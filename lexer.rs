@@ -29,6 +29,8 @@ pub enum Token {
     TDot,
     TComma,
     TColon,
+    TLet,
+    TAssign,
     TEOF
 }
 
@@ -37,6 +39,7 @@ fn name_or_keyword(interner: &mut Interner, s: &str) -> Token {
         "if" => TIf,
         "else" => TElse,
         "fn" => TFn,
+        "let" => TLet,
         _ => TIdentifier(interner.intern(s)),
     }
 }
@@ -96,7 +99,7 @@ impl <'a> Lexer<'a> {
 
     pub fn peek<'b>(&'b mut self) -> &'b Token {
         if self.offset != 0 && self.tokens.len() != 0 {
-            self.tokens.get(self.tokens.len() - self.offset + 1)
+            self.tokens.get(self.tokens.len() - self.offset - 1)
         }
         else {
             self.next();
@@ -237,7 +240,10 @@ impl <'a> Lexer<'a> {
                     None => { break; }
                 }
             }
-            return TOperator(self.intern(self.current_str()));
+            return match self.current_str() {
+                "=" => TAssign,
+                s => TOperator(self.intern(s))
+            }
         }
         else if c.is_digit() {
             return self.scan_number();

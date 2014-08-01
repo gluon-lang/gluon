@@ -6,7 +6,15 @@ macro_rules! expect(
     ($e: expr, $p: pat) => (
         match $e.lexer.next() {
             x@&$p => x,
-            _ => return Err(String::from_str("Expected other token"))
+            x => return Err(format!("Unexpected token {}", x))
+        }
+    )
+)
+macro_rules! matches(
+    ($e: expr, $p: pat) => (
+        match $e {
+            $p => true,
+            _ => false
         }
     )
 )
@@ -27,6 +35,13 @@ fn precedence(s : &str) -> int {
     }
 }
 
+fn is_statement<T>(e: &Expr<T>) -> bool {
+    match *e {
+        IfElse(..) | Match(..) | Block(..) => true,
+        _ => false
+    }
+}
+
 type PString = InternedStr;
 type ParseResult<T> = Result<T, String>;
 
@@ -37,6 +52,38 @@ pub struct Parser<'a> {
 impl <'a> Parser<'a> {
     pub fn new(input: &'a mut Buffer) -> Parser<'a> {
         Parser { lexer: Lexer::new(input) }
+    }
+    fn statement(&mut self) -> ParseResult<(Expr<PString>, bool)> {
+        match *self.lexer.peek() {
+            TLet => {
+                self.lexer.next();
+                let id = match *expect!(self, TIdentifier(..)) {
+                    TIdentifier(id) => id,
+                    _ => fail!()
+                };
+                expect!(self, TAssign);
+                let expr = try!(self.expression());
+                expect!(self, TSemicolon);
+                Ok((Let(id, box expr), true))
+            }
+            _ => {
+                match self.expression() {
+                    Ok(e) => {
+                        if is_statement(&e) {
+                            Ok((e, true))
+                        }
+                        else if matches!(self.lexer.peek(), &TSemicolon) {
+                            self.lexer.next();
+                            Ok((e, true))
+                        }
+                        else {
+                            Ok((e, false))
+                        }
+                    }
+                    Err(e) => Err(e)
+                }
+            }
+        }
     }
 
     fn expression(&mut self) -> ParseResult<Expr<PString>> {
@@ -54,10 +101,31 @@ impl <'a> Parser<'a> {
                 expect!(self, TCloseParen);
                 Ok(e)
             }
+            TOpenBrace => {
+                let mut exprs = Vec::new();
+                loop {
+                    let (expr, is_stm) = try!(self.statement());
+                    exprs.push(expr);
+                    if !is_stm {
+                        break
+                    }
+                }
+                expect!(self, TCloseBrace);
+                Ok(Block(exprs))
+            }
             TInteger(i) => {
                 Ok(Literal(Integer(i)))
             }
-            _ => Err(String::from_str("Not an expression"))
+            TFloat(f) => {
+                Ok(Literal(Float(f)))
+            }
+            TString(s) => {
+                Ok(Literal(String(s)))
+            }
+            x => {
+                self.lexer.backtrack();
+                Err(format!("Token {} does not start an expression", x))
+            }
         }
     }
 
@@ -117,6 +185,12 @@ mod tests {
     fn int(i: int) -> Expr<InternedStr> {
         Literal(Integer(i))
     }
+    fn let_(s: &str, e: Expr<InternedStr>) -> Expr<InternedStr> {
+        Let(intern(s), box e)
+    }
+    fn id(s: &str) -> Expr<InternedStr> {
+        Identifier(intern(s))
+    }
 
     #[test]
     fn operators() {
@@ -125,5 +199,13 @@ mod tests {
         let expr = parser.expression()
             .unwrap_or_else(|err| fail!(err));
         assert_eq!(expr, binop(binop(int(1), "/", int(4)), "+", binop(binop(int(2), "-", int(3)), "*", int(2))));
+    }
+    #[test]
+    fn block() {
+        let mut buffer = BufReader::new("1 / { let x = 2; x }".as_bytes());
+        let mut parser = Parser::new(&mut buffer);
+        let expr = parser.expression()
+            .unwrap_or_else(|err| fail!(err));
+        assert_eq!(expr, binop(int(1), "/", Block(vec!(let_("x", int(2)), id("x")))));
     }
 }

@@ -1,3 +1,4 @@
+use interner::InternedStr;
 
 #[deriving(Clone, Eq, PartialEq, Show)]
 pub enum Type<Id> {
@@ -9,7 +10,7 @@ pub enum Type<Id> {
 pub enum Literal {
     Integer(int),
     Float(f64),
-    String(String)
+    String(InternedStr)
 }
 
 #[deriving(Clone, PartialEq, Show)]
@@ -32,7 +33,8 @@ pub enum Expr<Id> {
     IfElse(Box<Expr<Id>>, Box<Expr<Id>>, Box<Expr<Id>>),
     Match(Box<Expr<Id>>, Vec<Alternative<Id>>),
     Block(Vec<Expr<Id>>),
-    BinOp(Box<Expr<Id>>, Id, Box<Expr<Id>>)
+    BinOp(Box<Expr<Id>>, Id, Box<Expr<Id>>),
+    Let(Id, Box<Expr<Id>>)
 }
 
 #[deriving(Clone, PartialEq, Show)]
