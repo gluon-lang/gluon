@@ -110,10 +110,15 @@ impl <'a> Lexer<'a> {
     
     ///Returns the next token in the lexer
     pub fn next<'b>(&'b mut self) -> &'b Token {
-        let t = self.next_token();
-        self.tokens.push(t);
-        self.reset_str();
-        debug!("Token {}", self.current());
+        if self.offset > 0 {
+            self.offset -= 1;
+        }
+        else {
+            let t = self.next_token();
+            self.tokens.push(t);
+            self.reset_str();
+            debug!("Token {}", self.current());
+        }
         self.current()
     }
 
@@ -242,6 +247,7 @@ impl <'a> Lexer<'a> {
             }
             return match self.current_str() {
                 "=" => TAssign,
+                ":" => TColon,
                 s => TOperator(self.intern(s))
             }
         }
