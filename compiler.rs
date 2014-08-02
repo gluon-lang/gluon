@@ -86,7 +86,7 @@ impl <'a> Compiler<'a> {
         self.stack.len()
     }
 
-    fn compile_function(&mut self, function: &Function<InternedStr>) -> CompiledFunction {
+    pub fn compile_function(&mut self, function: &Function<InternedStr>) -> CompiledFunction {
         for arg in function.arguments.iter() {
             self.new_stack_var(arg.name);
         }

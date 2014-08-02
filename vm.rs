@@ -2,6 +2,7 @@ use compiler::*;
 use interner::InternedStr;
 
 
+#[deriving(PartialEq, Show)]
 pub enum Value {
     Int(int)
 }
@@ -48,6 +49,20 @@ impl <'a> StackFrame<'a> {
 }
 
 impl VM {
+    
+    pub fn new() -> VM {
+        VM { globals: Vec::new() }
+    }
+
+    pub fn run_function(&self, cf: &CompiledFunction) -> Value {
+        let mut stack = Vec::new();
+        {
+            let frame = StackFrame::new(&mut stack, 0);
+            self.execute(frame, cf.instructions.as_slice());
+        }
+        stack.pop().expect("Expected return value")
+    }
+
     fn execute<'a>(&self, mut stack: StackFrame<'a>, instructions: &[Instruction]) {
         let mut index = 0;
         while index < instructions.len() {

@@ -99,7 +99,7 @@ impl <'a> Lexer<'a> {
 
     pub fn peek<'b>(&'b mut self) -> &'b Token {
         if self.offset != 0 && self.tokens.len() != 0 {
-            self.tokens.get(self.tokens.len() - self.offset - 1)
+            self.tokens.get(self.tokens.len() - self.offset)
         }
         else {
             self.next();
