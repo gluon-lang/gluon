@@ -55,4 +55,7 @@ pub struct Struct<Id> {
     pub fields: Vec<Field<Id>>
 }
 
+pub struct Module<Id> {
+    pub functions: Vec<Function<Id>>
+}
 

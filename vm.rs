@@ -4,7 +4,8 @@ use interner::InternedStr;
 
 #[deriving(PartialEq, Show)]
 pub enum Value {
-    Int(int)
+    Int(int),
+    Function(uint)
 }
 
 pub struct VM {
@@ -29,6 +30,11 @@ impl <'a> StackFrame<'a> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset }
     }
+
+    fn len(&self) -> uint {
+        self.stack.len() - self.offset
+    }
+
     fn get<'a>(&'a self, i: uint) -> &'a Value {
         self.stack.get(self.offset + i)
     }
@@ -54,6 +60,14 @@ impl VM {
         VM { globals: Vec::new() }
     }
 
+    pub fn new_functions(&mut self, fns: Vec<CompiledFunction>) {
+        self.globals.extend(fns.move_iter())
+    }
+
+    pub fn get_function(&self, index: uint) -> &CompiledFunction {
+        &self.globals[index]
+    }
+
     pub fn run_function(&self, cf: &CompiledFunction) -> Value {
         let mut stack = Vec::new();
         {
@@ -74,11 +88,23 @@ impl VM {
                 PushInt(i) => {
                     stack.push(Int(i));
                 }
+                PushGlobal(i) => {
+                    stack.push(Function(i));
+                }
                 PushFloat(_) => fail!(),
                 Store(i) => {
                     *stack.get_mut(i) = stack.pop();
                 }
-                Call(..) => fail!(),
+                CallGlobal(args) => {
+                    let function = match stack.get(stack.len() - 1 - args) {
+                        &Function(index) => {
+                            &self.globals[index]
+                        }
+                        _ => fail!()
+                    };
+                    let new_stack = StackFrame::new(stack.stack, args);
+                    self.execute(new_stack, function.instructions.as_slice());
+                }
                 Jump(i) => {
                     index = i;
                     continue
@@ -106,7 +132,8 @@ fn binop_int<'a>(stack: &mut StackFrame<'a>, f: |int, int| -> int) {
     let r = stack.pop();
     let l = stack.pop();
     match (l, r) {
-        (Int(l), Int(r)) => stack.push(Int(f(l, r)))
+        (Int(l), Int(r)) => stack.push(Int(f(l, r))),
+        _ => fail!()
     }
 }
 

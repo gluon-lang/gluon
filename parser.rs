@@ -77,6 +77,15 @@ impl <'a> Parser<'a> {
     pub fn new(input: &'a mut Buffer) -> Parser<'a> {
         Parser { lexer: Lexer::new(input) }
     }
+
+    pub fn module(&mut self) -> ParseResult<Module<PString>> {
+        let mut fns = Vec::new();
+        while matches!(self.lexer.peek(), &TFn) {
+            fns.push(try!(self.function()));
+        }
+        Ok(Module { functions: fns })
+    }
+
     fn statement(&mut self) -> ParseResult<(Expr<PString>, bool)> {
         match *self.lexer.peek() {
             TLet => {

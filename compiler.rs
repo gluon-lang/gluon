@@ -6,8 +6,9 @@ pub enum Instruction {
     PushInt(int),
     PushFloat(f64),
     Push(uint),
+    PushGlobal(uint),
     Store(uint),
-    Call(int, int),
+    CallGlobal(uint),
     Jump(uint),
     CJump(uint),
 
@@ -52,6 +53,15 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     }
 }
 
+impl CompilerEnv for Module<InternedStr> {
+    fn find_var(&self, id: &InternedStr) -> Option<Variable> {
+        self.functions.iter()
+            .enumerate()
+            .find(|&(_, f)| f.name == *id)
+            .map(|(i, _)| Global(i))
+    }
+}
+
 impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
         self.find_var(s)
@@ -86,6 +96,12 @@ impl <'a> Compiler<'a> {
         self.stack.len()
     }
 
+    pub fn compile_module(&mut self, module: &Module<InternedStr>) -> Vec<CompiledFunction> {
+        module.functions.iter()
+            .map(|f| self.compile_function(f))
+            .collect()
+    }
+
     pub fn compile_function(&mut self, function: &Function<InternedStr>) -> CompiledFunction {
         for arg in function.arguments.iter() {
             self.new_stack_var(arg.name);
@@ -111,7 +127,7 @@ impl <'a> Compiler<'a> {
             Identifier(ref id) => {
                 match self.find(id).unwrap_or_else(|| fail!("Undefined variable {}", id)) {
                     Stack(index) => instructions.push(Push(index)),
-                    _ => fail!()
+                    Global(index) => instructions.push(PushGlobal(index))
                 }
             }
             IfElse(ref pred, ref if_true, ref if_false) => {
@@ -151,6 +167,13 @@ impl <'a> Compiler<'a> {
             Let(ref id, ref expr) => {
                 self.new_stack_var(*id);
                 self.compile(&**expr, instructions);
+            }
+            Call(ref func, ref args) => {
+                self.compile(&**func, instructions);
+                for arg in args.iter() {
+                    self.compile(arg, instructions);
+                }
+                instructions.push(CallGlobal(args.len()));
             }
             _ => fail!()
         }

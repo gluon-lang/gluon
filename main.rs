@@ -21,15 +21,15 @@ mod vm;
 fn run_main(s: &str) -> Result<Value, String> {
     let mut buffer = BufReader::new(s.as_bytes());
     let mut parser = Parser::new(&mut buffer);
-    let f = match parser.function() {
+    let module = match parser.module() {
         Ok(f) => f,
         Err(x) => return Err(format!("{}", x))
     };
-    let x = ();
-    let mut compiler = Compiler::new(&x);
-    let cf = compiler.compile_function(&f);
-    let vm = VM::new();
-    let v = vm.run_function(&cf);
+    let mut compiler = Compiler::new(&module);
+    let functions = compiler.compile_module(&module);
+    let mut vm = VM::new();
+    vm.new_functions(functions);
+    let v = vm.run_function(vm.get_function(0));
     Ok(v)
 }
 
