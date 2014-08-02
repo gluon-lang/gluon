@@ -4,23 +4,32 @@ use interner::InternedStr;
 
 macro_rules! expect(
     ($e: expr, $p: ident (..)) => (
-        match $e.lexer.next() {
-            x@&$p(..) => x,
-            x => return Err(format!("Unexpected token {}, expected {}", x, stringify!($p)))
+        match *$e.lexer.next() {
+            x@$p(..) => x,
+            x => {
+                $e.lexer.backtrack();
+                return Err(format!("Unexpected token {}, expected {}", x, stringify!($p)))
+            }
         }
     );
     ($e: expr, $p: ident) => (
-        match $e.lexer.next() {
-            x@&$p => x,
-            x => return Err(format!("Unexpected token {}, expected {}", x, $p))
+        match *$e.lexer.next() {
+            x@$p => x,
+            x => {
+                $e.lexer.backtrack();
+                return Err(format!("Unexpected token {}, expected {}", x, $p))
+            }
         }
     )
 )
 macro_rules! expect1(
     ($e: expr, $p: ident ($x: ident)) => (
-        match $e.lexer.next() {
-            &$p($x) => $x,
-            x => return Err(format!("Unexpected token {}", x))
+        match *$e.lexer.next() {
+            $p($x) => $x,
+            x => {
+                $e.lexer.backtrack();
+                return Err(format!("Unexpected token {}", x))
+            }
         }
     )
 )
@@ -72,7 +81,7 @@ impl <'a> Parser<'a> {
         match *self.lexer.peek() {
             TLet => {
                 self.lexer.next();
-                let id = match *expect!(self, TIdentifier(..)) {
+                let id = match expect!(self, TIdentifier(..)) {
                     TIdentifier(id) => id,
                     _ => fail!()
                 };
@@ -101,7 +110,7 @@ impl <'a> Parser<'a> {
         }
     }
 
-    fn expression(&mut self) -> ParseResult<Expr<PString>> {
+    pub fn expression(&mut self) -> ParseResult<Expr<PString>> {
         let e = try!(self.sub_expression());
         self.binary_expression(e, 0)
     }
@@ -139,7 +148,6 @@ impl <'a> Parser<'a> {
         expect!(self, TOpenBrace);
         let mut exprs = Vec::new();
         while !matches!(self.lexer.peek(), &TCloseBrace) {
-            
             let (expr, is_stm) = try!(self.statement());
             exprs.push(expr);
             if !is_stm {
@@ -205,7 +213,7 @@ impl <'a> Parser<'a> {
         Ok(Field { name: name, typ: typ })
     }
 
-    fn function(&mut self) -> ParseResult<Function<PString>> {
+    pub fn function(&mut self) -> ParseResult<Function<PString>> {
         expect!(self, TFn);
         let name = expect1!(self, TIdentifier(x));
         let arguments = try!(self.parens(|this|
