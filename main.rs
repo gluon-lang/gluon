@@ -1,4 +1,4 @@
-#![feature(globs, phase, macro_rules)]
+#![feature(globs, phase, macro_rules, unboxed_closures)]
 extern crate collections;
 #[phase(plugin, link)]
 extern crate log;

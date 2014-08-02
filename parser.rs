@@ -116,6 +116,18 @@ impl <'a> Parser<'a> {
     }
 
     fn sub_expression(&mut self) -> ParseResult<Expr<PString>> {
+        let e = try!(self.sub_expression_());
+        match self.lexer.peek() {
+            &TOpenParen => {
+                let args = try!(self.parens(|this|
+                    this.sep_by(|t| matches!(t, &TComma), |this| this.expression())
+                ));
+                Ok(Call(box e, args))
+            }
+            _ => Ok(e)
+        }
+    }
+    fn sub_expression_(&mut self) -> ParseResult<Expr<PString>> {
         match *self.lexer.next() {
             TIdentifier(id) => {
                 Ok(Identifier(id))
@@ -222,6 +234,8 @@ impl <'a> Parser<'a> {
         let expr = try!(self.block());
         Ok(Function { name: name, arguments: arguments, expression: expr })
     }
+
+
     fn parens<T>(&mut self, f: |&mut Parser| -> ParseResult<T>) -> ParseResult<T> {
         expect!(self, TOpenParen);
         let x = try!(f(self));
@@ -268,6 +282,9 @@ mod tests {
     fn typ(s: &str) -> Type<InternedStr> {
         Type(intern(s))
     }
+    fn call(e: Expr<InternedStr>, args: Vec<Expr<InternedStr>>) -> Expr<InternedStr> {
+        Call(box e, args)
+    }
 
     #[test]
     fn operators() {
@@ -297,5 +314,13 @@ mod tests {
             expression: Block(vec!())
         };
         assert_eq!(func, expected);
+    }
+    #[test]
+    fn call_function() {
+        let mut buffer = BufReader::new("test(1, x)".as_bytes());
+        let mut parser = Parser::new(&mut buffer);
+        let func = parser.expression()
+            .unwrap_or_else(|err| fail!(err));
+        assert_eq!(func, call(id("test"), vec![int(1), id("x")]));
     }
 }

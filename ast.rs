@@ -29,7 +29,7 @@ pub struct Alternative<Id> {
 pub enum Expr<Id> {
     Identifier(Id),
     Literal(Literal),
-    Call(Id, Vec<Expr<Id>>),
+    Call(Box<Expr<Id>>, Vec<Expr<Id>>),
     IfElse(Box<Expr<Id>>, Box<Expr<Id>>, Box<Expr<Id>>),
     Match(Box<Expr<Id>>, Vec<Alternative<Id>>),
     Block(Vec<Expr<Id>>),
