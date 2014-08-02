@@ -8,6 +8,6 @@ mod ast;
 mod lexer;
 mod parser;
 
-
+#[cfg(not(test))]
 fn main() {
 }

@@ -3,13 +3,28 @@ use ast::*;
 use interner::InternedStr;
 
 macro_rules! expect(
-    ($e: expr, $p: pat) => (
+    ($e: expr, $p: ident (..)) => (
+        match $e.lexer.next() {
+            x@&$p(..) => x,
+            x => return Err(format!("Unexpected token {}, expected {}", x, stringify!($p)))
+        }
+    );
+    ($e: expr, $p: ident) => (
         match $e.lexer.next() {
             x@&$p => x,
+            x => return Err(format!("Unexpected token {}, expected {}", x, $p))
+        }
+    )
+)
+macro_rules! expect1(
+    ($e: expr, $p: ident ($x: ident)) => (
+        match $e.lexer.next() {
+            &$p($x) => $x,
             x => return Err(format!("Unexpected token {}", x))
         }
     )
 )
+
 macro_rules! matches(
     ($e: expr, $p: pat) => (
         match $e {
@@ -102,16 +117,8 @@ impl <'a> Parser<'a> {
                 Ok(e)
             }
             TOpenBrace => {
-                let mut exprs = Vec::new();
-                loop {
-                    let (expr, is_stm) = try!(self.statement());
-                    exprs.push(expr);
-                    if !is_stm {
-                        break
-                    }
-                }
-                expect!(self, TCloseBrace);
-                Ok(Block(exprs))
+                self.lexer.backtrack();
+                self.block()
             }
             TInteger(i) => {
                 Ok(Literal(Integer(i)))
@@ -127,6 +134,20 @@ impl <'a> Parser<'a> {
                 Err(format!("Token {} does not start an expression", x))
             }
         }
+    }
+    fn block(&mut self) -> ParseResult<Expr<PString>> {
+        expect!(self, TOpenBrace);
+        let mut exprs = Vec::new();
+        while !matches!(self.lexer.peek(), &TCloseBrace) {
+            
+            let (expr, is_stm) = try!(self.statement());
+            exprs.push(expr);
+            if !is_stm {
+                break
+            }
+        }
+        expect!(self, TCloseBrace);
+        Ok(Block(exprs))
     }
 
     fn binary_expression(&mut self, inL: Expr<PString>, minPrecedence : int) -> ParseResult<Expr<PString>> {
@@ -170,6 +191,48 @@ impl <'a> Parser<'a> {
         self.lexer.backtrack();
         Ok(lhs)
     }
+
+    fn typ(&mut self) -> ParseResult<Type<PString>> {
+        let x = expect1!(self, TIdentifier(x));
+        Ok(Type(x))
+    }
+    
+    fn field(&mut self) -> ParseResult<Field<PString>> {
+        debug!("Field");
+        let name = expect1!(self, TIdentifier(x));
+        expect!(self, TColon);
+        let typ = try!(self.typ());
+        Ok(Field { name: name, typ: typ })
+    }
+
+    fn function(&mut self) -> ParseResult<Function<PString>> {
+        expect!(self, TFn);
+        let name = expect1!(self, TIdentifier(x));
+        let arguments = try!(self.parens(|this|
+            this.sep_by(|t| matches!(t, &TComma), |this| this.field())
+        ));
+        let expr = try!(self.block());
+        Ok(Function { name: name, arguments: arguments, expression: expr })
+    }
+    fn parens<T>(&mut self, f: |&mut Parser| -> ParseResult<T>) -> ParseResult<T> {
+        expect!(self, TOpenParen);
+        let x = try!(f(self));
+        expect!(self, TCloseParen);
+        Ok(x)
+    }
+    fn sep_by<T>(&mut self, sep: |&Token| -> bool, f: |&mut Parser| -> ParseResult<T>) -> ParseResult<Vec<T>> {
+        let mut result = Vec::new();
+        match f(self) {
+            Ok(x) => result.push(x),
+            Err(_) => return Ok(result)
+        }
+        while sep(self.lexer.peek()) {
+            self.lexer.next();
+            let x = try!(f(self));
+            result.push(x);
+        }
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +254,12 @@ mod tests {
     fn id(s: &str) -> Expr<InternedStr> {
         Identifier(intern(s))
     }
+    fn field(s: &str, typ: Type<InternedStr>) -> Field<InternedStr> {
+        Field { name: intern(s), typ: typ }
+    }
+    fn typ(s: &str) -> Type<InternedStr> {
+        Type(intern(s))
+    }
 
     #[test]
     fn operators() {
@@ -207,5 +276,18 @@ mod tests {
         let expr = parser.expression()
             .unwrap_or_else(|err| fail!(err));
         assert_eq!(expr, binop(int(1), "/", Block(vec!(let_("x", int(2)), id("x")))));
+    }
+    #[test]
+    fn function() {
+        let mut buffer = BufReader::new("fn main(x: int, y: float) { }".as_bytes());
+        let mut parser = Parser::new(&mut buffer);
+        let func = parser.function()
+            .unwrap_or_else(|err| fail!(err));
+        let expected = Function {
+            name: intern("main"),
+            arguments: vec!(field("x", typ("int")), field("y", typ("float"))),
+            expression: Block(vec!())
+        };
+        assert_eq!(func, expected);
     }
 }
