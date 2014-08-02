@@ -32,7 +32,7 @@ impl Interner {
 
     pub fn get_str<'a>(&'a self, InternedStr(i): InternedStr) -> &'a str {
         if i < self.strings.len() {
-            self.strings.get(i).as_slice()
+            self.strings[i].as_slice()
         }
         else {
             fail!("Invalid InternedStr {}", i)
@@ -51,10 +51,6 @@ pub fn get_local_interner() -> Rc<RefCell<Interner>> {
             interner
         }
     }
-}
-
-pub fn set_local_interner(interner: Interner) {
-    *(*get_local_interner()).borrow_mut() = interner;
 }
 
 pub fn intern(s: &str) -> InternedStr {

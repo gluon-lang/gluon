@@ -261,7 +261,7 @@ impl <'a> Lexer<'a> {
             loop {
                 match self.read_char() {
                     Some('"') => return TString(self.intern(self.current_str())),
-                    Some(x) => (),
+                    Some(_) => (),
                     None => fail!("Unexpected EOF")
                 }
             }
