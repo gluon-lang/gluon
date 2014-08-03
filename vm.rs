@@ -17,7 +17,7 @@ impl fmt::Show for Value {
         match *self {
             Int(i) => write!(f, "{}", i),
             Data(ref ptr) => write!(f, "{}", ptr.borrow()),
-            Function(i) => write!(f, "{}", i),
+            Function(i) => write!(f, "<function {}>", i),
         }
     }
 }
@@ -118,8 +118,15 @@ impl VM {
                         }
                         _ => fail!()
                     };
-                    let new_stack = StackFrame::new(stack.stack, args);
-                    self.execute(new_stack, function.instructions.as_slice());
+                    {
+                        let new_stack = StackFrame::new(stack.stack, args);
+                        self.execute(new_stack, function.instructions.as_slice());
+                    }
+                    let result = stack.pop();
+                    for _ in range(0, args + 1) {
+                        stack.pop();
+                    }
+                    stack.push(result);
                 }
                 Construct(args) => {
                     let mut fields = Vec::new();
@@ -178,7 +185,7 @@ fn binop_int<'a>(stack: &mut StackFrame<'a>, f: |int, int| -> int) {
     let l = stack.pop();
     match (l, r) {
         (Int(l), Int(r)) => stack.push(Int(f(l, r))),
-        _ => fail!()
+        (l, r) => fail!("{} `op` {}", l, r)
     }
 }
 
