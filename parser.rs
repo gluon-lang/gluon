@@ -294,7 +294,7 @@ impl <'a> Parser<'a> {
             try!(self.typ())
         }
         else {
-            unit_type()
+            unit_type.clone()
         };
         let expr = try!(self.block());
         Ok(Function { name: name, arguments: arguments, return_type: return_type, expression: expr })

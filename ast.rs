@@ -1,9 +1,20 @@
 use interner::{intern, InternedStr};
 
+
+#[deriving(Clone, Eq, PartialEq, Show)]
+pub enum LiteralType {
+    StringType,
+    IntType,
+    FloatType,
+    BoolType,
+    UnitType
+}
+
 #[deriving(Clone, Eq, PartialEq, Show)]
 pub enum Type<Id> {
     Type(Id),
-    FunctionType(Vec<Type<Id>>, Box<Type<Id>>)
+    FunctionType(Vec<Type<Id>>, Box<Type<Id>>),
+    LiteralType(LiteralType)
 }
 
 #[deriving(Clone, PartialEq, Show)]
@@ -67,20 +78,10 @@ pub struct Module<Id> {
     pub structs: Vec<Struct<Id>>
 }
 
-pub fn int_type() -> Type<InternedStr> {
-    Type(intern("int"))
-}
-pub fn float_type() -> Type<InternedStr> {
-    Type(intern("float"))
-}
-pub fn string_type() -> Type<InternedStr> {
-    Type(intern("string"))
-}
-pub fn bool_type() -> Type<InternedStr> {
-    Type(intern("bool"))
-}
-pub fn unit_type() -> Type<InternedStr> {
-    Type(intern("()"))
-}
+pub static int_type: Type<InternedStr> = LiteralType(IntType);
+pub static float_type: Type<InternedStr> = LiteralType(FloatType);
+pub static string_type: Type<InternedStr> = LiteralType(StringType);
+pub static bool_type: Type<InternedStr> = LiteralType(BoolType);
+pub static unit_type: Type<InternedStr> = LiteralType(UnitType);
 
 
