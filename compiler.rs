@@ -176,6 +176,20 @@ impl <'a> Compiler<'a> {
                 }
                 instructions.push(CallGlobal(args.len()));
             }
+            While(ref pred, ref expr) => {
+                //jump #test
+                //#start:
+                //[compile(expr)]
+                //#test:
+                //[compile(pred)]
+                //cjump #start
+                let mut pre_jump_index = instructions.len();
+                instructions.push(Jump(0));
+                self.compile(&**expr, instructions);
+                *instructions.get_mut(pre_jump_index) = Jump(instructions.len());
+                self.compile(&**pred, instructions);
+                instructions.push(CJump(pre_jump_index + 1));
+            }
             _ => fail!()
         }
     }

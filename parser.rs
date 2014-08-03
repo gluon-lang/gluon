@@ -61,7 +61,7 @@ fn precedence(s : &str) -> int {
 
 fn is_statement<T>(e: &Expr<T>) -> bool {
     match *e {
-        IfElse(..) | Match(..) | Block(..) => true,
+        IfElse(..) | Match(..) | Block(..) | While(..) => true,
         _ => false
     }
 }
