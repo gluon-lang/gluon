@@ -4,6 +4,7 @@ extern crate collections;
 extern crate log;
 
 use parser::*;
+use typecheck::*;
 use compiler::*;
 use vm::*;
 
@@ -13,6 +14,7 @@ mod interner;
 mod ast;
 mod lexer;
 mod parser;
+mod typecheck;
 mod compiler;
 mod vm;
 
@@ -25,6 +27,9 @@ fn run_main(s: &str) -> Result<Value, String> {
         Ok(f) => f,
         Err(x) => return Err(format!("{}", x))
     };
+    let mut tc = Typecheck::new(&module);
+    try!(tc.typecheck_module(&module)
+        .map_err(|e| format!("{}", e)));
     let mut compiler = Compiler::new(&module);
     let functions = compiler.compile_module(&module);
     let mut vm = VM::new();
