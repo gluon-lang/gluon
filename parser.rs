@@ -266,7 +266,13 @@ impl <'a, PString> Parser<'a, PString> {
 
     fn typ(&mut self) -> ParseResult<Type<InternedStr>> {
         let x = expect1!(self, TIdentifier(x));
-        Ok(Type(x))
+        Ok(match x.as_slice() {
+            "int" => int_type.clone(),
+            "float" => float_type.clone(),
+            "string" => string_type.clone(),
+            "bool" => bool_type.clone(),
+            _ => Type(x)
+        })
     }
     
     fn field(&mut self) -> ParseResult<Field> {
