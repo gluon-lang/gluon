@@ -94,7 +94,9 @@ impl VM {
     fn execute<'a>(&self, mut stack: StackFrame<'a>, instructions: &[Instruction]) {
         let mut index = 0;
         while index < instructions.len() {
-            match instructions[index] {
+            let instr = instructions[index];
+            debug!("{}", instr);
+            match instr {
                 Push(i) => {
                     let v = stack.get(i).clone();
                     stack.push(v);
@@ -126,6 +128,7 @@ impl VM {
                     }
                     fields.reverse();
                     let d = Data(Rc::new(RefCell::new(fields)));
+                    stack.push(d);
                 }
                 GetField(i) => {
                     match stack.pop() {
@@ -133,7 +136,7 @@ impl VM {
                             let v = (*fields.borrow())[i].clone();
                             stack.push(v);
                         }
-                        _ => fail!()
+                        x => fail!("GetField on {}", x)
                     }
                 }
                 Jump(i) => {

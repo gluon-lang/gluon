@@ -255,6 +255,11 @@ impl <'a> Typecheck<'a> {
 pub trait Typed {
     fn type_of(&self) -> &Type<InternedStr>;
 }
+impl Typed for TcIdent {
+    fn type_of(&self) -> &Type<InternedStr> {
+        &self.typ
+    }
+}
 impl <Id: Typed + Str> Typed for Expr<Id> {
     fn type_of(&self) -> &Type<InternedStr> {
         match *self {

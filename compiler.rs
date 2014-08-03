@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use interner::*;
 use ast::*;
-use typecheck::TcIdent;
+use typecheck::{Typed, TcIdent};
 
+#[deriving(Show)]
 pub enum Instruction {
     PushInt(int),
     PushFloat(f64),
@@ -202,6 +203,21 @@ impl <'a> Compiler<'a> {
                 self.compile(&**expr, instructions);
             }
             Call(ref func, ref args) => {
+                match **func {
+                    Identifier(ref id) => {
+                        match self.find(id.id()).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
+                            Constructor(num_args) => {
+                                for arg in args.iter() {
+                                    self.compile(arg, instructions);
+                                }
+                                instructions.push(Construct(num_args));
+                                return
+                            }
+                            _ => ()
+                        }
+                    }
+                    _ => ()
+                }
                 self.compile(&**func, instructions);
                 for arg in args.iter() {
                     self.compile(arg, instructions);
@@ -237,9 +253,16 @@ impl <'a> Compiler<'a> {
                     _ => fail!("Assignment to {}", lhs)
                 }
             }
-            FieldAccess(ref expr, ref id) => {
+            FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, instructions);
-                fail!()//instructions.push(GetField(i));
+                let field_index = match *expr.type_of() {
+                    Type(ref id) => {
+                        self.find_field(id, field.id())
+                            .unwrap()
+                    }
+                    _ => fail!()
+                };
+                instructions.push(GetField(field_index));
             }
             ref e => fail!("Cannot compile {}", e)
         }
