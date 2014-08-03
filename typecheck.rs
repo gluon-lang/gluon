@@ -48,27 +48,27 @@ fn find_type<'a>(module: &'a Module<TcIdent>, name: &InternedStr) -> Option<TcTy
 }
 
 pub struct Typecheck<'a> {
-    module: &'a Module<TcIdent>,
+    module: HashMap<InternedStr, TcType>,
+    structs: HashMap<InternedStr, Vec<(InternedStr, TcType)>>,
     stack: HashMap<InternedStr, TcType>
 }
 
 impl <'a> Typecheck<'a> {
     
-    pub fn new(module: &'a Module<TcIdent>) -> Typecheck<'a> {
-        Typecheck { module: module, stack: HashMap::new() }
+    pub fn new() -> Typecheck<'a> {
+        Typecheck { module: HashMap::new(), structs: HashMap::new(), stack: HashMap::new() }
     }
     
     fn find(&self, id: &InternedStr) -> TcResult {
         self.stack.find(id)
+            .or_else(|| self.module.find(id))
             .map(|t| t.clone())
-            .or_else(|| find_type(self.module, id))
             .map(Ok)
             .unwrap_or_else(|| Err(UndefinedVariable(id.clone())))
     }
 
-    fn find_struct(&self, id: &InternedStr) -> Result<&'a Struct<TcIdent>, TypeError> {
-        self.module.structs.iter()
-            .find(|s| s.name.name == *id)
+    fn find_struct(&self, id: &InternedStr) -> Result<&Vec<(InternedStr, TcType)>, TypeError> {
+        self.structs.find(id)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
     }
@@ -77,26 +77,42 @@ impl <'a> Typecheck<'a> {
         self.stack.insert(id, typ);
     }
 
-    pub fn typecheck_module(&mut self, module: &Module<TcIdent>) -> Result<(), TypeError> {
-        for f in module.functions.iter() {
+    pub fn typecheck_module(&mut self, module: &mut Module<TcIdent>) -> Result<(), TypeError> {
+        
+        for f in module.functions.mut_iter() {
+            f.name.typ = FunctionType(f.arguments.iter().map(|f| f.typ.clone()).collect(), box f.return_type.clone());
+            self.module.insert(f.name.name, f.name.typ.clone());
+        }
+        for s in module.structs.mut_iter() {
+            let fields = s.fields.iter().map(|f| (f.name, f.typ.clone())).collect();
+            self.structs.insert(s.name.name, fields);
+
+            let args = s.fields.iter().map(|f| f.typ.clone()).collect();
+            s.name.typ = FunctionType(args, box Type(s.name.name));
+            self.module.insert(s.name.name, s.name.typ.clone());
+        }
+        for f in module.functions.mut_iter() {
             try!(self.typecheck_function(f));
         }
         Ok(())
     }
 
-    fn typecheck_function(&mut self, function: &Function<TcIdent>) -> Result<(), TypeError> {
+    fn typecheck_function(&mut self, function: &mut Function<TcIdent>) -> Result<(), TypeError> {
         self.stack.clear();
         for arg in function.arguments.iter() {
             self.stack_var(arg.name.clone(), arg.typ.clone());
         }
-        let return_type = try!(self.typecheck(&function.expression));
+        let return_type = try!(self.typecheck(&mut function.expression));
         self.unify(&function.return_type, return_type)
             .map(|_| ())
     }
 
-    fn typecheck(&mut self, expr: &Expr<TcIdent>) -> TcResult {
+    fn typecheck(&mut self, expr: &mut Expr<TcIdent>) -> TcResult {
         match *expr {
-            Identifier(ref id) => self.find(id.id()),
+            Identifier(ref mut id) => {
+                id.typ = try!(self.find(id.id()));
+                Ok(id.typ.clone())
+            }
             Literal(ref lit) => {
                 Ok(match *lit {
                     Integer(_) => int_type.clone(),
@@ -105,15 +121,15 @@ impl <'a> Typecheck<'a> {
                     Bool(_) => bool_type.clone()
                 })
             }
-            Call(ref func, ref args) => {
-                let func_type = try!(self.typecheck(&**func));
+            Call(ref mut func, ref mut args) => {
+                let func_type = try!(self.typecheck(&mut**func));
                 match func_type {
                     FunctionType(arg_types, return_type) => {
                         if arg_types.len() != args.len() {
                             return Err(WrongNumberOfArguments(arg_types.len(), args.len()));
                         }
                         for i in range(0, arg_types.len()) {
-                            let actual = try!(self.typecheck(&args[i]));
+                            let actual = try!(self.typecheck(args.get_mut(i)));
                             try!(self.unify(&arg_types[i], actual));
                         }
                         Ok(*return_type)
@@ -121,22 +137,22 @@ impl <'a> Typecheck<'a> {
                     t => Err(NotAFunction(t))
                 }
             }
-            IfElse(ref pred, ref if_true, ref if_false) => {
-                let pred_type = try!(self.typecheck(&**pred));
+            IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
+                let pred_type = try!(self.typecheck(&mut**pred));
                 self.unify(&bool_type, pred_type);
-                let true_type = try!(self.typecheck(&**if_true));
-                let false_type = try!(self.typecheck(&**if_false));
+                let true_type = try!(self.typecheck(&mut**if_true));
+                let false_type = try!(self.typecheck(&mut**if_false));
                 self.unify(&true_type, false_type)
             }
-            While(ref pred, ref expr) => {
-                let pred_type = try!(self.typecheck(&**pred));
+            While(ref mut pred, ref mut expr) => {
+                let pred_type = try!(self.typecheck(&mut **pred));
                 try!(self.unify(&bool_type, pred_type));
-                self.typecheck(&**expr)
+                self.typecheck(&mut**expr)
                     .map(|_| unit_type.clone())
             }
-            BinOp(ref lhs, ref op, ref rhs) => {
-                let lhs_type = try!(self.typecheck(&**lhs));
-                let rhs_type = try!(self.typecheck(&**rhs));
+            BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
+                let lhs_type = try!(self.typecheck(&mut**lhs));
+                let rhs_type = try!(self.typecheck(&mut**rhs));
                 try!(self.unify(&lhs_type, rhs_type.clone()));
                 match op.as_slice() {
                     "+" | "-" | "*" => {
@@ -155,9 +171,9 @@ impl <'a> Typecheck<'a> {
                     _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
-            Block(ref exprs) => {
+            Block(ref mut exprs) => {
                 let mut typ = unit_type.clone();
-                for expr in exprs.iter() {
+                for expr in exprs.mut_iter() {
                     typ = try!(self.typecheck(expr));
                 }
                 for expr in exprs.iter() {
@@ -170,36 +186,37 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(typ)
             }
-            Match(ref expr, ref alts) => {
-                let typ = try!(self.typecheck(&**expr));
-                try!(self.typecheck_pattern(&alts[0].pattern, typ.clone()));
-                let alt1_type = try!(self.typecheck(&alts[0].expression));
-                for alt in alts.iter().skip(1) {
+            Match(ref mut expr, ref mut alts) => {
+                let typ = try!(self.typecheck(&mut**expr));
+                try!(self.typecheck_pattern(&mut alts.get_mut(0).pattern, typ.clone()));
+                let alt1_type = try!(self.typecheck(&mut alts.get_mut(0).expression));
+                for alt in alts.mut_iter().skip(1) {
                     try!(self.typecheck_pattern(&alt.pattern, typ.clone()));
-                    let alt_type = try!(self.typecheck(&alts[0].expression));
+                    let alt_type = try!(self.typecheck(&mut alt.expression));
                     try!(self.unify(&alt1_type, alt_type));
                 }
                 Ok(alt1_type)
             }
-            Let(ref id, ref expr) => {
-                let typ = try!(self.typecheck(&**expr));
-                self.stack_var(id.name.clone(), typ);
+            Let(ref mut id, ref mut expr) => {
+                id.typ = try!(self.typecheck(&mut **expr));
+                self.stack_var(id.name.clone(), id.typ.clone());
                 Ok(unit_type.clone())
             }
-            Assign(ref lhs, ref rhs) => {
-                let rhs_type = try!(self.typecheck(&**rhs));
-                let lhs_type = try!(self.typecheck(&**lhs));
+            Assign(ref mut lhs, ref mut rhs) => {
+                let rhs_type = try!(self.typecheck(&mut **rhs));
+                let lhs_type = try!(self.typecheck(&mut **lhs));
                 self.unify(&lhs_type, rhs_type)
             }
-            FieldAccess(ref expr, ref id) => {
-                let typ = try!(self.typecheck(&**expr));
+            FieldAccess(ref mut expr, ref mut id) => {
+                let typ = try!(self.typecheck(&mut **expr));
                 match typ {
                     Type(ref struct_id) => {
-                        let s = try!(self.find_struct(struct_id));
-                        s.fields.iter()
-                            .find(|f| f.name == id.name)
-                            .map(|f| Ok(f.typ.clone()))
-                            .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone())))
+                        let fields = try!(self.find_struct(struct_id));
+                        id.typ = try!(fields.iter()
+                            .find(|& &(ref name, _)| *name == id.name)
+                            .map(|&(_, ref t)| Ok(t.clone()))
+                            .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone()))));
+                        Ok(id.typ.clone())
                     }
                     FunctionType(..) => Err(TypeError("Field access on function")),
                     LiteralType(..) => Err(TypeError("Field acces on primitive"))
@@ -299,9 +316,9 @@ mod tests {
     #[test]
     fn while_() {
         let text = "fn main() { let x = 2; while x < 10 { x } }";
-        let module = parse(text, |p| p.module());
-        let mut tc = Typecheck::new(&module);
-        tc.typecheck_module(&module)
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| fail!(err))
 
     }

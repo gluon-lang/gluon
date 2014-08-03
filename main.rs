@@ -24,12 +24,12 @@ mod vm;
 fn run_main(s: &str) -> Result<Value, String> {
     let mut buffer = BufReader::new(s.as_bytes());
     let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type.clone(), name: s });
-    let module = match parser.module() {
+    let mut module = match parser.module() {
         Ok(f) => f,
         Err(x) => return Err(format!("{}", x))
     };
-    let mut tc = Typecheck::new(&module);
-    try!(tc.typecheck_module(&module)
+    let mut tc = Typecheck::new();
+    try!(tc.typecheck_module(&mut module)
         .map_err(|e| format!("{}", e)));
     let mut compiler = Compiler::new(&module);
     let functions = compiler.compile_module(&module);
