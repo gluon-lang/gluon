@@ -159,6 +159,13 @@ impl <'a> Parser<'a> {
             TString(s) => {
                 Ok(Literal(String(s)))
             }
+            TIf => {
+                let pred = box try!(self.expression());
+                let if_true = box try!(self.block());
+                expect!(self, TElse);
+                let if_false = box try!(self.block());
+                Ok(IfElse(pred, if_true, if_false))
+            }
             x => {
                 self.lexer.backtrack();
                 Err(format!("Token {} does not start an expression", x))
@@ -276,6 +283,7 @@ impl <'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::ParseResult;
     use ast::*;
     use std::io::BufReader;
     use interner::*;
@@ -301,42 +309,45 @@ mod tests {
     fn call(e: Expr<InternedStr>, args: Vec<Expr<InternedStr>>) -> Expr<InternedStr> {
         Call(box e, args)
     }
+    fn if_else(p: Expr<InternedStr>, if_true: Expr<InternedStr>, if_false: Expr<InternedStr>) -> Expr<InternedStr> {
+        IfElse(box p, box if_true, box if_false)
+    }
+    fn parse<T>(s: &str, f: |&mut Parser| -> ParseResult<T>) -> T {
+        let mut buffer = BufReader::new(s.as_bytes());
+        let mut parser = Parser::new(&mut buffer);
+        f(&mut parser)
+            .unwrap_or_else(|err| fail!(err))
+    }
 
     #[test]
     fn operators() {
-        let mut buffer = BufReader::new("1 / 4 + (2 - 3) * 2".as_bytes());
-        let mut parser = Parser::new(&mut buffer);
-        let expr = parser.expression()
-            .unwrap_or_else(|err| fail!(err));
+        let expr = parse("1 / 4 + (2 - 3) * 2", |p| p.expression());
         assert_eq!(expr, binop(binop(int(1), "/", int(4)), "+", binop(binop(int(2), "-", int(3)), "*", int(2))));
     }
     #[test]
     fn block() {
-        let mut buffer = BufReader::new("1 / { let x = 2; x }".as_bytes());
-        let mut parser = Parser::new(&mut buffer);
-        let expr = parser.expression()
-            .unwrap_or_else(|err| fail!(err));
+        let expr = parse("1 / { let x = 2; x }", |p| p.expression());
         assert_eq!(expr, binop(int(1), "/", Block(vec!(let_("x", int(2)), id("x")))));
     }
     #[test]
     fn function() {
-        let mut buffer = BufReader::new("fn main(x: int, y: float) { }".as_bytes());
-        let mut parser = Parser::new(&mut buffer);
-        let func = parser.function()
-            .unwrap_or_else(|err| fail!(err));
+        let func = parse("fn main(x: int, y: float) { }", |p| p.function());
         let expected = Function {
             name: intern("main"),
             arguments: vec!(field("x", typ("int")), field("y", typ("float"))),
-            expression: Block(vec!())
+            expression: Block(vec!()),
+            return_type: unit_type()
         };
         assert_eq!(func, expected);
     }
     #[test]
     fn call_function() {
-        let mut buffer = BufReader::new("test(1, x)".as_bytes());
-        let mut parser = Parser::new(&mut buffer);
-        let func = parser.expression()
-            .unwrap_or_else(|err| fail!(err));
-        assert_eq!(func, call(id("test"), vec![int(1), id("x")]));
+        let expr = parse("test(1, x)", |p| p.expression());
+        assert_eq!(expr, call(id("test"), vec![int(1), id("x")]));
+    }
+    #[test]
+    fn test_if_else() {
+        let expr = parse("if 1 < x { 1 } else { 0 }", |p| p.expression());
+        assert_eq!(expr, if_else(binop(int(1), "<", id("x")), Block(vec![int(1)]), Block(vec![int(0)])));
     }
 }
