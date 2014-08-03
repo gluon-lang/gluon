@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use scoped_map::ScopedMap;
 use ast::*;
 use interner::*;
 
@@ -50,7 +51,7 @@ fn find_type<'a>(module: &'a Module<TcIdent>, name: &InternedStr) -> Option<TcTy
 pub struct Typecheck<'a> {
     module: HashMap<InternedStr, TcType>,
     structs: HashMap<InternedStr, Vec<(InternedStr, TcType)>>,
-    stack: HashMap<InternedStr, TcType>
+    stack: ScopedMap<InternedStr, TcType>
 }
 
 impl <'a> Typecheck<'a> {
@@ -59,7 +60,7 @@ impl <'a> Typecheck<'a> {
         Typecheck {
             module: HashMap::new(),
             structs: HashMap::new(),
-            stack: HashMap::new()
+            stack: ScopedMap::new()
         }
     }
     
@@ -182,27 +183,26 @@ impl <'a> Typecheck<'a> {
                 }
             }
             Block(ref mut exprs) => {
+                self.stack.enter_scope();
                 let mut typ = unit_type.clone();
                 for expr in exprs.mut_iter() {
                     typ = try!(self.typecheck(expr));
                 }
-                for expr in exprs.iter() {
-                    match expr {
-                        &Let(ref id, _) => {
-                            self.stack.remove(&id.name);
-                        }
-                        _ => ()
-                    }
-                }
+                self.stack.exit_scope();
                 Ok(typ)
             }
             Match(ref mut expr, ref mut alts) => {
                 let typ = try!(self.typecheck(&mut**expr));
+                self.stack.enter_scope();
                 try!(self.typecheck_pattern(&mut alts.get_mut(0).pattern, typ.clone()));
                 let alt1_type = try!(self.typecheck(&mut alts.get_mut(0).expression));
+                self.stack.exit_scope();
+
                 for alt in alts.mut_iter().skip(1) {
+                    self.stack.enter_scope();
                     try!(self.typecheck_pattern(&alt.pattern, typ.clone()));
                     let alt_type = try!(self.typecheck(&mut alt.expression));
+                    self.stack.exit_scope();
                     try!(self.unify(&alt1_type, alt_type));
                 }
                 Ok(alt1_type)
@@ -248,7 +248,10 @@ impl <'a> Typecheck<'a> {
                             .map(|_| ())
                 }
             }
-            _ => Ok(())
+            IdentifierPattern(ref id) => {
+                self.stack_var(id.id().clone(), match_type);
+                Ok(())
+            }
         }
     }
 
