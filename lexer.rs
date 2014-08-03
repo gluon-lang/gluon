@@ -21,6 +21,7 @@ pub enum Token {
     TMatch,
     TFn,
     TStruct,
+    TEnum,
     TIdentifier(InternedStr),
     TOpenBrace,
     TCloseBrace,
@@ -36,6 +37,7 @@ pub enum Token {
     TLet,
     TAssign,
     TRArrow,
+    TMatchArrow,
     TEOF
 }
 
@@ -44,8 +46,10 @@ fn name_or_keyword(interner: &mut Interner, s: &str) -> Token {
         "if" => TIf,
         "else" => TElse,
         "while" => TWhile,
+        "match" => TMatch,
         "fn" => TFn,
         "struct" => TStruct,
+        "enum" => TEnum,
         "let" => TLet,
         "true" => TTrue,
         "false" => TFalse,
@@ -259,6 +263,7 @@ impl <'a> Lexer<'a> {
                 ":" => TColon,
                 "->" => TRArrow,
                 "." => TDot,
+                "=>" => TMatchArrow,
                 s => TOperator(self.intern(s))
             }
         }

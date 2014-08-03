@@ -56,7 +56,11 @@ pub struct Typecheck<'a> {
 impl <'a> Typecheck<'a> {
     
     pub fn new() -> Typecheck<'a> {
-        Typecheck { module: HashMap::new(), structs: HashMap::new(), stack: HashMap::new() }
+        Typecheck {
+            module: HashMap::new(),
+            structs: HashMap::new(),
+            stack: HashMap::new()
+        }
     }
     
     fn find(&self, id: &InternedStr) -> TcResult {
@@ -65,6 +69,10 @@ impl <'a> Typecheck<'a> {
             .map(|t| t.clone())
             .map(Ok)
             .unwrap_or_else(|| Err(UndefinedVariable(id.clone())))
+    }
+
+    fn find_enum(&self, id: &InternedStr) -> Result<(), TypeError> {
+        Ok(())
     }
 
     fn find_struct(&self, id: &InternedStr) -> Result<&Vec<(InternedStr, TcType)>, TypeError> {
@@ -90,6 +98,12 @@ impl <'a> Typecheck<'a> {
             let args = s.fields.iter().map(|f| f.typ.clone()).collect();
             s.name.typ = FunctionType(args, box Type(s.name.name));
             self.module.insert(s.name.name, s.name.typ.clone());
+        }
+        for e in module.enums.iter() {
+            for ctor in e.constructors.iter() {
+                let typ = FunctionType(ctor.arguments.clone(), box Type(e.name.name));
+                self.module.insert(ctor.name.name, typ);
+            }
         }
         for f in module.functions.mut_iter() {
             try!(self.typecheck_function(f));
@@ -321,6 +335,26 @@ mod tests {
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| fail!(err))
+
+    }
+    #[test]
+    fn enums() {
+        let text = 
+r"
+enum AB {
+    A(int),
+    B(float)
+}
+fn main() -> int {
+    match A(1) {
+        A(x) => { x }
+        B(x) => { 0 }
+    }
+}";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err))
 
     }
 }

@@ -71,9 +71,20 @@ pub struct Struct<Id> {
     pub name: Id,
     pub fields: Vec<Field>
 }
+#[deriving(Clone, PartialEq, Show)]
+pub struct Constructor<Id> {
+    pub name: Id,
+    pub arguments: Vec<Type<InternedStr>>
+}
+#[deriving(Clone, PartialEq, Show)]
+pub struct Enum<Id> {
+    pub name: Id,
+    pub constructors: Vec<Constructor<Id>>
+}
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Module<Id> {
+    pub enums: Vec<Enum<Id>>,
     pub functions: Vec<Function<Id>>,
     pub structs: Vec<Struct<Id>>
 }

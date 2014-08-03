@@ -93,14 +93,16 @@ impl <'a, PString> Parser<'a, PString> {
     pub fn module(&mut self) -> ParseResult<Module<PString>> {
         let mut fns = Vec::new();
         let mut structs = Vec::new();
+        let mut enums = Vec::new();
         loop {
             match *self.lexer.peek() {
                 TFn => fns.push(try!(self.function())),
                 TStruct => structs.push(try!(self.struct_())),
+                TEnum => enums.push(try!(self.enum_())),
                 _ => break
             }
         }
-        Ok(Module { functions: fns, structs: structs })
+        Ok(Module { enums: enums, functions: fns, structs: structs })
     }
 
     fn statement(&mut self) -> ParseResult<(Expr<PString>, bool)> {
@@ -202,12 +204,20 @@ impl <'a, PString> Parser<'a, PString> {
                 let b = box try!(self.block());
                 Ok(While(pred, b))
             }
+            TMatch => {
+                let expr = box try!(self.expression());
+                let alternatives = try!(self.braces(
+                    |this| this.many(|this| this.alternative())
+                ));
+                Ok(Match(expr, alternatives))
+            }
             x => {
                 self.lexer.backtrack();
                 Err(format!("Token {} does not start an expression", x))
             }
         }
     }
+
     fn block(&mut self) -> ParseResult<Expr<PString>> {
         expect!(self, TOpenBrace);
         let mut exprs = Vec::new();
@@ -264,6 +274,29 @@ impl <'a, PString> Parser<'a, PString> {
         Ok(lhs)
     }
 
+    fn alternative(&mut self) -> ParseResult<Alternative<PString>> {
+        let pattern = try!(self.pattern());
+        expect!(self, TMatchArrow);
+        let expression = try!(self.block());
+        Ok(Alternative { pattern: pattern, expression: expression })
+    }
+
+    fn pattern(&mut self) -> ParseResult<Pattern<PString>> {
+        let name = expect1!(self, TIdentifier(x));
+        if *self.lexer.peek() == TOpenParen {
+            let args = try!(self.parens(|this|
+                this.sep_by(|t| *t == TComma, |this| {
+                    let arg = expect1!(this, TIdentifier(x));
+                    Ok(this.make_id(arg))
+                })
+            ));
+            Ok(ConstructorPattern(self.make_id(name), args))
+        }
+        else {
+            Ok(IdentifierPattern(self.make_id(name)))
+        }
+    }
+
     fn typ(&mut self) -> ParseResult<Type<InternedStr>> {
         let x = expect1!(self, TIdentifier(x));
         Ok(match x.as_slice() {
@@ -281,6 +314,26 @@ impl <'a, PString> Parser<'a, PString> {
         expect!(self, TColon);
         let typ = try!(self.typ());
         Ok(Field { name: name, typ: typ })
+    }
+
+    pub fn enum_(&mut self) -> ParseResult<Enum<PString>> {
+        expect!(self, TEnum);
+        let name = expect1!(self, TIdentifier(x));
+        let constructors = try!(self.braces(
+            |this| this.sep_by(
+                |t| *t == TComma, |this| this.constructor()
+            )
+        ));
+        Ok(Enum { name: self.make_id(name), constructors: constructors })
+    }
+    pub fn constructor(&mut self) -> ParseResult<Constructor<PString>> {
+        let name = expect1!(self, TIdentifier(x));
+        let arguments = try!(self.parens(
+            |this| this.sep_by(
+                |t| *t == TComma, |this| this.typ()
+            )
+        ));
+        Ok(Constructor { name: self.make_id(name), arguments: arguments })
     }
 
     pub fn struct_(&mut self) -> ParseResult<Struct<PString>> {
@@ -323,6 +376,17 @@ impl <'a, PString> Parser<'a, PString> {
         let x = try!(f(self));
         expect!(self, TCloseParen);
         Ok(x)
+    }
+
+    fn many<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
+        let mut result = Vec::new();
+        loop {
+            match f(self) {
+                Ok(x) => result.push(x),
+                Err(_) => break
+            }
+        }
+        Ok(result)
     }
     fn sep_by<T>(&mut self, sep: |&Token| -> bool, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
         let mut result = Vec::new();
@@ -407,7 +471,7 @@ pub mod tests {
         let func = parse("fn main(x: int, y: float) { }", |p| p.function());
         let expected = Function {
             name: intern("main"),
-            arguments: vec!(field("x", typ("int")), field("y", typ("float"))),
+            arguments: vec!(field("x", int_type.clone()), field("y", float_type.clone())),
             expression: Block(vec!()),
             return_type: unit_type.clone()
         };
@@ -439,9 +503,10 @@ pub mod tests {
         let expected = Module {
             structs: vec![Struct {
                 name: intern("Test"),
-                fields: vec![field("y", typ("int")), field("f", typ("float"))]
+                fields: vec![field("y", int_type.clone()), field("f", float_type.clone())]
             }],
-            functions: vec![]
+            functions: vec![],
+            enums: vec![]
         };
         assert_eq!(module, expected);
     }
