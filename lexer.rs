@@ -258,6 +258,7 @@ impl <'a> Lexer<'a> {
                 "=" => TAssign,
                 ":" => TColon,
                 "->" => TRArrow,
+                "." => TDot,
                 s => TOperator(self.intern(s))
             }
         }

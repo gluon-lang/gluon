@@ -151,6 +151,11 @@ impl <'a> Parser<'a> {
                 ));
                 Ok(Call(box e, args))
             }
+            &TDot => {
+                self.lexer.next();
+                let id = expect1!(self, TIdentifier(x));
+                Ok(FieldAccess(box e, id.clone()))
+            }
             _ => Ok(e)
         }
     }

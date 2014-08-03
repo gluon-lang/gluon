@@ -37,7 +37,8 @@ pub enum Expr<Id> {
     Block(Vec<Expr<Id>>),
     BinOp(Box<Expr<Id>>, Id, Box<Expr<Id>>),
     Let(Id, Box<Expr<Id>>),
-    Assign(Box<Expr<Id>>, Box<Expr<Id>>)
+    Assign(Box<Expr<Id>>, Box<Expr<Id>>),
+    FieldAccess(Box<Expr<Id>>, Id)
 }
 
 #[deriving(Clone, PartialEq, Show)]

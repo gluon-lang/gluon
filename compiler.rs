@@ -9,6 +9,8 @@ pub enum Instruction {
     PushGlobal(uint),
     Store(uint),
     CallGlobal(uint),
+    Construct(uint),
+    GetField(uint),
     Jump(uint),
     CJump(uint),
 
@@ -22,7 +24,8 @@ type CExpr = Expr<InternedStr>;
 
 pub enum Variable {
     Stack(uint),
-    Global(uint)
+    Global(uint),
+    Constructor(uint)
 }
 
 pub struct CompiledFunction {
@@ -32,6 +35,9 @@ pub struct CompiledFunction {
 
 pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
+    fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint> {
+        None
+    }
 }
 
 impl CompilerEnv for () {
@@ -52,6 +58,11 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         inner.find_var(s)
             .or_else(|| outer.find_var(s))
     }
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+        let &(ref outer, ref inner) = self;
+        inner.find_field(struct_, field)
+            .or_else(|| outer.find_field(struct_, field))
+    }
 }
 
 impl CompilerEnv for Module<InternedStr> {
@@ -60,6 +71,18 @@ impl CompilerEnv for Module<InternedStr> {
             .enumerate()
             .find(|&(_, f)| f.name == *id)
             .map(|(i, _)| Global(i))
+            .or_else(|| self.structs.iter()
+                .find(|s| s.name == *id)
+                .map(|s| Constructor(s.fields.len()))
+            )
+    }
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+        self.structs.iter()
+            .find(|s| s.name == *struct_)
+            .map(|s| s.fields.iter()
+                .enumerate()
+                .find(|&(_, f)| f.name == *field)
+                .map(|(i, _)| i).unwrap())
     }
 }
 
@@ -83,6 +106,11 @@ impl <'a> Compiler<'a> {
     fn find(&self, s: &InternedStr) -> Option<Variable> {
         self.stack.find_var(s)
             .or_else(||  self.globals.find_var(s))
+    }
+
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+        self.stack.find_field(struct_, field)
+            .or_else(||  self.globals.find_field(struct_, field))
     }
 
     fn new_stack_var(&mut self, s: InternedStr) {
@@ -129,7 +157,8 @@ impl <'a> Compiler<'a> {
             Identifier(ref id) => {
                 match self.find(id).unwrap_or_else(|| fail!("Undefined variable {}", id)) {
                     Stack(index) => instructions.push(Push(index)),
-                    Global(index) => instructions.push(PushGlobal(index))
+                    Global(index) => instructions.push(PushGlobal(index)),
+                    Constructor(num_args) => instructions.push(Construct(num_args))
                 }
             }
             IfElse(ref pred, ref if_true, ref if_false) => {
@@ -200,13 +229,19 @@ impl <'a> Compiler<'a> {
                             .unwrap_or_else(|| fail!("Undefined variable {}", id));
                         match var {
                             Stack(i) => instructions.push(Store(i)),
-                            Global(_) => fail!("Assignment to global {}", id)
+                            Global(_) => fail!("Assignment to global {}", id),
+                            Constructor(_) => fail!("Assignment to constructor {}", id)
                         }
                     }
                     _ => fail!("Assignment to {}", lhs)
                 }
             }
+            FieldAccess(ref expr, ref id) => {
+                self.compile(&**expr, instructions);
+                fail!()//instructions.push(GetField(i));
+            }
             ref e => fail!("Cannot compile {}", e)
         }
     }
+
 }

@@ -13,6 +13,8 @@ enum TypeError {
     NotAFunction(TcType),
     WrongNumberOfArguments(uint, uint),
     TypeMismatch(TcType, TcType),
+    UndefinedStruct(TcIdent),
+    UndefinedField(TcIdent, TcIdent),
     TypeError(&'static str)
 }
 
@@ -23,6 +25,10 @@ fn find_type<'a>(module: &'a Module<TcIdent>, name: &TcIdent) -> Option<TcType> 
     module.functions.iter()
         .find(|f| f.name == *name)
         .map(|f| FunctionType(f.arguments.iter().map(|field| field.typ.clone()).collect(), box f.return_type.clone()))
+        .or_else(|| module.structs.iter()
+            .find(|s| s.name == *name)
+            .map(|s| FunctionType(s.fields.iter().map(|field| field.typ.clone()).collect(), box Type(s.name.clone())))
+        )
 }
 
 pub struct Typecheck<'a> {
@@ -42,6 +48,13 @@ impl <'a> Typecheck<'a> {
             .or_else(|| find_type(self.module, id))
             .map(Ok)
             .unwrap_or_else(|| Err(UndefinedVariable(id.clone())))
+    }
+
+    fn find_struct(&self, id: &TcIdent) -> Result<&'a Struct<TcIdent>, TypeError> {
+        self.module.structs.iter()
+            .find(|s| s.name == *id)
+            .map(|s| Ok(s))
+            .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
     }
 
     fn stack_var(&mut self, id: TcIdent, typ: TcType) {
@@ -161,6 +174,19 @@ impl <'a> Typecheck<'a> {
                 let rhs_type = try!(self.typecheck(&**rhs));
                 let lhs_type = try!(self.typecheck(&**lhs));
                 self.unify(&lhs_type, rhs_type)
+            }
+            FieldAccess(ref expr, ref id) => {
+                let typ = try!(self.typecheck(&**expr));
+                match typ {
+                    Type(ref struct_id) => {
+                        let s = try!(self.find_struct(struct_id));
+                        s.fields.iter()
+                            .find(|f| f.name == *id)
+                            .map(|f| Ok(f.typ.clone()))
+                            .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.clone())))
+                    }
+                    FunctionType(..) => Err(TypeError("Field access on function"))
+                }
             }
         }
     }

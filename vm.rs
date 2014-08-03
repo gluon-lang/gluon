@@ -1,11 +1,25 @@
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::fmt;
 use compiler::*;
 use interner::InternedStr;
 
 
-#[deriving(PartialEq, Show)]
+#[deriving(PartialEq, Clone)]
 pub enum Value {
     Int(int),
+    Data(Rc<RefCell<Vec<Value>>>),
     Function(uint)
+}
+
+impl fmt::Show for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Int(i) => write!(f, "{}", i),
+            Data(ref ptr) => write!(f, "{}", ptr.borrow()),
+            Function(i) => write!(f, "{}", i),
+        }
+    }
 }
 
 pub struct VM {
@@ -82,7 +96,7 @@ impl VM {
         while index < instructions.len() {
             match instructions[index] {
                 Push(i) => {
-                    let v = *stack.get(i);
+                    let v = stack.get(i).clone();
                     stack.push(v);
                 }
                 PushInt(i) => {
@@ -104,6 +118,23 @@ impl VM {
                     };
                     let new_stack = StackFrame::new(stack.stack, args);
                     self.execute(new_stack, function.instructions.as_slice());
+                }
+                Construct(args) => {
+                    let mut fields = Vec::new();
+                    for _ in range(0, args) {
+                        fields.push(stack.pop());
+                    }
+                    fields.reverse();
+                    let d = Data(Rc::new(RefCell::new(fields)));
+                }
+                GetField(i) => {
+                    match stack.pop() {
+                        Data(fields) => {
+                            let v = (*fields.borrow())[i].clone();
+                            stack.push(v);
+                        }
+                        _ => fail!()
+                    }
                 }
                 Jump(i) => {
                     index = i;
