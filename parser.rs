@@ -168,6 +168,11 @@ impl <'a> Parser<'a> {
                 let if_false = box try!(self.block());
                 Ok(IfElse(pred, if_true, if_false))
             }
+            TWhile => {
+                let pred = box try!(self.expression());
+                let b = box try!(self.block());
+                Ok(While(pred, b))
+            }
             x => {
                 self.lexer.backtrack();
                 Err(format!("Token {} does not start an expression", x))
@@ -283,7 +288,7 @@ impl <'a> Parser<'a> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use super::ParseResult;
     use ast::*;
@@ -314,7 +319,16 @@ mod tests {
     fn if_else(p: Expr<InternedStr>, if_true: Expr<InternedStr>, if_false: Expr<InternedStr>) -> Expr<InternedStr> {
         IfElse(box p, box if_true, box if_false)
     }
-    fn parse<T>(s: &str, f: |&mut Parser| -> ParseResult<T>) -> T {
+
+    fn while_(p: Expr<InternedStr>, expr: Expr<InternedStr>) -> Expr<InternedStr> {
+        While(box p, box expr)
+    }
+
+    fn bool(b: bool) -> Expr<InternedStr> {
+        Literal(Bool(b))
+    }
+
+    pub fn parse<T>(s: &str, f: |&mut Parser| -> ParseResult<T>) -> T {
         let mut buffer = BufReader::new(s.as_bytes());
         let mut parser = Parser::new(&mut buffer);
         f(&mut parser)
@@ -351,5 +365,10 @@ mod tests {
     fn test_if_else() {
         let expr = parse("if 1 < x { 1 } else { 0 }", |p| p.expression());
         assert_eq!(expr, if_else(binop(int(1), "<", id("x")), Block(vec![int(1)]), Block(vec![int(0)])));
+    }
+    #[test]
+    fn test_while() {
+        let expr = parse("while true { }", |p| p.expression());
+        assert_eq!(expr, while_(bool(true), Block(vec![])));
     }
 }

@@ -99,6 +99,12 @@ impl <'a> Typecheck<'a> {
                 let false_type = try!(self.typecheck(&**if_false));
                 self.unify(&true_type, false_type)
             }
+            While(ref pred, ref expr) => {
+                let pred_type = try!(self.typecheck(&**pred));
+                try!(self.unify(&bool_type(), pred_type));
+                self.typecheck(&**expr)
+                    .map(|_| unit_type())
+            }
             BinOp(ref lhs, ref op, ref rhs) => {
                 let lhs_type = try!(self.typecheck(&**lhs));
                 let rhs_type = try!(self.typecheck(&**rhs));
@@ -178,5 +184,23 @@ impl <'a> Typecheck<'a> {
         else {
             Err(TypeMismatch(expected.clone(), actual))
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use parser::*;
+    use parser::tests::*;
+
+    #[test]
+    fn while_() {
+        let text = "fn main() { let x = 2; while x < 10 { x } }";
+        let module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new(&module);
+        tc.typecheck_module(&module)
+            .unwrap_or_else(|err| fail!(err))
+
     }
 }

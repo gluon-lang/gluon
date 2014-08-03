@@ -17,6 +17,7 @@ pub enum Token {
     TFalse,
     TIf,
     TElse,
+    TWhile,
     TMatch,
     TFn,
     TIdentifier(InternedStr),
@@ -41,6 +42,7 @@ fn name_or_keyword(interner: &mut Interner, s: &str) -> Token {
     match s {
         "if" => TIf,
         "else" => TElse,
+        "while" => TWhile,
         "fn" => TFn,
         "let" => TLet,
         "true" => TTrue,
