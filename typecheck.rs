@@ -4,36 +4,52 @@ use interner::*;
 
 
 
-type TcIdent = InternedStr;
-type TcType = Type<TcIdent>;
+#[deriving(Clone, Eq, PartialEq, Show)]
+pub struct TcIdent {
+    pub typ: TcType,
+    pub name: InternedStr
+}
+impl TcIdent {
+    pub fn id(&self) -> &InternedStr {
+        &self.name
+    }
+}
+
+impl Str for TcIdent {
+    fn as_slice(&self) -> &str {
+        self.name.as_slice()
+    }
+}
+
+type TcType = Type<InternedStr>;
 
 #[deriving(Show)]
 enum TypeError {
-    UndefinedVariable(TcIdent),
+    UndefinedVariable(InternedStr),
     NotAFunction(TcType),
     WrongNumberOfArguments(uint, uint),
     TypeMismatch(TcType, TcType),
-    UndefinedStruct(TcIdent),
-    UndefinedField(TcIdent, TcIdent),
+    UndefinedStruct(InternedStr),
+    UndefinedField(InternedStr, InternedStr),
     TypeError(&'static str)
 }
 
 type TcResult = Result<TcType, TypeError>;
 
 
-fn find_type<'a>(module: &'a Module<TcIdent>, name: &TcIdent) -> Option<TcType> {
+fn find_type<'a>(module: &'a Module<TcIdent>, name: &InternedStr) -> Option<TcType> {
     module.functions.iter()
-        .find(|f| f.name == *name)
+        .find(|f| f.name.id() == name)
         .map(|f| FunctionType(f.arguments.iter().map(|field| field.typ.clone()).collect(), box f.return_type.clone()))
         .or_else(|| module.structs.iter()
-            .find(|s| s.name == *name)
-            .map(|s| FunctionType(s.fields.iter().map(|field| field.typ.clone()).collect(), box Type(s.name.clone())))
+            .find(|s| s.name.id() == name)
+            .map(|s| s.name.typ.clone())
         )
 }
 
 pub struct Typecheck<'a> {
     module: &'a Module<TcIdent>,
-    stack: HashMap<TcIdent, TcType>
+    stack: HashMap<InternedStr, TcType>
 }
 
 impl <'a> Typecheck<'a> {
@@ -42,7 +58,7 @@ impl <'a> Typecheck<'a> {
         Typecheck { module: module, stack: HashMap::new() }
     }
     
-    fn find(&self, id: &TcIdent) -> TcResult {
+    fn find(&self, id: &InternedStr) -> TcResult {
         self.stack.find(id)
             .map(|t| t.clone())
             .or_else(|| find_type(self.module, id))
@@ -50,14 +66,14 @@ impl <'a> Typecheck<'a> {
             .unwrap_or_else(|| Err(UndefinedVariable(id.clone())))
     }
 
-    fn find_struct(&self, id: &TcIdent) -> Result<&'a Struct<TcIdent>, TypeError> {
+    fn find_struct(&self, id: &InternedStr) -> Result<&'a Struct<TcIdent>, TypeError> {
         self.module.structs.iter()
-            .find(|s| s.name == *id)
+            .find(|s| s.name.name == *id)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
     }
 
-    fn stack_var(&mut self, id: TcIdent, typ: TcType) {
+    fn stack_var(&mut self, id: InternedStr, typ: TcType) {
         self.stack.insert(id, typ);
     }
 
@@ -80,7 +96,7 @@ impl <'a> Typecheck<'a> {
 
     fn typecheck(&mut self, expr: &Expr<TcIdent>) -> TcResult {
         match *expr {
-            Identifier(ref id) => self.find(id),
+            Identifier(ref id) => self.find(id.id()),
             Literal(ref lit) => {
                 Ok(match *lit {
                     Integer(_) => int_type.clone(),
@@ -136,7 +152,7 @@ impl <'a> Typecheck<'a> {
                         Ok(lhs_type)
                     }
                     "<" | ">" | "<=" | ">=" => Ok(bool_type.clone()),
-                    _ => Err(UndefinedVariable(op.clone()))
+                    _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
             Block(ref exprs) => {
@@ -147,7 +163,7 @@ impl <'a> Typecheck<'a> {
                 for expr in exprs.iter() {
                     match expr {
                         &Let(ref id, _) => {
-                            self.stack.remove(id);
+                            self.stack.remove(&id.name);
                         }
                         _ => ()
                     }
@@ -167,7 +183,7 @@ impl <'a> Typecheck<'a> {
             }
             Let(ref id, ref expr) => {
                 let typ = try!(self.typecheck(&**expr));
-                self.stack_var(id.clone(), typ);
+                self.stack_var(id.name.clone(), typ);
                 Ok(unit_type.clone())
             }
             Assign(ref lhs, ref rhs) => {
@@ -181,9 +197,9 @@ impl <'a> Typecheck<'a> {
                     Type(ref struct_id) => {
                         let s = try!(self.find_struct(struct_id));
                         s.fields.iter()
-                            .find(|f| f.name == *id)
+                            .find(|f| f.name == id.name)
                             .map(|f| Ok(f.typ.clone()))
-                            .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.clone())))
+                            .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone())))
                     }
                     FunctionType(..) => Err(TypeError("Field access on function")),
                     LiteralType(..) => Err(TypeError("Field acces on primitive"))
@@ -195,7 +211,7 @@ impl <'a> Typecheck<'a> {
     fn typecheck_pattern(&mut self, pattern: &Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
         match *pattern {
             ConstructorPattern(ref name, _) => {
-                let ctor_type = try!(self.find(name));
+                let ctor_type = try!(self.find(name.id()));
                 match ctor_type {
                     FunctionType(_, ref return_type) => {
                         self.unify(&**return_type, match_type)
@@ -267,8 +283,18 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::TcIdent;
+    use ast::*;
     use parser::*;
-    use parser::tests::*;
+    use interner::InternedStr;
+
+    pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {
+        use std::io::BufReader;
+        let mut buffer = BufReader::new(s.as_bytes());
+        let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type.clone(), name: s });
+        f(&mut parser)
+            .unwrap_or_else(|err| fail!(err))
+    }
 
     #[test]
     fn while_() {

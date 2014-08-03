@@ -3,6 +3,7 @@ extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
 
+use ast::unit_type;
 use parser::*;
 use typecheck::*;
 use compiler::*;
@@ -22,7 +23,7 @@ mod vm;
 #[cfg(not(test))]
 fn run_main(s: &str) -> Result<Value, String> {
     let mut buffer = BufReader::new(s.as_bytes());
-    let mut parser = Parser::new(&mut buffer);
+    let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type.clone(), name: s });
     let module = match parser.module() {
         Ok(f) => f,
         Err(x) => return Err(format!("{}", x))

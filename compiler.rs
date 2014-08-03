@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use interner::*;
 use ast::*;
+use typecheck::TcIdent;
 
 pub enum Instruction {
     PushInt(int),
@@ -20,7 +21,7 @@ pub enum Instruction {
     IntLT
 }
 
-type CExpr = Expr<InternedStr>;
+type CExpr = Expr<TcIdent>;
 
 pub enum Variable {
     Stack(uint),
@@ -65,20 +66,20 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     }
 }
 
-impl CompilerEnv for Module<InternedStr> {
+impl CompilerEnv for Module<TcIdent> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
         self.functions.iter()
             .enumerate()
-            .find(|&(_, f)| f.name == *id)
+            .find(|&(_, f)| f.name.id() == id)
             .map(|(i, _)| Global(i))
             .or_else(|| self.structs.iter()
-                .find(|s| s.name == *id)
+                .find(|s| s.name.id() == id)
                 .map(|s| Constructor(s.fields.len()))
             )
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
         self.structs.iter()
-            .find(|s| s.name == *struct_)
+            .find(|s| s.name.id() == struct_)
             .map(|s| s.fields.iter()
                 .enumerate()
                 .find(|&(_, f)| f.name == *field)
@@ -125,13 +126,13 @@ impl <'a> Compiler<'a> {
         self.stack.len()
     }
 
-    pub fn compile_module(&mut self, module: &Module<InternedStr>) -> Vec<CompiledFunction> {
+    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Vec<CompiledFunction> {
         module.functions.iter()
             .map(|f| self.compile_function(f))
             .collect()
     }
 
-    pub fn compile_function(&mut self, function: &Function<InternedStr>) -> CompiledFunction {
+    pub fn compile_function(&mut self, function: &Function<TcIdent>) -> CompiledFunction {
         for arg in function.arguments.iter() {
             self.new_stack_var(arg.name);
         }
@@ -140,7 +141,7 @@ impl <'a> Compiler<'a> {
         for arg in function.arguments.iter() {
             self.stack.remove(&arg.name);
         }
-        CompiledFunction { id: function.name, instructions: instructions }
+        CompiledFunction { id: function.name.id().clone(), instructions: instructions }
     }
 
 
@@ -155,7 +156,7 @@ impl <'a> Compiler<'a> {
                 }
             }
             Identifier(ref id) => {
-                match self.find(id).unwrap_or_else(|| fail!("Undefined variable {}", id)) {
+                match self.find(id.id()).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
                     Stack(index) => instructions.push(Push(index)),
                     Global(index) => instructions.push(PushGlobal(index)),
                     Constructor(num_args) => instructions.push(Construct(num_args))
@@ -179,7 +180,7 @@ impl <'a> Compiler<'a> {
                 for expr in exprs.iter() {
                     match expr {
                         &Let(ref id, _) => {
-                            self.stack.remove(id);
+                            self.stack.remove(id.id());
                         }
                         _ => ()
                     }
@@ -197,7 +198,7 @@ impl <'a> Compiler<'a> {
                 }
             }
             Let(ref id, ref expr) => {
-                self.new_stack_var(*id);
+                self.new_stack_var(*id.id());
                 self.compile(&**expr, instructions);
             }
             Call(ref func, ref args) => {
@@ -225,7 +226,7 @@ impl <'a> Compiler<'a> {
                 self.compile(&**rhs, instructions);
                 match **lhs {
                     Identifier(ref id) => {
-                        let var = self.find(id)
+                        let var = self.find(id.id())
                             .unwrap_or_else(|| fail!("Undefined variable {}", id));
                         match var {
                             Stack(i) => instructions.push(Store(i)),

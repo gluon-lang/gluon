@@ -53,23 +53,23 @@ pub enum Expr<Id> {
 }
 
 #[deriving(Clone, PartialEq, Show)]
-pub struct Field<Id> {
-    pub name: Id,
-    pub typ: Type<Id>
+pub struct Field {
+    pub name: InternedStr,
+    pub typ: Type<InternedStr>
 }
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Function<Id> {
     pub name: Id,
-    pub arguments: Vec<Field<Id>>,
-    pub return_type: Type<Id>,
+    pub arguments: Vec<Field>,
+    pub return_type: Type<InternedStr>,
     pub expression: Expr<Id>
 }
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Struct<Id> {
     pub name: Id,
-    pub fields: Vec<Field<Id>>
+    pub fields: Vec<Field>
 }
 
 #[deriving(Clone, PartialEq, Show)]

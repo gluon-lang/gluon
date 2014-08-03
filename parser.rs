@@ -74,15 +74,20 @@ fn is_lvalue<T>(e: &Expr<T>) -> bool {
 }
 
 type PString = InternedStr;
-type ParseResult<T> = Result<T, String>;
+pub type ParseResult<T> = Result<T, String>;
 
-pub struct Parser<'a> {
-    lexer: Lexer<'a>
+pub struct Parser<'a, PString> {
+    lexer: Lexer<'a>,
+    make_id_f: |InternedStr|:'static -> PString
 }
 
-impl <'a> Parser<'a> {
-    pub fn new(input: &'a mut Buffer) -> Parser<'a> {
-        Parser { lexer: Lexer::new(input) }
+impl <'a, PString> Parser<'a, PString> {
+    pub fn new(input: &'a mut Buffer, make_id: |InternedStr|:'static -> PString) -> Parser<'a, PString> {
+        Parser { lexer: Lexer::new(input), make_id_f: make_id }
+    }
+
+    fn make_id(&mut self, s: InternedStr) -> PString {
+        (self.make_id_f)(s)
     }
 
     pub fn module(&mut self) -> ParseResult<Module<PString>> {
@@ -109,7 +114,7 @@ impl <'a> Parser<'a> {
                 expect!(self, TAssign);
                 let expr = try!(self.expression());
                 expect!(self, TSemicolon);
-                Ok((Let(id, box expr), true))
+                Ok((Let(self.make_id(id), box expr), true))
             }
             _ => {
                 match self.expression() {
@@ -154,7 +159,7 @@ impl <'a> Parser<'a> {
             &TDot => {
                 self.lexer.next();
                 let id = expect1!(self, TIdentifier(x));
-                Ok(FieldAccess(box e, id.clone()))
+                Ok(FieldAccess(box e, self.make_id(id.clone())))
             }
             _ => Ok(e)
         }
@@ -163,7 +168,7 @@ impl <'a> Parser<'a> {
     fn sub_expression_(&mut self) -> ParseResult<Expr<PString>> {
         match *self.lexer.next() {
             TIdentifier(id) => {
-                Ok(Identifier(id))
+                Ok(Identifier(self.make_id(id)))
             }
             TOpenParen => {
                 let e = try!(self.expression());
@@ -253,18 +258,18 @@ impl <'a> Parser<'a> {
                 rhs = try!(self.binary_expression(rhs, lookahead));
                 self.lexer.next();
             }
-            lhs = BinOp(box lhs, lhs_op.clone(), box rhs)
+            lhs = BinOp(box lhs, self.make_id(lhs_op.clone()), box rhs)
         }
         self.lexer.backtrack();
         Ok(lhs)
     }
 
-    fn typ(&mut self) -> ParseResult<Type<PString>> {
+    fn typ(&mut self) -> ParseResult<Type<InternedStr>> {
         let x = expect1!(self, TIdentifier(x));
         Ok(Type(x))
     }
     
-    fn field(&mut self) -> ParseResult<Field<PString>> {
+    fn field(&mut self) -> ParseResult<Field> {
         debug!("Field");
         let name = expect1!(self, TIdentifier(x));
         expect!(self, TColon);
@@ -280,7 +285,7 @@ impl <'a> Parser<'a> {
                 |t| *t == TComma, |this| this.field()
             )
         ));
-        Ok(Struct { name: name, fields: fields })
+        Ok(Struct { name: self.make_id(name), fields: fields })
     }
 
     pub fn function(&mut self) -> ParseResult<Function<PString>> {
@@ -297,23 +302,23 @@ impl <'a> Parser<'a> {
             unit_type.clone()
         };
         let expr = try!(self.block());
-        Ok(Function { name: name, arguments: arguments, return_type: return_type, expression: expr })
+        Ok(Function { name: self.make_id(name), arguments: arguments, return_type: return_type, expression: expr })
     }
 
-    fn braces<T>(&mut self, f: |&mut Parser| -> ParseResult<T>) -> ParseResult<T> {
+    fn braces<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<T> {
         expect!(self, TOpenBrace);
         let x = try!(f(self));
         expect!(self, TCloseBrace);
         Ok(x)
     }
 
-    fn parens<T>(&mut self, f: |&mut Parser| -> ParseResult<T>) -> ParseResult<T> {
+    fn parens<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<T> {
         expect!(self, TOpenParen);
         let x = try!(f(self));
         expect!(self, TCloseParen);
         Ok(x)
     }
-    fn sep_by<T>(&mut self, sep: |&Token| -> bool, f: |&mut Parser| -> ParseResult<T>) -> ParseResult<Vec<T>> {
+    fn sep_by<T>(&mut self, sep: |&Token| -> bool, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
         let mut result = Vec::new();
         match f(self) {
             Ok(x) => result.push(x),
@@ -350,7 +355,7 @@ pub mod tests {
     fn id(s: &str) -> PExpr {
         Identifier(intern(s))
     }
-    fn field(s: &str, typ: Type<InternedStr>) -> Field<InternedStr> {
+    fn field(s: &str, typ: Type<InternedStr>) -> Field {
         Field { name: intern(s), typ: typ }
     }
     fn typ(s: &str) -> Type<InternedStr> {
@@ -374,9 +379,9 @@ pub mod tests {
         Literal(Bool(b))
     }
 
-    pub fn parse<T>(s: &str, f: |&mut Parser| -> ParseResult<T>) -> T {
+    pub fn parse<T>(s: &str, f: |&mut Parser<InternedStr>|:'static -> ParseResult<T>) -> T {
         let mut buffer = BufReader::new(s.as_bytes());
-        let mut parser = Parser::new(&mut buffer);
+        let mut parser = Parser::new(&mut buffer, |s| s);
         f(&mut parser)
             .unwrap_or_else(|err| fail!(err))
     }
@@ -398,7 +403,7 @@ pub mod tests {
             name: intern("main"),
             arguments: vec!(field("x", typ("int")), field("y", typ("float"))),
             expression: Block(vec!()),
-            return_type: unit_type()
+            return_type: unit_type.clone()
         };
         assert_eq!(func, expected);
     }
