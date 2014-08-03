@@ -157,15 +157,11 @@ impl <'a> Typecheck<'a> {
                 match op.as_slice() {
                     "+" | "-" | "*" => {
                         if lhs_type == int_type || lhs_type == float_type {
-                            try!(self.unify(&int_type, rhs_type));
-                        }
-                        else if rhs_type == int_type || rhs_type == float_type {
-                            try!(self.unify(&int_type, lhs_type.clone()));
+                            Ok(lhs_type)
                         }
                         else {
-                            return Err(TypeError("Expected numbers in "))
+                            return Err(TypeError("Expected numbers in binop"))
                         }
-                        Ok(lhs_type)
                     }
                     "<" | ">" | "<=" | ">=" => Ok(bool_type.clone()),
                     _ => Err(UndefinedVariable(op.name.clone()))
