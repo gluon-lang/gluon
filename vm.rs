@@ -121,6 +121,7 @@ impl VM {
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
+                IntLT => binop_int(&mut stack, |l, r| if l < r { 1 } else { 0 })
             }
             index += 1;
         }

@@ -14,7 +14,8 @@ pub enum Instruction {
 
     AddInt,
     SubtractInt,
-    MultiplyInt
+    MultiplyInt,
+    IntLT
 }
 
 type CExpr = Expr<InternedStr>;
@@ -162,6 +163,7 @@ impl <'a> Compiler<'a> {
                     "+" => instructions.push(AddInt),
                     "-" => instructions.push(SubtractInt),
                     "*" => instructions.push(MultiplyInt),
+                    "<" => instructions.push(IntLT),
                     _ => fail!()
                 }
             }
