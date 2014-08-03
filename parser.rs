@@ -240,8 +240,15 @@ impl <'a> Parser<'a> {
         let arguments = try!(self.parens(|this|
             this.sep_by(|t| matches!(t, &TComma), |this| this.field())
         ));
+        let return_type = if matches!(self.lexer.peek(), &TRArrow) {
+            self.lexer.next();
+            try!(self.typ())
+        }
+        else {
+            unit_type()
+        };
         let expr = try!(self.block());
-        Ok(Function { name: name, arguments: arguments, expression: expr })
+        Ok(Function { name: name, arguments: arguments, return_type: return_type, expression: expr })
     }
 
 

@@ -1,4 +1,4 @@
-use interner::InternedStr;
+use interner::{intern, InternedStr};
 
 #[deriving(Clone, Eq, PartialEq, Show)]
 pub enum Type<Id> {
@@ -15,7 +15,7 @@ pub enum Literal {
 
 #[deriving(Clone, PartialEq, Show)]
 pub enum Pattern<Id> {
-    Constructor(Id, Vec<Id>),
+    ConstructorPattern(Id, Vec<Id>),
     IdentifierPattern(Id)
 }
 
@@ -47,6 +47,7 @@ pub struct Field<Id> {
 pub struct Function<Id> {
     pub name: Id,
     pub arguments: Vec<Field<Id>>,
+    pub return_type: Type<Id>,
     pub expression: Expr<Id>
 }
 
@@ -58,4 +59,21 @@ pub struct Struct<Id> {
 pub struct Module<Id> {
     pub functions: Vec<Function<Id>>
 }
+
+pub fn int_type() -> Type<InternedStr> {
+    Type(intern("int"))
+}
+pub fn float_type() -> Type<InternedStr> {
+    Type(intern("float"))
+}
+pub fn string_type() -> Type<InternedStr> {
+    Type(intern("string"))
+}
+pub fn bool_type() -> Type<InternedStr> {
+    Type(intern("bool"))
+}
+pub fn unit_type() -> Type<InternedStr> {
+    Type(intern("()"))
+}
+
 

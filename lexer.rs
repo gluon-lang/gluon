@@ -31,6 +31,7 @@ pub enum Token {
     TColon,
     TLet,
     TAssign,
+    TRArrow,
     TEOF
 }
 
@@ -248,6 +249,7 @@ impl <'a> Lexer<'a> {
             return match self.current_str() {
                 "=" => TAssign,
                 ":" => TColon,
+                "->" => TRArrow,
                 s => TOperator(self.intern(s))
             }
         }
