@@ -87,10 +87,15 @@ impl <'a> Parser<'a> {
 
     pub fn module(&mut self) -> ParseResult<Module<PString>> {
         let mut fns = Vec::new();
-        while matches!(self.lexer.peek(), &TFn) {
-            fns.push(try!(self.function()));
+        let mut structs = Vec::new();
+        loop {
+            match *self.lexer.peek() {
+                TFn => fns.push(try!(self.function())),
+                TStruct => structs.push(try!(self.struct_())),
+                _ => break
+            }
         }
-        Ok(Module { functions: fns })
+        Ok(Module { functions: fns, structs: structs })
     }
 
     fn statement(&mut self) -> ParseResult<(Expr<PString>, bool)> {
@@ -262,6 +267,17 @@ impl <'a> Parser<'a> {
         Ok(Field { name: name, typ: typ })
     }
 
+    pub fn struct_(&mut self) -> ParseResult<Struct<PString>> {
+        expect!(self, TStruct);
+        let name = expect1!(self, TIdentifier(x));
+        let fields = try!(self.braces(
+            |this| this.sep_by(
+                |t| *t == TComma, |this| this.field()
+            )
+        ));
+        Ok(Struct { name: name, fields: fields })
+    }
+
     pub fn function(&mut self) -> ParseResult<Function<PString>> {
         expect!(self, TFn);
         let name = expect1!(self, TIdentifier(x));
@@ -279,6 +295,12 @@ impl <'a> Parser<'a> {
         Ok(Function { name: name, arguments: arguments, return_type: return_type, expression: expr })
     }
 
+    fn braces<T>(&mut self, f: |&mut Parser| -> ParseResult<T>) -> ParseResult<T> {
+        expect!(self, TOpenBrace);
+        let x = try!(f(self));
+        expect!(self, TCloseBrace);
+        Ok(x)
+    }
 
     fn parens<T>(&mut self, f: |&mut Parser| -> ParseResult<T>) -> ParseResult<T> {
         expect!(self, TOpenParen);
@@ -394,5 +416,17 @@ pub mod tests {
     fn test_assign() {
         let expr = parse("{ y = 2; 2 }", |p| p.expression());
         assert_eq!(expr, Block(vec![assign(id("y"), int(2)), int(2)]));
+    }
+    #[test]
+    fn struct_() {
+        let module = parse("struct Test { y: int, f: float }", |p| p.module());
+        let expected = Module {
+            structs: vec![Struct {
+                name: intern("Test"),
+                fields: vec![field("y", typ("int")), field("f", typ("float"))]
+            }],
+            functions: vec![]
+        };
+        assert_eq!(module, expected);
     }
 }

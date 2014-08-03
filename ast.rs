@@ -56,11 +56,14 @@ pub struct Function<Id> {
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Struct<Id> {
+    pub name: Id,
     pub fields: Vec<Field<Id>>
 }
 
+#[deriving(Clone, PartialEq, Show)]
 pub struct Module<Id> {
-    pub functions: Vec<Function<Id>>
+    pub functions: Vec<Function<Id>>,
+    pub structs: Vec<Struct<Id>>
 }
 
 pub fn int_type() -> Type<InternedStr> {
