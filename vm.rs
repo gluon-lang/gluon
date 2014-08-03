@@ -9,7 +9,7 @@ use interner::InternedStr;
 pub enum Value {
     Int(int),
     Float(f64),
-    Data(Rc<RefCell<Vec<Value>>>),
+    Data(uint, Rc<RefCell<Vec<Value>>>),
     Function(uint)
 }
 
@@ -18,7 +18,7 @@ impl fmt::Show for Value {
         match *self {
             Int(i) => write!(f, "{}", i),
             Float(x) => write!(f, "{}f", x),
-            Data(ref ptr) => write!(f, "{}", ptr.borrow()),
+            Data(tag, ref ptr) => write!(f, "{{{} {}}}", tag, ptr.borrow()),
             Function(i) => write!(f, "<function {}>", i),
         }
     }
@@ -60,6 +60,9 @@ impl <'a> StackFrame<'a> {
 
     fn push(&mut self, v: Value) {
         self.stack.push(v);
+    }
+    fn top(&mut self) -> &Value {
+        self.stack.last().unwrap()
     }
 
     fn pop(&mut self) -> Value {
@@ -130,18 +133,18 @@ impl VM {
                     }
                     stack.push(result);
                 }
-                Construct(args) => {
+                Construct(tag, args) => {
                     let mut fields = Vec::new();
                     for _ in range(0, args) {
                         fields.push(stack.pop());
                     }
                     fields.reverse();
-                    let d = Data(Rc::new(RefCell::new(fields)));
+                    let d = Data(tag, Rc::new(RefCell::new(fields)));
                     stack.push(d);
                 }
                 GetField(i) => {
                     match stack.pop() {
-                        Data(fields) => {
+                        Data(_, fields) => {
                             let v = (*fields.borrow())[i].clone();
                             stack.push(v);
                         }
@@ -152,8 +155,25 @@ impl VM {
                     let data = stack.pop();
                     let value = stack.pop();
                     match data {
-                        Data(fields) => {
+                        Data(_, fields) => {
                             *(*fields.borrow_mut()).get_mut(i) = value;
+                        }
+                        _ => fail!()
+                    }
+                }
+                TestTag(tag) => {
+                    let x = match *stack.top() {
+                        Data(t, _) => if t == tag { 1 } else { 0 },
+                        _ => fail!()
+                    };
+                    stack.push(Int(x));
+                }
+                Split => {
+                    match stack.pop() {
+                        Data(_, fields) => {
+                            for field in (*fields.borrow()).iter() {
+                                stack.push(field.clone());
+                            }
                         }
                         _ => fail!()
                     }

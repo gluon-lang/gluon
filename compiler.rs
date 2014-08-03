@@ -11,9 +11,11 @@ pub enum Instruction {
     PushGlobal(uint),
     Store(uint),
     CallGlobal(uint),
-    Construct(uint),
+    Construct(uint, uint),
     GetField(uint),
     SetField(uint),
+    Split,
+    TestTag(uint),
     Jump(uint),
     CJump(uint),
 
@@ -33,7 +35,7 @@ type CExpr = Expr<TcIdent>;
 pub enum Variable {
     Stack(uint),
     Global(uint),
-    Constructor(uint)
+    Constructor(uint, uint)
 }
 
 pub struct CompiledFunction {
@@ -44,6 +46,9 @@ pub struct CompiledFunction {
 pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
     fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint> {
+        None
+    }
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
         None
     }
 }
@@ -81,8 +86,19 @@ impl CompilerEnv for Module<TcIdent> {
             .map(|(i, _)| Global(i))
             .or_else(|| self.structs.iter()
                 .find(|s| s.name.id() == id)
-                .map(|s| Constructor(s.fields.len()))
+                .map(|s| Constructor(0, s.fields.len()))
             )
+            .or_else(|| {
+                for e in self.enums.iter() {
+                    let x = e.constructors.iter().enumerate()
+                        .find(|&(_, ctor)| ctor.name.id() == id)
+                        .map(|(i, ctor)| Constructor(i, ctor.arguments.len()));
+                    if x.is_some() {
+                        return x
+                    }
+                }
+                None
+            })
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
         self.structs.iter()
@@ -90,6 +106,14 @@ impl CompilerEnv for Module<TcIdent> {
             .map(|s| s.fields.iter()
                 .enumerate()
                 .find(|&(_, f)| f.name == *field)
+                .map(|(i, _)| i).unwrap())
+    }
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
+        self.enums.iter()
+            .find(|e| e.name.id() == enum_)
+            .map(|e| e.constructors.iter()
+                .enumerate()
+                .find(|&(_, c)| c.name.id() == ctor_name)
                 .map(|(i, _)| i).unwrap())
     }
 }
@@ -119,6 +143,11 @@ impl <'a> Compiler<'a> {
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
         self.stack.find_field(struct_, field)
             .or_else(||  self.globals.find_field(struct_, field))
+    }
+
+    fn find_tag(&self, enum_: &InternedStr, constructor: &InternedStr) -> Option<uint> {
+        self.stack.find_field(enum_, constructor)
+            .or_else(|| self.globals.find_tag(enum_, constructor))
     }
 
     fn new_stack_var(&mut self, s: InternedStr) {
@@ -166,7 +195,7 @@ impl <'a> Compiler<'a> {
                 match self.find(id.id()).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
                     Stack(index) => instructions.push(Push(index)),
                     Global(index) => instructions.push(PushGlobal(index)),
-                    Constructor(num_args) => instructions.push(Construct(num_args))
+                    Constructor(..) => fail!("Constructor {} is not fully applied", id)
                 }
             }
             IfElse(ref pred, ref if_true, ref if_false) => {
@@ -228,11 +257,11 @@ impl <'a> Compiler<'a> {
                 match **func {
                     Identifier(ref id) => {
                         match self.find(id.id()).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
-                            Constructor(num_args) => {
+                            Constructor(tag, num_args) => {
                                 for arg in args.iter() {
                                     self.compile(arg, instructions);
                                 }
-                                instructions.push(Construct(num_args));
+                                instructions.push(Construct(tag, num_args));
                                 return
                             }
                             _ => ()
@@ -269,7 +298,7 @@ impl <'a> Compiler<'a> {
                         match var {
                             Stack(i) => instructions.push(Store(i)),
                             Global(_) => fail!("Assignment to global {}", id),
-                            Constructor(_) => fail!("Assignment to constructor {}", id)
+                            Constructor(..) => fail!("Assignment to constructor {}", id)
                         }
                     }
                     FieldAccess(ref expr, ref field) => {
@@ -297,8 +326,46 @@ impl <'a> Compiler<'a> {
                 };
                 instructions.push(GetField(field_index));
             }
-            ref e => fail!("Cannot compile {}", e)
+            Match(ref expr, ref alts) => {
+                self.compile(&**expr, instructions);
+                let mut start_jumps = Vec::new();
+                let mut end_jumps = Vec::new();
+                let typename = match expr.type_of() {
+                    &Type(ref id) => id,
+                    _ => fail!()
+                };
+                for alt in alts.iter() {
+                    match alt.pattern {
+                        ConstructorPattern(ref id, ref args) => {
+                            let tag = self.find_tag(typename, id.id())
+                                .expect("Could not find tag");
+                            instructions.push(TestTag(tag));
+                            start_jumps.push(instructions.len());
+                            instructions.push(CJump(0));
+                        }
+                        _ => ()
+                    }
+                }
+                for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
+                    *instructions.get_mut(start_index) = CJump(instructions.len());
+                    match alt.pattern {
+                        ConstructorPattern(ref id, ref args) => {
+                            instructions.push(Split);
+                            for arg in args.iter() {
+                                self.new_stack_var(arg.id().clone());
+                            }
+                        }
+                        IdentifierPattern(ref id) => self.new_stack_var(id.id().clone())
+                    }
+                    self.compile(&alt.expression, instructions);
+                    end_jumps.push(instructions.len());
+                    instructions.push(Jump(0));
+
+                }
+                for &index in end_jumps.iter() {
+                    *instructions.get_mut(index) = Jump(instructions.len());
+                }
+            }
         }
     }
-
 }
