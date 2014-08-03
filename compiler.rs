@@ -190,7 +190,21 @@ impl <'a> Compiler<'a> {
                 self.compile(&**pred, instructions);
                 instructions.push(CJump(pre_jump_index + 1));
             }
-            _ => fail!()
+            Assign(ref lhs, ref rhs) => {
+                self.compile(&**rhs, instructions);
+                match **lhs {
+                    Identifier(ref id) => {
+                        let var = self.find(id)
+                            .unwrap_or_else(|| fail!("Undefined variable {}", id));
+                        match var {
+                            Stack(i) => instructions.push(Store(i)),
+                            Global(_) => fail!("Assignment to global {}", id)
+                        }
+                    }
+                    _ => fail!("Assignment to {}", lhs)
+                }
+            }
+            ref e => fail!("Cannot compile {}", e)
         }
     }
 }
