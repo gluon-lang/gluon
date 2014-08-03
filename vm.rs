@@ -139,6 +139,16 @@ impl VM {
                         x => fail!("GetField on {}", x)
                     }
                 }
+                SetField(i) => {
+                    let data = stack.pop();
+                    let value = stack.pop();
+                    match data {
+                        Data(fields) => {
+                            *(*fields.borrow_mut()).get_mut(i) = value;
+                        }
+                        _ => fail!()
+                    }
+                }
                 Jump(i) => {
                     index = i;
                     continue

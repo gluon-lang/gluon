@@ -13,6 +13,7 @@ pub enum Instruction {
     CallGlobal(uint),
     Construct(uint),
     GetField(uint),
+    SetField(uint),
     Jump(uint),
     CJump(uint),
 
@@ -249,6 +250,17 @@ impl <'a> Compiler<'a> {
                             Global(_) => fail!("Assignment to global {}", id),
                             Constructor(_) => fail!("Assignment to constructor {}", id)
                         }
+                    }
+                    FieldAccess(ref expr, ref field) => {
+                        self.compile(&**expr, instructions);
+                        let field_index = match *expr.type_of() {
+                            Type(ref id) => {
+                                self.find_field(id, field.id())
+                                    .unwrap()
+                            }
+                            _ => fail!()
+                        };
+                        instructions.push(SetField(field_index));
                     }
                     _ => fail!("Assignment to {}", lhs)
                 }
