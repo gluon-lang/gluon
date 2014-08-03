@@ -20,7 +20,12 @@ pub enum Instruction {
     AddInt,
     SubtractInt,
     MultiplyInt,
-    IntLT
+    IntLT,
+
+    AddFloat,
+    SubtractFloat,
+    MultiplyFloat,
+    FloatLT
 }
 
 type CExpr = Expr<TcIdent>;
@@ -191,13 +196,29 @@ impl <'a> Compiler<'a> {
             BinOp(ref lhs, ref op, ref rhs) => {
                 self.compile(&**lhs, instructions);
                 self.compile(&**rhs, instructions);
-                match op.as_slice() {
-                    "+" => instructions.push(AddInt),
-                    "-" => instructions.push(SubtractInt),
-                    "*" => instructions.push(MultiplyInt),
-                    "<" => instructions.push(IntLT),
-                    _ => fail!()
+                let typ = lhs.type_of();
+                let instr = if *typ == int_type {
+                    match op.as_slice() {
+                        "+" => AddInt,
+                        "-" => SubtractInt,
+                        "*" => MultiplyInt,
+                        "<" => IntLT,
+                        _ => fail!()
+                    }
                 }
+                else if *typ == float_type {
+                    match op.as_slice() {
+                        "+" => AddFloat,
+                        "-" => SubtractFloat,
+                        "*" => MultiplyFloat,
+                        "<" => FloatLT,
+                        _ => fail!()
+                    }
+                }
+                else {
+                    fail!()
+                };
+                instructions.push(instr);
             }
             Let(ref id, ref expr) => {
                 self.new_stack_var(*id.id());

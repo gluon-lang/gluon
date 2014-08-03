@@ -8,6 +8,7 @@ use interner::InternedStr;
 #[deriving(PartialEq, Clone)]
 pub enum Value {
     Int(int),
+    Float(f64),
     Data(Rc<RefCell<Vec<Value>>>),
     Function(uint)
 }
@@ -16,6 +17,7 @@ impl fmt::Show for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Int(i) => write!(f, "{}", i),
+            Float(x) => write!(f, "{}f", x),
             Data(ref ptr) => write!(f, "{}", ptr.borrow()),
             Function(i) => write!(f, "<function {}>", i),
         }
@@ -107,7 +109,7 @@ impl VM {
                 PushGlobal(i) => {
                     stack.push(Function(i));
                 }
-                PushFloat(_) => fail!(),
+                PushFloat(f) => stack.push(Float(f)),
                 Store(i) => {
                     *stack.get_mut(i) = stack.pop();
                 }
@@ -172,7 +174,17 @@ impl VM {
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
-                IntLT => binop_int(&mut stack, |l, r| if l < r { 1 } else { 0 })
+                IntLT => binop_int(&mut stack, |l, r| if l < r { 1 } else { 0 }),
+
+                AddFloat => binop_float(&mut stack, |l, r| l + r),
+                SubtractFloat => binop_float(&mut stack, |l, r| l - r),
+                MultiplyFloat => binop_float(&mut stack, |l, r| l * r),
+                FloatLT => binop(&mut stack, |l, r| {
+                    match (l, r) {
+                        (Float(l), Float(r)) => Int(if l < r { 1 } else { 0 }),
+                        _ => fail!()
+                    }
+                })
             }
             index += 1;
         }
@@ -180,12 +192,27 @@ impl VM {
 }
 
 #[inline]
-fn binop_int<'a>(stack: &mut StackFrame<'a>, f: |int, int| -> int) {
+fn binop<'a>(stack: &mut StackFrame<'a>, f: |Value, Value| -> Value) {
     let r = stack.pop();
     let l = stack.pop();
-    match (l, r) {
-        (Int(l), Int(r)) => stack.push(Int(f(l, r))),
-        (l, r) => fail!("{} `op` {}", l, r)
-    }
+    stack.push(f(l, r));
+}
+#[inline]
+fn binop_int<'a>(stack: &mut StackFrame<'a>, f: |int, int| -> int) {
+    binop(stack, |l, r| {
+        match (l, r) {
+            (Int(l), Int(r)) => Int(f(l, r)),
+            (l, r) => fail!("{} `intOp` {}", l, r)
+        }
+    })
+}
+#[inline]
+fn binop_float<'a>(stack: &mut StackFrame<'a>, f: |f64, f64| -> f64) {
+    binop(stack, |l, r| {
+        match (l, r) {
+            (Float(l), Float(r)) => Float(f(l, r)),
+            (l, r) => fail!("{} `floatOp` {}", l, r)
+        }
+    })
 }
 
