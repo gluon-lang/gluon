@@ -36,7 +36,8 @@ pub enum Expr<Id> {
     Match(Box<Expr<Id>>, Vec<Alternative<Id>>),
     Block(Vec<Expr<Id>>),
     BinOp(Box<Expr<Id>>, Id, Box<Expr<Id>>),
-    Let(Id, Box<Expr<Id>>)
+    Let(Id, Box<Expr<Id>>),
+    Assign(Box<Expr<Id>>, Box<Expr<Id>>)
 }
 
 #[deriving(Clone, PartialEq, Show)]

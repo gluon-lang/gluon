@@ -157,6 +157,11 @@ impl <'a> Typecheck<'a> {
                 self.stack_var(id.clone(), typ);
                 Ok(unit_type())
             }
+            Assign(ref lhs, ref rhs) => {
+                let rhs_type = try!(self.typecheck(&**rhs));
+                let lhs_type = try!(self.typecheck(&**lhs));
+                self.unify(&lhs_type, rhs_type)
+            }
         }
     }
 

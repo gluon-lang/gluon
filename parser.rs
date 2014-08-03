@@ -66,6 +66,13 @@ fn is_statement<T>(e: &Expr<T>) -> bool {
     }
 }
 
+fn is_lvalue<T>(e: &Expr<T>) -> bool {
+    match *e {
+        Identifier(..) => true,
+        _ => false
+    }
+}
+
 type PString = InternedStr;
 type ParseResult<T> = Result<T, String>;
 
@@ -102,7 +109,13 @@ impl <'a> Parser<'a> {
             _ => {
                 match self.expression() {
                     Ok(e) => {
-                        if is_statement(&e) {
+                        if is_lvalue(&e) && matches!(self.lexer.peek(), &TAssign) {
+                            self.lexer.next();
+                            let rhs = try!(self.expression());
+                            expect!(self, TSemicolon);
+                            Ok((Assign(box e, box rhs), true))
+                        }
+                        else if is_statement(&e) {
                             Ok((e, true))
                         }
                         else if matches!(self.lexer.peek(), &TSemicolon) {
@@ -136,6 +149,7 @@ impl <'a> Parser<'a> {
             _ => Ok(e)
         }
     }
+    
     fn sub_expression_(&mut self) -> ParseResult<Expr<PString>> {
         match *self.lexer.next() {
             TIdentifier(id) => {
@@ -294,17 +308,19 @@ pub mod tests {
     use ast::*;
     use std::io::BufReader;
     use interner::*;
-
-    fn binop(l: Expr<InternedStr>, s: &str, r: Expr<InternedStr>) -> Expr<InternedStr> {
+    
+    type PExpr = Expr<InternedStr>;
+    
+    fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
         BinOp(box l, intern(s), box r)
     }
-    fn int(i: int) -> Expr<InternedStr> {
+    fn int(i: int) -> PExpr {
         Literal(Integer(i))
     }
-    fn let_(s: &str, e: Expr<InternedStr>) -> Expr<InternedStr> {
+    fn let_(s: &str, e: PExpr) -> PExpr {
         Let(intern(s), box e)
     }
-    fn id(s: &str) -> Expr<InternedStr> {
+    fn id(s: &str) -> PExpr {
         Identifier(intern(s))
     }
     fn field(s: &str, typ: Type<InternedStr>) -> Field<InternedStr> {
@@ -313,18 +329,21 @@ pub mod tests {
     fn typ(s: &str) -> Type<InternedStr> {
         Type(intern(s))
     }
-    fn call(e: Expr<InternedStr>, args: Vec<Expr<InternedStr>>) -> Expr<InternedStr> {
+    fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
         Call(box e, args)
     }
-    fn if_else(p: Expr<InternedStr>, if_true: Expr<InternedStr>, if_false: Expr<InternedStr>) -> Expr<InternedStr> {
+    fn if_else(p: PExpr, if_true: PExpr, if_false: PExpr) -> PExpr {
         IfElse(box p, box if_true, box if_false)
     }
 
-    fn while_(p: Expr<InternedStr>, expr: Expr<InternedStr>) -> Expr<InternedStr> {
+    fn while_(p: PExpr, expr: PExpr) -> PExpr {
         While(box p, box expr)
     }
+    fn assign(p: PExpr, rhs: PExpr) -> PExpr {
+        Assign(box p, box rhs)
+    }
 
-    fn bool(b: bool) -> Expr<InternedStr> {
+    fn bool(b: bool) -> PExpr {
         Literal(Bool(b))
     }
 
@@ -370,5 +389,10 @@ pub mod tests {
     fn test_while() {
         let expr = parse("while true { }", |p| p.expression());
         assert_eq!(expr, while_(bool(true), Block(vec![])));
+    }
+    #[test]
+    fn test_assign() {
+        let expr = parse("{ y = 2; 2 }", |p| p.expression());
+        assert_eq!(expr, Block(vec![assign(id("y"), int(2)), int(2)]));
     }
 }
