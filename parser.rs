@@ -159,6 +159,8 @@ impl <'a> Parser<'a> {
             TString(s) => {
                 Ok(Literal(String(s)))
             }
+            TTrue => Ok(Literal(Bool(true))),
+            TFalse => Ok(Literal(Bool(false))),
             TIf => {
                 let pred = box try!(self.expression());
                 let if_true = box try!(self.block());

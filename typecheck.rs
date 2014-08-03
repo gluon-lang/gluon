@@ -73,6 +73,7 @@ impl <'a> Typecheck<'a> {
                     Integer(_) => int_type(),
                     Float(_) => float_type(),
                     String(_) => string_type(),
+                    Bool(_) => bool_type()
                 })
             }
             Call(ref func, ref args) => {

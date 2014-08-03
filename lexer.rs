@@ -13,6 +13,8 @@ pub enum Token {
     TFloat(f64),
     TString(InternedStr),
     TChar(char),
+    TTrue,
+    TFalse,
     TIf,
     TElse,
     TMatch,
@@ -41,6 +43,8 @@ fn name_or_keyword(interner: &mut Interner, s: &str) -> Token {
         "else" => TElse,
         "fn" => TFn,
         "let" => TLet,
+        "true" => TTrue,
+        "false" => TFalse,
         _ => TIdentifier(interner.intern(s)),
     }
 }

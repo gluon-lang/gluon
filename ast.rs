@@ -10,7 +10,8 @@ pub enum Type<Id> {
 pub enum Literal {
     Integer(int),
     Float(f64),
-    String(InternedStr)
+    String(InternedStr),
+    Bool(bool)
 }
 
 #[deriving(Clone, PartialEq, Show)]

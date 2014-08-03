@@ -121,6 +121,7 @@ impl <'a> Compiler<'a> {
                 match *lit {
                     Integer(i) => instructions.push(PushInt(i)),
                     Float(f) => instructions.push(PushFloat(f)),
+                    Bool(b) => instructions.push(PushInt(if b { 1 } else { 0 })),
                     String(s) => fail!("String is not implemented")
                 }
             }
