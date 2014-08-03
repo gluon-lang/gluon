@@ -48,9 +48,14 @@ fn find_type<'a>(module: &'a Module<TcIdent>, name: &InternedStr) -> Option<TcTy
         )
 }
 
+enum TypeInfo {
+    Struct(Vec<(InternedStr, TcType)>),
+    Enum(Enum<TcIdent>)
+}
+
 pub struct Typecheck<'a> {
     module: HashMap<InternedStr, TcType>,
-    structs: HashMap<InternedStr, Vec<(InternedStr, TcType)>>,
+    type_infos: HashMap<InternedStr, TypeInfo>,
     stack: ScopedMap<InternedStr, TcType>
 }
 
@@ -59,7 +64,7 @@ impl <'a> Typecheck<'a> {
     pub fn new() -> Typecheck<'a> {
         Typecheck {
             module: HashMap::new(),
-            structs: HashMap::new(),
+            type_infos: HashMap::new(),
             stack: ScopedMap::new()
         }
     }
@@ -76,8 +81,8 @@ impl <'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn find_struct(&self, id: &InternedStr) -> Result<&Vec<(InternedStr, TcType)>, TypeError> {
-        self.structs.find(id)
+    fn find_type_info(&self, id: &InternedStr) -> Result<&TypeInfo, TypeError> {
+        self.type_infos.find(id)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
     }
@@ -94,13 +99,14 @@ impl <'a> Typecheck<'a> {
         }
         for s in module.structs.mut_iter() {
             let fields = s.fields.iter().map(|f| (f.name, f.typ.clone())).collect();
-            self.structs.insert(s.name.name, fields);
+            self.type_infos.insert(s.name.name, Struct(fields));
 
             let args = s.fields.iter().map(|f| f.typ.clone()).collect();
             s.name.typ = FunctionType(args, box Type(s.name.name));
             self.module.insert(s.name.name, s.name.typ.clone());
         }
         for e in module.enums.iter() {
+            self.type_infos.insert(e.name.name, Enum(e.clone()));
             for ctor in e.constructors.iter() {
                 let typ = FunctionType(ctor.arguments.clone(), box Type(e.name.name));
                 self.module.insert(ctor.name.name, typ);
@@ -200,7 +206,7 @@ impl <'a> Typecheck<'a> {
 
                 for alt in alts.mut_iter().skip(1) {
                     self.stack.enter_scope();
-                    try!(self.typecheck_pattern(&alt.pattern, typ.clone()));
+                    try!(self.typecheck_pattern(&mut alt.pattern, typ.clone()));
                     let alt_type = try!(self.typecheck(&mut alt.expression));
                     self.stack.exit_scope();
                     try!(self.unify(&alt1_type, alt_type));
@@ -221,12 +227,17 @@ impl <'a> Typecheck<'a> {
                 let typ = try!(self.typecheck(&mut **expr));
                 match typ {
                     Type(ref struct_id) => {
-                        let fields = try!(self.find_struct(struct_id));
-                        id.typ = try!(fields.iter()
-                            .find(|& &(ref name, _)| *name == id.name)
-                            .map(|&(_, ref t)| Ok(t.clone()))
-                            .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone()))));
-                        Ok(id.typ.clone())
+                        let type_info = try!(self.find_type_info(struct_id));
+                        match *type_info {
+                            Struct(ref fields) => {
+                                id.typ = try!(fields.iter()
+                                    .find(|& &(ref name, _)| *name == id.name)
+                                    .map(|&(_, ref t)| Ok(t.clone()))
+                                    .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone()))));
+                                Ok(id.typ.clone())
+                            }
+                            Enum(_) => Err(TypeError("Field access on enum type"))
+                        }
                     }
                     FunctionType(..) => Err(TypeError("Field access on function")),
                     LiteralType(..) => Err(TypeError("Field acces on primitive"))
@@ -235,18 +246,27 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_pattern(&mut self, pattern: &Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
+    fn typecheck_pattern(&mut self, pattern: &mut Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
+        let typename = match match_type {
+            Type(id) => id,
+            _ => return Err(TypeError("Pattern matching only works on enums"))
+        };
         match *pattern {
-            ConstructorPattern(ref name, _) => {
-                let ctor_type = try!(self.find(name.id()));
-                match ctor_type {
-                    FunctionType(_, ref return_type) => {
-                        self.unify(&**return_type, match_type)
-                            .map(|_| ())
+            ConstructorPattern(ref name, ref mut args) => {
+                //Find the enum constructor and return the types for its arguments
+                let argument_types: Vec<TcType> = match *try!(self.find_type_info(&typename)) {
+                    Enum(ref e) => {
+                        match e.constructors.iter().find(|ctor| ctor.name.id() == name.id()) {
+                            Some(ctor) => ctor.arguments.iter().map(|t| t.clone()).collect(),
+                            None => return Err(TypeError("Undefined constructor"))
+                        }
                     }
-                    _ => self.unify(&ctor_type, match_type)
-                            .map(|_| ())
+                    Struct(..) => return Err(TypeError("Pattern match on struct"))
+                };
+                for (arg, typ) in args.iter().zip(argument_types.move_iter()) {
+                    self.stack_var(arg.id().clone(), typ);
                 }
+                Ok(())
             }
             IdentifierPattern(ref id) => {
                 self.stack_var(id.id().clone(), match_type);
