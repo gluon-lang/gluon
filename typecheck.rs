@@ -49,6 +49,7 @@ pub trait TypeEnv {
 }
 
 pub struct Typecheck<'a> {
+    environment: Option<&'a TypeEnv>,
     module: HashMap<InternedStr, TcType>,
     type_infos: HashMap<InternedStr, TypeInfo>,
     stack: ScopedMap<InternedStr, TcType>
@@ -59,10 +60,12 @@ impl <'a> TypeEnv for Typecheck<'a> {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         self.stack.find(id)
             .or_else(|| self.module.find(id))
+            .or_else(|| self.environment.and_then(|e| e.find_type(id)))
     }
 
     fn find_type_info(&self, id: &InternedStr) -> Option<&TypeInfo> {
         self.type_infos.find(id)
+            .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
     }
 }
 
@@ -70,6 +73,7 @@ impl <'a> Typecheck<'a> {
     
     pub fn new() -> Typecheck<'a> {
         Typecheck {
+            environment: None,
             module: HashMap::new(),
             type_infos: HashMap::new(),
             stack: ScopedMap::new()
@@ -91,6 +95,10 @@ impl <'a> Typecheck<'a> {
 
     fn stack_var(&mut self, id: InternedStr, typ: TcType) {
         self.stack.insert(id, typ);
+    }
+
+    pub fn add_environment(&mut self, env: &'a TypeEnv) {
+        self.environment = Some(env);
     }
 
     pub fn typecheck_module(&mut self, module: &mut Module<TcIdent>) -> Result<(), TypeError> {

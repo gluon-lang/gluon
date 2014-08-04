@@ -265,25 +265,34 @@ fn binop_float<'a>(stack: &mut StackFrame<'a>, f: |f64, f64| -> f64) {
         }
     })
 }
+macro_rules! tryf(
+    ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
+)
 
-pub fn run_main(s: &str) -> Result<Option<Value>, String> {
-    use std::io::BufReader;
+pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
     use ast::*;
     use parser::Parser;
 
-    let mut buffer = BufReader::new(s.as_bytes());
-    let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type.clone(), name: s });
-    let mut module = match parser.module() {
-        Ok(f) => f,
-        Err(x) => return Err(format!("{}", x))
+    let mut parser = Parser::new(buffer, |s| TcIdent { typ: unit_type.clone(), name: s });
+    let mut module = tryf!(parser.module());
+    let assembly = {
+        let vm: &VM = vm;
+        let mut tc = Typecheck::new();
+        tc.add_environment(vm);
+        tryf!(tc.typecheck_module(&mut module));
+        let mut compiler = Compiler::new(vm);
+        compiler.compile_module(&module)
     };
-    let mut tc = Typecheck::new();
-    try!(tc.typecheck_module(&mut module)
-        .map_err(|e| format!("{}", e)));
-    let mut compiler = Compiler::new(&module);
-    let functions = compiler.compile_module(&module).functions;
+    vm.new_functions(assembly.functions);
+    Ok(())
+}
+
+pub fn run_main(s: &str) -> Result<Option<Value>, String> {
+    use std::io::BufReader;
+
     let mut vm = VM::new();
-    vm.new_functions(functions);
+    let mut buffer = BufReader::new(s.as_bytes());
+    try!(load_script(&mut vm, &mut buffer));
     let v = vm.run_function(vm.get_function(0));
     Ok(v)
 }
