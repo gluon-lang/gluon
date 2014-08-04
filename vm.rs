@@ -2,9 +2,10 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt;
 use std::collections::HashMap;
+use ast::FunctionType;
 use typecheck::{TypeEnv, Typecheck, TcIdent, TcType, TypeInfo, Struct, Enum};
 use compiler::*;
-use interner::InternedStr;
+use interner::{InternedStr, intern};
 
 
 #[deriving(PartialEq, Clone)]
@@ -26,8 +27,20 @@ impl fmt::Show for Value {
     }
 }
 
+pub type ExternFunction = fn (&VM, StackFrame);
+
+struct Global {
+    id: InternedStr,
+    typ: TcType,
+    value: Global_
+}
+enum Global_ {
+    Bytecode(Vec<Instruction>),
+    Extern(ExternFunction)
+}
+
 pub struct VM {
-    globals: Vec<CompiledFunction>,
+    globals: Vec<Global>,
     type_infos: HashMap<InternedStr, TypeInfo>
 }
 
@@ -51,7 +64,7 @@ impl TypeEnv for VM {
     }
 }
 
-struct StackFrame<'a> {
+pub struct StackFrame<'a> {
     stack: &'a mut Vec<Value>,
     offset: uint
 }
@@ -61,25 +74,25 @@ impl <'a> StackFrame<'a> {
         StackFrame { stack: v, offset: offset }
     }
 
-    fn len(&self) -> uint {
+    pub fn len(&self) -> uint {
         self.stack.len() - self.offset
     }
 
-    fn get<'a>(&'a self, i: uint) -> &'a Value {
+    pub fn get<'a>(&'a self, i: uint) -> &'a Value {
         self.stack.get(self.offset + i)
     }
-    fn get_mut<'a>(&'a mut self, i: uint) -> &'a mut Value {
+    pub fn get_mut<'a>(&'a mut self, i: uint) -> &'a mut Value {
         self.stack.get_mut(self.offset + i)
     }
 
-    fn push(&mut self, v: Value) {
+    pub fn push(&mut self, v: Value) {
         self.stack.push(v);
     }
-    fn top(&mut self) -> &Value {
+    pub fn top(&mut self) -> &Value {
         self.stack.last().unwrap()
     }
 
-    fn pop(&mut self) -> Value {
+    pub fn pop(&mut self) -> Value {
         match self.stack.pop() {
             Some(x) => x,
             None => fail!()
@@ -94,15 +107,24 @@ impl VM {
     }
 
     pub fn new_functions(&mut self, fns: Vec<CompiledFunction>) {
-        self.globals.extend(fns.move_iter())
+        self.globals.extend(fns.move_iter()
+            .map(|CompiledFunction { id: id, typ: typ, instructions: instructions }|
+                Global { id: id, typ: typ, value: Bytecode(instructions) }
+            )
+        )
     }
 
-    pub fn get_function(&self, index: uint) -> &CompiledFunction {
+    pub fn get_function(&self, index: uint) -> &Global {
         &self.globals[index]
     }
 
-    pub fn run_function(&self, cf: &CompiledFunction) -> Option<Value> {
-        self.execute_instructions(cf.instructions.as_slice())
+    pub fn run_function(&self, cf: &Global) -> Option<Value> {
+        let mut stack = Vec::new();
+        {
+            let frame = StackFrame::new(&mut stack, 0);
+            self.execute_function(frame, cf);
+        }
+        stack.pop()
     }
 
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value> {
@@ -114,7 +136,27 @@ impl VM {
         stack.pop()
     }
 
-    fn execute<'a>(&self, mut stack: StackFrame<'a>, instructions: &[Instruction]) {
+    pub fn extern_function(&mut self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) {
+        let global = Global {
+            id: intern(name),
+            typ: FunctionType(args, box return_type),
+            value: Extern(f)
+        };
+        self.globals.push(global);
+    }
+
+    fn execute_function(&self, stack: StackFrame, function: &Global) {
+        match function.value {
+            Extern(func) => {
+                func(self, stack);
+            }
+            Bytecode(ref instructions) => {
+                self.execute(stack, instructions.as_slice());
+            }
+        }
+    }
+
+    fn execute(&self, mut stack: StackFrame, instructions: &[Instruction]) {
         let mut index = 0;
         while index < instructions.len() {
             let instr = instructions[index];
@@ -135,7 +177,8 @@ impl VM {
                     *stack.get_mut(i) = stack.pop();
                 }
                 CallGlobal(args) => {
-                    let function = match stack.get(stack.len() - 1 - args) {
+                    let function_index = stack.len() - 1 - args;
+                    let function = match stack.get(function_index) {
                         &Function(index) => {
                             &self.globals[index]
                         }
@@ -143,13 +186,21 @@ impl VM {
                     };
                     {
                         let new_stack = StackFrame::new(stack.stack, args);
-                        self.execute(new_stack, function.instructions.as_slice());
+                        self.execute_function(new_stack, function);
                     }
-                    let result = stack.pop();
-                    for _ in range(0, args + 1) {
-                        stack.pop();
+                    if stack.len() > function_index + args {
+                        //Value was returned
+                        let result = stack.pop();
+                        while stack.len() > function_index {
+                            stack.pop();
+                        }
+                        stack.push(result);
                     }
-                    stack.push(result);
+                    else {
+                        while stack.len() > function_index {
+                            stack.pop();
+                        }
+                    }
                 }
                 Construct(tag, args) => {
                     let mut fields = Vec::new();

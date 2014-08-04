@@ -1,18 +1,23 @@
 use std::io::BufReader;
 use std::io::IoResult;
 
-use ast::unit_type;
+use ast::{int_type, unit_type};
 use parser::Parser;
 use typecheck::{TcIdent, Typecheck};
 use compiler::Compiler;
-use vm::{VM, load_script};
+use vm::{VM, StackFrame, load_script};
 
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 )
 
+fn print(_: &VM, mut stack: StackFrame) {
+    println!("{}", stack.pop());
+}
+
 pub fn run() {
     let mut vm = VM::new();
+    vm.extern_function("printInt", vec![int_type.clone()], unit_type.clone(), print);
     for line in ::std::io::stdin().lines() {
         match run_line(&mut vm, line) {
             Ok(continue_repl) => {
