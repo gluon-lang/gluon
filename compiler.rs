@@ -50,13 +50,13 @@ pub trait CompilerEnv {
     fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint> {
         None
     }
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
+    fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<uint> {
         None
     }
 }
 
 impl CompilerEnv for () {
-    fn find_var(&self, id: &InternedStr) -> Option<Variable> {
+    fn find_var(&self, _: &InternedStr) -> Option<Variable> {
         None
     }
 }
@@ -190,7 +190,7 @@ impl <'a> Compiler<'a> {
                     Integer(i) => instructions.push(PushInt(i)),
                     Float(f) => instructions.push(PushFloat(f)),
                     Bool(b) => instructions.push(PushInt(if b { 1 } else { 0 })),
-                    String(s) => fail!("String is not implemented")
+                    String(_) => fail!("String is not implemented")
                 }
             }
             Identifier(ref id) => {
@@ -311,7 +311,7 @@ impl <'a> Compiler<'a> {
                 //#test:
                 //[compile(pred)]
                 //cjump #start
-                let mut pre_jump_index = instructions.len();
+                let pre_jump_index = instructions.len();
                 instructions.push(Jump(0));
                 self.compile(&**expr, instructions);
                 *instructions.get_mut(pre_jump_index) = Jump(instructions.len());
@@ -365,7 +365,7 @@ impl <'a> Compiler<'a> {
                 };
                 for alt in alts.iter() {
                     match alt.pattern {
-                        ConstructorPattern(ref id, ref args) => {
+                        ConstructorPattern(ref id, _) => {
                             let tag = self.find_tag(typename, id.id())
                                 .expect("Could not find tag");
                             instructions.push(TestTag(tag));
@@ -378,7 +378,7 @@ impl <'a> Compiler<'a> {
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     *instructions.get_mut(start_index) = CJump(instructions.len());
                     match alt.pattern {
-                        ConstructorPattern(ref id, ref args) => {
+                        ConstructorPattern(_, ref args) => {
                             instructions.push(Split);
                             for arg in args.iter() {
                                 self.new_stack_var(arg.id().clone());

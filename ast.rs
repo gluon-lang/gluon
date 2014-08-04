@@ -1,4 +1,4 @@
-use interner::{intern, InternedStr};
+use interner::{InternedStr};
 
 
 #[deriving(Clone, Eq, PartialEq, Show)]

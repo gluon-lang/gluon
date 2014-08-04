@@ -38,16 +38,6 @@ enum TypeError {
 type TcResult = Result<TcType, TypeError>;
 
 
-fn find_type<'a>(module: &'a Module<TcIdent>, name: &InternedStr) -> Option<TcType> {
-    module.functions.iter()
-        .find(|f| f.name.id() == name)
-        .map(|f| FunctionType(f.arguments.iter().map(|field| field.typ.clone()).collect(), box f.return_type.clone()))
-        .or_else(|| module.structs.iter()
-            .find(|s| s.name.id() == name)
-            .map(|s| s.name.typ.clone())
-        )
-}
-
 enum TypeInfo {
     Struct(Vec<(InternedStr, TcType)>),
     Enum(Enum<TcIdent>)
@@ -75,10 +65,6 @@ impl <'a> Typecheck<'a> {
             .map(|t| t.clone())
             .map(Ok)
             .unwrap_or_else(|| Err(UndefinedVariable(id.clone())))
-    }
-
-    fn find_enum(&self, id: &InternedStr) -> Result<(), TypeError> {
-        Ok(())
     }
 
     fn find_type_info(&self, id: &InternedStr) -> Result<&TypeInfo, TypeError> {
@@ -160,7 +146,7 @@ impl <'a> Typecheck<'a> {
             }
             IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut**pred));
-                self.unify(&bool_type, pred_type);
+                try!(self.unify(&bool_type, pred_type));
                 let true_type = try!(self.typecheck(&mut**if_true));
                 let false_type = try!(self.typecheck(&mut**if_false));
                 self.unify(&true_type, false_type)
@@ -341,7 +327,6 @@ mod tests {
     use super::TcIdent;
     use ast::*;
     use parser::*;
-    use interner::InternedStr;
 
     pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {
         use std::io::BufReader;

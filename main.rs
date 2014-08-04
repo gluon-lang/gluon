@@ -3,9 +3,8 @@ extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
 
+#[cfg(not(test))]
 use vm::*;
-
-use std::io::BufReader;
 
 mod scoped_map;
 mod interner;
