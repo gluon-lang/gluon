@@ -191,6 +191,18 @@ impl VM {
                         }
                     }
                 }
+                Pop(n) => {
+                    for i in range(0, n) {
+                        stack.pop();
+                    }
+                }
+                Slide(n) => {
+                    let v = stack.pop();
+                    for i in range(0, n) {
+                        stack.pop();
+                    }
+                    stack.push(v);
+                }
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
@@ -234,5 +246,56 @@ fn binop_float<'a>(stack: &mut StackFrame<'a>, f: |f64, f64| -> f64) {
             (l, r) => fail!("{} `floatOp` {}", l, r)
         }
     })
+}
+
+pub fn run_main(s: &str) -> Result<Value, String> {
+    use std::io::BufReader;
+    use ast::*;
+    use parser::Parser;
+    use typecheck::*;
+
+    let mut buffer = BufReader::new(s.as_bytes());
+    let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type.clone(), name: s });
+    let mut module = match parser.module() {
+        Ok(f) => f,
+        Err(x) => return Err(format!("{}", x))
+    };
+    let mut tc = Typecheck::new();
+    try!(tc.typecheck_module(&mut module)
+        .map_err(|e| format!("{}", e)));
+    let mut compiler = Compiler::new(&module);
+    let functions = compiler.compile_module(&module);
+    let mut vm = VM::new();
+    vm.new_functions(functions);
+    let v = vm.run_function(vm.get_function(0));
+    Ok(v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    ///Test that the stack is adjusted correctly after executing expressions as statements
+    #[test]
+    fn stack_for_block() {
+        let text =
+r"
+fn main() -> int {
+    10 + 2;
+    let y = {
+        let a = 1000;
+        let b = 1000;
+    };
+    let x = {
+        let z = 1;
+        z + 2
+    };
+    x = x * 2 + 2;
+    x
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Int(8));
+    }
 }
 

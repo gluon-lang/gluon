@@ -18,6 +18,8 @@ pub enum Instruction {
     TestTag(uint),
     Jump(uint),
     CJump(uint),
+    Pop(uint),
+    Slide(uint),
 
     AddInt,
     SubtractInt,
@@ -210,9 +212,19 @@ impl <'a> Compiler<'a> {
                 *instructions.get_mut(false_jump_index) = Jump(instructions.len());
             }
             Block(ref exprs) => {
-                for expr in exprs.iter() {
-                    self.compile(expr, instructions);
+                if exprs.len() != 0 {
+                    for expr in exprs.slice_to(exprs.len() - 1).iter() {
+                        self.compile(expr, instructions);
+                        //Since this line is executed as a statement we need to remove
+                        //the value from the stack
+                        if *expr.type_of() != unit_type {
+                            instructions.push(Pop(1));
+                        }
+                    }
+                    let last = exprs.last().unwrap();
+                    self.compile(last, instructions);
                 }
+                let stack_size = self.stack_size();
                 for expr in exprs.iter() {
                     match expr {
                         &Let(ref id, _) => {
@@ -221,6 +233,18 @@ impl <'a> Compiler<'a> {
                         _ => ()
                     }
                 }
+                //If the stack has changed size during the block we need to adjust
+                //it back to its initial size
+                let diff_size = stack_size - self.stack_size();
+                if diff_size != 0 {
+                    if *expr.type_of() == unit_type {
+                        instructions.push(Pop(diff_size));
+                    }
+                    else {
+                        instructions.push(Slide(diff_size));
+                    }
+                }
+                
             }
             BinOp(ref lhs, ref op, ref rhs) => {
                 self.compile(&**lhs, instructions);
@@ -250,8 +274,13 @@ impl <'a> Compiler<'a> {
                 instructions.push(instr);
             }
             Let(ref id, ref expr) => {
-                self.new_stack_var(*id.id());
                 self.compile(&**expr, instructions);
+                self.new_stack_var(*id.id());
+                //unit expressions do not return a value so we need to add a dummy value
+                //To make the stack correct
+                if *expr.type_of() == unit_type {
+                    instructions.push(PushInt(0));
+                }
             }
             Call(ref func, ref args) => {
                 match **func {
