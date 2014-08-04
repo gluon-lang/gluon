@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use interner::*;
 use ast::*;
-use typecheck::{Typed, TcIdent};
+use typecheck::{Typed, TcIdent, TcType};
 
 #[deriving(Show)]
 pub enum Instruction {
@@ -42,6 +42,7 @@ pub enum Variable {
 
 pub struct CompiledFunction {
     pub id: InternedStr,
+    pub typ: TcType,
     pub instructions: Vec<Instruction>
 }
 
@@ -179,7 +180,11 @@ impl <'a> Compiler<'a> {
         for arg in function.arguments.iter() {
             self.stack.remove(&arg.name);
         }
-        CompiledFunction { id: function.name.id().clone(), instructions: instructions }
+        CompiledFunction {
+            id: function.name.id().clone(),
+            typ: function.type_of().clone(),
+            instructions: instructions
+        }
     }
 
 

@@ -1,6 +1,8 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt;
+use std::collections::HashMap;
+use typecheck::{TypeEnv, Typecheck, TcIdent, TcType, TypeInfo, Struct, Enum};
 use compiler::*;
 use interner::InternedStr;
 
@@ -25,7 +27,8 @@ impl fmt::Show for Value {
 }
 
 pub struct VM {
-    globals: Vec<CompiledFunction>
+    globals: Vec<CompiledFunction>,
+    type_infos: HashMap<InternedStr, TypeInfo>
 }
 
 impl CompilerEnv for VM {
@@ -34,6 +37,17 @@ impl CompilerEnv for VM {
             .enumerate()
             .find(|&(_, f)| f.id == *id)
             .map(|(i, _)| Global(i))
+    }
+}
+
+impl TypeEnv for VM {
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+        self.globals.iter()
+            .find(|f| f.id == *id)
+            .map(|f| &f.typ)
+    }
+    fn find_type_info(&self, id: &InternedStr) -> Option<&TypeInfo> {
+        self.type_infos.find(id)
     }
 }
 
@@ -76,7 +90,7 @@ impl <'a> StackFrame<'a> {
 impl VM {
     
     pub fn new() -> VM {
-        VM { globals: Vec::new() }
+        VM { globals: Vec::new(), type_infos: HashMap::new() }
     }
 
     pub fn new_functions(&mut self, fns: Vec<CompiledFunction>) {
@@ -252,7 +266,6 @@ pub fn run_main(s: &str) -> Result<Value, String> {
     use std::io::BufReader;
     use ast::*;
     use parser::Parser;
-    use typecheck::*;
 
     let mut buffer = BufReader::new(s.as_bytes());
     let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type.clone(), name: s });

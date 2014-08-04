@@ -22,7 +22,7 @@ impl Str for TcIdent {
     }
 }
 
-type TcType = Type<InternedStr>;
+pub type TcType = Type<InternedStr>;
 
 #[deriving(Show)]
 enum TypeError {
@@ -38,15 +38,32 @@ enum TypeError {
 type TcResult = Result<TcType, TypeError>;
 
 
-enum TypeInfo {
+pub enum TypeInfo {
     Struct(Vec<(InternedStr, TcType)>),
     Enum(Enum<TcIdent>)
+}
+
+pub trait TypeEnv {
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType>;
+    fn find_type_info(&self, id: &InternedStr) -> Option<&TypeInfo>;
 }
 
 pub struct Typecheck<'a> {
     module: HashMap<InternedStr, TcType>,
     type_infos: HashMap<InternedStr, TypeInfo>,
     stack: ScopedMap<InternedStr, TcType>
+}
+
+impl <'a> TypeEnv for Typecheck<'a> {
+    
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+        self.stack.find(id)
+            .or_else(|| self.module.find(id))
+    }
+
+    fn find_type_info(&self, id: &InternedStr) -> Option<&TypeInfo> {
+        self.type_infos.find(id)
+    }
 }
 
 impl <'a> Typecheck<'a> {
@@ -60,15 +77,14 @@ impl <'a> Typecheck<'a> {
     }
     
     fn find(&self, id: &InternedStr) -> TcResult {
-        self.stack.find(id)
-            .or_else(|| self.module.find(id))
+        self.find_type(id)
             .map(|t| t.clone())
             .map(Ok)
             .unwrap_or_else(|| Err(UndefinedVariable(id.clone())))
     }
 
     fn find_type_info(&self, id: &InternedStr) -> Result<&TypeInfo, TypeError> {
-        self.type_infos.find(id)
+        (self as &TypeEnv).find_type_info(id)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
     }
@@ -317,6 +333,12 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
             Match(_, ref alts) => alts[0].expression.type_of(),
             FieldAccess(_, ref id) => id.type_of()
         }
+    }
+}
+
+impl <T: Typed> Typed for Function<T> {
+    fn type_of(&self) -> &TcType {
+        self.name.type_of()
     }
 }
 
