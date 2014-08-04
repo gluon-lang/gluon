@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use interner::*;
 use ast::*;
-use typecheck::{Typed, TcIdent, TcType};
+use typecheck::{Typed, TcIdent, TcType, TypeInfo, Enum, Struct};
 
 #[deriving(Show)]
 pub enum Instruction {
@@ -44,6 +44,11 @@ pub struct CompiledFunction {
     pub id: InternedStr,
     pub typ: TcType,
     pub instructions: Vec<Instruction>
+}
+
+pub struct Assembly {
+    pub functions: Vec<CompiledFunction>,
+    pub types: Vec<TypeInfo>
 }
 
 pub trait CompilerEnv {
@@ -165,10 +170,15 @@ impl <'a> Compiler<'a> {
         self.stack.len()
     }
 
-    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Vec<CompiledFunction> {
-        module.functions.iter()
+    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Assembly {
+        let functions = module.functions.iter()
             .map(|f| self.compile_function(f))
-            .collect()
+            .collect();
+        let types = module.structs.iter()
+            .map(|s| Struct(s.fields.clone()))
+            .chain(module.enums.iter().map(|e| Enum(e.constructors.clone())))
+            .collect();
+        Assembly { functions: functions, types: types }
     }
 
     pub fn compile_function(&mut self, function: &Function<TcIdent>) -> CompiledFunction {
@@ -188,7 +198,7 @@ impl <'a> Compiler<'a> {
     }
 
 
-    fn compile(&mut self, expr: &CExpr, instructions: &mut Vec<Instruction>) {
+    pub fn compile(&mut self, expr: &CExpr, instructions: &mut Vec<Instruction>) {
         match *expr {
             Literal(ref lit) => {
                 match *lit {

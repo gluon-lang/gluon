@@ -14,10 +14,19 @@ mod parser;
 mod typecheck;
 mod compiler;
 mod vm;
+mod repl;
 
 
 #[cfg(not(test))]
 fn main() {
     let args = ::std::os::args();
-    println!("{}", run_main(args[1].as_slice()));
+    if args.len() < 2 {
+        println!("Expected atleast 1 argument");
+    }
+    else if args[1].as_slice() == "-i" {
+        repl::run();
+    }
+    else {
+        println!("{}", run_main(args[1].as_slice()));
+    }
 }

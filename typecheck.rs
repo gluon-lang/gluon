@@ -39,8 +39,8 @@ type TcResult = Result<TcType, TypeError>;
 
 
 pub enum TypeInfo {
-    Struct(Vec<(InternedStr, TcType)>),
-    Enum(Enum<TcIdent>)
+    Struct(Vec<Field>),
+    Enum(Vec<Constructor<TcIdent>>)
 }
 
 pub trait TypeEnv {
@@ -100,7 +100,7 @@ impl <'a> Typecheck<'a> {
             self.module.insert(f.name.name, f.name.typ.clone());
         }
         for s in module.structs.mut_iter() {
-            let fields = s.fields.iter().map(|f| (f.name, f.typ.clone())).collect();
+            let fields = s.fields.clone();
             self.type_infos.insert(s.name.name, Struct(fields));
 
             let args = s.fields.iter().map(|f| f.typ.clone()).collect();
@@ -108,7 +108,7 @@ impl <'a> Typecheck<'a> {
             self.module.insert(s.name.name, s.name.typ.clone());
         }
         for e in module.enums.iter() {
-            self.type_infos.insert(e.name.name, Enum(e.clone()));
+            self.type_infos.insert(e.name.name, Enum(e.constructors.clone()));
             for ctor in e.constructors.iter() {
                 let typ = FunctionType(ctor.arguments.clone(), box Type(e.name.name));
                 self.module.insert(ctor.name.name, typ);
@@ -130,7 +130,7 @@ impl <'a> Typecheck<'a> {
             .map(|_| ())
     }
 
-    fn typecheck(&mut self, expr: &mut Expr<TcIdent>) -> TcResult {
+    pub fn typecheck(&mut self, expr: &mut Expr<TcIdent>) -> TcResult {
         match *expr {
             Identifier(ref mut id) => {
                 id.typ = try!(self.find(id.id()));
@@ -233,8 +233,8 @@ impl <'a> Typecheck<'a> {
                         match *type_info {
                             Struct(ref fields) => {
                                 id.typ = try!(fields.iter()
-                                    .find(|& &(ref name, _)| *name == id.name)
-                                    .map(|&(_, ref t)| Ok(t.clone()))
+                                    .find(|field| field.name == id.name)
+                                    .map(|field| Ok(field.typ.clone()))
                                     .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone()))));
                                 Ok(id.typ.clone())
                             }
@@ -257,8 +257,8 @@ impl <'a> Typecheck<'a> {
             ConstructorPattern(ref name, ref mut args) => {
                 //Find the enum constructor and return the types for its arguments
                 let argument_types: Vec<TcType> = match *try!(self.find_type_info(&typename)) {
-                    Enum(ref e) => {
-                        match e.constructors.iter().find(|ctor| ctor.name.id() == name.id()) {
+                    Enum(ref ctors) => {
+                        match ctors.iter().find(|ctor| ctor.name.id() == name.id()) {
                             Some(ctor) => ctor.arguments.iter().map(|t| t.clone()).collect(),
                             None => return Err(TypeError("Undefined constructor"))
                         }

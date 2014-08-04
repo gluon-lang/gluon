@@ -101,13 +101,17 @@ impl VM {
         &self.globals[index]
     }
 
-    pub fn run_function(&self, cf: &CompiledFunction) -> Value {
+    pub fn run_function(&self, cf: &CompiledFunction) -> Option<Value> {
+        self.execute_instructions(cf.instructions.as_slice())
+    }
+
+    pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value> {
         let mut stack = Vec::new();
         {
             let frame = StackFrame::new(&mut stack, 0);
-            self.execute(frame, cf.instructions.as_slice());
+            self.execute(frame, instructions);
         }
-        stack.pop().expect("Expected return value")
+        stack.pop()
     }
 
     fn execute<'a>(&self, mut stack: StackFrame<'a>, instructions: &[Instruction]) {
@@ -262,7 +266,7 @@ fn binop_float<'a>(stack: &mut StackFrame<'a>, f: |f64, f64| -> f64) {
     })
 }
 
-pub fn run_main(s: &str) -> Result<Value, String> {
+pub fn run_main(s: &str) -> Result<Option<Value>, String> {
     use std::io::BufReader;
     use ast::*;
     use parser::Parser;
@@ -277,7 +281,7 @@ pub fn run_main(s: &str) -> Result<Value, String> {
     try!(tc.typecheck_module(&mut module)
         .map_err(|e| format!("{}", e)));
     let mut compiler = Compiler::new(&module);
-    let functions = compiler.compile_module(&module);
+    let functions = compiler.compile_module(&module).functions;
     let mut vm = VM::new();
     vm.new_functions(functions);
     let v = vm.run_function(vm.get_function(0));
@@ -308,7 +312,7 @@ fn main() -> int {
 ";
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Int(8));
+        assert_eq!(value, Some(Int(8)));
     }
 }
 
