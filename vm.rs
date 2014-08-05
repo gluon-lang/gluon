@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::collections::HashMap;
 use ast::FunctionType;
-use typecheck::{TypeEnv, Typecheck, TcIdent, TcType, TypeInfo, Struct, Enum};
+use typecheck::{TypeEnv, TypeInfos, Typecheck, TcIdent, TcType, TypeInfo, Struct, Enum};
 use compiler::*;
 use interner::{InternedStr, intern};
 
@@ -41,7 +41,7 @@ enum Global_ {
 
 pub struct VM {
     globals: Vec<Global>,
-    type_infos: HashMap<InternedStr, TypeInfo>
+    type_infos: TypeInfos
 }
 
 impl CompilerEnv for VM {
@@ -51,6 +51,21 @@ impl CompilerEnv for VM {
             .find(|&(_, f)| f.id == *id)
             .map(|(i, _)| Global(i))
     }
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+        (*self).find_field(struct_, field)
+    }
+
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
+        match self.type_infos.enums.find(enum_) {
+            Some(ctors) => {
+                ctors.iter()
+                    .enumerate()
+                    .find(|&(_, c)| c.name.id() == ctor_name)
+                    .map(|(i, _)| i)
+            }
+            None => None
+        }
+    }
 }
 
 impl TypeEnv for VM {
@@ -59,8 +74,8 @@ impl TypeEnv for VM {
             .find(|f| f.id == *id)
             .map(|f| &f.typ)
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<&TypeInfo> {
-        self.type_infos.find(id)
+    fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
+        self.type_infos.find_type_info(id)
     }
 }
 
@@ -103,7 +118,7 @@ impl <'a> StackFrame<'a> {
 impl VM {
     
     pub fn new() -> VM {
-        VM { globals: Vec::new(), type_infos: HashMap::new() }
+        VM { globals: Vec::new(), type_infos: TypeInfos::new() }
     }
 
     pub fn new_functions(&mut self, fns: Vec<CompiledFunction>) {
@@ -331,10 +346,12 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
         let mut tc = Typecheck::new();
         tc.add_environment(vm);
         tryf!(tc.typecheck_module(&mut module));
-        let mut compiler = Compiler::new(vm);
+        let env = (vm, &module);
+        let mut compiler = Compiler::new(&env);
         compiler.compile_module(&module)
     };
     vm.new_functions(assembly.functions);
+    vm.type_infos.add_module(&module);
     Ok(())
 }
 
@@ -368,6 +385,26 @@ fn main() -> int {
     };
     x = x * 2 + 2;
     x
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(8)));
+    }
+
+    #[test]
+    fn unpack_enum() {
+        let text =
+r"
+fn main() -> int {
+    match A(8) {
+        A(x) => { x }
+        B(y) => { 0 }
+    }
+}
+enum AB {
+    A(int),
+    B(float)
 }
 ";
         let value = run_main(text)

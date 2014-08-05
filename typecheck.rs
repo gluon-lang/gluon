@@ -38,20 +38,45 @@ enum TypeError {
 type TcResult = Result<TcType, TypeError>;
 
 
-pub enum TypeInfo {
-    Struct(Vec<Field>),
-    Enum(Vec<Constructor<TcIdent>>)
+pub enum TypeInfo<'a> {
+    Struct(&'a [Field]),
+    Enum(&'a [Constructor<TcIdent>])
+}
+
+pub struct TypeInfos {
+    pub structs: HashMap<InternedStr, Vec<Field>>,
+    pub enums: HashMap<InternedStr, Vec<Constructor<TcIdent>>>,
+}
+
+impl TypeInfos {
+    pub fn new() -> TypeInfos {
+        TypeInfos { structs: HashMap::new(), enums: HashMap::new() }
+    }
+    pub fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
+        self.structs.find(id)
+            .map(|s| Struct(s.as_slice()))
+            .or_else(|| self.enums.find(id).map(|e| Enum(e.as_slice())))
+    }
+    pub fn add_module(&mut self, module: &Module<TcIdent>) {
+        for s in module.structs.iter() {
+            let fields = s.fields.clone();
+            self.structs.insert(s.name.name, fields);
+        }
+        for e in module.enums.iter() {
+            self.enums.insert(e.name.name, e.constructors.clone());
+        }
+    }
 }
 
 pub trait TypeEnv {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType>;
-    fn find_type_info(&self, id: &InternedStr) -> Option<&TypeInfo>;
+    fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo>;
 }
 
 pub struct Typecheck<'a> {
     environment: Option<&'a TypeEnv>,
+    type_infos: TypeInfos,
     module: HashMap<InternedStr, TcType>,
-    type_infos: HashMap<InternedStr, TypeInfo>,
     stack: ScopedMap<InternedStr, TcType>
 }
 
@@ -63,8 +88,8 @@ impl <'a> TypeEnv for Typecheck<'a> {
             .or_else(|| self.environment.and_then(|e| e.find_type(id)))
     }
 
-    fn find_type_info(&self, id: &InternedStr) -> Option<&TypeInfo> {
-        self.type_infos.find(id)
+    fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
+        self.type_infos.find_type_info(id)
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
     }
 }
@@ -75,7 +100,7 @@ impl <'a> Typecheck<'a> {
         Typecheck {
             environment: None,
             module: HashMap::new(),
-            type_infos: HashMap::new(),
+            type_infos: TypeInfos::new(),
             stack: ScopedMap::new()
         }
     }
@@ -87,7 +112,7 @@ impl <'a> Typecheck<'a> {
             .unwrap_or_else(|| Err(UndefinedVariable(id.clone())))
     }
 
-    fn find_type_info(&self, id: &InternedStr) -> Result<&TypeInfo, TypeError> {
+    fn find_type_info(&self, id: &InternedStr) -> Result<TypeInfo, TypeError> {
         (self as &TypeEnv).find_type_info(id)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
@@ -107,16 +132,13 @@ impl <'a> Typecheck<'a> {
             f.name.typ = FunctionType(f.arguments.iter().map(|f| f.typ.clone()).collect(), box f.return_type.clone());
             self.module.insert(f.name.name, f.name.typ.clone());
         }
+        self.type_infos.add_module(module);
         for s in module.structs.mut_iter() {
-            let fields = s.fields.clone();
-            self.type_infos.insert(s.name.name, Struct(fields));
-
             let args = s.fields.iter().map(|f| f.typ.clone()).collect();
             s.name.typ = FunctionType(args, box Type(s.name.name));
             self.module.insert(s.name.name, s.name.typ.clone());
         }
         for e in module.enums.iter() {
-            self.type_infos.insert(e.name.name, Enum(e.constructors.clone()));
             for ctor in e.constructors.iter() {
                 let typ = FunctionType(ctor.arguments.clone(), box Type(e.name.name));
                 self.module.insert(ctor.name.name, typ);
@@ -238,7 +260,7 @@ impl <'a> Typecheck<'a> {
                 match typ {
                     Type(ref struct_id) => {
                         let type_info = try!(self.find_type_info(struct_id));
-                        match *type_info {
+                        match type_info {
                             Struct(ref fields) => {
                                 id.typ = try!(fields.iter()
                                     .find(|field| field.name == id.name)
@@ -264,7 +286,7 @@ impl <'a> Typecheck<'a> {
         match *pattern {
             ConstructorPattern(ref name, ref mut args) => {
                 //Find the enum constructor and return the types for its arguments
-                let argument_types: Vec<TcType> = match *try!(self.find_type_info(&typename)) {
+                let argument_types: Vec<TcType> = match try!(self.find_type_info(&typename)) {
                     Enum(ref ctors) => {
                         match ctors.iter().find(|ctor| ctor.name.id() == name.id()) {
                             Some(ctor) => ctor.arguments.iter().map(|t| t.clone()).collect(),

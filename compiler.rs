@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use interner::*;
 use ast::*;
-use typecheck::{Typed, TcIdent, TcType, TypeInfo, Enum, Struct};
+use typecheck::{Typed, TcIdent, TcType, TypeInfos, Enum, Struct};
 
 #[deriving(Show)]
 pub enum Instruction {
@@ -48,29 +48,13 @@ pub struct CompiledFunction {
 
 pub struct Assembly {
     pub functions: Vec<CompiledFunction>,
-    pub types: Vec<TypeInfo>
+    pub types: TypeInfos
 }
 
 pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
-    fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint> {
-        None
-    }
-    fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<uint> {
-        None
-    }
-}
-
-impl CompilerEnv for () {
-    fn find_var(&self, _: &InternedStr) -> Option<Variable> {
-        None
-    }
-}
-
-impl CompilerEnv for HashMap<InternedStr, Variable> {
-    fn find_var(&self, s: &InternedStr) -> Option<Variable> {
-        self.find(s).map(|x| *x)
-    }
+    fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint>;
+    fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<uint>;
 }
 
 impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
@@ -83,6 +67,12 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         let &(ref outer, ref inner) = self;
         inner.find_field(struct_, field)
             .or_else(|| outer.find_field(struct_, field))
+    }
+
+    fn find_tag(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+        let &(ref outer, ref inner) = self;
+        inner.find_tag(struct_, field)
+            .or_else(|| outer.find_tag(struct_, field))
     }
 }
 
@@ -128,7 +118,14 @@ impl CompilerEnv for Module<TcIdent> {
 
 impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
-        self.find_var(s)
+        (*self).find_var(s)
+    }
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+        (*self).find_field(struct_, field)
+    }
+
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
+        (*self).find_tag(enum_, ctor_name)
     }
 }
 
@@ -144,18 +141,17 @@ impl <'a> Compiler<'a> {
     }
 
     fn find(&self, s: &InternedStr) -> Option<Variable> {
-        self.stack.find_var(s)
+        self.stack.find(s)
+            .map(|x| *x)
             .or_else(||  self.globals.find_var(s))
     }
 
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
-        self.stack.find_field(struct_, field)
-            .or_else(||  self.globals.find_field(struct_, field))
+        self.globals.find_field(struct_, field)
     }
 
     fn find_tag(&self, enum_: &InternedStr, constructor: &InternedStr) -> Option<uint> {
-        self.stack.find_field(enum_, constructor)
-            .or_else(|| self.globals.find_tag(enum_, constructor))
+        self.globals.find_tag(enum_, constructor)
     }
 
     fn new_stack_var(&mut self, s: InternedStr) {
@@ -174,10 +170,8 @@ impl <'a> Compiler<'a> {
         let functions = module.functions.iter()
             .map(|f| self.compile_function(f))
             .collect();
-        let types = module.structs.iter()
-            .map(|s| Struct(s.fields.clone()))
-            .chain(module.enums.iter().map(|e| Enum(e.constructors.clone())))
-            .collect();
+        let mut types = TypeInfos::new();
+        types.add_module(module);
         Assembly { functions: functions, types: types }
     }
 
@@ -382,7 +376,7 @@ impl <'a> Compiler<'a> {
                     match alt.pattern {
                         ConstructorPattern(ref id, _) => {
                             let tag = self.find_tag(typename, id.id())
-                                .expect("Could not find tag");
+                                .unwrap_or_else(|| fail!("Could not find tag for {}::{}", typename, id.id()));
                             instructions.push(TestTag(tag));
                             start_jumps.push(instructions.len());
                             instructions.push(CJump(0));
