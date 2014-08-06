@@ -81,12 +81,24 @@ pub struct Enum<Id> {
     pub name: Id,
     pub constructors: Vec<Constructor<Id>>
 }
+#[deriving(Clone, PartialEq, Show)]
+pub struct FunctionDeclaration<Id> {
+    pub name: Id,
+    pub arguments: Vec<Field>,
+    pub return_type: Type<InternedStr>,
+}
+#[deriving(Clone, PartialEq, Show)]
+pub struct Trait<Id> {
+    pub name: Id,
+    pub declarations: Vec<FunctionDeclaration<Id>>
+}
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Module<Id> {
     pub enums: Vec<Enum<Id>>,
     pub functions: Vec<Function<Id>>,
-    pub structs: Vec<Struct<Id>>
+    pub structs: Vec<Struct<Id>>,
+    pub traits: Vec<Trait<Id>>
 }
 
 pub static int_type: Type<InternedStr> = LiteralType(IntType);

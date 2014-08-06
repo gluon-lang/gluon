@@ -94,15 +94,17 @@ impl <'a, PString> Parser<'a, PString> {
         let mut fns = Vec::new();
         let mut structs = Vec::new();
         let mut enums = Vec::new();
+        let mut traits = Vec::new();
         loop {
             match *self.lexer.peek() {
                 TFn => fns.push(try!(self.function())),
                 TStruct => structs.push(try!(self.struct_())),
                 TEnum => enums.push(try!(self.enum_())),
+                TTrait => traits.push(try!(self.trait_())),
                 _ => break
             }
         }
-        Ok(Module { enums: enums, functions: fns, structs: structs })
+        Ok(Module { enums: enums, functions: fns, structs: structs, traits: traits })
     }
 
     fn statement(&mut self) -> ParseResult<(Expr<PString>, bool)> {
@@ -347,7 +349,17 @@ impl <'a, PString> Parser<'a, PString> {
         Ok(Struct { name: self.make_id(name), fields: fields })
     }
 
-    pub fn function(&mut self) -> ParseResult<Function<PString>> {
+    pub fn trait_(&mut self) -> ParseResult<Trait<PString>> {
+        expect!(self, TTrait);
+        let name = expect1!(self, TIdentifier(x));
+        let declarations = try!(self.braces(|this| this.many(|this| {
+            let decl = try!(this.function_declaration());
+            expect!(this, TSemicolon);
+            Ok(decl)
+        })));
+        Ok(Trait { name: self.make_id(name), declarations: declarations })
+    }
+    pub fn function_declaration(&mut self) -> ParseResult<FunctionDeclaration<PString>> {
         expect!(self, TFn);
         let name = expect1!(self, TIdentifier(x));
         let arguments = try!(self.parens(|this|
@@ -360,8 +372,13 @@ impl <'a, PString> Parser<'a, PString> {
         else {
             unit_type.clone()
         };
+        Ok(FunctionDeclaration { name: self.make_id(name), arguments: arguments, return_type: return_type })
+    }
+
+    pub fn function(&mut self) -> ParseResult<Function<PString>> {
+        let FunctionDeclaration { name: name, arguments: arguments, return_type: return_type } = try!(self.function_declaration());
         let expr = try!(self.block());
-        Ok(Function { name: self.make_id(name), arguments: arguments, return_type: return_type, expression: expr })
+        Ok(Function { name: name, arguments: arguments, return_type: return_type, expression: expr })
     }
 
     fn braces<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<T> {
@@ -506,7 +523,33 @@ pub mod tests {
                 fields: vec![field("y", int_type.clone()), field("f", float_type.clone())]
             }],
             functions: vec![],
-            enums: vec![]
+            enums: vec![],
+            traits: vec![]
+        };
+        assert_eq!(module, expected);
+    }
+    #[test]
+    fn trait_() {
+        let module = parse("trait Test { fn test(x: Self) -> int; fn test2(x: int, y: Self); }", |p| p.module());
+        let expected = Module {
+            structs: vec![],
+            functions: vec![],
+            enums: vec![],
+            traits: vec![Trait {
+                name: intern("Test"),
+                declarations: vec![
+                    FunctionDeclaration {
+                        name: intern("test"),
+                        arguments: vec![field("x", typ("Self"))],
+                        return_type: int_type.clone()
+                    },
+                    FunctionDeclaration {
+                        name: intern("test2"),
+                        arguments: vec![field("x", int_type.clone()), field("y", typ("Self"))],
+                        return_type: unit_type.clone()
+                    },
+                ]
+            }]
         };
         assert_eq!(module, expected);
     }
