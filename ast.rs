@@ -92,13 +92,20 @@ pub struct Trait<Id> {
     pub name: Id,
     pub declarations: Vec<FunctionDeclaration<Id>>
 }
+#[deriving(Clone, PartialEq, Show)]
+pub struct Impl<Id> {
+    pub trait_name: Id,
+    pub type_name: Id,
+    pub functions: Vec<Function<Id>>
+}
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Module<Id> {
     pub enums: Vec<Enum<Id>>,
     pub functions: Vec<Function<Id>>,
     pub structs: Vec<Struct<Id>>,
-    pub traits: Vec<Trait<Id>>
+    pub traits: Vec<Trait<Id>>,
+    pub impls: Vec<Impl<Id>>
 }
 
 pub static int_type: Type<InternedStr> = LiteralType(IntType);

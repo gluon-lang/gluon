@@ -95,16 +95,18 @@ impl <'a, PString> Parser<'a, PString> {
         let mut structs = Vec::new();
         let mut enums = Vec::new();
         let mut traits = Vec::new();
+        let mut impls = Vec::new();
         loop {
             match *self.lexer.peek() {
                 TFn => fns.push(try!(self.function())),
                 TStruct => structs.push(try!(self.struct_())),
                 TEnum => enums.push(try!(self.enum_())),
                 TTrait => traits.push(try!(self.trait_())),
+                TImpl => impls.push(try!(self.impl_())),
                 _ => break
             }
         }
-        Ok(Module { enums: enums, functions: fns, structs: structs, traits: traits })
+        Ok(Module { enums: enums, functions: fns, structs: structs, traits: traits, impls: impls })
     }
 
     fn statement(&mut self) -> ParseResult<(Expr<PString>, bool)> {
@@ -359,6 +361,15 @@ impl <'a, PString> Parser<'a, PString> {
         })));
         Ok(Trait { name: self.make_id(name), declarations: declarations })
     }
+    pub fn impl_(&mut self) -> ParseResult<Impl<PString>> {
+        expect!(self, TImpl);
+        let trait_name = expect1!(self, TIdentifier(x));
+        expect!(self, TFor);
+        let type_name = expect1!(self, TIdentifier(x));
+        let functions = try!(self.braces(|this| this.many(|this| this.function() )));
+        Ok(Impl { trait_name: self.make_id(trait_name), type_name: self.make_id(type_name), functions: functions })
+    }
+
     pub fn function_declaration(&mut self) -> ParseResult<FunctionDeclaration<PString>> {
         expect!(self, TFn);
         let name = expect1!(self, TIdentifier(x));
@@ -516,41 +527,36 @@ pub mod tests {
     }
     #[test]
     fn struct_() {
-        let module = parse("struct Test { y: int, f: float }", |p| p.module());
-        let expected = Module {
-            structs: vec![Struct {
-                name: intern("Test"),
-                fields: vec![field("y", int_type.clone()), field("f", float_type.clone())]
-            }],
-            functions: vec![],
-            enums: vec![],
-            traits: vec![]
+        let module = parse("struct Test { y: int, f: float }", |p| p.struct_());
+        let expected = Struct {
+            name: intern("Test"),
+            fields: vec![field("y", int_type.clone()), field("f", float_type.clone())]
         };
         assert_eq!(module, expected);
     }
     #[test]
     fn trait_() {
-        let module = parse("trait Test { fn test(x: Self) -> int; fn test2(x: int, y: Self); }", |p| p.module());
-        let expected = Module {
-            structs: vec![],
-            functions: vec![],
-            enums: vec![],
-            traits: vec![Trait {
-                name: intern("Test"),
-                declarations: vec![
-                    FunctionDeclaration {
-                        name: intern("test"),
-                        arguments: vec![field("x", typ("Self"))],
-                        return_type: int_type.clone()
-                    },
-                    FunctionDeclaration {
-                        name: intern("test2"),
-                        arguments: vec![field("x", int_type.clone()), field("y", typ("Self"))],
-                        return_type: unit_type.clone()
-                    },
-                ]
-            }]
+        let module = parse("trait Test { fn test(x: Self) -> int; fn test2(x: int, y: Self); }", |p| p.trait_());
+        let expected = Trait {
+            name: intern("Test"),
+            declarations: vec![
+                FunctionDeclaration {
+                    name: intern("test"),
+                    arguments: vec![field("x", typ("Self"))],
+                    return_type: int_type.clone()
+                },
+                FunctionDeclaration {
+                    name: intern("test2"),
+                    arguments: vec![field("x", int_type.clone()), field("y", typ("Self"))],
+                    return_type: unit_type.clone()
+                },
+            ]
         };
         assert_eq!(module, expected);
+    }
+    #[test]
+    fn impl_() {
+        parse(
+r"impl Test for int { fn test(x: Self) -> int { x } fn test2(x: int, y: Self) { x + y; } }", |p| p.impl_());
     }
 }
