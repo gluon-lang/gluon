@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use scoped_map::ScopedMap;
 use ast::*;
 use interner::*;
@@ -32,6 +33,7 @@ enum TypeError {
     TypeMismatch(TcType, TcType),
     UndefinedStruct(InternedStr),
     UndefinedField(InternedStr, InternedStr),
+    UndefinedTrait(InternedStr),
     TypeError(&'static str)
 }
 
@@ -46,16 +48,31 @@ pub enum TypeInfo<'a> {
 pub struct TypeInfos {
     pub structs: HashMap<InternedStr, Vec<Field>>,
     pub enums: HashMap<InternedStr, Vec<Constructor<TcIdent>>>,
+    impls: HashMap<TcType, HashSet<TcType>>,
+    traits: HashMap<InternedStr, Vec<(InternedStr, TcType)>>
 }
 
 impl TypeInfos {
     pub fn new() -> TypeInfos {
-        TypeInfos { structs: HashMap::new(), enums: HashMap::new() }
+        TypeInfos {
+            structs: HashMap::new(),
+            enums: HashMap::new(),
+            traits: HashMap::new(),
+            impls: HashMap::new()
+        }
     }
     pub fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
         self.structs.find(id)
             .map(|s| Struct(s.as_slice()))
             .or_else(|| self.enums.find(id).map(|e| Enum(e.as_slice())))
+    }
+    pub fn has_impl_of_trait(&self, typ: &TcType, trait_id: &TcType) -> bool {
+        self.impls.find(typ)
+            .map(|set| set.contains(trait_id))
+            .unwrap_or(false)
+    }
+    pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, TcType)]> {
+        self.traits.find(name).map(|v| v.as_slice())
     }
     pub fn add_module(&mut self, module: &Module<TcIdent>) {
         for s in module.structs.iter() {
@@ -64,6 +81,17 @@ impl TypeInfos {
         }
         for e in module.enums.iter() {
             self.enums.insert(e.name.name, e.constructors.clone());
+        }
+        for t in module.traits.iter() {
+            let function_types = t.declarations.iter().map(|f| {
+                let arg_types = f.arguments.iter().map(|f| f.typ.clone()).collect();
+                (f.name.id().clone(), FunctionType(arg_types, box f.return_type.clone()))
+            }).collect();
+            self.traits.insert(t.name.id().clone(), function_types);
+        }
+        for imp in module.impls.iter() {
+            let set = self.impls.find_or_insert(Type(imp.type_name.id().clone()), HashSet::new());
+            set.insert(Type(imp.trait_name.id().clone()));
         }
     }
 }
@@ -77,7 +105,7 @@ pub struct Typecheck<'a> {
     environment: Option<&'a TypeEnv>,
     type_infos: TypeInfos,
     module: HashMap<InternedStr, TcType>,
-    stack: ScopedMap<InternedStr, TcType>
+    stack: ScopedMap<InternedStr, TcType>,
 }
 
 impl <'a> TypeEnv for Typecheck<'a> {
@@ -101,7 +129,7 @@ impl <'a> Typecheck<'a> {
             environment: None,
             module: HashMap::new(),
             type_infos: TypeInfos::new(),
-            stack: ScopedMap::new()
+            stack: ScopedMap::new(),
         }
     }
     
@@ -116,6 +144,18 @@ impl <'a> Typecheck<'a> {
         (self as &TypeEnv).find_type_info(id)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
+    }
+    
+    fn find_trait(&self, name: &InternedStr) -> Result<&[(InternedStr, TcType)], TypeError> {
+        self.type_infos.find_trait(name)
+            .map(Ok)
+            .unwrap_or_else(|| Err(UndefinedTrait(name.clone())))
+    }
+    fn has_trait(&self, typ: &TcType) -> bool {
+        match *typ {
+            Type(ref id) => self.find_trait(id).is_ok(),
+            _ => false
+        }
     }
 
     fn stack_var(&mut self, id: InternedStr, typ: TcType) {
@@ -147,7 +187,47 @@ impl <'a> Typecheck<'a> {
         for f in module.functions.mut_iter() {
             try!(self.typecheck_function(f));
         }
+        for imp in module.impls.mut_iter() {
+            {
+                let trait_functions = try!(self.find_trait(imp.trait_name.id()));
+                for f in imp.functions.iter() {
+                    let trait_function_type = try!(trait_functions.iter()
+                        .find(|& &(ref name, _)| name == f.name.id())
+                        .map(Ok)
+                        .unwrap_or_else(|| Err(TypeError("Function does not exist in trait"))));
+                    try!(self.unify_trait_function(&Type(imp.type_name.id().clone()), trait_function_type.ref1(), f));
+                }
+            }
+            for f in imp.functions.mut_iter() {
+                try!(self.typecheck_function(f));
+            }
+        }
         Ok(())
+    }
+
+    ///Checks that a function implemented for a trait has the correct type
+    ///The special Self type in the trait is replaced with the type which implements that trait and is then unified
+    ///with the actual type
+    fn unify_trait_function(&self, self_type: &TcType, trait_function_type: &TcType, actual: &Function<TcIdent>) -> Result<(), TypeError> {
+        use std::result;
+        debug!("Unify trait {} ==>\n{} <=> {}", self_type, trait_function_type, actual);
+        match *trait_function_type {
+            FunctionType(ref args, ref return_type) => {
+                try!(result::fold(args.iter()
+                    .zip(actual.arguments.iter())
+                    .map(|(e, a)| self.unify_self(self_type, e, &a.typ)), (), |_, _| ()));
+                self.unify_self(self_type, &**return_type, &actual.return_type)
+            }
+            _ => Err(TypeError("Trait function has non function type"))
+        }
+    }
+    
+    ///Unifies a type which might have 'Self' types in its type
+    fn unify_self(&self, self_type: &TcType, trait_function_type: &TcType, actual: &TcType) -> Result<(), TypeError> {
+        let mut x = trait_function_type.clone();
+        replace_self(&mut x, self_type);
+        self.unify(&x, actual.clone())
+            .map(|_| ())
     }
 
     fn typecheck_function(&mut self, function: &mut Function<TcIdent>) -> Result<(), TypeError> {
@@ -308,12 +388,33 @@ impl <'a> Typecheck<'a> {
     }
 
     fn unify(&self, expected: &TcType, actual: TcType) -> TcResult {
+        debug!("Unify {} <=> {}", expected, actual);
         if *expected == actual {
+            Ok(actual)
+        }
+        else if self.has_trait(expected) && self.type_infos.has_impl_of_trait(expected, &actual) {
             Ok(actual)
         }
         else {
             Err(TypeMismatch(expected.clone(), actual))
         }
+    }
+}
+
+fn replace_self(replace_in: &mut TcType, typ: &TcType) {
+    let replace = match *replace_in {
+        Type(ref id) if id.as_slice() == "Self" => true,
+        FunctionType(ref mut args, ref mut return_type) => {
+            for a in args.mut_iter() {
+                replace_self(a, typ);
+            }
+            replace_self(&mut **return_type, typ);
+            false
+        }
+        _ => false
+    };
+    if replace {
+        *replace_in = typ.clone();
     }
 }
 
@@ -416,5 +517,55 @@ fn main() -> int {
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| fail!("{}", err))
 
+    }
+    #[test]
+    fn traits() {
+        let text = 
+r"
+struct Vec {
+    x: int,
+    y: int
+}
+
+trait Add {
+    fn add(l: Self, r: Self) -> Self;
+}
+
+impl Add for Vec {
+    fn add(l: Vec, r: Vec) -> Vec {
+        Vec(l.x + r.x, l.y + r.y)
+    }
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err))
+
+    }
+    #[test]
+    ///Check that implementations with its types wrong are not allowed
+    fn traits_wrong_self() {
+        let text = 
+r"
+struct Vec {
+    x: int,
+    y: int
+}
+
+trait Add {
+    fn add(l: Self, r: Self) -> Self;
+}
+
+impl Add for Vec {
+    fn add(l: Vec, r: Vec) -> int {
+        2
+    }
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        let result = tc.typecheck_module(&mut module);
+        assert!(result.is_err());
     }
 }

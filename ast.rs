@@ -1,7 +1,7 @@
 use interner::{InternedStr};
 
 
-#[deriving(Clone, Eq, PartialEq, Show)]
+#[deriving(Clone, Eq, PartialEq, Show, Hash)]
 pub enum LiteralType {
     StringType,
     IntType,
@@ -10,7 +10,7 @@ pub enum LiteralType {
     UnitType
 }
 
-#[deriving(Clone, Eq, PartialEq, Show)]
+#[deriving(Clone, Eq, PartialEq, Show, Hash)]
 pub enum Type<Id> {
     Type(Id),
     FunctionType(Vec<Type<Id>>, Box<Type<Id>>),
