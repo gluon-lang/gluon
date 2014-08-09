@@ -17,6 +17,8 @@ pub enum Type<Id> {
     LiteralType(LiteralType)
 }
 
+pub type VMType = Type<InternedStr>;
+
 #[deriving(Clone, PartialEq, Show)]
 pub enum Literal {
     Integer(int),

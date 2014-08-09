@@ -2,8 +2,8 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt;
 use std::collections::HashMap;
-use ast::FunctionType;
-use typecheck::{TypeEnv, TypeInfos, Typecheck, TcIdent, TcType, TypeInfo, Struct, Enum};
+use ast::VMType;
+use typecheck::*;
 use compiler::*;
 use interner::{InternedStr, intern};
 
@@ -339,7 +339,7 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
     use ast::*;
     use parser::Parser;
 
-    let mut parser = Parser::new(buffer, |s| TcIdent { typ: unit_type.clone(), name: s });
+    let mut parser = Parser::new(buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
     let mut module = tryf!(parser.module());
     let assembly = {
         let vm: &VM = vm;
@@ -368,6 +368,8 @@ pub fn run_main(s: &str) -> Result<Option<Value>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::rc::Rc;
+    use std::cell::RefCell;
     ///Test that the stack is adjusted correctly after executing expressions as statements
     #[test]
     fn stack_for_block() {
@@ -410,6 +412,33 @@ enum AB {
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(8)));
+    }
+    #[test]
+    fn call_trait_function() {
+        let text =
+r"
+fn main() -> Vec {
+    let x = Vec(1, 2);
+    add(x, Vec(10, 0))
+}
+struct Vec {
+    x: int,
+    y: int
+}
+
+trait Add {
+    fn add(l: Self, r: Self) -> Self;
+}
+
+impl Add for Vec {
+    fn add(l: Vec, r: Vec) -> Vec {
+        Vec(l.x + r.x, l.y + r.y)
+    }
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(11), Int(2)])))));
     }
 }
 

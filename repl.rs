@@ -1,9 +1,9 @@
 use std::io::BufReader;
 use std::io::IoResult;
 
-use ast::{int_type, unit_type};
 use parser::Parser;
-use typecheck::{TcIdent, Typecheck};
+use typecheck::*;
+use ast::*;
 use compiler::Compiler;
 use vm::{VM, StackFrame, load_script};
 
@@ -17,7 +17,7 @@ fn print(_: &VM, mut stack: StackFrame) {
 
 pub fn run() {
     let mut vm = VM::new();
-    vm.extern_function("printInt", vec![int_type.clone()], unit_type.clone(), print);
+    vm.extern_function("printInt", vec![int_type_tc.clone()], unit_type_tc.clone(), print);
     for line in ::std::io::stdin().lines() {
         match run_line(&mut vm, line) {
             Ok(continue_repl) => {
@@ -42,7 +42,7 @@ fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
         _ => ()
     }
     let mut buffer = BufReader::new(expr_str.as_bytes());
-    let mut parser = Parser::new(&mut buffer, |s| TcIdent { name: s, typ: unit_type.clone() });
+    let mut parser = Parser::new(&mut buffer, |s| TcIdent { name: s, typ: unit_type_tc.clone() });
     let mut expr = try!(parser.expression());
     let mut instructions = Vec::new();
     {

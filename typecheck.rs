@@ -2,8 +2,15 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use scoped_map::ScopedMap;
 use ast::*;
+use ast;
 use interner::*;
 
+
+pub static int_type_tc: TcType = BuiltinType(IntType);
+pub static float_type_tc: TcType = BuiltinType(FloatType);
+pub static string_type_tc: TcType = BuiltinType(StringType);
+pub static bool_type_tc: TcType = BuiltinType(BoolType);
+pub static unit_type_tc: TcType = BuiltinType(UnitType);
 
 
 #[deriving(Clone, Eq, PartialEq, Show)]
@@ -23,7 +30,24 @@ impl Str for TcIdent {
     }
 }
 
-pub type TcType = Type<InternedStr>;
+#[deriving(Clone, Eq, PartialEq, Hash, Show)]
+pub enum TcType {
+    Type(InternedStr),
+    TypeVariable(uint),
+    FunctionType(Vec<TcType>, Box<TcType>),
+    BuiltinType(LiteralType)
+}
+
+fn from_vm_type(typ: &VMType) -> TcType {
+    match *typ {
+        ast::Type(ref id) => Type(*id),
+        ast::FunctionType(ref args, ref return_type) => {
+            let args2 = args.iter().map(|a| from_vm_type(a)).collect();
+            FunctionType(args2, box from_vm_type(&**return_type))
+        }
+        ast::LiteralType(ref id) => BuiltinType(*id),
+    }
+}
 
 #[deriving(Show)]
 enum TypeError {
@@ -84,8 +108,8 @@ impl TypeInfos {
         }
         for t in module.traits.iter() {
             let function_types = t.declarations.iter().map(|f| {
-                let arg_types = f.arguments.iter().map(|f| f.typ.clone()).collect();
-                (f.name.id().clone(), FunctionType(arg_types, box f.return_type.clone()))
+                let arg_types = f.arguments.iter().map(|f| from_vm_type(&f.typ)).collect();
+                (f.name.id().clone(), FunctionType(arg_types, box from_vm_type(&f.return_type)))
             }).collect();
             self.traits.insert(t.name.id().clone(), function_types);
         }
@@ -169,18 +193,19 @@ impl <'a> Typecheck<'a> {
     pub fn typecheck_module(&mut self, module: &mut Module<TcIdent>) -> Result<(), TypeError> {
         
         for f in module.functions.mut_iter() {
-            f.name.typ = FunctionType(f.arguments.iter().map(|f| f.typ.clone()).collect(), box f.return_type.clone());
+            f.name.typ = FunctionType(f.arguments.iter().map(|f| from_vm_type(&f.typ)).collect(), box from_vm_type(&f.return_type));
             self.module.insert(f.name.name, f.name.typ.clone());
         }
         self.type_infos.add_module(module);
         for s in module.structs.mut_iter() {
-            let args = s.fields.iter().map(|f| f.typ.clone()).collect();
+            let args = s.fields.iter().map(|f| from_vm_type(&f.typ)).collect();
             s.name.typ = FunctionType(args, box Type(s.name.name));
             self.module.insert(s.name.name, s.name.typ.clone());
         }
         for e in module.enums.iter() {
             for ctor in e.constructors.iter() {
-                let typ = FunctionType(ctor.arguments.clone(), box Type(e.name.name));
+                let args = ctor.arguments.iter().map(|t| from_vm_type(t)).collect();
+                let typ = FunctionType(args, box Type(e.name.name));
                 self.module.insert(ctor.name.name, typ);
             }
         }
@@ -215,8 +240,8 @@ impl <'a> Typecheck<'a> {
             FunctionType(ref args, ref return_type) => {
                 try!(result::fold(args.iter()
                     .zip(actual.arguments.iter())
-                    .map(|(e, a)| self.unify_self(self_type, e, &a.typ)), (), |_, _| ()));
-                self.unify_self(self_type, &**return_type, &actual.return_type)
+                    .map(|(e, a)| self.unify_self(self_type, e, &from_vm_type(&a.typ))), (), |_, _| ()));
+                self.unify_self(self_type, &**return_type, &actual.name.typ)
             }
             _ => Err(TypeError("Trait function has non function type"))
         }
@@ -233,25 +258,24 @@ impl <'a> Typecheck<'a> {
     fn typecheck_function(&mut self, function: &mut Function<TcIdent>) -> Result<(), TypeError> {
         self.stack.clear();
         for arg in function.arguments.iter() {
-            self.stack_var(arg.name.clone(), arg.typ.clone());
+            self.stack_var(arg.name.clone(), from_vm_type(&arg.typ));
         }
         let return_type = try!(self.typecheck(&mut function.expression));
-        self.unify(&function.return_type, return_type)
+        self.unify(&from_vm_type(&function.return_type), return_type)
             .map(|_| ())
     }
 
     pub fn typecheck(&mut self, expr: &mut Expr<TcIdent>) -> TcResult {
         match *expr {
             Identifier(ref mut id) => {
-                id.typ = try!(self.find(id.id()));
-                Ok(id.typ.clone())
+                self.find(id.id())
             }
             Literal(ref lit) => {
                 Ok(match *lit {
-                    Integer(_) => int_type.clone(),
-                    Float(_) => float_type.clone(),
-                    String(_) => string_type.clone(),
-                    Bool(_) => bool_type.clone()
+                    Integer(_) => int_type_tc.clone(),
+                    Float(_) => float_type_tc.clone(),
+                    String(_) => string_type_tc.clone(),
+                    Bool(_) => bool_type_tc.clone()
                 })
             }
             Call(ref mut func, ref mut args) => {
@@ -272,16 +296,16 @@ impl <'a> Typecheck<'a> {
             }
             IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut**pred));
-                try!(self.unify(&bool_type, pred_type));
+                try!(self.unify(&bool_type_tc, pred_type));
                 let true_type = try!(self.typecheck(&mut**if_true));
                 let false_type = try!(self.typecheck(&mut**if_false));
                 self.unify(&true_type, false_type)
             }
             While(ref mut pred, ref mut expr) => {
                 let pred_type = try!(self.typecheck(&mut **pred));
-                try!(self.unify(&bool_type, pred_type));
+                try!(self.unify(&bool_type_tc, pred_type));
                 self.typecheck(&mut**expr)
-                    .map(|_| unit_type.clone())
+                    .map(|_| unit_type_tc.clone())
             }
             BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = try!(self.typecheck(&mut**lhs));
@@ -289,20 +313,20 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&lhs_type, rhs_type.clone()));
                 match op.as_slice() {
                     "+" | "-" | "*" => {
-                        if lhs_type == int_type || lhs_type == float_type {
+                        if lhs_type == int_type_tc || lhs_type == float_type_tc {
                             Ok(lhs_type)
                         }
                         else {
                             return Err(TypeError("Expected numbers in binop"))
                         }
                     }
-                    "<" | ">" | "<=" | ">=" => Ok(bool_type.clone()),
+                    "<" | ">" | "<=" | ">=" => Ok(bool_type_tc.clone()),
                     _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
             Block(ref mut exprs) => {
                 self.stack.enter_scope();
-                let mut typ = unit_type.clone();
+                let mut typ = BuiltinType(UnitType);
                 for expr in exprs.mut_iter() {
                     typ = try!(self.typecheck(expr));
                 }
@@ -326,9 +350,9 @@ impl <'a> Typecheck<'a> {
                 Ok(alt1_type)
             }
             Let(ref mut id, ref mut expr) => {
-                id.typ = try!(self.typecheck(&mut **expr));
-                self.stack_var(id.name.clone(), id.typ.clone());
-                Ok(unit_type.clone())
+                let typ = try!(self.typecheck(&mut **expr));
+                self.stack_var(id.name.clone(), typ);
+                Ok(unit_type_tc.clone())
             }
             Assign(ref mut lhs, ref mut rhs) => {
                 let rhs_type = try!(self.typecheck(&mut **rhs));
@@ -344,7 +368,7 @@ impl <'a> Typecheck<'a> {
                             Struct(ref fields) => {
                                 id.typ = try!(fields.iter()
                                     .find(|field| field.name == id.name)
-                                    .map(|field| Ok(field.typ.clone()))
+                                    .map(|field| Ok(from_vm_type(&field.typ)))
                                     .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone()))));
                                 Ok(id.typ.clone())
                             }
@@ -352,7 +376,8 @@ impl <'a> Typecheck<'a> {
                         }
                     }
                     FunctionType(..) => Err(TypeError("Field access on function")),
-                    LiteralType(..) => Err(TypeError("Field acces on primitive"))
+                    BuiltinType(..) => Err(TypeError("Field acces on primitive")),
+                    TypeVariable(..) => Err(TypeError("Field acces on type variable"))
                 }
             }
         }
@@ -369,7 +394,7 @@ impl <'a> Typecheck<'a> {
                 let argument_types: Vec<TcType> = match try!(self.find_type_info(&typename)) {
                     Enum(ref ctors) => {
                         match ctors.iter().find(|ctor| ctor.name.id() == name.id()) {
-                            Some(ctor) => ctor.arguments.iter().map(|t| t.clone()).collect(),
+                            Some(ctor) => ctor.arguments.iter().map(|t| from_vm_type(t)).collect(),
                             None => return Err(TypeError("Undefined constructor"))
                         }
                     }
@@ -419,29 +444,29 @@ fn replace_self(replace_in: &mut TcType, typ: &TcType) {
 }
 
 pub trait Typed {
-    fn type_of(&self) -> &Type<InternedStr>;
+    fn type_of(&self) -> &TcType;
 }
 impl Typed for TcIdent {
-    fn type_of(&self) -> &Type<InternedStr> {
+    fn type_of(&self) -> &TcType {
         &self.typ
     }
 }
 impl <Id: Typed + Str> Typed for Expr<Id> {
-    fn type_of(&self) -> &Type<InternedStr> {
+    fn type_of(&self) -> &TcType {
         match *self {
             Identifier(ref id) => id.type_of(),
             Literal(ref lit) => {
                 match *lit {
-                    Integer(_) => &int_type,
-                    Float(_) => &float_type,
-                    String(_) => &string_type,
-                    Bool(_) => &bool_type
+                    Integer(_) => &int_type_tc,
+                    Float(_) => &float_type_tc,
+                    String(_) => &string_type_tc,
+                    Bool(_) => &bool_type_tc
                 }
             }
             IfElse(_, ref arm, _) => arm.type_of(),
             Block(ref exprs) => {
                 if exprs.len() == 0 {
-                    &unit_type
+                    &unit_type_tc
                 }
                 else {
                     exprs.last().unwrap().type_of()
@@ -450,11 +475,11 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
             BinOp(ref lhs, ref op, _) => {
                 match op.as_slice() {
                     "+" | "-" | "*" => lhs.type_of(),
-                    "<" | ">" | "<=" | ">=" => &bool_type,
+                    "<" | ">" | "<=" | ">=" => &bool_type_tc,
                     _ => fail!()
                 }
             }
-            Let(..) | While(..) | Assign(..) => &unit_type,
+            Let(..) | While(..) | Assign(..) => &unit_type_tc,
             Call(ref func, _) => {
                 match func.type_of() {
                     &FunctionType(_, ref return_type) => &**return_type,
@@ -484,7 +509,7 @@ mod tests {
     pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {
         use std::io::BufReader;
         let mut buffer = BufReader::new(s.as_bytes());
-        let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type.clone(), name: s });
+        let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
         f(&mut parser)
             .unwrap_or_else(|err| fail!(err))
     }
@@ -535,6 +560,10 @@ impl Add for Vec {
     fn add(l: Vec, r: Vec) -> Vec {
         Vec(l.x + r.x, l.y + r.y)
     }
+}
+
+fn test(v: Vec) -> Vec {
+    add(v, Vec(1, 1))
 }
 ";
         let mut module = parse(text, |p| p.module());

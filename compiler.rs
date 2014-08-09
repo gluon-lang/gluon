@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use interner::*;
-use ast::*;
-use typecheck::{Typed, TcIdent, TcType, TypeInfos, Enum, Struct};
+use ast::{Module, Expr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Integer, Float, String, Bool, Pattern, ConstructorPattern, IdentifierPattern, Function};
+use typecheck::*;
 
 #[deriving(Show)]
 pub enum Instruction {
@@ -226,7 +226,7 @@ impl <'a> Compiler<'a> {
                         self.compile(expr, instructions);
                         //Since this line is executed as a statement we need to remove
                         //the value from the stack
-                        if *expr.type_of() != unit_type {
+                        if *expr.type_of() != unit_type_tc {
                             instructions.push(Pop(1));
                         }
                     }
@@ -246,7 +246,7 @@ impl <'a> Compiler<'a> {
                 //it back to its initial size
                 let diff_size = stack_size - self.stack_size();
                 if diff_size != 0 {
-                    if *expr.type_of() == unit_type {
+                    if *expr.type_of() == unit_type_tc {
                         instructions.push(Pop(diff_size));
                     }
                     else {
@@ -259,7 +259,7 @@ impl <'a> Compiler<'a> {
                 self.compile(&**lhs, instructions);
                 self.compile(&**rhs, instructions);
                 let typ = lhs.type_of();
-                let instr = if *typ == int_type {
+                let instr = if *typ == int_type_tc {
                     match op.as_slice() {
                         "+" => AddInt,
                         "-" => SubtractInt,
@@ -268,7 +268,7 @@ impl <'a> Compiler<'a> {
                         _ => fail!()
                     }
                 }
-                else if *typ == float_type {
+                else if *typ == float_type_tc {
                     match op.as_slice() {
                         "+" => AddFloat,
                         "-" => SubtractFloat,
@@ -287,7 +287,7 @@ impl <'a> Compiler<'a> {
                 self.new_stack_var(*id.id());
                 //unit expressions do not return a value so we need to add a dummy value
                 //To make the stack correct
-                if *expr.type_of() == unit_type {
+                if *expr.type_of() == unit_type_tc {
                     instructions.push(PushInt(0));
                 }
             }
