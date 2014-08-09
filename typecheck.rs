@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt;
 use scoped_map::ScopedMap;
 use ast::*;
 use ast;
@@ -30,12 +31,24 @@ impl Str for TcIdent {
     }
 }
 
-#[deriving(Clone, Eq, PartialEq, Hash, Show)]
+#[deriving(Clone, Eq, PartialEq, Hash)]
 pub enum TcType {
     Type(InternedStr),
+    TraitType(InternedStr),
     TypeVariable(uint),
     FunctionType(Vec<TcType>, Box<TcType>),
     BuiltinType(LiteralType)
+}
+impl fmt::Show for TcType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Type(t) => t.fmt(f),
+            TraitType(t) => t.fmt(f),
+            TypeVariable(ref x) => x.fmt(f),
+            FunctionType(ref args, ref return_type) => write!(f, "fn {} -> {}", args, return_type),
+            BuiltinType(t) => t.fmt(f)
+        }
+    }
 }
 
 fn from_vm_type(typ: &VMType) -> TcType {
@@ -72,7 +85,7 @@ pub enum TypeInfo<'a> {
 pub struct TypeInfos {
     pub structs: HashMap<InternedStr, Vec<Field>>,
     pub enums: HashMap<InternedStr, Vec<Constructor<TcIdent>>>,
-    impls: HashMap<TcType, HashSet<TcType>>,
+    impls: HashMap<TcType, HashSet<InternedStr>>,
     traits: HashMap<InternedStr, Vec<(InternedStr, TcType)>>
 }
 
@@ -90,7 +103,7 @@ impl TypeInfos {
             .map(|s| Struct(s.as_slice()))
             .or_else(|| self.enums.find(id).map(|e| Enum(e.as_slice())))
     }
-    pub fn has_impl_of_trait(&self, typ: &TcType, trait_id: &TcType) -> bool {
+    pub fn has_impl_of_trait(&self, typ: &TcType, trait_id: &InternedStr) -> bool {
         self.impls.find(typ)
             .map(|set| set.contains(trait_id))
             .unwrap_or(false)
@@ -108,14 +121,14 @@ impl TypeInfos {
         }
         for t in module.traits.iter() {
             let function_types = t.declarations.iter().map(|f| {
-                let arg_types = f.arguments.iter().map(|f| from_vm_type(&f.typ)).collect();
-                (f.name.id().clone(), FunctionType(arg_types, box from_vm_type(&f.return_type)))
+                let arg_types = f.arguments.iter().map(|f| from_trait_function_type(&f.typ)).collect();
+                (f.name.id().clone(), FunctionType(arg_types, box from_trait_function_type(&f.return_type)))
             }).collect();
             self.traits.insert(t.name.id().clone(), function_types);
         }
         for imp in module.impls.iter() {
             let set = self.impls.find_or_insert(Type(imp.type_name.id().clone()), HashSet::new());
-            set.insert(Type(imp.trait_name.id().clone()));
+            set.insert(imp.trait_name.id().clone());
         }
     }
 }
@@ -130,6 +143,7 @@ pub struct Typecheck<'a> {
     type_infos: TypeInfos,
     module: HashMap<InternedStr, TcType>,
     stack: ScopedMap<InternedStr, TcType>,
+    subs: Substitution
 }
 
 impl <'a> TypeEnv for Typecheck<'a> {
@@ -154,6 +168,7 @@ impl <'a> Typecheck<'a> {
             module: HashMap::new(),
             type_infos: TypeInfos::new(),
             stack: ScopedMap::new(),
+            subs: Substitution::new()
         }
     }
     
@@ -209,18 +224,32 @@ impl <'a> Typecheck<'a> {
                 self.module.insert(ctor.name.name, typ);
             }
         }
+        for t in module.traits.mut_iter() {
+            let trait_name = t.name.id().clone();
+            for func in t.declarations.mut_iter() {
+                let args = func.arguments.iter()
+                    .map(|f| from_trait_function_type(&f.typ))
+                    .collect();
+                func.name.typ = FunctionType(args, box from_trait_function_type(&func.return_type));
+                self.module.insert(func.name.id().clone(), func.name.typ.clone());
+            }
+        }
         for f in module.functions.mut_iter() {
             try!(self.typecheck_function(f));
         }
         for imp in module.impls.mut_iter() {
             {
                 let trait_functions = try!(self.find_trait(imp.trait_name.id()));
-                for f in imp.functions.iter() {
+                for func in imp.functions.mut_iter() {
                     let trait_function_type = try!(trait_functions.iter()
-                        .find(|& &(ref name, _)| name == f.name.id())
+                        .find(|& &(ref name, _)| name == func.name.id())
                         .map(Ok)
                         .unwrap_or_else(|| Err(TypeError("Function does not exist in trait"))));
-                    try!(self.unify_trait_function(&Type(imp.type_name.id().clone()), trait_function_type.ref1(), f));
+                    let args = func.arguments.iter()
+                        .map(|f| from_vm_type(&f.typ))
+                        .collect();
+                    func.name.typ = FunctionType(args, box from_vm_type(&func.return_type));
+                    try!(self.unify(trait_function_type.ref1(), func.name.typ.clone()));
                 }
             }
             for f in imp.functions.mut_iter() {
@@ -230,45 +259,44 @@ impl <'a> Typecheck<'a> {
         Ok(())
     }
 
-    ///Checks that a function implemented for a trait has the correct type
-    ///The special Self type in the trait is replaced with the type which implements that trait and is then unified
-    ///with the actual type
-    fn unify_trait_function(&self, self_type: &TcType, trait_function_type: &TcType, actual: &Function<TcIdent>) -> Result<(), TypeError> {
-        use std::result;
-        debug!("Unify trait {} ==>\n{} <=> {}", self_type, trait_function_type, actual);
-        match *trait_function_type {
-            FunctionType(ref args, ref return_type) => {
-                try!(result::fold(args.iter()
-                    .zip(actual.arguments.iter())
-                    .map(|(e, a)| self.unify_self(self_type, e, &from_vm_type(&a.typ))), (), |_, _| ()));
-                self.unify_self(self_type, &**return_type, &actual.name.typ)
-            }
-            _ => Err(TypeError("Trait function has non function type"))
-        }
-    }
     
     ///Unifies a type which might have 'Self' types in its type
     fn unify_self(&self, self_type: &TcType, trait_function_type: &TcType, actual: &TcType) -> Result<(), TypeError> {
         let mut x = trait_function_type.clone();
         replace_self(&mut x, self_type);
-        self.unify(&x, actual.clone())
-            .map(|_| ())
+        if x == *actual {
+            Ok(())
+        }
+        else {
+            Err(TypeMismatch(x, actual.clone()))
+        }
     }
 
     fn typecheck_function(&mut self, function: &mut Function<TcIdent>) -> Result<(), TypeError> {
+        debug!("Typecheck function {}", function.name.id());
         self.stack.clear();
         for arg in function.arguments.iter() {
             self.stack_var(arg.name.clone(), from_vm_type(&arg.typ));
         }
         let return_type = try!(self.typecheck(&mut function.expression));
-        self.unify(&from_vm_type(&function.return_type), return_type)
-            .map(|_| ())
+        let x = self.unify(&from_vm_type(&function.return_type), return_type)
+            .map(|_| ());
+        debug!("End {} ==> {}", function.name.id(), x.is_ok());
+        x
     }
 
     pub fn typecheck(&mut self, expr: &mut Expr<TcIdent>) -> TcResult {
+        let ret = self.typecheck_(expr);
+        if ret.is_err() {
+            debug!("{}", expr);
+        }
+        ret
+    }
+    pub fn typecheck_(&mut self, expr: &mut Expr<TcIdent>) -> TcResult {
         match *expr {
             Identifier(ref mut id) => {
-                self.find(id.id())
+                id.typ = try!(self.find(id.id()));
+                Ok(id.typ.clone())
             }
             Literal(ref lit) => {
                 Ok(match *lit {
@@ -377,6 +405,7 @@ impl <'a> Typecheck<'a> {
                     }
                     FunctionType(..) => Err(TypeError("Field access on function")),
                     BuiltinType(..) => Err(TypeError("Field acces on primitive")),
+                    TraitType(..) => Err(TypeError("Field acces on trait object")),
                     TypeVariable(..) => Err(TypeError("Field acces on type variable"))
                 }
             }
@@ -414,14 +443,98 @@ impl <'a> Typecheck<'a> {
 
     fn unify(&self, expected: &TcType, actual: TcType) -> TcResult {
         debug!("Unify {} <=> {}", expected, actual);
-        if *expected == actual {
-            Ok(actual)
-        }
-        else if self.has_trait(expected) && self.type_infos.has_impl_of_trait(expected, &actual) {
+        if self.unify_(expected, &actual) {
             Ok(actual)
         }
         else {
             Err(TypeMismatch(expected.clone(), actual))
+        }
+    }
+    fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
+        match (self.subs.real_type(expected), self.subs.real_type(actual)) {
+            (&TypeVariable(ref l), actual) => {
+                self.subs.union(*l, actual);
+                true
+            }
+            (&TraitType(ref l), &Type(ref r)) => {
+                self.type_infos.has_impl_of_trait(actual, l)
+            }
+            (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
+                if l_args.len() == r_args.len() {
+                    l_args.iter().zip(r_args.iter()).all(|(l, r)| self.unify_(l, r)) && self.unify_(&**l_ret, &**r_ret)
+                }
+                else {
+                    false
+                }
+            }
+            (expected, actual) => expected == actual
+        }
+    }
+}
+
+fn from_trait_function_type(typ: &VMType) -> TcType {
+    Substitution::new().from_trait_function_type(typ)
+}
+
+struct Substitution {
+    map: HashMap<uint, Box<TcType>>
+}
+impl Substitution {
+    fn new() -> Substitution {
+        Substitution { map: HashMap::new() }
+    }
+
+    fn union(&self, id: uint, typ: &TcType) {
+        {
+            let id_type = self.find(id);
+            let other_type = self.real_type(typ);
+            if id_type.map(|x| x == other_type).unwrap_or(false) {
+                return
+            }
+        }
+        let this: &mut Substitution = unsafe { ::std::mem::transmute(self) };
+        this.map.insert(id, box typ.clone());
+    }
+
+    fn real_type<'a>(&'a self, typ: &'a TcType) -> &'a TcType {
+        match *typ {
+            TypeVariable(var) => match self.find(var) {
+                Some(t) => t,
+                None => typ
+            },
+            _ => typ
+        }
+    }
+
+    fn find(&self, var: uint) -> Option<&TcType> {
+        //Use unsafe so that we can hold a reference into the map and continue
+        //to look for parents
+        //Since we never have a cycle in the map we will never hold a &mut
+        //to the same place
+        let this: &mut Substitution = unsafe { ::std::mem::transmute(&*self) };
+        this.map.find_mut(&var).map(|typ| {
+            match **typ {
+                TypeVariable(parent_var) if parent_var != var => {
+                    match self.find(parent_var) {
+                        Some(other) => { **typ = other.clone(); }
+                        None => ()
+                    }
+                    &**typ
+                }
+                _ => &**typ
+            }
+        })
+    }
+
+    fn from_trait_function_type(&mut self, typ: &VMType) -> TcType {
+        match *typ {
+            ast::Type(ref id) if id.as_slice() == "Self" => TypeVariable(0),
+            ast::Type(ref id) => Type(*id),
+            ast::FunctionType(ref args, ref return_type) => {
+                let args2 = args.iter().map(|a| self.from_trait_function_type(a)).collect();
+                FunctionType(args2, box self.from_trait_function_type(&**return_type))
+            }
+            ast::LiteralType(ref id) => BuiltinType(*id),
         }
     }
 }
@@ -483,7 +596,7 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
             Call(ref func, _) => {
                 match func.type_of() {
                     &FunctionType(_, ref return_type) => &**return_type,
-                    _ => fail!()
+                    x => fail!("{}", x)
                 }
             }
             Match(_, ref alts) => alts[0].expression.type_of(),
@@ -544,7 +657,7 @@ fn main() -> int {
 
     }
     #[test]
-    fn traits() {
+    fn trait_function() {
         let text = 
 r"
 struct Vec {
