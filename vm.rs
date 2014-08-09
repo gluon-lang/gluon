@@ -66,6 +66,12 @@ impl CompilerEnv for VM {
             None => None
         }
     }
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
+        self.globals.iter()
+            .enumerate()
+            .find(|&(_, f)| f.id == *id && f.typ == *typ)
+            .map(|(i, _)| i)
+    }
 }
 
 impl TypeEnv for VM {
@@ -419,7 +425,9 @@ enum AB {
 r"
 fn main() -> Vec {
     let x = Vec(1, 2);
-    add(x, Vec(10, 0))
+    x = add(x, Vec(10, 0));
+    x.y = add(x.y, 3);
+    x
 }
 struct Vec {
     x: int,
@@ -435,10 +443,15 @@ impl Add for Vec {
         Vec(l.x + r.x, l.y + r.y)
     }
 }
+impl Add for int {
+    fn add(l: int, r: int) -> int {
+        l + r
+    }
+}
 ";
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(11), Int(2)])))));
+        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(11), Int(5)])))));
     }
 }
 

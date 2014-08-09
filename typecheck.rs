@@ -36,6 +36,7 @@ pub enum TcType {
     Type(InternedStr),
     TraitType(InternedStr),
     TypeVariable(uint),
+    Generic(uint),
     FunctionType(Vec<TcType>, Box<TcType>),
     BuiltinType(LiteralType)
 }
@@ -45,6 +46,7 @@ impl fmt::Show for TcType {
             Type(t) => t.fmt(f),
             TraitType(t) => t.fmt(f),
             TypeVariable(ref x) => x.fmt(f),
+            Generic(x) => write!(f, "#{}", x),
             FunctionType(ref args, ref return_type) => write!(f, "fn {} -> {}", args, return_type),
             BuiltinType(t) => t.fmt(f)
         }
@@ -121,8 +123,7 @@ impl TypeInfos {
         }
         for t in module.traits.iter() {
             let function_types = t.declarations.iter().map(|f| {
-                let arg_types = f.arguments.iter().map(|f| from_trait_function_type(&f.typ)).collect();
-                (f.name.id().clone(), FunctionType(arg_types, box from_trait_function_type(&f.return_type)))
+                (f.name.id().clone(), f.name.typ.clone())
             }).collect();
             self.traits.insert(t.name.id().clone(), function_types);
         }
@@ -131,6 +132,11 @@ impl TypeInfos {
             set.insert(imp.trait_name.id().clone());
         }
     }
+}
+fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(InternedStr, TcType)], TypeError> {
+    this.find_trait(name)
+        .map(Ok)
+        .unwrap_or_else(|| Err(UndefinedTrait(name.clone())))
 }
 
 pub trait TypeEnv {
@@ -146,20 +152,6 @@ pub struct Typecheck<'a> {
     subs: Substitution
 }
 
-impl <'a> TypeEnv for Typecheck<'a> {
-    
-    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
-        self.stack.find(id)
-            .or_else(|| self.module.find(id))
-            .or_else(|| self.environment.and_then(|e| e.find_type(id)))
-    }
-
-    fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
-        self.type_infos.find_type_info(id)
-            .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
-    }
-}
-
 impl <'a> Typecheck<'a> {
     
     pub fn new() -> Typecheck<'a> {
@@ -172,27 +164,31 @@ impl <'a> Typecheck<'a> {
         }
     }
     
-    fn find(&self, id: &InternedStr) -> TcResult {
-        self.find_type(id)
-            .map(|t| t.clone())
-            .map(Ok)
-            .unwrap_or_else(|| Err(UndefinedVariable(id.clone())))
+    fn find(&mut self, id: &InternedStr) -> TcResult {
+        let t = {
+            let stack = &self.stack;
+            let module = &self.module;
+            let environment = &self.environment;
+            stack.find(id)
+                .or_else(|| module.find(id))
+                .or_else(|| environment.and_then(|e| e.find_type(id)))
+        };
+        match t {
+            Some(t) => Ok(self.subs.instantiate(t)),
+            None => Err(UndefinedVariable(id.clone()))
+        }
     }
 
     fn find_type_info(&self, id: &InternedStr) -> Result<TypeInfo, TypeError> {
-        (self as &TypeEnv).find_type_info(id)
+        self.type_infos.find_type_info(id)
+            .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
     }
     
-    fn find_trait(&self, name: &InternedStr) -> Result<&[(InternedStr, TcType)], TypeError> {
-        self.type_infos.find_trait(name)
-            .map(Ok)
-            .unwrap_or_else(|| Err(UndefinedTrait(name.clone())))
-    }
     fn has_trait(&self, typ: &TcType) -> bool {
         match *typ {
-            Type(ref id) => self.find_trait(id).is_ok(),
+            Type(ref id) => find_trait(&self.type_infos, id).is_ok(),
             _ => false
         }
     }
@@ -211,6 +207,16 @@ impl <'a> Typecheck<'a> {
             f.name.typ = FunctionType(f.arguments.iter().map(|f| from_vm_type(&f.typ)).collect(), box from_vm_type(&f.return_type));
             self.module.insert(f.name.name, f.name.typ.clone());
         }
+        for t in module.traits.mut_iter() {
+            let trait_name = t.name.id().clone();
+            for func in t.declarations.mut_iter() {
+                let args = func.arguments.iter()
+                    .map(|f| self.subs.from_trait_function_type(&f.typ))
+                    .collect();
+                func.name.typ = FunctionType(args, box self.subs.from_trait_function_type(&func.return_type));
+                self.module.insert(func.name.id().clone(), func.name.typ.clone());
+            }
+        }
         self.type_infos.add_module(module);
         for s in module.structs.mut_iter() {
             let args = s.fields.iter().map(|f| from_vm_type(&f.typ)).collect();
@@ -224,22 +230,13 @@ impl <'a> Typecheck<'a> {
                 self.module.insert(ctor.name.name, typ);
             }
         }
-        for t in module.traits.mut_iter() {
-            let trait_name = t.name.id().clone();
-            for func in t.declarations.mut_iter() {
-                let args = func.arguments.iter()
-                    .map(|f| from_trait_function_type(&f.typ))
-                    .collect();
-                func.name.typ = FunctionType(args, box from_trait_function_type(&func.return_type));
-                self.module.insert(func.name.id().clone(), func.name.typ.clone());
-            }
-        }
         for f in module.functions.mut_iter() {
             try!(self.typecheck_function(f));
         }
         for imp in module.impls.mut_iter() {
+            imp.type_name.typ = from_vm_type(&str_to_type(imp.type_name.id().clone()));
             {
-                let trait_functions = try!(self.find_trait(imp.trait_name.id()));
+                let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
                 for func in imp.functions.mut_iter() {
                     let trait_function_type = try!(trait_functions.iter()
                         .find(|& &(ref name, _)| name == func.name.id())
@@ -249,7 +246,8 @@ impl <'a> Typecheck<'a> {
                         .map(|f| from_vm_type(&f.typ))
                         .collect();
                     func.name.typ = FunctionType(args, box from_vm_type(&func.return_type));
-                    try!(self.unify(trait_function_type.ref1(), func.name.typ.clone()));
+                    let tf = self.subs.instantiate(trait_function_type.ref1());
+                    try!(self.unify(&tf, func.name.typ.clone()));
                 }
             }
             for f in imp.functions.mut_iter() {
@@ -260,18 +258,6 @@ impl <'a> Typecheck<'a> {
     }
 
     
-    ///Unifies a type which might have 'Self' types in its type
-    fn unify_self(&self, self_type: &TcType, trait_function_type: &TcType, actual: &TcType) -> Result<(), TypeError> {
-        let mut x = trait_function_type.clone();
-        replace_self(&mut x, self_type);
-        if x == *actual {
-            Ok(())
-        }
-        else {
-            Err(TypeMismatch(x, actual.clone()))
-        }
-    }
-
     fn typecheck_function(&mut self, function: &mut Function<TcIdent>) -> Result<(), TypeError> {
         debug!("Typecheck function {}", function.name.id());
         self.stack.clear();
@@ -281,6 +267,22 @@ impl <'a> Typecheck<'a> {
         let return_type = try!(self.typecheck(&mut function.expression));
         let x = self.unify(&from_vm_type(&function.return_type), return_type)
             .map(|_| ());
+        if x.is_ok() {
+            //Replace all type variables with their inferred types
+            struct ReplaceVisitor<'a> { subs: &'a mut Substitution }
+            impl <'a> MutVisitor<TcIdent> for ReplaceVisitor<'a> {
+                fn visit_expr(&mut self, e: &mut Expr<TcIdent>) {
+                    match *e {
+                        Identifier(ref mut id) => self.subs.set_type(&mut id.typ),
+                        FieldAccess(_, ref mut id) => self.subs.set_type(&mut id.typ),
+                        _ => ()
+                    }
+                    walk_mut_expr(self, e);
+                }
+            }
+            let mut v = ReplaceVisitor { subs: &mut self.subs };
+            v.visit_expr(&mut function.expression);
+        }
         debug!("End {} ==> {}", function.name.id(), x.is_ok());
         x
     }
@@ -406,7 +408,8 @@ impl <'a> Typecheck<'a> {
                     FunctionType(..) => Err(TypeError("Field access on function")),
                     BuiltinType(..) => Err(TypeError("Field acces on primitive")),
                     TraitType(..) => Err(TypeError("Field acces on trait object")),
-                    TypeVariable(..) => Err(TypeError("Field acces on type variable"))
+                    TypeVariable(..) => Err(TypeError("Field acces on type variable")),
+                    Generic(..) => Err(TypeError("Field acces on generic"))
                 }
             }
         }
@@ -472,16 +475,31 @@ impl <'a> Typecheck<'a> {
     }
 }
 
-fn from_trait_function_type(typ: &VMType) -> TcType {
-    Substitution::new().from_trait_function_type(typ)
-}
-
 struct Substitution {
-    map: HashMap<uint, Box<TcType>>
+    map: HashMap<uint, Box<TcType>>,
+    var_id: uint
 }
 impl Substitution {
     fn new() -> Substitution {
-        Substitution { map: HashMap::new() }
+        Substitution { map: HashMap::new(), var_id: 0 }
+    }
+
+    fn set_type(&self, t: &mut TcType) {
+        let replacement = match *t {
+            TypeVariable(id) => self.find(id),
+            FunctionType(ref mut args, ref mut return_type) => {
+                for arg in args.mut_iter() {
+                    self.set_type(arg);
+                }
+                self.set_type(&mut **return_type);
+                None
+            }
+            _ => None
+        };
+        match replacement {
+            Some(x) => *t = x.clone(),
+            None => ()
+        }
     }
 
     fn union(&self, id: uint, typ: &TcType) {
@@ -526,9 +544,28 @@ impl Substitution {
         })
     }
 
+    fn instantiate(&mut self, typ: &TcType) -> TcType {
+        self.var_id += 1;
+        let base = self.var_id;
+        self.instantiate_(base, typ)
+    }
+    fn instantiate_(&mut self, base: uint, typ: &TcType) -> TcType {
+        match *typ {
+            Generic(x) => {
+                self.var_id = ::std::cmp::max(base + x, self.var_id);
+                TypeVariable(base + x)
+            }
+            FunctionType(ref args, ref return_type) => {
+                let args2 = args.iter().map(|a| self.instantiate_(base, a)).collect();
+                FunctionType(args2, box self.instantiate_(base, &**return_type))
+            }
+            ref x => x.clone()
+        }
+    }
+
     fn from_trait_function_type(&mut self, typ: &VMType) -> TcType {
         match *typ {
-            ast::Type(ref id) if id.as_slice() == "Self" => TypeVariable(0),
+            ast::Type(ref id) if id.as_slice() == "Self" => Generic(0),
             ast::Type(ref id) => Type(*id),
             ast::FunctionType(ref args, ref return_type) => {
                 let args2 = args.iter().map(|a| self.from_trait_function_type(a)).collect();
@@ -536,23 +573,6 @@ impl Substitution {
             }
             ast::LiteralType(ref id) => BuiltinType(*id),
         }
-    }
-}
-
-fn replace_self(replace_in: &mut TcType, typ: &TcType) {
-    let replace = match *replace_in {
-        Type(ref id) if id.as_slice() == "Self" => true,
-        FunctionType(ref mut args, ref mut return_type) => {
-            for a in args.mut_iter() {
-                replace_self(a, typ);
-            }
-            replace_self(&mut **return_type, typ);
-            false
-        }
-        _ => false
-    };
-    if replace {
-        *replace_in = typ.clone();
     }
 }
 

@@ -117,3 +117,65 @@ pub static bool_type: Type<InternedStr> = LiteralType(BoolType);
 pub static unit_type: Type<InternedStr> = LiteralType(UnitType);
 
 
+pub fn str_to_type(x: InternedStr) -> Type<InternedStr> {
+    match x.as_slice() {
+        "int" => int_type.clone(),
+        "float" => float_type.clone(),
+        "string" => string_type.clone(),
+        "bool" => bool_type.clone(),
+        _ => Type(x)
+    }
+}
+
+
+pub trait MutVisitor<T> {
+    fn visit_expr(&mut self, e: &mut Expr<T>) {
+        walk_mut_expr(self, e);
+    }
+}
+
+pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut Expr<T>) {
+    match *e {
+        IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
+            v.visit_expr(&mut **pred);
+            v.visit_expr(&mut **if_true);
+            v.visit_expr(&mut **if_false);
+        }
+        Block(ref mut exprs) => {
+            for expr in exprs.mut_iter() {
+                v.visit_expr(expr);
+            }
+        }
+        BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
+            v.visit_expr(&mut **lhs);
+            v.visit_expr(&mut **rhs);
+        }
+        Let(ref mut id, ref mut expr) => {
+            v.visit_expr(&mut **expr);
+        }
+        Call(ref mut func, ref mut args) => {
+            v.visit_expr(&mut **func);
+            for arg in args.mut_iter() {
+                v.visit_expr(arg);
+            }
+        }
+        While(ref mut pred, ref mut expr) => {
+            v.visit_expr(&mut **pred);
+            v.visit_expr(&mut **expr);
+        }
+        Assign(ref mut lhs, ref mut rhs) => {
+            v.visit_expr(&mut **lhs);
+            v.visit_expr(&mut **rhs);
+        }
+        FieldAccess(ref mut expr, ref mut field) => {
+            v.visit_expr(&mut **expr);
+        }
+        Match(ref mut expr, ref mut alts) => {
+            v.visit_expr(&mut**expr);
+            for alt in alts.mut_iter() {
+                v.visit_expr(&mut alt.expression);
+            }
+        }
+        Literal(..) | Identifier(..) => ()
+    }
+}

@@ -34,10 +34,11 @@ pub enum Instruction {
 
 type CExpr = Expr<TcIdent>;
 
-pub enum Variable {
+pub enum Variable<'a> {
     Stack(uint),
     Global(uint),
-    Constructor(uint, uint)
+    Constructor(uint, uint),
+    TraitFunction(&'a TcType)
 }
 
 pub struct CompiledFunction {
@@ -55,6 +56,7 @@ pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
     fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint>;
     fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<uint>;
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint>;
 }
 
 impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
@@ -73,6 +75,11 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         let &(ref outer, ref inner) = self;
         inner.find_tag(struct_, field)
             .or_else(|| outer.find_tag(struct_, field))
+    }
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
+        let &(ref outer, ref inner) = self;
+        inner.find_trait_function(typ, id)
+            .or_else(|| outer.find_trait_function(typ, id))
     }
 }
 
@@ -97,6 +104,12 @@ impl CompilerEnv for Module<TcIdent> {
                 }
                 None
             })
+            .or_else(|| {
+                self.traits.iter()
+                    .flat_map(|trait_| trait_.declarations.iter())
+                    .find(|decl| decl.name.id() == id)
+                    .map(|decl| TraitFunction(&decl.name.typ))
+            })
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
         self.structs.iter()
@@ -114,6 +127,20 @@ impl CompilerEnv for Module<TcIdent> {
                 .find(|&(_, c)| c.name.id() == ctor_name)
                 .map(|(i, _)| i).unwrap())
     }
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
+        let mut offset = self.functions.len();
+        for imp in self.impls.iter() {
+            if imp.type_name.typ == *typ {
+                for (i, func) in imp.functions.iter().enumerate() {
+                    if func.name.id() == id {
+                        return Some(offset + i);
+                    }
+                }
+            }
+            offset += imp.functions.len();
+        }
+        None
+    }
 }
 
 impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
@@ -127,11 +154,14 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
         (*self).find_tag(enum_, ctor_name)
     }
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
+        (*self).find_trait_function(typ, id)
+    }
 }
 
 pub struct Compiler<'a> {
     globals: &'a CompilerEnv,
-    stack: HashMap<InternedStr, Variable>,
+    stack: HashMap<InternedStr, uint>,
 }
 
 impl <'a> Compiler<'a> {
@@ -142,7 +172,7 @@ impl <'a> Compiler<'a> {
 
     fn find(&self, s: &InternedStr) -> Option<Variable> {
         self.stack.find(s)
-            .map(|x| *x)
+            .map(|x| Stack(*x))
             .or_else(||  self.globals.find_var(s))
     }
 
@@ -154,8 +184,12 @@ impl <'a> Compiler<'a> {
         self.globals.find_tag(enum_, constructor)
     }
 
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
+        self.globals.find_trait_function(typ, id)
+    }
+
     fn new_stack_var(&mut self, s: InternedStr) {
-        let v = Stack(self.stack.len());
+        let v = self.stack.len();
         if self.stack.find(&s).is_some() {
             fail!("Variable shadowing is not allowed")
         }
@@ -167,9 +201,15 @@ impl <'a> Compiler<'a> {
     }
 
     pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Assembly {
-        let functions = module.functions.iter()
+        let mut functions: Vec<CompiledFunction> = module.functions.iter()
             .map(|f| self.compile_function(f))
             .collect();
+        for imp in module.impls.iter() {
+            for f in imp.functions.iter() {
+                functions.push(self.compile_function(f));
+            }
+        }
+
         let mut types = TypeInfos::new();
         types.add_module(module);
         Assembly { functions: functions, types: types }
@@ -206,6 +246,7 @@ impl <'a> Compiler<'a> {
                 match self.find(id.id()).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
                     Stack(index) => instructions.push(Push(index)),
                     Global(index) => instructions.push(PushGlobal(index)),
+                    TraitFunction(typ) => self.compile_trait_function(typ, id, instructions),
                     Constructor(..) => fail!("Constructor {} is not fully applied", id)
                 }
             }
@@ -336,7 +377,8 @@ impl <'a> Compiler<'a> {
                         match var {
                             Stack(i) => instructions.push(Store(i)),
                             Global(_) => fail!("Assignment to global {}", id),
-                            Constructor(..) => fail!("Assignment to constructor {}", id)
+                            Constructor(..) => fail!("Assignment to constructor {}", id),
+                            TraitFunction(..) => fail!("Assignment to trait function {}", id),
                         }
                     }
                     FieldAccess(ref expr, ref field) => {
@@ -405,5 +447,32 @@ impl <'a> Compiler<'a> {
                 }
             }
         }
+    }
+
+    fn compile_trait_function(&self, trait_func_type: &TcType, id: &TcIdent, instructions: &mut Vec<Instruction>) {
+        let typ = find_real_type(trait_func_type, &id.typ)
+            .unwrap_or_else(|| fail!("Could not find the real type between {} <=> {}", trait_func_type, id.typ));
+
+        debug!("Find trait function {} {}", typ, id.id());
+        let index = self.find_trait_function(typ, id.id())
+            .expect("Trait function does not exist");
+        instructions.push(PushGlobal(index));
+    }
+}
+
+fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> Option<&'a TcType> {
+    match (trait_func_type, real_type) {
+        (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
+            for (l, r) in l_args.iter().zip(r_args.iter()) {
+                let x = find_real_type(l, r);
+                if x.is_some() {
+                    return x;
+                }
+            }
+            find_real_type(&**l_ret, &**r_ret)
+        }
+        (&TypeVariable(_), real_type) => Some(real_type),
+        (&Generic(_), real_type) => Some(real_type),
+        _ => None
     }
 }
