@@ -730,4 +730,25 @@ impl Add for Vec {
         let result = tc.typecheck_module(&mut module);
         assert!(result.is_err());
     }
+    #[test]
+    fn function_type() {
+        let text = 
+r"
+fn test(x: int) -> float {
+    1.0
+}
+
+fn higher_order(x: int, f: fn (int) -> float) -> float {
+    f(x)
+}
+
+fn test2() {
+    higher_order(1, test);
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        let result = tc.typecheck_module(&mut module);
+        assert!(result.is_err());
+    }
 }

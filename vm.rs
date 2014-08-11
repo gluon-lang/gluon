@@ -453,5 +453,24 @@ impl Add for int {
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(11), Int(5)])))));
     }
+    #[test]
+    fn pass_function_value() {
+        let text = 
+r"
+fn main() -> int {
+    test(lazy)
+}
+fn lazy() -> int {
+    42
+}
+
+fn test(f: fn () -> int) -> int {
+    f() + 10
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(52)));
+    }
 }
 

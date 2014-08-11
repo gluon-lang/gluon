@@ -302,8 +302,23 @@ impl <'a, PString> Parser<'a, PString> {
     }
 
     fn typ(&mut self) -> ParseResult<Type<InternedStr>> {
-        let x = expect1!(self, TIdentifier(x));
-        Ok(str_to_type(x))
+        let x = match *self.lexer.next() {
+            TIdentifier(x) => str_to_type(x),
+            TFn => {
+                let args = try!(self.parens(|this|
+                    this.sep_by(|t| *t == TComma, |this|
+                        this.typ()
+                    )
+                ));
+                expect!(self, TRArrow);
+                FunctionType(args, box try!(self.typ()))
+            }
+            x => {
+                self.lexer.backtrack();
+                return Err(format!("Unexpected token {}, expected 'fn', id", x))
+            }
+        };
+        Ok(x)
     }
     
     fn field(&mut self) -> ParseResult<Field> {
@@ -552,5 +567,10 @@ pub mod tests {
     fn impl_() {
         parse(
 r"impl Test for int { fn test(x: Self) -> int { x } fn test2(x: int, y: Self) { x + y; } }", |p| p.impl_());
+    }
+    #[test]
+    fn function_type() {
+        let typ = parse("fn () -> fn (int) -> float", |p| p.typ());
+        assert_eq!(typ, FunctionType(Vec::new(), box FunctionType(vec![int_type.clone()], box float_type.clone())));
     }
 }
