@@ -215,6 +215,11 @@ impl <'a, PString> Parser<'a, PString> {
                 ));
                 Ok(Match(expr, alternatives))
             }
+            TOpenBracket => {
+                let args = try!(self.sep_by(|t| *t == TComma, |this| this.expression()));
+                expect!(self, TCloseBracket);
+                Ok(Array(args))
+            }
             x => {
                 self.lexer.backtrack();
                 Err(format!("Token {} does not start an expression", x))
@@ -312,6 +317,11 @@ impl <'a, PString> Parser<'a, PString> {
                 ));
                 expect!(self, TRArrow);
                 FunctionType(args, box try!(self.typ()))
+            }
+            TOpenBracket => {
+                let t = try!(self.typ());
+                expect!(self, TCloseBracket);
+                ArrayType(box t)
             }
             x => {
                 self.lexer.backtrack();

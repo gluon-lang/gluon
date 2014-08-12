@@ -38,7 +38,8 @@ pub enum TcType {
     TypeVariable(uint),
     Generic(uint),
     FunctionType(Vec<TcType>, Box<TcType>),
-    BuiltinType(LiteralType)
+    BuiltinType(LiteralType),
+    ArrayType(Box<TcType>)
 }
 impl fmt::Show for TcType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -48,7 +49,8 @@ impl fmt::Show for TcType {
             TypeVariable(ref x) => x.fmt(f),
             Generic(x) => write!(f, "#{}", x),
             FunctionType(ref args, ref return_type) => write!(f, "fn {} -> {}", args, return_type),
-            BuiltinType(t) => t.fmt(f)
+            BuiltinType(t) => t.fmt(f),
+            ArrayType(ref t) => write!(f, "[{}]", t)
         }
     }
 }
@@ -61,6 +63,7 @@ fn from_vm_type(typ: &VMType) -> TcType {
             FunctionType(args2, box from_vm_type(&**return_type))
         }
         ast::LiteralType(ref id) => BuiltinType(*id),
+        ast::ArrayType(ref typ) => ArrayType(box from_vm_type(&**typ))
     }
 }
 
@@ -409,8 +412,17 @@ impl <'a> Typecheck<'a> {
                     BuiltinType(..) => Err(TypeError("Field acces on primitive")),
                     TraitType(..) => Err(TypeError("Field acces on trait object")),
                     TypeVariable(..) => Err(TypeError("Field acces on type variable")),
-                    Generic(..) => Err(TypeError("Field acces on generic"))
+                    Generic(..) => Err(TypeError("Field acces on generic")),
+                    ArrayType(..) => Err(TypeError("Field access on array"))
                 }
+            }
+            Array(ref mut exprs) => {
+                let mut expected_type = self.subs.new_var();
+                for expr in exprs.mut_iter() {
+                    let typ = try!(self.typecheck(expr));
+                    expected_type = try!(self.unify(&expected_type, typ));
+                }
+                Ok(ArrayType(box expected_type))
             }
         }
     }
@@ -544,6 +556,11 @@ impl Substitution {
         })
     }
 
+    fn new_var(&mut self) -> TcType {
+        self.var_id += 1;
+        TypeVariable(self.var_id)
+    }
+
     fn instantiate(&mut self, typ: &TcType) -> TcType {
         self.var_id += 1;
         let base = self.var_id;
@@ -572,6 +589,7 @@ impl Substitution {
                 FunctionType(args2, box self.from_trait_function_type(&**return_type))
             }
             ast::LiteralType(ref id) => BuiltinType(*id),
+            ast::ArrayType(ref t) => ArrayType(box self.from_trait_function_type(&**t))
         }
     }
 }
@@ -620,7 +638,8 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
                 }
             }
             Match(_, ref alts) => alts[0].expression.type_of(),
-            FieldAccess(_, ref id) => id.type_of()
+            FieldAccess(_, ref id) => id.type_of(),
+            Array(ref exprs) => fail!()
         }
     }
 }
@@ -750,5 +769,18 @@ fn test2() {
         let mut tc = Typecheck::new();
         let result = tc.typecheck_module(&mut module);
         assert!(result.is_err());
+    }
+    #[test]
+    fn array_type() {
+        let text = 
+r"
+fn test(x: int) -> [int] {
+    [1,2,x]
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err));
     }
 }

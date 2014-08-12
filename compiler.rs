@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use interner::*;
-use ast::{Module, Expr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Integer, Float, String, Bool, Pattern, ConstructorPattern, IdentifierPattern, Function};
+use ast::{Module, Expr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, Integer, Float, String, Bool, Pattern, ConstructorPattern, IdentifierPattern, Function};
 use typecheck::*;
 
 #[deriving(Show)]
@@ -446,6 +446,7 @@ impl <'a> Compiler<'a> {
                     *instructions.get_mut(index) = Jump(instructions.len());
                 }
             }
+            Array(_) => fail!()
         }
     }
 

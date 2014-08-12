@@ -14,7 +14,8 @@ pub enum LiteralType {
 pub enum Type<Id> {
     Type(Id),
     FunctionType(Vec<Type<Id>>, Box<Type<Id>>),
-    LiteralType(LiteralType)
+    LiteralType(LiteralType),
+    ArrayType(Box<Type<Id>>)
 }
 
 pub type VMType = Type<InternedStr>;
@@ -51,7 +52,8 @@ pub enum Expr<Id> {
     BinOp(Box<Expr<Id>>, Id, Box<Expr<Id>>),
     Let(Id, Box<Expr<Id>>),
     Assign(Box<Expr<Id>>, Box<Expr<Id>>),
-    FieldAccess(Box<Expr<Id>>, Id)
+    FieldAccess(Box<Expr<Id>>, Id),
+    Array(Vec<Expr<Id>>)
 }
 
 #[deriving(Clone, PartialEq, Show)]
@@ -174,6 +176,11 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut Expr<T>) {
             v.visit_expr(&mut**expr);
             for alt in alts.mut_iter() {
                 v.visit_expr(&mut alt.expression);
+            }
+        }
+        Array(ref mut exprs) => {
+            for expr in exprs.mut_iter() {
+                v.visit_expr(expr);
             }
         }
         Literal(..) | Identifier(..) => ()
