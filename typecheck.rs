@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
 use scoped_map::ScopedMap;
-use ast::*;
 use ast;
+use ast::*;
 use interner::*;
 
 
@@ -189,13 +189,6 @@ impl <'a> Typecheck<'a> {
             .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
     }
     
-    fn has_trait(&self, typ: &TcType) -> bool {
-        match *typ {
-            Type(ref id) => find_trait(&self.type_infos, id).is_ok(),
-            _ => false
-        }
-    }
-
     fn stack_var(&mut self, id: InternedStr, typ: TcType) {
         self.stack.insert(id, typ);
     }
@@ -211,7 +204,6 @@ impl <'a> Typecheck<'a> {
             self.module.insert(f.name.name, f.name.typ.clone());
         }
         for t in module.traits.mut_iter() {
-            let trait_name = t.name.id().clone();
             for func in t.declarations.mut_iter() {
                 let args = func.arguments.iter()
                     .map(|f| self.subs.from_trait_function_type(&f.typ))
@@ -471,7 +463,7 @@ impl <'a> Typecheck<'a> {
                 self.subs.union(*l, actual);
                 true
             }
-            (&TraitType(ref l), &Type(ref r)) => {
+            (&TraitType(ref l), &Type(_)) => {
                 self.type_infos.has_impl_of_trait(actual, l)
             }
             (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {

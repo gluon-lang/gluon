@@ -1,10 +1,10 @@
-#![feature(globs, phase, macro_rules, unboxed_closures, default_type_params)]
+#![feature(globs, phase, macro_rules, default_type_params)]
 extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
 
 #[cfg(not(test))]
-use vm::*;
+use vm::run_main;
 
 mod scoped_map;
 mod interner;

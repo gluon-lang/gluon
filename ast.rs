@@ -155,11 +155,11 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut Expr<T>) {
                 v.visit_expr(expr);
             }
         }
-        BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
+        BinOp(ref mut lhs, _, ref mut rhs) => {
             v.visit_expr(&mut **lhs);
             v.visit_expr(&mut **rhs);
         }
-        Let(ref mut id, ref mut expr) => {
+        Let(_, ref mut expr) => {
             v.visit_expr(&mut **expr);
         }
         Call(ref mut func, ref mut args) => {
@@ -176,7 +176,7 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut Expr<T>) {
             v.visit_expr(&mut **lhs);
             v.visit_expr(&mut **rhs);
         }
-        FieldAccess(ref mut expr, ref mut field) => {
+        FieldAccess(ref mut expr, _) => {
             v.visit_expr(&mut **expr);
         }
         Match(ref mut expr, ref mut alts) => {

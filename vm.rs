@@ -1,8 +1,6 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt;
-use std::collections::HashMap;
-use ast::VMType;
 use typecheck::*;
 use compiler::*;
 use interner::{InternedStr, intern};
@@ -100,7 +98,7 @@ impl <'a> StackFrame<'a> {
     }
 
     pub fn get<'a>(&'a self, i: uint) -> &'a Value {
-        self.stack.get(self.offset + i)
+        &(*self.stack)[self.offset + i]
     }
     pub fn get_mut<'a>(&'a mut self, i: uint) -> &'a mut Value {
         self.stack.get_mut(self.offset + i)
@@ -342,7 +340,6 @@ macro_rules! tryf(
 )
 
 pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
-    use ast::*;
     use parser::Parser;
 
     let mut parser = Parser::new(buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });

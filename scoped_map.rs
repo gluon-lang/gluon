@@ -42,7 +42,7 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             Some(..) => {
                 let mut i = self.scopes.len() as int - 1;
                 while i >= 0 {
-                    if self.scopes.get(i as uint).as_ref().map_or(false, |x| x == k) {
+                    if self.scopes[i as uint].as_ref().map_or(false, |x| x == k) {
                         self.scopes.remove(i as uint);
                     }
                     i -= 1;
@@ -113,7 +113,7 @@ impl <K: Eq + Hash + Clone, V> MutableMap<K, V> for ScopedMap<K, V> {
             Some(v) => {
                 let mut i = self.scopes.len() as int - 1;
                 while i >= 0 {
-                    if self.scopes.get(i as uint).as_ref().map_or(false, |x| x == k) {
+                    if self.scopes[i as uint].as_ref().map_or(false, |x| x == k) {
                         self.scopes.remove(i as uint);
                     }
                     i -= 1;

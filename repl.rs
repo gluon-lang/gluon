@@ -3,7 +3,6 @@ use std::io::IoResult;
 
 use parser::Parser;
 use typecheck::*;
-use ast::*;
 use compiler::Compiler;
 use vm::{VM, StackFrame, load_script};
 
