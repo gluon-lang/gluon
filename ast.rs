@@ -60,7 +60,8 @@ pub enum Expr<Id> {
     Let(Id, Box<Expr<Id>>),
     Assign(Box<Expr<Id>>, Box<Expr<Id>>),
     FieldAccess(Box<Expr<Id>>, Id),
-    Array(Array<Id>)
+    Array(Array<Id>),
+    ArrayAccess(Box<Expr<Id>>, Box<Expr<Id>>)
 }
 
 #[deriving(Clone, PartialEq, Show)]
@@ -189,6 +190,10 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut Expr<T>) {
             for expr in a.expressions.mut_iter() {
                 v.visit_expr(expr);
             }
+        }
+        ArrayAccess(ref mut array, ref mut index) => {
+            v.visit_expr(&mut **array);
+            v.visit_expr(&mut **index);
         }
         Literal(..) | Identifier(..) => ()
     }

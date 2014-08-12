@@ -167,6 +167,12 @@ impl <'a, PString> Parser<'a, PString> {
                 let id = expect1!(self, TIdentifier(x));
                 Ok(FieldAccess(box e, self.make_id(id.clone())))
             }
+            &TOpenBracket => {
+                self.lexer.next();
+                let index = box try!(self.expression());
+                expect!(self, TCloseBracket);
+                Ok(ArrayAccess(box e, index))
+            }
             _ => Ok(e)
         }
     }

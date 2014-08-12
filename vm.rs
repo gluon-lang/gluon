@@ -291,6 +291,17 @@ impl VM {
                     }
                     stack.push(v);
                 }
+                GetIndex => {
+                    let index = stack.pop();
+                    let array = stack.pop();
+                    match (array, index) {
+                        (Data(_, array), Int(index)) => {
+                            let v = (*array.borrow_mut())[index as uint].clone();
+                            stack.push(v);
+                        }
+                        _ => fail!()
+                    }
+                }
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
@@ -470,17 +481,17 @@ fn test(f: fn () -> int) -> int {
         assert_eq!(value, Some(Int(52)));
     }
     #[test]
-    fn return_array() {
+    fn arrays() {
         let text = 
 r"
 fn main() -> [int] {
     let x = [10, 20, 30];
-    x
+    [1,2, x[2] + 3]
 }
 ";
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(10), Int(20), Int(30)])))));
+        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(1), Int(2), Int(33)])))));
     }
 }
 

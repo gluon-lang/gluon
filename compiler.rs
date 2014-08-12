@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use interner::*;
-use ast::{Module, Expr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function};
+use ast::{Module, Expr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function};
 use typecheck::*;
 
 #[deriving(Show)]
@@ -20,6 +20,8 @@ pub enum Instruction {
     CJump(uint),
     Pop(uint),
     Slide(uint),
+
+    GetIndex,
 
     AddInt,
     SubtractInt,
@@ -451,6 +453,11 @@ impl <'a> Compiler<'a> {
                     self.compile(expr, instructions);
                 }
                 instructions.push(Construct(0, a.expressions.len()));
+            }
+            ArrayAccess(ref array, ref index) => {
+                self.compile(&**array, instructions);
+                self.compile(&**index, instructions);
+                instructions.push(GetIndex);
             }
         }
     }

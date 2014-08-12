@@ -270,6 +270,7 @@ impl <'a> Typecheck<'a> {
                     match *e {
                         Identifier(ref mut id) => self.subs.set_type(&mut id.typ),
                         FieldAccess(_, ref mut id) => self.subs.set_type(&mut id.typ),
+                        Array(ref mut array) => self.subs.set_type(&mut array.id.typ),
                         _ => ()
                     }
                     walk_mut_expr(self, e);
@@ -414,7 +415,18 @@ impl <'a> Typecheck<'a> {
                     let typ = try!(self.typecheck(expr));
                     expected_type = try!(self.unify(&expected_type, typ));
                 }
-                Ok(ArrayType(box expected_type))
+                a.id.typ = ArrayType(box expected_type);
+                Ok(a.id.typ.clone())
+            }
+            ArrayAccess(ref mut array, ref mut index) => {
+                let array_type = try!(self.typecheck(&mut **array));
+                let typ = match array_type {
+                    ArrayType(typ) => *typ,
+                    _ => return Err(TypeError("Index on a non array type"))
+                };
+                let index_type = try!(self.typecheck(&mut **index));
+                try!(self.unify(&int_type_tc, index_type));
+                Ok(typ)
             }
         }
     }
@@ -631,7 +643,11 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
             }
             Match(_, ref alts) => alts[0].expression.type_of(),
             FieldAccess(_, ref id) => id.type_of(),
-            Array(ref a) => a.id.type_of()
+            Array(ref a) => a.id.type_of(),
+            ArrayAccess(ref array, _) => match array.type_of() {
+                &ArrayType(ref t) => &**t,
+                t => fail!("Not an array type {}", t)
+            }
         }
     }
 }
