@@ -266,7 +266,7 @@ impl <'a> Compiler<'a> {
                     for expr in exprs.slice_to(exprs.len() - 1).iter() {
                         self.compile(expr, instructions);
                         //Since this line is executed as a statement we need to remove
-                        //the value from the stack
+                        //the value from the stack if it exists
                         if *expr.type_of() != unit_type_tc {
                             instructions.push(Pop(1));
                         }
@@ -446,7 +446,12 @@ impl <'a> Compiler<'a> {
                     *instructions.get_mut(index) = Jump(instructions.len());
                 }
             }
-            Array(_) => fail!()
+            Array(ref a) => {
+                for expr in a.expressions.iter() {
+                    self.compile(expr, instructions);
+                }
+                instructions.push(Construct(0, a.expressions.len()));
+            }
         }
     }
 

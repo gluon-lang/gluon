@@ -41,6 +41,13 @@ pub struct Alternative<Id> {
 }
 
 #[deriving(Clone, PartialEq, Show)]
+pub struct Array<Id> {
+    //Field to store the type of the array since type_of returns a borrowed reference
+    pub id: Id,
+    pub expressions: Vec<Expr<Id>>
+}
+
+#[deriving(Clone, PartialEq, Show)]
 pub enum Expr<Id> {
     Identifier(Id),
     Literal(Literal),
@@ -53,7 +60,7 @@ pub enum Expr<Id> {
     Let(Id, Box<Expr<Id>>),
     Assign(Box<Expr<Id>>, Box<Expr<Id>>),
     FieldAccess(Box<Expr<Id>>, Id),
-    Array(Vec<Expr<Id>>)
+    Array(Array<Id>)
 }
 
 #[deriving(Clone, PartialEq, Show)]
@@ -178,8 +185,8 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut Expr<T>) {
                 v.visit_expr(&mut alt.expression);
             }
         }
-        Array(ref mut exprs) => {
-            for expr in exprs.mut_iter() {
+        Array(ref mut a) => {
+            for expr in a.expressions.mut_iter() {
                 v.visit_expr(expr);
             }
         }

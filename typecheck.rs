@@ -416,9 +416,9 @@ impl <'a> Typecheck<'a> {
                     ArrayType(..) => Err(TypeError("Field access on array"))
                 }
             }
-            Array(ref mut exprs) => {
+            Array(ref mut a) => {
                 let mut expected_type = self.subs.new_var();
-                for expr in exprs.mut_iter() {
+                for expr in a.expressions.mut_iter() {
                     let typ = try!(self.typecheck(expr));
                     expected_type = try!(self.unify(&expected_type, typ));
                 }
@@ -639,7 +639,7 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
             }
             Match(_, ref alts) => alts[0].expression.type_of(),
             FieldAccess(_, ref id) => id.type_of(),
-            Array(ref exprs) => fail!()
+            Array(ref a) => a.id.type_of()
         }
     }
 }

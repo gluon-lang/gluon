@@ -218,7 +218,8 @@ impl <'a, PString> Parser<'a, PString> {
             TOpenBracket => {
                 let args = try!(self.sep_by(|t| *t == TComma, |this| this.expression()));
                 expect!(self, TCloseBracket);
-                Ok(Array(args))
+                let dummy = ::interner::intern("[]");
+                Ok(Array(Array { id: self.make_id(dummy), expressions: args }))
             }
             x => {
                 self.lexer.backtrack();

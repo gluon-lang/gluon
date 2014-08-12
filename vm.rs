@@ -472,5 +472,18 @@ fn test(f: fn () -> int) -> int {
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(52)));
     }
+    #[test]
+    fn return_array() {
+        let text = 
+r"
+fn main() -> [int] {
+    let x = [10, 20, 30];
+    x
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(10), Int(20), Int(30)])))));
+    }
 }
 
