@@ -227,6 +227,15 @@ impl <'a, PString> Parser<'a, PString> {
                 let dummy = ::interner::intern("[]");
                 Ok(Array(Array { id: self.make_id(dummy), expressions: args }))
             }
+            TLambda => {
+                let args = try!(self.many(|this| {
+                    let id = expect1!(this, TIdentifier(x));
+                    Ok(this.make_id(id))
+                }));
+                expect!(self, TRArrow);
+                let body = box try!(self.expression());
+                Ok(Lambda(Lambda { id: self.make_id(::interner::intern("")), arguments: args, body: body }))
+            }
             x => {
                 self.lexer.backtrack();
                 Err(format!("Token {} does not start an expression", x))
@@ -589,5 +598,12 @@ r"impl Test for int { fn test(x: Self) -> int { x } fn test2(x: int, y: Self) { 
     fn function_type() {
         let typ = parse("fn () -> fn (int) -> float", |p| p.typ());
         assert_eq!(typ, FunctionType(Vec::new(), box FunctionType(vec![int_type.clone()], box float_type.clone())));
+    }
+    #[test]
+    fn lambda() {
+        parse(
+r"fn main() -> fn (int) -> float {
+    \x -> 1.0
+}", |p| p.function());
     }
 }

@@ -428,6 +428,9 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&int_type_tc, index_type));
                 Ok(typ)
             }
+            Lambda(_) => {
+                fail!()
+            }
         }
     }
 
@@ -647,7 +650,8 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
             ArrayAccess(ref array, _) => match array.type_of() {
                 &ArrayType(ref t) => &**t,
                 t => fail!("Not an array type {}", t)
-            }
+            },
+            Lambda(ref lambda) => lambda.id.type_of()
         }
     }
 }

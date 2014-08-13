@@ -41,6 +41,7 @@ pub enum Token {
     TAssign,
     TRArrow,
     TMatchArrow,
+    TLambda,
     TEOF
 }
 
@@ -311,6 +312,7 @@ impl <'a> Lexer<'a> {
                 '{' => TOpenBrace,
                 '}' => TCloseBrace,
                 ',' => TComma,
+                '\\' => TLambda,
                 _   => TEOF
             }
         }
