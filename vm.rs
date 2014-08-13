@@ -240,8 +240,8 @@ impl VM {
                     }
                 }
                 SetField(i) => {
-                    let data = stack.pop();
                     let value = stack.pop();
+                    let data = stack.pop();
                     match data {
                         Data(_, fields) => {
                             *(*fields.borrow_mut()).get_mut(i) = value;
@@ -298,6 +298,17 @@ impl VM {
                         (Data(_, array), Int(index)) => {
                             let v = (*array.borrow_mut())[index as uint].clone();
                             stack.push(v);
+                        }
+                        _ => fail!()
+                    }
+                }
+                SetIndex => {
+                    let value = stack.pop();
+                    let index = stack.pop();
+                    let array = stack.pop();
+                    match (array, index) {
+                        (Data(_, array), Int(index)) => {
+                            *(*array.borrow_mut()).get_mut(index as uint) = value;
                         }
                         _ => fail!()
                     }
@@ -492,6 +503,20 @@ fn main() -> [int] {
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(1), Int(2), Int(33)])))));
+    }
+    #[test]
+    fn array_assign() {
+        let text = 
+r"
+fn main() -> int {
+    let x = [10, 20, 30];
+    x[2] = x[2] + 10;
+    x[2]
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(40)));
     }
 }
 

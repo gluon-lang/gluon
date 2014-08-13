@@ -68,7 +68,7 @@ fn is_statement<T>(e: &Expr<T>) -> bool {
 
 fn is_lvalue<T>(e: &Expr<T>) -> bool {
     match *e {
-        Identifier(..) | FieldAccess(..) => true,
+        Identifier(..) | FieldAccess(..) | ArrayAccess(..) => true,
         _ => false
     }
 }

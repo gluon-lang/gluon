@@ -22,6 +22,7 @@ pub enum Instruction {
     Slide(uint),
 
     GetIndex,
+    SetIndex,
 
     AddInt,
     SubtractInt,
@@ -371,9 +372,9 @@ impl <'a> Compiler<'a> {
                 instructions.push(CJump(pre_jump_index + 1));
             }
             Assign(ref lhs, ref rhs) => {
-                self.compile(&**rhs, instructions);
                 match **lhs {
                     Identifier(ref id) => {
+                        self.compile(&**rhs, instructions);
                         let var = self.find(id.id())
                             .unwrap_or_else(|| fail!("Undefined variable {}", id));
                         match var {
@@ -385,6 +386,7 @@ impl <'a> Compiler<'a> {
                     }
                     FieldAccess(ref expr, ref field) => {
                         self.compile(&**expr, instructions);
+                        self.compile(&**rhs, instructions);
                         let field_index = match *expr.type_of() {
                             Type(ref id) => {
                                 self.find_field(id, field.id())
@@ -393,6 +395,12 @@ impl <'a> Compiler<'a> {
                             _ => fail!()
                         };
                         instructions.push(SetField(field_index));
+                    }
+                    ArrayAccess(ref expr, ref index) => {
+                        self.compile(&**expr, instructions);
+                        self.compile(&**index, instructions);
+                        self.compile(&**rhs, instructions);
+                        instructions.push(SetIndex);
                     }
                     _ => fail!("Assignment to {}", lhs)
                 }
