@@ -271,6 +271,7 @@ impl <'a> Typecheck<'a> {
                         Identifier(ref mut id) => self.subs.set_type(&mut id.typ),
                         FieldAccess(_, ref mut id) => self.subs.set_type(&mut id.typ),
                         Array(ref mut array) => self.subs.set_type(&mut array.id.typ),
+                        Lambda(ref mut lambda) => self.subs.set_type(&mut lambda.id.typ),
                         _ => ()
                     }
                     walk_mut_expr(self, e);
@@ -428,8 +429,18 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&int_type_tc, index_type));
                 Ok(typ)
             }
-            Lambda(_) => {
-                fail!()
+            Lambda(ref mut lambda) => {
+                self.stack.enter_scope();
+                let mut arg_types = Vec::new();
+                for arg in lambda.arguments.mut_iter() {
+                    arg.typ = self.subs.new_var();
+                    arg_types.push(arg.typ.clone());
+                    self.stack_var(arg.name.clone(), arg.typ.clone());
+                }
+                let body_type = try!(self.typecheck(&mut *lambda.body));
+                self.stack.exit_scope();
+                lambda.id.typ = FunctionType(arg_types, box body_type);
+                Ok(lambda.id.typ.clone())
             }
         }
     }
@@ -476,6 +487,10 @@ impl <'a> Typecheck<'a> {
         match (self.subs.real_type(expected), self.subs.real_type(actual)) {
             (&TypeVariable(ref l), actual) => {
                 self.subs.union(*l, actual);
+                true
+            }
+            (expected, &TypeVariable(ref r)) => {
+                self.subs.union(*r, expected);
                 true
             }
             (&TraitType(ref l), &Type(_)) => {
@@ -788,6 +803,23 @@ fn test2() {
 r"
 fn test(x: int) -> [int] {
     [1,2,x]
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err));
+    }
+    #[test]
+    fn lambda() {
+        let text = 
+r"
+fn main() -> int {
+    let f = adder(2);
+    f(3)
+}
+fn adder(x: int) -> fn (int) -> int {
+    \y -> x + y
 }
 ";
         let mut module = parse(text, |p| p.module());
