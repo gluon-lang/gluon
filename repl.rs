@@ -3,7 +3,7 @@ use std::io::IoResult;
 
 use parser::Parser;
 use typecheck::*;
-use compiler::Compiler;
+use compiler::{FunctionEnv, Compiler};
 use vm::{VM, StackFrame, load_script};
 
 macro_rules! tryf(
@@ -43,16 +43,16 @@ fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
     let mut buffer = BufReader::new(expr_str.as_bytes());
     let mut parser = Parser::new(&mut buffer, |s| TcIdent { name: s, typ: unit_type_tc.clone() });
     let mut expr = try!(parser.expression());
-    let mut instructions = Vec::new();
+    let mut function = FunctionEnv::new();
     {
         let vm: &VM = vm;
         let mut tc = Typecheck::new();
         tc.add_environment(vm);
         tryf!(tc.typecheck(&mut expr));
         let mut compiler = Compiler::new(vm);
-        compiler.compile(&expr, &mut instructions);
+        compiler.compile(&expr, &mut function);
     }
-    let v = vm.execute_instructions(instructions.as_slice());
+    let v = vm.execute_instructions(function.instructions.as_slice());
     match v {
         Some(v) => println!("{}", v),
         None => println!("")

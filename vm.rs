@@ -11,7 +11,8 @@ pub enum Value {
     Int(int),
     Float(f64),
     Data(uint, Rc<RefCell<Vec<Value>>>),
-    Function(uint)
+    Function(uint),
+    Closure(uint, Rc<RefCell<Vec<Value>>>)
 }
 
 impl fmt::Show for Value {
@@ -21,12 +22,14 @@ impl fmt::Show for Value {
             Float(x) => write!(f, "{}f", x),
             Data(tag, ref ptr) => write!(f, "{{{} {}}}", tag, ptr.borrow()),
             Function(i) => write!(f, "<function {}>", i),
+            Closure(fi, ref upvars) => write!(f, "{} {}", fi, upvars.borrow())
         }
     }
 }
 
 pub type ExternFunction = fn (&VM, StackFrame);
 
+#[deriving(Show)]
 struct Global {
     id: InternedStr,
     typ: TcType,
@@ -35,6 +38,14 @@ struct Global {
 enum Global_ {
     Bytecode(Vec<Instruction>),
     Extern(ExternFunction)
+}
+impl fmt::Show for Global_ {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self { 
+            Bytecode(ref is) => write!(f, "Bytecode {}", is),
+            Extern(_) => write!(f, "<extern>")
+        }
+    }
 }
 
 pub struct VM {
@@ -70,6 +81,9 @@ impl CompilerEnv for VM {
             .find(|&(_, f)| f.id == *id && f.typ == *typ)
             .map(|(i, _)| i)
     }
+    fn next_function_index(&self) -> uint {
+        self.globals.len()
+    }
 }
 
 impl TypeEnv for VM {
@@ -83,14 +97,15 @@ impl TypeEnv for VM {
     }
 }
 
-pub struct StackFrame<'a> {
+pub struct StackFrame<'a, 'b> {
     stack: &'a mut Vec<Value>,
-    offset: uint
+    offset: uint,
+    upvars: Option<&'b RefCell<Vec<Value>>>
 }
-impl <'a> StackFrame<'a> {
-    fn new(v: &'a mut Vec<Value>, args: uint) -> StackFrame<'a> {
+impl <'a, 'b> StackFrame<'a, 'b> {
+    fn new(v: &'a mut Vec<Value>, args: uint, upvars: Option<&'b RefCell<Vec<Value>>>) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
-        StackFrame { stack: v, offset: offset }
+        StackFrame { stack: v, offset: offset, upvars: upvars }
     }
 
     pub fn len(&self) -> uint {
@@ -117,6 +132,9 @@ impl <'a> StackFrame<'a> {
             None => fail!()
         }
     }
+    fn as_slice(&self) -> &[Value] {
+        self.stack.slice_from(self.offset)
+    }
 }
 
 impl VM {
@@ -140,7 +158,7 @@ impl VM {
     pub fn run_function(&self, cf: &Global) -> Option<Value> {
         let mut stack = Vec::new();
         {
-            let frame = StackFrame::new(&mut stack, 0);
+            let frame = StackFrame::new(&mut stack, 0, None);
             self.execute_function(frame, cf);
         }
         stack.pop()
@@ -149,7 +167,7 @@ impl VM {
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value> {
         let mut stack = Vec::new();
         {
-            let frame = StackFrame::new(&mut stack, 0);
+            let frame = StackFrame::new(&mut stack, 0, None);
             self.execute(frame, instructions);
         }
         stack.pop()
@@ -176,6 +194,7 @@ impl VM {
     }
 
     fn execute(&self, mut stack: StackFrame, instructions: &[Instruction]) {
+        debug!("Enter frame with {}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
             let instr = instructions[index];
@@ -197,15 +216,27 @@ impl VM {
                 }
                 CallGlobal(args) => {
                     let function_index = stack.len() - 1 - args;
-                    let function = match stack.get(function_index) {
+                    let (function, upvars) = match stack.get(function_index) {
                         &Function(index) => {
-                            &self.globals[index]
+                            (&self.globals[index], None)
                         }
-                        _ => fail!()
+                        &Closure(index, ref upvars) => {
+                            (&self.globals[index], Some(upvars.clone()))
+                        }
+                        x => fail!("Cannot call {}", x)
                     };
                     {
-                        let new_stack = StackFrame::new(stack.stack, args);
-                        self.execute_function(new_stack, function);
+                        match upvars {
+                            Some(upvars) => {
+                                let ref u = *upvars;
+                                let new_stack = StackFrame::new(stack.stack, args, Some(u));
+                                self.execute_function(new_stack, function);
+                            }
+                            None => {
+                                let new_stack = StackFrame::new(stack.stack, args, None);
+                                self.execute_function(new_stack, function);
+                            }
+                        }
                     }
                     if stack.len() > function_index + args {
                         //Value was returned
@@ -313,6 +344,22 @@ impl VM {
                         _ => fail!()
                     }
                 }
+                MakeClosure(fi, n) => {
+                    let mut upvars = Vec::with_capacity(n);
+                    for _ in range(0, n) {
+                        let v = stack.pop();
+                        upvars.push(v);
+                    }
+                    stack.push(Closure(fi, Rc::new(RefCell::new(upvars))));
+                }
+                PushUpVar(i) => {
+                    let v = (*stack.upvars.unwrap().borrow())[i].clone();
+                    stack.push(v);
+                }
+                StoreUpVar(i) => {
+                    let v = stack.pop();
+                    *(*stack.upvars.unwrap().borrow_mut()).get_mut(i) = v;
+                }
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
@@ -334,13 +381,13 @@ impl VM {
 }
 
 #[inline]
-fn binop<'a>(stack: &mut StackFrame<'a>, f: |Value, Value| -> Value) {
+fn binop(stack: &mut StackFrame, f: |Value, Value| -> Value) {
     let r = stack.pop();
     let l = stack.pop();
     stack.push(f(l, r));
 }
 #[inline]
-fn binop_int<'a>(stack: &mut StackFrame<'a>, f: |int, int| -> int) {
+fn binop_int(stack: &mut StackFrame, f: |int, int| -> int) {
     binop(stack, |l, r| {
         match (l, r) {
             (Int(l), Int(r)) => Int(f(l, r)),
@@ -349,7 +396,7 @@ fn binop_int<'a>(stack: &mut StackFrame<'a>, f: |int, int| -> int) {
     })
 }
 #[inline]
-fn binop_float<'a>(stack: &mut StackFrame<'a>, f: |f64, f64| -> f64) {
+fn binop_float(stack: &mut StackFrame, f: |f64, f64| -> f64) {
     binop(stack, |l, r| {
         match (l, r) {
             (Float(l), Float(r)) => Float(f(l, r)),
@@ -517,6 +564,23 @@ fn main() -> int {
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(40)));
+    }
+    #[test]
+    fn lambda() {
+        let text = 
+r"
+fn main() -> int {
+    let y = 100;
+    let f = \x -> {
+        y = y + x;
+        y + 1
+    };
+    f(22)
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(123)));
     }
 }
 

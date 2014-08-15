@@ -234,7 +234,7 @@ impl <'a, PString> Parser<'a, PString> {
                 }));
                 expect!(self, TRArrow);
                 let body = box try!(self.expression());
-                Ok(Lambda(Lambda { id: self.make_id(::interner::intern("")), arguments: args, body: body }))
+                Ok(Lambda(Lambda { id: self.make_id(::interner::intern("")), free_vars: Vec::new(), arguments: args, body: body }))
             }
             x => {
                 self.lexer.backtrack();

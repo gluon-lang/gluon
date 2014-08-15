@@ -51,6 +51,7 @@ pub struct Array<Id> {
 pub struct Lambda<Id> {
     //Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
+    pub free_vars: Vec<Id>,
     pub arguments: Vec<Id>,
     pub body: Box<Expr<Id>>
 }
