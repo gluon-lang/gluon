@@ -176,6 +176,16 @@ impl <'a> Lexer<'a> {
                     Ok(c) => Some(c),
                     Err(_) => None
                 };
+                self.location.absolute += 1;
+                self.location.column += 1;
+                if c == '\n' || c == '\r' {
+                    self.location.column = 0;
+                    self.location.row += 1;
+                    //If this is a \n\r line ending skip the next char without increasing the location
+                    if c == '\r' && self.peek_c == Some('\n') {
+                        self.peek_c = self.input.read_char().ok();
+                    }
+                }
             }
             None => ()
         }
