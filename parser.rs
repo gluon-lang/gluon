@@ -412,9 +412,9 @@ impl <'a, PString> Parser<'a, PString> {
         expect!(self, TImpl);
         let trait_name = expect1!(self, TIdentifier(x));
         expect!(self, TFor);
-        let type_name = expect1!(self, TIdentifier(x));
+        let typ = try!(self.typ());
         let functions = try!(self.braces(|this| this.many(|this| this.function() )));
-        Ok(Impl { trait_name: self.make_id(trait_name), type_name: self.make_id(type_name), functions: functions })
+        Ok(Impl { trait_name: self.make_id(trait_name), typ: typ, functions: functions })
     }
 
     pub fn function_declaration(&mut self) -> ParseResult<FunctionDeclaration<PString>> {

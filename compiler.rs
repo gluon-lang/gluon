@@ -27,6 +27,10 @@ pub enum Instruction {
     PushUpVar(uint),
     StoreUpVar(uint),
 
+    ConstructTraitObject(uint),
+    PushTraitFunction(uint),
+    Unpack,
+
     GetIndex,
     SetIndex,
 
@@ -57,6 +61,12 @@ pub struct CompiledFunction {
     pub instructions: Vec<Instruction>
 }
 
+#[deriving(PartialEq, Clone)]
+pub struct TraitFunctions {
+    //The where the first function of the implemented trait is at
+    pub index: uint
+}
+
 pub struct FunctionEnv {
     pub instructions: Vec<Instruction>,
     pub free_vars: Vec<InternedStr>
@@ -83,7 +93,9 @@ pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
     fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint>;
     fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<uint>;
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint>;
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint>;
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint>;
     fn next_function_index(&self) -> uint;
 }
 
@@ -108,11 +120,22 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         inner.find_tag(struct_, field)
             .or_else(|| outer.find_tag(struct_, field))
     }
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
+        let &(ref outer, ref inner) = self;
+        inner.find_trait_offset(trait_name, trait_type)
+            .map(|index| index + outer.next_function_index())
+            .or_else(|| outer.find_trait_offset(trait_name, trait_type))
+    }
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
         let &(ref outer, ref inner) = self;
         inner.find_trait_function(typ, id)
             .map(|index| index + outer.next_function_index())
             .or_else(|| outer.find_trait_function(typ, id))
+    }
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
+        let &(ref outer, ref inner) = self;
+        inner.find_object_function(trait_type, name)
+            .or_else(|| outer.find_object_function(trait_type, name))
     }
     fn next_function_index(&self) -> uint {
         let &(ref outer, ref inner) = self;
@@ -164,10 +187,19 @@ impl CompilerEnv for Module<TcIdent> {
                 .find(|&(_, c)| c.name.id() == ctor_name)
                 .map(|(i, _)| i).unwrap())
     }
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
+        let mut offset = self.functions.len();
+        self.impls.iter()
+            .find(|imp| {
+                offset += imp.functions.len();
+                imp.trait_name.id() == trait_name && trait_type.equiv(&imp.typ)
+            })
+            .map(|imp| offset - imp.functions.len())
+    }
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
         let mut offset = self.functions.len();
         for imp in self.impls.iter() {
-            if imp.type_name.typ == *typ {
+            if typ.equiv(&imp.typ) {
                 for (i, func) in imp.functions.iter().enumerate() {
                     if func.name.id() == id {
                         return Some(offset + i);
@@ -177,6 +209,14 @@ impl CompilerEnv for Module<TcIdent> {
             offset += imp.functions.len();
         }
         None
+    }
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
+        self.traits.iter()
+            .find(|trait_| trait_.name.id() == trait_type)
+            .and_then(|trait_| trait_.declarations.iter().enumerate()
+                .find(|&(_, func)| func.name.id() == name)
+                .map(|(i, _)| i)
+            )
     }
     fn next_function_index(&self) -> uint {
         self.functions.len() + self.impls.iter().fold(0, |y, i| i.functions.len() + y)
@@ -194,8 +234,14 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
         (*self).find_tag(enum_, ctor_name)
     }
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
+        (*self).find_trait_offset(trait_name, trait_type)
+    }
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
         (*self).find_trait_function(typ, id)
+    }
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
+        (*self).find_object_function(trait_type, name)
     }
     fn next_function_index(&self) -> uint {
         (*self).next_function_index()
@@ -265,20 +311,23 @@ impl <'a> Compiler<'a> {
         self.stack.len()
     }
 
-    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Assembly {
+    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> (Vec<CompiledFunction>, Vec<TraitFunctions>) {
         let mut functions: Vec<CompiledFunction> = module.functions.iter()
             .map(|f| self.compile_function(f))
             .collect();
+        let mut trait_functions = Vec::new();
+        let offset = self.globals.next_function_index();
         for imp in module.impls.iter() {
+            trait_functions.push(TraitFunctions { index: offset + functions.len() });
             for f in imp.functions.iter() {
                 functions.push(self.compile_function(f));
             }
         }
         let lambdas = ::std::mem::replace(&mut self.compiled_lambdas, Vec::new());
         functions.extend(lambdas.move_iter());
-        let mut types = TypeInfos::new();
-        types.add_module(module);
-        Assembly { functions: functions, types: types }
+
+
+        (functions, trait_functions)
     }
 
     pub fn compile_function(&mut self, function: &Function<TcIdent>) -> CompiledFunction {
@@ -417,8 +466,36 @@ impl <'a> Compiler<'a> {
                     _ => ()
                 }
                 self.compile(&**func, function);
-                for arg in args.iter() {
+                let arg_types = match *func.type_of() {
+                    FunctionType(ref args, _) => args.as_slice(),
+                    _ => fail!("Non function type inferred in call")
+                };
+                let is_trait_func = match func.value {
+                    Identifier(ref func_id) => {
+                        self.find(func_id.id(), function).map(|x| {
+                            match x {
+                                TraitFunction(ref t) => true,
+                                _ => false
+                            }
+                        })
+                    }
+                    _ => None
+                }.unwrap_or(false);
+                for (arg, real_arg_type) in args.iter().zip(arg_types.iter()) {
                     self.compile(arg, function);
+                    match (arg.type_of(), real_arg_type, is_trait_func) {
+                        (&TraitType(_), &TraitType(ref typ), true) => {
+                            //Call through a trait object
+                            //Need to unpack the trait object for this argument
+                            function.instructions.push(Unpack);
+                        }
+                        (actual, &TraitType(ref id), _) => {
+                            let offset = self.globals.find_trait_offset(id, actual)
+                                .expect("Missing trait");
+                            function.instructions.push(ConstructTraitObject(offset));
+                        }
+                        _ => ()
+                    }
                 }
                 function.instructions.push(CallGlobal(args.len()));
             }
@@ -570,13 +647,23 @@ impl <'a> Compiler<'a> {
     }
 
     fn compile_trait_function(&self, trait_func_type: &TcType, id: &TcIdent, function: &mut FunctionEnv) {
+        debug!("Find real {} <=> {}", trait_func_type, id.typ);
         let typ = find_real_type(trait_func_type, &id.typ)
             .unwrap_or_else(|| fail!("Could not find the real type between {} <=> {}", trait_func_type, id.typ));
-
-        debug!("Find trait function {} {}", typ, id.id());
-        let index = self.find_trait_function(typ, id.id())
-            .expect("Trait function does not exist");
-        function.instructions.push(PushGlobal(index));
+        
+        match *typ {
+            TraitType(ref trait_name) => {
+                    let index = self.globals.find_object_function(trait_name, id.id())
+                        .expect("Trait object function does not exist");
+                    function.instructions.push(PushTraitFunction(index));
+                }
+            _ => {
+                debug!("Find trait function {} {}", typ, id.id());
+                let index = self.find_trait_function(typ, id.id())
+                    .expect("Trait function does not exist");
+                function.instructions.push(PushGlobal(index));
+            }
+        }
     }
 }
 

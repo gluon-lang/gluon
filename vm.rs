@@ -12,7 +12,8 @@ pub enum Value {
     Float(f64),
     Data(uint, Rc<RefCell<Vec<Value>>>),
     Function(uint),
-    Closure(uint, Rc<RefCell<Vec<Value>>>)
+    Closure(uint, Rc<RefCell<Vec<Value>>>),
+    TraitObject(uint, Rc<Value>)
 }
 
 impl fmt::Show for Value {
@@ -22,7 +23,8 @@ impl fmt::Show for Value {
             Float(x) => write!(f, "{}f", x),
             Data(tag, ref ptr) => write!(f, "{{{} {}}}", tag, ptr.borrow()),
             Function(i) => write!(f, "<function {}>", i),
-            Closure(fi, ref upvars) => write!(f, "{} {}", fi, upvars.borrow())
+            Closure(fi, ref upvars) => write!(f, "{} {}", fi, upvars.borrow()),
+            TraitObject(fns, ref o) => write!(f, "<{} {}>", fns, o)
         }
     }
 }
@@ -50,7 +52,8 @@ impl fmt::Show for Global_ {
 
 pub struct VM {
     globals: Vec<Global>,
-    type_infos: TypeInfos
+    trait_indexes: Vec<TraitFunctions>,
+    type_infos: TypeInfos,
 }
 
 impl CompilerEnv for VM {
@@ -75,11 +78,17 @@ impl CompilerEnv for VM {
             None => None
         }
     }
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
+        fail!("{} {}", trait_name, trait_type)
+    }
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
         self.globals.iter()
             .enumerate()
             .find(|&(_, f)| f.id == *id && f.typ == *typ)
             .map(|(i, _)| i)
+    }
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
+        fail!()
     }
     fn next_function_index(&self) -> uint {
         self.globals.len()
@@ -140,7 +149,7 @@ impl <'a, 'b> StackFrame<'a, 'b> {
 impl VM {
     
     pub fn new() -> VM {
-        let mut vm = VM { globals: Vec::new(), type_infos: TypeInfos::new() };
+        let mut vm = VM { globals: Vec::new(), trait_indexes: Vec::new(), type_infos: TypeInfos::new() };
         vm.extern_function("array_length", vec![ArrayType(box int_type_tc.clone())], int_type_tc.clone(), array_length);
         vm.extern_function("array_push", vec![ArrayType(box int_type_tc.clone()), int_type_tc.clone()], unit_type_tc.clone(), array_push);
         vm
@@ -152,6 +161,10 @@ impl VM {
                 Global { id: id, typ: typ, value: Bytecode(instructions) }
             )
         )
+    }
+
+    fn add_trait_indexes(&mut self, indexes: Vec<TraitFunctions>) {
+        self.trait_indexes.extend(indexes.move_iter())
     }
 
     pub fn run_function(&self, cf: &Global) -> Option<Value> {
@@ -360,6 +373,25 @@ impl VM {
                     let v = stack.pop();
                     *(*stack.upvars.unwrap().borrow_mut()).get_mut(i) = v;
                 }
+                ConstructTraitObject(i) => {
+                    let v = stack.pop();
+                    stack.push(TraitObject(i, Rc::new(v)));
+                }
+                PushTraitFunction(i) => {
+                    let func = match stack.top() {
+                        &TraitObject(fi, _) => {
+                            Function(fi + i)
+                        }
+                        _ => fail!()
+                    };
+                    stack.push(func);
+                }
+                Unpack => {
+                    match stack.pop() {
+                        TraitObject(_, obj) => stack.push((*obj).clone()),
+                        _ => fail!()
+                    }
+                }
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
@@ -434,17 +466,18 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
 
     let mut parser = Parser::new(buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
     let mut module = tryf!(parser.module());
-    let assembly = {
+    let (type_infos, (functions, trait_indexes)) = {
         let vm: &VM = vm;
         let mut tc = Typecheck::new();
         tc.add_environment(vm);
         tryf!(tc.typecheck_module(&mut module));
         let env = (vm, &module);
         let mut compiler = Compiler::new(&env);
-        compiler.compile_module(&module)
+        (tc.type_infos, compiler.compile_module(&module))
     };
-    vm.new_functions(assembly.functions);
-    vm.type_infos.add_module(&module);
+    vm.new_functions(functions);
+    vm.add_trait_indexes(trait_indexes);
+    vm.type_infos = type_infos;
     Ok(())
 }
 
@@ -628,6 +661,32 @@ fn main() -> [int] {
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(2), Int(4), Int(6)])))));
+    }
+    #[test]
+    fn trait_object() {
+        let text = 
+r"
+
+trait Collection {
+    fn len(x: Self) -> int;
+}
+impl Collection for [int] {
+    fn len(x: [int]) -> int {
+        array_length(x)
+    }
+}
+
+fn test(c: Collection) -> int {
+    len(c)
+}
+
+fn main() -> int {
+    test([0, 0, 0])
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(3)));
     }
 }
 

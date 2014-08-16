@@ -45,12 +45,27 @@ impl fmt::Show for TcType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Type(t) => t.fmt(f),
-            TraitType(t) => t.fmt(f),
+            TraitType(t) => write!(f, "${}", t),
             TypeVariable(ref x) => x.fmt(f),
             Generic(x) => write!(f, "#{}", x),
             FunctionType(ref args, ref return_type) => write!(f, "fn {} -> {}", args, return_type),
             BuiltinType(t) => t.fmt(f),
             ArrayType(ref t) => write!(f, "[{}]", t)
+        }
+    }
+}
+
+impl Equiv<Type<InternedStr>> for TcType {
+    fn equiv(&self, o: &Type<InternedStr>) -> bool {
+        match (self, o) {
+            (&Type(ref l), &ast::Type(ref r)) => l == r,
+            (&TypeVariable(_), _) => false,
+            (&Generic(_), _) => false,
+            (&FunctionType(ref l_args, ref l), &ast::FunctionType(ref r_args, ref r)) =>
+                l_args.iter().zip(r_args.iter()).all(|(l, r)| l.equiv(r)) && l.equiv(&**r),
+            (&BuiltinType(ref l), &ast::LiteralType(ref r)) => l == r,
+            (&ArrayType(ref l), &ast::ArrayType(ref r)) => l.equiv(&**r),
+            _ => false
         }
     }
 }
@@ -131,7 +146,7 @@ impl TypeInfos {
             self.traits.insert(t.name.id().clone(), function_types);
         }
         for imp in module.impls.iter() {
-            let set = self.impls.find_or_insert(Type(imp.type_name.id().clone()), HashSet::new());
+            let set = self.impls.find_or_insert(from_vm_type(&imp.typ), HashSet::new());
             set.insert(imp.trait_name.id().clone());
         }
     }
@@ -149,7 +164,7 @@ pub trait TypeEnv {
 
 pub struct Typecheck<'a> {
     environment: Option<&'a TypeEnv>,
-    type_infos: TypeInfos,
+    pub type_infos: TypeInfos,
     module: HashMap<InternedStr, TcType>,
     stack: ScopedMap<InternedStr, TcType>,
     subs: Substitution,
@@ -275,7 +290,6 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn typecheck_impl(&mut self, imp: &mut Impl<TcIdent>) -> Result<(), TypeError> {
-        imp.type_name.typ = from_vm_type(&str_to_type(imp.type_name.id().clone()));
         {
             let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
             for func in imp.functions.mut_iter() {
@@ -322,20 +336,20 @@ impl <'a> Typecheck<'a> {
 
     fn replace_vars(&mut self, expr: &mut LExpr<TcIdent>) {
         //Replace all type variables with their inferred types
-        struct ReplaceVisitor<'a> { subs: &'a mut Substitution }
-        impl <'a> MutVisitor<TcIdent> for ReplaceVisitor<'a> {
+        struct ReplaceVisitor<'a, 'b> { tc: &'a mut Typecheck<'b> }
+        impl <'a, 'b> MutVisitor<TcIdent> for ReplaceVisitor<'a, 'b> {
             fn visit_expr(&mut self, e: &mut LExpr<TcIdent>) {
                 match e.value {
-                    Identifier(ref mut id) => self.subs.set_type(&mut id.typ),
-                    FieldAccess(_, ref mut id) => self.subs.set_type(&mut id.typ),
-                    Array(ref mut array) => self.subs.set_type(&mut array.id.typ),
-                    Lambda(ref mut lambda) => self.subs.set_type(&mut lambda.id.typ),
+                    Identifier(ref mut id) => self.tc.set_type(&mut id.typ),
+                    FieldAccess(_, ref mut id) => self.tc.set_type(&mut id.typ),
+                    Array(ref mut array) => self.tc.set_type(&mut array.id.typ),
+                    Lambda(ref mut lambda) => self.tc.set_type(&mut lambda.id.typ),
                     _ => ()
                 }
                 walk_mut_expr(self, e);
             }
         }
-        let mut v = ReplaceVisitor { subs: &mut self.subs };
+        let mut v = ReplaceVisitor { tc: self };
         v.visit_expr(expr);
     }
 
@@ -465,10 +479,10 @@ impl <'a> Typecheck<'a> {
                     }
                     FunctionType(..) => Err(TypeError("Field access on function")),
                     BuiltinType(..) => Err(TypeError("Field acces on primitive")),
-                    TraitType(..) => Err(TypeError("Field acces on trait object")),
                     TypeVariable(..) => Err(TypeError("Field acces on type variable")),
                     Generic(..) => Err(TypeError("Field acces on generic")),
-                    ArrayType(..) => Err(TypeError("Field access on array"))
+                    ArrayType(..) => Err(TypeError("Field access on array")),
+                    TraitType(..) => Err(TypeError("Field access on trait object"))
                 }
             }
             Array(ref mut a) => {
@@ -545,17 +559,16 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
-        match (self.subs.real_type(expected), self.subs.real_type(actual)) {
-            (&TypeVariable(ref l), actual) => {
+        let expected = self.subs.real_type(expected);
+        let actual = self.subs.real_type(actual);
+        match (expected, actual) {
+            (&TypeVariable(ref l), _) => {
                 self.subs.union(*l, actual);
                 true
             }
-            (expected, &TypeVariable(ref r)) => {
+            (_, &TypeVariable(ref r)) => {
                 self.subs.union(*r, expected);
                 true
-            }
-            (&TraitType(ref l), &Type(_)) => {
-                self.type_infos.has_impl_of_trait(actual, l)
             }
             (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
@@ -566,9 +579,51 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (&ArrayType(ref l), &ArrayType(ref r)) => self.unify_(&**l, &**r),
-            (expected, actual) => expected == actual
+            (&Type(ref l), _) => {
+                if find_trait(&self.type_infos, l).is_ok() {
+                    debug!("Found trait {} ", l);
+                    self.type_infos.has_impl_of_trait(actual, l)
+                }
+                else {
+                    expected == actual
+                }
+            }
+            _ => expected == actual
         }
     }
+    fn set_type(&self, t: &mut TcType) {
+        let replacement = match *t {
+            TypeVariable(id) => self.subs.find(id)
+                .map(|t| match *t {
+                    Type(ref id) if find_trait(&self.type_infos, id).is_ok() => {
+                        TraitType(id.clone())
+                    }
+                    _ => t.clone()
+                }),
+            FunctionType(ref mut args, ref mut return_type) => {
+                for arg in args.mut_iter() {
+                    self.set_type(arg);
+                }
+                self.set_type(&mut **return_type);
+                None
+            }
+            Type(id) => {
+                if find_trait(&self.type_infos, &id).is_ok() {
+                    Some(TraitType(id))
+                }
+                else {
+                    None
+                }
+            }
+            ArrayType(ref mut typ) => { self.set_type(&mut **typ); None }
+            _ => None
+        };
+        match replacement {
+            Some(x) => *t = x,
+            None => ()
+        }
+    }
+
 }
 
 struct Substitution {
@@ -578,24 +633,6 @@ struct Substitution {
 impl Substitution {
     fn new() -> Substitution {
         Substitution { map: HashMap::new(), var_id: 0 }
-    }
-
-    fn set_type(&self, t: &mut TcType) {
-        let replacement = match *t {
-            TypeVariable(id) => self.find(id),
-            FunctionType(ref mut args, ref mut return_type) => {
-                for arg in args.mut_iter() {
-                    self.set_type(arg);
-                }
-                self.set_type(&mut **return_type);
-                None
-            }
-            _ => None
-        };
-        match replacement {
-            Some(x) => *t = x.clone(),
-            None => ()
-        }
     }
 
     fn union(&self, id: uint, typ: &TcType) {
