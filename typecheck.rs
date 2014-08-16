@@ -504,6 +504,7 @@ impl <'a> Typecheck<'a> {
                     false
                 }
             }
+            (&ArrayType(ref l), &ArrayType(ref r)) => self.unify_(&**l, &**r),
             (expected, actual) => expected == actual
         }
     }
@@ -803,6 +804,19 @@ fn test2() {
 r"
 fn test(x: int) -> [int] {
     [1,2,x]
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err));
+    }
+    #[test]
+    fn array_unify() {
+        let text = 
+r"
+fn test() -> [int] {
+    []
 }
 ";
         let mut module = parse(text, |p| p.module());
