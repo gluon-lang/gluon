@@ -340,7 +340,11 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&lhs_type, rhs_type.clone()));
                 match op.as_slice() {
                     "+" | "-" | "*" => {
-                        if lhs_type == int_type_tc || lhs_type == float_type_tc {
+                        let b = {
+                            let lt = self.subs.real_type(&lhs_type);
+                            *lt == int_type_tc || *lt == float_type_tc
+                        };
+                        if b {
                             Ok(lhs_type)
                         }
                         else {

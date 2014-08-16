@@ -140,7 +140,10 @@ impl <'a, 'b> StackFrame<'a, 'b> {
 impl VM {
     
     pub fn new() -> VM {
-        VM { globals: Vec::new(), type_infos: TypeInfos::new() }
+        let mut vm = VM { globals: Vec::new(), type_infos: TypeInfos::new() };
+        vm.extern_function("array_length", vec![ArrayType(box int_type_tc.clone())], int_type_tc.clone(), array_length);
+        vm.extern_function("array_push", vec![ArrayType(box int_type_tc.clone()), int_type_tc.clone()], unit_type_tc.clone(), array_push);
+        vm
     }
 
     pub fn new_functions(&mut self, fns: Vec<CompiledFunction>) {
@@ -149,10 +152,6 @@ impl VM {
                 Global { id: id, typ: typ, value: Bytecode(instructions) }
             )
         )
-    }
-
-    pub fn get_function(&self, index: uint) -> &Global {
-        &self.globals[index]
     }
 
     pub fn run_function(&self, cf: &Global) -> Option<Value> {
@@ -226,6 +225,7 @@ impl VM {
                         x => fail!("Cannot call {}", x)
                     };
                     {
+                        debug!("Call {}", function.id);
                         match upvars {
                             Some(upvars) => {
                                 let ref u = *upvars;
@@ -404,6 +404,27 @@ fn binop_float(stack: &mut StackFrame, f: |f64, f64| -> f64) {
         }
     })
 }
+
+fn array_length(_: &VM, mut stack: StackFrame) {
+    match stack.pop() {
+        Data(_, values) => {
+            let i = values.borrow().len();
+            stack.push(Int(i as int));
+        }
+        _ => fail!()
+    }
+}
+fn array_push(_: &VM, mut stack: StackFrame) {
+    let value = stack.pop();
+    let data = stack.pop();
+    match data {
+        Data(_, values) => {
+            values.borrow_mut().push(value);
+        }
+        _ => fail!()
+    }
+}
+
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 )
@@ -433,7 +454,11 @@ pub fn run_main(s: &str) -> Result<Option<Value>, String> {
     let mut vm = VM::new();
     let mut buffer = BufReader::new(s.as_bytes());
     try!(load_script(&mut vm, &mut buffer));
-    let v = vm.run_function(vm.get_function(0));
+    let func = match vm.globals.iter().find(|g| g.id.as_slice() == "main") {
+        Some(f) => f,
+        None => return Err("Undefined main function".to_string())
+    };
+    let v = vm.run_function(func);
     Ok(v)
 }
 
@@ -581,6 +606,28 @@ fn main() -> int {
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(123)));
+    }
+    #[test]
+    fn array_map() {
+        let text = 
+r"
+fn map_int_array(xs: [int], f: fn (int) -> int) -> [int] {
+    let i = 0;
+    let result = [];
+    while i < array_length(xs) {
+        array_push(result, f(xs[i]));
+        i = i + 1;
+    }
+    result
+}
+fn main() -> [int] {
+    let xs = [1,2,3];
+    map_int_array(xs, \x -> x * 2)
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(2), Int(4), Int(6)])))));
     }
 }
 
