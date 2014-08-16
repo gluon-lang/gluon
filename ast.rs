@@ -1,5 +1,5 @@
 use interner::{InternedStr};
-use lexer::Location;
+pub use lexer::Location;
 
 
 #[deriving(Clone, Show)]

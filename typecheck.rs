@@ -152,8 +152,42 @@ pub struct Typecheck<'a> {
     type_infos: TypeInfos,
     module: HashMap<InternedStr, TcType>,
     stack: ScopedMap<InternedStr, TcType>,
-    subs: Substitution
+    subs: Substitution,
+    errors: Errors<Located<TypeError>>
 }
+
+struct Errors<T> {
+    errors: Vec<T>
+}
+
+impl <T> Errors<T> {
+    fn new() -> Errors<T> {
+        Errors { errors: Vec::new() }
+    }
+    fn has_errors(&self) -> bool {
+        self.errors.len() != 0
+    }
+    fn error(&mut self, t: T) {
+        self.errors.push(t);
+    }
+    fn handle<U>(&mut self, err: Result<U, T>) {
+        match err {
+            Ok(_) => (),
+            Err(e) => self.error(e)
+        }
+    }
+}
+
+impl <T: fmt::Show> fmt::Show for Errors<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for error in self.errors.iter() {
+            try!(write!(f, "{}\n", error));
+        }
+        Ok(())
+    }
+}
+
+type TypeErrors = Errors<Located<TypeError>>;
 
 impl <'a> Typecheck<'a> {
     
@@ -163,7 +197,8 @@ impl <'a> Typecheck<'a> {
             module: HashMap::new(),
             type_infos: TypeInfos::new(),
             stack: ScopedMap::new(),
-            subs: Substitution::new()
+            subs: Substitution::new(),
+            errors: Errors::new()
         }
     }
     
@@ -197,7 +232,7 @@ impl <'a> Typecheck<'a> {
         self.environment = Some(env);
     }
 
-    pub fn typecheck_module(&mut self, module: &mut Module<TcIdent>) -> Result<(), TypeError> {
+    pub fn typecheck_module(&mut self, module: &mut Module<TcIdent>) -> Result<(), TypeErrors> {
         
         for f in module.functions.mut_iter() {
             f.name.typ = FunctionType(f.arguments.iter().map(|f| from_vm_type(&f.typ)).collect(), box from_vm_type(&f.return_type));
@@ -226,70 +261,92 @@ impl <'a> Typecheck<'a> {
             }
         }
         for f in module.functions.mut_iter() {
-            try!(self.typecheck_function(f));
+            self.typecheck_function(f)
         }
         for imp in module.impls.mut_iter() {
-            imp.type_name.typ = from_vm_type(&str_to_type(imp.type_name.id().clone()));
-            {
-                let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
-                for func in imp.functions.mut_iter() {
-                    let trait_function_type = try!(trait_functions.iter()
-                        .find(|& &(ref name, _)| name == func.name.id())
-                        .map(Ok)
-                        .unwrap_or_else(|| Err(TypeError("Function does not exist in trait"))));
-                    let args = func.arguments.iter()
-                        .map(|f| from_vm_type(&f.typ))
-                        .collect();
-                    func.name.typ = FunctionType(args, box from_vm_type(&func.return_type));
-                    let tf = self.subs.instantiate(trait_function_type.ref1());
-                    try!(self.unify(&tf, func.name.typ.clone()));
-                }
+            let x = self.typecheck_impl(imp).map_err(no_loc);
+            self.errors.handle(x);
+        }
+        if self.errors.has_errors() {
+            Err(::std::mem::replace(&mut self.errors, Errors::new()))
+        }
+        else {
+            Ok(())
+        }
+    }
+    fn typecheck_impl(&mut self, imp: &mut Impl<TcIdent>) -> Result<(), TypeError> {
+        imp.type_name.typ = from_vm_type(&str_to_type(imp.type_name.id().clone()));
+        {
+            let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
+            for func in imp.functions.mut_iter() {
+                let trait_function_type = try!(trait_functions.iter()
+                    .find(|& &(ref name, _)| name == func.name.id())
+                    .map(Ok)
+                    .unwrap_or_else(|| Err(TypeError("Function does not exist in trait"))));
+                let args = func.arguments.iter()
+                    .map(|f| from_vm_type(&f.typ))
+                    .collect();
+                func.name.typ = FunctionType(args, box from_vm_type(&func.return_type));
+                let tf = self.subs.instantiate(trait_function_type.ref1());
+                try!(self.unify(&tf, func.name.typ.clone()));
             }
-            for f in imp.functions.mut_iter() {
-                try!(self.typecheck_function(f));
-            }
+        }
+        for f in imp.functions.mut_iter() {
+            self.typecheck_function(f);
         }
         Ok(())
     }
 
     
-    fn typecheck_function(&mut self, function: &mut Function<TcIdent>) -> Result<(), TypeError> {
+    fn typecheck_function(&mut self, function: &mut Function<TcIdent>) {
         debug!("Typecheck function {}", function.name.id());
         self.stack.clear();
         for arg in function.arguments.iter() {
             self.stack_var(arg.name.clone(), from_vm_type(&arg.typ));
         }
-        let return_type = try!(self.typecheck(&mut function.expression));
-        let x = self.unify(&from_vm_type(&function.return_type), return_type)
-            .map(|_| ());
-        if x.is_ok() {
-            //Replace all type variables with their inferred types
-            struct ReplaceVisitor<'a> { subs: &'a mut Substitution }
-            impl <'a> MutVisitor<TcIdent> for ReplaceVisitor<'a> {
-                fn visit_expr(&mut self, e: &mut LExpr<TcIdent>) {
-                    match e.value {
-                        Identifier(ref mut id) => self.subs.set_type(&mut id.typ),
-                        FieldAccess(_, ref mut id) => self.subs.set_type(&mut id.typ),
-                        Array(ref mut array) => self.subs.set_type(&mut array.id.typ),
-                        Lambda(ref mut lambda) => self.subs.set_type(&mut lambda.id.typ),
-                        _ => ()
-                    }
-                    walk_mut_expr(self, e);
-                }
+        let return_type = match self.typecheck(&mut function.expression) {
+            Ok(typ) => typ,
+            Err(err) => {
+                self.errors.error(Located { location: function.expression.location, value: err });
+                return;
             }
-            let mut v = ReplaceVisitor { subs: &mut self.subs };
-            v.visit_expr(&mut function.expression);
+        };
+        match self.unify(&from_vm_type(&function.return_type), return_type) {
+            Ok(_) => self.replace_vars(&mut function.expression),
+            Err(err) => {
+                debug!("End {} ==> {}", function.name.id(), err);
+                self.errors.error(Located { location: function.expression.location, value: err });
+            }
         }
-        debug!("End {} ==> {}", function.name.id(), x.is_ok());
-        x
+    }
+
+    fn replace_vars(&mut self, expr: &mut LExpr<TcIdent>) {
+        //Replace all type variables with their inferred types
+        struct ReplaceVisitor<'a> { subs: &'a mut Substitution }
+        impl <'a> MutVisitor<TcIdent> for ReplaceVisitor<'a> {
+            fn visit_expr(&mut self, e: &mut LExpr<TcIdent>) {
+                match e.value {
+                    Identifier(ref mut id) => self.subs.set_type(&mut id.typ),
+                    FieldAccess(_, ref mut id) => self.subs.set_type(&mut id.typ),
+                    Array(ref mut array) => self.subs.set_type(&mut array.id.typ),
+                    Lambda(ref mut lambda) => self.subs.set_type(&mut lambda.id.typ),
+                    _ => ()
+                }
+                walk_mut_expr(self, e);
+            }
+        }
+        let mut v = ReplaceVisitor { subs: &mut self.subs };
+        v.visit_expr(expr);
     }
 
     pub fn typecheck(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
-        let ret = self.typecheck_(expr);
-        if ret.is_err() {
-            debug!("{}", expr);
+        match self.typecheck_(expr) {
+            Ok(typ) => Ok(typ),
+            Err(err) => {
+                self.errors.error(Located { location: expr.location, value: err });
+                Ok(self.subs.new_var())
+            }
         }
-        ret
     }
     pub fn typecheck_(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
         match expr.value {
