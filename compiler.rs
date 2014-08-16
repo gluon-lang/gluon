@@ -91,6 +91,10 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
         let &(ref outer, ref inner) = self;
         inner.find_var(s)
+            .map(|var| match var {
+                Global(i) => Global(i + outer.next_function_index()),
+                var => var
+            })
             .or_else(|| outer.find_var(s))
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
@@ -107,6 +111,7 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
         let &(ref outer, ref inner) = self;
         inner.find_trait_function(typ, id)
+            .map(|index| index + outer.next_function_index())
             .or_else(|| outer.find_trait_function(typ, id))
     }
     fn next_function_index(&self) -> uint {
