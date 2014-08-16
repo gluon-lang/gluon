@@ -266,8 +266,8 @@ impl <'a> Typecheck<'a> {
             //Replace all type variables with their inferred types
             struct ReplaceVisitor<'a> { subs: &'a mut Substitution }
             impl <'a> MutVisitor<TcIdent> for ReplaceVisitor<'a> {
-                fn visit_expr(&mut self, e: &mut Expr<TcIdent>) {
-                    match *e {
+                fn visit_expr(&mut self, e: &mut LExpr<TcIdent>) {
+                    match e.value {
                         Identifier(ref mut id) => self.subs.set_type(&mut id.typ),
                         FieldAccess(_, ref mut id) => self.subs.set_type(&mut id.typ),
                         Array(ref mut array) => self.subs.set_type(&mut array.id.typ),
@@ -284,15 +284,15 @@ impl <'a> Typecheck<'a> {
         x
     }
 
-    pub fn typecheck(&mut self, expr: &mut Expr<TcIdent>) -> TcResult {
+    pub fn typecheck(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
         let ret = self.typecheck_(expr);
         if ret.is_err() {
             debug!("{}", expr);
         }
         ret
     }
-    pub fn typecheck_(&mut self, expr: &mut Expr<TcIdent>) -> TcResult {
-        match *expr {
+    pub fn typecheck_(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
+        match expr.value {
             Identifier(ref mut id) => {
                 id.typ = try!(self.find(id.id()));
                 Ok(id.typ.clone())

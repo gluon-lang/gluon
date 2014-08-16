@@ -1,5 +1,26 @@
 use interner::{InternedStr};
+use lexer::Location;
 
+
+#[deriving(Clone, Show)]
+pub struct Located<T> {
+    pub location: Location,
+    pub value: T
+}
+impl <T: PartialEq> PartialEq for Located<T> {
+    fn eq(&self, other: &Located<T>) -> bool {
+        self.value == other.value
+    }
+}
+impl <T> Deref<T> for Located<T> {
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+pub fn no_loc<T>(x: T) -> Located<T> {
+    Located { location: Location::eof(), value: x }
+}
 
 #[deriving(Clone, Eq, PartialEq, Show, Hash)]
 pub enum LiteralType {
@@ -37,14 +58,14 @@ pub enum Pattern<Id> {
 #[deriving(Clone, PartialEq, Show)]
 pub struct Alternative<Id> {
     pub pattern: Pattern<Id>,
-    pub expression: Expr<Id>
+    pub expression: LExpr<Id>
 }
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Array<Id> {
     //Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
-    pub expressions: Vec<Expr<Id>>
+    pub expressions: Vec<LExpr<Id>>
 }
 
 #[deriving(Clone, PartialEq, Show)]
@@ -53,24 +74,26 @@ pub struct Lambda<Id> {
     pub id: Id,
     pub free_vars: Vec<Id>,
     pub arguments: Vec<Id>,
-    pub body: Box<Expr<Id>>
+    pub body: Box<LExpr<Id>>
 }
+
+pub type LExpr<Id> = Located<Expr<Id>>;
 
 #[deriving(Clone, PartialEq, Show)]
 pub enum Expr<Id> {
     Identifier(Id),
     Literal(Literal),
-    Call(Box<Expr<Id>>, Vec<Expr<Id>>),
-    IfElse(Box<Expr<Id>>, Box<Expr<Id>>, Box<Expr<Id>>),
-    While(Box<Expr<Id>>, Box<Expr<Id>>),
-    Match(Box<Expr<Id>>, Vec<Alternative<Id>>),
-    Block(Vec<Expr<Id>>),
-    BinOp(Box<Expr<Id>>, Id, Box<Expr<Id>>),
-    Let(Id, Box<Expr<Id>>),
-    Assign(Box<Expr<Id>>, Box<Expr<Id>>),
-    FieldAccess(Box<Expr<Id>>, Id),
+    Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
+    IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Box<LExpr<Id>>),
+    While(Box<LExpr<Id>>, Box<LExpr<Id>>),
+    Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
+    Block(Vec<LExpr<Id>>),
+    BinOp(Box<LExpr<Id>>, Id, Box<LExpr<Id>>),
+    Let(Id, Box<LExpr<Id>>),
+    Assign(Box<LExpr<Id>>, Box<LExpr<Id>>),
+    FieldAccess(Box<LExpr<Id>>, Id),
     Array(Array<Id>),
-    ArrayAccess(Box<Expr<Id>>, Box<Expr<Id>>),
+    ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
     Lambda(Lambda<Id>)
 }
 
@@ -85,7 +108,7 @@ pub struct Function<Id> {
     pub name: Id,
     pub arguments: Vec<Field>,
     pub return_type: Type<InternedStr>,
-    pub expression: Expr<Id>
+    pub expression: LExpr<Id>
 }
 
 #[deriving(Clone, PartialEq, Show)]
@@ -149,13 +172,13 @@ pub fn str_to_type(x: InternedStr) -> Type<InternedStr> {
 
 
 pub trait MutVisitor<T> {
-    fn visit_expr(&mut self, e: &mut Expr<T>) {
+    fn visit_expr(&mut self, e: &mut LExpr<T>) {
         walk_mut_expr(self, e);
     }
 }
 
-pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut Expr<T>) {
-    match *e {
+pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut LExpr<T>) {
+    match e.value {
         IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
             v.visit_expr(&mut **if_true);

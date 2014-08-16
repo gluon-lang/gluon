@@ -117,6 +117,10 @@ impl <'a> Lexer<'a> {
         }
     }
 
+    pub fn location(&self) -> Location {
+        self.location
+    }
+
     pub fn peek<'b>(&'b mut self) -> &'b Token {
         if self.offset != 0 && self.tokens.len() != 0 {
             self.tokens.get(self.tokens.len() - self.offset)

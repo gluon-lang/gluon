@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use interner::*;
-use ast::{Module, Expr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function};
+use ast::{Module, LExpr, Expr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function};
 use typecheck::*;
 
 #[deriving(Show)]
@@ -41,7 +41,7 @@ pub enum Instruction {
     FloatLT
 }
 
-type CExpr = Expr<TcIdent>;
+type CExpr = LExpr<TcIdent>;
 
 pub enum Variable<'a> {
     Stack(uint),
@@ -300,7 +300,7 @@ impl <'a> Compiler<'a> {
 
 
     pub fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv) {
-        match *expr {
+        match expr.value {
             Literal(ref lit) => {
                 match *lit {
                     Integer(i) => function.instructions.push(PushInt(i)),
@@ -344,8 +344,8 @@ impl <'a> Compiler<'a> {
                 }
                 let stack_size = self.stack_size();
                 for expr in exprs.iter() {
-                    match expr {
-                        &Let(ref id, _) => {
+                    match expr.value {
+                        Let(ref id, _) => {
                             self.stack.remove(id.id());
                         }
                         _ => ()
@@ -401,7 +401,7 @@ impl <'a> Compiler<'a> {
                 }
             }
             Call(ref func, ref args) => {
-                match **func {
+                match func.value {
                     Identifier(ref id) => {
                         match self.find(id.id(), function).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
                             Constructor(tag, num_args) => {
@@ -437,7 +437,7 @@ impl <'a> Compiler<'a> {
                 function.instructions.push(CJump(pre_jump_index + 1));
             }
             Assign(ref lhs, ref rhs) => {
-                match **lhs {
+                match ***lhs {
                     Identifier(ref id) => {
                         self.compile(&**rhs, function);
                         let var = self.find(id.id(), function)

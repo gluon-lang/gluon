@@ -109,8 +109,9 @@ impl <'a, PString> Parser<'a, PString> {
         Ok(Module { enums: enums, functions: fns, structs: structs, traits: traits, impls: impls })
     }
 
-    fn statement(&mut self) -> ParseResult<(Expr<PString>, bool)> {
-        match *self.lexer.peek() {
+    fn statement(&mut self) -> ParseResult<(LExpr<PString>, bool)> {
+        let location = self.lexer.location();
+        let (expr, is_stm) = try!(match *self.lexer.peek() {
             TLet => {
                 self.lexer.next();
                 let id = match expect!(self, TIdentifier(..)) {
@@ -125,31 +126,32 @@ impl <'a, PString> Parser<'a, PString> {
             _ => {
                 match self.expression() {
                     Ok(e) => {
-                        if is_lvalue(&e) && matches!(self.lexer.peek(), &TAssign) {
+                        if is_lvalue(&e.value) && matches!(self.lexer.peek(), &TAssign) {
                             self.lexer.next();
                             let rhs = try!(self.expression());
                             expect!(self, TSemicolon);
                             Ok((Assign(box e, box rhs), true))
                         }
-                        else if is_statement(&e) {
-                            Ok((e, true))
+                        else if is_statement(&e.value) {
+                            Ok((e.value, true))
                         }
                         else if matches!(self.lexer.peek(), &TSemicolon) {
                             self.lexer.next();
-                            Ok((e, true))
+                            Ok((e.value, true))
                         }
                         else {
-                            Ok((e, false))
+                            Ok((e.value, false))
                         }
                     }
                     Err(e) => Err(e)
                 }
             }
-        }
+        });
+        Ok((Located { location: location, value: expr }, is_stm))
     }
 
-    pub fn expression(&mut self) -> ParseResult<Expr<PString>> {
-        let e = try!(self.sub_expression());
+    pub fn expression(&mut self) -> ParseResult<LExpr<PString>> {
+        let e = try!(self.located(|this| this.sub_expression()));
         self.binary_expression(e, 0)
     }
 
@@ -173,11 +175,14 @@ impl <'a, PString> Parser<'a, PString> {
                 expect!(self, TCloseBracket);
                 Ok(ArrayAccess(box e, index))
             }
-            _ => Ok(e)
+            _ => Ok(e.value)
         }
     }
     
-    fn sub_expression_(&mut self) -> ParseResult<Expr<PString>> {
+    fn sub_expression_(&mut self) -> ParseResult<LExpr<PString>> {
+        self.located(|this| this.sub_expression_2())
+    }
+    fn sub_expression_2(&mut self) -> ParseResult<Expr<PString>> {
         match *self.lexer.next() {
             TIdentifier(id) => {
                 Ok(Identifier(self.make_id(id)))
@@ -185,11 +190,11 @@ impl <'a, PString> Parser<'a, PString> {
             TOpenParen => {
                 let e = try!(self.expression());
                 expect!(self, TCloseParen);
-                Ok(e)
+                Ok(e.value)
             }
             TOpenBrace => {
                 self.lexer.backtrack();
-                self.block()
+                self.block().map(|e| e.value)
             }
             TInteger(i) => {
                 Ok(Literal(Integer(i)))
@@ -243,7 +248,10 @@ impl <'a, PString> Parser<'a, PString> {
         }
     }
 
-    fn block(&mut self) -> ParseResult<Expr<PString>> {
+    fn block(&mut self) -> ParseResult<LExpr<PString>> {
+        self.located(|this| this.block_())
+    }
+    fn block_(&mut self) -> ParseResult<Expr<PString>> {
         expect!(self, TOpenBrace);
         let mut exprs = Vec::new();
         while !matches!(self.lexer.peek(), &TCloseBrace) {
@@ -257,10 +265,11 @@ impl <'a, PString> Parser<'a, PString> {
         Ok(Block(exprs))
     }
 
-    fn binary_expression(&mut self, inL: Expr<PString>, minPrecedence : int) -> ParseResult<Expr<PString>> {
+    fn binary_expression(&mut self, inL: LExpr<PString>, minPrecedence : int) -> ParseResult<LExpr<PString>> {
         let mut lhs = inL;
         self.lexer.next();
         loop {
+            let location = self.lexer.location();
             let lhs_op;
             let lhs_prec;
             match *self.lexer.current() {
@@ -275,7 +284,7 @@ impl <'a, PString> Parser<'a, PString> {
             };
             debug!("Op {}", lhs_op);
 
-            let mut rhs = try!(self.sub_expression());
+            let mut rhs = try!(self.located(|this| this.sub_expression()));
             self.lexer.next();
             loop {
                 let lookahead;
@@ -293,7 +302,10 @@ impl <'a, PString> Parser<'a, PString> {
                 rhs = try!(self.binary_expression(rhs, lookahead));
                 self.lexer.next();
             }
-            lhs = BinOp(box lhs, self.make_id(lhs_op.clone()), box rhs)
+            lhs = Located {
+                location: location,
+                value: BinOp(box lhs, self.make_id(lhs_op.clone()), box rhs)
+            };
         }
         self.lexer.backtrack();
         Ok(lhs)
@@ -464,6 +476,11 @@ impl <'a, PString> Parser<'a, PString> {
         }
         Ok(result)
     }
+    fn located<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<Located<T>> {
+        let location = self.lexer.location();
+        let value = try!(f(self));
+        Ok(Located { location: location, value: value })
+    }
 }
 
 #[cfg(test)]
@@ -474,19 +491,19 @@ pub mod tests {
     use std::io::BufReader;
     use interner::*;
     
-    type PExpr = Expr<InternedStr>;
+    type PExpr = LExpr<InternedStr>;
     
     fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
-        BinOp(box l, intern(s), box r)
+        no_loc(BinOp(box l, intern(s), box r))
     }
     fn int(i: int) -> PExpr {
-        Literal(Integer(i))
+        no_loc(Literal(Integer(i)))
     }
     fn let_(s: &str, e: PExpr) -> PExpr {
-        Let(intern(s), box e)
+        no_loc(Let(intern(s), box e))
     }
     fn id(s: &str) -> PExpr {
-        Identifier(intern(s))
+        no_loc(Identifier(intern(s)))
     }
     fn field(s: &str, typ: Type<InternedStr>) -> Field {
         Field { name: intern(s), typ: typ }
@@ -495,21 +512,24 @@ pub mod tests {
         Type(intern(s))
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
-        Call(box e, args)
+        no_loc(Call(box e, args))
     }
     fn if_else(p: PExpr, if_true: PExpr, if_false: PExpr) -> PExpr {
-        IfElse(box p, box if_true, box if_false)
+        no_loc(IfElse(box p, box if_true, box if_false))
     }
 
     fn while_(p: PExpr, expr: PExpr) -> PExpr {
-        While(box p, box expr)
+        no_loc(While(box p, box expr))
     }
     fn assign(p: PExpr, rhs: PExpr) -> PExpr {
-        Assign(box p, box rhs)
+        no_loc(Assign(box p, box rhs))
+    }
+    fn block(xs: Vec<PExpr>) -> PExpr {
+        no_loc(Block(xs))
     }
 
     fn bool(b: bool) -> PExpr {
-        Literal(Bool(b))
+        no_loc(Literal(Bool(b)))
     }
 
     pub fn parse<T>(s: &str, f: |&mut Parser<InternedStr>|:'static -> ParseResult<T>) -> T {
@@ -525,9 +545,9 @@ pub mod tests {
         assert_eq!(expr, binop(binop(int(1), "/", int(4)), "+", binop(binop(int(2), "-", int(3)), "*", int(2))));
     }
     #[test]
-    fn block() {
+    fn block_test() {
         let expr = parse("1 / { let x = 2; x }", |p| p.expression());
-        assert_eq!(expr, binop(int(1), "/", Block(vec!(let_("x", int(2)), id("x")))));
+        assert_eq!(expr, binop(int(1), "/", block(vec!(let_("x", int(2)), id("x")))));
     }
     #[test]
     fn function() {
@@ -535,7 +555,7 @@ pub mod tests {
         let expected = Function {
             name: intern("main"),
             arguments: vec!(field("x", int_type.clone()), field("y", float_type.clone())),
-            expression: Block(vec!()),
+            expression: block(vec!()),
             return_type: unit_type.clone()
         };
         assert_eq!(func, expected);
@@ -548,17 +568,17 @@ pub mod tests {
     #[test]
     fn test_if_else() {
         let expr = parse("if 1 < x { 1 } else { 0 }", |p| p.expression());
-        assert_eq!(expr, if_else(binop(int(1), "<", id("x")), Block(vec![int(1)]), Block(vec![int(0)])));
+        assert_eq!(expr, if_else(binop(int(1), "<", id("x")), block(vec![int(1)]), block(vec![int(0)])));
     }
     #[test]
     fn test_while() {
         let expr = parse("while true { }", |p| p.expression());
-        assert_eq!(expr, while_(bool(true), Block(vec![])));
+        assert_eq!(expr, while_(bool(true), block(vec![])));
     }
     #[test]
     fn test_assign() {
         let expr = parse("{ y = 2; 2 }", |p| p.expression());
-        assert_eq!(expr, Block(vec![assign(id("y"), int(2)), int(2)]));
+        assert_eq!(expr, block(vec![assign(id("y"), int(2)), int(2)]));
     }
     #[test]
     fn struct_() {
