@@ -780,7 +780,6 @@ impl <T: Typed> Typed for Function<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::TcIdent;
     use ast::*;
     use parser::*;
 

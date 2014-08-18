@@ -486,7 +486,6 @@ impl <'a, PString> Parser<'a, PString> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use super::ParseResult;
     use ast::*;
     use std::io::BufReader;
     use interner::*;

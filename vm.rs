@@ -41,6 +41,11 @@ enum Global_ {
     Bytecode(Vec<Instruction>),
     Extern(ExternFunction)
 }
+impl Typed for Global {
+    fn type_of(&self) -> &TcType {
+        &self.typ
+    }
+}
 impl fmt::Show for Global_ {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self { 
@@ -112,7 +117,7 @@ pub struct StackFrame<'a, 'b> {
     upvars: Option<&'b RefCell<Vec<Value>>>
 }
 impl <'a, 'b> StackFrame<'a, 'b> {
-    fn new(v: &'a mut Vec<Value>, args: uint, upvars: Option<&'b RefCell<Vec<Value>>>) -> StackFrame<'a, 'b> {
+    pub fn new(v: &'a mut Vec<Value>, args: uint, upvars: Option<&'b RefCell<Vec<Value>>>) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
@@ -167,6 +172,12 @@ impl VM {
         self.trait_indexes.extend(indexes.move_iter())
     }
 
+    pub fn get_global(&mut self, name: &str) -> Option<(uint, &Global)> {
+        let n = intern(name);
+        self.globals.iter().enumerate()
+            .find(|g| n == g.ref1().id)
+    }
+
     pub fn run_function(&self, cf: &Global) -> Option<Value> {
         let mut stack = Vec::new();
         {
@@ -194,6 +205,17 @@ impl VM {
         self.globals.push(global);
     }
 
+    pub fn register_type(&mut self, name: &str) -> Result<(), ()> {
+        let n = intern(name);
+        if self.type_infos.structs.contains_key(&n) {
+            Err(())
+        }
+        else {
+            self.type_infos.structs.insert(n, Vec::new());
+            Ok(())
+        }
+    }
+
     fn execute_function(&self, stack: StackFrame, function: &Global) {
         match function.value {
             Extern(func) => {
@@ -205,7 +227,7 @@ impl VM {
         }
     }
 
-    fn execute(&self, mut stack: StackFrame, instructions: &[Instruction]) {
+    pub fn execute(&self, mut stack: StackFrame, instructions: &[Instruction]) {
         debug!("Enter frame with {}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {

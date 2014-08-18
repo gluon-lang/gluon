@@ -1,4 +1,4 @@
-#![feature(globs, phase, macro_rules, default_type_params)]
+#![feature(globs, phase, macro_rules, default_type_params, overloaded_calls)]
 extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
@@ -15,6 +15,7 @@ mod typecheck;
 mod compiler;
 mod vm;
 mod repl;
+mod api;
 
 
 #[cfg(not(test))]
