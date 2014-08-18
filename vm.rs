@@ -1,19 +1,44 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt;
+use std::intrinsics::TypeId;
+use std::collections::HashMap;
+use std::any::Any;
 use typecheck::*;
 use compiler::*;
 use interner::{InternedStr, intern};
 
+pub struct Data<T> {
+    pub data: Rc<RefCell<T>>
+}
+impl <T> Data<T> {
+    pub fn new(v: T) -> Data<T> {
+        Data { data: Rc::new(RefCell::new(v)) }
+    }
+    fn ptr(&self) -> *const () {
+        (&*self.data as *const RefCell<T>) as *const ()
+    }
+}
+impl <T> PartialEq for Data<T> {
+    fn eq(&self, o: &Data<T>) -> bool {
+        self.ptr() == o.ptr()
+    }
+}
+impl <T> Clone for Data<T> {
+    fn clone(&self) -> Data<T> {
+        Data { data: self.data.clone() }
+    }
+}
 
-#[deriving(PartialEq, Clone)]
+#[deriving(Clone, PartialEq)]
 pub enum Value {
     Int(int),
     Float(f64),
     Data(uint, Rc<RefCell<Vec<Value>>>),
     Function(uint),
     Closure(uint, Rc<RefCell<Vec<Value>>>),
-    TraitObject(uint, Rc<Value>)
+    TraitObject(uint, Rc<Value>),
+    Userdata(Data<Box<Any>>)
 }
 
 impl fmt::Show for Value {
@@ -24,7 +49,8 @@ impl fmt::Show for Value {
             Data(tag, ref ptr) => write!(f, "{{{} {}}}", tag, ptr.borrow()),
             Function(i) => write!(f, "<function {}>", i),
             Closure(fi, ref upvars) => write!(f, "{} {}", fi, upvars.borrow()),
-            TraitObject(fns, ref o) => write!(f, "<{} {}>", fns, o)
+            TraitObject(fns, ref o) => write!(f, "<{} {}>", fns, o),
+            Userdata(ref ptr) => write!(f, "<Userdata {}>", &*ptr.data.borrow() as *const Box<Any>)
         }
     }
 }
@@ -59,6 +85,7 @@ pub struct VM {
     globals: Vec<Global>,
     trait_indexes: Vec<TraitFunctions>,
     type_infos: TypeInfos,
+    typeids: HashMap<TypeId, TcType>
 }
 
 impl CompilerEnv for VM {
@@ -154,7 +181,12 @@ impl <'a, 'b> StackFrame<'a, 'b> {
 impl VM {
     
     pub fn new() -> VM {
-        let mut vm = VM { globals: Vec::new(), trait_indexes: Vec::new(), type_infos: TypeInfos::new() };
+        let mut vm = VM {
+            globals: Vec::new(),
+            trait_indexes: Vec::new(),
+            type_infos: TypeInfos::new(),
+            typeids: HashMap::new()
+        };
         vm.extern_function("array_length", vec![ArrayType(box int_type_tc.clone())], int_type_tc.clone(), array_length);
         vm.extern_function("array_push", vec![ArrayType(box int_type_tc.clone()), int_type_tc.clone()], unit_type_tc.clone(), array_push);
         vm
@@ -172,10 +204,16 @@ impl VM {
         self.trait_indexes.extend(indexes.move_iter())
     }
 
-    pub fn get_global(&mut self, name: &str) -> Option<(uint, &Global)> {
+    pub fn get_global(&self, name: &str) -> Option<(uint, &Global)> {
         let n = intern(name);
         self.globals.iter().enumerate()
             .find(|g| n == g.ref1().id)
+    }
+
+    pub fn get_type<T: 'static>(&self) -> &TcType {
+        let id = TypeId::of::<T>();
+        self.typeids.find(&id)
+            .expect("Expected type to be inserted before get_type call")
     }
 
     pub fn run_function(&self, cf: &Global) -> Option<Value> {
@@ -205,14 +243,16 @@ impl VM {
         self.globals.push(global);
     }
 
-    pub fn register_type(&mut self, name: &str) -> Result<(), ()> {
+    pub fn register_type<T: 'static>(&mut self, name: &str) -> Result<&TcType, ()> {
         let n = intern(name);
         if self.type_infos.structs.contains_key(&n) {
             Err(())
         }
         else {
+            let id = TypeId::of::<T>();
+            let t = &*self.typeids.find_or_insert(id, Type(n));
             self.type_infos.structs.insert(n, Vec::new());
-            Ok(())
+            Ok(t)
         }
     }
 
