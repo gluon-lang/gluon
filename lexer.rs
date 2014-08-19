@@ -78,7 +78,7 @@ pub struct Lexer<'a, 'b> {
     location: Location,
     tokens: RingBuf<Token>,
     offset: uint,
-    interner: &'a mut Interner
+    pub interner: &'a mut Interner
 }
 
 impl <'a, 'b> Lexer<'a, 'b> {
@@ -330,7 +330,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use interner::{Interner, intern};
+    use interner::Interner;
     use std::io::BufReader;
 
     fn buffer<'a>(s: &'a str) -> BufReader<'a> {
@@ -342,13 +342,15 @@ mod tests {
         let mut buffer = buffer("fn main() { 1 + 2 }");
         let mut interner = Interner::new();
         let mut lexer = Lexer::new(&mut interner, &mut buffer);
+        let plus = lexer.interner.intern("+");
+        let main = lexer.interner.intern("main");
         assert_eq!(lexer.next(), &TFn);
-        assert_eq!(lexer.next(), &TIdentifier(intern("main")));
+        assert_eq!(lexer.next(), &TIdentifier(main));
         assert_eq!(lexer.next(), &TOpenParen);
         assert_eq!(lexer.next(), &TCloseParen);
         assert_eq!(lexer.next(), &TOpenBrace);
         assert_eq!(lexer.next(), &TInteger(1));
-        assert_eq!(lexer.next(), &TOperator(intern("+")));
+        assert_eq!(lexer.next(), &TOperator(plus));
         assert_eq!(lexer.next(), &TInteger(2));
         assert_eq!(lexer.next(), &TCloseBrace);
     }

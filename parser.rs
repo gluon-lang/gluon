@@ -229,7 +229,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             TOpenBracket => {
                 let args = try!(self.sep_by(|t| *t == TComma, |this| this.expression()));
                 expect!(self, TCloseBracket);
-                let dummy = ::interner::intern("[]");
+                let dummy = self.lexer.interner.intern("[]");
                 Ok(Array(Array { id: self.make_id(dummy), expressions: args }))
             }
             TLambda => {
@@ -239,7 +239,8 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 }));
                 expect!(self, TRArrow);
                 let body = box try!(self.expression());
-                Ok(Lambda(Lambda { id: self.make_id(::interner::intern("")), free_vars: Vec::new(), arguments: args, body: body }))
+                let s = self.lexer.interner.intern("");
+                Ok(Lambda(Lambda { id: self.make_id(s), free_vars: Vec::new(), arguments: args, body: body }))
             }
             x => {
                 self.lexer.backtrack();
@@ -489,6 +490,7 @@ pub mod tests {
     use ast::*;
     use std::io::BufReader;
     use interner::*;
+    use interner::tests::*;
     
     type PExpr = LExpr<InternedStr>;
     
@@ -533,10 +535,12 @@ pub mod tests {
 
     pub fn parse<T>(s: &str, f: |&mut Parser<InternedStr>|:'static -> ParseResult<T>) -> T {
         let mut buffer = BufReader::new(s.as_bytes());
-        let mut interner = Interner::new();
-        let mut parser = Parser::new(&mut interner, &mut buffer, |s| s);
-        f(&mut parser)
-            .unwrap_or_else(|err| fail!(err))
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+        let mut parser = Parser::new(&mut *interner, &mut buffer, |s| s);
+        let x = f(&mut parser)
+            .unwrap_or_else(|err| fail!(err));
+        x
     }
 
     #[test]

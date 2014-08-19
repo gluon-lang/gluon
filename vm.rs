@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::any::Any;
 use typecheck::*;
 use compiler::*;
-use interner::{Interner, InternedStr, intern};
+use interner::{Interner, InternedStr};
 
 pub struct Data<T> {
     pub data: Rc<RefCell<T>>
@@ -86,7 +86,7 @@ pub struct VM {
     trait_indexes: Vec<TraitFunctions>,
     type_infos: TypeInfos,
     typeids: HashMap<TypeId, TcType>,
-    interner: Interner
+    interner: RefCell<Interner>
 }
 
 impl CompilerEnv for VM {
@@ -187,7 +187,7 @@ impl VM {
             trait_indexes: Vec::new(),
             type_infos: TypeInfos::new(),
             typeids: HashMap::new(),
-            interner: Interner::new()
+            interner: RefCell::new(Interner::new())
         };
         vm.extern_function("array_length", vec![ArrayType(box int_type_tc.clone())], int_type_tc.clone(), array_length);
         vm.extern_function("array_push", vec![ArrayType(box int_type_tc.clone()), int_type_tc.clone()], unit_type_tc.clone(), array_push);
@@ -207,7 +207,7 @@ impl VM {
     }
 
     pub fn get_global(&self, name: &str) -> Option<(uint, &Global)> {
-        let n = intern(name);
+        let n = self.intern(name);
         self.globals.iter().enumerate()
             .find(|g| n == g.ref1().id)
     }
@@ -238,7 +238,7 @@ impl VM {
 
     pub fn extern_function(&mut self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) {
         let global = Global {
-            id: intern(name),
+            id: self.intern(name),
             typ: FunctionType(args, box return_type),
             value: Extern(f)
         };
@@ -246,7 +246,7 @@ impl VM {
     }
 
     pub fn register_type<T: 'static>(&mut self, name: &str) -> Result<&TcType, ()> {
-        let n = intern(name);
+        let n = self.intern(name);
         if self.type_infos.structs.contains_key(&n) {
             Err(())
         }
@@ -256,6 +256,9 @@ impl VM {
             self.type_infos.structs.insert(n, Vec::new());
             Ok(t)
         }
+    }
+    fn intern(&self, s: &str) -> InternedStr {
+        self.interner.borrow_mut().intern(s)
     }
 
     fn execute_function(&self, stack: StackFrame, function: &Global) {
@@ -529,7 +532,8 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
     use parser::Parser;
 
     let mut module = {
-        let mut parser = Parser::new(&mut vm.interner, buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
+        let mut cell = vm.interner.borrow_mut();
+        let mut parser = Parser::new(&mut*cell, buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
         tryf!(parser.module())
     };
     let (type_infos, (functions, trait_indexes)) = {

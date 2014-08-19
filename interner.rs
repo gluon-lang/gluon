@@ -1,44 +1,53 @@
 use std::collections::HashMap;
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::fmt;
 
 #[deriving(Eq, PartialEq, Clone, Default, Hash)]
-pub struct InternedStr(uint);
+pub struct InternedStr(&'static str);
 
 #[deriving(Clone)]
 pub struct Interner {
-    indexes: HashMap<String, uint>,
-    strings: Vec<String>
+    indexes: HashMap<&'static str, String>
 }
 
 impl Interner {
 
     pub fn new() -> Interner {
-        Interner { indexes: HashMap::new(), strings: Vec::new() }
+        Interner { indexes: HashMap::new() }
     }
 
     pub fn intern(&mut self, s: &str) -> InternedStr {
-        match self.indexes.find_equiv(&s).map(|x| *x) {
-            Some(index) => InternedStr(index),
-            None => {
-                let index = self.strings.len();
-                self.indexes.insert(s.to_string(), index);
-                self.strings.push(s.to_string());
-                InternedStr(index)
+        match self.indexes.find_equiv(&s) {
+            Some(interned_str) => {
+                let index: &'static str = unsafe { ::std::mem::transmute(interned_str.as_slice()) };
+                return InternedStr(index);
             }
+            None => ()
         }
-    }
-
-    pub fn get_str<'a>(&'a self, InternedStr(i): InternedStr) -> &'a str {
-        if i < self.strings.len() {
-            self.strings[i].as_slice()
-        }
-        else {
-            fail!("Invalid InternedStr {}", i)
-        }
+        let val = s.to_string();
+        let index: &'static str = unsafe { ::std::mem::transmute(val.as_slice()) };
+        self.indexes.insert(index, val);
+        InternedStr(index)
     }
 }
+
+impl Str for InternedStr {
+    fn as_slice<'a>(&'a self) -> &'a str {
+        let InternedStr(s) = *self;
+        s
+    }
+}
+
+impl fmt::Show for InternedStr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_slice())
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use std::rc::Rc;
+    use std::cell::RefCell;
+    use super::*;
 
 ///Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Interner>> {
@@ -58,18 +67,4 @@ pub fn intern(s: &str) -> InternedStr {
     (*i).borrow_mut().intern(s)
 }
 
-impl Str for InternedStr {
-    fn as_slice<'a>(&'a self) -> &'a str {
-        let interner = get_local_interner();
-        let mut x = (*interner).borrow_mut();
-        let r: &str = x.get_str(*self);
-        //The interner is task local and will never remove a string so this is safe
-        unsafe { ::std::mem::transmute(r) }
-    }
-}
-
-impl fmt::Show for InternedStr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.as_slice())
-    }
 }
