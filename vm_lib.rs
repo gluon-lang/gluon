@@ -5,7 +5,7 @@ extern crate collections;
 extern crate log;
 
 pub use interner::InternedStr;
-
+pub use parser::ParseResult;
 pub use typecheck::TcType;
 pub use compiler::{CompiledFunction, Instruction};
 
@@ -15,8 +15,8 @@ mod interner;
 pub mod ast;
 mod lexer;
 mod parser;
-mod typecheck;
-mod compiler;
+pub mod typecheck;
+pub mod compiler;
 pub mod vm;
 pub mod api;
 

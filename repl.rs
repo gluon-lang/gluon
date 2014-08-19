@@ -1,10 +1,9 @@
 use std::io::BufReader;
 use std::io::IoResult;
 
-use vm_lib::parser::Parser;
 use vm_lib::typecheck::*;
 use vm_lib::compiler::{FunctionEnv, Compiler};
-use vm_lib::vm::{VM, StackFrame, load_script};
+use vm_lib::vm::{VM, StackFrame, parse_expr, load_script};
 
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
@@ -41,8 +40,7 @@ fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
         _ => ()
     }
     let mut buffer = BufReader::new(expr_str.as_bytes());
-    let mut parser = Parser::new(&mut buffer, |s| TcIdent { name: s, typ: unit_type_tc.clone() });
-    let mut expr = try!(parser.expression());
+    let mut expr = tryf!(parse_expr(&mut buffer, vm));
     let mut function = FunctionEnv::new();
     {
         let vm: &VM = vm;

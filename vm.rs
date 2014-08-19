@@ -4,6 +4,7 @@ use std::fmt;
 use std::intrinsics::TypeId;
 use std::collections::HashMap;
 use std::any::Any;
+use parser::Parser;
 use typecheck::*;
 use compiler::*;
 use interner::{Interner, InternedStr};
@@ -527,6 +528,12 @@ fn array_push(_: &VM, mut stack: StackFrame) {
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 )
+
+pub fn parse_expr(buffer: &mut Buffer, vm: &mut VM) -> Result<::ast::LExpr<TcIdent>, String> {
+    let mut interner = vm.interner.borrow_mut();
+    let mut parser = Parser::new(&mut *interner, buffer, |s| TcIdent { name: s, typ: unit_type_tc.clone() });
+    parser.expression().map_err(|err| format!("{}", err))
+}
 
 pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
     use parser::Parser;
