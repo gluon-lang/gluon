@@ -28,34 +28,77 @@ pub fn run() {
     }
 }
 
+fn run_command(vm: &mut VM, command: char, args: &str) -> Result<bool, String> {
+    match command {
+        'q' => Ok(false),
+        'l' => {
+            try!(load_file(vm, args));
+            Ok(true)
+        }
+        't' => {
+            match vm.find_type_info(args) {
+                Some(info) => {
+                    match info {
+                        Struct(fields) => {
+                            println!("struct {} {{", args);
+                            for field in fields.iter()  {
+                                println!("    {}: {},", field.name, field.typ);
+                            }
+                            println!("}}");
+                        }
+                        Enum(constructors) => {
+                            println!("enum {} {{", args);
+                            for ctor in constructors.iter()  {
+                                print!("    {}(", ctor.name.id());
+                                let mut args = ctor.arguments.iter();
+                                match args.next() {
+                                    Some(arg) => print!("{}", arg),
+                                    None => ()
+                                }
+                                for arg in args {
+                                    print!(",{}", arg);
+                                }
+                                println!("),");
+                            }
+                            println!("}}");
+                        }
+                    }
+                }
+                None => println!("{} is not a type", args)
+            }
+            Ok(true)
+        }
+        _ => Err("Invalid command ".to_string() + command.to_string())
+    }
+}
+
 fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
     let expr_str = tryf!(line);
-    match expr_str.as_slice().slice_to(2) {
-        ":q" => return Ok(false),
-        ":l" => {
-            let filename = expr_str.as_slice().slice_from(2).trim();
-            try!(load_file(vm, filename));
-            return Ok(true)
+    let slice = expr_str.as_slice();
+    match slice.char_at(0) {
+        ':' => {
+            run_command(vm, slice.char_at(1), expr_str.as_slice().slice_from(2).trim())
         }
-        _ => ()
+        _ =>  {
+            let mut buffer = BufReader::new(expr_str.as_bytes());
+            let mut expr = try!(parse_expr(&mut buffer, vm));
+            let mut function = FunctionEnv::new();
+            {
+                let vm: &VM = vm;
+                let mut tc = Typecheck::new();
+                tc.add_environment(vm);
+                tryf!(tc.typecheck(&mut expr));
+                let mut compiler = Compiler::new(vm);
+                compiler.compile(&expr, &mut function);
+            }
+            let v = vm.execute_instructions(function.instructions.as_slice());
+            match v {
+                Some(v) => println!("{}", v),
+                None => println!("")
+            }
+            Ok(true)
+        }
     }
-    let mut buffer = BufReader::new(expr_str.as_bytes());
-    let mut expr = tryf!(parse_expr(&mut buffer, vm));
-    let mut function = FunctionEnv::new();
-    {
-        let vm: &VM = vm;
-        let mut tc = Typecheck::new();
-        tc.add_environment(vm);
-        tryf!(tc.typecheck(&mut expr));
-        let mut compiler = Compiler::new(vm);
-        compiler.compile(&expr, &mut function);
-    }
-    let v = vm.execute_instructions(function.instructions.as_slice());
-    match v {
-        Some(v) => println!("{}", v),
-        None => println!("")
-    }
-    Ok(true)
 }
 
 fn load_file(vm: &mut VM, filename: &str) -> Result<(), String> {

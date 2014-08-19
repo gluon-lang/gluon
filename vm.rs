@@ -218,6 +218,10 @@ impl VM {
         self.typeids.find(&id)
             .expect("Expected type to be inserted before get_type call")
     }
+    pub fn find_type_info(&self, s: &str) -> Option<TypeInfo> {
+        let n = self.intern(s);
+        (self as &TypeEnv).find_type_info(&n)
+    }
 
     pub fn run_function(&self, cf: &Global) -> Option<Value> {
         let mut stack = Vec::new();
