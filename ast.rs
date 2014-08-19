@@ -105,9 +105,7 @@ pub struct Field {
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Function<Id> {
-    pub name: Id,
-    pub arguments: Vec<Field>,
-    pub return_type: Type<InternedStr>,
+    pub declaration: FunctionDeclaration<Id>,
     pub expression: LExpr<Id>
 }
 
@@ -129,6 +127,7 @@ pub struct Enum<Id> {
 #[deriving(Clone, PartialEq, Show)]
 pub struct FunctionDeclaration<Id> {
     pub name: Id,
+    pub type_variables: Vec<InternedStr>,
     pub arguments: Vec<Field>,
     pub return_type: Type<InternedStr>,
 }

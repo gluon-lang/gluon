@@ -250,8 +250,9 @@ impl <'a> Typecheck<'a> {
     pub fn typecheck_module(&mut self, module: &mut Module<TcIdent>) -> Result<(), TypeErrors> {
         
         for f in module.functions.mut_iter() {
-            f.name.typ = FunctionType(f.arguments.iter().map(|f| from_vm_type(&f.typ)).collect(), box from_vm_type(&f.return_type));
-            self.module.insert(f.name.name, f.name.typ.clone());
+            let decl = &mut f.declaration;
+            decl.name.typ = FunctionType(decl.arguments.iter().map(|f| from_vm_type(&f.typ)).collect(), box from_vm_type(&decl.return_type));
+            self.module.insert(decl.name.name, decl.name.typ.clone());
         }
         for t in module.traits.mut_iter() {
             for func in t.declarations.mut_iter() {
@@ -294,15 +295,15 @@ impl <'a> Typecheck<'a> {
             let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
             for func in imp.functions.mut_iter() {
                 let trait_function_type = try!(trait_functions.iter()
-                    .find(|& &(ref name, _)| name == func.name.id())
+                    .find(|& &(ref name, _)| name == func.declaration.name.id())
                     .map(Ok)
                     .unwrap_or_else(|| Err(TypeError("Function does not exist in trait"))));
-                let args = func.arguments.iter()
+                let args = func.declaration.arguments.iter()
                     .map(|f| from_vm_type(&f.typ))
                     .collect();
-                func.name.typ = FunctionType(args, box from_vm_type(&func.return_type));
+                func.declaration.name.typ = FunctionType(args, box from_vm_type(&func.declaration.return_type));
                 let tf = self.subs.instantiate(trait_function_type.ref1());
-                try!(self.unify(&tf, func.name.typ.clone()));
+                try!(self.unify(&tf, func.type_of().clone()));
             }
         }
         for f in imp.functions.mut_iter() {
@@ -313,9 +314,9 @@ impl <'a> Typecheck<'a> {
 
     
     fn typecheck_function(&mut self, function: &mut Function<TcIdent>) {
-        debug!("Typecheck function {}", function.name.id());
+        debug!("Typecheck function {}", function.declaration.name.id());
         self.stack.clear();
-        for arg in function.arguments.iter() {
+        for arg in function.declaration.arguments.iter() {
             self.stack_var(arg.name.clone(), from_vm_type(&arg.typ));
         }
         let return_type = match self.typecheck(&mut function.expression) {
@@ -325,10 +326,10 @@ impl <'a> Typecheck<'a> {
                 return;
             }
         };
-        match self.unify(&from_vm_type(&function.return_type), return_type) {
+        match self.unify(&from_vm_type(&function.declaration.return_type), return_type) {
             Ok(_) => self.replace_vars(&mut function.expression),
             Err(err) => {
-                debug!("End {} ==> {}", function.name.id(), err);
+                debug!("End {} ==> {}", function.declaration.name.id(), err);
                 self.errors.error(Located { location: function.expression.location, value: err });
             }
         }
@@ -772,7 +773,7 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
 
 impl <T: Typed> Typed for Function<T> {
     fn type_of(&self) -> &TcType {
-        self.name.type_of()
+        self.declaration.name.type_of()
     }
 }
 

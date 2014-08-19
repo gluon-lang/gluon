@@ -141,7 +141,7 @@ impl CompilerEnv for Module<TcIdent> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
         self.functions.iter()
             .enumerate()
-            .find(|&(_, f)| f.name.id() == id)
+            .find(|&(_, f)| f.declaration.name.id() == id)
             .map(|(i, _)| Global(i))
             .or_else(|| self.structs.iter()
                 .find(|s| s.name.id() == id)
@@ -195,7 +195,7 @@ impl CompilerEnv for Module<TcIdent> {
         for imp in self.impls.iter() {
             if typ.equiv(&imp.typ) {
                 for (i, func) in imp.functions.iter().enumerate() {
-                    if func.name.id() == id {
+                    if func.declaration.name.id() == id {
                         return Some(offset + i);
                     }
                 }
@@ -325,17 +325,17 @@ impl <'a> Compiler<'a> {
     }
 
     pub fn compile_function(&mut self, function: &Function<TcIdent>) -> CompiledFunction {
-        for arg in function.arguments.iter() {
+        for arg in function.declaration.arguments.iter() {
             self.new_stack_var(arg.name);
         }
         let mut f = FunctionEnv::new();
         self.compile(&function.expression, &mut f);
-        for arg in function.arguments.iter() {
+        for arg in function.declaration.arguments.iter() {
             self.stack.remove(&arg.name);
         }
         let FunctionEnv { instructions: instructions, .. } = f;
         CompiledFunction {
-            id: function.name.id().clone(),
+            id: function.declaration.name.id().clone(),
             typ: function.type_of().clone(),
             instructions: instructions
         }

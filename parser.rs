@@ -421,6 +421,21 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn function_declaration(&mut self) -> ParseResult<FunctionDeclaration<PString>> {
         expect!(self, TFn);
         let name = expect1!(self, TIdentifier(x));
+        let type_variables = match *self.lexer.peek() {
+            TOperator(s) if s.as_slice() == "<" => {
+                self.lexer.next();
+                let vars = try!(self.sep_by(|t| *t == TComma, |this| {
+                    let id = expect1!(this, TIdentifier(x));
+                    Ok(id)
+                }));
+                match *self.lexer.next() {
+                    TOperator(x) if x.as_slice() == ">" => (),
+                    x => return Err(format!("Unexpected token {}, expected >", x))
+                }
+                vars
+            }
+            _ => Vec::new()
+        };
         let arguments = try!(self.parens(|this|
             this.sep_by(|t| matches!(t, &TComma), |this| this.field())
         ));
@@ -431,13 +446,18 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         else {
             unit_type.clone()
         };
-        Ok(FunctionDeclaration { name: self.make_id(name), arguments: arguments, return_type: return_type })
+        Ok(FunctionDeclaration {
+            name: self.make_id(name),
+            type_variables: type_variables,
+            arguments: arguments,
+            return_type: return_type
+        })
     }
 
     pub fn function(&mut self) -> ParseResult<Function<PString>> {
-        let FunctionDeclaration { name: name, arguments: arguments, return_type: return_type } = try!(self.function_declaration());
+        let declaration = try!(self.function_declaration());
         let expr = try!(self.block());
-        Ok(Function { name: name, arguments: arguments, return_type: return_type, expression: expr })
+        Ok(Function { declaration: declaration, expression: expr })
     }
 
     fn braces<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
@@ -557,10 +577,27 @@ pub mod tests {
     fn function() {
         let func = parse("fn main(x: int, y: float) { }", |p| p.function());
         let expected = Function {
-            name: intern("main"),
-            arguments: vec!(field("x", int_type.clone()), field("y", float_type.clone())),
-            expression: block(vec!()),
-            return_type: unit_type.clone()
+            declaration: FunctionDeclaration {
+                name: intern("main"),
+                type_variables: Vec::new(),
+                arguments: vec!(field("x", int_type.clone()), field("y", float_type.clone())),
+                return_type: unit_type.clone()
+            },
+            expression: block(vec!())
+        };
+        assert_eq!(func, expected);
+    }
+    #[test]
+    fn generic_function() {
+        let func = parse("fn id<T>(x: T) -> T { x }", |p| p.function());
+        let expected = Function {
+            declaration: FunctionDeclaration {
+                name: intern("id"),
+                type_variables: vec![intern("T")],
+                arguments: vec![field("x", typ("T"))],
+                return_type: typ("T")
+            },
+            expression: block(vec![id("x")])
         };
         assert_eq!(func, expected);
     }
@@ -601,11 +638,13 @@ pub mod tests {
             declarations: vec![
                 FunctionDeclaration {
                     name: intern("test"),
+                    type_variables: Vec::new(),
                     arguments: vec![field("x", typ("Self"))],
                     return_type: int_type.clone()
                 },
                 FunctionDeclaration {
                     name: intern("test2"),
+                    type_variables: Vec::new(),
                     arguments: vec![field("x", int_type.clone()), field("y", typ("Self"))],
                     return_type: unit_type.clone()
                 },
