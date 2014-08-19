@@ -58,7 +58,7 @@ impl fmt::Show for Value {
 pub type ExternFunction = fn (&VM, StackFrame);
 
 #[deriving(Show)]
-struct Global {
+pub struct Global {
     id: InternedStr,
     typ: TcType,
     value: Global_

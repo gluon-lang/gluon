@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use interner::*;
-use ast::{Module, LExpr, Expr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function};
+use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function};
 use typecheck::*;
 
 #[deriving(Show)]
@@ -45,7 +45,7 @@ pub enum Instruction {
     FloatLT
 }
 
-type CExpr = LExpr<TcIdent>;
+pub type CExpr = LExpr<TcIdent>;
 
 pub enum Variable<'a> {
     Stack(uint),
@@ -474,7 +474,7 @@ impl <'a> Compiler<'a> {
                     Identifier(ref func_id) => {
                         self.find(func_id.id(), function).map(|x| {
                             match x {
-                                TraitFunction(ref t) => true,
+                                TraitFunction(_) => true,
                                 _ => false
                             }
                         })
@@ -484,7 +484,7 @@ impl <'a> Compiler<'a> {
                 for (arg, real_arg_type) in args.iter().zip(arg_types.iter()) {
                     self.compile(arg, function);
                     match (arg.type_of(), real_arg_type, is_trait_func) {
-                        (&TraitType(_), &TraitType(ref typ), true) => {
+                        (&TraitType(_), &TraitType(_), true) => {
                             //Call through a trait object
                             //Need to unpack the trait object for this argument
                             function.instructions.push(Unpack);

@@ -4,6 +4,8 @@ extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
 
+pub use interner::InternedStr;
+
 mod scoped_map;
 mod interner;
 pub mod ast;
@@ -13,3 +15,4 @@ pub mod typecheck;
 pub mod compiler;
 pub mod vm;
 pub mod api;
+

@@ -94,7 +94,7 @@ enum TypeError {
     TypeError(&'static str)
 }
 
-type TcResult = Result<TcType, TypeError>;
+pub type TcResult = Result<TcType, TypeError>;
 
 
 pub enum TypeInfo<'a> {
@@ -202,7 +202,7 @@ impl <T: fmt::Show> fmt::Show for Errors<T> {
     }
 }
 
-type TypeErrors = Errors<Located<TypeError>>;
+pub type TypeErrors = Errors<Located<TypeError>>;
 
 impl <'a> Typecheck<'a> {
     
@@ -780,7 +780,6 @@ impl <T: Typed> Typed for Function<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ast::*;
     use parser::*;
 
     pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {
