@@ -3,19 +3,12 @@ extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
 
-#[cfg(not(test))]
-use vm::run_main;
+extern crate vm_lib;
 
-mod scoped_map;
-mod interner;
-mod ast;
-mod lexer;
-mod parser;
-mod typecheck;
-mod compiler;
-mod vm;
+#[cfg(not(test))]
+use vm_lib::vm::run_main;
+
 mod repl;
-mod api;
 
 
 #[cfg(not(test))]

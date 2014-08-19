@@ -1,10 +1,10 @@
 use std::io::BufReader;
 use std::io::IoResult;
 
-use parser::Parser;
-use typecheck::*;
-use compiler::{FunctionEnv, Compiler};
-use vm::{VM, StackFrame, load_script};
+use vm_lib::parser::Parser;
+use vm_lib::typecheck::*;
+use vm_lib::compiler::{FunctionEnv, Compiler};
+use vm_lib::vm::{VM, StackFrame, load_script};
 
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))

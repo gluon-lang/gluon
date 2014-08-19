@@ -4,7 +4,7 @@ use compiler::CallGlobal;
 use std::any::{Any, AnyRefExt};
 use std::boxed::BoxAny;
 
-trait VMValue {
+pub trait VMValue {
     fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType;
     fn push(self, stack: &mut StackFrame);
     fn from_value(value: Value) -> Option<Self>;
@@ -181,7 +181,7 @@ impl <Args, R> VMValue for FunctionRef<Args, R> {
 }
 
 impl <'a, A: VMValue, R: VMValue> Callable<'a, (A,), R> {
-    fn call(&mut self, a: A) -> R {
+    pub fn call(&mut self, a: A) -> R {
         let mut vec = Vec::new();
         {
             let mut stack = StackFrame::new(&mut vec, 0, None);
@@ -194,7 +194,7 @@ impl <'a, A: VMValue, R: VMValue> Callable<'a, (A,), R> {
     }
 }
 impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
-    fn call2(&mut self, a: A, b: B) -> R {
+    pub fn call2(&mut self, a: A, b: B) -> R {
         let mut vec = Vec::new();
         {
             let mut stack = StackFrame::new(&mut vec, 0, None);
@@ -208,6 +208,7 @@ impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::{Get, Callable};
 
