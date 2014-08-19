@@ -1,8 +1,6 @@
 use collections::RingBuf;
 use std::from_str::FromStr;
 use std::fmt;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 use interner::*;
 
@@ -45,26 +43,6 @@ pub enum Token {
     TEOF
 }
 
-fn name_or_keyword(interner: &mut Interner, s: &str) -> Token {
-    match s {
-        "if" => TIf,
-        "else" => TElse,
-        "while" => TWhile,
-        "for" => TFor,
-        "match" => TMatch,
-        "fn" => TFn,
-        "struct" => TStruct,
-        "trait" => TTrait,
-        "impl" => TImpl,
-        "enum" => TEnum,
-        "let" => TLet,
-        "true" => TTrue,
-        "false" => TFalse,
-        _ => TIdentifier(interner.intern(s)),
-    }
-}
-
-
 #[deriving(Clone, PartialEq)]
 pub struct Location {
     pub column : int,
@@ -93,19 +71,19 @@ fn is_operator(first_char : char) -> bool {
     }
 }
 
-pub struct Lexer<'a> {
-    input: &'a mut Buffer,
+pub struct Lexer<'a, 'b> {
+    input: &'b mut Buffer,
     buffer: String,
     peek_c: Option<char>,
     location: Location,
     tokens: RingBuf<Token>,
     offset: uint,
-    interner: Rc<RefCell<Interner>>
+    interner: &'a mut Interner
 }
 
-impl <'a> Lexer<'a> {
+impl <'a, 'b> Lexer<'a, 'b> {
 
-    pub fn new(s: &'a mut Buffer) -> Lexer<'a> {
+    pub fn new(interner: &'a mut Interner, s: &'b mut Buffer) -> Lexer<'a, 'b> {
         Lexer {
             peek_c: Some(s.read_char().unwrap()),
             input: s,
@@ -113,7 +91,7 @@ impl <'a> Lexer<'a> {
             location: Location { row: 1, column: 1, absolute: 0 },
             tokens: RingBuf::with_capacity(20),
             offset: 0,
-            interner: get_local_interner()
+            interner: interner
         }
     }
 
@@ -196,8 +174,8 @@ impl <'a> Lexer<'a> {
         self.buffer.as_slice()
     }
 
-    fn intern(&self, s: &str) -> InternedStr {
-        (*self.interner.borrow_mut()).intern(s)
+    fn intern_current(&mut self) -> InternedStr {
+        self.interner.intern(self.buffer.as_slice())
     }
 
     ///Scans digits into a string
@@ -247,7 +225,22 @@ impl <'a> Lexer<'a> {
                 None => break
             }
         }
-        name_or_keyword(&mut *self.interner.borrow_mut(), self.current_str())
+        match self.current_str() {
+            "if" => TIf,
+            "else" => TElse,
+            "while" => TWhile,
+            "for" => TFor,
+            "match" => TMatch,
+            "fn" => TFn,
+            "struct" => TStruct,
+            "trait" => TTrait,
+            "impl" => TImpl,
+            "enum" => TEnum,
+            "let" => TLet,
+            "true" => TTrue,
+            "false" => TFalse,
+            _ => TIdentifier(self.intern_current()),
+        }
     }
     
     ///Scans the character stream for the next token
@@ -285,7 +278,7 @@ impl <'a> Lexer<'a> {
                 "->" => TRArrow,
                 "." => TDot,
                 "=>" => TMatchArrow,
-                s => TOperator(self.intern(s))
+                _ => TOperator(self.intern_current())
             }
         }
         else if c.is_digit() {
@@ -297,7 +290,7 @@ impl <'a> Lexer<'a> {
         else if c == '"' {
             loop {
                 match self.read_char() {
-                    Some('"') => return TString(self.intern(self.current_str())),
+                    Some('"') => return TString(self.intern_current()),
                     Some(_) => (),
                     None => fail!("Unexpected EOF")
                 }
@@ -337,7 +330,7 @@ impl <'a> Lexer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use interner::intern;
+    use interner::{Interner, intern};
     use std::io::BufReader;
 
     fn buffer<'a>(s: &'a str) -> BufReader<'a> {
@@ -347,7 +340,8 @@ mod tests {
     #[test]
     fn lex() {
         let mut buffer = buffer("fn main() { 1 + 2 }");
-        let mut lexer = Lexer::new(&mut buffer);
+        let mut interner = Interner::new();
+        let mut lexer = Lexer::new(&mut interner, &mut buffer);
         assert_eq!(lexer.next(), &TFn);
         assert_eq!(lexer.next(), &TIdentifier(intern("main")));
         assert_eq!(lexer.next(), &TOpenParen);

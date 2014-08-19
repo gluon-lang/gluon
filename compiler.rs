@@ -83,12 +83,6 @@ impl FunctionEnv {
     }
 }
 
-
-pub struct Assembly {
-    pub functions: Vec<CompiledFunction>,
-    pub types: TypeInfos
-}
-
 pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
     fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint>;

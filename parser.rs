@@ -1,6 +1,6 @@
 use lexer::*;
 use ast::*;
-use interner::InternedStr;
+use interner::{Interner, InternedStr};
 
 macro_rules! expect(
     ($e: expr, $p: ident (..)) => (
@@ -76,14 +76,14 @@ fn is_lvalue<T>(e: &Expr<T>) -> bool {
 type PString = InternedStr;
 pub type ParseResult<T> = Result<T, String>;
 
-pub struct Parser<'a, PString> {
-    lexer: Lexer<'a>,
+pub struct Parser<'a, 'b, PString> {
+    lexer: Lexer<'a, 'b>,
     make_id_f: |InternedStr|:'static -> PString
 }
 
-impl <'a, PString> Parser<'a, PString> {
-    pub fn new(input: &'a mut Buffer, make_id: |InternedStr|:'static -> PString) -> Parser<'a, PString> {
-        Parser { lexer: Lexer::new(input), make_id_f: make_id }
+impl <'a, 'b, PString> Parser<'a, 'b, PString> {
+    pub fn new(interner: &'a mut Interner, input: &'b mut Buffer, make_id: |InternedStr|:'static -> PString) -> Parser<'a, 'b, PString> {
+        Parser { lexer: Lexer::new(interner, input), make_id_f: make_id }
     }
 
     fn make_id(&mut self, s: InternedStr) -> PString {
@@ -439,21 +439,21 @@ impl <'a, PString> Parser<'a, PString> {
         Ok(Function { name: name, arguments: arguments, return_type: return_type, expression: expr })
     }
 
-    fn braces<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<T> {
+    fn braces<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
         expect!(self, TOpenBrace);
         let x = try!(f(self));
         expect!(self, TCloseBrace);
         Ok(x)
     }
 
-    fn parens<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<T> {
+    fn parens<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
         expect!(self, TOpenParen);
         let x = try!(f(self));
         expect!(self, TCloseParen);
         Ok(x)
     }
 
-    fn many<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
+    fn many<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
         let mut result = Vec::new();
         loop {
             match f(self) {
@@ -463,7 +463,7 @@ impl <'a, PString> Parser<'a, PString> {
         }
         Ok(result)
     }
-    fn sep_by<T>(&mut self, sep: |&Token| -> bool, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
+    fn sep_by<T>(&mut self, sep: |&Token| -> bool, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
         let mut result = Vec::new();
         match f(self) {
             Ok(x) => result.push(x),
@@ -476,7 +476,7 @@ impl <'a, PString> Parser<'a, PString> {
         }
         Ok(result)
     }
-    fn located<T>(&mut self, f: |&mut Parser<'a, PString>| -> ParseResult<T>) -> ParseResult<Located<T>> {
+    fn located<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<Located<T>> {
         let location = self.lexer.location();
         let value = try!(f(self));
         Ok(Located { location: location, value: value })
@@ -533,7 +533,8 @@ pub mod tests {
 
     pub fn parse<T>(s: &str, f: |&mut Parser<InternedStr>|:'static -> ParseResult<T>) -> T {
         let mut buffer = BufReader::new(s.as_bytes());
-        let mut parser = Parser::new(&mut buffer, |s| s);
+        let mut interner = Interner::new();
+        let mut parser = Parser::new(&mut interner, &mut buffer, |s| s);
         f(&mut parser)
             .unwrap_or_else(|err| fail!(err))
     }

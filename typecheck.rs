@@ -781,11 +781,13 @@ impl <T: Typed> Typed for Function<T> {
 mod tests {
     use super::*;
     use parser::*;
+    use interner::Interner;
 
     pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {
         use std::io::BufReader;
         let mut buffer = BufReader::new(s.as_bytes());
-        let mut parser = Parser::new(&mut buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
+        let mut interner = Interner::new();
+        let mut parser = Parser::new(&mut interner, &mut buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
         f(&mut parser)
             .unwrap_or_else(|err| fail!(err))
     }

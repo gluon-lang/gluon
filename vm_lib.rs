@@ -6,13 +6,17 @@ extern crate log;
 
 pub use interner::InternedStr;
 
+pub use typecheck::TcType;
+pub use compiler::{CompiledFunction, Instruction};
+
+
 mod scoped_map;
 mod interner;
 pub mod ast;
-pub mod lexer;
-pub mod parser;
-pub mod typecheck;
-pub mod compiler;
+mod lexer;
+mod parser;
+mod typecheck;
+mod compiler;
 pub mod vm;
 pub mod api;
 

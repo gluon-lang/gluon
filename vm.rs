@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::any::Any;
 use typecheck::*;
 use compiler::*;
-use interner::{InternedStr, intern};
+use interner::{Interner, InternedStr, intern};
 
 pub struct Data<T> {
     pub data: Rc<RefCell<T>>
@@ -85,7 +85,8 @@ pub struct VM {
     globals: Vec<Global>,
     trait_indexes: Vec<TraitFunctions>,
     type_infos: TypeInfos,
-    typeids: HashMap<TypeId, TcType>
+    typeids: HashMap<TypeId, TcType>,
+    interner: Interner
 }
 
 impl CompilerEnv for VM {
@@ -185,7 +186,8 @@ impl VM {
             globals: Vec::new(),
             trait_indexes: Vec::new(),
             type_infos: TypeInfos::new(),
-            typeids: HashMap::new()
+            typeids: HashMap::new(),
+            interner: Interner::new()
         };
         vm.extern_function("array_length", vec![ArrayType(box int_type_tc.clone())], int_type_tc.clone(), array_length);
         vm.extern_function("array_push", vec![ArrayType(box int_type_tc.clone()), int_type_tc.clone()], unit_type_tc.clone(), array_push);
@@ -526,8 +528,10 @@ macro_rules! tryf(
 pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
     use parser::Parser;
 
-    let mut parser = Parser::new(buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
-    let mut module = tryf!(parser.module());
+    let mut module = {
+        let mut parser = Parser::new(&mut vm.interner, buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
+        tryf!(parser.module())
+    };
     let (type_infos, (functions, trait_indexes)) = {
         let vm: &VM = vm;
         let mut tc = Typecheck::new();
