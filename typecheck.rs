@@ -70,16 +70,32 @@ impl Equiv<Type<InternedStr>> for TcType {
     }
 }
 
-fn from_vm_type(typ: &VMType) -> TcType {
+fn from_declaration(decl: &FunctionDeclaration<TcIdent>) -> TcType {
+    let variables = decl.type_variables.as_slice();
+    let args = decl.arguments.iter()
+        .map(|f| from_generic_type(variables, &f.typ))
+        .collect();
+    FunctionType(args, box from_generic_type(variables, &decl.return_type))
+}
+
+fn from_generic_type(variables: &[InternedStr], typ: &VMType) -> TcType {
     match *typ {
-        ast::Type(ref id) => Type(*id),
+        ast::Type(ref id) => {
+            match variables.iter().enumerate().find(|v| *v.ref1() == id).map(|v| *v.ref0()) {
+                Some(index) => Generic(index),
+                None => Type(*id)
+            }
+        }
         ast::FunctionType(ref args, ref return_type) => {
-            let args2 = args.iter().map(|a| from_vm_type(a)).collect();
-            FunctionType(args2, box from_vm_type(&**return_type))
+            let args2 = args.iter().map(|a| from_generic_type(variables, a)).collect();
+            FunctionType(args2, box from_generic_type(variables, &**return_type))
         }
         ast::LiteralType(ref id) => BuiltinType(*id),
-        ast::ArrayType(ref typ) => ArrayType(box from_vm_type(&**typ))
+        ast::ArrayType(ref typ) => ArrayType(box from_generic_type(variables, &**typ))
     }
+}
+fn from_vm_type(typ: &VMType) -> TcType {
+    from_generic_type(&[], typ)
 }
 
 #[deriving(Show)]
@@ -251,7 +267,7 @@ impl <'a> Typecheck<'a> {
         
         for f in module.functions.mut_iter() {
             let decl = &mut f.declaration;
-            decl.name.typ = FunctionType(decl.arguments.iter().map(|f| from_vm_type(&f.typ)).collect(), box from_vm_type(&decl.return_type));
+            decl.name.typ = from_declaration(decl);
             self.module.insert(decl.name.name, decl.name.typ.clone());
         }
         for t in module.traits.mut_iter() {
@@ -316,17 +332,23 @@ impl <'a> Typecheck<'a> {
     fn typecheck_function(&mut self, function: &mut Function<TcIdent>) {
         debug!("Typecheck function {}", function.declaration.name.id());
         self.stack.clear();
-        for arg in function.declaration.arguments.iter() {
-            self.stack_var(arg.name.clone(), from_vm_type(&arg.typ));
-        }
-        let return_type = match self.typecheck(&mut function.expression) {
+        let return_type = match function.declaration.name.typ {
+            FunctionType(ref arg_types, ref return_type) => {
+                for (typ, arg) in arg_types.iter().zip(function.declaration.arguments.iter()) {
+                    self.stack_var(arg.name.clone(), typ.clone());
+                }
+                &**return_type
+            }
+            _ => fail!("Non function type for function")
+        };
+        let inferred_return_type = match self.typecheck(&mut function.expression) {
             Ok(typ) => typ,
             Err(err) => {
                 self.errors.error(Located { location: function.expression.location, value: err });
                 return;
             }
         };
-        match self.unify(&from_vm_type(&function.declaration.return_type), return_type) {
+        match self.unify(return_type, inferred_return_type) {
             Ok(_) => self.replace_vars(&mut function.expression),
             Err(err) => {
                 debug!("End {} ==> {}", function.declaration.name.id(), err);
@@ -939,5 +961,59 @@ fn adder(x: int) -> fn (int) -> int {
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| fail!("{}", err));
+    }
+    #[test]
+    fn generic_function() {
+        let text = 
+r"
+fn main() -> int {
+    let x = 1;
+    id(x)
+}
+fn id<T>(x: T) -> T {
+    x
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err));
+    }
+    #[test]
+    fn generic_function_map() {
+        let text = 
+r"
+fn main() -> float {
+    let xs = [1,2,3,4];
+    transform(xs, \x -> []);
+    transform(1, \x -> 1.0)
+}
+fn transform<A, B>(x: A, f: fn (A) -> B) -> B {
+    f(x)
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err));
+        match module.functions[0].expression.value {
+            ::ast::Block(ref exprs) => {
+                assert_eq!(exprs[2].value.type_of(), &float_type_tc);
+            }
+            _ => fail!()
+        }
+    }
+    #[test]
+    fn specialized_generic_function_error() {
+        let text = 
+r"
+fn id<T>(x: T) -> T {
+    2
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_err();
     }
 }
