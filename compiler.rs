@@ -581,19 +581,25 @@ impl <'a> Compiler<'a> {
                             start_jumps.push(function.instructions.len());
                             function.instructions.push(CJump(0));
                         }
-                        _ => ()
+                        _ => {
+                            start_jumps.push(function.instructions.len());
+                            function.instructions.push(Jump(0));
+                        }
                     }
                 }
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
-                    *function.instructions.get_mut(start_index) = CJump(function.instructions.len());
                     match alt.pattern {
                         ConstructorPattern(_, ref args) => {
+                            *function.instructions.get_mut(start_index) = CJump(function.instructions.len());
                             function.instructions.push(Split);
                             for arg in args.iter() {
                                 self.new_stack_var(arg.id().clone());
                             }
                         }
-                        IdentifierPattern(ref id) => self.new_stack_var(id.id().clone())
+                        IdentifierPattern(ref id) => {
+                            *function.instructions.get_mut(start_index) = Jump(function.instructions.len());
+                            self.new_stack_var(id.id().clone());
+                        }
                     }
                     self.compile(&alt.expression, function);
                     end_jumps.push(function.instructions.len());
