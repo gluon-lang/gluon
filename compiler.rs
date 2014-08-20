@@ -333,6 +333,7 @@ impl <'a> Compiler<'a> {
         for arg in function.declaration.arguments.iter() {
             self.stack.remove(&arg.name);
         }
+        debug!("Stack {} {}", function.declaration.name.id(), self.stack);
         let FunctionEnv { instructions: instructions, .. } = f;
         CompiledFunction {
             id: function.declaration.name.id().clone(),
@@ -341,8 +342,14 @@ impl <'a> Compiler<'a> {
         }
     }
 
+    pub fn compile_expr(&mut self, expr: &CExpr) -> (Vec<Instruction>, Vec<CompiledFunction>) {
+        let mut env = FunctionEnv::new();
+        self.compile(expr, &mut env);
+        let lambdas = ::std::mem::replace(&mut self.compiled_lambdas, Vec::new());
+        (env.instructions, lambdas)
+    }
 
-    pub fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv) {
+    fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv) {
         match expr.value {
             Literal(ref lit) => {
                 match *lit {
@@ -588,6 +595,14 @@ impl <'a> Compiler<'a> {
                     end_jumps.push(function.instructions.len());
                     function.instructions.push(Jump(0));
 
+                    match alt.pattern {
+                        ConstructorPattern(_, ref args) => {
+                            for arg in args.iter() {
+                                self.stack.remove(arg.id());
+                            }
+                        }
+                        IdentifierPattern(ref id) => { self.stack.remove(id.id()); }
+                    }
                 }
                 for &index in end_jumps.iter() {
                     *function.instructions.get_mut(index) = Jump(function.instructions.len());

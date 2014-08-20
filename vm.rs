@@ -49,7 +49,7 @@ impl fmt::Show for Value {
             Float(x) => write!(f, "{}f", x),
             Data(tag, ref ptr) => write!(f, "{{{} {}}}", tag, ptr.borrow()),
             Function(i) => write!(f, "<function {}>", i),
-            Closure(fi, ref upvars) => write!(f, "{} {}", fi, upvars.borrow()),
+            Closure(fi, ref upvars) => write!(f, "<Closure {} {}>", fi, upvars.borrow()),
             TraitObject(fns, ref o) => write!(f, "<{} {}>", fns, o),
             Userdata(ref ptr) => write!(f, "<Userdata {}>", &*ptr.data.borrow() as *const Box<Any>)
         }
@@ -515,7 +515,7 @@ fn array_length(_: &VM, mut stack: StackFrame) {
             let i = values.borrow().len();
             stack.push(Int(i as int));
         }
-        _ => fail!()
+        x => fail!("{}", x)
     }
 }
 fn array_push(_: &VM, mut stack: StackFrame) {

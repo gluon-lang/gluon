@@ -2,7 +2,7 @@ use std::io::BufReader;
 use std::io::IoResult;
 
 use vm_lib::typecheck::*;
-use vm_lib::compiler::{FunctionEnv, Compiler};
+use vm_lib::compiler::Compiler;
 use vm_lib::vm::{VM, StackFrame, parse_expr, load_script};
 
 macro_rules! tryf(
@@ -82,16 +82,16 @@ fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
         _ =>  {
             let mut buffer = BufReader::new(expr_str.as_bytes());
             let mut expr = try!(parse_expr(&mut buffer, vm));
-            let mut function = FunctionEnv::new();
-            {
+            let (instructions, lambdas) = {
                 let vm: &VM = vm;
                 let mut tc = Typecheck::new();
                 tc.add_environment(vm);
                 tryf!(tc.typecheck(&mut expr));
                 let mut compiler = Compiler::new(vm);
-                compiler.compile(&expr, &mut function);
-            }
-            let v = vm.execute_instructions(function.instructions.as_slice());
+                compiler.compile_expr(&expr)
+            };
+            vm.new_functions(lambdas);
+            let v = vm.execute_instructions(instructions.as_slice());
             match v {
                 Some(v) => println!("{}", v),
                 None => println!("")
