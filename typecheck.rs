@@ -58,7 +58,7 @@ impl fmt::Show for TcType {
 impl Equiv<ast::VMType> for TcType {
     fn equiv(&self, o: &ast::VMType) -> bool {
         match (self, o) {
-            (&Type(ref l), &ast::Type(ref r)) => l == r,
+            (&Type(ref l), &ast::Type(ref r, _)) => l == r,//TODO
             (&TypeVariable(_), _) => false,
             (&Generic(_), _) => false,
             (&FunctionType(ref l_args, ref l), &ast::FunctionType(ref r_args, ref r)) =>
@@ -80,10 +80,15 @@ fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> TcType {
 
 fn from_generic_type(variables: &[InternedStr], typ: &ast::VMType) -> TcType {
     match *typ {
-        ast::Type(ref id) => {
+        ast::Type(ref id, ref args) => {
             match variables.iter().enumerate().find(|v| *v.ref1() == id).map(|v| *v.ref0()) {
-                Some(index) => Generic(index),
-                None => Type(*id)
+                Some(index) => {//TODO type parameters
+                    Generic(index)
+                }
+                None => {
+                    let args2: Vec<TcType> = args.iter().map(|a| from_generic_type(variables, a)).collect();
+                    Type(*id)//, args2)//TODO
+                }
             }
         }
         ast::FunctionType(ref args, ref return_type) => {
@@ -773,8 +778,14 @@ impl Substitution {
 
     fn from_trait_function_type(&mut self, typ: &ast::VMType) -> TcType {
         match *typ {
-            ast::Type(ref id) if id.as_slice() == "Self" => Generic(0),
-            ast::Type(ref id) => Type(*id),
+            ast::Type(ref id, _) if id.as_slice() == "Self" => Generic(0),
+            ast::Type(ref id, ref args) => {
+                let args2: Vec<TcType> = args.iter().map(|a| self.from_trait_function_type(a)).collect();
+                if args.len() != 0 {
+                    fail!();//TODO
+                }
+                Type(*id)
+            }
             ast::FunctionType(ref args, ref return_type) => {
                 let args2 = args.iter().map(|a| self.from_trait_function_type(a)).collect();
                 FunctionType(args2, box self.from_trait_function_type(&**return_type))

@@ -33,7 +33,7 @@ pub enum LiteralType {
 
 #[deriving(Clone, Eq, PartialEq, Show, Hash)]
 pub enum Type<Id> {
-    Type(Id),
+    Type(Id, Vec<Type<Id>>),
     FunctionType(Vec<Type<Id>>, Box<Type<Id>>),
     LiteralType(LiteralType),
     ArrayType(Box<Type<Id>>)
@@ -112,6 +112,7 @@ pub struct Function<Id> {
 #[deriving(Clone, PartialEq, Show)]
 pub struct Struct<Id> {
     pub name: Id,
+    pub type_variables: Vec<InternedStr>,
     pub fields: Vec<Field>
 }
 #[deriving(Clone, PartialEq, Show)]
@@ -122,6 +123,7 @@ pub struct Constructor<Id> {
 #[deriving(Clone, PartialEq, Show)]
 pub struct Enum<Id> {
     pub name: Id,
+    pub type_variables: Vec<InternedStr>,
     pub constructors: Vec<Constructor<Id>>
 }
 #[deriving(Clone, PartialEq, Show)]
@@ -159,14 +161,15 @@ pub static bool_type: Type<InternedStr> = LiteralType(BoolType);
 pub static unit_type: Type<InternedStr> = LiteralType(UnitType);
 
 
-pub fn str_to_type(x: InternedStr) -> Type<InternedStr> {
-    match x.as_slice() {
+pub fn str_to_primitive_type(x: InternedStr) -> Option<Type<InternedStr>> {
+    let t = match x.as_slice() {
         "int" => int_type.clone(),
         "float" => float_type.clone(),
         "string" => string_type.clone(),
         "bool" => bool_type.clone(),
-        _ => Type(x)
-    }
+        _ => return None
+    };
+    Some(t)
 }
 
 
