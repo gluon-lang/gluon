@@ -76,9 +76,13 @@ impl FunctionEnv {
     pub fn new() -> FunctionEnv {
         FunctionEnv { instructions: Vec::new(), free_vars: Vec::new() }
     }
-    fn try_insert_var(&mut self, s: InternedStr) {
-        if self.free_vars.iter().find(|var| **var == s).is_none() {
-            self.free_vars.push(s);
+    fn upvar(&mut self, s: InternedStr) -> uint {
+        match self.free_vars.iter().enumerate().find(|t| *t.val1() == s).map(|t| t.val0()) {
+            Some(index) => index,
+            None => {
+                self.free_vars.push(s);
+                self.free_vars.len() - 1
+            }
         }
     }
 }
@@ -267,8 +271,8 @@ impl <'a> Compiler<'a> {
                 if self.closure_limits.len() != 0 {
                     let closure_stack_start = *self.closure_limits.last().unwrap();
                     if *x < closure_stack_start {
-                        env.try_insert_var(*s);
-                        UpVar(*x)
+                        let i = env.upvar(*s);
+                        UpVar(i)
                     }
                     else {
                         Stack(*x - closure_stack_start)

@@ -769,5 +769,33 @@ fn main() -> int {
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(3)));
     }
+
+    #[test]
+    fn upvar_index() {
+        let text = 
+r"
+fn main() -> int {
+    let xs = map([1,2,3], \x -> x * 2);
+    xs[2]
+}
+fn map<A, B>(as: [A], f: fn (A) -> B) -> [B] {
+    foldl(as, [], \a bs -> { array_push(bs, f(a)); bs })
+}
+
+fn foldl<A, B>(as: [A], b: B, f: fn (A, B) -> B) -> B {
+    let i = 0;
+    while i < array_length(as) {
+        b = f(as[i], b);
+        i = i + 1;
+    }
+    b
+}
+
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(6)));
+    }
+
 }
 
