@@ -310,14 +310,11 @@ impl <'a> Typecheck<'a> {
         {
             let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
             for func in imp.functions.mut_iter() {
+                func.declaration.name.typ = from_declaration(&func.declaration);
                 let trait_function_type = try!(trait_functions.iter()
                     .find(|& &(ref name, _)| name == func.declaration.name.id())
                     .map(Ok)
                     .unwrap_or_else(|| Err(TypeError("Function does not exist in trait"))));
-                let args = func.declaration.arguments.iter()
-                    .map(|f| from_vm_type(&f.typ))
-                    .collect();
-                func.declaration.name.typ = FunctionType(args, box from_vm_type(&func.declaration.return_type));
                 let tf = self.subs.instantiate(trait_function_type.ref1());
                 try!(self.unify(&tf, func.type_of().clone()));
             }
@@ -335,9 +332,11 @@ impl <'a> Typecheck<'a> {
         let return_type = match function.declaration.name.typ {
             FunctionType(ref arg_types, ref return_type) => {
                 for (typ, arg) in arg_types.iter().zip(function.declaration.arguments.iter()) {
-                    self.stack_var(arg.name.clone(), typ.clone());
+                    let typ = self.subs.instantiate(typ);
+                    debug!("{} {}", arg.name, typ);
+                    self.stack_var(arg.name.clone(), typ);
                 }
-                &**return_type
+                self.subs.instantiate(&**return_type)
             }
             _ => fail!("Non function type for function")
         };
@@ -348,7 +347,7 @@ impl <'a> Typecheck<'a> {
                 return;
             }
         };
-        match self.unify(return_type, inferred_return_type) {
+        match self.merge(return_type, inferred_return_type) {
             Ok(_) => self.replace_vars(&mut function.expression),
             Err(err) => {
                 debug!("End {} ==> {}", function.declaration.name.id(), err);
@@ -614,6 +613,42 @@ impl <'a> Typecheck<'a> {
             _ => expected == actual
         }
     }
+    fn merge(&self, expected: TcType, actual: TcType) -> TcResult {
+        if self.merge_(&expected, &actual) {
+            Ok(expected)
+        }
+        else {
+            Err(TypeMismatch(expected, actual))
+        }
+    }
+    fn merge_(&self, expected: &TcType, actual: &TcType) -> bool {
+        let expected = self.subs.real_type(expected);
+        let actual = self.subs.real_type(actual);
+        match (expected, actual) {
+            (_, &TypeVariable(ref r)) => {
+                self.subs.union(*r, expected);
+                true
+            }
+            (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
+                if l_args.len() == r_args.len() {
+                    l_args.iter().zip(r_args.iter()).all(|(l, r)| self.unify_(l, r)) && self.unify_(&**l_ret, &**r_ret)
+                }
+                else {
+                    false
+                }
+            }
+            (&ArrayType(ref l), &ArrayType(ref r)) => self.unify_(&**l, &**r),
+            (&Type(ref l), _) => {
+                if find_trait(&self.type_infos, l).is_ok() {
+                    self.type_infos.has_impl_of_trait(actual, l)
+                }
+                else {
+                    expected == actual
+                }
+            }
+            _ => expected == actual
+        }
+    }
     fn set_type(&self, t: &mut TcType) {
         let replacement = match *t {
             TypeVariable(id) => self.subs.find(id)
@@ -720,6 +755,7 @@ impl Substitution {
                 let args2 = args.iter().map(|a| self.instantiate_(base, a)).collect();
                 FunctionType(args2, box self.instantiate_(base, &**return_type))
             }
+            ArrayType(ref typ) => ArrayType(box self.instantiate_(base, &**typ)),
             ref x => x.clone()
         }
     }
