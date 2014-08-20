@@ -375,7 +375,18 @@ impl <'a> Typecheck<'a> {
         v.visit_expr(expr);
     }
 
-    pub fn typecheck(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
+    pub fn typecheck_expr(&mut self, expr: &mut LExpr<TcIdent>) -> Result<TcType, TypeErrors> {
+        let typ = match self.typecheck(expr) {
+            Ok(typ) => typ,
+            Err(err) => {
+                self.errors.error(Located { location: expr.location, value: err });
+                return Err(::std::mem::replace(&mut self.errors, Errors::new()))
+            }
+        };
+        self.replace_vars(expr);
+        Ok(typ)
+    }
+    fn typecheck(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
         match self.typecheck_(expr) {
             Ok(typ) => Ok(typ),
             Err(err) => {
@@ -384,7 +395,7 @@ impl <'a> Typecheck<'a> {
             }
         }
     }
-    pub fn typecheck_(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
+    fn typecheck_(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
         match expr.value {
             Identifier(ref mut id) => {
                 id.typ = try!(self.find(id.id()));

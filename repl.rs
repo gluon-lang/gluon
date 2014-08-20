@@ -86,7 +86,7 @@ fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
                 let vm: &VM = vm;
                 let mut tc = Typecheck::new();
                 tc.add_environment(vm);
-                tryf!(tc.typecheck(&mut expr));
+                tryf!(tc.typecheck_expr(&mut expr));
                 let mut compiler = Compiler::new(vm);
                 compiler.compile_expr(&expr)
             };

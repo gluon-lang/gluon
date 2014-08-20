@@ -437,7 +437,7 @@ impl <'a> Compiler<'a> {
                     }
                 }
                 else {
-                    fail!()
+                    fail!("Unexpected type {} in expression {}", typ, op.id())
                 };
                 function.instructions.push(instr);
             }
