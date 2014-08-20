@@ -129,6 +129,7 @@ enum TypeError {
     UndefinedStruct(InternedStr),
     UndefinedField(InternedStr, InternedStr),
     UndefinedTrait(InternedStr),
+    IndexError(TcType),
     TypeError(&'static str)
 }
 
@@ -136,12 +137,12 @@ pub type TcResult = Result<TcType, TypeError>;
 
 
 pub enum TypeInfo<'a> {
-    Struct(&'a [ast::Field]),
+    Struct(&'a [(InternedStr, TcType)]),
     Enum(&'a [ast::Constructor<TcIdent>])
 }
 
 pub struct TypeInfos {
-    pub structs: HashMap<InternedStr, Vec<ast::Field>>,
+    pub structs: HashMap<InternedStr, Vec<(InternedStr, TcType)>>,
     pub enums: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
     impls: HashMap<TcType, HashSet<InternedStr>>,
     traits: HashMap<InternedStr, Vec<(InternedStr, TcType)>>
@@ -171,7 +172,9 @@ impl TypeInfos {
     }
     pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
         for s in module.structs.iter() {
-            let fields = s.fields.clone();
+            let fields = s.fields.iter()
+                .map(|field| (field.name, from_generic_type(s.type_variables.as_slice(), &field.typ)))
+                .collect();
             self.structs.insert(s.name.name, fields);
         }
         for e in module.enums.iter() {
@@ -302,7 +305,6 @@ impl <'a> Typecheck<'a> {
                 self.module.insert(func.name.id().clone(), func.name.typ.clone());
             }
         }
-        self.type_infos.add_module(module);
         for s in module.structs.mut_iter() {
             let args = s.fields.iter()
                 .map(|f| from_generic_type(s.type_variables.as_slice(), &f.typ))
@@ -313,18 +315,20 @@ impl <'a> Typecheck<'a> {
             s.name.typ = FunctionType(args, box Type(s.name.name, variables));
             self.module.insert(s.name.name, s.name.typ.clone());
         }
-        for e in module.enums.iter() {
-            for ctor in e.constructors.iter() {
+        for e in module.enums.mut_iter() {
+            let type_variables = e.type_variables.as_slice();
+            for ctor in e.constructors.mut_iter() {
                 let args = ctor.arguments.iter()
-                    .map(|t| from_generic_type(e.type_variables.as_slice(), t))
+                    .map(|t| from_generic_type(type_variables, t))
                     .collect();
                 let variables = range(0, e.type_variables.len())
                     .map(|i| Generic(i))
                     .collect();
-                let typ = FunctionType(args, box Type(e.name.name, variables));
-                self.module.insert(ctor.name.name, typ);
+                ctor.name.typ = FunctionType(args, box Type(e.name.name, variables));
+                self.module.insert(ctor.name.name, ctor.name.typ.clone());
             }
         }
+        self.type_infos.add_module(module);
         for f in module.functions.mut_iter() {
             self.typecheck_function(f)
         }
@@ -399,6 +403,18 @@ impl <'a> Typecheck<'a> {
                     ast::FieldAccess(_, ref mut id) => self.tc.set_type(&mut id.typ),
                     ast::Array(ref mut array) => self.tc.set_type(&mut array.id.typ),
                     ast::Lambda(ref mut lambda) => self.tc.set_type(&mut lambda.id.typ),
+                    ast::Match(_, ref mut alts) => {
+                        for alt in alts.mut_iter() {
+                            match alt.pattern {
+                                ast::ConstructorPattern(ref mut typ, ref mut args) => {
+                                    for arg in args.mut_iter() {
+                                        self.tc.set_type(&mut arg.typ);
+                                    }
+                                }
+                                ast::IdentifierPattern(ref mut id) => self.tc.set_type(&mut id.typ)
+                            }
+                        }
+                    }
                     _ => ()
                 }
                 ast::walk_mut_expr(self, e);
@@ -535,8 +551,8 @@ impl <'a> Typecheck<'a> {
                         match type_info {
                             Struct(ref fields) => {
                                 id.typ = try!(fields.iter()
-                                    .find(|field| field.name == id.name)
-                                    .map(|field| Ok(from_vm_type(&field.typ)))
+                                    .find(|& &(name, _)| name == id.name)
+                                    .map(|&(_, ref typ)| Ok(typ.clone()))
                                     .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone()))));
                                 Ok(id.typ.clone())
                             }
@@ -562,9 +578,11 @@ impl <'a> Typecheck<'a> {
             }
             ast::ArrayAccess(ref mut array, ref mut index) => {
                 let array_type = try!(self.typecheck(&mut **array));
+                let var = self.subs.new_var();
+                let array_type = try!(self.unify(&ArrayType(box var), array_type));
                 let typ = match array_type {
                     ArrayType(typ) => *typ,
-                    _ => return Err(TypeError("Index on a non array type"))
+                    typ => return Err(IndexError(typ))
                 };
                 let index_type = try!(self.typecheck(&mut **index));
                 try!(self.unify(&int_type_tc, index_type));
@@ -597,7 +615,10 @@ impl <'a> Typecheck<'a> {
                 let argument_types: Vec<TcType> = match try!(self.find_type_info(&typename)) {
                     Enum(ref ctors) => {
                         match ctors.iter().find(|ctor| ctor.name.id() == name.id()) {
-                            Some(ctor) => ctor.arguments.iter().map(|t| from_vm_type(t)).collect(),
+                            Some(ctor) => match ctor.name.typ {
+                                    FunctionType(ref argument_types, _) => argument_types.clone(),
+                                    _ => return Err(TypeError("Enum constructor must be a function type"))
+                                },
                             None => return Err(TypeError("Undefined constructor"))
                         }
                     }
@@ -615,13 +636,17 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn unify(&self, expected: &TcType, actual: TcType) -> TcResult {
+    fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult {
         debug!("Unify {} <=> {}", expected, actual);
         if self.unify_(expected, &actual) {
+            self.set_type(&mut actual);
             Ok(actual)
         }
         else {
-            Err(TypeMismatch(expected.clone(), actual))
+            let mut expected = expected.clone();
+            self.set_type(&mut expected);
+            self.set_type(&mut actual);
+            Err(TypeMismatch(expected, actual))
         }
     }
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
@@ -657,11 +682,13 @@ impl <'a> Typecheck<'a> {
             _ => expected == actual
         }
     }
-    fn merge(&self, expected: TcType, actual: TcType) -> TcResult {
+    fn merge(&self, mut expected: TcType, mut actual: TcType) -> TcResult {
         if self.merge_(&expected, &actual) {
             Ok(expected)
         }
         else {
+            self.set_type(&mut expected);
+            self.set_type(&mut actual);
             Err(TypeMismatch(expected, actual))
         }
     }
@@ -675,13 +702,16 @@ impl <'a> Typecheck<'a> {
             }
             (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
-                    l_args.iter().zip(r_args.iter()).all(|(l, r)| self.unify_(l, r)) && self.unify_(&**l_ret, &**r_ret)
+                    l_args.iter()
+                        .zip(r_args.iter())
+                        .all(|(l, r)| self.merge_(l, r))
+                        && self.merge_(&**l_ret, &**r_ret)
                 }
                 else {
                     false
                 }
             }
-            (&ArrayType(ref l), &ArrayType(ref r)) => self.unify_(&**l, &**r),
+            (&ArrayType(ref l), &ArrayType(ref r)) => self.merge_(&**l, &**r),
             (&Type(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
                 self.type_infos.has_impl_of_trait(actual, l)
             }

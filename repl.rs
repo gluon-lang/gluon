@@ -41,8 +41,8 @@ fn run_command(vm: &mut VM, command: char, args: &str) -> Result<bool, String> {
                     match info {
                         Struct(fields) => {
                             println!("struct {} {{", args);
-                            for field in fields.iter()  {
-                                println!("    {}: {},", field.name, field.typ);
+                            for &(name, ref typ) in fields.iter()  {
+                                println!("    {}: {},", name, typ);
                             }
                             println!("}}");
                         }
