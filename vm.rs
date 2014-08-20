@@ -564,10 +564,12 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
 
 pub fn run_main(s: &str) -> Result<Option<Value>, String> {
     use std::io::BufReader;
-
-    let mut vm = VM::new();
     let mut buffer = BufReader::new(s.as_bytes());
-    try!(load_script(&mut vm, &mut buffer));
+    run_buffer_main(&mut buffer)
+}
+pub fn run_buffer_main(buffer: &mut Buffer) -> Result<Option<Value>, String> {
+    let mut vm = VM::new();
+    try!(load_script(&mut vm, buffer));
     let func = match vm.globals.iter().find(|g| g.id.as_slice() == "main") {
         Some(f) => f,
         None => return Err("Undefined main function".to_string())
