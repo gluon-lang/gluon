@@ -489,12 +489,12 @@ impl <'a> Compiler<'a> {
                 for (arg, real_arg_type) in args.iter().zip(arg_types.iter()) {
                     self.compile(arg, function);
                     match (arg.type_of(), real_arg_type, is_trait_func) {
-                        (&TraitType(_), &TraitType(_), true) => {
+                        (&TraitType(..), &TraitType(..), true) => {
                             //Call through a trait object
                             //Need to unpack the trait object for this argument
                             function.instructions.push(Unpack);
                         }
-                        (actual, &TraitType(ref id), _) => {
+                        (actual, &TraitType(ref id, _), _) => {
                             let offset = self.globals.find_trait_offset(id, actual)
                                 .expect("Missing trait");
                             function.instructions.push(ConstructTraitObject(offset));
@@ -536,7 +536,7 @@ impl <'a> Compiler<'a> {
                         self.compile(&**expr, function);
                         self.compile(&**rhs, function);
                         let field_index = match *expr.type_of() {
-                            Type(ref id) => {
+                            Type(ref id, _) => {
                                 self.find_field(id, field.id())
                                     .unwrap()
                             }
@@ -556,7 +556,7 @@ impl <'a> Compiler<'a> {
             FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function);
                 let field_index = match *expr.type_of() {
-                    Type(ref id) => {
+                    Type(ref id, _) => {
                         self.find_field(id, field.id())
                             .unwrap()
                     }
@@ -569,7 +569,7 @@ impl <'a> Compiler<'a> {
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
                 let typename = match expr.type_of() {
-                    &Type(ref id) => id,
+                    &Type(ref id, _) => id,
                     _ => fail!()
                 };
                 for alt in alts.iter() {
@@ -665,7 +665,7 @@ impl <'a> Compiler<'a> {
             .unwrap_or_else(|| fail!("Could not find the real type between {} <=> {}", trait_func_type, id.typ));
         
         match *typ {
-            TraitType(ref trait_name) => {
+            TraitType(ref trait_name, _) => {//TODO parameterized traits
                     let index = self.globals.find_object_function(trait_name, id.id())
                         .expect("Trait object function does not exist");
                     function.instructions.push(PushTraitFunction(index));

@@ -257,7 +257,7 @@ impl VM {
         }
         else {
             let id = TypeId::of::<T>();
-            let t = &*self.typeids.find_or_insert(id, Type(n));
+            let t = &*self.typeids.find_or_insert(id, Type(n, Vec::new()));
             self.type_infos.structs.insert(n, Vec::new());
             Ok(t)
         }

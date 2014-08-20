@@ -33,8 +33,8 @@ impl Str for TcIdent {
 
 #[deriving(Clone, Eq, PartialEq, Hash)]
 pub enum TcType {
-    Type(InternedStr),
-    TraitType(InternedStr),
+    Type(InternedStr, Vec<TcType>),
+    TraitType(InternedStr, Vec<TcType>),
     TypeVariable(uint),
     Generic(uint),
     FunctionType(Vec<TcType>, Box<TcType>),
@@ -43,9 +43,25 @@ pub enum TcType {
 }
 impl fmt::Show for TcType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt_type(f: &mut fmt::Formatter, t: &InternedStr, args: &[TcType]) -> fmt::Result {
+            try!(write!(f, "{}", t));
+            if args.len() != 0 {
+                try!(write!(f, "<"));
+                let mut args_iter = args.iter();
+                try!(write!(f, "{}", args_iter.next().unwrap()));
+                for arg in args_iter {
+                    try!(write!(f, ", {}", arg));
+                }
+                try!(write!(f, ">"));
+            }
+            Ok(())
+        }
         match *self {
-            Type(t) => t.fmt(f),
-            TraitType(t) => write!(f, "${}", t),
+            Type(ref t, ref args) => fmt_type(f, t, args.as_slice()),
+            TraitType(ref t, ref args) => {
+                try!(write!(f, "$"));
+                fmt_type(f, t, args.as_slice())
+            }
             TypeVariable(ref x) => x.fmt(f),
             Generic(x) => write!(f, "#{}", x),
             FunctionType(ref args, ref return_type) => write!(f, "fn {} -> {}", args, return_type),
@@ -58,7 +74,8 @@ impl fmt::Show for TcType {
 impl Equiv<ast::VMType> for TcType {
     fn equiv(&self, o: &ast::VMType) -> bool {
         match (self, o) {
-            (&Type(ref l), &ast::Type(ref r, _)) => l == r,//TODO
+            (&Type(ref l, ref l_args), &ast::Type(ref r, ref r_args)) =>
+                l == r && l_args.iter().zip(r_args.iter()).all(|(l, r)| l.equiv(r)),
             (&TypeVariable(_), _) => false,
             (&Generic(_), _) => false,
             (&FunctionType(ref l_args, ref l), &ast::FunctionType(ref r_args, ref r)) =>
@@ -86,8 +103,8 @@ fn from_generic_type(variables: &[InternedStr], typ: &ast::VMType) -> TcType {
                     Generic(index)
                 }
                 None => {
-                    let args2: Vec<TcType> = args.iter().map(|a| from_generic_type(variables, a)).collect();
-                    Type(*id)//, args2)//TODO
+                    let args2 = args.iter().map(|a| from_generic_type(variables, a)).collect();
+                    Type(*id, args2)
                 }
             }
         }
@@ -247,6 +264,7 @@ impl <'a> Typecheck<'a> {
                 .or_else(|| module.find(id))
                 .or_else(|| environment.and_then(|e| e.find_type(id)))
         };
+        debug!("Find {} : {}", id, t);
         match t {
             Some(t) => Ok(self.subs.instantiate(t)),
             None => Err(UndefinedVariable(id.clone()))
@@ -286,14 +304,24 @@ impl <'a> Typecheck<'a> {
         }
         self.type_infos.add_module(module);
         for s in module.structs.mut_iter() {
-            let args = s.fields.iter().map(|f| from_vm_type(&f.typ)).collect();
-            s.name.typ = FunctionType(args, box Type(s.name.name));
+            let args = s.fields.iter()
+                .map(|f| from_generic_type(s.type_variables.as_slice(), &f.typ))
+                .collect();
+            let variables = range(0, s.type_variables.len())
+                .map(|i| Generic(i))
+                .collect();
+            s.name.typ = FunctionType(args, box Type(s.name.name, variables));
             self.module.insert(s.name.name, s.name.typ.clone());
         }
         for e in module.enums.iter() {
             for ctor in e.constructors.iter() {
-                let args = ctor.arguments.iter().map(|t| from_vm_type(t)).collect();
-                let typ = FunctionType(args, box Type(e.name.name));
+                let args = ctor.arguments.iter()
+                    .map(|t| from_generic_type(e.type_variables.as_slice(), t))
+                    .collect();
+                let variables = range(0, e.type_variables.len())
+                    .map(|i| Generic(i))
+                    .collect();
+                let typ = FunctionType(args, box Type(e.name.name, variables));
                 self.module.insert(ctor.name.name, typ);
             }
         }
@@ -460,7 +488,7 @@ impl <'a> Typecheck<'a> {
                             return Err(TypeError("Expected numbers in binop"))
                         }
                     }
-                    "<" | ">" | "<=" | ">=" => Ok(bool_type_tc.clone()),
+                    "<" | ">" | "<=" | ">="  => Ok(bool_type_tc.clone()),
                     _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
@@ -502,7 +530,7 @@ impl <'a> Typecheck<'a> {
             ast::FieldAccess(ref mut expr, ref mut id) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 match typ {
-                    Type(ref struct_id) => {
+                    Type(ref struct_id, _) => {
                         let type_info = try!(self.find_type_info(struct_id));
                         match type_info {
                             Struct(ref fields) => {
@@ -560,7 +588,7 @@ impl <'a> Typecheck<'a> {
 
     fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
         let typename = match match_type {
-            Type(id) => id,
+            Type(id, _) => id,
             _ => return Err(TypeError("Pattern matching only works on enums"))
         };
         match *pattern {
@@ -617,14 +645,14 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (&ArrayType(ref l), &ArrayType(ref r)) => self.unify_(&**l, &**r),
-            (&Type(ref l), _) => {
-                if find_trait(&self.type_infos, l).is_ok() {
-                    debug!("Found trait {} ", l);
-                    self.type_infos.has_impl_of_trait(actual, l)
-                }
-                else {
-                    expected == actual
-                }
+            (&Type(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
+                debug!("Found trait {} ", l);
+                self.type_infos.has_impl_of_trait(actual, l)
+            }
+            (&Type(ref l, ref l_args), &Type(ref r, ref r_args)) => {
+                l == r
+                && l_args.len() == r_args.len()
+                && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.unify_(l, r))
             }
             _ => expected == actual
         }
@@ -654,13 +682,13 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (&ArrayType(ref l), &ArrayType(ref r)) => self.unify_(&**l, &**r),
-            (&Type(ref l), _) => {
-                if find_trait(&self.type_infos, l).is_ok() {
-                    self.type_infos.has_impl_of_trait(actual, l)
-                }
-                else {
-                    expected == actual
-                }
+            (&Type(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
+                self.type_infos.has_impl_of_trait(actual, l)
+            }
+            (&Type(ref l, ref l_args), &Type(ref r, ref r_args)) => {
+                l == r
+                && l_args.len() == r_args.len()
+                && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.merge_(l, r))
             }
             _ => expected == actual
         }
@@ -669,8 +697,8 @@ impl <'a> Typecheck<'a> {
         let replacement = match *t {
             TypeVariable(id) => self.subs.find(id)
                 .map(|t| match *t {
-                    Type(ref id) if find_trait(&self.type_infos, id).is_ok() => {
-                        TraitType(id.clone())
+                    Type(ref id, ref args) if find_trait(&self.type_infos, id).is_ok() => {
+                        TraitType(id.clone(), args.clone())
                     }
                     _ => t.clone()
                 }),
@@ -681,9 +709,13 @@ impl <'a> Typecheck<'a> {
                 self.set_type(&mut **return_type);
                 None
             }
-            Type(id) => {
+            Type(id, ref mut args) => {
+                for arg in args.mut_iter() {
+                    self.set_type(arg);
+                }
                 if find_trait(&self.type_infos, &id).is_ok() {
-                    Some(TraitType(id))
+                    let a = ::std::mem::replace(args, Vec::new());
+                    Some(TraitType(id, a))
                 }
                 else {
                     None
@@ -772,6 +804,14 @@ impl Substitution {
                 FunctionType(args2, box self.instantiate_(base, &**return_type))
             }
             ArrayType(ref typ) => ArrayType(box self.instantiate_(base, &**typ)),
+            Type(id, ref args) => {
+                let args2 = args.iter().map(|a| self.instantiate_(base, a)).collect();
+                Type(id, args2)
+            }
+            TraitType(id, ref args) => {
+                let args2 = args.iter().map(|a| self.instantiate_(base, a)).collect();
+                TraitType(id, args2)
+            }
             ref x => x.clone()
         }
     }
@@ -780,11 +820,8 @@ impl Substitution {
         match *typ {
             ast::Type(ref id, _) if id.as_slice() == "Self" => Generic(0),
             ast::Type(ref id, ref args) => {
-                let args2: Vec<TcType> = args.iter().map(|a| self.from_trait_function_type(a)).collect();
-                if args.len() != 0 {
-                    fail!();//TODO
-                }
-                Type(*id)
+                let args2 = args.iter().map(|a| self.from_trait_function_type(a)).collect();
+                Type(*id, args2)
             }
             ast::FunctionType(ref args, ref return_type) => {
                 let args2 = args.iter().map(|a| self.from_trait_function_type(a)).collect();
@@ -861,8 +898,10 @@ impl <T: Typed> Typed for ast::Function<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ast;
     use parser::*;
     use interner::Interner;
+    use interner::tests::intern;
 
     pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {
         use std::io::BufReader;
@@ -1067,6 +1106,62 @@ fn transform<A, B>(x: A, f: fn (A) -> B) -> B {
 r"
 fn id<T>(x: T) -> T {
     2
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_err();
+    }
+    #[test]
+    fn unify_parameterized_types() {
+        let text = 
+r"
+enum Option<T> {
+    Some(T),
+    None()
+}
+fn is_positive(x: float) -> Option<float> {
+    if x < 0.0 {
+        None()
+    }
+    else {
+        Some(x)
+    }
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err));
+        match module.functions[0].expression.value {
+            ast::Block(ref exprs) => {
+                match exprs[0].value {
+                    ast::IfElse(_, ref if_true, ref if_false) => {
+                        assert_eq!(if_true.type_of(), if_false.type_of());
+                        assert_eq!(if_false.type_of(), &Type(intern("Option"), vec![float_type_tc.clone()]));
+                    }
+                    _ => fail!()
+                }
+            }
+            _ => fail!()
+        }
+    }
+    #[test]
+    fn paramter_mismatch() {
+        let text = 
+r"
+enum Option<T> {
+    Some(T),
+    None()
+}
+fn test(x: float) -> Option<int> {
+    if x < 0.0 {
+        None()
+    }
+    else {
+        Some(y)
+    }
 }
 ";
         let mut module = parse(text, |p| p.module());
