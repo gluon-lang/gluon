@@ -406,7 +406,8 @@ impl <'a> Typecheck<'a> {
                     ast::Match(_, ref mut alts) => {
                         for alt in alts.mut_iter() {
                             match alt.pattern {
-                                ast::ConstructorPattern(ref mut typ, ref mut args) => {
+                                ast::ConstructorPattern(ref mut id, ref mut args) => {
+                                    self.tc.set_type(&mut id.typ);
                                     for arg in args.mut_iter() {
                                         self.tc.set_type(&mut arg.typ);
                                     }
