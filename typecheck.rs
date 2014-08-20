@@ -3,15 +3,15 @@ use std::collections::HashSet;
 use std::fmt;
 use scoped_map::ScopedMap;
 use ast;
-use ast::*;
+use ast::MutVisitor;
 use interner::*;
 
 
-pub static int_type_tc: TcType = BuiltinType(IntType);
-pub static float_type_tc: TcType = BuiltinType(FloatType);
-pub static string_type_tc: TcType = BuiltinType(StringType);
-pub static bool_type_tc: TcType = BuiltinType(BoolType);
-pub static unit_type_tc: TcType = BuiltinType(UnitType);
+pub static int_type_tc: TcType = BuiltinType(ast::IntType);
+pub static float_type_tc: TcType = BuiltinType(ast::FloatType);
+pub static string_type_tc: TcType = BuiltinType(ast::StringType);
+pub static bool_type_tc: TcType = BuiltinType(ast::BoolType);
+pub static unit_type_tc: TcType = BuiltinType(ast::UnitType);
 
 
 #[deriving(Clone, Eq, PartialEq, Show)]
@@ -38,7 +38,7 @@ pub enum TcType {
     TypeVariable(uint),
     Generic(uint),
     FunctionType(Vec<TcType>, Box<TcType>),
-    BuiltinType(LiteralType),
+    BuiltinType(ast::LiteralType),
     ArrayType(Box<TcType>)
 }
 impl fmt::Show for TcType {
@@ -55,8 +55,8 @@ impl fmt::Show for TcType {
     }
 }
 
-impl Equiv<Type<InternedStr>> for TcType {
-    fn equiv(&self, o: &Type<InternedStr>) -> bool {
+impl Equiv<ast::VMType> for TcType {
+    fn equiv(&self, o: &ast::VMType) -> bool {
         match (self, o) {
             (&Type(ref l), &ast::Type(ref r)) => l == r,
             (&TypeVariable(_), _) => false,
@@ -70,7 +70,7 @@ impl Equiv<Type<InternedStr>> for TcType {
     }
 }
 
-fn from_declaration(decl: &FunctionDeclaration<TcIdent>) -> TcType {
+fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> TcType {
     let variables = decl.type_variables.as_slice();
     let args = decl.arguments.iter()
         .map(|f| from_generic_type(variables, &f.typ))
@@ -78,7 +78,7 @@ fn from_declaration(decl: &FunctionDeclaration<TcIdent>) -> TcType {
     FunctionType(args, box from_generic_type(variables, &decl.return_type))
 }
 
-fn from_generic_type(variables: &[InternedStr], typ: &VMType) -> TcType {
+fn from_generic_type(variables: &[InternedStr], typ: &ast::VMType) -> TcType {
     match *typ {
         ast::Type(ref id) => {
             match variables.iter().enumerate().find(|v| *v.ref1() == id).map(|v| *v.ref0()) {
@@ -94,7 +94,7 @@ fn from_generic_type(variables: &[InternedStr], typ: &VMType) -> TcType {
         ast::ArrayType(ref typ) => ArrayType(box from_generic_type(variables, &**typ))
     }
 }
-fn from_vm_type(typ: &VMType) -> TcType {
+fn from_vm_type(typ: &ast::VMType) -> TcType {
     from_generic_type(&[], typ)
 }
 
@@ -114,13 +114,13 @@ pub type TcResult = Result<TcType, TypeError>;
 
 
 pub enum TypeInfo<'a> {
-    Struct(&'a [Field]),
-    Enum(&'a [Constructor<TcIdent>])
+    Struct(&'a [ast::Field]),
+    Enum(&'a [ast::Constructor<TcIdent>])
 }
 
 pub struct TypeInfos {
-    pub structs: HashMap<InternedStr, Vec<Field>>,
-    pub enums: HashMap<InternedStr, Vec<Constructor<TcIdent>>>,
+    pub structs: HashMap<InternedStr, Vec<ast::Field>>,
+    pub enums: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
     impls: HashMap<TcType, HashSet<InternedStr>>,
     traits: HashMap<InternedStr, Vec<(InternedStr, TcType)>>
 }
@@ -147,7 +147,7 @@ impl TypeInfos {
     pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, TcType)]> {
         self.traits.find(name).map(|v| v.as_slice())
     }
-    pub fn add_module(&mut self, module: &Module<TcIdent>) {
+    pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
         for s in module.structs.iter() {
             let fields = s.fields.clone();
             self.structs.insert(s.name.name, fields);
@@ -184,7 +184,7 @@ pub struct Typecheck<'a> {
     module: HashMap<InternedStr, TcType>,
     stack: ScopedMap<InternedStr, TcType>,
     subs: Substitution,
-    errors: Errors<Located<TypeError>>
+    errors: Errors<ast::Located<TypeError>>
 }
 
 struct Errors<T> {
@@ -218,7 +218,7 @@ impl <T: fmt::Show> fmt::Show for Errors<T> {
     }
 }
 
-pub type TypeErrors = Errors<Located<TypeError>>;
+pub type TypeErrors = Errors<ast::Located<TypeError>>;
 
 impl <'a> Typecheck<'a> {
     
@@ -263,7 +263,7 @@ impl <'a> Typecheck<'a> {
         self.environment = Some(env);
     }
 
-    pub fn typecheck_module(&mut self, module: &mut Module<TcIdent>) -> Result<(), TypeErrors> {
+    pub fn typecheck_module(&mut self, module: &mut ast::Module<TcIdent>) -> Result<(), TypeErrors> {
         
         for f in module.functions.mut_iter() {
             let decl = &mut f.declaration;
@@ -296,7 +296,7 @@ impl <'a> Typecheck<'a> {
             self.typecheck_function(f)
         }
         for imp in module.impls.mut_iter() {
-            let x = self.typecheck_impl(imp).map_err(no_loc);
+            let x = self.typecheck_impl(imp).map_err(ast::no_loc);
             self.errors.handle(x);
         }
         if self.errors.has_errors() {
@@ -306,7 +306,7 @@ impl <'a> Typecheck<'a> {
             Ok(())
         }
     }
-    fn typecheck_impl(&mut self, imp: &mut Impl<TcIdent>) -> Result<(), TypeError> {
+    fn typecheck_impl(&mut self, imp: &mut ast::Impl<TcIdent>) -> Result<(), TypeError> {
         {
             let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
             for func in imp.functions.mut_iter() {
@@ -326,7 +326,7 @@ impl <'a> Typecheck<'a> {
     }
 
     
-    fn typecheck_function(&mut self, function: &mut Function<TcIdent>) {
+    fn typecheck_function(&mut self, function: &mut ast::Function<TcIdent>) {
         debug!("Typecheck function {}", function.declaration.name.id());
         self.stack.clear();
         let return_type = match function.declaration.name.typ {
@@ -343,7 +343,7 @@ impl <'a> Typecheck<'a> {
         let inferred_return_type = match self.typecheck(&mut function.expression) {
             Ok(typ) => typ,
             Err(err) => {
-                self.errors.error(Located { location: function.expression.location, value: err });
+                self.errors.error(ast::Located { location: function.expression.location, value: err });
                 return;
             }
         };
@@ -351,65 +351,65 @@ impl <'a> Typecheck<'a> {
             Ok(_) => self.replace_vars(&mut function.expression),
             Err(err) => {
                 debug!("End {} ==> {}", function.declaration.name.id(), err);
-                self.errors.error(Located { location: function.expression.location, value: err });
+                self.errors.error(ast::Located { location: function.expression.location, value: err });
             }
         }
     }
 
-    fn replace_vars(&mut self, expr: &mut LExpr<TcIdent>) {
+    fn replace_vars(&mut self, expr: &mut ast::LExpr<TcIdent>) {
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b> { tc: &'a mut Typecheck<'b> }
         impl <'a, 'b> MutVisitor<TcIdent> for ReplaceVisitor<'a, 'b> {
-            fn visit_expr(&mut self, e: &mut LExpr<TcIdent>) {
+            fn visit_expr(&mut self, e: &mut ast::LExpr<TcIdent>) {
                 match e.value {
-                    Identifier(ref mut id) => self.tc.set_type(&mut id.typ),
-                    FieldAccess(_, ref mut id) => self.tc.set_type(&mut id.typ),
-                    Array(ref mut array) => self.tc.set_type(&mut array.id.typ),
-                    Lambda(ref mut lambda) => self.tc.set_type(&mut lambda.id.typ),
+                    ast::Identifier(ref mut id) => self.tc.set_type(&mut id.typ),
+                    ast::FieldAccess(_, ref mut id) => self.tc.set_type(&mut id.typ),
+                    ast::Array(ref mut array) => self.tc.set_type(&mut array.id.typ),
+                    ast::Lambda(ref mut lambda) => self.tc.set_type(&mut lambda.id.typ),
                     _ => ()
                 }
-                walk_mut_expr(self, e);
+                ast::walk_mut_expr(self, e);
             }
         }
         let mut v = ReplaceVisitor { tc: self };
         v.visit_expr(expr);
     }
 
-    pub fn typecheck_expr(&mut self, expr: &mut LExpr<TcIdent>) -> Result<TcType, TypeErrors> {
+    pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, TypeErrors> {
         let typ = match self.typecheck(expr) {
             Ok(typ) => typ,
             Err(err) => {
-                self.errors.error(Located { location: expr.location, value: err });
+                self.errors.error(ast::Located { location: expr.location, value: err });
                 return Err(::std::mem::replace(&mut self.errors, Errors::new()))
             }
         };
         self.replace_vars(expr);
         Ok(typ)
     }
-    fn typecheck(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
+    fn typecheck(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult {
         match self.typecheck_(expr) {
             Ok(typ) => Ok(typ),
             Err(err) => {
-                self.errors.error(Located { location: expr.location, value: err });
+                self.errors.error(ast::Located { location: expr.location, value: err });
                 Ok(self.subs.new_var())
             }
         }
     }
-    fn typecheck_(&mut self, expr: &mut LExpr<TcIdent>) -> TcResult {
+    fn typecheck_(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult {
         match expr.value {
-            Identifier(ref mut id) => {
+            ast::Identifier(ref mut id) => {
                 id.typ = try!(self.find(id.id()));
                 Ok(id.typ.clone())
             }
-            Literal(ref lit) => {
+            ast::Literal(ref lit) => {
                 Ok(match *lit {
-                    Integer(_) => int_type_tc.clone(),
-                    Float(_) => float_type_tc.clone(),
-                    String(_) => string_type_tc.clone(),
-                    Bool(_) => bool_type_tc.clone()
+                    ast::Integer(_) => int_type_tc.clone(),
+                    ast::Float(_) => float_type_tc.clone(),
+                    ast::String(_) => string_type_tc.clone(),
+                    ast::Bool(_) => bool_type_tc.clone()
                 })
             }
-            Call(ref mut func, ref mut args) => {
+            ast::Call(ref mut func, ref mut args) => {
                 let func_type = try!(self.typecheck(&mut**func));
                 match func_type {
                     FunctionType(arg_types, return_type) => {
@@ -425,20 +425,20 @@ impl <'a> Typecheck<'a> {
                     t => Err(NotAFunction(t))
                 }
             }
-            IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
+            ast::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut**pred));
                 try!(self.unify(&bool_type_tc, pred_type));
                 let true_type = try!(self.typecheck(&mut**if_true));
                 let false_type = try!(self.typecheck(&mut**if_false));
                 self.unify(&true_type, false_type)
             }
-            While(ref mut pred, ref mut expr) => {
+            ast::While(ref mut pred, ref mut expr) => {
                 let pred_type = try!(self.typecheck(&mut **pred));
                 try!(self.unify(&bool_type_tc, pred_type));
                 self.typecheck(&mut**expr)
                     .map(|_| unit_type_tc.clone())
             }
-            BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
+            ast::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = try!(self.typecheck(&mut**lhs));
                 let rhs_type = try!(self.typecheck(&mut**rhs));
                 try!(self.unify(&lhs_type, rhs_type.clone()));
@@ -459,16 +459,16 @@ impl <'a> Typecheck<'a> {
                     _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
-            Block(ref mut exprs) => {
+            ast::Block(ref mut exprs) => {
                 self.stack.enter_scope();
-                let mut typ = BuiltinType(UnitType);
+                let mut typ = BuiltinType(ast::UnitType);
                 for expr in exprs.mut_iter() {
                     typ = try!(self.typecheck(expr));
                 }
                 self.stack.exit_scope();
                 Ok(typ)
             }
-            Match(ref mut expr, ref mut alts) => {
+            ast::Match(ref mut expr, ref mut alts) => {
                 let typ = try!(self.typecheck(&mut**expr));
                 self.stack.enter_scope();
                 try!(self.typecheck_pattern(&mut alts.get_mut(0).pattern, typ.clone()));
@@ -484,17 +484,17 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(alt1_type)
             }
-            Let(ref mut id, ref mut expr) => {
+            ast::Let(ref mut id, ref mut expr) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 self.stack_var(id.name.clone(), typ);
                 Ok(unit_type_tc.clone())
             }
-            Assign(ref mut lhs, ref mut rhs) => {
+            ast::Assign(ref mut lhs, ref mut rhs) => {
                 let rhs_type = try!(self.typecheck(&mut **rhs));
                 let lhs_type = try!(self.typecheck(&mut **lhs));
                 self.unify(&lhs_type, rhs_type)
             }
-            FieldAccess(ref mut expr, ref mut id) => {
+            ast::FieldAccess(ref mut expr, ref mut id) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 match typ {
                     Type(ref struct_id) => {
@@ -518,7 +518,7 @@ impl <'a> Typecheck<'a> {
                     TraitType(..) => Err(TypeError("Field access on trait object"))
                 }
             }
-            Array(ref mut a) => {
+            ast::Array(ref mut a) => {
                 let mut expected_type = self.subs.new_var();
                 for expr in a.expressions.mut_iter() {
                     let typ = try!(self.typecheck(expr));
@@ -527,7 +527,7 @@ impl <'a> Typecheck<'a> {
                 a.id.typ = ArrayType(box expected_type);
                 Ok(a.id.typ.clone())
             }
-            ArrayAccess(ref mut array, ref mut index) => {
+            ast::ArrayAccess(ref mut array, ref mut index) => {
                 let array_type = try!(self.typecheck(&mut **array));
                 let typ = match array_type {
                     ArrayType(typ) => *typ,
@@ -537,7 +537,7 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&int_type_tc, index_type));
                 Ok(typ)
             }
-            Lambda(ref mut lambda) => {
+            ast::Lambda(ref mut lambda) => {
                 self.stack.enter_scope();
                 let mut arg_types = Vec::new();
                 for arg in lambda.arguments.mut_iter() {
@@ -553,13 +553,13 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_pattern(&mut self, pattern: &mut Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
+    fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
         let typename = match match_type {
             Type(id) => id,
             _ => return Err(TypeError("Pattern matching only works on enums"))
         };
         match *pattern {
-            ConstructorPattern(ref name, ref mut args) => {
+            ast::ConstructorPattern(ref name, ref mut args) => {
                 //Find the enum constructor and return the types for its arguments
                 let argument_types: Vec<TcType> = match try!(self.find_type_info(&typename)) {
                     Enum(ref ctors) => {
@@ -575,7 +575,7 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(())
             }
-            IdentifierPattern(ref id) => {
+            ast::IdentifierPattern(ref id) => {
                 self.stack_var(id.id().clone(), match_type);
                 Ok(())
             }
@@ -771,7 +771,7 @@ impl Substitution {
         }
     }
 
-    fn from_trait_function_type(&mut self, typ: &VMType) -> TcType {
+    fn from_trait_function_type(&mut self, typ: &ast::VMType) -> TcType {
         match *typ {
             ast::Type(ref id) if id.as_slice() == "Self" => Generic(0),
             ast::Type(ref id) => Type(*id),
@@ -793,20 +793,20 @@ impl Typed for TcIdent {
         &self.typ
     }
 }
-impl <Id: Typed + Str> Typed for Expr<Id> {
+impl <Id: Typed + Str> Typed for ast::Expr<Id> {
     fn type_of(&self) -> &TcType {
         match *self {
-            Identifier(ref id) => id.type_of(),
-            Literal(ref lit) => {
+            ast::Identifier(ref id) => id.type_of(),
+            ast::Literal(ref lit) => {
                 match *lit {
-                    Integer(_) => &int_type_tc,
-                    Float(_) => &float_type_tc,
-                    String(_) => &string_type_tc,
-                    Bool(_) => &bool_type_tc
+                    ast::Integer(_) => &int_type_tc,
+                    ast::Float(_) => &float_type_tc,
+                    ast::String(_) => &string_type_tc,
+                    ast::Bool(_) => &bool_type_tc
                 }
             }
-            IfElse(_, ref arm, _) => arm.type_of(),
-            Block(ref exprs) => {
+            ast::IfElse(_, ref arm, _) => arm.type_of(),
+            ast::Block(ref exprs) => {
                 if exprs.len() == 0 {
                     &unit_type_tc
                 }
@@ -814,33 +814,33 @@ impl <Id: Typed + Str> Typed for Expr<Id> {
                     exprs.last().unwrap().type_of()
                 }
             }
-            BinOp(ref lhs, ref op, _) => {
+            ast::BinOp(ref lhs, ref op, _) => {
                 match op.as_slice() {
                     "+" | "-" | "*" => lhs.type_of(),
                     "<" | ">" | "<=" | ">=" => &bool_type_tc,
                     _ => fail!()
                 }
             }
-            Let(..) | While(..) | Assign(..) => &unit_type_tc,
-            Call(ref func, _) => {
+            ast::Let(..) | ast::While(..) | ast::Assign(..) => &unit_type_tc,
+            ast::Call(ref func, _) => {
                 match func.type_of() {
                     &FunctionType(_, ref return_type) => &**return_type,
                     x => fail!("{}", x)
                 }
             }
-            Match(_, ref alts) => alts[0].expression.type_of(),
-            FieldAccess(_, ref id) => id.type_of(),
-            Array(ref a) => a.id.type_of(),
-            ArrayAccess(ref array, _) => match array.type_of() {
+            ast::Match(_, ref alts) => alts[0].expression.type_of(),
+            ast::FieldAccess(_, ref id) => id.type_of(),
+            ast::Array(ref a) => a.id.type_of(),
+            ast::ArrayAccess(ref array, _) => match array.type_of() {
                 &ArrayType(ref t) => &**t,
                 t => fail!("Not an array type {}", t)
             },
-            Lambda(ref lambda) => lambda.id.type_of()
+            ast::Lambda(ref lambda) => lambda.id.type_of()
         }
     }
 }
 
-impl <T: Typed> Typed for Function<T> {
+impl <T: Typed> Typed for ast::Function<T> {
     fn type_of(&self) -> &TcType {
         self.declaration.name.type_of()
     }
