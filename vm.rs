@@ -190,8 +190,10 @@ impl VM {
             typeids: HashMap::new(),
             interner: RefCell::new(Interner::new())
         };
-        vm.extern_function("array_length", vec![ArrayType(box int_type_tc.clone())], int_type_tc.clone(), array_length);
-        vm.extern_function("array_push", vec![ArrayType(box int_type_tc.clone()), int_type_tc.clone()], unit_type_tc.clone(), array_push);
+        let a = Generic(0);
+        let array_a = ArrayType(box a.clone());
+        vm.extern_function("array_length", vec![array_a.clone()], int_type_tc.clone(), array_length);
+        vm.extern_function("array_push", vec![array_a.clone(), a.clone()], unit_type_tc.clone(), array_push);
         vm
     }
 

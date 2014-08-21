@@ -695,6 +695,7 @@ impl <'a> Typecheck<'a> {
     fn merge_(&self, expected: &TcType, actual: &TcType) -> bool {
         let expected = self.subs.real_type(expected);
         let actual = self.subs.real_type(actual);
+        debug!("Merge {} {}", expected, actual);
         match (expected, actual) {
             (_, &TypeVariable(ref r)) => {
                 self.subs.union(*r, expected);
