@@ -95,10 +95,10 @@ fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> TcType {
     FunctionType(args, box from_generic_type(variables, &decl.return_type))
 }
 
-fn from_generic_type(variables: &[InternedStr], typ: &ast::VMType) -> TcType {
+fn from_generic_type(variables: &[ast::Constraints], typ: &ast::VMType) -> TcType {
     match *typ {
         ast::Type(ref id, ref args) => {
-            match variables.iter().enumerate().find(|v| *v.ref1() == id).map(|v| *v.ref0()) {
+            match variables.iter().enumerate().find(|v| v.ref1().type_variable == *id).map(|v| v.val0()) {
                 Some(index) => {//TODO type parameters
                     Generic(index)
                 }

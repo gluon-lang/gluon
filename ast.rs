@@ -102,6 +102,11 @@ pub struct Field {
     pub name: InternedStr,
     pub typ: Type<InternedStr>
 }
+#[deriving(Clone, PartialEq, Show)]
+pub struct Constraints {
+    pub type_variable: InternedStr,
+    pub constraints: Vec<VMType>
+}
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Function<Id> {
@@ -112,7 +117,7 @@ pub struct Function<Id> {
 #[deriving(Clone, PartialEq, Show)]
 pub struct Struct<Id> {
     pub name: Id,
-    pub type_variables: Vec<InternedStr>,
+    pub type_variables: Vec<Constraints>,
     pub fields: Vec<Field>
 }
 #[deriving(Clone, PartialEq, Show)]
@@ -123,13 +128,13 @@ pub struct Constructor<Id> {
 #[deriving(Clone, PartialEq, Show)]
 pub struct Enum<Id> {
     pub name: Id,
-    pub type_variables: Vec<InternedStr>,
+    pub type_variables: Vec<Constraints>,
     pub constructors: Vec<Constructor<Id>>
 }
 #[deriving(Clone, PartialEq, Show)]
 pub struct FunctionDeclaration<Id> {
     pub name: Id,
-    pub type_variables: Vec<InternedStr>,
+    pub type_variables: Vec<Constraints>,
     pub arguments: Vec<Field>,
     pub return_type: Type<InternedStr>,
 }

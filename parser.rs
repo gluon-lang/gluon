@@ -449,12 +449,19 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             x => Err(format!("Unexpected token {}, expected <", x))
         }
     }
-    fn type_variables(&mut self) -> ParseResult<Vec<InternedStr>> {
+    fn type_variables(&mut self) -> ParseResult<Vec<Constraints>> {
         match *self.lexer.peek() {
             TOperator(s) if s.as_slice() == "<" => {
                 let vars = try!(self.angle_brackets(|this| this.sep_by(|t| *t == TComma, |this| {
                     let id = expect1!(this, TIdentifier(x));
-                    Ok(id)
+                    let constraints = match *this.lexer.peek() {
+                        TColon => {
+                            this.lexer.next();
+                            vec![try!(this.typ())]
+                        }
+                        _ => Vec::new()
+                    };
+                    Ok(Constraints { type_variable: id, constraints: constraints })
                 })));
                 Ok(vars)
             }
@@ -623,7 +630,7 @@ pub mod tests {
         let expected = Function {
             declaration: FunctionDeclaration {
                 name: intern("id"),
-                type_variables: vec![intern("T")],
+                type_variables: vec![Constraints { type_variable: intern("T"), constraints: Vec::new() }],
                 arguments: vec![field("x", typ("T"))],
                 return_type: typ("T")
             },
@@ -712,7 +719,10 @@ struct Named<T> {
     value: T
 }
 
-fn test<T>(x: T) -> Option<T> {
+trait Test {
+}
+
+fn test<T: Test>(x: T) -> Option<T> {
     Some(x)
 }
 
