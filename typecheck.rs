@@ -86,6 +86,30 @@ impl Equiv<ast::VMType> for TcType {
         }
     }
 }
+fn from_impl_type(constraints: &[ast::Constraints], decl: &mut ast::FunctionDeclaration<TcIdent>) -> TcType {
+    //Add all constraints from the impl declaration to the functions declaration
+    for constraint in constraints.iter() {
+        let exists = {
+            let x = decl.type_variables.mut_iter()
+                .find(|func_constraint| func_constraint.type_variable == constraint.type_variable);
+            match x {
+                Some(c) => {
+                    for trait_type in constraint.constraints.iter() {
+                        if c.constraints.iter().find(|t| *t == trait_type).is_none() {
+                            c.constraints.push(trait_type.clone());
+                        }
+                    }
+                    true
+                }
+                None => false
+            }
+        };
+        if !exists {
+            decl.type_variables.push(constraint.clone());
+        }
+    }
+    from_declaration(decl)
+}
 
 fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> TcType {
     let variables = decl.type_variables.as_slice();
@@ -346,8 +370,9 @@ impl <'a> Typecheck<'a> {
     fn typecheck_impl(&mut self, imp: &mut ast::Impl<TcIdent>) -> Result<(), TypeError> {
         {
             let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
+            let type_variables = imp.type_variables.as_slice();
             for func in imp.functions.mut_iter() {
-                func.declaration.name.typ = from_declaration(&func.declaration);
+                func.declaration.name.typ = from_impl_type(type_variables, &mut func.declaration);
                 let trait_function_type = try!(trait_functions.iter()
                     .find(|& &(ref name, _)| name == func.declaration.name.id())
                     .map(Ok)
@@ -505,7 +530,7 @@ impl <'a> Typecheck<'a> {
                             return Err(TypeError("Expected numbers in binop"))
                         }
                     }
-                    "<" | ">" | "<=" | ">="  => Ok(bool_type_tc.clone()),
+                    "=="| "!=" | "<" | ">" | "<=" | ">="  => Ok(bool_type_tc.clone()),
                     _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
@@ -932,18 +957,17 @@ mod tests {
     use super::*;
     use ast;
     use parser::*;
-    use interner::Interner;
-    use interner::tests::intern;
+    use interner::tests::{get_local_interner, intern};
 
     pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {
         use std::io::BufReader;
         let mut buffer = BufReader::new(s.as_bytes());
-        let mut interner = Interner::new();
-        let mut parser = Parser::new(&mut interner, &mut buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+        let mut parser = Parser::new(&mut *interner, &mut buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
         f(&mut parser)
             .unwrap_or_else(|err| fail!(err))
     }
-
     #[test]
     fn while_() {
         let text = "fn main() { let x = 2; while x < 10 { x } }";
@@ -1194,6 +1218,76 @@ fn test(x: float) -> Option<int> {
     else {
         Some(y)
     }
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_err();
+    }
+
+
+    #[test]
+    fn typecheck_trait_for_generic_types() {
+        let text = 
+r"
+trait Eq {
+    fn eq(l: Self, r: Self) -> bool;
+}
+enum Option<T> {
+    Some(T),
+    None()
+}
+impl Eq for int {
+    fn eq(l: int, r: int) -> bool {
+        l == r
+    }
+}
+impl <T:Eq> Eq for Option<T> {
+    fn eq(l: Option<T>, r: Option<T>) -> bool {
+        match l {
+            Some(l_val) => {
+                match r {
+                    Some(r_val) => { eq(l_val, r_val) }
+                    None() => { false }
+                }
+            }
+            None() => {
+                match r {
+                    Some(_) => { false }
+                    None() => { true }
+                }
+            }
+        }
+    }
+}
+fn test() -> bool {
+    eq(Some(2), None())
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err));
+    }
+    #[test]
+    fn error_no_impl_for_parameter() {
+        let text = 
+r"
+trait Eq {
+    fn eq(l: Self, r: Self) -> bool;
+}
+enum Option<T> {
+    Some(T),
+    None()
+}
+impl <T:Eq> Eq for Option<T> {
+    fn eq(l: Option<T>, r: Option<T>) -> bool {
+        false
+    }
+}
+fn test() -> bool {
+    eq(Some(2), None())
 }
 ";
         let mut module = parse(text, |p| p.module());

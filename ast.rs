@@ -146,6 +146,7 @@ pub struct Trait<Id> {
 #[deriving(Clone, PartialEq, Show)]
 pub struct Impl<Id> {
     pub trait_name: Id,
+    pub type_variables: Vec<Constraints>,
     pub typ: Type<InternedStr>,
     pub functions: Vec<Function<Id>>
 }

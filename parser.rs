@@ -428,11 +428,17 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     }
     pub fn impl_(&mut self) -> ParseResult<Impl<PString>> {
         expect!(self, TImpl);
+        let type_variables = try!(self.type_variables());
         let trait_name = expect1!(self, TIdentifier(x));
         expect!(self, TFor);
         let typ = try!(self.typ());
         let functions = try!(self.braces(|this| this.many(|this| this.function() )));
-        Ok(Impl { trait_name: self.make_id(trait_name), typ: typ, functions: functions })
+        Ok(Impl {
+            trait_name: self.make_id(trait_name),
+            type_variables: type_variables,
+            typ: typ,
+            functions: functions
+        })
     }
     
     fn angle_brackets<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
