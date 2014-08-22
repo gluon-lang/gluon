@@ -393,8 +393,10 @@ impl <'a> Typecheck<'a> {
         self.stack.clear();
         let return_type = match function.declaration.name.typ {
             FunctionType(ref arg_types, ref return_type) => {
+                self.subs.var_id += 1;
+                let base = self.subs.var_id;
                 for (typ, arg) in arg_types.iter().zip(function.declaration.arguments.iter()) {
-                    let typ = self.subs.instantiate(typ);
+                    let typ = self.subs.instantiate_(base, typ);
                     debug!("{} {}", arg.name, typ);
                     self.stack_var(arg.name.clone(), typ);
                 }
