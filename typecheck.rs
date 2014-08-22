@@ -86,6 +86,13 @@ impl Equiv<ast::VMType> for TcType {
         }
     }
 }
+
+#[deriving(Show)]
+pub struct Constrained<T> {
+    constraints: Vec<TcType>,
+    value: T
+}
+
 fn from_impl_type(constraints: &[ast::Constraints], decl: &mut ast::FunctionDeclaration<TcIdent>) -> TcType {
     //Add all constraints from the impl declaration to the functions declaration
     for constraint in constraints.iter() {
@@ -400,6 +407,14 @@ impl <'a> Typecheck<'a> {
                     debug!("{} {}", arg.name, typ);
                     self.stack_var(arg.name.clone(), typ);
                 }
+                let vars = function.declaration.type_variables.as_slice();
+                for (i, constraint) in function.declaration.type_variables.iter().enumerate() {
+                    let var_id = base + i;
+                    let types = constraint.constraints.iter()
+                        .map(|typ| from_generic_type(vars, typ))
+                        .collect();
+                    self.subs.constraints.insert(var_id, types);
+                }
                 self.subs.instantiate(&**return_type)
             }
             _ => fail!("Non function type for function")
@@ -682,12 +697,22 @@ impl <'a> Typecheck<'a> {
         let actual = self.subs.real_type(actual);
         match (expected, actual) {
             (&TypeVariable(ref l), _) => {
-                self.subs.union(*l, actual);
-                true
+                if self.check_constraints(l, actual) {
+                    self.subs.union(*l, actual);
+                    true
+                }
+                else {
+                    false
+                }
             }
             (_, &TypeVariable(ref r)) => {
-                self.subs.union(*r, expected);
-                true
+                if self.check_constraints(r, expected) {
+                    self.subs.union(*r, expected);
+                    true
+                }
+                else {
+                    false
+                }
             }
             (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
@@ -752,6 +777,23 @@ impl <'a> Typecheck<'a> {
             _ => expected == actual
         }
     }
+
+    fn check_constraints(&self, variable: &uint, typ: &TcType) -> bool {
+        debug!("Constraint check {} {} ==> {}", variable, self.subs.constraints.find(variable), typ);
+        match self.subs.constraints.find(variable) {
+            Some(trait_types) => {
+                trait_types.iter()
+                    .all(|trait_type| {
+                        match *trait_type {
+                            Type(ref id, _) => self.type_infos.has_impl_of_trait(typ, id),
+                            _ => false
+                        }
+                    })
+            }
+            None => true
+        }
+    }
+
     fn set_type(&self, t: &mut TcType) {
         let replacement = match *t {
             TypeVariable(id) => self.subs.find(id)
@@ -793,11 +835,12 @@ impl <'a> Typecheck<'a> {
 
 struct Substitution {
     map: HashMap<uint, Box<TcType>>,
+    constraints: HashMap<uint, Vec<TcType>>,
     var_id: uint
 }
 impl Substitution {
     fn new() -> Substitution {
-        Substitution { map: HashMap::new(), var_id: 0 }
+        Substitution { map: HashMap::new(), constraints: HashMap::new(), var_id: 0 }
     }
 
     fn union(&self, id: uint, typ: &TcType) {
@@ -809,6 +852,17 @@ impl Substitution {
             }
         }
         let this: &mut Substitution = unsafe { ::std::mem::transmute(self) };
+        match this.constraints.pop(&id) {
+            Some(constraints) => {
+                match *typ {
+                    TypeVariable(other_id) => {
+                        this.constraints.insert(other_id, constraints);
+                    }
+                    _ => ()
+                }
+            }
+            None => ()
+        }
         this.map.insert(id, box typ.clone());
     }
 
