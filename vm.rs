@@ -61,7 +61,7 @@ pub type ExternFunction = fn (&VM, StackFrame);
 #[deriving(Show)]
 pub struct Global {
     id: InternedStr,
-    typ: TcType,
+    typ: Constrained<TcType>,
     value: Global_
 }
 enum Global_ {
@@ -70,7 +70,7 @@ enum Global_ {
 }
 impl Typed for Global {
     fn type_of(&self) -> &TcType {
-        &self.typ
+        &self.typ.value
     }
 }
 impl fmt::Show for Global_ {
@@ -118,7 +118,7 @@ impl CompilerEnv for VM {
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
         self.globals.iter()
             .enumerate()
-            .find(|&(_, f)| f.id == *id && f.typ == *typ)
+            .find(|&(_, f)| f.id == *id && f.typ.value == *typ)
             .map(|(i, _)| i)
     }
     fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
@@ -130,7 +130,7 @@ impl CompilerEnv for VM {
 }
 
 impl TypeEnv for VM {
-    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+    fn find_type(&self, id: &InternedStr) -> Option<&Constrained<TcType>> {
         self.globals.iter()
             .find(|f| f.id == *id)
             .map(|f| &f.typ)
@@ -246,7 +246,7 @@ impl VM {
     pub fn extern_function(&mut self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) {
         let global = Global {
             id: self.intern(name),
-            typ: FunctionType(args, box return_type),
+            typ: Constrained { constraints: Vec::new(), value: FunctionType(args, box return_type) },
             value: Extern(f)
         };
         self.globals.push(global);

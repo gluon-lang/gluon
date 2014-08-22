@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt;
 use scoped_map::ScopedMap;
 use ast;
@@ -89,11 +88,11 @@ impl Equiv<ast::VMType> for TcType {
 
 #[deriving(Show)]
 pub struct Constrained<T> {
-    constraints: Vec<TcType>,
-    value: T
+    pub constraints: Vec<Vec<TcType>>,
+    pub value: T
 }
 
-fn from_impl_type(constraints: &[ast::Constraints], decl: &mut ast::FunctionDeclaration<TcIdent>) -> TcType {
+fn from_impl_type(constraints: &[ast::Constraints], decl: &mut ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType> {
     //Add all constraints from the impl declaration to the functions declaration
     for constraint in constraints.iter() {
         let exists = {
@@ -118,15 +117,23 @@ fn from_impl_type(constraints: &[ast::Constraints], decl: &mut ast::FunctionDecl
     from_declaration(decl)
 }
 
-fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> TcType {
+fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType> {
     let variables = decl.type_variables.as_slice();
     let args = decl.arguments.iter()
         .map(|f| from_generic_type(variables, &f.typ))
         .collect();
-    FunctionType(args, box from_generic_type(variables, &decl.return_type))
+    let constraints = variables.iter()
+        .map(|constraints| constraints.constraints.iter()
+            .map(|typ| from_generic_type(variables, typ))
+            .collect())
+        .collect();
+    Constrained {
+        constraints: constraints,
+        value: FunctionType(args, box from_generic_type(variables, &decl.return_type))
+    }
 }
 
-fn from_generic_type(variables: &[ast::Constraints], typ: &ast::VMType) -> TcType {
+pub fn from_generic_type(variables: &[ast::Constraints], typ: &ast::VMType) -> TcType {
     match *typ {
         ast::Type(ref id, ref args) => {
             match variables.iter().enumerate().find(|v| v.ref1().type_variable == *id).map(|v| v.val0()) {
@@ -175,7 +182,7 @@ pub enum TypeInfo<'a> {
 pub struct TypeInfos {
     pub structs: HashMap<InternedStr, Vec<(InternedStr, TcType)>>,
     pub enums: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
-    impls: HashMap<TcType, HashSet<InternedStr>>,
+    impls: HashMap<InternedStr, Vec<(Vec<Vec<TcType>>, TcType)>>,
     traits: HashMap<InternedStr, Vec<(InternedStr, TcType)>>
 }
 
@@ -192,11 +199,6 @@ impl TypeInfos {
         self.structs.find(id)
             .map(|s| Struct(s.as_slice()))
             .or_else(|| self.enums.find(id).map(|e| Enum(e.as_slice())))
-    }
-    pub fn has_impl_of_trait(&self, typ: &TcType, trait_id: &InternedStr) -> bool {
-        self.impls.find(typ)
-            .map(|set| set.contains(trait_id))
-            .unwrap_or(false)
     }
     pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, TcType)]> {
         self.traits.find(name).map(|v| v.as_slice())
@@ -218,8 +220,14 @@ impl TypeInfos {
             self.traits.insert(t.name.id().clone(), function_types);
         }
         for imp in module.impls.iter() {
-            let set = self.impls.find_or_insert(from_vm_type(&imp.typ), HashSet::new());
-            set.insert(imp.trait_name.id().clone());
+            let imp_type = from_generic_type(imp.type_variables.as_slice(), &imp.typ);
+            let set = self.impls.find_or_insert(imp.trait_name.id().clone(), Vec::new());
+            let constraints = imp.type_variables.iter()
+                .map(|constraints| constraints.constraints.iter()
+                    .map(|typ| from_generic_type(imp.type_variables.as_slice(), typ))
+                    .collect())
+                .collect();
+            set.push((constraints, imp_type));
         }
     }
 }
@@ -230,14 +238,14 @@ fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(Inter
 }
 
 pub trait TypeEnv {
-    fn find_type(&self, id: &InternedStr) -> Option<&TcType>;
+    fn find_type(&self, id: &InternedStr) -> Option<&Constrained<TcType>>;
     fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo>;
 }
 
 pub struct Typecheck<'a> {
     environment: Option<&'a TypeEnv>,
     pub type_infos: TypeInfos,
-    module: HashMap<InternedStr, TcType>,
+    module: HashMap<InternedStr, Constrained<TcType>>,
     stack: ScopedMap<InternedStr, TcType>,
     subs: Substitution,
     errors: Errors<ast::Located<TypeError>>
@@ -290,17 +298,20 @@ impl <'a> Typecheck<'a> {
     }
     
     fn find(&mut self, id: &InternedStr) -> TcResult {
-        let t = {
+        let t: Option<(&[Vec<TcType>], &TcType)> = {
             let stack = &self.stack;
             let module = &self.module;
             let environment = &self.environment;
-            stack.find(id)
-                .or_else(|| module.find(id))
-                .or_else(|| environment.and_then(|e| e.find_type(id)))
+            match stack.find(id).map(|typ| (&[], typ)) {
+                Some(x) => Some(x),
+                None => module.find(id)
+                    .or_else(|| environment.and_then(|e| e.find_type(id)))
+                    .map(|c| (c.constraints.as_slice(), &c.value))
+            }
         };
         debug!("Find {} : {}", id, t);
         match t {
-            Some(t) => Ok(self.subs.instantiate(t)),
+            Some(t) => Ok(self.subs.instantiate_constrained(t.val0(), t.val1())),
             None => Err(UndefinedVariable(id.clone()))
         }
     }
@@ -324,8 +335,9 @@ impl <'a> Typecheck<'a> {
         
         for f in module.functions.mut_iter() {
             let decl = &mut f.declaration;
-            decl.name.typ = from_declaration(decl);
-            self.module.insert(decl.name.name, decl.name.typ.clone());
+            let constrained_type = from_declaration(decl);
+            decl.name.typ = constrained_type.value.clone();
+            self.module.insert(decl.name.name, constrained_type);
         }
         for t in module.traits.mut_iter() {
             for func in t.declarations.mut_iter() {
@@ -333,7 +345,10 @@ impl <'a> Typecheck<'a> {
                     .map(|f| self.subs.from_trait_function_type(&f.typ))
                     .collect();
                 func.name.typ = FunctionType(args, box self.subs.from_trait_function_type(&func.return_type));
-                self.module.insert(func.name.id().clone(), func.name.typ.clone());
+                self.module.insert(func.name.id().clone(), Constrained {
+                    constraints: vec![vec![Type(t.name.name, Vec::new())]],//Self, ie Generic(0) should have the trait itself as a constraint
+                    value: func.name.typ.clone()
+                });
             }
         }
         for s in module.structs.mut_iter() {
@@ -344,7 +359,10 @@ impl <'a> Typecheck<'a> {
                 .map(|i| Generic(i))
                 .collect();
             s.name.typ = FunctionType(args, box Type(s.name.name, variables));
-            self.module.insert(s.name.name, s.name.typ.clone());
+            self.module.insert(s.name.name, Constrained {
+                constraints: Vec::new(),
+                value: s.name.typ.clone()
+            });
         }
         for e in module.enums.mut_iter() {
             let type_variables = e.type_variables.as_slice();
@@ -356,7 +374,10 @@ impl <'a> Typecheck<'a> {
                     .map(|i| Generic(i))
                     .collect();
                 ctor.name.typ = FunctionType(args, box Type(e.name.name, variables));
-                self.module.insert(ctor.name.name, ctor.name.typ.clone());
+                self.module.insert(ctor.name.name, Constrained {
+                    constraints: Vec::new(),
+                    value: ctor.name.typ.clone()
+                });
             }
         }
         self.type_infos.add_module(module);
@@ -379,7 +400,8 @@ impl <'a> Typecheck<'a> {
             let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
             let type_variables = imp.type_variables.as_slice();
             for func in imp.functions.mut_iter() {
-                func.declaration.name.typ = from_impl_type(type_variables, &mut func.declaration);
+                let c_type = from_impl_type(type_variables, &mut func.declaration);
+                func.declaration.name.typ = c_type.value;
                 let trait_function_type = try!(trait_functions.iter()
                     .find(|& &(ref name, _)| name == func.declaration.name.id())
                     .map(Ok)
@@ -725,7 +747,7 @@ impl <'a> Typecheck<'a> {
             (&ArrayType(ref l), &ArrayType(ref r)) => self.unify_(&**l, &**r),
             (&Type(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
                 debug!("Found trait {} ", l);
-                self.type_infos.has_impl_of_trait(actual, l)
+                self.has_impl_of_trait(actual, l)
             }
             (&Type(ref l, ref l_args), &Type(ref r, ref r_args)) => {
                 l == r
@@ -767,7 +789,7 @@ impl <'a> Typecheck<'a> {
             }
             (&ArrayType(ref l), &ArrayType(ref r)) => self.merge_(&**l, &**r),
             (&Type(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
-                self.type_infos.has_impl_of_trait(actual, l)
+                self.has_impl_of_trait(actual, l)
             }
             (&Type(ref l, ref l_args), &Type(ref r, ref r_args)) => {
                 l == r
@@ -777,15 +799,78 @@ impl <'a> Typecheck<'a> {
             _ => expected == actual
         }
     }
+    fn check_impl(&self, constraints: &[Vec<TcType>], expected: &TcType, actual: &TcType) -> bool {
+        let expected = self.subs.real_type(expected);
+        let actual = self.subs.real_type(actual);
+        debug!("Merge {} {}", expected, actual);
+        match (expected, actual) {
+            (_, &TypeVariable(ref r)) => {
+                self.subs.union(*r, expected);
+                true
+            }
+            (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
+                if l_args.len() == r_args.len() {
+                    l_args.iter()
+                        .zip(r_args.iter())
+                        .all(|(l, r)| self.check_impl(constraints, l, r))
+                        && self.check_impl(constraints, &**l_ret, &**r_ret)
+                }
+                else {
+                    false
+                }
+            }
+            (&ArrayType(ref l), &ArrayType(ref r)) => self.merge_(&**l, &**r),
+            (&Type(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
+                self.has_impl_of_trait(actual, l)
+            }
+            (&Type(ref l, ref l_args), &Type(ref r, ref r_args)) => {
+                l == r
+                && l_args.len() == r_args.len()
+                && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.check_impl(constraints, l, r))
+            }
+            (&Generic(index), _) => {
+                if index < constraints.len() {
+                    constraints[index].iter()
+                        .all(|constraint_type| {
+                            match *constraint_type {
+                                Type(ref trait_id, _) => self.has_impl_of_trait(actual, trait_id),
+                                _ => false
+                            }
+                        })
+                }
+                else {
+                    true
+                }
+            }
+            _ => expected == actual
+        }
+    }
+    fn has_impl_of_trait(&self, typ: &TcType, trait_id: &InternedStr) -> bool {
+        match self.type_infos.impls.find(trait_id) {
+            Some(impls) => {
+                for &(ref constraints, ref impl_type) in impls.iter() {
+                    if self.check_impl(constraints.as_slice(), impl_type, typ) {
+                        return true;
+                    }
+                }
+                false
+            }
+            _ => true
+        }
+    }
 
     fn check_constraints(&self, variable: &uint, typ: &TcType) -> bool {
         debug!("Constraint check {} {} ==> {}", variable, self.subs.constraints.find(variable), typ);
+        match *typ {
+            TypeVariable(_) => return true,
+            _ => ()
+        }
         match self.subs.constraints.find(variable) {
             Some(trait_types) => {
                 trait_types.iter()
                     .all(|trait_type| {
                         match *trait_type {
-                            Type(ref id, _) => self.type_infos.has_impl_of_trait(typ, id),
+                            Type(ref id, _) => self.has_impl_of_trait(typ, id),
                             _ => false
                         }
                     })
@@ -901,6 +986,14 @@ impl Substitution {
         TypeVariable(self.var_id)
     }
 
+    fn instantiate_constrained(&mut self, constraints: &[Vec<TcType>], typ: &TcType) -> TcType {
+        self.var_id += 1;
+        let base = self.var_id;
+        for (i, constraint) in constraints.iter().enumerate() {
+            self.constraints.insert(base + i, constraint.clone());
+        }
+        self.instantiate_(base, typ)
+    }
     fn instantiate(&mut self, typ: &TcType) -> TcType {
         self.var_id += 1;
         let base = self.var_id;

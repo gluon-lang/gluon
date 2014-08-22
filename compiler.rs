@@ -57,7 +57,7 @@ pub enum Variable<'a> {
 
 pub struct CompiledFunction {
     pub id: InternedStr,
-    pub typ: TcType,
+    pub typ: Constrained<TcType>,
     pub instructions: Vec<Instruction>
 }
 
@@ -339,9 +339,14 @@ impl <'a> Compiler<'a> {
         }
         debug!("Stack {} {}", function.declaration.name.id(), self.stack);
         let FunctionEnv { instructions: instructions, .. } = f;
+        let constraints = function.declaration.type_variables.iter()
+            .map(|constraints| constraints.constraints.iter()
+                .map(|typ| from_generic_type(function.declaration.type_variables.as_slice(), typ))
+                .collect())
+            .collect();
         CompiledFunction {
             id: function.declaration.name.id().clone(),
-            typ: function.type_of().clone(),
+            typ: Constrained { constraints: constraints, value: function.type_of().clone() },
             instructions: instructions
         }
     }
@@ -660,7 +665,7 @@ impl <'a> Compiler<'a> {
         function.instructions.push(MakeClosure(function_index,f.free_vars.len()));
         CompiledFunction {
             id: lambda.id.id().clone(),
-            typ: lambda.id.typ.clone(),
+            typ: Constrained { constraints: Vec::new(), value: lambda.id.typ.clone() },
             instructions: f.instructions
         }
     }
