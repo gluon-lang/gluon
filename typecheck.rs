@@ -154,9 +154,6 @@ pub fn from_generic_type(variables: &[ast::Constraints], typ: &ast::VMType) -> T
         ast::ArrayType(ref typ) => ArrayType(box from_generic_type(variables, &**typ))
     }
 }
-fn from_vm_type(typ: &ast::VMType) -> TcType {
-    from_generic_type(&[], typ)
-}
 
 #[deriving(Show)]
 enum TypeError {
@@ -717,6 +714,7 @@ impl <'a> Typecheck<'a> {
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
         let expected = self.subs.real_type(expected);
         let actual = self.subs.real_type(actual);
+        debug!("{} <=> {}", expected, actual);
         match (expected, actual) {
             (&TypeVariable(ref l), _) => {
                 if self.check_constraints(l, actual) {
@@ -846,6 +844,12 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn has_impl_of_trait(&self, typ: &TcType, trait_id: &InternedStr) -> bool {
+        debug!("Check impl {} {}", typ, trait_id);
+        //If the type is the trait it self it passes the check
+        match *typ {
+            Type(ref id, _) if id == trait_id => return true,
+            _ => ()
+        }
         match self.type_infos.impls.find(trait_id) {
             Some(impls) => {
                 for &(ref constraints, ref impl_type) in impls.iter() {
