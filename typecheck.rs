@@ -5,6 +5,8 @@ use ast;
 use ast::MutVisitor;
 use interner::*;
 
+pub use ast::{Type, FunctionType, TraitType, TypeVariable, BuiltinType, Generic, ArrayType};
+
 
 pub static int_type_tc: TcType = BuiltinType(ast::IntType);
 pub static float_type_tc: TcType = BuiltinType(ast::FloatType);
@@ -30,16 +32,55 @@ impl Str for TcIdent {
     }
 }
 
-#[deriving(Clone, Eq, PartialEq, Hash)]
-pub enum TcType {
-    Type(InternedStr, Vec<TcType>),
-    TraitType(InternedStr, Vec<TcType>),
-    TypeVariable(uint),
-    Generic(uint),
-    FunctionType(Vec<TcType>, Box<TcType>),
-    BuiltinType(ast::LiteralType),
-    ArrayType(Box<TcType>)
+pub type TcType = ast::Type<InternedStr>;
+
+pub fn match_types(l: &TcType, r: &TcType) -> bool {
+    fn type_eq(vars: &mut HashMap<uint, uint>, l: &TcType, r: &TcType) -> bool {
+        match (l, r) {
+            (&TypeVariable(l), &TypeVariable(r)) => var_eq(vars, l, r),
+            (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
+                if l_args.len() == r_args.len() {
+                    l_args.iter()
+                        .zip(r_args.iter())
+                        .all(|(l, r)| type_eq(vars, l, r))
+                        && type_eq(vars, &**l_ret, &**r_ret)
+                }
+                else {
+                    false
+                }
+            }
+            (&ArrayType(ref l), &ArrayType(ref r)) => type_eq(vars, &**l, &**r),
+            (&Type(ref l, ref l_args), &Type(ref r, ref r_args)) => {
+                l == r
+                && l_args.len() == r_args.len()
+                && l_args.iter().zip(r_args.iter()).all(|(l, r)| type_eq(vars, l, r))
+            }
+            (&TraitType(ref l, ref l_args), &TraitType(ref r, ref r_args)) => {
+                l == r
+                && l_args.len() == r_args.len()
+                && l_args.iter().zip(r_args.iter()).all(|(l, r)| type_eq(vars, l, r))
+            }
+            (&Generic(l), &Generic(r)) => l == r,
+            (&BuiltinType(l), &BuiltinType(r)) => l == r,
+            (&Generic(l), &TypeVariable(r)) => var_eq(vars, l, r),
+            _ => false
+        }
+    }
+
+    fn var_eq<'a>(mapping: &mut HashMap<uint, uint>, l: uint, r: uint) -> bool {
+        match mapping.find(&l) {
+            Some(x) => return *x == r,
+            None => ()
+        }
+        mapping.insert(l, r);
+        true
+    }
+
+    let mut vars = HashMap::new();
+    type_eq(&mut vars, l, r)
 }
+
+
 impl fmt::Show for TcType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn fmt_type(f: &mut fmt::Formatter, t: &InternedStr, args: &[TcType]) -> fmt::Result {
@@ -66,22 +107,6 @@ impl fmt::Show for TcType {
             FunctionType(ref args, ref return_type) => write!(f, "fn {} -> {}", args, return_type),
             BuiltinType(t) => t.fmt(f),
             ArrayType(ref t) => write!(f, "[{}]", t)
-        }
-    }
-}
-
-impl Equiv<ast::VMType> for TcType {
-    fn equiv(&self, o: &ast::VMType) -> bool {
-        match (self, o) {
-            (&Type(ref l, ref l_args), &ast::Type(ref r, ref r_args)) =>
-                l == r && l_args.iter().zip(r_args.iter()).all(|(l, r)| l.equiv(r)),
-            (&TypeVariable(_), _) => false,
-            (&Generic(_), _) => false,
-            (&FunctionType(ref l_args, ref l), &ast::FunctionType(ref r_args, ref r)) =>
-                l_args.iter().zip(r_args.iter()).all(|(l, r)| l.equiv(r)) && l.equiv(&**r),
-            (&BuiltinType(ref l), &ast::LiteralType(ref r)) => l == r,
-            (&ArrayType(ref l), &ast::ArrayType(ref r)) => l.equiv(&**r),
-            _ => false
         }
     }
 }
@@ -150,8 +175,14 @@ pub fn from_generic_type(variables: &[ast::Constraints], typ: &ast::VMType) -> T
             let args2 = args.iter().map(|a| from_generic_type(variables, a)).collect();
             FunctionType(args2, box from_generic_type(variables, &**return_type))
         }
-        ast::LiteralType(ref id) => BuiltinType(*id),
-        ast::ArrayType(ref typ) => ArrayType(box from_generic_type(variables, &**typ))
+        ast::BuiltinType(ref id) => BuiltinType(*id),
+        ast::ArrayType(ref typ) => ArrayType(box from_generic_type(variables, &**typ)),
+        ast::TraitType(ref id, ref args) => {
+            let args2 = args.iter().map(|a| from_generic_type(variables, a)).collect();
+            Type(*id, args2)
+        }
+        ast::TypeVariable(id) => TypeVariable(id),
+        ast::Generic(id) => Generic(id),
     }
 }
 
@@ -382,6 +413,7 @@ impl <'a> Typecheck<'a> {
             self.typecheck_function(f)
         }
         for imp in module.impls.mut_iter() {
+            imp.typ = from_generic_type(imp.type_variables.as_slice(), &imp.typ);
             let x = self.typecheck_impl(imp).map_err(ast::no_loc);
             self.errors.handle(x);
         }
@@ -1033,11 +1065,17 @@ impl Substitution {
                 let args2 = args.iter().map(|a| self.from_trait_function_type(a)).collect();
                 Type(*id, args2)
             }
+            ast::TraitType(ref id, ref args) => {
+                let args2 = args.iter().map(|a| self.from_trait_function_type(a)).collect();
+                Type(*id, args2)
+            }
+            ast::TypeVariable(id) => TypeVariable(id),
+            ast::Generic(id) => Generic(id),
             ast::FunctionType(ref args, ref return_type) => {
                 let args2 = args.iter().map(|a| self.from_trait_function_type(a)).collect();
                 FunctionType(args2, box self.from_trait_function_type(&**return_type))
             }
-            ast::LiteralType(ref id) => BuiltinType(*id),
+            ast::BuiltinType(ref id) => BuiltinType(*id),
             ast::ArrayType(ref t) => ArrayType(box self.from_trait_function_type(&**t))
         }
     }

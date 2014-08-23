@@ -38,11 +38,13 @@ pub enum Instruction {
     SubtractInt,
     MultiplyInt,
     IntLT,
+    IntEQ,
 
     AddFloat,
     SubtractFloat,
     MultiplyFloat,
-    FloatLT
+    FloatLT,
+    FloatEQ,
 }
 
 pub type CExpr = LExpr<TcIdent>;
@@ -190,14 +192,14 @@ impl CompilerEnv for Module<TcIdent> {
         self.impls.iter()
             .find(|imp| {
                 offset += imp.functions.len();
-                imp.trait_name.id() == trait_name && trait_type.equiv(&imp.typ)
+                imp.trait_name.id() == trait_name && match_types(trait_type, &imp.typ)
             })
             .map(|imp| offset - imp.functions.len())
     }
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
         let mut offset = self.functions.len();
         for imp in self.impls.iter() {
-            if typ.equiv(&imp.typ) {
+            if match_types(&imp.typ, typ) {
                 for (i, func) in imp.functions.iter().enumerate() {
                     if func.declaration.name.id() == id {
                         return Some(offset + i);
@@ -433,6 +435,7 @@ impl <'a> Compiler<'a> {
                         "-" => SubtractInt,
                         "*" => MultiplyInt,
                         "<" => IntLT,
+                        "==" => IntEQ,
                         _ => fail!()
                     }
                 }
@@ -442,6 +445,7 @@ impl <'a> Compiler<'a> {
                         "-" => SubtractFloat,
                         "*" => MultiplyFloat,
                         "<" => FloatLT,
+                        "==" => FloatEQ,
                         _ => fail!()
                     }
                 }

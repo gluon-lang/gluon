@@ -23,19 +23,21 @@ pub fn no_loc<T>(x: T) -> Located<T> {
 }
 
 #[deriving(Clone, Eq, PartialEq, Show, Hash)]
-pub enum LiteralType {
+pub enum BuiltinType {
     StringType,
     IntType,
     FloatType,
     BoolType,
     UnitType
 }
-
-#[deriving(Clone, Eq, PartialEq, Show, Hash)]
+#[deriving(Clone, Eq, PartialEq, Hash)]
 pub enum Type<Id> {
     Type(Id, Vec<Type<Id>>),
+    TraitType(Id, Vec<Type<Id>>),
+    TypeVariable(uint),
+    Generic(uint),
     FunctionType(Vec<Type<Id>>, Box<Type<Id>>),
-    LiteralType(LiteralType),
+    BuiltinType(BuiltinType),
     ArrayType(Box<Type<Id>>)
 }
 
@@ -160,11 +162,11 @@ pub struct Module<Id> {
     pub impls: Vec<Impl<Id>>
 }
 
-pub static int_type: Type<InternedStr> = LiteralType(IntType);
-pub static float_type: Type<InternedStr> = LiteralType(FloatType);
-pub static string_type: Type<InternedStr> = LiteralType(StringType);
-pub static bool_type: Type<InternedStr> = LiteralType(BoolType);
-pub static unit_type: Type<InternedStr> = LiteralType(UnitType);
+pub static int_type: Type<InternedStr> = BuiltinType(IntType);
+pub static float_type: Type<InternedStr> = BuiltinType(FloatType);
+pub static string_type: Type<InternedStr> = BuiltinType(StringType);
+pub static bool_type: Type<InternedStr> = BuiltinType(BoolType);
+pub static unit_type: Type<InternedStr> = BuiltinType(UnitType);
 
 
 pub fn str_to_primitive_type(x: InternedStr) -> Option<Type<InternedStr>> {

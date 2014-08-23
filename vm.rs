@@ -470,6 +470,7 @@ impl VM {
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
                 IntLT => binop_int(&mut stack, |l, r| if l < r { 1 } else { 0 }),
+                IntEQ => binop_int(&mut stack, |l, r| if l == r { 1 } else { 0 }),
 
                 AddFloat => binop_float(&mut stack, |l, r| l + r),
                 SubtractFloat => binop_float(&mut stack, |l, r| l - r),
@@ -479,9 +480,21 @@ impl VM {
                         (Float(l), Float(r)) => Int(if l < r { 1 } else { 0 }),
                         _ => fail!()
                     }
+                }),
+                FloatEQ => binop(&mut stack, |l, r| {
+                    match (l, r) {
+                        (Float(l), Float(r)) => Int(if l == r { 1 } else { 0 }),
+                        _ => fail!()
+                    }
                 })
             }
             index += 1;
+        }
+        if stack.len() != 0 {
+            debug!("--> {}", stack.top());
+        }
+        else {
+            debug!("--> ()");
         }
     }
 }
@@ -801,5 +814,53 @@ fn foldl<A, B>(as: [A], b: B, f: fn (A, B) -> B) -> B {
         assert_eq!(value, Some(Int(6)));
     }
 
+    #[test]
+    fn call_generic_constrained_function() {
+        let text = 
+r"
+trait Eq {
+    fn eq(l: Self, r: Self) -> bool;
+}
+enum Option<T> {
+    Some(T),
+    None()
+}
+impl Eq for int {
+    fn eq(l: int, r: int) -> bool {
+        l == r
+    }
+}
+impl <T:Eq> Eq for Option<T> {
+    fn eq(l: Option<T>, r: Option<T>) -> bool {
+        match l {
+            Some(l_val) => {
+                match r {
+                    Some(r_val) => { eq(l_val, r_val) }
+                    None() => { false }
+                }
+            }
+            None() => {
+                match r {
+                    Some(_) => { false }
+                    None() => { true }
+                }
+            }
+        }
+    }
+}
+struct Pair {
+    x: bool,
+    y: bool
+}
+fn main() -> Pair {
+    let x = eq(Some(2), None());
+    let y = eq(Some(1), Some(1));
+    Pair(x, y)
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(0), Int(1)])))));//false
+    }
 }
 
