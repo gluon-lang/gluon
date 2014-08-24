@@ -84,6 +84,7 @@ impl fmt::Show for Global_ {
 
 pub struct VM {
     globals: Vec<Global>,
+    dictionaries: Vec<Vec<uint>>,
     trait_indexes: Vec<TraitFunctions>,
     type_infos: TypeInfos,
     typeids: HashMap<TypeId, TcType>,
@@ -95,7 +96,7 @@ impl CompilerEnv for VM {
         self.globals.iter()
             .enumerate()
             .find(|&(_, f)| f.id == *id)
-            .map(|(i, _)| Global(i))
+            .map(|(i, f)| Global(i, f.typ.constraints.as_slice(), &f.typ.value))
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
         (*self).find_field(struct_, field)
@@ -115,11 +116,11 @@ impl CompilerEnv for VM {
     fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
         fail!("{} {}", trait_name, trait_type)
     }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<uint> {
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<uint>> {
         self.globals.iter()
             .enumerate()
             .find(|&(_, f)| f.id == *id && f.typ.value == *typ)
-            .map(|(i, _)| i)
+            .map(|(i, f)| TypeResult { constraints: f.typ.constraints.as_slice(), typ: &f.typ.value, value: i })
     }
     fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
         fail!()
@@ -185,6 +186,7 @@ impl VM {
     pub fn new() -> VM {
         let mut vm = VM {
             globals: Vec::new(),
+            dictionaries: Vec::new(),
             trait_indexes: Vec::new(),
             type_infos: TypeInfos::new(),
             typeids: HashMap::new(),
@@ -312,7 +314,7 @@ impl VM {
                         x => fail!("Cannot call {}", x)
                     };
                     {
-                        debug!("Call {}", function.id);
+                        debug!("Call {} :: {}", function.id, function.typ);
                         match upvars {
                             Some(upvars) => {
                                 let ref u = *upvars;
@@ -417,7 +419,7 @@ impl VM {
                             let v = (*array.borrow_mut())[index as uint].clone();
                             stack.push(v);
                         }
-                        _ => fail!()
+                        (x, y) => fail!("{} {}", x, y)
                     }
                 }
                 SetIndex => {
@@ -465,6 +467,20 @@ impl VM {
                         TraitObject(_, obj) => stack.push((*obj).clone()),
                         _ => fail!()
                     }
+                }
+                PushDictionaryMember(index) => {
+                    let global_index = match stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())  {
+                        Some(Int(dict_ref)) => {
+                            self.dictionaries[dict_ref as uint][index]
+                        }
+                        ref x => fail!("PushDictionaryMember {}", x)
+                    };
+                    stack.push(Function(global_index));
+                }
+                PushDictionary => {
+                    let dict = stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())
+                        .expect("Expected dictionary in upvalues");
+                    stack.push(dict);
                 }
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
@@ -562,7 +578,7 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
         let mut parser = Parser::new(&mut*cell, buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
         tryf!(parser.module())
     };
-    let (type_infos, (functions, trait_indexes)) = {
+    let (type_infos, (functions, trait_indexes, dictionaries)) = {
         let vm: &VM = vm;
         let mut tc = Typecheck::new();
         tc.add_environment(vm);
@@ -573,6 +589,7 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
     };
     vm.new_functions(functions);
     vm.add_trait_indexes(trait_indexes);
+    vm.dictionaries.extend(dictionaries.move_iter());
     vm.type_infos = type_infos;
     Ok(())
 }

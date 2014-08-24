@@ -35,9 +35,10 @@ impl Str for TcIdent {
 pub type TcType = ast::Type<InternedStr>;
 
 pub fn match_types(l: &TcType, r: &TcType) -> bool {
-    fn type_eq(vars: &mut HashMap<uint, uint>, l: &TcType, r: &TcType) -> bool {
+    fn type_eq<'a>(vars: &mut HashMap<uint, &'a TcType>, l: &'a TcType, r: &'a TcType) -> bool {
         match (l, r) {
-            (&TypeVariable(l), &TypeVariable(r)) => var_eq(vars, l, r),
+            (&TypeVariable(l), _) => var_eq(vars, l, r),
+            (&Generic(l), _) => var_eq(vars, l, r),
             (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
                     l_args.iter()
@@ -60,14 +61,12 @@ pub fn match_types(l: &TcType, r: &TcType) -> bool {
                 && l_args.len() == r_args.len()
                 && l_args.iter().zip(r_args.iter()).all(|(l, r)| type_eq(vars, l, r))
             }
-            (&Generic(l), &Generic(r)) => l == r,
             (&BuiltinType(l), &BuiltinType(r)) => l == r,
-            (&Generic(l), &TypeVariable(r)) => var_eq(vars, l, r),
             _ => false
         }
     }
 
-    fn var_eq<'a>(mapping: &mut HashMap<uint, uint>, l: uint, r: uint) -> bool {
+    fn var_eq<'a>(mapping: &mut HashMap<uint, &'a TcType>, l: uint, r: &'a TcType) -> bool {
         match mapping.find(&l) {
             Some(x) => return *x == r,
             None => ()
@@ -113,7 +112,7 @@ impl fmt::Show for TcType {
 
 #[deriving(Show)]
 pub struct Constrained<T> {
-    pub constraints: Vec<Vec<TcType>>,
+    pub constraints: Vec<ast::Constraints>,
     pub value: T
 }
 
@@ -148,10 +147,13 @@ fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcT
         .map(|f| from_generic_type(variables, &f.typ))
         .collect();
     let constraints = variables.iter()
-        .map(|constraints| constraints.constraints.iter()
-            .map(|typ| from_generic_type(variables, typ))
-            .collect())
-        .collect();
+        .map(|constraints| {
+            let cs = constraints.constraints.iter()
+                .map(|typ| from_generic_type(variables, typ))
+                .collect();
+            ast::Constraints { type_variable: constraints.type_variable, constraints: cs }
+        }
+        ).collect();
     Constrained {
         constraints: constraints,
         value: FunctionType(args, box from_generic_type(variables, &decl.return_type))
@@ -326,7 +328,7 @@ impl <'a> Typecheck<'a> {
     }
     
     fn find(&mut self, id: &InternedStr) -> TcResult {
-        let t: Option<(&[Vec<TcType>], &TcType)> = {
+        let t: Option<(&[ast::Constraints], &TcType)> = {
             let stack = &self.stack;
             let module = &self.module;
             let environment = &self.environment;
@@ -374,7 +376,10 @@ impl <'a> Typecheck<'a> {
                     .collect();
                 func.name.typ = FunctionType(args, box self.subs.from_trait_function_type(&func.return_type));
                 self.module.insert(func.name.id().clone(), Constrained {
-                    constraints: vec![vec![Type(t.name.name, Vec::new())]],//Self, ie Generic(0) should have the trait itself as a constraint
+                    constraints: vec![ast::Constraints {
+                        type_variable: func.name.id().clone(),//TODO
+                        constraints: vec![Type(t.name.name, Vec::new())]
+                    }],//Self, ie Generic(0) should have the trait itself as a constraint
                     value: func.name.typ.clone()
                 });
             }
@@ -449,6 +454,7 @@ impl <'a> Typecheck<'a> {
     fn typecheck_function(&mut self, function: &mut ast::Function<TcIdent>) {
         debug!("Typecheck function {}", function.declaration.name.id());
         self.stack.clear();
+        self.subs.clear();
         let return_type = match function.declaration.name.typ {
             FunctionType(ref arg_types, ref return_type) => {
                 self.subs.var_id += 1;
@@ -706,18 +712,23 @@ impl <'a> Typecheck<'a> {
         match *pattern {
             ast::ConstructorPattern(ref name, ref mut args) => {
                 //Find the enum constructor and return the types for its arguments
-                let argument_types: Vec<TcType> = match try!(self.find_type_info(&typename)) {
+                let ctor_type = match try!(self.find_type_info(&typename)) {
                     Enum(ref ctors) => {
                         match ctors.iter().find(|ctor| ctor.name.id() == name.id()) {
-                            Some(ctor) => match ctor.name.typ {
-                                    FunctionType(ref argument_types, _) => argument_types.clone(),
-                                    _ => return Err(TypeError("Enum constructor must be a function type"))
-                                },
+                            Some(ctor) => ctor.name.typ.clone(),
                             None => return Err(TypeError("Undefined constructor"))
                         }
                     }
                     Struct(..) => return Err(TypeError("Pattern match on struct"))
                 };
+                let ctor_type = self.subs.instantiate(&ctor_type);
+                let (argument_types, return_type) = match ctor_type {
+                    FunctionType(argument_types, return_type) => {
+                        (argument_types, *return_type)
+                    }
+                    _ => return Err(TypeError("Enum constructor must be a function type"))
+                };
+                try!(self.unify(&match_type, return_type));
                 for (arg, typ) in args.iter().zip(argument_types.move_iter()) {
                     self.stack_var(arg.id().clone(), typ);
                 }
@@ -922,7 +933,11 @@ impl <'a> Typecheck<'a> {
                     Type(ref id, ref args) if find_trait(&self.type_infos, id).is_ok() => {
                         TraitType(id.clone(), args.clone())
                     }
-                    _ => t.clone()
+                    _ => {
+                        let mut t = t.clone();
+                        self.set_type(&mut t);
+                        t
+                    }
                 }),
             FunctionType(ref mut args, ref mut return_type) => {
                 for arg in args.mut_iter() {
@@ -964,27 +979,42 @@ impl Substitution {
         Substitution { map: HashMap::new(), constraints: HashMap::new(), var_id: 0 }
     }
 
+    fn clear(&mut self) {
+        self.map.clear();
+        self.constraints = HashMap::new();//TODO Check if there is a bug in hashmap when calling clear
+        self.var_id = 0;
+    }
+
     fn union(&self, id: uint, typ: &TcType) {
         {
             let id_type = self.find(id);
             let other_type = self.real_type(typ);
-            if id_type.map(|x| x == other_type).unwrap_or(false) {
+            if id_type.map(|x| x == other_type).unwrap_or(&TypeVariable(id) == other_type) {
                 return
             }
         }
         let this: &mut Substitution = unsafe { ::std::mem::transmute(self) };
-        match this.constraints.pop(&id) {
+        //Always make sure the mapping is from a higher variable to a lower
+        //This way the resulting variables are always equal to any variables in the functions
+        //declaration
+        match *typ {
+            TypeVariable(other_id) if id < other_id => this.assign_union(other_id, TypeVariable(id)),
+            _ => this.assign_union(id, typ.clone())
+        }
+    }
+    fn assign_union(&mut self, id: uint, typ: TcType) {
+        match self.constraints.pop(&id) {
             Some(constraints) => {
-                match *typ {
+                match typ {
                     TypeVariable(other_id) => {
-                        this.constraints.insert(other_id, constraints);
+                        self.constraints.insert(other_id, constraints);
                     }
                     _ => ()
                 }
             }
             None => ()
         }
-        this.map.insert(id, box typ.clone());
+        self.map.insert(id, box typ);
     }
 
     fn real_type<'a>(&'a self, typ: &'a TcType) -> &'a TcType {
@@ -1022,11 +1052,11 @@ impl Substitution {
         TypeVariable(self.var_id)
     }
 
-    fn instantiate_constrained(&mut self, constraints: &[Vec<TcType>], typ: &TcType) -> TcType {
+    fn instantiate_constrained(&mut self, constraints: &[ast::Constraints], typ: &TcType) -> TcType {
         self.var_id += 1;
         let base = self.var_id;
         for (i, constraint) in constraints.iter().enumerate() {
-            self.constraints.insert(base + i, constraint.clone());
+            self.constraints.insert(base + i, constraint.constraints.clone());
         }
         self.instantiate_(base, typ)
     }
@@ -1460,6 +1490,20 @@ fn test() -> bool {
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| fail!("{}", err));
+        match module.functions[0].expression.value {
+            ast::Block(ref exprs) => {
+                match exprs[0].value {
+                    ast::Call(ref f, ref args) => {
+                        let int_opt = Type(intern("Option"), vec![int_type_tc.clone()]);
+                        assert_eq!(f.type_of(), &(FunctionType(vec![int_opt.clone(), int_opt.clone()], box bool_type_tc.clone())));
+                        assert_eq!(args[0].type_of(), &int_opt);
+                        assert_eq!(args[1].type_of(), &int_opt);
+                    }
+                    _ => fail!()
+                }
+            }
+            _ => fail!()
+        }
     }
     #[test]
     fn error_no_impl_for_parameter() {
