@@ -1,5 +1,5 @@
 use vm::{VM, Value, Int, Float, Function, Userdata, StackFrame, Data};
-use typecheck::{TcType, Typed, FunctionType, bool_type_tc, int_type_tc, float_type_tc};
+use typecheck::{TcType, Typed, FunctionType, unit_type_tc, bool_type_tc, int_type_tc, float_type_tc};
 use compiler::CallGlobal;
 use std::any::{Any, AnyRefExt};
 use std::boxed::BoxAny;
@@ -8,6 +8,16 @@ pub trait VMValue {
     fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType;
     fn push(self, stack: &mut StackFrame);
     fn from_value(value: Value) -> Option<Self>;
+}
+impl VMValue for () {
+    fn vm_type<'a>(&self, _: &'a VM) -> &'a TcType {
+        &unit_type_tc
+    }
+    fn push(self, _: &mut StackFrame) {
+    }
+    fn from_value(_: Value) -> Option<()> {
+        Some(())
+    }
 }
 impl VMValue for int {
     fn vm_type<'a>(&self, _: &'a VM) -> &'a TcType {
@@ -212,14 +222,59 @@ pub fn get_function<'a, T: Get<'a>>(vm: &'a mut VM, name: &str) -> Option<T> {
     Get::get_function(vm, name)
 }
 
+trait VMFunction {
+    fn unpack_and_call(mut stack: StackFrame, f: Self);
+}
+
+impl <R: VMValue> VMFunction for fn () -> R {
+    fn unpack_and_call(mut stack: StackFrame, f: fn () -> R) {
+        let r = f();
+        r.push(&mut stack);
+    }
+}
+
+macro_rules! make_vm_function(
+    ($($args:ident),*) => (
+impl <$($args : VMValue),*, R: VMValue> VMFunction for fn ($($args),*) -> R {
+    fn unpack_and_call(mut stack: StackFrame, f: fn ($($args),*) -> R) {
+        let mut i = 0;
+        $(let $args = {
+            let x = VMValue::from_value(stack[i].clone()).unwrap();
+            i += 1;
+            x
+        });*;
+        drop(i);//Avoid unused warnings
+        let r = f($($args),*);
+        r.push(&mut stack);
+    }
+}
+    )
+)
+
+make_vm_function!(a)
+make_vm_function!(a, b)
+make_vm_function!(a, b, c)
+make_vm_function!(a, b, c, d)
+make_vm_function!(a, b, c, d, e)
+make_vm_function!(a, b, c, d, e, f)
+make_vm_function!(a, b, c, d, e, f, g)
+
+macro_rules! vm_function(
+    ($func: expr) => ({
+        fn wrapper(_: &VM, stack: StackFrame) {
+            VMFunction::unpack_and_call(stack, $func)
+        }
+        wrapper
+    })
+)
+
 #[cfg(test)]
 mod tests {
-    use super::{Get, Callable};
+    use super::{Get, Callable, VMFunction};
 
     use vm::{VM, load_script, StackFrame};
     use typecheck::{bool_type_tc};
     use std::io::BufReader;
-    use std::any::AnyMutRefExt;
 
     #[test]
     fn call_function() {
@@ -256,19 +311,11 @@ fn id(x: Test) -> Test {
 }
 ";
         let mut vm = VM::new();
-        fn test(_: &VM, mut stack: StackFrame) {
-            use vm::{Int, Userdata};
-            let v = match stack.pop() {
-                Userdata(ptr) => {
-                    let mut cell = ptr.data.borrow_mut();
-                    let test: &mut Test = unsafe { &mut **cell.downcast_mut::<*mut Test>().expect("Expected Test type") };
-                    let x = if test.x == 123 { 1 } else { 0 };
-                    test.x *= 2;
-                    x
-                }
-                _ => 0
-            };
-            stack.push(Int(v));
+        fn test(test: *mut Test) -> bool {
+            let test = unsafe { &mut *test };
+            let x = test.x == 123;
+            test.x *= 2;
+            x
         }
         struct Test {
             x: int
@@ -276,7 +323,7 @@ fn id(x: Test) -> Test {
         let test_type = vm.register_type::<Test>("Test")
             .unwrap_or_else(|_| fail!("Could not add type"))
             .clone();
-        vm.extern_function("test", vec![test_type], bool_type_tc.clone(), test);
+        vm.extern_function("test", vec![test_type], bool_type_tc.clone(), vm_function!(test));
         let mut buffer = BufReader::new(s.as_bytes());
         load_script(&mut vm, &mut buffer)
             .unwrap_or_else(|err| fail!("{}", err));
