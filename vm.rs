@@ -42,6 +42,8 @@ pub enum Value {
     Userdata(Data<Box<Any>>)
 }
 
+type Dict = Vec<uint>;
+
 impl fmt::Show for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -84,7 +86,6 @@ impl fmt::Show for Global_ {
 
 pub struct VM {
     globals: Vec<Global>,
-    dictionaries: Vec<Vec<uint>>,
     trait_indexes: Vec<TraitFunctions>,
     type_infos: TypeInfos,
     typeids: HashMap<TypeId, TcType>,
@@ -186,7 +187,6 @@ impl VM {
     pub fn new() -> VM {
         let mut vm = VM {
             globals: Vec::new(),
-            dictionaries: Vec::new(),
             trait_indexes: Vec::new(),
             type_infos: TypeInfos::new(),
             typeids: HashMap::new(),
@@ -468,18 +468,25 @@ impl VM {
                         _ => fail!()
                     }
                 }
-                PushDictionaryMember(index) => {
-                    let global_index = match stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())  {
-                        Some(Int(dict_ref)) => {
-                            self.dictionaries[dict_ref as uint][index]
+                PushDictionaryMember(trait_index, function_offset) => {
+                    let func = match stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())  {
+                        Some(Data(_, dict)) => {
+                            match (*dict.borrow())[trait_index] {
+                                Function(i) => Function(i + function_offset),
+                                _ => fail!()
+                            }
                         }
                         ref x => fail!("PushDictionaryMember {}", x)
                     };
-                    stack.push(Function(global_index));
+                    stack.push(func);
                 }
-                PushDictionary => {
+                PushDictionary(index) => {
                     let dict = stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())
                         .expect("Expected dictionary in upvalues");
+                    let dict = match dict {
+                        Data(_, fields) => (*fields.borrow())[index].clone(),
+                        _ => fail!()
+                    };
                     stack.push(dict);
                 }
                 AddInt => binop_int(&mut stack, |l, r| l + r),
@@ -578,7 +585,7 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
         let mut parser = Parser::new(&mut*cell, buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
         tryf!(parser.module())
     };
-    let (type_infos, (functions, trait_indexes, dictionaries)) = {
+    let (type_infos, (functions, trait_indexes)) = {
         let vm: &VM = vm;
         let mut tc = Typecheck::new();
         tc.add_environment(vm);
@@ -589,7 +596,6 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
     };
     vm.new_functions(functions);
     vm.add_trait_indexes(trait_indexes);
-    vm.dictionaries.extend(dictionaries.move_iter());
     vm.type_infos = type_infos;
     Ok(())
 }
@@ -878,6 +884,69 @@ fn main() -> Pair {
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(0), Int(1)])))));//false
+    }
+    #[test]
+    fn call_generic_constrained_multi_parameters_function() {
+        let text = 
+r"
+trait Eq {
+    fn eq(l: Self, r: Self) -> bool;
+}
+enum Option<T> {
+    Some(T),
+    None()
+}
+impl Eq for int {
+    fn eq(l: int, r: int) -> bool {
+        l == r
+    }
+}
+impl Eq for float {
+    fn eq(l: float, r: float) -> bool {
+        l == r
+    }
+}
+impl <T:Eq> Eq for Option<T> {
+    fn eq(l: Option<T>, r: Option<T>) -> bool {
+        match l {
+            Some(l_val) => {
+                match r {
+                    Some(r_val) => { eq(l_val, r_val) }
+                    None() => { false }
+                }
+            }
+            None() => {
+                match r {
+                    Some(_) => { false }
+                    None() => { true }
+                }
+            }
+        }
+    }
+}
+fn test<T: Eq, U: Eq>(opt: Option<T>, x: U, y: U) -> bool {
+    if eq(x, y) {
+        eq(opt, None())
+    }
+    else {
+        false
+    }
+}
+struct Pair {
+    x: bool,
+    y: bool
+}
+fn main() -> Pair {
+    let a = None();
+    eq(a, Some(1));
+    let x = test(a, 1.0, 1.0);
+    let y = test(Some(2), 1.0, 1.0);
+    Pair(x, y)
+}
+";
+        let value = run_main(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(1), Int(0)])))));
     }
 }
 

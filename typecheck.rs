@@ -339,9 +339,12 @@ impl <'a> Typecheck<'a> {
                     .map(|c| (c.constraints.as_slice(), &c.value))
             }
         };
-        debug!("Find {} : {}", id, t);
         match t {
-            Some(t) => Ok(self.subs.instantiate_constrained(t.val0(), t.val1())),
+            Some(t) => {
+                let x = self.subs.instantiate_constrained(t.val0(), t.val1());
+                debug!("Find {} : {}", id, x);
+                Ok(x)
+            }
             None => Err(UndefinedVariable(id.clone()))
         }
     }
@@ -843,10 +846,9 @@ impl <'a> Typecheck<'a> {
     fn check_impl(&self, constraints: &[Vec<TcType>], expected: &TcType, actual: &TcType) -> bool {
         let expected = self.subs.real_type(expected);
         let actual = self.subs.real_type(actual);
-        debug!("Merge {} {}", expected, actual);
+        debug!("Check impl {} {}", expected, actual);
         match (expected, actual) {
-            (_, &TypeVariable(ref r)) => {
-                self.subs.union(*r, expected);
+            (_, &TypeVariable(_)) => {
                 true
             }
             (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {

@@ -31,8 +31,8 @@ pub enum Instruction {
     PushTraitFunction(uint),
     Unpack,
 
-    PushDictionaryMember(uint),
-    PushDictionary,
+    PushDictionaryMember(uint, uint),
+    PushDictionary(uint),
 
     GetIndex,
     SetIndex,
@@ -271,7 +271,6 @@ pub struct Compiler<'a> {
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<uint>,
     compiled_lambdas: Vec<CompiledFunction>,
-    dictionaries: Vec<Vec<uint>>
 }
 
 impl <'a> Compiler<'a> {
@@ -282,7 +281,6 @@ impl <'a> Compiler<'a> {
             stack: HashMap::new(),
             closure_limits: Vec::new(),
             compiled_lambdas: Vec::new(),
-            dictionaries: Vec::new()
         }
     }
 
@@ -330,7 +328,7 @@ impl <'a> Compiler<'a> {
         self.stack.len()
     }
 
-    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> (Vec<CompiledFunction>, Vec<TraitFunctions>, Vec<Vec<uint>>) {
+    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> (Vec<CompiledFunction>, Vec<TraitFunctions>) {
         let mut functions: Vec<CompiledFunction> = module.functions.iter()
             .map(|f| self.compile_function(f))
             .collect();
@@ -346,7 +344,7 @@ impl <'a> Compiler<'a> {
         functions.extend(lambdas.move_iter());
 
 
-        (functions, trait_functions, self.dictionaries.clone())
+        (functions, trait_functions)
     }
 
     pub fn compile_function(&mut self, function: &Function<TcIdent>) -> CompiledFunction {
@@ -396,28 +394,21 @@ impl <'a> Compiler<'a> {
                 }
             }
             Identifier(ref id) => {
-                let mut dict = None;
                 match self.find(id.id(), function).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
                     Stack(index) => function.instructions.push(Push(index)),
                     UpVar(index) => function.instructions.push(PushUpVar(index)),
                     Global(index, constraints, typ) => {
                         if constraints.iter().any(|c| c.constraints.len() != 0) {
                             debug!("Compile dictionary for {}", id.id());
-                            dict = self.compile_dictionary(constraints, typ, expr.type_of(), function);
+                            self.compile_dictionary(constraints, typ, expr.type_of(), function);
                             function.instructions.push(MakeClosure(index, 1));
                         }
                         else {
                             function.instructions.push(PushGlobal(index));
                         }
                     }
-                    TraitFunction(typ) => {
-                        dict = self.compile_trait_function(typ, id, function);
-                    }
+                    TraitFunction(typ) => self.compile_trait_function(typ, id, function),
                     Constructor(..) => fail!("Constructor {} is not fully applied", id)
-                }
-                match dict {
-                    Some(dict) => self.dictionaries.push(dict),
-                    None => ()
                 }
             }
             IfElse(ref pred, ref if_true, ref if_false) => {
@@ -719,54 +710,57 @@ impl <'a> Compiler<'a> {
                         , constraints: &[Constraints]
                         , function_type: &TcType
                         , expr_type: &TcType
-                        , function: &mut FunctionEnv) -> Option<Vec<uint>> {
+                        , function: &mut FunctionEnv) {
         debug!("Find type for dictionary {} <=> {}", function_type, expr_type);
-        match find_real_type(function_type, expr_type) {
-            Some(real_type) => {
-                debug!("Found {}", real_type);
-                let mut dict = Vec::new();
-                for constraint in constraints.iter() {
-                    if constraint.constraints.len() == 1 {
-                        match constraint.constraints[0] {
-                            Type(ref trait_id, _) => {
-                                let impl_index = self.globals.find_trait_offset(trait_id, real_type)
-                                    .unwrap_or_else(|| fail!("ICE"));
-                                dict.push(impl_index);
-                            }
-                            _ => fail!()
-                        }
-                    }
-                }
-                function.instructions.push(PushInt(self.dictionaries.len() as int));
-                Some(dict)
+        let real_types = find_real_type(function_type, expr_type);
+        let mut dict_size = 0;
+        for (i, (constraint, real_type)) in constraints.iter().zip(real_types.iter()).enumerate() {
+            if constraint.constraints.len() != 0 {
+                dict_size += self.add_dictionary(i, &constraint.constraints[0], real_type.unwrap(), function);
             }
-            None => {
+        }
+        function.instructions.push(Construct(0, dict_size));
+    }
+
+    fn add_dictionary(&self, i: uint, constraint_type: &TcType, real_type: &TcType, function: &mut FunctionEnv) -> uint {
+        match real_type {
+            &TypeVariable(_) => {
                 debug!("In dict");
                 //Load dictionary from stack
                 //TODO actually look for what part of the dictionary that is needed
-                function.instructions.push(PushDictionary);
-                None
+                function.instructions.push(PushDictionary(i));
+            }
+            real_type => {
+                debug!("Found {} for {}", real_type, constraint_type);
+                match *constraint_type {
+                    Type(ref trait_id, _) => {
+                        let impl_index = self.globals.find_trait_offset(trait_id, real_type)
+                            .unwrap_or_else(|| fail!("ICE"));
+                        function.instructions.push(PushGlobal(impl_index));
+                    }
+                    _ => fail!()
+                }
             }
         }
+        1
     }
 
-    fn compile_trait_function(&self, trait_func_type: &TcType, id: &TcIdent, function: &mut FunctionEnv) -> Option<Vec<uint>> {
+    fn compile_trait_function(&self, trait_func_type: &TcType, id: &TcIdent, function: &mut FunctionEnv) {
         debug!("Find real {} <=> {}", trait_func_type, id.typ);
-        let typ = find_real_type(trait_func_type, &id.typ)
-            .unwrap_or_else(|| fail!("Could not find the real type between {} <=> {}", trait_func_type, id.typ));
-        let mut dict = None;
-        match *typ {
-            TraitType(ref trait_name, _) => {//TODO parameterized traits
+        let types = find_real_type(trait_func_type, &id.typ);
+        assert!(types.len() != 0);
+        match types[0] {
+            Some(&TraitType(ref trait_name, _)) => {//TODO parameterized traits
                     let index = self.globals.find_object_function(trait_name, id.id())
                         .expect("Trait object function does not exist");
                     function.instructions.push(PushTraitFunction(index));
                 }
-            _ => {
-                debug!("Find trait function {} {}", typ, id.id());
-                match self.find_trait_function(typ, id.id()) {
+            Some(t0) => {
+                debug!("Find trait function {} {}", types, id.id());
+                match self.find_trait_function(t0, id.id()) {
                     Some(result) => {//Found a match
                         if result.constraints.iter().any(|c| c.constraints.len() != 0) {
-                            dict = self.compile_dictionary(result.constraints, result.typ, &id.typ, function);
+                            self.compile_dictionary(result.constraints, result.typ, &id.typ, function);
                             function.instructions.push(MakeClosure(result.value, 1));
                         }
                         else {
@@ -774,8 +768,8 @@ impl <'a> Compiler<'a> {
                         }
                     }
                     None => {//Function must be in the dictionary
-                        match *typ {
-                            TypeVariable(var_index) if var_index - 1 < function.dictionary.len() => {
+                        match types[0] {
+                            Some(&TypeVariable(var_index)) if var_index - 1 < function.dictionary.len() => {
                                 let constraint = &function.dictionary[var_index - 1];
                                 for trait_type in constraint.constraints.iter() {
                                     let func_index = match *trait_type {
@@ -786,50 +780,62 @@ impl <'a> Compiler<'a> {
                                     };
                                     match func_index {
                                         Some(index) => {
-                                            function.instructions.push(PushDictionaryMember(index));
-                                            return dict
+                                            function.instructions.push(PushDictionaryMember(var_index - 1, index));
+                                            return
                                         }
                                         None => ()
                                     }
                                 }
-                                fail!("{}   {}\n{}   {}", trait_func_type, id, function.dictionary, typ)
+                                fail!("{}   {}\n{}   {}", trait_func_type, id, function.dictionary, types)
                             }
                             _ => fail!("ICE")
                         }
                     }
                 }
             }
+            _ => fail!()
         }
-        dict
     }
 }
 
-fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> Option<&'a TcType> {
+fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> Vec<Option<&'a TcType>> {
+    let mut result = Vec::new();
+    find_real_type_(trait_func_type, real_type, &mut result);
+    result
+}
+fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mut Vec<Option<&'a TcType>>) {
     match (trait_func_type, real_type) {
         (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
             for (l, r) in l_args.iter().zip(r_args.iter()) {
-                let x = find_real_type(l, r);
-                if x.is_some() {
-                    return x;
-                }
+                find_real_type_(l, r, out);
             }
-            find_real_type(&**l_ret, &**r_ret)
+            find_real_type_(&**l_ret, &**r_ret, out)
         }
-        (&TypeVariable(_), real_type) => Some(real_type),
-        (&Generic(_), real_type) => Some(real_type),
-        (&ArrayType(ref l), &ArrayType(ref r)) => find_real_type(&**l, &**r),
+        (&TypeVariable(i), real_type) => {
+            if i >= out.len() {
+                let x = i + 1 - out.len();
+                out.grow(x, &None);
+            }
+            *out.get_mut(i) = Some(real_type);
+        }
+        (&Generic(i), real_type) => {
+            if i >= out.len() {
+                let x = i + 1 - out.len();
+                out.grow(x, &None);
+            }
+            *out.get_mut(i) = Some(real_type);
+        }
+        (&ArrayType(ref l), &ArrayType(ref r)) => find_real_type_(&**l, &**r, out),
         (&Type(_, ref l_args), &Type(_, ref r_args)) => {
-            l_args.iter()
-                .zip(r_args.iter())
-                .flat_map(|(l, r)| find_real_type(l, r).move_iter())
-                .next()
+            for (l, r) in l_args.iter().zip(r_args.iter()) {
+                find_real_type_(l, r, out);
+            }
         }
         (&TraitType(_, ref l_args), &TraitType(_, ref r_args)) => {
-            l_args.iter()
-                .zip(r_args.iter())
-                .flat_map(|(l, r)| find_real_type(l, r).move_iter())
-                .next()
+            for (l, r) in l_args.iter().zip(r_args.iter()) {
+                find_real_type_(l, r, out);
+            }
         }
-        _ => None
+        _ => ()
     }
 }
