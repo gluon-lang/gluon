@@ -2,7 +2,7 @@ use collections::RingBuf;
 use std::from_str::FromStr;
 use std::fmt;
 
-use interner::*;
+use interner::{Interner, InternedStr};
 
 
 #[deriving(PartialEq, Clone, Show)]
@@ -101,12 +101,12 @@ impl <'a, 'b> Lexer<'a, 'b> {
 
     pub fn peek<'b>(&'b mut self) -> &'b Token {
         if self.offset != 0 && self.tokens.len() != 0 {
-            self.tokens.get(self.tokens.len() - self.offset)
+            &self.tokens[self.tokens.len() - self.offset]
         }
         else {
             self.next();
             self.backtrack();
-            self.tokens.get(self.tokens.len() - 1)
+            &self.tokens[self.tokens.len() - 1]
         }
     }
     
@@ -126,7 +126,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
 
     ///Returns a reference to the current token
     pub fn current<'b>(&'b self) -> &'b Token {
-        self.tokens.get(self.tokens.len() - self.offset - 1)
+        &self.tokens[self.tokens.len() - self.offset - 1]
     }
 
     ///Moves the lexer back one token
@@ -329,7 +329,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use lexer;
     use interner::Interner;
     use std::io::BufReader;
 
@@ -341,17 +341,17 @@ mod tests {
     fn lex() {
         let mut buffer = buffer("fn main() { 1 + 2 }");
         let mut interner = Interner::new();
-        let mut lexer = Lexer::new(&mut interner, &mut buffer);
+        let mut lexer = lexer::Lexer::new(&mut interner, &mut buffer);
         let plus = lexer.interner.intern("+");
         let main = lexer.interner.intern("main");
-        assert_eq!(lexer.next(), &TFn);
-        assert_eq!(lexer.next(), &TIdentifier(main));
-        assert_eq!(lexer.next(), &TOpenParen);
-        assert_eq!(lexer.next(), &TCloseParen);
-        assert_eq!(lexer.next(), &TOpenBrace);
-        assert_eq!(lexer.next(), &TInteger(1));
-        assert_eq!(lexer.next(), &TOperator(plus));
-        assert_eq!(lexer.next(), &TInteger(2));
-        assert_eq!(lexer.next(), &TCloseBrace);
+        assert_eq!(lexer.next(), &lexer::TFn);
+        assert_eq!(lexer.next(), &lexer::TIdentifier(main));
+        assert_eq!(lexer.next(), &lexer::TOpenParen);
+        assert_eq!(lexer.next(), &lexer::TCloseParen);
+        assert_eq!(lexer.next(), &lexer::TOpenBrace);
+        assert_eq!(lexer.next(), &lexer::TInteger(1));
+        assert_eq!(lexer.next(), &lexer::TOperator(plus));
+        assert_eq!(lexer.next(), &lexer::TInteger(2));
+        assert_eq!(lexer.next(), &lexer::TCloseBrace);
     }
 }

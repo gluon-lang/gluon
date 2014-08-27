@@ -5,7 +5,7 @@ use std::intrinsics::TypeId;
 use std::collections::HashMap;
 use std::any::Any;
 use parser::Parser;
-use typecheck::*;
+use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType};
 use compiler::*;
 use interner::{Interner, InternedStr};
 
@@ -618,7 +618,7 @@ pub fn run_buffer_main(buffer: &mut Buffer) -> Result<Option<Value>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Data, Int, run_main};
     use std::rc::Rc;
     use std::cell::RefCell;
     ///Test that the stack is adjusted correctly after executing expressions as statements

@@ -1,6 +1,43 @@
-use lexer::*;
 use ast::*;
 use interner::{Interner, InternedStr};
+use lexer::{
+    Lexer,
+    Token,
+    TInteger,
+    TFloat,
+    TString,
+    TChar,
+    TTrue,
+    TFalse,
+    TIf,
+    TElse,
+    TWhile,
+    TFor,
+    TMatch,
+    TFn,
+    TStruct,
+    TEnum,
+    TTrait,
+    TImpl,
+    TIdentifier,
+    TOpenBrace,
+    TCloseBrace,
+    TOpenParen,
+    TCloseParen,
+    TOpenBracket,
+    TCloseBracket,
+    TOperator,
+    TSemicolon,
+    TDot,
+    TComma,
+    TColon,
+    TLet,
+    TAssign,
+    TRArrow,
+    TMatchArrow,
+    TLambda,
+    TEOF
+};
 
 macro_rules! expect(
     ($e: expr, $p: ident (..)) => (
@@ -549,7 +586,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
+    use super::{Parser, ParseResult};
     use ast::*;
     use std::io::BufReader;
     use interner::*;

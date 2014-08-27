@@ -3,7 +3,7 @@ use std::fmt;
 use scoped_map::ScopedMap;
 use ast;
 use ast::MutVisitor;
-use interner::*;
+use interner::InternedStr;
 
 pub use ast::{Type, FunctionType, TraitType, TypeVariable, BuiltinType, Generic, ArrayType};
 
@@ -1177,9 +1177,9 @@ impl <T: Typed> Typed for ast::Function<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Typecheck, Typed, TcIdent, unit_type_tc, int_type_tc, bool_type_tc, float_type_tc, Type, FunctionType};
     use ast;
-    use parser::*;
+    use parser::{Parser, ParseResult};
     use interner::tests::{get_local_interner, intern};
 
     pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {

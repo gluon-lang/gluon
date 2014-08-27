@@ -1,5 +1,5 @@
-use vm::*;
-use typecheck::*;
+use vm::{VM, Value, Int, Float, Function, Userdata, StackFrame, Data};
+use typecheck::{TcType, Typed, FunctionType, bool_type_tc, int_type_tc, float_type_tc};
 use compiler::CallGlobal;
 use std::any::{Any, AnyRefExt};
 use std::boxed::BoxAny;
