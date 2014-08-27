@@ -3,10 +3,10 @@ extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
 
-extern crate vm_lib;
+extern crate EmbedLang;
 
 #[cfg(not(test))]
-use vm_lib::vm::{run_main, run_buffer_main};
+use EmbedLang::vm::{run_main, run_buffer_main};
 
 mod repl;
 
