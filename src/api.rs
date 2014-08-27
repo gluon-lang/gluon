@@ -157,7 +157,7 @@ impl <'a, T: VMValue, R: VMValue> Get<'a> for Callable<'a, (T,), R> {
 }
 
 
-struct Callable<'a, Args, R> {
+pub struct Callable<'a, Args, R> {
     vm: &'a mut VM,
     value: FunctionRef<Args, R>
 }
@@ -207,6 +207,7 @@ impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
             .expect("Wrong type")
     }
 }
+
 
 #[cfg(test)]
 mod tests {
