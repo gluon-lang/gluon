@@ -17,7 +17,9 @@ fn main() {
 	println!("{}", args);
     if args.len() == 1 {
         let mut buffer = ::std::io::stdin();
-        println!("{}", run_buffer_main(&mut buffer));
+        let (_, value) = run_buffer_main(&mut buffer)
+            .unwrap_or_else(|err| fail!("{}", err));
+        println!("{}", value);
     }
     else if args[1].as_slice() == "-i" {
         repl::run();

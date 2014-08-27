@@ -7,6 +7,7 @@ use typecheck::*;
 pub enum Instruction {
     PushInt(int),
     PushFloat(f64),
+    PushString(InternedStr),
     Push(uint),
     PushGlobal(uint),
     Store(uint),
@@ -390,7 +391,7 @@ impl <'a> Compiler<'a> {
                     Integer(i) => function.instructions.push(PushInt(i)),
                     Float(f) => function.instructions.push(PushFloat(f)),
                     Bool(b) => function.instructions.push(PushInt(if b { 1 } else { 0 })),
-                    String(_) => fail!("String is not implemented")
+                    String(s) => function.instructions.push(PushString(s))
                 }
             }
             Identifier(ref id) => {

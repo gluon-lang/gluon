@@ -5,7 +5,7 @@ use std::intrinsics::TypeId;
 use std::collections::HashMap;
 use std::any::Any;
 use parser::Parser;
-use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType};
+use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType};
 use compiler::*;
 use interner::{Interner, InternedStr};
 
@@ -35,6 +35,7 @@ impl <T> Clone for Data<T> {
 pub enum Value {
     Int(int),
     Float(f64),
+    String(InternedStr),
     Data(uint, Rc<RefCell<Vec<Value>>>),
     Function(uint),
     Closure(uint, Rc<RefCell<Vec<Value>>>),
@@ -49,6 +50,7 @@ impl fmt::Show for Value {
         match *self {
             Int(i) => write!(f, "{}", i),
             Float(x) => write!(f, "{}f", x),
+            String(x) => write!(f, "\"{}\"", x),
             Data(tag, ref ptr) => write!(f, "{{{} {}}}", tag, ptr.borrow()),
             Function(i) => write!(f, "<function {}>", i),
             Closure(fi, ref upvars) => write!(f, "<Closure {} {}>", fi, upvars.borrow()),
@@ -182,6 +184,12 @@ impl <'a, 'b> StackFrame<'a, 'b> {
     }
 }
 
+impl <'a, 'b> Index<uint, Value> for StackFrame<'a, 'b> {
+    fn index(&self, index: &uint) -> &Value {
+        &(*self.stack)[self.offset + *index]
+    }
+}
+
 impl VM {
     
     pub fn new() -> VM {
@@ -196,6 +204,7 @@ impl VM {
         let array_a = ArrayType(box a.clone());
         vm.extern_function("array_length", vec![array_a.clone()], int_type_tc.clone(), array_length);
         vm.extern_function("array_push", vec![array_a.clone(), a.clone()], unit_type_tc.clone(), array_push);
+        vm.extern_function("string_append", vec![string_type_tc.clone(), string_type_tc.clone()], string_type_tc.clone(), string_append);
         vm
     }
 
@@ -295,6 +304,9 @@ impl VM {
                 PushInt(i) => {
                     stack.push(Int(i));
                 }
+                PushString(s) => {
+                    stack.push(String(s));
+                }
                 PushGlobal(i) => {
                     stack.push(Function(i));
                 }
@@ -330,6 +342,7 @@ impl VM {
                     if stack.len() > function_index + args {
                         //Value was returned
                         let result = stack.pop();
+                        debug!("Return {}", result);
                         while stack.len() > function_index {
                             stack.pop();
                         }
@@ -566,6 +579,19 @@ fn array_push(_: &VM, mut stack: StackFrame) {
         _ => fail!()
     }
 }
+fn string_append(vm: &VM, mut stack: StackFrame) {
+    match (&stack[0], &stack[1]) {
+        (&String(l), &String(r)) => {
+            let l = l.as_slice();
+            let r = r.as_slice();
+            let mut s = String::with_capacity(l.len() + r.len());
+            s = s.append(l).append(r);
+            let result = vm.interner.borrow_mut().intern(s.as_slice());
+            stack.push(String(result));
+        }
+        _ => fail!()
+    }
+}
 
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
@@ -601,24 +627,29 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
 }
 
 pub fn run_main(s: &str) -> Result<Option<Value>, String> {
+    run_main2(s).map(|x| x.val1())
+}
+pub fn run_main2(s: &str) -> Result<(VM, Option<Value>), String> {
     use std::io::BufReader;
     let mut buffer = BufReader::new(s.as_bytes());
     run_buffer_main(&mut buffer)
 }
-pub fn run_buffer_main(buffer: &mut Buffer) -> Result<Option<Value>, String> {
+pub fn run_buffer_main(buffer: &mut Buffer) -> Result<(VM, Option<Value>), String> {
     let mut vm = VM::new();
     try!(load_script(&mut vm, buffer));
-    let func = match vm.globals.iter().find(|g| g.id.as_slice() == "main") {
-        Some(f) => f,
-        None => return Err("Undefined main function".to_string())
+    let v = {
+        let func = match vm.globals.iter().find(|g| g.id.as_slice() == "main") {
+            Some(f) => f,
+            None => return Err("Undefined main function".to_string())
+        };
+        vm.run_function(func)
     };
-    let v = vm.run_function(func);
-    Ok(v)
+    Ok((vm, v))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Data, Int, run_main};
+    use super::{Data, Int, String, run_main, run_main2};
     use std::rc::Rc;
     use std::cell::RefCell;
     ///Test that the stack is adjusted correctly after executing expressions as statements
@@ -947,6 +978,17 @@ fn main() -> Pair {
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(1), Int(0)])))));
+    }
+
+    #[test]
+    fn strings() {
+        let text = 
+r#"fn main() -> string {
+    string_append("Hello", " World")
+}"#;
+        let (vm, value) = run_main2(text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(String(vm.intern("Hello World"))));
     }
 }
 
