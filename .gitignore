@@ -1,25 +1,5 @@
 
-*.sdf
-*.suo
-*.sln
-*.vcxproj
-*.vcxproj.filters
-*.vcxproj.user
-*.ilk
-*.pdb
-*.idb
-*.opensdf
-*.tlog
-
-obj
-bin
-
-*.o
-*.exe
-
 *.swp
 *.swo
-*.make
 
-.depend
-tags
+target
