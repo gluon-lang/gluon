@@ -290,7 +290,15 @@ impl <'a, 'b> Lexer<'a, 'b> {
         else if c == '"' {
             loop {
                 match self.read_char() {
-                    Some('"') => return TString(self.intern_current()),
+                    Some('"') => {
+                        //Drop the '"' at the start and end
+                        let contents = self.buffer
+                            .as_slice()
+                            .slice_to(self.buffer.len() - 1)
+                            .slice_from(1);
+                        let s = self.interner.intern(contents);
+                        return TString(s)
+                    }
                     Some(_) => (),
                     None => fail!("Unexpected EOF")
                 }
