@@ -332,7 +332,7 @@ impl <'a> Typecheck<'a> {
             let stack = &self.stack;
             let module = &self.module;
             let environment = &self.environment;
-            match stack.find(id).map(|typ| (&[], typ)) {
+            match stack.find(id).map(|typ| ([].as_slice(), typ)) {
                 Some(x) => Some(x),
                 None => module.find(id)
                     .or_else(|| environment.and_then(|e| e.find_type(id)))
