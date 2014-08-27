@@ -1,3 +1,4 @@
+use std::fmt;
 use ast::*;
 use interner::{Interner, InternedStr};
 use lexer::{
@@ -40,35 +41,38 @@ use lexer::{
 };
 
 macro_rules! expect(
-    ($e: expr, $p: ident (..)) => (
+    ($e: expr, $p: ident (..)) => ({
         match *$e.lexer.next() {
             x@$p(..) => x,
-            x => {
+            actual => {
                 $e.lexer.backtrack();
-                return Err(format!("Unexpected token {}, expected {}", x, stringify!($p)))
+                static expected: &'static [&'static str] = &[stringify!($p)];
+                return Err($e.unexpected_token(expected, actual))
             }
         }
-    );
-    ($e: expr, $p: ident) => (
+    });
+    ($e: expr, $p: ident) => ({
         match *$e.lexer.next() {
             x@$p => x,
-            x => {
+            actual => {
                 $e.lexer.backtrack();
-                return Err(format!("Unexpected token {}, expected {}", x, $p))
+                static expected: &'static [&'static str] = &[stringify!($p)];
+                return Err($e.unexpected_token(expected, actual))
             }
         }
-    )
+    })
 )
 macro_rules! expect1(
-    ($e: expr, $p: ident ($x: ident)) => (
+    ($e: expr, $p: ident ($x: ident)) => ({
         match *$e.lexer.next() {
             $p($x) => $x,
-            x => {
+            actual => {
                 $e.lexer.backtrack();
-                return Err(format!("Unexpected token {}", x))
+                static expected: &'static [&'static str] = &[stringify!($p)];
+                return Err($e.unexpected_token(expected, actual))
             }
         }
-    )
+    })
 )
 
 macro_rules! matches(
@@ -111,7 +115,19 @@ fn is_lvalue<T>(e: &Expr<T>) -> bool {
 }
 
 type PString = InternedStr;
-pub type ParseResult<T> = Result<T, String>;
+enum ParseError {
+    UnexpectedToken(&'static [&'static str], Token)
+}
+
+impl fmt::Show for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            UnexpectedToken(expected, actual) => write!(f, "Unexpected token {}, expected {}", actual, expected),
+        }
+    }
+}
+
+pub type ParseResult<T> = Result<T, Located<ParseError>>;
 
 pub struct Parser<'a, 'b, PString> {
     lexer: Lexer<'a, 'b>,
@@ -281,7 +297,8 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             }
             x => {
                 self.lexer.backtrack();
-                Err(format!("Token {} does not start an expression", x))
+                static expected: &'static [&'static str] = &["TIdentifier", "(", "{", "TInteger", "TFloat", "TString", "true", "false", "if", "while", "match", "[", "\\"];
+                Err(self.unexpected_token(expected, x))
             }
         }
     }
@@ -406,7 +423,8 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             }
             x => {
                 self.lexer.backtrack();
-                return Err(format!("Unexpected token {}, expected 'fn', id", x))
+                static expected: &'static [&'static str] = &["fn"];
+                return Err(self.unexpected_token(expected, x))
             }
         };
         Ok(x)
@@ -479,17 +497,19 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     }
     
     fn angle_brackets<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
+        static expected_lt: &'static [&'static str] = &["<"];
+        static expected_gt: &'static [&'static str] = &[">"];
         match *self.lexer.peek() {
             TOperator(s) if s.as_slice() == "<" => {
                 self.lexer.next();
                 let result = try!(f(self));
                 match *self.lexer.next() {
                     TOperator(x) if x.as_slice() == ">" => (),
-                    x => return Err(format!("Unexpected token {}, expected >", x))
+                    x => return Err(self.unexpected_token(expected_gt, x))
                 }
                 Ok(result)
             }
-            x => Err(format!("Unexpected token {}, expected <", x))
+            x => Err(self.unexpected_token(expected_lt, x))
         }
     }
     fn type_variables(&mut self) -> ParseResult<Vec<Constraints>> {
@@ -581,6 +601,10 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let location = self.lexer.location();
         let value = try!(f(self));
         Ok(Located { location: location, value: value })
+    }
+
+    fn unexpected_token(&self, expected: &'static [&'static str], actual: Token) -> Located<ParseError> {
+        Located { location: self.lexer.location(), value: UnexpectedToken(expected, actual) }
     }
 }
 
