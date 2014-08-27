@@ -208,6 +208,9 @@ impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
     }
 }
 
+pub fn get_function<'a, T: Get<'a>>(vm: &'a mut VM, name: &str) -> Option<T> {
+    Get::get_function(vm, name)
+}
 
 #[cfg(test)]
 mod tests {
