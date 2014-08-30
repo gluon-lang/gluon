@@ -269,26 +269,21 @@ impl <R: VMValue> VMType for fn () -> R {
     }
 }
 
-impl <R: VMValue> VMValue for fn () -> R {
-    fn push(self, stack: &mut StackFrame) {
-    }
-    fn from_value(value: Value) -> Option<fn () -> R> {
-        None
-    }
-}
-
 macro_rules! make_vm_function(
     ($($args:ident),*) => (
 impl <$($args: VMValue),* , R: VMValue> VMType for fn ($($args),*) -> R {
+    #[allow(non_snake_case)]
     fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType {
         vm.get_type::<fn ($($args),*) -> R>()
     }
+    #[allow(non_snake_case)]
     fn make_type(&self, vm: &VM) -> TcType {
         FunctionType(vec![$(make_type::<$args>(vm)),*], box make_type::<R>(vm))
     }
 }
 
 impl <$($args : VMValue),*, R: VMValue> VMFunction for fn ($($args),*) -> R {
+    #[allow(non_snake_case)]
     fn unpack_and_call(mut stack: StackFrame, f: fn ($($args),*) -> R) {
         let mut i = 0;
         $(let $args = {
@@ -304,13 +299,13 @@ impl <$($args : VMValue),*, R: VMValue> VMFunction for fn ($($args),*) -> R {
     )
 )
 
-make_vm_function!(a)
-make_vm_function!(a, b)
-make_vm_function!(a, b, c)
-make_vm_function!(a, b, c, d)
-make_vm_function!(a, b, c, d, e)
-make_vm_function!(a, b, c, d, e, f)
-make_vm_function!(a, b, c, d, e, f, g)
+make_vm_function!(A)
+make_vm_function!(A, B)
+make_vm_function!(A, B, C)
+make_vm_function!(A, B, C, D)
+make_vm_function!(A, B, C, D, E)
+make_vm_function!(A, B, C, D, E, F)
+make_vm_function!(A, B, C, D, E, F, G)
 
 macro_rules! vm_function(
     ($func: expr) => ({

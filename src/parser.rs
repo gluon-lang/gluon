@@ -320,8 +320,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         Ok(Block(exprs))
     }
 
-    fn binary_expression(&mut self, inL: LExpr<PString>, minPrecedence : int) -> ParseResult<LExpr<PString>> {
-        let mut lhs = inL;
+    fn binary_expression(&mut self, mut lhs: LExpr<PString>, min_precedence : int) -> ParseResult<LExpr<PString>> {
         self.lexer.next();
         loop {
             let location = self.lexer.location();
@@ -331,7 +330,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 TOperator(op) => {
                     lhs_prec = precedence(op.as_slice());
                     lhs_op = op;
-                    if lhs_prec < minPrecedence {
+                    if lhs_prec < min_precedence {
                         break
                     }
                 }

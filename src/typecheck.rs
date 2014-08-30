@@ -273,7 +273,7 @@ pub trait TypeEnv {
 }
 
 pub struct Typecheck<'a> {
-    environment: Option<&'a TypeEnv>,
+    environment: Option<&'a TypeEnv + 'a>,
     pub type_infos: TypeInfos,
     module: HashMap<InternedStr, Constrained<TcType>>,
     stack: ScopedMap<InternedStr, TcType>,
@@ -497,7 +497,7 @@ impl <'a> Typecheck<'a> {
 
     fn replace_vars(&mut self, expr: &mut ast::LExpr<TcIdent>) {
         //Replace all type variables with their inferred types
-        struct ReplaceVisitor<'a, 'b> { tc: &'a mut Typecheck<'b> }
+        struct ReplaceVisitor<'a, 'b:'a> { tc: &'a mut Typecheck<'b> }
         impl <'a, 'b> MutVisitor<TcIdent> for ReplaceVisitor<'a, 'b> {
             fn visit_expr(&mut self, e: &mut ast::LExpr<TcIdent>) {
                 match e.value {

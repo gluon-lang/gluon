@@ -267,7 +267,7 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
 }
 
 pub struct Compiler<'a> {
-    globals: &'a CompilerEnv,
+    globals: &'a CompilerEnv + 'a,
     stack: HashMap<InternedStr, uint>,
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<uint>,

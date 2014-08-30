@@ -72,7 +72,7 @@ fn is_operator(first_char : char) -> bool {
 }
 
 pub struct Lexer<'a, 'b> {
-    input: &'b mut Buffer,
+    input: &'b mut Buffer + 'b,
     buffer: String,
     peek_c: Option<char>,
     location: Location,

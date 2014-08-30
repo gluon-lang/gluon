@@ -40,7 +40,7 @@ pub enum Value {
     Function(uint),
     Closure(uint, Rc<RefCell<Vec<Value>>>),
     TraitObject(uint, Rc<Value>),
-    Userdata(Data<Box<Any>>)
+    Userdata(Data<Box<Any + 'static>>)
 }
 
 type Dict = Vec<uint>;
