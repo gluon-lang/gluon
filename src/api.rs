@@ -284,6 +284,9 @@ impl <$($args : VMValue,)* R: VMValue> VMFunction for fn ($($args),*) -> R {
 }
     )
 )
+fn unpack_and_call<F: VMFunction>(stack: StackFrame, f: F) {
+    VMFunction::unpack_and_call(stack, f)
+}
 
 make_vm_function!()
 make_vm_function!(A)
@@ -298,7 +301,7 @@ make_vm_function!(A, B, C, D, E, F, G)
 macro_rules! vm_function(
     ($func: expr) => ({
         fn wrapper(_: &VM, stack: StackFrame) {
-            VMFunction::unpack_and_call(stack, $func)
+            unpack_and_call(stack, $func)
         }
         wrapper
     })
