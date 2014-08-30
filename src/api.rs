@@ -1,3 +1,4 @@
+#![macro_escape]
 use vm::{VM, Value, Int, Float, Function, Userdata, StackFrame, Data};
 use typecheck::{TcType, Typed, FunctionType, unit_type_tc, bool_type_tc, int_type_tc, float_type_tc};
 use compiler::CallGlobal;
@@ -302,6 +303,7 @@ macro_rules! vm_function(
     })
 )
 
+#[macro_export]
 macro_rules! define_function(
     ($vm: expr, $name: expr, $func: expr) => ({
         let vm = $vm;
