@@ -254,24 +254,9 @@ trait VMFunction {
     fn unpack_and_call(mut stack: StackFrame, f: Self);
 }
 
-impl <R: VMValue> VMFunction for fn () -> R {
-    fn unpack_and_call(mut stack: StackFrame, f: fn () -> R) {
-        let r = f();
-        r.push(&mut stack);
-    }
-}
-impl <R: VMValue> VMType for fn () -> R {
-    fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType {
-        vm.get_type::<fn () -> R>()
-    }
-    fn make_type(&self, vm: &VM) -> TcType {
-        FunctionType(vec![], box make_type::<R>(vm))
-    }
-}
-
 macro_rules! make_vm_function(
     ($($args:ident),*) => (
-impl <$($args: VMValue),* , R: VMValue> VMType for fn ($($args),*) -> R {
+impl <$($args: VMValue,)* R: VMValue> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
     fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType {
         vm.get_type::<fn ($($args),*) -> R>()
@@ -282,10 +267,10 @@ impl <$($args: VMValue),* , R: VMValue> VMType for fn ($($args),*) -> R {
     }
 }
 
-impl <$($args : VMValue),*, R: VMValue> VMFunction for fn ($($args),*) -> R {
+impl <$($args : VMValue,)* R: VMValue> VMFunction for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
     fn unpack_and_call(mut stack: StackFrame, f: fn ($($args),*) -> R) {
-        let mut i = 0;
+        let mut i = 0u;
         $(let $args = {
             let x = VMValue::from_value(stack[i].clone()).unwrap();
             i += 1;
@@ -299,6 +284,7 @@ impl <$($args : VMValue),*, R: VMValue> VMFunction for fn ($($args),*) -> R {
     )
 )
 
+make_vm_function!()
 make_vm_function!(A)
 make_vm_function!(A, B)
 make_vm_function!(A, B, C)
