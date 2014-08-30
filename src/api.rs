@@ -284,7 +284,7 @@ impl <$($args : VMValue,)* R: VMValue> VMFunction for fn ($($args),*) -> R {
 }
     )
 )
-fn unpack_and_call<F: VMFunction>(stack: StackFrame, f: F) {
+pub fn unpack_and_call<F: VMFunction>(stack: StackFrame, f: F) {
     VMFunction::unpack_and_call(stack, f)
 }
 
