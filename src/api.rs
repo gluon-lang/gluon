@@ -294,6 +294,7 @@ make_vm_function!(A, B, C, D, E)
 make_vm_function!(A, B, C, D, E, F)
 make_vm_function!(A, B, C, D, E, F, G)
 
+#[macro_export]
 macro_rules! vm_function(
     ($func: expr) => ({
         fn wrapper(_: &VM, stack: StackFrame) {
