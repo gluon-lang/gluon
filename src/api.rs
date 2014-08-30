@@ -4,25 +4,35 @@ use compiler::CallGlobal;
 use std::any::{Any, AnyRefExt};
 use std::boxed::BoxAny;
 
-pub trait VMValue {
+pub trait VMType {
     fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType;
+    fn make_type(&self, vm: &VM) -> TcType {
+        self.vm_type(vm).clone()
+    }
+}
+pub trait VMValue : VMType {
     fn push(self, stack: &mut StackFrame);
     fn from_value(value: Value) -> Option<Self>;
 }
-impl VMValue for () {
+impl VMType for () {
     fn vm_type<'a>(&self, _: &'a VM) -> &'a TcType {
         &unit_type_tc
     }
+}
+impl VMValue for () {
     fn push(self, _: &mut StackFrame) {
     }
     fn from_value(_: Value) -> Option<()> {
         Some(())
     }
 }
-impl VMValue for int {
+
+impl VMType for int {
     fn vm_type<'a>(&self, _: &'a VM) -> &'a TcType {
         &int_type_tc
     }
+}
+impl VMValue for int {
     fn push(self, stack: &mut StackFrame) {
         stack.push(Int(self));
     }
@@ -33,10 +43,12 @@ impl VMValue for int {
         }
     }
 }
-impl VMValue for f64 {
+impl VMType for f64 {
     fn vm_type<'a>(&self, _: &'a VM) -> &'a TcType {
         &float_type_tc
     }
+}
+impl VMValue for f64 {
     fn push(self, stack: &mut StackFrame) {
         stack.push(Float(self));
     }
@@ -47,10 +59,12 @@ impl VMValue for f64 {
         }
     }
 }
-impl VMValue for bool {
+impl VMType for bool {
     fn vm_type<'a>(&self, _: &'a VM) -> &'a TcType {
         &bool_type_tc
     }
+}
+impl VMValue for bool {
     fn push(self, stack: &mut StackFrame) {
         stack.push(Int(if self { 1 } else { 0 }));
     }
@@ -62,10 +76,12 @@ impl VMValue for bool {
         }
     }
 }
-impl <T: 'static + BoxAny + Clone> VMValue for Box<T> {
+impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
     fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
     }
+}
+impl <T: 'static + BoxAny + Clone> VMValue for Box<T> {
     fn push(self, stack: &mut StackFrame) {
         stack.push(Userdata(Data::new(self as Box<Any>)));
     }
@@ -76,10 +92,12 @@ impl <T: 'static + BoxAny + Clone> VMValue for Box<T> {
         }
     }
 }
-impl <T: 'static> VMValue for *mut T {
+impl <T: 'static> VMType for *mut T {
     fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
     }
+}
+impl <T: 'static> VMValue for *mut T {
     fn push(self, stack: &mut StackFrame) {
         stack.push(Userdata(Data::new(box self as Box<Any>)));
     }
@@ -94,6 +112,13 @@ impl <T: 'static> VMValue for *mut T {
 fn vm_type<'a, T: VMValue>(vm: &'a VM) -> &'a TcType {
     let t: T = unsafe { ::std::mem::uninitialized() };
     let typ = t.vm_type(vm);
+    unsafe { ::std::mem::forget(t) }
+    typ
+}
+
+fn make_type<'a, T: VMValue>(vm: &'a VM) -> TcType {
+    let t: T = unsafe { ::std::mem::uninitialized() };
+    let typ = t.make_type(vm);
     unsafe { ::std::mem::forget(t) }
     typ
 }
@@ -175,10 +200,13 @@ struct FunctionRef<Args, R> {
     value: uint
 }
 
-impl <Args, R> VMValue for FunctionRef<Args, R> {
+impl <Args, R> VMType for FunctionRef<Args, R> {
     fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType {
         vm.get_type::<|Args|:'static -> R>()
     }
+}
+
+impl <Args, R> VMValue for FunctionRef<Args, R> {
     fn push(self, stack: &mut StackFrame) {
         stack.push(Function(self.value));
     }
@@ -232,9 +260,34 @@ impl <R: VMValue> VMFunction for fn () -> R {
         r.push(&mut stack);
     }
 }
+impl <R: VMValue> VMType for fn () -> R {
+    fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType {
+        vm.get_type::<fn () -> R>()
+    }
+    fn make_type(&self, vm: &VM) -> TcType {
+        FunctionType(vec![], box make_type::<R>(vm))
+    }
+}
+
+impl <R: VMValue> VMValue for fn () -> R {
+    fn push(self, stack: &mut StackFrame) {
+    }
+    fn from_value(value: Value) -> Option<fn () -> R> {
+        None
+    }
+}
 
 macro_rules! make_vm_function(
     ($($args:ident),*) => (
+impl <$($args: VMValue),* , R: VMValue> VMType for fn ($($args),*) -> R {
+    fn vm_type<'a>(&self, vm: &'a VM) -> &'a TcType {
+        vm.get_type::<fn ($($args),*) -> R>()
+    }
+    fn make_type(&self, vm: &VM) -> TcType {
+        FunctionType(vec![$(make_type::<$args>(vm)),*], box make_type::<R>(vm))
+    }
+}
+
 impl <$($args : VMValue),*, R: VMValue> VMFunction for fn ($($args),*) -> R {
     fn unpack_and_call(mut stack: StackFrame, f: fn ($($args),*) -> R) {
         let mut i = 0;
@@ -268,12 +321,23 @@ macro_rules! vm_function(
     })
 )
 
+macro_rules! define_function(
+    ($vm: expr, $name: expr, $func: expr) => ({
+        let vm = $vm;
+        let (args, ret) = match $func.make_type(vm) {
+            FunctionType(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
+            _ => fail!()
+        };
+        vm.extern_function($name, args, ret, vm_function!($func))
+    })
+)
+
 #[cfg(test)]
 mod tests {
-    use super::{Get, Callable, VMFunction};
+    use super::{Get, Callable, VMType, VMFunction};
 
+    use typecheck::FunctionType;
     use vm::{VM, load_script, StackFrame};
-    use typecheck::{bool_type_tc};
     use std::io::BufReader;
 
     #[test]
@@ -320,10 +384,9 @@ fn id(x: Test) -> Test {
         struct Test {
             x: int
         }
-        let test_type = vm.register_type::<Test>("Test")
-            .unwrap_or_else(|_| fail!("Could not add type"))
-            .clone();
-        vm.extern_function("test", vec![test_type], bool_type_tc.clone(), vm_function!(test));
+        vm.register_type::<Test>("Test")
+            .unwrap_or_else(|_| fail!("Could not add type"));
+        define_function!(&mut vm, "test", test);
         let mut buffer = BufReader::new(s.as_bytes());
         load_script(&mut vm, &mut buffer)
             .unwrap_or_else(|err| fail!("{}", err));

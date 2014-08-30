@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt;
-use std::intrinsics::TypeId;
+use std::intrinsics::{TypeId, get_tydesc};
 use std::collections::HashMap;
 use std::any::Any;
 use parser::Parser;
@@ -229,7 +229,16 @@ impl VM {
     pub fn get_type<T: 'static>(&self) -> &TcType {
         let id = TypeId::of::<T>();
         self.typeids.find(&id)
-            .expect("Expected type to be inserted before get_type call")
+            .unwrap_or_else(|| {
+                let desc = unsafe { get_tydesc::<T>() };
+                let name = if desc.is_not_null() {
+                    unsafe { &*desc }.name
+                }
+                else {
+                    ""
+                };
+                fail!("Expected type {} to be inserted before get_type call", name)
+            })
     }
     pub fn find_type_info(&self, s: &str) -> Option<TypeInfo> {
         let n = self.intern(s);
