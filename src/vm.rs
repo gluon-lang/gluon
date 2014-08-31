@@ -9,26 +9,49 @@ use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, 
 use compiler::*;
 use interner::{Interner, InternedStr};
 
-pub struct Data<T> {
+pub struct Userdata<T> {
     pub data: Rc<RefCell<T>>
 }
-impl <T> Data<T> {
-    pub fn new(v: T) -> Data<T> {
-        Data { data: Rc::new(RefCell::new(v)) }
+impl <T> Userdata<T> {
+    pub fn new(v: T) -> Userdata<T> {
+        Userdata { data: Rc::new(RefCell::new(v)) }
     }
     fn ptr(&self) -> *const () {
         (&*self.data as *const RefCell<T>) as *const ()
     }
 }
-impl <T> PartialEq for Data<T> {
-    fn eq(&self, o: &Data<T>) -> bool {
+impl <T> PartialEq for Userdata<T> {
+    fn eq(&self, o: &Userdata<T>) -> bool {
         self.ptr() == o.ptr()
     }
 }
-impl <T> Clone for Data<T> {
-    fn clone(&self) -> Data<T> {
-        Data { data: self.data.clone() }
+impl <T> Clone for Userdata<T> {
+    fn clone(&self) -> Userdata<T> {
+        Userdata { data: self.data.clone() }
     }
+}
+
+#[deriving(Clone, PartialEq)]
+pub struct Data {
+    value: Rc<RefCell<Data_>>
+}
+
+impl Data {
+    fn new(tag: uint, fields: Vec<Value>) -> Data {
+        Data { value: Rc::new(RefCell::new(Data_ { tag: tag, fields: fields })) }
+    }
+}
+
+impl Deref<RefCell<Data_>> for Data {
+    fn deref(&self) -> &RefCell<Data_> {
+        & *self.value
+    }
+}
+
+#[deriving(Clone, PartialEq)]
+pub struct Data_ {
+    tag: uint,
+    fields: Vec<Value>
 }
 
 #[deriving(Clone, PartialEq)]
@@ -36,11 +59,11 @@ pub enum Value {
     Int(int),
     Float(f64),
     String(InternedStr),
-    Data(uint, Rc<RefCell<Vec<Value>>>),
+    Data(Data),
     Function(uint),
     Closure(uint, Rc<RefCell<Vec<Value>>>),
     TraitObject(uint, Rc<Value>),
-    Userdata(Data<Box<Any + 'static>>)
+    Userdata(Userdata<Box<Any + 'static>>)
 }
 
 type Dict = Vec<uint>;
@@ -51,7 +74,10 @@ impl fmt::Show for Value {
             Int(i) => write!(f, "{}", i),
             Float(x) => write!(f, "{}f", x),
             String(x) => write!(f, "\"{}\"", x),
-            Data(tag, ref ptr) => write!(f, "{{{} {}}}", tag, ptr.borrow()),
+            Data(ref data) => {
+                let d = data.borrow();
+                write!(f, "{{{} {}}}", d.tag, d.fields)
+            }
             Function(i) => write!(f, "<function {}>", i),
             Closure(fi, ref upvars) => write!(f, "<Closure {} {}>", fi, upvars.borrow()),
             TraitObject(fns, ref o) => write!(f, "<{} {}>", fns, o),
@@ -369,13 +395,13 @@ impl VM {
                         fields.push(stack.pop());
                     }
                     fields.reverse();
-                    let d = Data(tag, Rc::new(RefCell::new(fields)));
+                    let d = Data(Data::new(tag, fields));
                     stack.push(d);
                 }
                 GetField(i) => {
                     match stack.pop() {
-                        Data(_, fields) => {
-                            let v = (*fields.borrow())[i].clone();
+                        Data(data) => {
+                            let v = data.borrow().fields[i].clone();
                             stack.push(v);
                         }
                         x => fail!("GetField on {}", x)
@@ -385,23 +411,23 @@ impl VM {
                     let value = stack.pop();
                     let data = stack.pop();
                     match data {
-                        Data(_, fields) => {
-                            *(*fields.borrow_mut()).get_mut(i) = value;
+                        Data(data) => {
+                            *data.borrow_mut().fields.get_mut(i) = value;
                         }
                         _ => fail!()
                     }
                 }
                 TestTag(tag) => {
                     let x = match *stack.top() {
-                        Data(t, _) => if t == tag { 1 } else { 0 },
+                        Data(ref data) => if data.borrow().tag == tag { 1 } else { 0 },
                         _ => fail!()
                     };
                     stack.push(Int(x));
                 }
                 Split => {
                     match stack.pop() {
-                        Data(_, fields) => {
-                            for field in (*fields.borrow()).iter() {
+                        Data(data) => {
+                            for field in data.borrow().fields.iter() {
                                 stack.push(field.clone());
                             }
                         }
@@ -437,8 +463,8 @@ impl VM {
                     let index = stack.pop();
                     let array = stack.pop();
                     match (array, index) {
-                        (Data(_, array), Int(index)) => {
-                            let v = (*array.borrow_mut())[index as uint].clone();
+                        (Data(array), Int(index)) => {
+                            let v = array.borrow_mut().fields[index as uint].clone();
                             stack.push(v);
                         }
                         (x, y) => fail!("{} {}", x, y)
@@ -449,8 +475,8 @@ impl VM {
                     let index = stack.pop();
                     let array = stack.pop();
                     match (array, index) {
-                        (Data(_, array), Int(index)) => {
-                            *(*array.borrow_mut()).get_mut(index as uint) = value;
+                        (Data(array), Int(index)) => {
+                            *array.borrow_mut().fields.get_mut(index as uint) = value;
                         }
                         _ => fail!()
                     }
@@ -492,8 +518,8 @@ impl VM {
                 }
                 PushDictionaryMember(trait_index, function_offset) => {
                     let func = match stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())  {
-                        Some(Data(_, dict)) => {
-                            match (*dict.borrow())[trait_index] {
+                        Some(Data(dict)) => {
+                            match dict.borrow().fields[trait_index] {
                                 Function(i) => Function(i + function_offset),
                                 _ => fail!()
                             }
@@ -506,7 +532,7 @@ impl VM {
                     let dict = stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())
                         .expect("Expected dictionary in upvalues");
                     let dict = match dict {
-                        Data(_, fields) => (*fields.borrow())[index].clone(),
+                        Data(data) => data.borrow().fields[index].clone(),
                         _ => fail!()
                     };
                     stack.push(dict);
@@ -571,8 +597,8 @@ fn binop_float(stack: &mut StackFrame, f: |f64, f64| -> f64) {
 
 fn array_length(_: &VM, mut stack: StackFrame) {
     match stack.pop() {
-        Data(_, values) => {
-            let i = values.borrow().len();
+        Data(values) => {
+            let i = values.borrow().fields.len();
             stack.push(Int(i as int));
         }
         x => fail!("{}", x)
@@ -582,8 +608,8 @@ fn array_push(_: &VM, mut stack: StackFrame) {
     let value = stack.pop();
     let data = stack.pop();
     match data {
-        Data(_, values) => {
-            values.borrow_mut().push(value);
+        Data(values) => {
+            values.borrow_mut().fields.push(value);
         }
         _ => fail!()
     }
@@ -659,8 +685,6 @@ pub fn run_buffer_main(buffer: &mut Buffer) -> Result<(VM, Option<Value>), Strin
 #[cfg(test)]
 mod tests {
     use super::{Data, Int, String, run_main, run_main2};
-    use std::rc::Rc;
-    use std::cell::RefCell;
     ///Test that the stack is adjusted correctly after executing expressions as statements
     #[test]
     fn stack_for_block() {
@@ -736,7 +760,7 @@ impl Add for int {
 ";
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(11), Int(5)])))));
+        assert_eq!(value, Some(Data(Data::new(0, vec![Int(11), Int(5)]))));
     }
     #[test]
     fn pass_function_value() {
@@ -768,7 +792,7 @@ fn main() -> [int] {
 ";
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(1), Int(2), Int(33)])))));
+        assert_eq!(value, Some(Data(Data::new(0, vec![Int(1), Int(2), Int(33)]))));
     }
     #[test]
     fn array_assign() {
@@ -821,7 +845,7 @@ fn main() -> [int] {
 ";
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(2), Int(4), Int(6)])))));
+        assert_eq!(value, Some(Data(Data::new(0, vec![Int(2), Int(4), Int(6)]))));
     }
     #[test]
     fn trait_object() {
@@ -923,7 +947,7 @@ fn main() -> Pair {
 ";
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(0), Int(1)])))));//false
+        assert_eq!(value, Some(Data(Data::new(0, vec![Int(0), Int(1)]))));//false
     }
     #[test]
     fn call_generic_constrained_multi_parameters_function() {
@@ -986,7 +1010,7 @@ fn main() -> Pair {
 ";
         let value = run_main(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(0, Rc::new(RefCell::new(vec![Int(1), Int(0)])))));
+        assert_eq!(value, Some(Data(Data::new(0, vec![Int(1), Int(0)]))));
     }
 
     #[test]

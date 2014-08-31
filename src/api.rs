@@ -1,5 +1,5 @@
 #![macro_escape]
-use vm::{VM, Value, Int, Float, Function, Userdata, StackFrame, Data};
+use vm::{VM, Value, Int, Float, Function, Userdata, StackFrame};
 use typecheck::{TcType, Typed, FunctionType, unit_type_tc, bool_type_tc, int_type_tc, float_type_tc};
 use compiler::CallGlobal;
 use std::any::{Any, AnyRefExt};
@@ -84,7 +84,7 @@ impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
 }
 impl <T: 'static + BoxAny + Clone> VMValue for Box<T> {
     fn push(self, stack: &mut StackFrame) {
-        stack.push(Userdata(Data::new(self as Box<Any>)));
+        stack.push(Userdata(Userdata::new(self as Box<Any>)));
     }
     fn from_value(value: Value) -> Option<Box<T>> {
         match value {
@@ -100,7 +100,7 @@ impl <T: 'static> VMType for *mut T {
 }
 impl <T: 'static> VMValue for *mut T {
     fn push(self, stack: &mut StackFrame) {
-        stack.push(Userdata(Data::new(box self as Box<Any>)));
+        stack.push(Userdata(Userdata::new(box self as Box<Any>)));
     }
     fn from_value(value: Value) -> Option<*mut T> {
         match value {
