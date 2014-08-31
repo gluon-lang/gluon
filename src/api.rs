@@ -128,9 +128,9 @@ trait Get<'a> {
     fn get_function(vm: &'a mut VM, name: &str) -> Option<Self>;
 }
 macro_rules! make_get(
-    ($($args:ident),* -> $result:ident) => (
-impl <'a, $($args : VMValue),*, $result: VMValue> Get<'a> for Callable<'a, ($($args),*), $result> {
-    fn get_function(vm: &'a mut VM, name: &str) -> Option<Callable<'a, ($($args),*), $result>> {
+    ($($args:ident),*) => (
+impl <'a, $($args : VMValue,)* R: VMValue> Get<'a> for Callable<'a, ($($args,)*), R> {
+    fn get_function(vm: &'a mut VM, name: &str) -> Option<Callable<'a, ($($args,)*), R>> {
         let value = match vm.get_global(name) {
             Some((function_ref, global)) => {
                 match global.type_of() {
@@ -138,8 +138,8 @@ impl <'a, $($args : VMValue),*, $result: VMValue> Get<'a> for Callable<'a, ($($a
                         let mut arg_iter = args.iter();
                         let ok = $({
                             arg_iter.next().unwrap() == vm_type::<$args>(vm)
-                            })&&*;
-                        if arg_iter.next().is_none() && ok && **return_type == *vm_type::<$result>(vm) {
+                            } &&)* true;
+                        if arg_iter.next().is_none() && ok && **return_type == *vm_type::<R>(vm) {
                             Some(FunctionRef { value: function_ref })
                         }
                         else {
@@ -159,39 +159,13 @@ impl <'a, $($args : VMValue),*, $result: VMValue> Get<'a> for Callable<'a, ($($a
 }
 ))
 
-make_get!(A, B -> R)
-
-impl <'a, T: VMValue, R: VMValue> Get<'a> for Callable<'a, (T,), R> {
-    fn get_function(vm: &'a mut VM, name: &str) -> Option<Callable<'a, (T,), R>> {
-        let value = match vm.get_global(name) {
-            Some((function_ref, global)) => {
-                match global.type_of() {
-                    &FunctionType(ref args, ref return_type) => {
-                        if args.len() == 1 {
-                            let ok = args[0] == *vm_type::<T>(vm);
-                            if ok && **return_type == *vm_type::<R>(vm) {
-                                Some(FunctionRef { value: function_ref })
-                            }
-                            else {
-                                None
-                            }
-                        }
-                        else {
-                            None
-                        }
-                    }
-                    _ => None
-                }
-            }
-            None => None
-        };
-        match value {
-            Some(value) => Some(Callable { vm: vm, value: value }),
-            None => None
-        }
-    }
-}
-
+make_get!()
+make_get!(A)
+make_get!(A, B)
+make_get!(A, B, C)
+make_get!(A, B, C, D)
+make_get!(A, B, C, D, E)
+make_get!(A, B, C, D, E, F, G)
 
 pub struct Callable<'a, Args, R> {
     vm: &'a mut VM,
@@ -269,7 +243,7 @@ impl <$($args: VMValue,)* R: VMValue> VMType for fn ($($args),*) -> R {
 }
 
 impl <$($args : VMValue,)* R: VMValue> VMFunction for fn ($($args),*) -> R {
-    #[allow(non_snake_case)]
+    #[allow(non_snake_case, unused_mut, dead_assignment, unused_variable)]
     fn unpack_and_call(mut stack: StackFrame, f: fn ($($args),*) -> R) {
         let mut i = 0u;
         $(let $args = {
@@ -277,7 +251,6 @@ impl <$($args : VMValue,)* R: VMValue> VMFunction for fn ($($args),*) -> R {
             i += 1;
             x
         });*;
-        drop(i);//Avoid unused warnings
         let r = f($($args),*);
         r.push(&mut stack);
     }
@@ -321,7 +294,7 @@ macro_rules! define_function(
 
 #[cfg(test)]
 mod tests {
-    use super::{Get, Callable, VMType, VMFunction};
+    use super::{Get, Callable, VMType, unpack_and_call};
 
     use typecheck::FunctionType;
     use vm::{VM, load_script, StackFrame};
