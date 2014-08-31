@@ -4,3 +4,14 @@ name = "EmbedLang"
 version = "0.0.1"
 authors = ["Markus <marwes91@gmail.com>"]
 
+
+[lib]
+
+name = "EmbedLang"
+path = "src/lib.rs"
+
+
+[[bin]]
+
+name = "repl"
+path = "src/main.rs"
