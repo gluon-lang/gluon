@@ -70,7 +70,9 @@ pub struct CompiledFunction {
 #[deriving(PartialEq, Clone)]
 pub struct TraitFunctions {
     //The where the first function of the implemented trait is at
-    pub index: uint
+    pub index: uint,
+    pub trait_name: InternedStr,
+    pub impl_type: TcType
 }
 
 pub struct FunctionEnv<'a> {
@@ -334,9 +336,13 @@ impl <'a> Compiler<'a> {
             .map(|f| self.compile_function(f))
             .collect();
         let mut trait_functions = Vec::new();
-        let offset = self.globals.next_function_index();
+        let offset = self.globals.next_function_index() - module.next_function_index();
         for imp in module.impls.iter() {
-            trait_functions.push(TraitFunctions { index: offset + functions.len() });
+            trait_functions.push(TraitFunctions {
+                index: offset + functions.len(),
+                trait_name: imp.trait_name.id().clone(),
+                impl_type: imp.typ.clone()
+            });
             for f in imp.functions.iter() {
                 functions.push(self.compile_function(f));
             }
@@ -365,7 +371,7 @@ impl <'a> Compiler<'a> {
         let constraints = variables.iter()
             .map(|constraints| {
                 let cs = constraints.constraints.iter()
-                    .map(|typ| from_generic_type(variables, typ))
+                    .map(|typ| from_constrained_type(variables, typ))
                     .collect();
                 Constraints { type_variable: constraints.type_variable, constraints: cs }
             }
@@ -789,7 +795,7 @@ impl <'a> Compiler<'a> {
                                 }
                                 fail!("{}   {}\n{}   {}", trait_func_type, id, function.dictionary, types)
                             }
-                            _ => fail!("ICE")
+                            x => fail!("ICE {}", x)
                         }
                     }
                 }

@@ -5,7 +5,7 @@ use std::intrinsics::{TypeId, get_tydesc};
 use std::collections::HashMap;
 use std::any::Any;
 use parser::Parser;
-use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType};
+use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType, match_types};
 use compiler::*;
 use interner::{Interner, InternedStr};
 
@@ -122,10 +122,16 @@ pub struct VM {
 
 impl CompilerEnv for VM {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
-        self.globals.iter()
-            .enumerate()
-            .find(|&(_, f)| f.id == *id)
-            .map(|(i, f)| Global(i, f.typ.constraints.as_slice(), &f.typ.value))
+        self.type_infos.traits.iter()
+            .flat_map(|(_, ref trait_fns)| trait_fns.iter())
+            .find(|tuple| tuple.ref0() == id)
+            .map(|tuple| TraitFunction(&tuple.ref1().value))
+            .or_else(|| {
+                self.globals.iter()
+                    .enumerate()
+                    .find(|&(_, f)| f.id == *id)
+                    .map(|(i, f)| Global(i, f.typ.constraints.as_slice(), &f.typ.value))
+            })
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
         (*self).find_field(struct_, field)
@@ -143,16 +149,37 @@ impl CompilerEnv for VM {
         }
     }
     fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
-        fail!("{} {}", trait_name, trait_type)
+        self.trait_indexes.iter()
+            .find(|func| func.trait_name == *trait_name && match_types(&func.impl_type, trait_type))
+            .map(|func| func.index)
     }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<uint>> {
-        self.globals.iter()
-            .enumerate()
-            .find(|&(_, f)| f.id == *id && f.typ.value == *typ)
-            .map(|(i, f)| TypeResult { constraints: f.typ.constraints.as_slice(), typ: &f.typ.value, value: i })
+    fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<uint>> {
+        for (trait_name, imp) in self.type_infos.traits.iter() {
+            match (self.find_object_function(trait_name, fn_name), self.find_trait_offset(trait_name, typ)) {
+                (Some(function_offset), Some(trait_offset)) => {
+                    debug!("{} {} {}", function_offset, trait_offset, self.globals.len());
+                    let global_index = function_offset + trait_offset;
+                    let global = &self.globals[global_index];
+                    return Some(TypeResult {
+                        constraints: global.typ.constraints.as_slice(),
+                        typ: &global.typ.value,
+                        value: global_index
+                    })
+                }
+                _ => ()
+            }
+        }
+        None
     }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
-        fail!()
+    fn find_object_function(&self, trait_name: &InternedStr, fn_name: &InternedStr) -> Option<uint> {
+        self.type_infos.traits
+            .find(trait_name)
+            .and_then(|trait_info| 
+                trait_info.iter()
+                    .enumerate()
+                    .find(|&(_, tup)| tup.ref0() == fn_name)
+                    .map(|(i, _)| i)
+            )
     }
     fn next_function_index(&self) -> uint {
         self.globals.len()
@@ -161,9 +188,16 @@ impl CompilerEnv for VM {
 
 impl TypeEnv for VM {
     fn find_type(&self, id: &InternedStr) -> Option<&Constrained<TcType>> {
-        self.globals.iter()
-            .find(|f| f.id == *id)
-            .map(|f| &f.typ)
+        //Look for the function in the traits first so that we do not accidentaly get the type of
+        //a function that is implemented
+        self.type_infos.traits.iter()
+            .flat_map(|(_, ref trait_fns)| trait_fns.iter())
+            .find(|tuple| tuple.ref0() == id)
+            .map(|tuple| tuple.ref1())
+            .or_else(|| self.globals.iter()
+                .find(|f| f.id == *id)
+                .map(|f| &f.typ)
+            )
     }
     fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
         self.type_infos.find_type_info(id)
@@ -672,19 +706,22 @@ pub fn run_main2(s: &str) -> Result<(VM, Option<Value>), String> {
 pub fn run_buffer_main(buffer: &mut Buffer) -> Result<(VM, Option<Value>), String> {
     let mut vm = VM::new();
     try!(load_script(&mut vm, buffer));
-    let v = {
-        let func = match vm.globals.iter().find(|g| g.id.as_slice() == "main") {
-            Some(f) => f,
-            None => return Err("Undefined main function".to_string())
-        };
-        vm.run_function(func)
-    };
+    let v = try!(run_function(&vm, "main"));
     Ok((vm, v))
+}
+
+pub fn run_function(vm: &VM, name: &str) -> Result<Option<Value>, String> {
+    let func = match vm.globals.iter().find(|g| g.id.as_slice() == name) {
+        Some(f) => f,
+        None => return Err(format!("Undefined function {}", name))
+    };
+    Ok(vm.run_function(func))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Data, Int, String, run_main, run_main2};
+    use super::{VM, Data, Int, String, run_main, run_main2, run_function, load_script};
+    use std::io::BufReader;
     ///Test that the stack is adjusted correctly after executing expressions as statements
     #[test]
     fn stack_for_block() {
@@ -1022,6 +1059,53 @@ r#"fn main() -> string {
         let (vm, value) = run_main2(text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(String(vm.intern("Hello World"))));
+    }
+    #[test]
+    fn call_trait_from_another_script() {
+        let mut vm = VM::new();
+        {
+            let text = 
+r"
+trait Eq {
+    fn eq(l: Self, r: Self) -> bool;
+}
+impl Eq for int {
+    fn eq(l: int, r: int) -> bool {
+        l == r
+    }
+}
+impl Eq for float {
+    fn eq(l: float, r: float) -> bool {
+        l == r
+    }
+}
+";
+            let mut buffer = BufReader::new(text.as_bytes());
+            load_script(&mut vm, &mut buffer)
+                .unwrap_or_else(|e| fail!("{}", e));
+        }
+        {
+            let text = 
+r"
+fn test<T: Eq>(x: T, y: T) -> bool {
+    eq(x, y)
+}
+fn main() -> bool {
+    if eq(1.0, 1.0) {
+        test(13, 13)
+    }
+    else {
+        false
+    }
+}
+";
+            let mut buffer = BufReader::new(text.as_bytes());
+            load_script(&mut vm, &mut buffer)
+                .unwrap_or_else(|e| fail!("{}", e));
+        }
+        let value = run_function(&vm, "main")
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(1)));
     }
 }
 
