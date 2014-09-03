@@ -8,6 +8,7 @@ use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType, match_types};
 use compiler::*;
 use interner::{Interner, InternedStr};
+use gc::{Gc, Traverseable};
 
 pub struct Userdata<T> {
     pub data: Rc<RefCell<T>>
@@ -31,20 +32,35 @@ impl <T> Clone for Userdata<T> {
     }
 }
 
-#[deriving(Clone, PartialEq)]
+#[deriving(Clone)]
 pub struct Data {
-    value: Rc<RefCell<Data_>>
+    value: *mut Data_
 }
 
 impl Data {
-    fn new(tag: uint, fields: Vec<Value>) -> Data {
-        Data { value: Rc::new(RefCell::new(Data_ { tag: tag, fields: fields })) }
+
+    fn borrow(&self) -> &Data_ {
+        & **self
+    }
+    fn borrow_mut(&self) -> &mut Data_ {
+        unsafe { ::std::mem::transmute(& **self) }
     }
 }
 
-impl Deref<RefCell<Data_>> for Data {
-    fn deref(&self) -> &RefCell<Data_> {
-        & *self.value
+impl PartialEq for Data {
+    fn eq(&self, other: &Data) -> bool {
+        self.tag == other.tag && self.fields == other.fields
+    }
+}
+
+impl Deref<Data_> for Data {
+    fn deref(&self) -> &Data_ {
+        unsafe { &*self.value }
+    }
+}
+impl DerefMut<Data_> for Data {
+    fn deref_mut(&mut self) -> &mut Data_ {
+        unsafe { &mut *self.value }
     }
 }
 
@@ -64,6 +80,32 @@ pub enum Value {
     Closure(uint, Rc<RefCell<Vec<Value>>>),
     TraitObject(uint, Rc<Value>),
     Userdata(Userdata<Box<Any + 'static>>)
+}
+
+impl Traverseable<Data_> for Data_ {
+    fn traverse(&mut self, func: |&mut Data_|) {
+        for field in self.fields.mut_iter() {
+            match *field {
+                Data(ref mut data) => {
+                    func(&mut **data);
+                }
+                _ => ()
+            }
+        }
+    }
+}
+
+impl Traverseable<Data_> for Vec<Value> {
+    fn traverse(&mut self, func: |&mut Data_|) {
+        for value in self.mut_iter() {
+            match *value {
+                Data(ref mut data) => {
+                    func(&mut **data);
+                }
+                _ => ()
+            }
+        }
+    }
 }
 
 type Dict = Vec<uint>;
@@ -117,7 +159,8 @@ pub struct VM {
     trait_indexes: Vec<TraitFunctions>,
     type_infos: TypeInfos,
     typeids: HashMap<TypeId, TcType>,
-    interner: RefCell<Interner>
+    interner: RefCell<Interner>,
+    gc: RefCell<Gc<Data_>>
 }
 
 impl CompilerEnv for VM {
@@ -258,7 +301,8 @@ impl VM {
             trait_indexes: Vec::new(),
             type_infos: TypeInfos::new(),
             typeids: HashMap::new(),
-            interner: RefCell::new(Interner::new())
+            interner: RefCell::new(Interner::new()),
+            gc: RefCell::new(Gc::new())
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
@@ -348,6 +392,13 @@ impl VM {
         self.interner.borrow_mut().intern(s)
     }
 
+    fn new_data(&self, tag: uint, fields: Vec<Value>) -> Value {
+        Data(Data { value: self.gc.borrow_mut().alloc(Data_ { tag: tag, fields: fields })})
+    }
+    fn new_data_and_collect(&self, roots: &mut Vec<Value>, tag: uint, fields: Vec<Value>) -> Value {
+        Data(Data { value: self.gc.borrow_mut().alloc_and_collect(roots, Data_ { tag: tag, fields: fields })})
+    }
+
     fn execute_function(&self, stack: StackFrame, function: &Global) {
         match function.value {
             Extern(func) => {
@@ -429,7 +480,7 @@ impl VM {
                         fields.push(stack.pop());
                     }
                     fields.reverse();
-                    let d = Data(Data::new(tag, fields));
+                    let d = self.new_data(tag, fields);
                     stack.push(d);
                 }
                 GetField(i) => {
@@ -795,9 +846,9 @@ impl Add for int {
     }
 }
 ";
-        let value = run_main(text)
+        let (vm, value) = run_main2(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(Data::new(0, vec![Int(11), Int(5)]))));
+        assert_eq!(value, Some(vm.new_data(0, vec![Int(11), Int(5)])));
     }
     #[test]
     fn pass_function_value() {
@@ -827,9 +878,9 @@ fn main() -> [int] {
     [1,2, x[2] + 3]
 }
 ";
-        let value = run_main(text)
+        let (vm, value) = run_main2(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(Data::new(0, vec![Int(1), Int(2), Int(33)]))));
+        assert_eq!(value, Some(vm.new_data(0, vec![Int(1), Int(2), Int(33)])));
     }
     #[test]
     fn array_assign() {
@@ -880,9 +931,9 @@ fn main() -> [int] {
     map_int_array(xs, \x -> x * 2)
 }
 ";
-        let value = run_main(text)
+        let (vm, value) = run_main2(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(Data::new(0, vec![Int(2), Int(4), Int(6)]))));
+        assert_eq!(value, Some(vm.new_data(0, vec![Int(2), Int(4), Int(6)])));
     }
     #[test]
     fn trait_object() {
@@ -982,9 +1033,9 @@ fn main() -> Pair {
     Pair(x, y)
 }
 ";
-        let value = run_main(text)
+        let (vm, value) = run_main2(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(Data::new(0, vec![Int(0), Int(1)]))));//false
+        assert_eq!(value, Some(vm.new_data(0, vec![Int(0), Int(1)])));
     }
     #[test]
     fn call_generic_constrained_multi_parameters_function() {
@@ -1045,9 +1096,9 @@ fn main() -> Pair {
     Pair(x, y)
 }
 ";
-        let value = run_main(text)
+        let (vm, value) = run_main2(text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(Data(Data::new(0, vec![Int(1), Int(0)]))));
+        assert_eq!(value, Some(vm.new_data(0, vec![Int(1), Int(0)])));
     }
 
     #[test]

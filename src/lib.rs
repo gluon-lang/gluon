@@ -19,4 +19,5 @@ pub mod typecheck;
 pub mod compiler;
 pub mod vm;
 pub mod api;
+mod gc;
 
