@@ -77,21 +77,14 @@ pub enum Value {
     String(InternedStr),
     Data(Data),
     Function(uint),
-    Closure(uint, Rc<RefCell<Vec<Value>>>),
-    TraitObject(uint, Rc<Value>),
+    Closure(Data),
+    TraitObject(Data),
     Userdata(Userdata<Box<Any + 'static>>)
 }
 
 impl Traverseable<Data_> for Data_ {
     fn traverse(&mut self, func: |&mut Data_|) {
-        for field in self.fields.mut_iter() {
-            match *field {
-                Data(ref mut data) => {
-                    func(&mut **data);
-                }
-                _ => ()
-            }
-        }
+        self.fields.traverse(func);
     }
 }
 
@@ -99,9 +92,9 @@ impl Traverseable<Data_> for Vec<Value> {
     fn traverse(&mut self, func: |&mut Data_|) {
         for value in self.mut_iter() {
             match *value {
-                Data(ref mut data) => {
-                    func(&mut **data);
-                }
+                Data(ref mut data) => func(&mut **data),
+                Closure(ref mut data) => func(&mut **data),
+                TraitObject(ref mut data) => func(&mut **data),
                 _ => ()
             }
         }
@@ -121,8 +114,8 @@ impl fmt::Show for Value {
                 write!(f, "{{{} {}}}", d.tag, d.fields)
             }
             Function(i) => write!(f, "<function {}>", i),
-            Closure(fi, ref upvars) => write!(f, "<Closure {} {}>", fi, upvars.borrow()),
-            TraitObject(fns, ref o) => write!(f, "<{} {}>", fns, o),
+            Closure(ref closure) => write!(f, "<Closure {} {}>", closure.tag, closure.fields),
+            TraitObject(ref object) => write!(f, "<{} {}>", object.tag, object.fields),
             Userdata(ref ptr) => write!(f, "<Userdata {}>", &*ptr.data.borrow() as *const Box<Any>)
         }
     }
@@ -250,10 +243,10 @@ impl TypeEnv for VM {
 pub struct StackFrame<'a, 'b> {
     stack: &'a mut Vec<Value>,
     offset: uint,
-    upvars: Option<&'b RefCell<Vec<Value>>>
+    upvars: &'b mut [Value]
 }
 impl <'a, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: &'a mut Vec<Value>, args: uint, upvars: Option<&'b RefCell<Vec<Value>>>) -> StackFrame<'a, 'b> {
+    pub fn new(v: &'a mut Vec<Value>, args: uint, upvars: &'b mut [Value]) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
@@ -352,7 +345,7 @@ impl VM {
     pub fn run_function(&self, cf: &Global) -> Option<Value> {
         let mut stack = Vec::new();
         {
-            let frame = StackFrame::new(&mut stack, 0, None);
+            let frame = StackFrame::new(&mut stack, 0, [].as_mut_slice());
             self.execute_function(frame, cf);
         }
         stack.pop()
@@ -361,7 +354,7 @@ impl VM {
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value> {
         let mut stack = Vec::new();
         {
-            let frame = StackFrame::new(&mut stack, 0, None);
+            let frame = StackFrame::new(&mut stack, 0, [].as_mut_slice());
             self.execute(frame, instructions);
         }
         stack.pop()
@@ -395,8 +388,8 @@ impl VM {
     fn new_data(&self, tag: uint, fields: Vec<Value>) -> Value {
         Data(Data { value: self.gc.borrow_mut().alloc(Data_ { tag: tag, fields: fields })})
     }
-    fn new_data_and_collect(&self, roots: &mut Vec<Value>, tag: uint, fields: Vec<Value>) -> Value {
-        Data(Data { value: self.gc.borrow_mut().alloc_and_collect(roots, Data_ { tag: tag, fields: fields })})
+    fn new_data_and_collect(&self, roots: &mut Vec<Value>, tag: uint, fields: Vec<Value>) -> Data {
+        Data { value: self.gc.borrow_mut().alloc_and_collect(roots, Data_ { tag: tag, fields: fields })}
     }
 
     fn execute_function(&self, stack: StackFrame, function: &Global) {
@@ -436,28 +429,20 @@ impl VM {
                 }
                 CallGlobal(args) => {
                     let function_index = stack.len() - 1 - args;
-                    let (function, upvars) = match stack.get(function_index) {
-                        &Function(index) => {
-                            (&self.globals[index], None)
-                        }
-                        &Closure(index, ref upvars) => {
-                            (&self.globals[index], Some(upvars.clone()))
-                        }
-                        x => fail!("Cannot call {}", x)
-                    };
                     {
+                        let mut f = stack.get(function_index).clone();
+                        let (function, upvars) = match f {
+                            Function(index) => {
+                                (&self.globals[index], [].as_mut_slice())
+                            }
+                            Closure(ref mut closure) => {
+                                (&self.globals[closure.tag], closure.fields.as_mut_slice())
+                            }
+                            x => fail!("Cannot call {}", x)
+                        };
                         debug!("Call {} :: {}", function.id, function.typ);
-                        match upvars {
-                            Some(upvars) => {
-                                let ref u = *upvars;
-                                let new_stack = StackFrame::new(stack.stack, args, Some(u));
-                                self.execute_function(new_stack, function);
-                            }
-                            None => {
-                                let new_stack = StackFrame::new(stack.stack, args, None);
-                                self.execute_function(new_stack, function);
-                            }
-                        }
+                        let new_stack = StackFrame::new(stack.stack, args, upvars);
+                        self.execute_function(new_stack, function);
                     }
                     if stack.len() > function_index + args {
                         //Value was returned
@@ -511,8 +496,8 @@ impl VM {
                 }
                 Split => {
                     match stack.pop() {
-                        Data(data) => {
-                            for field in data.borrow().fields.iter() {
+                        Data(mut data) => {
+                            for field in data.fields.iter() {
                                 stack.push(field.clone());
                             }
                         }
@@ -572,24 +557,26 @@ impl VM {
                         let v = stack.pop();
                         upvars.push(v);
                     }
-                    stack.push(Closure(fi, Rc::new(RefCell::new(upvars))));
+                    let closure = Closure(self.new_data_and_collect(stack.stack, fi, upvars));
+                    stack.push(closure);
                 }
                 PushUpVar(i) => {
-                    let v = (*stack.upvars.unwrap().borrow())[i].clone();
+                    let v = stack.upvars[i].clone();
                     stack.push(v);
                 }
                 StoreUpVar(i) => {
                     let v = stack.pop();
-                    *(*stack.upvars.unwrap().borrow_mut()).get_mut(i) = v;
+                    stack.upvars[i] = v;
                 }
                 ConstructTraitObject(i) => {
                     let v = stack.pop();
-                    stack.push(TraitObject(i, Rc::new(v)));
+                    let object = TraitObject(self.new_data_and_collect(stack.stack, i, vec![v]));
+                    stack.push(object);
                 }
                 PushTraitFunction(i) => {
                     let func = match stack.top() {
-                        &TraitObject(fi, _) => {
-                            Function(fi + i)
+                        &TraitObject(ref object) => {
+                            Function(object.tag + i)
                         }
                         _ => fail!()
                     };
@@ -597,13 +584,13 @@ impl VM {
                 }
                 Unpack => {
                     match stack.pop() {
-                        TraitObject(_, obj) => stack.push((*obj).clone()),
+                        TraitObject(ref obj) => stack.push(obj.fields[0].clone()),
                         _ => fail!()
                     }
                 }
                 PushDictionaryMember(trait_index, function_offset) => {
-                    let func = match stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())  {
-                        Some(Data(dict)) => {
+                    let func = match stack.upvars[0].clone()  {
+                        Data(dict) => {
                             match dict.borrow().fields[trait_index] {
                                 Function(i) => Function(i + function_offset),
                                 _ => fail!()
@@ -614,8 +601,7 @@ impl VM {
                     stack.push(func);
                 }
                 PushDictionary(index) => {
-                    let dict = stack.upvars.map(|upvars| (*upvars.borrow())[0].clone())
-                        .expect("Expected dictionary in upvalues");
+                    let dict = stack.upvars[0].clone();
                     let dict = match dict {
                         Data(data) => data.borrow().fields[index].clone(),
                         _ => fail!()

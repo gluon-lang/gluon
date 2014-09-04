@@ -197,7 +197,7 @@ impl <'a, A: VMValue, R: VMValue> Callable<'a, (A,), R> {
     pub fn call(&mut self, a: A) -> R {
         let mut vec = Vec::new();
         {
-            let mut stack = StackFrame::new(&mut vec, 0, None);
+            let mut stack = StackFrame::new(&mut vec, 0, [].as_mut_slice());
             self.value.push(&mut stack);
             a.push(&mut stack);
             self.vm.execute(stack, &[CallGlobal(1)]);
@@ -210,7 +210,7 @@ impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
     pub fn call2(&mut self, a: A, b: B) -> R {
         let mut vec = Vec::new();
         {
-            let mut stack = StackFrame::new(&mut vec, 0, None);
+            let mut stack = StackFrame::new(&mut vec, 0, [].as_mut_slice());
             self.value.push(&mut stack);
             a.push(&mut stack);
             b.push(&mut stack);
