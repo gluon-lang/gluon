@@ -11,7 +11,7 @@ pub struct Gc<T> {
 
 #[deriving(Clone, PartialEq)]
 struct GcHeader<T> {
-    next: *mut GcHeader<T>,
+    next: Option<Box<GcHeader<T>>>,
     marked: bool,
     value: T
 }
@@ -33,15 +33,9 @@ impl <T: Traverseable<T>> Gc<T> {
         self.alloc(value)
     }
     pub fn alloc(&mut self, value: T) -> *mut T {
-        let next_ptr: *mut GcHeader<T> = match self.values {
-            Some(ref ptr) => unsafe { mem::transmute(&**ptr) },
-            None => ptr::mut_null()
-        };
-        let new = Some(box GcHeader { next: next_ptr, marked: false, value: value });
-        let next = mem::replace(&mut self.values, new);
+        self.values = Some(box GcHeader { next: self.values.take(), marked: false, value: value });
         self.allocated_objects += 1;
         unsafe {
-            mem::forget(next);
             &mut self.values.as_mut().unwrap().value
         }
     }
@@ -66,16 +60,18 @@ impl <T: Traverseable<T>> Gc<T> {
             header.value.traverse(|child| self.mark(child));
         }
     }
-    fn sweep<'a>(&mut self) {
+
+    fn sweep(&mut self) {
+        //Usage of unsafe are sadly needed to circumvent the borrow checker
         let mut first = self.values.take();
         {
             let mut maybe_header = &mut first;
             loop {
+                let current: &mut Option<Box<GcHeader<T>>> = unsafe { mem::transmute(&*maybe_header) };
                 maybe_header = match *maybe_header {
                     Some(ref mut header) => {
                         if !header.marked {
-                            let next: Box<GcHeader<T>> = unsafe { mem::transmute(header.next) };
-                            let unreached = mem::replace(header, next);
+                            let unreached = mem::replace(current, header.next.take());
                             self.free(unreached);
                             continue
                         }
@@ -91,7 +87,7 @@ impl <T: Traverseable<T>> Gc<T> {
         }
         self.values = first;
     }
-    fn free(&mut self, header: Box<GcHeader<T>>) {
+    fn free(&mut self, header: Option<Box<GcHeader<T>>>) {
         self.allocated_objects -= 1;
         drop(header);
     }
@@ -146,9 +142,14 @@ mod tests {
             None => return 0
         };
         let mut count = 1;
-        while header.next.is_not_null() {
-            count += 1;
-            header = unsafe { &*header.next };
+        loop {
+            match header.next {
+                Some(ref ptr) => {
+                    count += 1;
+                    header = &**ptr;
+                }
+                None => break
+            }
         }
         count
     }
