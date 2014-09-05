@@ -1,9 +1,12 @@
-use std::ptr;
 use std::ptr::RawPtr;
 use std::mem;
+use std::cell::RefCell;
 
 
 pub struct Gc<T> {
+    gc: RefCell<Gc_<T>>
+}
+struct Gc_<T> {
     values: Option<Box<GcHeader<T>>>,
     allocated_objects: uint,
     collect_limit: uint
@@ -16,6 +19,22 @@ struct GcHeader<T> {
     value: T
 }
 
+pub struct GcPtr<'a, T: 'a> {
+    ptr: *mut T
+}
+
+impl <'a, T> Deref<T> for GcPtr<'a, T> {
+    fn deref(&self) -> &T {
+        unsafe { & *self.ptr }
+    }
+}
+
+impl <'a, T> DerefMut<T> for GcPtr<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.ptr }
+    }
+}
+
 pub trait Traverseable<T> {
     fn traverse(&mut self, func: |&mut T|);
 }
@@ -23,24 +42,36 @@ pub trait Traverseable<T> {
 impl <T: Traverseable<T>> Gc<T> {
 
     pub fn new() -> Gc<T> {
-        Gc { values: None, allocated_objects: 0, collect_limit: 100 }
+        Gc { gc: RefCell::new(Gc_ { values: None, allocated_objects: 0, collect_limit: 100 }) }
     }
+    pub fn alloc_and_collect<R: Traverseable<T>>(&self, roots: &mut R, value: T) -> GcPtr<T> {
+        let ptr = self.gc.borrow_mut().alloc_and_collect(roots, value);
+        GcPtr { ptr: ptr }
+    }
+    pub fn alloc(&self, value: T) -> GcPtr<T> {
+        let ptr = self.gc.borrow_mut().alloc(value);
+        GcPtr { ptr: ptr }
+    }
+
+    pub fn collect<R: Traverseable<T>>(&self, roots: &mut R) {
+        self.gc.borrow_mut().collect(roots);
+    }
+}
+impl <T: Traverseable<T>> Gc_<T> {
     
-    pub fn alloc_and_collect<R: Traverseable<T>>(&mut self, roots: &mut R, value: T) -> *mut T {
+    fn alloc_and_collect<R: Traverseable<T>>(&mut self, roots: &mut R, value: T) -> *mut T {
         if self.allocated_objects >= self.collect_limit {
             self.collect(roots);
         }
         self.alloc(value)
     }
-    pub fn alloc(&mut self, value: T) -> *mut T {
+    fn alloc(&mut self, value: T) -> *mut T {
         self.values = Some(box GcHeader { next: self.values.take(), marked: false, value: value });
         self.allocated_objects += 1;
-        unsafe {
-            &mut self.values.as_mut().unwrap().value
-        }
+        &mut self.values.as_mut().unwrap().value
     }
 
-    pub fn collect<R: Traverseable<T>>(&mut self, roots: &mut R) {
+    fn collect<R: Traverseable<T>>(&mut self, roots: &mut R) {
         roots.traverse(|v| self.mark(v));
         self.sweep();
     }
@@ -54,7 +85,7 @@ impl <T: Traverseable<T>> Gc<T> {
     }
 
     fn mark(&mut self, value: &mut T) {
-        let header = Gc::gc_header(value);
+        let header = Gc_::gc_header(value);
         if !header.marked {
             header.marked = true;
             header.value.traverse(|child| self.mark(child));
@@ -96,29 +127,40 @@ impl <T: Traverseable<T>> Gc<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Gc, GcHeader, Traverseable};
+    use super::{Gc, Gc_, GcPtr, GcHeader, Traverseable};
+    use std::fmt;
+
+    struct Data<'a> {
+        fields: GcPtr<'a, Vec<Value<'a>>>
+    }
+    impl <'a> Deref<Vec<Value<'a>>> for Data<'a> {
+        fn deref(&self) -> &Vec<Value<'a>> {
+            &*self.fields
+        }
+    }
+    impl <'a> DerefMut<Vec<Value<'a>>> for Data<'a> {
+        fn deref_mut(&mut self) -> &mut Vec<Value<'a>> {
+            &mut *self.fields
+        }
+    }
+    impl <'a> PartialEq for Data<'a> {
+        fn eq(&self, other: &Data<'a>) -> bool {
+            self.fields.ptr == other.fields.ptr
+        }
+    }
+    impl <'a> fmt::Show for Data<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            self.fields.ptr.fmt(f)
+        }
+    }
 
     #[deriving(PartialEq, Show)]
-    struct Data {
-        fields: *mut Vec<Value>
-    }
-    impl Deref<Vec<Value>> for Data {
-        fn deref(&self) -> &Vec<Value> {
-            unsafe { &*self.fields }
-        }
-    }
-    impl DerefMut<Vec<Value>> for Data {
-        fn deref_mut(&mut self) -> &mut Vec<Value> {
-            unsafe { &mut *self.fields }
-        }
-    }
-    #[deriving(PartialEq, Show)]
-    enum Value {
+    enum Value<'a> {
         Int(int),
-        Data(Data)
+        Data(Data<'a>)
     }
-    impl Traverseable<Vec<Value>> for Vec<Value> {
-        fn traverse(&mut self, func: |&mut Vec<Value>|) {
+    impl <'a> Traverseable<Vec<Value<'a>>> for Vec<Value<'a>> {
+        fn traverse(&mut self, func: |&mut Vec<Value<'a>>|) {
             for v in self.mut_iter() {
                 match *v {
                     Data(ref mut data) => func(&mut **data),
@@ -127,8 +169,8 @@ mod tests {
             }
         }
     }
-    impl Traverseable<Vec<Value>> for Value {
-        fn traverse(&mut self, func: |&mut Vec<Value>|) {
+    impl <'a> Traverseable<Vec<Value<'a>>> for Value<'a> {
+        fn traverse(&mut self, func: |&mut Vec<Value<'a>>|) {
             match *self {
                 Data(ref mut data) => func(&mut **data),
                 _ => ()
@@ -137,6 +179,7 @@ mod tests {
     }
 
     fn num_objects<T>(gc: &Gc<T>) -> uint {
+        let gc = gc.gc.borrow();
         let mut header: &GcHeader<T> = match gc.values {
             Some(ref x) => &**x,
             None => return 0
@@ -154,22 +197,22 @@ mod tests {
         count
     }
 
-    fn new_data(p: *mut Vec<Value>) -> Value {
+    fn new_data<'a>(p: GcPtr<'a, Vec<Value<'a>>>) -> Value<'a> {
         Data(Data { fields: p })
     }
 
     #[test]
     fn gc_header() {
-        let mut gc: Gc<Vec<Value>> = Gc::new();
-        let ptr = gc.alloc(Vec::new());
-        let header: *mut _ = &mut *Gc::gc_header(unsafe { &mut *ptr });
-        let other: *mut _ = &mut *gc.values.unwrap();
+        let gc: Gc<Vec<Value>> = Gc::new();
+        let mut ptr = gc.alloc(Vec::new());
+        let header: *mut _ = &mut *Gc_::gc_header(&mut *ptr);
+        let other: *mut _ = &mut **gc.gc.borrow_mut().values.as_mut().unwrap();
         assert_eq!(header, other);
     }
 
     #[test]
     fn basic() {
-        let mut gc: Gc<Vec<Value>> = Gc::new();
+        let gc: Gc<Vec<Value>> = Gc::new();
         let mut stack: Vec<Value> = Vec::new();
         stack.push(new_data(gc.alloc(vec![Int(1)])));
         let d2 = new_data(gc.alloc(vec![stack[0]]));

@@ -1,14 +1,14 @@
 use std::rc::Rc;
-use std::cell::RefCell;
+use std::cell::{RefCell, Ref};
 use std::fmt;
 use std::intrinsics::{TypeId, get_tydesc};
-use std::collections::HashMap;
 use std::any::Any;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType, match_types};
 use compiler::*;
 use interner::{Interner, InternedStr};
-use gc::{Gc, Traverseable};
+use gc::{Gc, GcPtr, Traverseable};
+use fixed::*;
 
 pub struct Userdata<T> {
     pub data: Rc<RefCell<T>>
@@ -32,64 +32,69 @@ impl <T> Clone for Userdata<T> {
     }
 }
 
-#[deriving(Clone)]
-pub struct Data {
-    value: *mut Data_
+pub struct Data<'a> {
+    value: GcPtr<'a, Data_<'a>>
 }
 
-impl Data {
+impl <'a> Data<'a> {
 
-    fn borrow(&self) -> &Data_ {
+    fn borrow(&self) -> &Data_<'a> {
         & **self
     }
-    fn borrow_mut(&self) -> &mut Data_ {
+    fn borrow_mut(&self) -> &mut Data_<'a> {
         unsafe { ::std::mem::transmute(& **self) }
     }
 }
 
-impl PartialEq for Data {
-    fn eq(&self, other: &Data) -> bool {
+impl <'a> PartialEq for Data<'a> {
+    fn eq(&self, other: &Data<'a>) -> bool {
         self.tag == other.tag && self.fields == other.fields
     }
 }
 
-impl Deref<Data_> for Data {
-    fn deref(&self) -> &Data_ {
-        unsafe { &*self.value }
+impl <'a> Clone for Data<'a> {
+    fn clone(&self) -> Data<'a> {
+        Data { value: self.value }
     }
 }
-impl DerefMut<Data_> for Data {
-    fn deref_mut(&mut self) -> &mut Data_ {
-        unsafe { &mut *self.value }
+
+impl <'a> Deref<Data_<'a>> for Data<'a> {
+    fn deref(&self) -> &Data_<'a> {
+        &*self.value
+    }
+}
+impl <'a> DerefMut<Data_<'a>> for Data<'a> {
+    fn deref_mut(&mut self) -> &mut Data_<'a> {
+        &mut *self.value
     }
 }
 
 #[deriving(Clone, PartialEq)]
-pub struct Data_ {
+pub struct Data_<'a> {
     tag: uint,
-    fields: Vec<Value>
+    fields: Vec<Value<'a>>
 }
 
 #[deriving(Clone, PartialEq)]
-pub enum Value {
+pub enum Value<'a> {
     Int(int),
     Float(f64),
     String(InternedStr),
-    Data(Data),
+    Data(Data<'a>),
     Function(uint),
-    Closure(Data),
-    TraitObject(Data),
+    Closure(Data<'a>),
+    TraitObject(Data<'a>),
     Userdata(Userdata<Box<Any + 'static>>)
 }
 
-impl Traverseable<Data_> for Data_ {
-    fn traverse(&mut self, func: |&mut Data_|) {
+impl <'a> Traverseable<Data_<'a>> for Data_<'a> {
+    fn traverse(&mut self, func: |&mut Data_<'a>|) {
         self.fields.traverse(func);
     }
 }
 
-impl Traverseable<Data_> for Vec<Value> {
-    fn traverse(&mut self, func: |&mut Data_|) {
+impl <'a> Traverseable<Data_<'a>> for Vec<Value<'a>> {
+    fn traverse(&mut self, func: |&mut Data_<'a>|) {
         for value in self.mut_iter() {
             match *value {
                 Data(ref mut data) => func(&mut **data),
@@ -103,7 +108,7 @@ impl Traverseable<Data_> for Vec<Value> {
 
 type Dict = Vec<uint>;
 
-impl fmt::Show for Value {
+impl <'a> fmt::Show for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Int(i) => write!(f, "{}", i),
@@ -147,25 +152,30 @@ impl fmt::Show for Global_ {
     }
 }
 
-pub struct VM {
-    globals: Vec<Global>,
-    trait_indexes: Vec<TraitFunctions>,
-    type_infos: TypeInfos,
-    typeids: HashMap<TypeId, TcType>,
+pub struct VM<'a> {
+    globals: FixedVec<Global>,
+    trait_indexes: FixedVec<TraitFunctions>,
+    type_infos: RefCell<TypeInfos>,
+    typeids: FixedMap<TypeId, TcType>,
     interner: RefCell<Interner>,
-    gc: RefCell<Gc<Data_>>
+    gc: Gc<Data_<'a>>
 }
 
-impl CompilerEnv for VM {
+pub struct VMEnv<'a> {
+    type_infos: Ref<'a, TypeInfos>,
+    trait_indexes: &'a FixedVec<TraitFunctions>,
+    globals: &'a FixedVec<Global>
+}
+
+impl <'a> CompilerEnv for VMEnv<'a> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
         self.type_infos.traits.iter()
             .flat_map(|(_, ref trait_fns)| trait_fns.iter())
             .find(|tuple| tuple.ref0() == id)
             .map(|tuple| TraitFunction(&tuple.ref1().value))
             .or_else(|| {
-                self.globals.iter()
-                    .enumerate()
-                    .find(|&(_, f)| f.id == *id)
+                self.globals
+                    .find(|f| f.id == *id)
                     .map(|(i, f)| Global(i, f.typ.constraints.as_slice(), &f.typ.value))
             })
     }
@@ -185,15 +195,15 @@ impl CompilerEnv for VM {
         }
     }
     fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
-        self.trait_indexes.iter()
+        self.trait_indexes
             .find(|func| func.trait_name == *trait_name && match_types(&func.impl_type, trait_type))
-            .map(|func| func.index)
+            .map(|(_, func)| func.index)
     }
     fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<uint>> {
         for (trait_name, imp) in self.type_infos.traits.iter() {
             match (self.find_object_function(trait_name, fn_name), self.find_trait_offset(trait_name, typ)) {
                 (Some(function_offset), Some(trait_offset)) => {
-                    debug!("{} {} {}", function_offset, trait_offset, self.globals.len());
+                    debug!("{} {} {}", function_offset, trait_offset, self.globals.borrow().len());
                     let global_index = function_offset + trait_offset;
                     let global = &self.globals[global_index];
                     return Some(TypeResult {
@@ -218,11 +228,11 @@ impl CompilerEnv for VM {
             )
     }
     fn next_function_index(&self) -> uint {
-        self.globals.len()
+        self.globals.borrow().len()
     }
 }
 
-impl TypeEnv for VM {
+impl <'a> TypeEnv for VMEnv<'a> {
     fn find_type(&self, id: &InternedStr) -> Option<&Constrained<TcType>> {
         //Look for the function in the traits first so that we do not accidentaly get the type of
         //a function that is implemented
@@ -230,9 +240,9 @@ impl TypeEnv for VM {
             .flat_map(|(_, ref trait_fns)| trait_fns.iter())
             .find(|tuple| tuple.ref0() == id)
             .map(|tuple| tuple.ref1())
-            .or_else(|| self.globals.iter()
+            .or_else(|| self.globals
                 .find(|f| f.id == *id)
-                .map(|f| &f.typ)
+                .map(|(_, f)| &f.typ)
             )
     }
     fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
@@ -240,13 +250,13 @@ impl TypeEnv for VM {
     }
 }
 
-pub struct StackFrame<'a, 'b> {
-    stack: &'a mut Vec<Value>,
+pub struct StackFrame<'a, 'b: 'a> {
+    stack: &'a mut Vec<Value<'b>>,
     offset: uint,
-    upvars: &'b mut [Value]
+    upvars: &'a mut [Value<'b>]
 }
 impl <'a, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: &'a mut Vec<Value>, args: uint, upvars: &'b mut [Value]) -> StackFrame<'a, 'b> {
+    pub fn new(v: &'a mut Vec<Value<'b>>, args: uint, upvars: &'a mut [Value<'b>]) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
@@ -255,47 +265,47 @@ impl <'a, 'b> StackFrame<'a, 'b> {
         self.stack.len() - self.offset
     }
 
-    pub fn get<'a>(&'a self, i: uint) -> &'a Value {
+    pub fn get<'a>(&'a self, i: uint) -> &'a Value<'b> {
         &(*self.stack)[self.offset + i]
     }
-    pub fn get_mut<'a>(&'a mut self, i: uint) -> &'a mut Value {
+    pub fn get_mut<'a>(&'a mut self, i: uint) -> &'a mut Value<'b> {
         self.stack.get_mut(self.offset + i)
     }
 
-    pub fn push(&mut self, v: Value) {
+    pub fn push(&mut self, v: Value<'b>) {
         self.stack.push(v);
     }
-    pub fn top(&mut self) -> &Value {
+    pub fn top(&mut self) -> &Value<'b> {
         self.stack.last().unwrap()
     }
 
-    pub fn pop(&mut self) -> Value {
+    pub fn pop(&mut self) -> Value<'b> {
         match self.stack.pop() {
             Some(x) => x,
             None => fail!()
         }
     }
-    fn as_slice(&self) -> &[Value] {
+    fn as_slice(&self) -> &[Value<'b>] {
         self.stack.slice_from(self.offset)
     }
 }
 
-impl <'a, 'b> Index<uint, Value> for StackFrame<'a, 'b> {
-    fn index(&self, index: &uint) -> &Value {
+impl <'a, 'b> Index<uint, Value<'b>> for StackFrame<'a, 'b> {
+    fn index(&self, index: &uint) -> &Value<'b> {
         &(*self.stack)[self.offset + *index]
     }
 }
 
-impl VM {
+impl <'a> VM<'a> {
     
-    pub fn new() -> VM {
-        let mut vm = VM {
-            globals: Vec::new(),
-            trait_indexes: Vec::new(),
-            type_infos: TypeInfos::new(),
-            typeids: HashMap::new(),
+    pub fn new() -> VM<'a> {
+        let vm = VM {
+            globals: FixedVec::new(),
+            trait_indexes: FixedVec::new(),
+            type_infos: RefCell::new(TypeInfos::new()),
+            typeids: FixedMap::new(),
             interner: RefCell::new(Interner::new()),
-            gc: RefCell::new(Gc::new())
+            gc: Gc::new()
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
@@ -305,7 +315,7 @@ impl VM {
         vm
     }
 
-    pub fn new_functions(&mut self, fns: Vec<CompiledFunction>) {
+    pub fn new_functions(&self, fns: Vec<CompiledFunction>) {
         self.globals.extend(fns.move_iter()
             .map(|CompiledFunction { id: id, typ: typ, instructions: instructions }|
                 Global { id: id, typ: typ, value: Bytecode(instructions) }
@@ -313,14 +323,9 @@ impl VM {
         )
     }
 
-    fn add_trait_indexes(&mut self, indexes: Vec<TraitFunctions>) {
-        self.trait_indexes.extend(indexes.move_iter())
-    }
-
     pub fn get_global(&self, name: &str) -> Option<(uint, &Global)> {
         let n = self.intern(name);
-        self.globals.iter().enumerate()
-            .find(|g| n == g.ref1().id)
+        self.globals.find(|g| n == g.id)
     }
 
     pub fn get_type<T: 'static>(&self) -> &TcType {
@@ -337,12 +342,8 @@ impl VM {
                 fail!("Expected type {} to be inserted before get_type call", name)
             })
     }
-    pub fn find_type_info(&self, s: &str) -> Option<TypeInfo> {
-        let n = self.intern(s);
-        (self as &TypeEnv).find_type_info(&n)
-    }
 
-    pub fn run_function(&self, cf: &Global) -> Option<Value> {
+    pub fn run_function(&'a self, cf: &Global) -> Option<Value<'a>> {
         let mut stack = Vec::new();
         {
             let frame = StackFrame::new(&mut stack, 0, [].as_mut_slice());
@@ -351,7 +352,7 @@ impl VM {
         stack.pop()
     }
 
-    pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value> {
+    pub fn execute_instructions(&'a self, instructions: &[Instruction]) -> Option<Value<'a>> {
         let mut stack = Vec::new();
         {
             let frame = StackFrame::new(&mut stack, 0, [].as_mut_slice());
@@ -360,7 +361,7 @@ impl VM {
         stack.pop()
     }
 
-    pub fn extern_function(&mut self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) {
+    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) {
         let global = Global {
             id: self.intern(name),
             typ: Constrained { constraints: Vec::new(), value: FunctionType(args, box return_type) },
@@ -371,28 +372,42 @@ impl VM {
 
     pub fn register_type<T: 'static>(&mut self, name: &str) -> Result<&TcType, ()> {
         let n = self.intern(name);
-        if self.type_infos.structs.contains_key(&n) {
+        if self.type_infos.borrow().structs.contains_key(&n) {
             Err(())
         }
         else {
             let id = TypeId::of::<T>();
-            let t = &*self.typeids.find_or_insert(id, Type(n, Vec::new()));
-            self.type_infos.structs.insert(n, Vec::new());
+            try!(self.typeids.try_insert(id, Type(n, Vec::new())).map_err(|_| ()));
+            let t = self.typeids.find(&id).unwrap();
+            self.type_infos.borrow_mut().structs.insert(n, Vec::new());
             Ok(t)
         }
     }
-    fn intern(&self, s: &str) -> InternedStr {
+
+    fn add_trait_indexes(&self, indexes: Vec<TraitFunctions>) {
+        self.trait_indexes.extend(indexes.move_iter())
+    }
+
+    pub fn intern(&self, s: &str) -> InternedStr {
         self.interner.borrow_mut().intern(s)
     }
 
-    fn new_data(&self, tag: uint, fields: Vec<Value>) -> Value {
-        Data(Data { value: self.gc.borrow_mut().alloc(Data_ { tag: tag, fields: fields })})
-    }
-    fn new_data_and_collect(&self, roots: &mut Vec<Value>, tag: uint, fields: Vec<Value>) -> Data {
-        Data { value: self.gc.borrow_mut().alloc_and_collect(roots, Data_ { tag: tag, fields: fields })}
+    pub fn env(&self) -> VMEnv {
+        VMEnv {
+            type_infos: self.type_infos.borrow(),
+            trait_indexes: &self.trait_indexes,
+            globals: &self.globals
+        }
     }
 
-    fn execute_function(&self, stack: StackFrame, function: &Global) {
+    fn new_data(&'a self, tag: uint, fields: Vec<Value<'a>>) -> Value<'a> {
+        Data(Data { value: self.gc.alloc(Data_ { tag: tag, fields: fields })})
+    }
+    fn new_data_and_collect(&'a self, roots: &mut Vec<Value<'a>>, tag: uint, fields: Vec<Value<'a>>) -> Data<'a> {
+        Data { value: self.gc.alloc_and_collect(roots, Data_ { tag: tag, fields: fields })}
+    }
+
+    fn execute_function<'b>(&'a self, stack: StackFrame<'b, 'a>, function: &Global) {
         match function.value {
             Extern(func) => {
                 func(self, stack);
@@ -403,7 +418,7 @@ impl VM {
         }
     }
 
-    pub fn execute(&self, mut stack: StackFrame, instructions: &[Instruction]) {
+    pub fn execute<'b>(&'a self, mut stack: StackFrame<'b, 'a>, instructions: &[Instruction]) {
         debug!("Enter frame with {}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
@@ -703,13 +718,13 @@ macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 )
 
-pub fn parse_expr(buffer: &mut Buffer, vm: &mut VM) -> Result<::ast::LExpr<TcIdent>, String> {
+pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, String> {
     let mut interner = vm.interner.borrow_mut();
     let mut parser = Parser::new(&mut *interner, buffer, |s| TcIdent { name: s, typ: unit_type_tc.clone() });
     parser.expression().map_err(|err| format!("{}", err))
 }
 
-pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
+pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), String> {
     use parser::Parser;
 
     let mut module = {
@@ -718,38 +733,35 @@ pub fn load_script(vm: &mut VM, buffer: &mut Buffer) -> Result<(), String> {
         tryf!(parser.module())
     };
     let (type_infos, (functions, trait_indexes)) = {
-        let vm: &VM = vm;
         let mut tc = Typecheck::new();
-        tc.add_environment(vm);
+        let env = vm.env();
+        tc.add_environment(&env);
         tryf!(tc.typecheck_module(&mut module));
-        let env = (vm, &module);
+        let env = (vm.env(), &module);
         let mut compiler = Compiler::new(&env);
         (tc.type_infos, compiler.compile_module(&module))
     };
     vm.new_functions(functions);
     vm.add_trait_indexes(trait_indexes);
-    vm.type_infos = type_infos;
+    *vm.type_infos.borrow_mut() = type_infos;
     Ok(())
 }
 
-pub fn run_main(s: &str) -> Result<Option<Value>, String> {
-    run_main2(s).map(|x| x.val1())
-}
-pub fn run_main2(s: &str) -> Result<(VM, Option<Value>), String> {
+pub fn run_main<'a>(vm: &'a VM<'a>, s: &str) -> Result<Option<Value<'a>>, String> {
     use std::io::BufReader;
     let mut buffer = BufReader::new(s.as_bytes());
-    run_buffer_main(&mut buffer)
+    run_buffer_main(vm, &mut buffer)
 }
-pub fn run_buffer_main(buffer: &mut Buffer) -> Result<(VM, Option<Value>), String> {
-    let mut vm = VM::new();
-    try!(load_script(&mut vm, buffer));
-    let v = try!(run_function(&vm, "main"));
-    Ok((vm, v))
+pub fn run_buffer_main<'a>(vm: &'a VM<'a>, buffer: &mut Buffer) -> Result<Option<Value<'a>>, String> {
+    try!(load_script(vm, buffer));
+    let v = try!(run_function(vm, "main"));
+    Ok(v)
 }
 
-pub fn run_function(vm: &VM, name: &str) -> Result<Option<Value>, String> {
-    let func = match vm.globals.iter().find(|g| g.id.as_slice() == name) {
-        Some(f) => f,
+pub fn run_function<'a>(vm: &'a VM<'a>, name: &str) -> Result<Option<Value<'a>>, String> {
+    let globals = vm.globals.borrow();
+    let func = match globals.iter().find(|g| g.id.as_slice() == name) {
+        Some(f) => &**f,
         None => return Err(format!("Undefined function {}", name))
     };
     Ok(vm.run_function(func))
@@ -757,7 +769,7 @@ pub fn run_function(vm: &VM, name: &str) -> Result<Option<Value>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{VM, Data, Int, String, run_main, run_main2, run_function, load_script};
+    use super::{VM, Data, Int, String, run_main, run_function, load_script};
     use std::io::BufReader;
     ///Test that the stack is adjusted correctly after executing expressions as statements
     #[test]
@@ -778,7 +790,8 @@ fn main() -> int {
     x
 }
 ";
-        let value = run_main(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(8)));
     }
@@ -798,7 +811,8 @@ enum AB {
     B(float)
 }
 ";
-        let value = run_main(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(8)));
     }
@@ -832,9 +846,15 @@ impl Add for int {
     }
 }
 ";
-        let (vm, value) = run_main2(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(vm.new_data(0, vec![Int(11), Int(5)])));
+        match value {
+            Some(Data(ref data)) => {
+                assert_eq!(data.fields, vec![Int(11), Int(5)]);
+            }
+            _ => fail!()
+        }
     }
     #[test]
     fn pass_function_value() {
@@ -851,7 +871,8 @@ fn test(f: fn () -> int) -> int {
     f() + 10
 }
 ";
-        let value = run_main(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(52)));
     }
@@ -864,9 +885,15 @@ fn main() -> [int] {
     [1,2, x[2] + 3]
 }
 ";
-        let (vm, value) = run_main2(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(vm.new_data(0, vec![Int(1), Int(2), Int(33)])));
+        match value {
+            Some(Data(ref data)) => {
+                assert_eq!(data.fields, vec![Int(1), Int(2), Int(33)]);
+            }
+            _ => fail!()
+        }
     }
     #[test]
     fn array_assign() {
@@ -878,7 +905,8 @@ fn main() -> int {
     x[2]
 }
 ";
-        let value = run_main(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(40)));
     }
@@ -895,7 +923,8 @@ fn main() -> int {
     f(22)
 }
 ";
-        let value = run_main(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(123)));
     }
@@ -917,9 +946,15 @@ fn main() -> [int] {
     map_int_array(xs, \x -> x * 2)
 }
 ";
-        let (vm, value) = run_main2(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(vm.new_data(0, vec![Int(2), Int(4), Int(6)])));
+        match value {
+            Some(Data(ref data)) => {
+                assert_eq!(data.fields, vec![Int(2), Int(4), Int(6)]);
+            }
+            _ => fail!()
+        }
     }
     #[test]
     fn trait_object() {
@@ -943,7 +978,8 @@ fn main() -> int {
     test([0, 0, 0])
 }
 ";
-        let value = run_main(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(3)));
     }
@@ -970,7 +1006,8 @@ fn foldl<A, B>(as: [A], b: B, f: fn (A, B) -> B) -> B {
 }
 
 ";
-        let value = run_main(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(6)));
     }
@@ -1019,9 +1056,15 @@ fn main() -> Pair {
     Pair(x, y)
 }
 ";
-        let (vm, value) = run_main2(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(vm.new_data(0, vec![Int(0), Int(1)])));
+        match value {
+            Some(Data(ref data)) => {
+                assert_eq!(data.fields, vec![Int(0), Int(1)]);
+            }
+            _ => fail!()
+        }
     }
     #[test]
     fn call_generic_constrained_multi_parameters_function() {
@@ -1082,9 +1125,15 @@ fn main() -> Pair {
     Pair(x, y)
 }
 ";
-        let (vm, value) = run_main2(text)
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(vm.new_data(0, vec![Int(1), Int(0)])));
+        match value {
+            Some(Data(ref data)) => {
+                assert_eq!(data.fields, vec![Int(1), Int(0)]);
+            }
+            _ => fail!()
+        }
     }
 
     #[test]
@@ -1093,9 +1142,11 @@ fn main() -> Pair {
 r#"fn main() -> string {
     string_append("Hello", " World")
 }"#;
-        let (vm, value) = run_main2(text)
+        let mut vm = VM::new();
+        let hello_world = vm.intern("Hello World");
+        let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| fail!("{}", err));
-        assert_eq!(value, Some(String(vm.intern("Hello World"))));
+        assert_eq!(value, Some(String(hello_world)));
     }
     #[test]
     fn call_trait_from_another_script() {

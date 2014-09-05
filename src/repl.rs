@@ -14,10 +14,10 @@ fn print(_: &VM, mut stack: StackFrame) {
 }
 
 pub fn run() {
-    let mut vm = VM::new();
+    let vm = VM::new();
     vm.extern_function("printInt", vec![int_type_tc.clone()], unit_type_tc.clone(), print);
     for line in ::std::io::stdin().lines() {
-        match run_line(&mut vm, line) {
+        match run_line(&vm, line) {
             Ok(continue_repl) => {
                 if !continue_repl {
                     break
@@ -28,7 +28,7 @@ pub fn run() {
     }
 }
 
-fn run_command(vm: &mut VM, command: char, args: &str) -> Result<bool, String> {
+fn run_command<'a>(vm: &'a VM<'a>, command: char, args: &str) -> Result<bool, String> {
     match command {
         'q' => Ok(false),
         'l' => {
@@ -36,7 +36,7 @@ fn run_command(vm: &mut VM, command: char, args: &str) -> Result<bool, String> {
             Ok(true)
         }
         't' => {
-            match vm.find_type_info(args) {
+            match vm.env().find_type_info(&vm.intern(args)) {
                 Some(info) => {
                     match info {
                         Struct(fields) => {
@@ -72,7 +72,7 @@ fn run_command(vm: &mut VM, command: char, args: &str) -> Result<bool, String> {
     }
 }
 
-fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
+fn run_line<'a>(vm: &'a VM<'a>, line: IoResult<String>) -> Result<bool, String> {
     let expr_str = tryf!(line);
     let slice = expr_str.as_slice();
     match slice.char_at(0) {
@@ -83,11 +83,11 @@ fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
             let mut buffer = BufReader::new(expr_str.as_bytes());
             let mut expr = try!(parse_expr(&mut buffer, vm));
             let (instructions, lambdas) = {
-                let vm: &VM = vm;
+                let env = vm.env();
                 let mut tc = Typecheck::new();
-                tc.add_environment(vm);
+                tc.add_environment(&env);
                 tryf!(tc.typecheck_expr(&mut expr));
-                let mut compiler = Compiler::new(vm);
+                let mut compiler = Compiler::new(&env);
                 compiler.compile_expr(&expr)
             };
             vm.new_functions(lambdas);
@@ -101,7 +101,7 @@ fn run_line(vm: &mut VM, line: IoResult<String>) -> Result<bool, String> {
     }
 }
 
-fn load_file(vm: &mut VM, filename: &str) -> Result<(), String> {
+fn load_file(vm: &VM, filename: &str) -> Result<(), String> {
     use std::io::{File, BufferedReader};
     use std::path::Path;
     let file = tryf!(File::open(&Path::new(filename)));
