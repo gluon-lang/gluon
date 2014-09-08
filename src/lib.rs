@@ -1,5 +1,5 @@
 #![crate_type="lib"]
-#![feature(globs, phase, macro_rules, default_type_params, overloaded_calls)]
+#![feature(globs, unsafe_destructor, phase, macro_rules, default_type_params, overloaded_calls)]
 extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
@@ -20,4 +20,5 @@ pub mod compiler;
 pub mod vm;
 mod gc;
 mod fixed;
+pub mod api;
 

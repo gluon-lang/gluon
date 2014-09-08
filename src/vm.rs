@@ -372,14 +372,15 @@ impl <'a> VM<'a> {
 
     pub fn register_type<T: 'static>(&mut self, name: &str) -> Result<&TcType, ()> {
         let n = self.intern(name);
-        if self.type_infos.borrow().structs.contains_key(&n) {
+        let mut type_infos = self.type_infos.borrow_mut();
+        if type_infos.structs.contains_key(&n) {
             Err(())
         }
         else {
             let id = TypeId::of::<T>();
             try!(self.typeids.try_insert(id, Type(n, Vec::new())).map_err(|_| ()));
             let t = self.typeids.find(&id).unwrap();
-            self.type_infos.borrow_mut().structs.insert(n, Vec::new());
+            type_infos.structs.insert(n, Vec::new());
             Ok(t)
         }
     }

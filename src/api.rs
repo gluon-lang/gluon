@@ -125,12 +125,12 @@ fn make_type<'a, T: VMValue>(vm: &'a VM) -> TcType {
 }
 
 trait Get<'a> {
-    fn get_function(vm: &'a mut VM<'a>, name: &str) -> Option<Self>;
+    fn get_function(vm: &'a VM<'a>, name: &str) -> Option<Self>;
 }
 macro_rules! make_get(
     ($($args:ident),*) => (
 impl <'a, $($args : VMValue,)* R: VMValue> Get<'a> for Callable<'a, ($($args,)*), R> {
-    fn get_function(vm: &'a mut VM<'a>, name: &str) -> Option<Callable<'a, ($($args,)*), R>> {
+    fn get_function(vm: &'a VM<'a>, name: &str) -> Option<Callable<'a, ($($args,)*), R>> {
         let value = match vm.get_global(name) {
             Some((function_ref, global)) => {
                 match global.type_of() {
@@ -168,7 +168,7 @@ make_get!(A, B, C, D, E)
 make_get!(A, B, C, D, E, F, G)
 
 pub struct Callable<'a, Args, R> {
-    vm: &'a mut VM<'a>,
+    vm: &'a VM<'a>,
     value: FunctionRef<Args, R>
 }
 struct FunctionRef<Args, R> {
@@ -194,7 +194,7 @@ impl <Args, R> VMValue for FunctionRef<Args, R> {
 }
 
 impl <'a, A: VMValue, R: VMValue> Callable<'a, (A,), R> {
-    pub fn call(&'a mut self, a: A) -> R {
+    pub fn call(&mut self, a: A) -> R {
         let mut vec = Vec::new();
         {
             let mut stack = StackFrame::new(&mut vec, 0, [].as_mut_slice());
@@ -207,7 +207,7 @@ impl <'a, A: VMValue, R: VMValue> Callable<'a, (A,), R> {
     }
 }
 impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
-    pub fn call2(&'a mut self, a: A, b: B) -> R {
+    pub fn call2(&mut self, a: A, b: B) -> R {
         let mut vec = Vec::new();
         {
             let mut stack = StackFrame::new(&mut vec, 0, [].as_mut_slice());
@@ -221,7 +221,7 @@ impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
     }
 }
 
-pub fn get_function<'a, T: Get<'a>>(vm: &'a mut VM<'a>, name: &str) -> Option<T> {
+pub fn get_function<'a, T: Get<'a>>(vm: &'a VM<'a>, name: &str) -> Option<T> {
     Get::get_function(vm, name)
 }
 
@@ -316,12 +316,12 @@ fn mul(x: float, y: float) -> float {
         load_script(&mut vm, &mut buffer)
             .unwrap_or_else(|err| fail!("{}", err));
         {
-            let mut f: Callable<(int,), int> = Get::get_function(&mut vm, "add10")
+            let mut f: Callable<(int,), int> = Get::get_function(&vm, "add10")
                 .expect("No function");
             let result = f.call(2);
             assert_eq!(result, 12);
         }
-        let mut f: Callable<(f64, f64), f64> = Get::get_function(&mut vm, "mul")
+        let mut f: Callable<(f64, f64), f64> = Get::get_function(&vm, "mul")
             .expect("No function");
         let result = f.call2(4., 5.);
         assert_eq!(result, 20.);
@@ -353,12 +353,12 @@ fn id(x: Test) -> Test {
 
         let mut test = Test { x: 123 };
         {
-            let mut f: Callable<(*mut Test,), *mut Test> = Get::get_function(&mut vm, "id")
+            let mut f: Callable<(*mut Test,), *mut Test> = Get::get_function(&vm, "id")
                 .expect("No function id");
             let result = f.call(&mut test);
             assert!(result == &mut test as *mut Test);
         }
-        let mut f: Callable<(*mut Test,), bool> = Get::get_function(&mut vm, "test")
+        let mut f: Callable<(*mut Test,), bool> = Get::get_function(&vm, "test")
             .expect("No function test");
         let result = f.call(&mut test);
         assert!(result);
