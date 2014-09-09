@@ -569,11 +569,16 @@ impl <'a> Typecheck<'a> {
             Ok(typ) => typ,
             Err(err) => {
                 self.errors.error(ast::Located { location: expr.location, value: err });
-                return Err(::std::mem::replace(&mut self.errors, Errors::new()))
+                return Err(::std::mem::replace(&mut self.errors, Errors::new()));
             }
         };
-        self.replace_vars(expr);
-        Ok(typ)
+        if self.errors.has_errors() {
+            Err(::std::mem::replace(&mut self.errors, Errors::new()))
+        }
+        else {
+            self.replace_vars(expr);
+            Ok(typ)
+        }
     }
     fn typecheck(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult {
         match self.typecheck_(expr) {
