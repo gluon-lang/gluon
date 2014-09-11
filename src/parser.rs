@@ -275,7 +275,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             TMatch => {
                 let expr = box try!(self.expression());
                 let alternatives = try!(self.braces(
-                    |this| this.many(|this| this.alternative())
+                    |this| this.many(|t| *t == TCloseBrace, |this| this.alternative())
                 ));
                 Ok(Match(expr, alternatives))
             }
@@ -286,7 +286,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 Ok(Array(Array { id: self.make_id(dummy), expressions: args }))
             }
             TLambda => {
-                let args = try!(self.many(|this| {
+                let args = try!(self.many(|t| *t == TRArrow, |this| {
                     let id = expect1!(this, TIdentifier(x));
                     Ok(this.make_id(id))
                 }));
@@ -473,7 +473,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn trait_(&mut self) -> ParseResult<Trait<PString>> {
         expect!(self, TTrait);
         let name = expect1!(self, TIdentifier(x));
-        let declarations = try!(self.braces(|this| this.many(|this| {
+        let declarations = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| {
             let decl = try!(this.function_declaration());
             expect!(this, TSemicolon);
             Ok(decl)
@@ -486,7 +486,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let trait_name = expect1!(self, TIdentifier(x));
         expect!(self, TFor);
         let typ = try!(self.typ());
-        let functions = try!(self.braces(|this| this.many(|this| this.function() )));
+        let functions = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| this.function() )));
         Ok(Impl {
             trait_name: self.make_id(trait_name),
             type_variables: type_variables,
@@ -573,13 +573,10 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         Ok(x)
     }
 
-    fn many<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
+    fn many<T>(&mut self, terminator: |&Token| -> bool, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
         let mut result = Vec::new();
-        loop {
-            match f(self) {
-                Ok(x) => result.push(x),
-                Err(_) => break
-            }
+        while !terminator(self.lexer.peek()) {
+            result.push(try!(f(self)));
         }
         Ok(result)
     }
