@@ -70,6 +70,12 @@ impl <T> FixedVec<T> {
     }
 }
 
+impl <V> Collection for FixedVec<V> {
+    fn len(&self) -> uint {
+        self.vec.borrow().len()
+    }
+}
+
 impl <T> Index<uint, T> for FixedVec<T> {
     fn index(&self, index: &uint) -> &T {
         let vec = self.vec.borrow();
