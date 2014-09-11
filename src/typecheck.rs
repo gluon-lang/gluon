@@ -686,7 +686,8 @@ impl <'a> Typecheck<'a> {
             ast::Assign(ref mut lhs, ref mut rhs) => {
                 let rhs_type = try!(self.typecheck(&mut **rhs));
                 let lhs_type = try!(self.typecheck(&mut **lhs));
-                self.unify(&lhs_type, rhs_type)
+                try!(self.unify(&lhs_type, rhs_type));
+                Ok(unit_type_tc.clone())
             }
             ast::FieldAccess(ref mut expr, ref mut id) => {
                 let typ = try!(self.typecheck(&mut **expr));
