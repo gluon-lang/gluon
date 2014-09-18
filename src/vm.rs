@@ -3,6 +3,7 @@ use std::cell::{RefCell, Ref};
 use std::fmt;
 use std::intrinsics::{TypeId, get_tydesc};
 use std::any::Any;
+use std::collections::HashMap;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType, match_types};
 use compiler::*;
@@ -152,32 +153,51 @@ impl fmt::Show for Global_ {
     }
 }
 
+enum Named {
+    GlobalFn(uint),
+    TraitFn(InternedStr, uint),
+}
+
 pub struct VM<'a> {
     globals: FixedVec<Global>,
     trait_indexes: FixedVec<TraitFunctions>,
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
     interner: RefCell<Interner>,
+    names: RefCell<HashMap<InternedStr, Named>>,
     gc: Gc<Data_<'a>>
 }
 
 pub struct VMEnv<'a> {
     type_infos: Ref<'a, TypeInfos>,
     trait_indexes: &'a FixedVec<TraitFunctions>,
-    globals: &'a FixedVec<Global>
+    globals: &'a FixedVec<Global>,
+    names: Ref<'a, HashMap<InternedStr, Named>>
 }
 
 impl <'a> CompilerEnv for VMEnv<'a> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
-        self.type_infos.traits.iter()
-            .flat_map(|(_, ref trait_fns)| trait_fns.iter())
-            .find(|tuple| tuple.ref0() == id)
-            .map(|tuple| TraitFunction(&tuple.ref1().value))
-            .or_else(|| {
-                self.globals
-                    .find(|f| f.id == *id)
-                    .map(|(i, f)| Global(i, f.typ.constraints.as_slice(), &f.typ.value))
-            })
+        self.names.find(id).and_then(|named| {
+            match *named {
+                GlobalFn(index) if index < self.globals.len() => {
+                    let g = &self.globals[index];
+                    Some(Global(index, g.typ.constraints.as_slice(), &g.typ.value))
+                }
+                TraitFn(trait_index, function_index) => {
+                    self.type_infos.traits
+                        .find(&trait_index)
+                        .and_then(|functions| {
+                            if function_index < functions.len() {
+                                Some(TraitFunction(&functions[function_index].ref1().value))
+                            }
+                            else {
+                                None
+                            }
+                        })
+                }
+                _ => None
+            }
+        })
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
         (*self).find_field(struct_, field)
@@ -200,22 +220,26 @@ impl <'a> CompilerEnv for VMEnv<'a> {
             .map(|(_, func)| func.index)
     }
     fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<uint>> {
-        for (trait_name, imp) in self.type_infos.traits.iter() {
-            match (self.find_object_function(trait_name, fn_name), self.find_trait_offset(trait_name, typ)) {
-                (Some(function_offset), Some(trait_offset)) => {
-                    debug!("{} {} {}", function_offset, trait_offset, self.globals.borrow().len());
-                    let global_index = function_offset + trait_offset;
-                    let global = &self.globals[global_index];
-                    return Some(TypeResult {
-                        constraints: global.typ.constraints.as_slice(),
-                        typ: &global.typ.value,
-                        value: global_index
-                    })
+        self.names.find(fn_name).and_then(|named| {
+            match *named {
+                TraitFn(ref trait_name, _) => {
+                    match (self.find_object_function(trait_name, fn_name), self.find_trait_offset(trait_name, typ)) {
+                        (Some(function_offset), Some(trait_offset)) => {
+                            debug!("{} {} {}", function_offset, trait_offset, self.globals.borrow().len());
+                            let global_index = function_offset + trait_offset;
+                            let global = &self.globals[global_index];
+                            Some(TypeResult {
+                                constraints: global.typ.constraints.as_slice(),
+                                typ: &global.typ.value,
+                                value: global_index
+                            })
+                        }
+                        _ => None
+                    }
                 }
-                _ => ()
+                _ =>  None
             }
-        }
-        None
+        })
     }
     fn find_object_function(&self, trait_name: &InternedStr, fn_name: &InternedStr) -> Option<uint> {
         self.type_infos.traits
@@ -234,16 +258,26 @@ impl <'a> CompilerEnv for VMEnv<'a> {
 
 impl <'a> TypeEnv for VMEnv<'a> {
     fn find_type(&self, id: &InternedStr) -> Option<&Constrained<TcType>> {
-        //Look for the function in the traits first so that we do not accidentaly get the type of
-        //a function that is implemented
-        self.type_infos.traits.iter()
-            .flat_map(|(_, ref trait_fns)| trait_fns.iter())
-            .find(|tuple| tuple.ref0() == id)
-            .map(|tuple| tuple.ref1())
-            .or_else(|| self.globals
-                .find(|f| f.id == *id)
-                .map(|(_, f)| &f.typ)
-            )
+        self.names.find(id).and_then(|named| {
+            match *named {
+                GlobalFn(index) if index < self.globals.len() => {
+                    Some(&self.globals[index].typ)
+                }
+                TraitFn(trait_index, function_index) => {
+                    self.type_infos.traits
+                        .find(&trait_index)
+                        .and_then(|functions| {
+                            if function_index < functions.len() {
+                                Some(functions[function_index].ref1())
+                            }
+                            else {
+                                None
+                            }
+                        })
+                }
+                _ => None
+            }
+        })
     }
     fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
         self.type_infos.find_type_info(id)
@@ -305,22 +339,57 @@ impl <'a> VM<'a> {
             type_infos: RefCell::new(TypeInfos::new()),
             typeids: FixedMap::new(),
             interner: RefCell::new(Interner::new()),
+            names: RefCell::new(HashMap::new()),
             gc: Gc::new()
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
-        vm.extern_function("array_length", vec![array_a.clone()], int_type_tc.clone(), array_length);
-        vm.extern_function("array_push", vec![array_a.clone(), a.clone()], unit_type_tc.clone(), array_push);
-        vm.extern_function("string_append", vec![string_type_tc.clone(), string_type_tc.clone()], string_type_tc.clone(), string_append);
+        let _ = vm.extern_function("array_length", vec![array_a.clone()], int_type_tc.clone(), array_length);
+        let _ = vm.extern_function("array_push", vec![array_a.clone(), a.clone()], unit_type_tc.clone(), array_push);
+        let _ = vm.extern_function("string_append", vec![string_type_tc.clone(), string_type_tc.clone()], string_type_tc.clone(), string_append);
         vm
     }
 
-    pub fn new_functions(&self, fns: Vec<CompiledFunction>) {
-        self.globals.extend(fns.move_iter()
-            .map(|CompiledFunction { id: id, typ: typ, instructions: instructions }|
-                Global { id: id, typ: typ, value: Bytecode(instructions) }
-            )
-        )
+    pub fn new_functions(&self, (fns, indexes): (Vec<CompiledFunction>, Vec<TraitFunctions>)) {
+        let mut names = self.names.borrow_mut();
+        for trait_index in indexes.move_iter() {
+            //First index of this impl's functions
+            let start_index = trait_index.index - self.globals.len();
+            let func = &fns[start_index];
+            let is_registered = match names.find(&func.id) {
+                Some(&TraitFn(..)) => true,
+                None => false,
+                _ => fail!()
+            };
+            if !is_registered {
+                match self.type_infos.borrow().traits.find(&trait_index.trait_name) {
+                    Some(trait_fns) => {
+                        for (i, &(trait_fn, _)) in trait_fns.iter().enumerate() {
+                            debug!("Register trait fn {}", trait_fn);
+                            names.insert(func.id, TraitFn(trait_index.trait_name, i));
+                        }
+                    }
+                    None => fail!()
+                }
+            }
+            self.trait_indexes.push(trait_index);
+        }
+        for f in fns.move_iter() {
+            let CompiledFunction { id: id, typ: typ, instructions: instructions } = f;
+            match names.find(&id) {
+                Some(&GlobalFn(..)) => {
+                    if id != self.interner.borrow_mut().intern("") {//Lambdas have the empty string as name
+                        fail!("ICE: Global {} already exists", id);
+                    }
+                }
+                Some(&TraitFn(..)) => (),
+                None => {
+                    debug!("Register fn {}", id);
+                    names.insert(id, GlobalFn(self.globals.len()));
+                }
+            }
+            self.globals.push(Global { id: id, typ: typ, value: Bytecode(instructions) });
+        }
     }
 
     pub fn get_global(&self, name: &str) -> Option<(uint, &Global)> {
@@ -361,13 +430,19 @@ impl <'a> VM<'a> {
         stack.pop()
     }
 
-    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) {
+    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) -> Result<(), String> {
+        let id = self.intern(name);
+        if self.names.borrow().contains_key(&id) {
+            return Err(format!("{} is already defined", name))
+        }
         let global = Global {
-            id: self.intern(name),
+            id: id,
             typ: Constrained { constraints: Vec::new(), value: FunctionType(args, box return_type) },
             value: Extern(f)
         };
+        self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(global);
+        Ok(())
     }
 
     pub fn register_type<T: 'static>(&mut self, name: &str) -> Result<&TcType, ()> {
@@ -385,10 +460,6 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn add_trait_indexes(&self, indexes: Vec<TraitFunctions>) {
-        self.trait_indexes.extend(indexes.move_iter())
-    }
-
     pub fn intern(&self, s: &str) -> InternedStr {
         self.interner.borrow_mut().intern(s)
     }
@@ -397,7 +468,8 @@ impl <'a> VM<'a> {
         VMEnv {
             type_infos: self.type_infos.borrow(),
             trait_indexes: &self.trait_indexes,
-            globals: &self.globals
+            globals: &self.globals,
+            names: self.names.borrow()
         }
     }
 
@@ -733,7 +805,7 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), String> {
         let mut parser = Parser::new(&mut*cell, buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
         tryf!(parser.module())
     };
-    let (type_infos, (functions, trait_indexes)) = {
+    let (type_infos, functions) = {
         let mut tc = Typecheck::new();
         let env = vm.env();
         tc.add_environment(&env);
@@ -742,9 +814,8 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), String> {
         let mut compiler = Compiler::new(&env);
         (tc.type_infos, compiler.compile_module(&module))
     };
+    vm.type_infos.borrow_mut().extend(type_infos);
     vm.new_functions(functions);
-    vm.add_trait_indexes(trait_indexes);
-    *vm.type_infos.borrow_mut() = type_infos;
     Ok(())
 }
 

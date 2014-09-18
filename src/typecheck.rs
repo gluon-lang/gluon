@@ -299,6 +299,21 @@ impl TypeInfos {
             set.push(Constrained { constraints: constraints, value: imp_type });
         }
     }
+    pub fn extend(&mut self, other: TypeInfos) {
+        let TypeInfos { structs: structs, enums: enums, impls: impls, traits: traits } = other;
+        for (id, struct_) in structs.move_iter() {
+            self.structs.insert(id, struct_);
+        }
+        for (id, enum_) in enums.move_iter() {
+            self.enums.insert(id, enum_);
+        }
+        for (id, impl_) in impls.move_iter() {
+            self.impls.insert(id, impl_);
+        }
+        for (id, trait_) in traits.move_iter() {
+            self.traits.insert(id, trait_);
+        }
+    }
 }
 fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(InternedStr, Constrained<TcType>)], TypeError> {
     this.find_trait(name)

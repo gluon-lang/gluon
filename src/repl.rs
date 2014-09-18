@@ -90,7 +90,7 @@ fn run_line<'a>(vm: &'a VM<'a>, line: IoResult<String>) -> Result<bool, String> 
                 let mut compiler = Compiler::new(&env);
                 compiler.compile_expr(&expr)
             };
-            vm.new_functions(lambdas);
+            vm.new_functions((lambdas, Vec::new()));
             let v = vm.execute_instructions(instructions.as_slice());
             match v {
                 Some(v) => println!("{}", v),

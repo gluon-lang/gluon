@@ -340,7 +340,8 @@ fn id(x: Test) -> Test {
         }
         vm.register_type::<Test>("Test")
             .unwrap_or_else(|_| fail!("Could not add type"));
-        define_function!(&mut vm, "test", test);
+        (define_function!(&mut vm, "test", test))
+            .unwrap_or_else(|err| fail!("{}", err));
         let mut buffer = BufReader::new(s.as_bytes());
         load_script(&mut vm, &mut buffer)
             .unwrap_or_else(|err| fail!("{}", err));
