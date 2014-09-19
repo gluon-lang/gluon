@@ -496,7 +496,7 @@ impl <'a> VM<'a> {
         let mut index = 0;
         while index < instructions.len() {
             let instr = instructions[index];
-            debug!("{}", instr);
+            debug!("{}: {}", index, instr);
             match instr {
                 Push(i) => {
                     let v = stack.get(i).clone();
@@ -1266,6 +1266,29 @@ fn main() -> bool {
         let value = run_function(&vm, "main")
             .unwrap_or_else(|err| fail!("{}", err));
         assert_eq!(value, Some(Int(1)));
+    }
+
+    #[test]
+    fn and_operator() {
+        let text = 
+r#"
+fn main() -> int {
+    let x = 0;
+    if false && { x = 100; true } {
+    }
+    else { 
+        if 0 < x || false {
+            x = 200;
+        }
+        else {
+        }
+    }
+    x
+}"#;
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(0)));
     }
 }
 

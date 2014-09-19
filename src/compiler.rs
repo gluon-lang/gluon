@@ -465,33 +465,55 @@ impl <'a> Compiler<'a> {
                 
             }
             BinOp(ref lhs, ref op, ref rhs) => {
-                self.compile(&**lhs, function);
-                self.compile(&**rhs, function);
-                let typ = lhs.type_of();
-                let instr = if *typ == int_type_tc {
-                    match op.as_slice() {
-                        "+" => AddInt,
-                        "-" => SubtractInt,
-                        "*" => MultiplyInt,
-                        "<" => IntLT,
-                        "==" => IntEQ,
-                        _ => fail!()
-                    }
+                if op.as_slice() == "&&" {
+                    self.compile(&**lhs, function);
+                    let lhs_end = function.instructions.len();
+                    function.instructions.push(CJump(lhs_end + 3));//Jump to rhs evaluation
+                    function.instructions.push(PushInt(0));
+                    function.instructions.push(Jump(0));//lhs false, jump to after rhs
+                    self.compile(&**rhs, function);
+                    *function.instructions.get_mut(lhs_end + 2) = Jump(function.instructions.len());//replace jump instruction
                 }
-                else if *typ == float_type_tc {
-                    match op.as_slice() {
-                        "+" => AddFloat,
-                        "-" => SubtractFloat,
-                        "*" => MultiplyFloat,
-                        "<" => FloatLT,
-                        "==" => FloatEQ,
-                        _ => fail!()
-                    }
+                else if op.as_slice() == "||" {
+                    self.compile(&**lhs, function);
+                    let lhs_end = function.instructions.len();
+                    function.instructions.push(CJump(0));
+                    self.compile(&**rhs, function);
+                    function.instructions.push(Jump(0));
+                    *function.instructions.get_mut(lhs_end) = CJump(function.instructions.len());
+                    function.instructions.push(PushInt(1));
+                    let end = function.instructions.len();
+                    *function.instructions.get_mut(end - 2) = Jump(end);
                 }
                 else {
-                    fail!("Unexpected type {} in expression {}", typ, op.id())
-                };
-                function.instructions.push(instr);
+                    self.compile(&**lhs, function);
+                    self.compile(&**rhs, function);
+                    let typ = lhs.type_of();
+                    let instr = if *typ == int_type_tc {
+                        match op.as_slice() {
+                            "+" => AddInt,
+                            "-" => SubtractInt,
+                            "*" => MultiplyInt,
+                            "<" => IntLT,
+                            "==" => IntEQ,
+                            _ => fail!()
+                        }
+                    }
+                    else if *typ == float_type_tc {
+                        match op.as_slice() {
+                            "+" => AddFloat,
+                            "-" => SubtractFloat,
+                            "*" => MultiplyFloat,
+                            "<" => FloatLT,
+                            "==" => FloatEQ,
+                            _ => fail!()
+                        }
+                    }
+                    else {
+                        fail!("Unexpected type {} in expression {}", typ, op.id())
+                    };
+                    function.instructions.push(instr);
+                }
             }
             Let(ref id, ref expr) => {
                 self.compile(&**expr, function);
