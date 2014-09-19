@@ -265,7 +265,14 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 let pred = box try!(self.expression());
                 let if_true = box try!(self.block());
                 expect!(self, TElse);
-                let if_false = box try!(self.block());
+                let if_false = box match *self.lexer.peek() {
+                    TOpenBrace => try!(self.block()),
+                    TIf => try!(self.expression()),
+                    x => {
+                        static expected: &'static [&'static str] = &["{", "if"];
+                        return Err(self.unexpected_token(expected, x))
+                    }
+                };
                 Ok(IfElse(pred, if_true, if_false))
             }
             TWhile => {

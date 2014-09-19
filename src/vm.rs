@@ -1276,12 +1276,10 @@ fn main() -> int {
     let x = 0;
     if false && { x = 100; true } {
     }
-    else { 
-        if 0 < x || false {
-            x = 200;
-        }
-        else {
-        }
+    else if 0 < x || false {
+        x = 200;
+    }
+    else {
     }
     x
 }"#;
