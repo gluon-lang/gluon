@@ -638,7 +638,10 @@ impl <'a> Typecheck<'a> {
                 let pred_type = try!(self.typecheck(&mut**pred));
                 try!(self.unify(&bool_type_tc, pred_type));
                 let true_type = try!(self.typecheck(&mut**if_true));
-                let false_type = try!(self.typecheck(&mut**if_false));
+                let false_type = match *if_false {
+                    Some(ref mut if_false) => try!(self.typecheck(&mut**if_false)),
+                    None => unit_type_tc.clone()
+                };
                 self.unify(&true_type, false_type)
             }
             ast::While(ref mut pred, ref mut expr) => {
@@ -1208,6 +1211,15 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
 impl <T: Typed> Typed for ast::Function<T> {
     fn type_of(&self) -> &TcType {
         self.declaration.name.type_of()
+    }
+}
+
+impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
+    fn type_of(&self) -> &TcType {
+        match *self {
+            Some(ref t) => t.type_of(),
+            None => &unit_type_tc
+        }
     }
 }
 

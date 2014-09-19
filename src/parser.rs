@@ -264,14 +264,19 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             TIf => {
                 let pred = box try!(self.expression());
                 let if_true = box try!(self.block());
-                expect!(self, TElse);
-                let if_false = box match *self.lexer.peek() {
-                    TOpenBrace => try!(self.block()),
-                    TIf => try!(self.expression()),
-                    x => {
-                        static expected: &'static [&'static str] = &["{", "if"];
-                        return Err(self.unexpected_token(expected, x))
+                let if_false = match *self.lexer.peek() {
+                    TElse => {
+                        self.lexer.next();
+                        Some(box match *self.lexer.peek() {
+                            TOpenBrace => try!(self.block()),
+                            TIf => try!(self.expression()),
+                            x => {
+                                static expected: &'static [&'static str] = &["{", "if"];
+                                return Err(self.unexpected_token(expected, x))
+                            }
+                        })
                     }
+                    _ => None
                 };
                 Ok(IfElse(pred, if_true, if_false))
             }
@@ -644,7 +649,7 @@ pub mod tests {
         no_loc(Call(box e, args))
     }
     fn if_else(p: PExpr, if_true: PExpr, if_false: PExpr) -> PExpr {
-        no_loc(IfElse(box p, box if_true, box if_false))
+        no_loc(IfElse(box p, box if_true, Some(box if_false)))
     }
 
     fn while_(p: PExpr, expr: PExpr) -> PExpr {

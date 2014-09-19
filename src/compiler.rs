@@ -422,7 +422,10 @@ impl <'a> Compiler<'a> {
                 self.compile(&**pred, function);
                 let jump_index = function.instructions.len();
                 function.instructions.push(CJump(0));
-                self.compile(&**if_false, function);
+                match *if_false {
+                    Some(ref if_false) => self.compile(&**if_false, function),
+                    None => ()
+                }
                 let false_jump_index = function.instructions.len();
                 function.instructions.push(Jump(0));
                 *function.instructions.get_mut(jump_index) = CJump(function.instructions.len());

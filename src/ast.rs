@@ -86,7 +86,7 @@ pub enum Expr<Id> {
     Identifier(Id),
     Literal(Literal),
     Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
-    IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Box<LExpr<Id>>),
+    IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
     While(Box<LExpr<Id>>, Box<LExpr<Id>>),
     Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
     Block(Vec<LExpr<Id>>),
@@ -192,7 +192,10 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut LExpr<T>) {
         IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
             v.visit_expr(&mut **if_true);
-            v.visit_expr(&mut **if_false);
+            match *if_false {
+                Some(ref mut if_false) => v.visit_expr(&mut **if_false),
+                None => ()
+            }
         }
         Block(ref mut exprs) => {
             for expr in exprs.mut_iter() {

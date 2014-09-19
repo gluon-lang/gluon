@@ -1279,8 +1279,6 @@ fn main() -> int {
     else if 0 < x || false {
         x = 200;
     }
-    else {
-    }
     x
 }"#;
         let mut vm = VM::new();
