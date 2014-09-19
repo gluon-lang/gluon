@@ -85,6 +85,7 @@ macro_rules! matches(
 )
 fn precedence(s : &str) -> int {
     match s {
+        "&&" | "||" => 0,
         "+" => 1,
         "-" => 1,
         "*" => 3,

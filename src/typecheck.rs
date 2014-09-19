@@ -664,7 +664,8 @@ impl <'a> Typecheck<'a> {
                             return Err(TypeError("Expected numbers in binop"))
                         }
                     }
-                    "=="| "!=" | "<" | ">" | "<=" | ">="  => Ok(bool_type_tc.clone()),
+                    "&&" | "||" => self.unify(&bool_type_tc, lhs_type),
+                    "=="| "!=" | "<" | ">" | "<=" | ">=" => Ok(bool_type_tc.clone()),
                     _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
@@ -1181,7 +1182,7 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
             ast::BinOp(ref lhs, ref op, _) => {
                 match op.as_slice() {
                     "+" | "-" | "*" => lhs.type_of(),
-                    "<" | ">" | "<=" | ">=" | "==" | "!=" => &bool_type_tc,
+                    "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => &bool_type_tc,
                     _ => fail!()
                 }
             }
@@ -1561,6 +1562,33 @@ impl <T:Eq> Eq for Option<T> {
 }
 fn test() -> bool {
     eq(Some(2), None())
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_err();
+    }
+
+    #[test]
+    fn and_or() {
+        let text = 
+r"
+fn test(x: float) -> bool {
+    x < 0.0 && true || x > 1.0
+}
+";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| fail!("{}", err));
+    }
+    #[test]
+    fn and_type_error() {
+        let text = 
+r"
+fn test() -> bool {
+    1 && true
 }
 ";
         let mut module = parse(text, |p| p.module());
