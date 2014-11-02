@@ -39,10 +39,15 @@ fn run_command<'a>(vm: &'a VM<'a>, command: char, args: &str) -> Result<bool, St
             match vm.env().find_type_info(&vm.intern(args)) {
                 Some(info) => {
                     match info {
-                        Struct(fields) => {
+                        Struct(&(ref typ, ref fields)) => {
                             println!("struct {} {{", args);
-                            for &(name, ref typ) in fields.iter()  {
-                                println!("    {}: {},", name, typ);
+                            match *typ {
+                                FunctionType(ref field_types, _) => {
+                                    for (name, typ) in fields.iter().zip(field_types.iter()) {
+                                        println!("    {}: {},", name, typ);
+                                    }
+                                }
+                                _ => ()
                             }
                             println!("}}");
                         }

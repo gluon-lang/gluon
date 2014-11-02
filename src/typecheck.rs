@@ -240,12 +240,12 @@ pub type TcResult = Result<TcType, TypeError>;
 
 
 pub enum TypeInfo<'a> {
-    Struct(&'a [(InternedStr, TcType)]),
+    Struct(&'a (TcType, Vec<InternedStr>)),
     Enum(&'a [ast::Constructor<TcIdent>])
 }
 
 pub struct TypeInfos {
-    pub structs: HashMap<InternedStr, Vec<(InternedStr, TcType)>>,
+    pub structs: HashMap<InternedStr, (TcType, Vec<InternedStr>)>,
     pub enums: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
     pub impls: HashMap<InternedStr, Vec<Constrained<TcType>>>,
     pub traits: HashMap<InternedStr, Vec<(InternedStr, Constrained<TcType>)>>
@@ -262,7 +262,7 @@ impl TypeInfos {
     }
     pub fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
         self.structs.find(id)
-            .map(|s| Struct(s.as_slice()))
+            .map(Struct)
             .or_else(|| self.enums.find(id).map(|e| Enum(e.as_slice())))
     }
     pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, Constrained<TcType>)]> {
@@ -271,9 +271,16 @@ impl TypeInfos {
     pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
         for s in module.structs.iter() {
             let fields = s.fields.iter()
-                .map(|field| (field.name, from_constrained_type(s.type_variables.as_slice(), &field.typ)))
+                .map(|field| field.name)
                 .collect();
-            self.structs.insert(s.name.name, fields);
+            let args = s.fields.iter()
+                .map(|f| from_constrained_type(s.type_variables.as_slice(), &f.typ))
+                .collect();
+            let variables = range(0, s.type_variables.len())
+                .map(|i| Generic(i))
+                .collect();
+            let typ = FunctionType(args, box Type(s.name.name, variables));
+            self.structs.insert(s.name.name, (typ, fields));
         }
         for e in module.enums.iter() {
             self.enums.insert(e.name.name, e.constructors.clone());
@@ -322,7 +329,7 @@ fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(Inter
 }
 
 pub trait TypeEnv {
-    fn find_type(&self, id: &InternedStr) -> Option<&Constrained<TcType>>;
+    fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraints], &TcType)>;
     fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo>;
 }
 
@@ -389,8 +396,8 @@ impl <'a> Typecheck<'a> {
             match stack.find(id).map(|typ| ([].as_slice(), typ)) {
                 Some(x) => Some(x),
                 None => module.find(id)
-                    .or_else(|| environment.and_then(|e| e.find_type(id)))
                     .map(|c| (c.constraints.as_slice(), &c.value))
+                    .or_else(|| environment.and_then(|e| e.find_type(id)))
             }
         };
         match t {
@@ -714,11 +721,20 @@ impl <'a> Typecheck<'a> {
                     Type(ref struct_id, _) => {
                         let type_info = try!(self.find_type_info(struct_id));
                         match type_info {
-                            Struct(ref fields) => {
-                                id.typ = try!(fields.iter()
-                                    .find(|& &(name, _)| name == id.name)
-                                    .map(|&(_, ref typ)| Ok(typ.clone()))
-                                    .unwrap_or_else(|| Err(UndefinedField(struct_id.clone(), id.name.clone()))));
+                            Struct(&(ref typ, ref fields)) => {
+                                let field_type = match *typ {
+                                    FunctionType(ref field_types, _) => {
+                                        fields.iter()
+                                            .zip(field_types.iter())
+                                            .find(|&(name, _)| name == id.id())
+                                            .map(|(_, typ)| typ.clone())
+                                    }
+                                    _ => None
+                                };
+                                id.typ = match field_type {
+                                    Some(typ) => typ,
+                                    None => return Err(UndefinedField(struct_id.clone(), id.name.clone()))
+                                };
                                 Ok(id.typ.clone())
                             }
                             Enum(_) => Err(TypeError("Field access on enum type"))

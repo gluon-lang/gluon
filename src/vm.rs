@@ -4,6 +4,7 @@ use std::fmt;
 use std::intrinsics::{TypeId, get_tydesc};
 use std::any::Any;
 use std::collections::HashMap;
+use ast;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType, match_types};
 use compiler::*;
@@ -177,27 +178,35 @@ pub struct VMEnv<'a> {
 
 impl <'a> CompilerEnv for VMEnv<'a> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
-        self.names.find(id).and_then(|named| {
-            match *named {
-                GlobalFn(index) if index < self.globals.len() => {
-                    let g = &self.globals[index];
-                    Some(Global(index, g.typ.constraints.as_slice(), &g.typ.value))
-                }
-                TraitFn(trait_index, function_index) => {
-                    self.type_infos.traits
-                        .find(&trait_index)
-                        .and_then(|functions| {
-                            if function_index < functions.len() {
-                                Some(TraitFunction(&functions[function_index].ref1().value))
-                            }
-                            else {
-                                None
-                            }
-                        })
-                }
-                _ => None
+        match self.names.find(id) {
+            Some(&GlobalFn(index)) if index < self.globals.len() => {
+                let g = &self.globals[index];
+                Some(Global(index, g.typ.constraints.as_slice(), &g.typ.value))
             }
-        })
+            Some(&TraitFn(trait_index, function_index)) => {
+                self.type_infos.traits
+                    .find(&trait_index)
+                    .and_then(|functions| {
+                        if function_index < functions.len() {
+                            Some(TraitFunction(&functions[function_index].ref1().value))
+                        }
+                        else {
+                            None
+                        }
+                    })
+            }
+            _ => {
+                debug!("#### {} {}", id, self.type_infos.enums);
+                self.type_infos.structs.find(id)
+                    .map(|&(_, ref fields)| Constructor(0, fields.len()))
+                    .or_else(|| {
+                        self.type_infos.enums.values()
+                            .flat_map(|ctors| ctors.iter().enumerate())
+                            .find(|ctor| ctor.ref1().name.id() == id)
+                            .map(|(i, ctor)| Constructor(i, ctor.arguments.len()))
+                    })
+            }
+        }
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
         (*self).find_field(struct_, field)
@@ -257,27 +266,36 @@ impl <'a> CompilerEnv for VMEnv<'a> {
 }
 
 impl <'a> TypeEnv for VMEnv<'a> {
-    fn find_type(&self, id: &InternedStr) -> Option<&Constrained<TcType>> {
-        self.names.find(id).and_then(|named| {
-            match *named {
-                GlobalFn(index) if index < self.globals.len() => {
-                    Some(&self.globals[index].typ)
-                }
-                TraitFn(trait_index, function_index) => {
-                    self.type_infos.traits
-                        .find(&trait_index)
-                        .and_then(|functions| {
-                            if function_index < functions.len() {
-                                Some(functions[function_index].ref1())
-                            }
-                            else {
-                                None
-                            }
-                        })
-                }
-                _ => None
+    fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraints], &TcType)> {
+        match self.names.find(id) {
+            Some(&GlobalFn(index)) if index < self.globals.len() => {
+                let g = &self.globals[index];
+                Some((g.typ.constraints.as_slice(), &g.typ.value))
             }
-        })
+            Some(&TraitFn(trait_index, function_index)) => {
+                self.type_infos.traits
+                    .find(&trait_index)
+                    .and_then(|functions| {
+                        if function_index < functions.len() {
+                            let f = functions[function_index].ref1();
+                            Some((f.constraints.as_slice(), &f.value))
+                        }
+                        else {
+                            None
+                        }
+                    })
+            }
+            _ => {
+                self.type_infos.structs.find(id)
+                    .map(|type_fields| ([].as_slice(), type_fields.ref0()))
+                    .or_else(|| {
+                        self.type_infos.enums.values()
+                            .flat_map(|ctors| ctors.iter())
+                            .find(|ctor| ctor.name.id() == id)
+                            .map(|ctor| ([].as_slice(), &ctor.name.typ))
+                    })
+            }
+        }
     }
     fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
         self.type_infos.find_type_info(id)
@@ -453,9 +471,10 @@ impl <'a> VM<'a> {
         }
         else {
             let id = TypeId::of::<T>();
-            try!(self.typeids.try_insert(id, Type(n, Vec::new())).map_err(|_| ()));
+            let typ = Type(n, Vec::new());
+            try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
             let t = self.typeids.find(&id).unwrap();
-            type_infos.structs.insert(n, Vec::new());
+            type_infos.structs.insert(n, (typ, Vec::new()));
             Ok(t)
         }
     }
@@ -1256,6 +1275,40 @@ fn main() -> bool {
     }
     else {
         false
+    }
+}
+";
+            let mut buffer = BufReader::new(text.as_bytes());
+            load_script(&mut vm, &mut buffer)
+                .unwrap_or_else(|e| fail!("{}", e));
+        }
+        let value = run_function(&vm, "main")
+            .unwrap_or_else(|err| fail!("{}", err));
+        assert_eq!(value, Some(Int(1)));
+    }
+
+    #[test]
+    fn use_type_from_another_script() {
+        let mut vm = VM::new();
+        {
+            let text = 
+r"
+enum IntOrFloat {
+    I(int),
+    F(float)
+}
+";
+            let mut buffer = BufReader::new(text.as_bytes());
+            load_script(&mut vm, &mut buffer)
+                .unwrap_or_else(|e| fail!("{}", e));
+        }
+        {
+            let text = 
+r"
+fn main() -> int {
+    match F(2.0) {
+        I(x) => { x }
+        F(x) => { 1 }
     }
 }
 ";
