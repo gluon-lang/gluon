@@ -28,7 +28,7 @@ pub fn run() {
     }
 }
 
-fn run_command<'a>(vm: &'a VM<'a>, command: char, args: &str) -> Result<bool, String> {
+fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
     match command {
         'q' => Ok(false),
         'l' => {
@@ -77,7 +77,7 @@ fn run_command<'a>(vm: &'a VM<'a>, command: char, args: &str) -> Result<bool, St
     }
 }
 
-fn run_line<'a>(vm: &'a VM<'a>, line: IoResult<String>) -> Result<bool, String> {
+fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
     let expr_str = tryf!(line);
     let slice = expr_str.as_slice();
     match slice.char_at(0) {

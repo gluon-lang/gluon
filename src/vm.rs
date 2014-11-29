@@ -34,69 +34,69 @@ impl <T> Clone for Userdata<T> {
     }
 }
 
-pub struct Data<'a> {
-    value: GcPtr<'a, Data_<'a>>
+pub struct Data {
+    value: GcPtr<Data_>
 }
 
-impl <'a> Data<'a> {
+impl  Data {
 
-    fn borrow(&self) -> &Data_<'a> {
+    fn borrow(&self) -> &Data_ {
         & **self
     }
-    fn borrow_mut(&self) -> &mut Data_<'a> {
+    fn borrow_mut(&self) -> &mut Data_ {
         unsafe { ::std::mem::transmute(& **self) }
     }
 }
 
-impl <'a> PartialEq for Data<'a> {
-    fn eq(&self, other: &Data<'a>) -> bool {
+impl  PartialEq for Data {
+    fn eq(&self, other: &Data) -> bool {
         self.tag == other.tag && self.fields == other.fields
     }
 }
 
-impl <'a> Clone for Data<'a> {
-    fn clone(&self) -> Data<'a> {
+impl  Clone for Data {
+    fn clone(&self) -> Data {
         Data { value: self.value }
     }
 }
 
-impl <'a> Deref<Data_<'a>> for Data<'a> {
-    fn deref(&self) -> &Data_<'a> {
+impl  Deref<Data_> for Data {
+    fn deref(&self) -> &Data_ {
         &*self.value
     }
 }
-impl <'a> DerefMut<Data_<'a>> for Data<'a> {
-    fn deref_mut(&mut self) -> &mut Data_<'a> {
+impl  DerefMut<Data_> for Data {
+    fn deref_mut(&mut self) -> &mut Data_ {
         &mut *self.value
     }
 }
 
 #[deriving(Clone, PartialEq)]
-pub struct Data_<'a> {
+pub struct Data_ {
     tag: uint,
-    fields: Vec<Value<'a>>
+    fields: Vec<Value>
 }
 
 #[deriving(Clone, PartialEq)]
-pub enum Value<'a> {
+pub enum Value {
     Int(int),
     Float(f64),
     String(InternedStr),
-    Data(Data<'a>),
+    Data(Data),
     Function(uint),
-    Closure(Data<'a>),
-    TraitObject(Data<'a>),
+    Closure(Data),
+    TraitObject(Data),
     Userdata(Userdata<Box<Any + 'static>>)
 }
 
-impl <'a> Traverseable<Data_<'a>> for Data_<'a> {
-    fn traverse(&mut self, func: |&mut Data_<'a>|) {
+impl  Traverseable<Data_> for Data_ {
+    fn traverse(&mut self, func: |&mut Data_|) {
         self.fields.traverse(func);
     }
 }
 
-impl <'a> Traverseable<Data_<'a>> for Vec<Value<'a>> {
-    fn traverse(&mut self, func: |&mut Data_<'a>|) {
+impl  Traverseable<Data_> for Vec<Value> {
+    fn traverse(&mut self, func: |&mut Data_|) {
         for value in self.mut_iter() {
             match *value {
                 Data(ref mut data) => func(&mut **data),
@@ -110,7 +110,7 @@ impl <'a> Traverseable<Data_<'a>> for Vec<Value<'a>> {
 
 type Dict = Vec<uint>;
 
-impl <'a> fmt::Show for Value<'a> {
+impl  fmt::Show for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Int(i) => write!(f, "{}", i),
@@ -159,14 +159,14 @@ enum Named {
     TraitFn(InternedStr, uint),
 }
 
-pub struct VM<'a> {
+pub struct VM {
     globals: FixedVec<Global>,
     trait_indexes: FixedVec<TraitFunctions>,
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
     interner: RefCell<Interner>,
     names: RefCell<HashMap<InternedStr, Named>>,
-    gc: Gc<Data_<'a>>
+    gc: Gc<Data_>
 }
 
 pub struct VMEnv<'a> {
@@ -302,13 +302,13 @@ impl <'a> TypeEnv for VMEnv<'a> {
     }
 }
 
-pub struct StackFrame<'a, 'b: 'a> {
-    stack: &'a mut Vec<Value<'b>>,
+pub struct StackFrame<'b> {
+    stack: &'b mut Vec<Value>,
     offset: uint,
-    upvars: &'a mut [Value<'b>]
+    upvars: &'b mut [Value]
 }
-impl <'a, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: &'a mut Vec<Value<'b>>, args: uint, upvars: &'a mut [Value<'b>]) -> StackFrame<'a, 'b> {
+impl <'b> StackFrame<'b> {
+    pub fn new(v: &'b mut Vec<Value>, args: uint, upvars: &'b mut [Value]) -> StackFrame<'b> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
@@ -317,40 +317,40 @@ impl <'a, 'b> StackFrame<'a, 'b> {
         self.stack.len() - self.offset
     }
 
-    pub fn get<'a>(&'a self, i: uint) -> &'a Value<'b> {
+    pub fn get(&self, i: uint) -> &Value {
         &(*self.stack)[self.offset + i]
     }
-    pub fn get_mut<'a>(&'a mut self, i: uint) -> &'a mut Value<'b> {
+    pub fn get_mut(&mut self, i: uint) -> &mut Value {
         self.stack.get_mut(self.offset + i)
     }
 
-    pub fn push(&mut self, v: Value<'b>) {
+    pub fn push(&mut self, v: Value) {
         self.stack.push(v);
     }
-    pub fn top(&mut self) -> &Value<'b> {
+    pub fn top(&mut self) -> &Value {
         self.stack.last().unwrap()
     }
 
-    pub fn pop(&mut self) -> Value<'b> {
+    pub fn pop(&mut self) -> Value {
         match self.stack.pop() {
             Some(x) => x,
             None => fail!()
         }
     }
-    fn as_slice(&self) -> &[Value<'b>] {
+    fn as_slice(&self) -> &[Value] {
         self.stack.slice_from(self.offset)
     }
 }
 
-impl <'a, 'b> Index<uint, Value<'b>> for StackFrame<'a, 'b> {
-    fn index(&self, index: &uint) -> &Value<'b> {
+impl <'b> Index<uint, Value> for StackFrame<'b> {
+    fn index(&self, index: &uint) -> &Value {
         &(*self.stack)[self.offset + *index]
     }
 }
 
-impl <'a> VM<'a> {
+impl VM {
     
-    pub fn new() -> VM<'a> {
+    pub fn new() -> VM {
         let vm = VM {
             globals: FixedVec::new(),
             trait_indexes: FixedVec::new(),
@@ -430,7 +430,7 @@ impl <'a> VM<'a> {
             })
     }
 
-    pub fn run_function(&'a self, cf: &Global) -> Option<Value<'a>> {
+    pub fn run_function(&self, cf: &Global) -> Option<Value> {
         let mut stack = Vec::new();
         {
             let frame = StackFrame::new(&mut stack, 0, [].as_mut_slice());
@@ -439,7 +439,7 @@ impl <'a> VM<'a> {
         stack.pop()
     }
 
-    pub fn execute_instructions(&'a self, instructions: &[Instruction]) -> Option<Value<'a>> {
+    pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value> {
         let mut stack = Vec::new();
         {
             let frame = StackFrame::new(&mut stack, 0, [].as_mut_slice());
@@ -492,14 +492,14 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn new_data(&'a self, tag: uint, fields: Vec<Value<'a>>) -> Value<'a> {
+    fn new_data(&self, tag: uint, fields: Vec<Value>) -> Value {
         Data(Data { value: self.gc.alloc(Data_ { tag: tag, fields: fields })})
     }
-    fn new_data_and_collect(&'a self, roots: &mut Vec<Value<'a>>, tag: uint, fields: Vec<Value<'a>>) -> Data<'a> {
+    fn new_data_and_collect(&self, roots: &mut Vec<Value>, tag: uint, fields: Vec<Value>) -> Data {
         Data { value: self.gc.alloc_and_collect(roots, Data_ { tag: tag, fields: fields })}
     }
 
-    fn execute_function<'b>(&'a self, stack: StackFrame<'b, 'a>, function: &Global) {
+    fn execute_function<'b>(&self, stack: StackFrame<'b>, function: &Global) {
         match function.value {
             Extern(func) => {
                 func(self, stack);
@@ -510,7 +510,7 @@ impl <'a> VM<'a> {
         }
     }
 
-    pub fn execute<'b>(&'a self, mut stack: StackFrame<'b, 'a>, instructions: &[Instruction]) {
+    pub fn execute<'b>(&self, mut stack: StackFrame<'b>, instructions: &[Instruction]) {
         debug!("Enter frame with {}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
@@ -838,18 +838,18 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), String> {
     Ok(())
 }
 
-pub fn run_main<'a>(vm: &'a VM<'a>, s: &str) -> Result<Option<Value<'a>>, String> {
+pub fn run_main(vm: &VM, s: &str) -> Result<Option<Value>, String> {
     use std::io::BufReader;
     let mut buffer = BufReader::new(s.as_bytes());
     run_buffer_main(vm, &mut buffer)
 }
-pub fn run_buffer_main<'a>(vm: &'a VM<'a>, buffer: &mut Buffer) -> Result<Option<Value<'a>>, String> {
+pub fn run_buffer_main(vm: &VM, buffer: &mut Buffer) -> Result<Option<Value>, String> {
     try!(load_script(vm, buffer));
     let v = try!(run_function(vm, "main"));
     Ok(v)
 }
 
-pub fn run_function<'a>(vm: &'a VM<'a>, name: &str) -> Result<Option<Value<'a>>, String> {
+pub fn run_function(vm: &VM, name: &str) -> Result<Option<Value>, String> {
     let globals = vm.globals.borrow();
     let func = match globals.iter().find(|g| g.id.as_slice() == name) {
         Some(f) => &**f,

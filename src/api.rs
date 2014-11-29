@@ -6,7 +6,7 @@ use std::any::{Any, AnyRefExt};
 use std::boxed::BoxAny;
 
 pub trait VMType {
-    fn vm_type<'a>(_: Option<Self>, vm: &'a VM) -> &'a TcType;
+    fn vm_type(_: Option<Self>, vm: &VM) -> &TcType;
     fn make_type(x: Option<Self>, vm: &VM) -> TcType {
         VMType::vm_type(x, vm).clone()
     }
@@ -16,7 +16,7 @@ pub trait VMValue : VMType {
     fn from_value(value: Value) -> Option<Self>;
 }
 impl VMType for () {
-    fn vm_type<'a>(_: Option<()>, _: &'a VM) -> &'a TcType {
+    fn vm_type(_: Option<()>, _: &VM) -> &TcType {
         &unit_type_tc
     }
 }
@@ -29,7 +29,7 @@ impl VMValue for () {
 }
 
 impl VMType for int {
-    fn vm_type<'a>(_: Option<int>, _: &'a VM) -> &'a TcType {
+    fn vm_type(_: Option<int>, _: &VM) -> &TcType {
         &int_type_tc
     }
 }
@@ -45,7 +45,7 @@ impl VMValue for int {
     }
 }
 impl VMType for f64 {
-    fn vm_type<'a>(_: Option<f64>, _: &'a VM) -> &'a TcType {
+    fn vm_type(_: Option<f64>, _: &VM) -> &TcType {
         &float_type_tc
     }
 }
@@ -61,7 +61,7 @@ impl VMValue for f64 {
     }
 }
 impl VMType for bool {
-    fn vm_type<'a>(_: Option<bool>, _: &'a VM) -> &'a TcType {
+    fn vm_type(_: Option<bool>, _: &VM) -> &TcType {
         &bool_type_tc
     }
 }
@@ -78,7 +78,7 @@ impl VMValue for bool {
     }
 }
 impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
-    fn vm_type<'a>(_: Option<Box<T>>, vm: &'a VM) -> &'a TcType {
+    fn vm_type(_: Option<Box<T>>, vm: &VM) -> &TcType {
         vm.get_type::<T>()
     }
 }
@@ -94,7 +94,7 @@ impl <T: 'static + BoxAny + Clone> VMValue for Box<T> {
     }
 }
 impl <T: 'static> VMType for *mut T {
-    fn vm_type<'a>(_: Option<*mut T>, vm: &'a VM) -> &'a TcType {
+    fn vm_type(_: Option<*mut T>, vm: &VM) -> &TcType {
         vm.get_type::<T>()
     }
 }
@@ -110,21 +110,21 @@ impl <T: 'static> VMValue for *mut T {
     }
 }
 
-fn vm_type<'a, T: VMValue>(vm: &'a VM) -> &'a TcType {
+fn vm_type<'a, T: VMValue>(vm: &VM) -> &TcType {
     VMType::vm_type(None::<T>, vm)
 }
 
-fn make_type<'a, T: VMValue>(vm: &'a VM) -> TcType {
+fn make_type<'a, T: VMValue>(vm: &VM) -> TcType {
     VMType::make_type(None::<T>, vm)
 }
 
 trait Get<'a> {
-    fn get_function(vm: &'a VM<'a>, name: &str) -> Option<Self>;
+    fn get_function(vm: &'a VM, name: &str) -> Option<Self>;
 }
 macro_rules! make_get(
     ($($args:ident),*) => (
 impl <'a, $($args : VMValue,)* R: VMValue> Get<'a> for Callable<'a, ($($args,)*), R> {
-    fn get_function(vm: &'a VM<'a>, name: &str) -> Option<Callable<'a, ($($args,)*), R>> {
+    fn get_function(vm: &'a VM, name: &str) -> Option<Callable<'a, ($($args,)*), R>> {
         let value = match vm.get_global(name) {
             Some((function_ref, global)) => {
                 match global.type_of() {
@@ -162,7 +162,7 @@ make_get!(A, B, C, D, E)
 make_get!(A, B, C, D, E, F, G)
 
 pub struct Callable<'a, Args, R> {
-    vm: &'a VM<'a>,
+    vm: &'a VM,
     value: FunctionRef<Args, R>
 }
 struct FunctionRef<Args, R> {
@@ -170,7 +170,7 @@ struct FunctionRef<Args, R> {
 }
 
 impl <Args, R> VMType for FunctionRef<Args, R> {
-    fn vm_type<'a>(_: Option<FunctionRef<Args, R>>, vm: &'a VM) -> &'a TcType {
+    fn vm_type(_: Option<FunctionRef<Args, R>>, vm: &VM) -> &TcType {
         vm.get_type::<|Args|:'static -> R>()
     }
 }
@@ -215,7 +215,7 @@ impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
     }
 }
 
-pub fn get_function<'a, T: Get<'a>>(vm: &'a VM<'a>, name: &str) -> Option<T> {
+pub fn get_function<'a, T: Get<'a>>(vm: &'a VM, name: &str) -> Option<T> {
     Get::get_function(vm, name)
 }
 
@@ -227,7 +227,7 @@ macro_rules! make_vm_function(
     ($($args:ident),*) => (
 impl <$($args: VMValue,)* R: VMValue> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
-    fn vm_type<'a>(_: Option<fn ($($args),*) -> R>, vm: &'a VM) -> &'a TcType {
+    fn vm_type(_: Option<fn ($($args),*) -> R>, vm: &VM) -> &TcType {
         vm.get_type::<fn ($($args),*) -> R>()
     }
     #[allow(non_snake_case)]

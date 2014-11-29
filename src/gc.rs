@@ -19,17 +19,17 @@ struct GcHeader<T> {
     value: T
 }
 
-pub struct GcPtr<'a, T: 'a> {
+pub struct GcPtr<T> {
     ptr: *mut T
 }
 
-impl <'a, T> Deref<T> for GcPtr<'a, T> {
+impl <T> Deref<T> for GcPtr<T> {
     fn deref(&self) -> &T {
         unsafe { & *self.ptr }
     }
 }
 
-impl <'a, T> DerefMut<T> for GcPtr<'a, T> {
+impl <T> DerefMut<T> for GcPtr<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *self.ptr }
     }
@@ -130,37 +130,37 @@ mod tests {
     use super::{Gc, Gc_, GcPtr, GcHeader, Traverseable};
     use std::fmt;
 
-    struct Data<'a> {
-        fields: GcPtr<'a, Vec<Value<'a>>>
+    struct Data {
+        fields: GcPtr<Vec<Value>>
     }
-    impl <'a> Deref<Vec<Value<'a>>> for Data<'a> {
-        fn deref(&self) -> &Vec<Value<'a>> {
+    impl  Deref<Vec<Value>> for Data {
+        fn deref(&self) -> &Vec<Value> {
             &*self.fields
         }
     }
-    impl <'a> DerefMut<Vec<Value<'a>>> for Data<'a> {
-        fn deref_mut(&mut self) -> &mut Vec<Value<'a>> {
+    impl  DerefMut<Vec<Value>> for Data {
+        fn deref_mut(&mut self) -> &mut Vec<Value> {
             &mut *self.fields
         }
     }
-    impl <'a> PartialEq for Data<'a> {
-        fn eq(&self, other: &Data<'a>) -> bool {
+    impl  PartialEq for Data {
+        fn eq(&self, other: &Data) -> bool {
             self.fields.ptr == other.fields.ptr
         }
     }
-    impl <'a> fmt::Show for Data<'a> {
+    impl  fmt::Show for Data {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             self.fields.ptr.fmt(f)
         }
     }
 
     #[deriving(PartialEq, Show)]
-    enum Value<'a> {
+    enum Value {
         Int(int),
-        Data(Data<'a>)
+        Data(Data)
     }
-    impl <'a> Traverseable<Vec<Value<'a>>> for Vec<Value<'a>> {
-        fn traverse(&mut self, func: |&mut Vec<Value<'a>>|) {
+    impl  Traverseable<Vec<Value>> for Vec<Value> {
+        fn traverse(&mut self, func: |&mut Vec<Value>|) {
             for v in self.mut_iter() {
                 match *v {
                     Data(ref mut data) => func(&mut **data),
@@ -169,8 +169,8 @@ mod tests {
             }
         }
     }
-    impl <'a> Traverseable<Vec<Value<'a>>> for Value<'a> {
-        fn traverse(&mut self, func: |&mut Vec<Value<'a>>|) {
+    impl  Traverseable<Vec<Value>> for Value {
+        fn traverse(&mut self, func: |&mut Vec<Value>|) {
             match *self {
                 Data(ref mut data) => func(&mut **data),
                 _ => ()
@@ -197,7 +197,7 @@ mod tests {
         count
     }
 
-    fn new_data<'a>(p: GcPtr<'a, Vec<Value<'a>>>) -> Value<'a> {
+    fn new_data(p: GcPtr<Vec<Value>>) -> Value {
         Data(Data { fields: p })
     }
 
