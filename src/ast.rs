@@ -181,19 +181,18 @@ pub struct Module<Id> {
     pub impls: Vec<Impl<Id>>
 }
 
-pub static int_type: VMType = BuiltinType(IntType);
-pub static float_type: VMType = BuiltinType(FloatType);
-pub static string_type: VMType = BuiltinType(StringType);
-pub static bool_type: VMType = BuiltinType(BoolType);
-pub static unit_type: VMType = BuiltinType(UnitType);
-
+pub static INT_TYPE: VMType = BuiltinType(IntType);
+pub static FLOAT_TYPE: VMType = BuiltinType(FloatType);
+pub static STRING_TYPE: VMType = BuiltinType(StringType);
+pub static BOOL_TYPE: VMType = BuiltinType(BoolType);
+pub static UNIT_TYPE: VMType = BuiltinType(UnitType);
 
 pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
     let t = match x.as_slice() {
-        "int" => int_type.clone(),
-        "float" => float_type.clone(),
-        "string" => string_type.clone(),
-        "bool" => bool_type.clone(),
+        "int" => INT_TYPE.clone(),
+        "float" => FLOAT_TYPE.clone(),
+        "string" => STRING_TYPE.clone(),
+        "bool" => BOOL_TYPE.clone(),
         _ => return None
     };
     Some(t)

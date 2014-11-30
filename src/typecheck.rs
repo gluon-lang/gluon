@@ -12,11 +12,11 @@ use self::TypeError::*;
 pub use ast::TypeEnum::{Type, FunctionType, TraitType, TypeVariable, BuiltinType, Generic, ArrayType};
 
 
-pub static int_type_tc: TcType = BuiltinType(ast::IntType);
-pub static float_type_tc: TcType = BuiltinType(ast::FloatType);
-pub static string_type_tc: TcType = BuiltinType(ast::StringType);
-pub static bool_type_tc: TcType = BuiltinType(ast::BoolType);
-pub static unit_type_tc: TcType = BuiltinType(ast::UnitType);
+pub static INT_TYPE: TcType = BuiltinType(ast::IntType);
+pub static FLOAT_TYPE: TcType = BuiltinType(ast::FloatType);
+pub static STRING_TYPE: TcType = BuiltinType(ast::StringType);
+pub static BOOL_TYPE: TcType = BuiltinType(ast::BoolType);
+pub static UNIT_TYPE: TcType = BuiltinType(ast::UnitType);
 
 
 #[deriving(Clone, Eq, PartialEq, Show)]
@@ -71,7 +71,7 @@ pub fn match_types(l: &TcType, r: &TcType) -> bool {
     }
 
     fn var_eq<'a>(mapping: &mut HashMap<uint, &'a TcType>, l: uint, r: &'a TcType) -> bool {
-        match mapping.find(&l) {
+        match mapping.get(&l) {
             Some(x) => return *x == r,
             None => ()
         }
@@ -265,12 +265,12 @@ impl TypeInfos {
         }
     }
     pub fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
-        self.structs.find(id)
+        self.structs.get(id)
             .map(Struct)
-            .or_else(|| self.enums.find(id).map(|e| Enum(e.as_slice())))
+            .or_else(|| self.enums.get(id).map(|e| Enum(e.as_slice())))
     }
     pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, Constrained<TcType>)]> {
-        self.traits.find(name).map(|v| v.as_slice())
+        self.traits.get(name).map(|v| v.as_slice())
     }
     pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
         for s in module.structs.iter() {
@@ -315,7 +315,7 @@ impl TypeInfos {
         }
     }
     pub fn extend(&mut self, other: TypeInfos) {
-        let TypeInfos { structs: structs, enums: enums, impls: impls, traits: traits } = other;
+        let TypeInfos { structs, enums, impls, traits } = other;
         for (id, struct_) in structs.into_iter() {
             self.structs.insert(id, struct_);
         }
@@ -403,7 +403,7 @@ impl <'a> Typecheck<'a> {
             let environment = &self.environment;
             match stack.find(id).map(|typ| ([].as_slice(), typ)) {
                 Some(x) => Some(x),
-                None => module.find(id)
+                None => module.get(id)
                     .map(|c| (c.constraints.as_slice(), &c.value))
                     .or_else(|| environment.and_then(|e| e.find_type(id)))
             }
@@ -627,10 +627,10 @@ impl <'a> Typecheck<'a> {
             }
             ast::Literal(ref lit) => {
                 Ok(match *lit {
-                    ast::Integer(_) => int_type_tc.clone(),
-                    ast::Float(_) => float_type_tc.clone(),
-                    ast::String(_) => string_type_tc.clone(),
-                    ast::Bool(_) => bool_type_tc.clone()
+                    ast::Integer(_) => INT_TYPE.clone(),
+                    ast::Float(_) => FLOAT_TYPE.clone(),
+                    ast::String(_) => STRING_TYPE.clone(),
+                    ast::Bool(_) => BOOL_TYPE.clone()
                 })
             }
             ast::Call(ref mut func, ref mut args) => {
@@ -651,19 +651,19 @@ impl <'a> Typecheck<'a> {
             }
             ast::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut**pred));
-                try!(self.unify(&bool_type_tc, pred_type));
+                try!(self.unify(&BOOL_TYPE, pred_type));
                 let true_type = try!(self.typecheck(&mut**if_true));
                 let false_type = match *if_false {
                     Some(ref mut if_false) => try!(self.typecheck(&mut**if_false)),
-                    None => unit_type_tc.clone()
+                    None => UNIT_TYPE.clone()
                 };
                 self.unify(&true_type, false_type)
             }
             ast::While(ref mut pred, ref mut expr) => {
                 let pred_type = try!(self.typecheck(&mut **pred));
-                try!(self.unify(&bool_type_tc, pred_type));
+                try!(self.unify(&BOOL_TYPE, pred_type));
                 self.typecheck(&mut**expr)
-                    .map(|_| unit_type_tc.clone())
+                    .map(|_| UNIT_TYPE.clone())
             }
             ast::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = try!(self.typecheck(&mut**lhs));
@@ -673,7 +673,7 @@ impl <'a> Typecheck<'a> {
                     "+" | "-" | "*" => {
                         let b = {
                             let lt = self.subs.real_type(&lhs_type);
-                            *lt == int_type_tc || *lt == float_type_tc
+                            *lt == INT_TYPE || *lt == FLOAT_TYPE
                         };
                         if b {
                             Ok(lhs_type)
@@ -682,8 +682,8 @@ impl <'a> Typecheck<'a> {
                             return Err(StringError("Expected numbers in binop"))
                         }
                     }
-                    "&&" | "||" => self.unify(&bool_type_tc, lhs_type),
-                    "=="| "!=" | "<" | ">" | "<=" | ">=" => Ok(bool_type_tc.clone()),
+                    "&&" | "||" => self.unify(&BOOL_TYPE, lhs_type),
+                    "=="| "!=" | "<" | ">" | "<=" | ">=" => Ok(BOOL_TYPE.clone()),
                     _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
@@ -715,13 +715,13 @@ impl <'a> Typecheck<'a> {
             ast::Let(ref mut id, ref mut expr) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 self.stack_var(id.name.clone(), typ);
-                Ok(unit_type_tc.clone())
+                Ok(UNIT_TYPE.clone())
             }
             ast::Assign(ref mut lhs, ref mut rhs) => {
                 let rhs_type = try!(self.typecheck(&mut **rhs));
                 let lhs_type = try!(self.typecheck(&mut **lhs));
                 try!(self.unify(&lhs_type, rhs_type));
-                Ok(unit_type_tc.clone())
+                Ok(UNIT_TYPE.clone())
             }
             ast::FieldAccess(ref mut expr, ref mut id) => {
                 let typ = try!(self.typecheck(&mut **expr));
@@ -774,7 +774,7 @@ impl <'a> Typecheck<'a> {
                     typ => return Err(IndexError(typ))
                 };
                 let index_type = try!(self.typecheck(&mut **index));
-                try!(self.unify(&int_type_tc, index_type));
+                try!(self.unify(&INT_TYPE, index_type));
                 Ok(typ)
             }
             ast::Lambda(ref mut lambda) => {
@@ -981,7 +981,7 @@ impl <'a> Typecheck<'a> {
             Type(ref id, _) if id == trait_id => return true,
             _ => ()
         }
-        match self.type_infos.impls.find(trait_id) {
+        match self.type_infos.impls.get(trait_id) {
             Some(impls) => {
                 for impl_type in impls.iter() {
                     if self.check_impl(impl_type.constraints.as_slice(), &impl_type.value, typ) {
@@ -995,12 +995,12 @@ impl <'a> Typecheck<'a> {
     }
 
     fn check_constraints(&self, variable: &uint, typ: &TcType) -> bool {
-        debug!("Constraint check {} {} ==> {}", variable, self.subs.constraints.find(variable), typ);
+        debug!("Constraint check {} {} ==> {}", variable, self.subs.constraints.get(variable), typ);
         match *typ {
             TypeVariable(_) => return true,
             _ => ()
         }
-        match self.subs.constraints.find(variable) {
+        match self.subs.constraints.get(variable) {
             Some(trait_types) => {
                 trait_types.iter()
                     .all(|trait_type| {
@@ -1091,7 +1091,7 @@ impl Substitution {
         }
     }
     fn assign_union(&mut self, id: uint, typ: TcType) {
-        match self.constraints.pop(&id) {
+        match self.constraints.remove(&id) {
             Some(constraints) => {
                 match typ {
                     TypeVariable(other_id) => {
@@ -1191,16 +1191,16 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
             ast::Identifier(ref id) => id.type_of(),
             ast::Literal(ref lit) => {
                 match *lit {
-                    ast::Integer(_) => &int_type_tc,
-                    ast::Float(_) => &float_type_tc,
-                    ast::String(_) => &string_type_tc,
-                    ast::Bool(_) => &bool_type_tc
+                    ast::Integer(_) => &INT_TYPE,
+                    ast::Float(_) => &FLOAT_TYPE,
+                    ast::String(_) => &STRING_TYPE,
+                    ast::Bool(_) => &BOOL_TYPE
                 }
             }
             ast::IfElse(_, ref arm, _) => arm.type_of(),
             ast::Block(ref exprs) => {
                 if exprs.len() == 0 {
-                    &unit_type_tc
+                    &UNIT_TYPE
                 }
                 else {
                     exprs.last().unwrap().type_of()
@@ -1209,11 +1209,11 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
             ast::BinOp(ref lhs, ref op, _) => {
                 match op.as_slice() {
                     "+" | "-" | "*" => lhs.type_of(),
-                    "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => &bool_type_tc,
+                    "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => &BOOL_TYPE,
                     _ => panic!()
                 }
             }
-            ast::Let(..) | ast::While(..) | ast::Assign(..) => &unit_type_tc,
+            ast::Let(..) | ast::While(..) | ast::Assign(..) => &UNIT_TYPE,
             ast::Call(ref func, _) => {
                 match func.type_of() {
                     &FunctionType(_, ref return_type) => &**return_type,
@@ -1242,7 +1242,7 @@ impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
     fn type_of(&self) -> &TcType {
         match *self {
             Some(ref t) => t.type_of(),
-            None => &unit_type_tc
+            None => &UNIT_TYPE
         }
     }
 }
@@ -1250,7 +1250,7 @@ impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Typecheck, Typed, TcIdent, unit_type_tc, int_type_tc, bool_type_tc, float_type_tc, Type, FunctionType};
+    use super::{Typecheck, Typed, TcIdent, UNIT_TYPE, INT_TYPE, BOOL_TYPE, FLOAT_TYPE, Type, FunctionType};
     use ast;
     use parser::{Parser, ParseResult};
     use interner::tests::{get_local_interner, intern};
@@ -1260,7 +1260,7 @@ mod tests {
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
-        let mut parser = Parser::new(&mut *interner, &mut buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
+        let mut parser = Parser::new(&mut *interner, &mut buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
         f(&mut parser)
             .unwrap_or_else(|err| panic!(err))
     }
@@ -1447,7 +1447,7 @@ fn transform<A, B>(x: A, f: fn (A) -> B) -> B {
             .unwrap_or_else(|err| panic!("{}", err));
         match module.functions[0].expression.value {
             ::ast::Block(ref exprs) => {
-                assert_eq!(exprs[2].value.type_of(), &float_type_tc);
+                assert_eq!(exprs[2].value.type_of(), &FLOAT_TYPE);
             }
             _ => panic!()
         }
@@ -1491,7 +1491,7 @@ fn is_positive(x: float) -> Option<float> {
                 match exprs[0].value {
                     ast::IfElse(_, ref if_true, ref if_false) => {
                         assert_eq!(if_true.type_of(), if_false.type_of());
-                        assert_eq!(if_false.type_of(), &Type(intern("Option"), vec![float_type_tc.clone()]));
+                        assert_eq!(if_false.type_of(), &Type(intern("Option"), vec![FLOAT_TYPE.clone()]));
                     }
                     _ => panic!()
                 }
@@ -1569,8 +1569,8 @@ fn test() -> bool {
             ast::Block(ref exprs) => {
                 match exprs[0].value {
                     ast::Call(ref f, ref args) => {
-                        let int_opt = Type(intern("Option"), vec![int_type_tc.clone()]);
-                        assert_eq!(f.type_of(), &(FunctionType(vec![int_opt.clone(), int_opt.clone()], box bool_type_tc.clone())));
+                        let int_opt = Type(intern("Option"), vec![INT_TYPE.clone()]);
+                        assert_eq!(f.type_of(), &(FunctionType(vec![int_opt.clone(), int_opt.clone()], box BOOL_TYPE.clone())));
                         assert_eq!(args[0].type_of(), &int_opt);
                         assert_eq!(args[1].type_of(), &int_opt);
                     }

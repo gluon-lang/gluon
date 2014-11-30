@@ -15,7 +15,7 @@ fn print(_: &VM, mut stack: StackFrame) {
 
 pub fn run() {
     let vm = VM::new();
-    vm.extern_function("printInt", vec![int_type_tc.clone()], unit_type_tc.clone(), print);
+    vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), print);
     for line in ::std::io::stdin().lines() {
         match run_line(&vm, line) {
             Ok(continue_repl) => {

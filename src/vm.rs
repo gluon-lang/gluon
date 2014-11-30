@@ -6,7 +6,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use ast;
 use parser::Parser;
-use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType, match_types};
+use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, Constrained, match_types};
 use ast::TypeEnum::*;
 use compiler::*;
 use compiler::Instruction::*;
@@ -377,9 +377,9 @@ impl VM {
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
-        let _ = vm.extern_function("array_length", vec![array_a.clone()], int_type_tc.clone(), array_length);
-        let _ = vm.extern_function("array_push", vec![array_a.clone(), a.clone()], unit_type_tc.clone(), array_push);
-        let _ = vm.extern_function("string_append", vec![string_type_tc.clone(), string_type_tc.clone()], string_type_tc.clone(), string_append);
+        let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), array_length);
+        let _ = vm.extern_function("array_push", vec![array_a.clone(), a.clone()], UNIT_TYPE.clone(), array_push);
+        let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), string_append);
         vm
     }
 
@@ -408,7 +408,7 @@ impl VM {
             self.trait_indexes.push(trait_index);
         }
         for f in fns.into_iter() {
-            let CompiledFunction { id: id, typ: typ, instructions: instructions } = f;
+            let CompiledFunction { id, typ, instructions } = f;
             match names.get(&id) {
                 Some(&GlobalFn(..)) => {
                     if id != self.interner.borrow_mut().intern("") {//Lambdas have the empty string as name
@@ -828,7 +828,7 @@ macro_rules! tryf(
 
 pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
-    let mut parser = Parser::new(&mut *interner, buffer, |s| TcIdent { name: s, typ: unit_type_tc.clone() });
+    let mut parser = Parser::new(&mut *interner, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
     parser.expression().map_err(|err| format!("{}", err))
 }
 
@@ -837,7 +837,7 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::St
 
     let mut module = {
         let mut cell = vm.interner.borrow_mut();
-        let mut parser = Parser::new(&mut*cell, buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
+        let mut parser = Parser::new(&mut*cell, buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
         tryf!(parser.module())
     };
     let (type_infos, functions) = {

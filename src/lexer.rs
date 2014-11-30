@@ -118,7 +118,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
         }
         else {
             let t = self.next_token();
-            self.tokens.push(t);
+            self.tokens.push_back(t);
             self.reset_str();
             debug!("Token {}", self.current());
         }
@@ -340,7 +340,6 @@ impl <'a, 'b> Lexer<'a, 'b> {
 mod tests {
     use lexer;
     use lexer::Token::*;
-    use super::*;
     use interner::Interner;
     use std::io::BufReader;
 

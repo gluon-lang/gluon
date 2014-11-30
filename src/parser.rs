@@ -272,8 +272,8 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                             TOpenBrace => try!(self.block()),
                             TIf => try!(self.expression()),
                             x => {
-                                static expected: &'static [&'static str] = &["{", "if"];
-                                return Err(self.unexpected_token(expected, x))
+                                static EXPECTED: &'static [&'static str] = &["{", "if"];
+                                return Err(self.unexpected_token(EXPECTED, x))
                             }
                         })
                     }
@@ -557,7 +557,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             try!(self.typ())
         }
         else {
-            unit_type.clone()
+            UNIT_TYPE.clone()
         };
         Ok(FunctionDeclaration {
             name: self.make_id(name),
@@ -694,8 +694,8 @@ pub mod tests {
             declaration: FunctionDeclaration {
                 name: intern("main"),
                 type_variables: Vec::new(),
-                arguments: vec!(field("x", int_type.clone()), field("y", float_type.clone())),
-                return_type: unit_type.clone()
+                arguments: vec!(field("x", INT_TYPE.clone()), field("y", FLOAT_TYPE.clone())),
+                return_type: UNIT_TYPE.clone()
             },
             expression: block(vec!())
         };
@@ -741,7 +741,7 @@ pub mod tests {
         let expected = Struct {
             name: intern("Test"),
             type_variables: Vec::new(),
-            fields: vec![field("y", int_type.clone()), field("f", float_type.clone())]
+            fields: vec![field("y", INT_TYPE.clone()), field("f", FLOAT_TYPE.clone())]
         };
         assert_eq!(module, expected);
     }
@@ -755,13 +755,13 @@ pub mod tests {
                     name: intern("test"),
                     type_variables: Vec::new(),
                     arguments: vec![field("x", typ("Self"))],
-                    return_type: int_type.clone()
+                    return_type: INT_TYPE.clone()
                 },
                 FunctionDeclaration {
                     name: intern("test2"),
                     type_variables: Vec::new(),
-                    arguments: vec![field("x", int_type.clone()), field("y", typ("Self"))],
-                    return_type: unit_type.clone()
+                    arguments: vec![field("x", INT_TYPE.clone()), field("y", typ("Self"))],
+                    return_type: UNIT_TYPE.clone()
                 },
             ]
         };
@@ -775,7 +775,7 @@ r"impl Test for int { fn test(x: Self) -> int { x } fn test2(x: int, y: Self) { 
     #[test]
     fn function_type() {
         let typ = parse("fn () -> fn (int) -> float", |p| p.typ());
-        assert_eq!(typ, FunctionType(Vec::new(), box FunctionType(vec![int_type.clone()], box float_type.clone())));
+        assert_eq!(typ, FunctionType(Vec::new(), box FunctionType(vec![INT_TYPE.clone()], box FLOAT_TYPE.clone())));
     }
     #[test]
     fn lambda() {

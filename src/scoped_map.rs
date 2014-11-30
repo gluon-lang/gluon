@@ -31,14 +31,14 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn exit_scope(&mut self) {
         loop {
             match self.scopes.pop() {
-                Some(Some(key)) => { self.map.find_mut(&key).map(|x| x.pop()); }
+                Some(Some(key)) => { self.map.get_mut(&key).map(|x| x.pop()); }
                 _ => break
             }
         }
     }
     ///Removes a previusly inserted value from the map.
     pub fn remove(&mut self, k: &K) -> bool {
-        match self.map.find_mut(k).map(|x| x.pop()) {
+        match self.map.get_mut(k).map(|x| x.pop()) {
             Some(..) => {
                 let mut i = self.scopes.len() as int - 1;
                 while i >= 0 {
@@ -51,11 +51,6 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             }
             None => false
         }
-    }
-
-    ///Like find but uses equiv to compare the keys
-    pub fn find_equiv<'a, Q: Hash + Equiv<K>>(&'a self, k: &Q) -> Option<&'a V> {
-        self.map.find_equiv(k).and_then(|x| x.last())
     }
 
     ///Returns true if the key has a value declared in the last declared scope
@@ -76,7 +71,7 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
     ///Returns a reference to the last inserted value corresponding to the key
     pub fn find<'a>(&'a self, k: &K) -> Option<&'a V> {
-        self.map.find(k).and_then(|x| x.last())
+        self.map.get(k).and_then(|x| x.last())
     }
 
     ///Returns the number of elements in the container.
@@ -107,7 +102,7 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         }
     }
     pub fn pop(&mut self, k: &K) -> Option<V> {
-        match self.map.find_mut(k).and_then(|x| x.pop()) {
+        match self.map.get_mut(k).and_then(|x| x.pop()) {
             Some(v) => {
                 let mut i = self.scopes.len() as int - 1;
                 while i >= 0 {
@@ -121,8 +116,8 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             None => None
         }
     }
-    pub fn find_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
-        self.map.find_mut(key).and_then(|x| { let last = x.len() - 1; x.get_mut(last) })
+    pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
+        self.map.get_mut(key).and_then(|x| { let last = x.len() - 1; x.get_mut(last) })
     }
     pub fn insert(&mut self, k: K, v: V) -> bool {
         let vec = match self.map.entry(k.clone()) {

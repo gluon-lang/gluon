@@ -325,7 +325,7 @@ impl <'a> Compiler<'a> {
 
     fn new_stack_var(&mut self, s: InternedStr) {
         let v = self.stack.len();
-        if self.stack.find(&s).is_some() {
+        if self.stack.get(&s).is_some() {
             panic!("Variable shadowing is not allowed")
         }
         self.stack.insert(s, v);
@@ -370,7 +370,7 @@ impl <'a> Compiler<'a> {
             self.stack.remove(&arg.name);
         }
 
-        let FunctionEnv { instructions: instructions, .. } = f;
+        let FunctionEnv { instructions, .. } = f;
         let variables = function.declaration.type_variables.as_slice();
         let constraints = variables.iter()
             .map(|constraints| {
@@ -442,7 +442,7 @@ impl <'a> Compiler<'a> {
                         self.compile(expr, function);
                         //Since this line is executed as a statement we need to remove
                         //the value from the stack if it exists
-                        if *expr.type_of() != unit_type_tc {
+                        if *expr.type_of() != UNIT_TYPE {
                             function.instructions.push(Pop(1));
                         }
                     }
@@ -462,7 +462,7 @@ impl <'a> Compiler<'a> {
                 //it back to its initial size
                 let diff_size = stack_size - self.stack_size();
                 if diff_size != 0 {
-                    if *expr.type_of() == unit_type_tc {
+                    if *expr.type_of() == UNIT_TYPE {
                         function.instructions.push(Pop(diff_size));
                     }
                     else {
@@ -496,7 +496,7 @@ impl <'a> Compiler<'a> {
                     self.compile(&**lhs, function);
                     self.compile(&**rhs, function);
                     let typ = lhs.type_of();
-                    let instr = if *typ == int_type_tc {
+                    let instr = if *typ == INT_TYPE {
                         match op.as_slice() {
                             "+" => AddInt,
                             "-" => SubtractInt,
@@ -506,7 +506,7 @@ impl <'a> Compiler<'a> {
                             _ => panic!()
                         }
                     }
-                    else if *typ == float_type_tc {
+                    else if *typ == FLOAT_TYPE {
                         match op.as_slice() {
                             "+" => AddFloat,
                             "-" => SubtractFloat,
@@ -527,7 +527,7 @@ impl <'a> Compiler<'a> {
                 self.new_stack_var(*id.id());
                 //unit expressions do not return a value so we need to add a dummy value
                 //To make the stack correct
-                if *expr.type_of() == unit_type_tc {
+                if *expr.type_of() == UNIT_TYPE {
                     function.instructions.push(PushInt(0));
                 }
             }

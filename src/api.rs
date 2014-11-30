@@ -1,6 +1,6 @@
 #![macro_escape]
 use vm::{VM, Value, Int, Float, Function, Userdata, Userdata_, StackFrame};
-use typecheck::{TcType, Typed, FunctionType, unit_type_tc, bool_type_tc, int_type_tc, float_type_tc};
+use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
 use std::any::{Any, AnyRefExt};
 use std::boxed::BoxAny;
@@ -17,7 +17,7 @@ pub trait VMValue : VMType {
 }
 impl VMType for () {
     fn vm_type(_: Option<()>, _: &VM) -> &TcType {
-        &unit_type_tc
+        &UNIT_TYPE
     }
 }
 impl VMValue for () {
@@ -30,7 +30,7 @@ impl VMValue for () {
 
 impl VMType for int {
     fn vm_type(_: Option<int>, _: &VM) -> &TcType {
-        &int_type_tc
+        &INT_TYPE
     }
 }
 impl VMValue for int {
@@ -46,7 +46,7 @@ impl VMValue for int {
 }
 impl VMType for f64 {
     fn vm_type(_: Option<f64>, _: &VM) -> &TcType {
-        &float_type_tc
+        &FLOAT_TYPE
     }
 }
 impl VMValue for f64 {
@@ -62,7 +62,7 @@ impl VMValue for f64 {
 }
 impl VMType for bool {
     fn vm_type(_: Option<bool>, _: &VM) -> &TcType {
-        &bool_type_tc
+        &BOOL_TYPE
     }
 }
 impl VMValue for bool {
