@@ -1,6 +1,6 @@
 extern crate collections;
 use std::collections::HashMap;
-use std::collections::hashmap::MutEntries;
+use std::collections::hash_map::{Entry, MutEntries};
 use std::hash::Hash;
 use std::hash::RandomSipHasher;
 
@@ -70,33 +70,31 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         false
     }
     ///Returns an iterator of the (key, values) pairs inserted in the map
-    pub fn mut_iter<'a>(&'a mut self) -> MutEntries<'a, K, Vec<V>> {
-        self.map.mut_iter()
+    pub fn iter_mut<'a>(&'a mut self) -> MutEntries<'a, K, Vec<V>> {
+        self.map.iter_mut()
     }
-}
 
-impl <K: Eq + Hash, V> Map<K, V> for ScopedMap<K, V> {
     ///Returns a reference to the last inserted value corresponding to the key
-    fn find<'a>(&'a self, k: &K) -> Option<&'a V> {
+    pub fn find<'a>(&'a self, k: &K) -> Option<&'a V> {
         self.map.find(k).and_then(|x| x.last())
     }
-}
-impl <K: Eq + Hash, V> Collection for ScopedMap<K, V> {
+
     ///Returns the number of elements in the container.
     ///Shadowed elements are not counted
-    fn len(&self) -> uint { self.map.len() }
-}
-impl <K: Eq + Hash, V> Mutable for ScopedMap<K, V> {
+    pub fn len(&self) -> uint { self.map.len() }
+
     ///Removes all elements
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.map.clear();
         self.scopes.clear();
     }
-}
-impl <K: Eq + Hash + Clone, V> MutableMap<K, V> for ScopedMap<K, V> {
+
     ///Swaps the value stored at key, or inserts it if it is not present
-    fn swap(&mut self, k: K, v: V) -> Option<V> {
-        let vec = self.map.find_or_insert(k.clone(), Vec::new());
+    pub fn swap(&mut self, k: K, v: V) -> Option<V> {
+        let vec = match self.map.entry(k.clone()) {
+            Entry::Occupied(v) => v.into_mut(),
+            Entry::Vacant(v) => v.set(Vec::new())
+        };
         if vec.len() != 0 {
             let r  = vec.pop();
             vec.push(v);
@@ -108,7 +106,7 @@ impl <K: Eq + Hash + Clone, V> MutableMap<K, V> for ScopedMap<K, V> {
             None
         }
     }
-    fn pop(&mut self, k: &K) -> Option<V> {
+    pub fn pop(&mut self, k: &K) -> Option<V> {
         match self.map.find_mut(k).and_then(|x| x.pop()) {
             Some(v) => {
                 let mut i = self.scopes.len() as int - 1;
@@ -123,11 +121,14 @@ impl <K: Eq + Hash + Clone, V> MutableMap<K, V> for ScopedMap<K, V> {
             None => None
         }
     }
-    fn find_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
-        self.map.find_mut(key).and_then(|x| x.mut_last())
+    pub fn find_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
+        self.map.find_mut(key).and_then(|x| { let last = x.len() - 1; x.get_mut(last) })
     }
-    fn insert(&mut self, k: K, v: V) -> bool {
-        let vec = self.map.find_or_insert(k.clone(), Vec::new());
+    pub fn insert(&mut self, k: K, v: V) -> bool {
+        let vec = match self.map.entry(k.clone()) {
+            Entry::Occupied(v) => v.into_mut(),
+            Entry::Vacant(v) => v.set(Vec::new())
+        };
         vec.push(v);
         self.scopes.push(Some(k));
         vec.len() == 1

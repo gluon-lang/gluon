@@ -16,7 +16,7 @@ impl Interner {
     }
 
     pub fn intern(&mut self, s: &str) -> InternedStr {
-        match self.indexes.find_equiv(&s) {
+        match self.indexes.get(s) {
             Some(interned_str) => {
                 let index: &'static str = unsafe { ::std::mem::transmute(interned_str.as_slice()) };
                 return InternedStr(index);
@@ -51,15 +51,8 @@ pub mod tests {
 
 ///Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Interner>> {
-    local_data_key!(key: Rc<RefCell<Interner>>)
-    match key.get() {
-        Some(interner) => interner.clone(),
-        None => {
-            let interner = Rc::new(RefCell::new(Interner::new()));
-            key.replace(Some(interner.clone()));
-            interner
-        }
-    }
+    thread_local!(static key: Rc<RefCell<Interner>> = Rc::new(RefCell::new(Interner::new())))
+    key.with(|interner| { interner.clone() })
 }
 
 pub fn intern(s: &str) -> InternedStr {

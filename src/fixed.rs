@@ -9,27 +9,14 @@ use std::mem::transmute;
 pub struct FixedMap<K, V> {
     map: RefCell<HashMap<K, Box<V>>>
 }
-
-impl <K: Eq + Hash, V> Collection for FixedMap<K, V> {
-    fn len(&self) -> uint {
-        self.map.borrow().len()
-    }
-}
-
-impl <K: Eq + Hash, V> Map<K, V> for FixedMap<K, V> {
-    fn find(&self, k: &K) -> Option<&V> {
-        self.map.borrow()
-            .find(k)
-            .map(|x| unsafe { transmute::<&V, &V>(&**x) })
-    }
-}
-
 impl <K: Eq + Hash, V> FixedMap<K, V> {
+
     pub fn new() -> FixedMap<K, V> {
         FixedMap { map: RefCell::new(HashMap::new()) }
     }
+
     pub fn try_insert(&self, key: K, value: V) -> Result<(), (K, V)> {
-        if self.contains_key(&key) {
+        if self.get(&key).is_some() {
             Err((key, value))
         }
         else {
@@ -37,6 +24,17 @@ impl <K: Eq + Hash, V> FixedMap<K, V> {
             Ok(())
         }
     }
+
+    pub fn len(&self) -> uint {
+        self.map.borrow().len()
+    }
+
+    pub fn get(&self, k: &K) -> Option<&V> {
+        self.map.borrow()
+            .get(k)
+            .map(|x| unsafe { transmute::<&V, &V>(&**x) })
+    }
+
 }
 
 pub struct FixedVec<T> {
@@ -68,10 +66,8 @@ impl <T> FixedVec<T> {
                     .map(|(i, boxed)| (i, unsafe { transmute::<&T, &T>(&**boxed) }))
             })
     }
-}
 
-impl <V> Collection for FixedVec<V> {
-    fn len(&self) -> uint {
+    pub fn len(&self) -> uint {
         self.vec.borrow().len()
     }
 }

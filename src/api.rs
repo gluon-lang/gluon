@@ -1,7 +1,7 @@
 #![macro_escape]
-use vm::{VM, Value, Int, Float, Function, Userdata, StackFrame};
+use vm::{VM, Value, Int, Float, Function, Userdata, Userdata_, StackFrame};
 use typecheck::{TcType, Typed, FunctionType, unit_type_tc, bool_type_tc, int_type_tc, float_type_tc};
-use compiler::CallGlobal;
+use compiler::Instruction::CallGlobal;
 use std::any::{Any, AnyRefExt};
 use std::boxed::BoxAny;
 
@@ -84,7 +84,7 @@ impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
 }
 impl <T: 'static + BoxAny + Clone> VMValue for Box<T> {
     fn push(self, stack: &mut StackFrame) {
-        stack.push(Userdata(Userdata::new(self as Box<Any>)));
+        stack.push(Userdata(Userdata_::new(self as Box<Any>)));
     }
     fn from_value(value: Value) -> Option<Box<T>> {
         match value {
@@ -100,7 +100,7 @@ impl <T: 'static> VMType for *mut T {
 }
 impl <T: 'static> VMValue for *mut T {
     fn push(self, stack: &mut StackFrame) {
-        stack.push(Userdata(Userdata::new(box self as Box<Any>)));
+        stack.push(Userdata(Userdata_::new(box self as Box<Any>)));
     }
     fn from_value(value: Value) -> Option<*mut T> {
         match value {
@@ -118,7 +118,7 @@ fn make_type<'a, T: VMValue>(vm: &VM) -> TcType {
     VMType::make_type(None::<T>, vm)
 }
 
-trait Get<'a> {
+pub trait Get<'a> {
     fn get_function(vm: &'a VM, name: &str) -> Option<Self>;
 }
 macro_rules! make_get(
@@ -219,7 +219,7 @@ pub fn get_function<'a, T: Get<'a>>(vm: &'a VM, name: &str) -> Option<T> {
     Get::get_function(vm, name)
 }
 
-trait VMFunction {
+pub trait VMFunction {
     fn unpack_and_call(mut stack: StackFrame, f: Self);
 }
 
@@ -237,7 +237,7 @@ impl <$($args: VMValue,)* R: VMValue> VMType for fn ($($args),*) -> R {
 }
 
 impl <$($args : VMValue,)* R: VMValue> VMFunction for fn ($($args),*) -> R {
-    #[allow(non_snake_case, unused_mut, dead_assignment, unused_variable)]
+    #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(mut stack: StackFrame, f: fn ($($args),*) -> R) {
         let mut i = 0u;
         $(let $args = {
@@ -280,7 +280,7 @@ macro_rules! define_function(
         let vm = $vm;
         let (args, ret) = match VMType::make_type(Some($func), vm) {
             FunctionType(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
-            _ => fail!()
+            _ => panic!()
         };
         vm.extern_function($name, args, ret, vm_function!($func))
     })
@@ -308,7 +308,7 @@ fn mul(x: float, y: float) -> float {
         let mut vm = VM::new();
         let mut buffer = BufReader::new(s.as_bytes());
         load_script(&mut vm, &mut buffer)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         {
             let mut f: Callable<(int,), int> = Get::get_function(&vm, "add10")
                 .expect("No function");
@@ -339,12 +339,12 @@ fn id(x: Test) -> Test {
             x: int
         }
         vm.register_type::<Test>("Test")
-            .unwrap_or_else(|_| fail!("Could not add type"));
+            .unwrap_or_else(|_| panic!("Could not add type"));
         (define_function!(&mut vm, "test", test))
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         let mut buffer = BufReader::new(s.as_bytes());
         load_script(&mut vm, &mut buffer)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
 
         let mut test = Test { x: 123 };
         {

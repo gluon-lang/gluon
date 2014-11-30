@@ -1,5 +1,24 @@
 use interner::{InternedStr};
 pub use lexer::Location;
+pub use self::BuiltinType_::{StringType, IntType, FloatType, BoolType, UnitType};
+pub use self::TypeEnum::{Type, TraitType, TypeVariable, Generic, FunctionType, BuiltinType, ArrayType};
+pub use self::Pattern::{ConstructorPattern, IdentifierPattern};
+pub use self::LiteralStruct::{Integer, Float, String, Bool};
+pub use self::Expr::{
+    Identifier,
+    Literal,
+    Call,
+    IfElse,
+    While,
+    Match,
+    Block,
+    BinOp,
+    Let,
+    Assign,
+    FieldAccess,
+    Array,
+    ArrayAccess,
+    Lambda};
 
 
 #[deriving(Clone, Show)]
@@ -23,7 +42,7 @@ pub fn no_loc<T>(x: T) -> Located<T> {
 }
 
 #[deriving(Clone, Eq, PartialEq, Show, Hash)]
-pub enum BuiltinType {
+pub enum BuiltinType_ {
     StringType,
     IntType,
     FloatType,
@@ -31,20 +50,20 @@ pub enum BuiltinType {
     UnitType
 }
 #[deriving(Clone, Eq, PartialEq, Hash)]
-pub enum Type<Id> {
-    Type(Id, Vec<Type<Id>>),
-    TraitType(Id, Vec<Type<Id>>),
+pub enum TypeEnum<Id> {
+    Type(Id, Vec<TypeEnum<Id>>),
+    TraitType(Id, Vec<TypeEnum<Id>>),
     TypeVariable(uint),
     Generic(uint),
-    FunctionType(Vec<Type<Id>>, Box<Type<Id>>),
-    BuiltinType(BuiltinType),
-    ArrayType(Box<Type<Id>>)
+    FunctionType(Vec<TypeEnum<Id>>, Box<TypeEnum<Id>>),
+    BuiltinType(BuiltinType_),
+    ArrayType(Box<TypeEnum<Id>>)
 }
 
-pub type VMType = Type<InternedStr>;
+pub type VMType = TypeEnum<InternedStr>;
 
 #[deriving(Clone, PartialEq, Show)]
-pub enum Literal {
+pub enum LiteralStruct {
     Integer(int),
     Float(f64),
     String(InternedStr),
@@ -64,14 +83,14 @@ pub struct Alternative<Id> {
 }
 
 #[deriving(Clone, PartialEq, Show)]
-pub struct Array<Id> {
+pub struct ArrayStruct<Id> {
     //Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub expressions: Vec<LExpr<Id>>
 }
 
 #[deriving(Clone, PartialEq, Show)]
-pub struct Lambda<Id> {
+pub struct LambdaStruct<Id> {
     //Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub free_vars: Vec<Id>,
@@ -84,7 +103,7 @@ pub type LExpr<Id> = Located<Expr<Id>>;
 #[deriving(Clone, PartialEq, Show)]
 pub enum Expr<Id> {
     Identifier(Id),
-    Literal(Literal),
+    Literal(LiteralStruct),
     Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
     IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
     While(Box<LExpr<Id>>, Box<LExpr<Id>>),
@@ -94,15 +113,15 @@ pub enum Expr<Id> {
     Let(Id, Box<LExpr<Id>>),
     Assign(Box<LExpr<Id>>, Box<LExpr<Id>>),
     FieldAccess(Box<LExpr<Id>>, Id),
-    Array(Array<Id>),
+    Array(ArrayStruct<Id>),
     ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
-    Lambda(Lambda<Id>)
+    Lambda(LambdaStruct<Id>)
 }
 
 #[deriving(Clone, PartialEq, Show)]
 pub struct Field {
     pub name: InternedStr,
-    pub typ: Type<InternedStr>
+    pub typ: TypeEnum<InternedStr>
 }
 #[deriving(Clone, PartialEq, Show)]
 pub struct Constraints {
@@ -125,7 +144,7 @@ pub struct Struct<Id> {
 #[deriving(Clone, PartialEq, Show)]
 pub struct Constructor<Id> {
     pub name: Id,
-    pub arguments: Vec<Type<InternedStr>>
+    pub arguments: Vec<TypeEnum<InternedStr>>
 }
 #[deriving(Clone, PartialEq, Show)]
 pub struct Enum<Id> {
@@ -138,7 +157,7 @@ pub struct FunctionDeclaration<Id> {
     pub name: Id,
     pub type_variables: Vec<Constraints>,
     pub arguments: Vec<Field>,
-    pub return_type: Type<InternedStr>,
+    pub return_type: TypeEnum<InternedStr>,
 }
 #[deriving(Clone, PartialEq, Show)]
 pub struct Trait<Id> {
@@ -149,7 +168,7 @@ pub struct Trait<Id> {
 pub struct Impl<Id> {
     pub trait_name: Id,
     pub type_variables: Vec<Constraints>,
-    pub typ: Type<InternedStr>,
+    pub typ: TypeEnum<InternedStr>,
     pub functions: Vec<Function<Id>>
 }
 
@@ -162,14 +181,14 @@ pub struct Module<Id> {
     pub impls: Vec<Impl<Id>>
 }
 
-pub static int_type: Type<InternedStr> = BuiltinType(IntType);
-pub static float_type: Type<InternedStr> = BuiltinType(FloatType);
-pub static string_type: Type<InternedStr> = BuiltinType(StringType);
-pub static bool_type: Type<InternedStr> = BuiltinType(BoolType);
-pub static unit_type: Type<InternedStr> = BuiltinType(UnitType);
+pub static int_type: VMType = BuiltinType(IntType);
+pub static float_type: VMType = BuiltinType(FloatType);
+pub static string_type: VMType = BuiltinType(StringType);
+pub static bool_type: VMType = BuiltinType(BoolType);
+pub static unit_type: VMType = BuiltinType(UnitType);
 
 
-pub fn str_to_primitive_type(x: InternedStr) -> Option<Type<InternedStr>> {
+pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
     let t = match x.as_slice() {
         "int" => int_type.clone(),
         "float" => float_type.clone(),
@@ -198,7 +217,7 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut LExpr<T>) {
             }
         }
         Block(ref mut exprs) => {
-            for expr in exprs.mut_iter() {
+            for expr in exprs.iter_mut() {
                 v.visit_expr(expr);
             }
         }
@@ -211,7 +230,7 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut LExpr<T>) {
         }
         Call(ref mut func, ref mut args) => {
             v.visit_expr(&mut **func);
-            for arg in args.mut_iter() {
+            for arg in args.iter_mut() {
                 v.visit_expr(arg);
             }
         }
@@ -228,12 +247,12 @@ pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut LExpr<T>) {
         }
         Match(ref mut expr, ref mut alts) => {
             v.visit_expr(&mut**expr);
-            for alt in alts.mut_iter() {
+            for alt in alts.iter_mut() {
                 v.visit_expr(&mut alt.expression);
             }
         }
         Array(ref mut a) => {
-            for expr in a.expressions.mut_iter() {
+            for expr in a.expressions.iter_mut() {
                 v.visit_expr(expr);
             }
         }

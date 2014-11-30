@@ -130,25 +130,27 @@ mod tests {
     use super::{Gc, Gc_, GcPtr, GcHeader, Traverseable};
     use std::fmt;
 
-    struct Data {
+    use self::Value::*;
+
+    struct Data_ {
         fields: GcPtr<Vec<Value>>
     }
-    impl  Deref<Vec<Value>> for Data {
+    impl  Deref<Vec<Value>> for Data_ {
         fn deref(&self) -> &Vec<Value> {
             &*self.fields
         }
     }
-    impl  DerefMut<Vec<Value>> for Data {
+    impl  DerefMut<Vec<Value>> for Data_ {
         fn deref_mut(&mut self) -> &mut Vec<Value> {
             &mut *self.fields
         }
     }
-    impl  PartialEq for Data {
-        fn eq(&self, other: &Data) -> bool {
+    impl  PartialEq for Data_ {
+        fn eq(&self, other: &Data_) -> bool {
             self.fields.ptr == other.fields.ptr
         }
     }
-    impl  fmt::Show for Data {
+    impl  fmt::Show for Data_ {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             self.fields.ptr.fmt(f)
         }
@@ -157,11 +159,11 @@ mod tests {
     #[deriving(PartialEq, Show)]
     enum Value {
         Int(int),
-        Data(Data)
+        Data(Data_)
     }
     impl  Traverseable<Vec<Value>> for Vec<Value> {
         fn traverse(&mut self, func: |&mut Vec<Value>|) {
-            for v in self.mut_iter() {
+            for v in self.iter_mut() {
                 match *v {
                     Data(ref mut data) => func(&mut **data),
                     _ => ()
@@ -198,7 +200,7 @@ mod tests {
     }
 
     fn new_data(p: GcPtr<Vec<Value>>) -> Value {
-        Data(Data { fields: p })
+        Data(Data_ { fields: p })
     }
 
     #[test]
@@ -222,11 +224,11 @@ mod tests {
         assert_eq!(num_objects(&gc), 2);
         match stack[0] {
             Data(ref data) => assert_eq!((**data)[0], Int(1)),
-            _ => fail!()
+            _ => panic!()
         }
         match stack[1] {
             Data(ref data) => assert_eq!((**data)[0], stack[0]),
-            _ => fail!()
+            _ => panic!()
         }
         stack.pop();
         stack.pop();

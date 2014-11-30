@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 use interner::*;
-use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function, Constraints};
+use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function, Constraints};
+use ast::TypeEnum::*;
 use typecheck::*;
+
+pub use self::Instruction::*;
+pub use self::Variable::*;
 
 #[deriving(Show)]
 pub enum Instruction {
@@ -288,7 +292,7 @@ impl <'a> Compiler<'a> {
     }
 
     fn find(&self, s: &InternedStr, env: &mut FunctionEnv) -> Option<Variable> {
-        self.stack.find(s)
+        self.stack.get(s)
             .map(|x| {
                 if self.closure_limits.len() != 0 {
                     let closure_stack_start = *self.closure_limits.last().unwrap();
@@ -322,7 +326,7 @@ impl <'a> Compiler<'a> {
     fn new_stack_var(&mut self, s: InternedStr) {
         let v = self.stack.len();
         if self.stack.find(&s).is_some() {
-            fail!("Variable shadowing is not allowed")
+            panic!("Variable shadowing is not allowed")
         }
         self.stack.insert(s, v);
     }
@@ -348,7 +352,7 @@ impl <'a> Compiler<'a> {
             }
         }
         let lambdas = ::std::mem::replace(&mut self.compiled_lambdas, Vec::new());
-        functions.extend(lambdas.move_iter());
+        functions.extend(lambdas.into_iter());
 
 
         (functions, trait_functions)
@@ -401,7 +405,7 @@ impl <'a> Compiler<'a> {
                 }
             }
             Identifier(ref id) => {
-                match self.find(id.id(), function).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
+                match self.find(id.id(), function).unwrap_or_else(|| panic!("Undefined variable {}", id.id())) {
                     Stack(index) => function.instructions.push(Push(index)),
                     UpVar(index) => function.instructions.push(PushUpVar(index)),
                     Global(index, constraints, typ) => {
@@ -415,7 +419,7 @@ impl <'a> Compiler<'a> {
                         }
                     }
                     TraitFunction(typ) => self.compile_trait_function(typ, id, function),
-                    Constructor(..) => fail!("Constructor {} is not fully applied", id)
+                    Constructor(..) => panic!("Constructor {} is not fully applied", id)
                 }
             }
             IfElse(ref pred, ref if_true, ref if_false) => {
@@ -428,9 +432,9 @@ impl <'a> Compiler<'a> {
                 }
                 let false_jump_index = function.instructions.len();
                 function.instructions.push(Jump(0));
-                *function.instructions.get_mut(jump_index) = CJump(function.instructions.len());
+                function.instructions[jump_index] = CJump(function.instructions.len());
                 self.compile(&**if_true, function);
-                *function.instructions.get_mut(false_jump_index) = Jump(function.instructions.len());
+                function.instructions[false_jump_index] = Jump(function.instructions.len());
             }
             Block(ref exprs) => {
                 if exprs.len() != 0 {
@@ -475,7 +479,7 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(PushInt(0));
                     function.instructions.push(Jump(0));//lhs false, jump to after rhs
                     self.compile(&**rhs, function);
-                    *function.instructions.get_mut(lhs_end + 2) = Jump(function.instructions.len());//replace jump instruction
+                    function.instructions[lhs_end + 2] = Jump(function.instructions.len());//replace jump instruction
                 }
                 else if op.as_slice() == "||" {
                     self.compile(&**lhs, function);
@@ -483,10 +487,10 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(CJump(0));
                     self.compile(&**rhs, function);
                     function.instructions.push(Jump(0));
-                    *function.instructions.get_mut(lhs_end) = CJump(function.instructions.len());
+                    function.instructions[lhs_end] = CJump(function.instructions.len());
                     function.instructions.push(PushInt(1));
                     let end = function.instructions.len();
-                    *function.instructions.get_mut(end - 2) = Jump(end);
+                    function.instructions[end - 2] = Jump(end);
                 }
                 else {
                     self.compile(&**lhs, function);
@@ -499,7 +503,7 @@ impl <'a> Compiler<'a> {
                             "*" => MultiplyInt,
                             "<" => IntLT,
                             "==" => IntEQ,
-                            _ => fail!()
+                            _ => panic!()
                         }
                     }
                     else if *typ == float_type_tc {
@@ -509,11 +513,11 @@ impl <'a> Compiler<'a> {
                             "*" => MultiplyFloat,
                             "<" => FloatLT,
                             "==" => FloatEQ,
-                            _ => fail!()
+                            _ => panic!()
                         }
                     }
                     else {
-                        fail!("Unexpected type {} in expression {}", typ, op.id())
+                        panic!("Unexpected type {} in expression {}", typ, op.id())
                     };
                     function.instructions.push(instr);
                 }
@@ -530,7 +534,7 @@ impl <'a> Compiler<'a> {
             Call(ref func, ref args) => {
                 match func.value {
                     Identifier(ref id) => {
-                        match self.find(id.id(), function).unwrap_or_else(|| fail!("Undefined variable {}", id.id())) {
+                        match self.find(id.id(), function).unwrap_or_else(|| panic!("Undefined variable {}", id.id())) {
                             Constructor(tag, num_args) => {
                                 for arg in args.iter() {
                                     self.compile(arg, function);
@@ -546,7 +550,7 @@ impl <'a> Compiler<'a> {
                 self.compile(&**func, function);
                 let arg_types = match *func.type_of() {
                     FunctionType(ref args, _) => args.as_slice(),
-                    _ => fail!("Non function type inferred in call")
+                    _ => panic!("Non function type inferred in call")
                 };
                 let is_trait_func = match func.value {
                     Identifier(ref func_id) => {
@@ -587,7 +591,7 @@ impl <'a> Compiler<'a> {
                 let pre_jump_index = function.instructions.len();
                 function.instructions.push(Jump(0));
                 self.compile(&**expr, function);
-                *function.instructions.get_mut(pre_jump_index) = Jump(function.instructions.len());
+                function.instructions[pre_jump_index] = Jump(function.instructions.len());
                 self.compile(&**pred, function);
                 function.instructions.push(CJump(pre_jump_index + 1));
             }
@@ -596,13 +600,13 @@ impl <'a> Compiler<'a> {
                     Identifier(ref id) => {
                         self.compile(&**rhs, function);
                         let var = self.find(id.id(), function)
-                            .unwrap_or_else(|| fail!("Undefined variable {}", id));
+                            .unwrap_or_else(|| panic!("Undefined variable {}", id));
                         match var {
                             Stack(i) => function.instructions.push(Store(i)),
                             UpVar(i) => function.instructions.push(StoreUpVar(i)),
-                            Global(..) => fail!("Assignment to global {}", id),
-                            Constructor(..) => fail!("Assignment to constructor {}", id),
-                            TraitFunction(..) => fail!("Assignment to trait function {}", id),
+                            Global(..) => panic!("Assignment to global {}", id),
+                            Constructor(..) => panic!("Assignment to constructor {}", id),
+                            TraitFunction(..) => panic!("Assignment to trait function {}", id),
                         }
                     }
                     FieldAccess(ref expr, ref field) => {
@@ -613,7 +617,7 @@ impl <'a> Compiler<'a> {
                                 self.find_field(id, field.id())
                                     .unwrap()
                             }
-                            _ => fail!()
+                            _ => panic!()
                         };
                         function.instructions.push(SetField(field_index));
                     }
@@ -623,7 +627,7 @@ impl <'a> Compiler<'a> {
                         self.compile(&**rhs, function);
                         function.instructions.push(SetIndex);
                     }
-                    _ => fail!("Assignment to {}", lhs)
+                    _ => panic!("Assignment to {}", lhs)
                 }
             }
             FieldAccess(ref expr, ref field) => {
@@ -633,7 +637,7 @@ impl <'a> Compiler<'a> {
                         self.find_field(id, field.id())
                             .unwrap()
                     }
-                    _ => fail!()
+                    _ => panic!()
                 };
                 function.instructions.push(GetField(field_index));
             }
@@ -643,13 +647,13 @@ impl <'a> Compiler<'a> {
                 let mut end_jumps = Vec::new();
                 let typename = match expr.type_of() {
                     &Type(ref id, _) => id,
-                    _ => fail!()
+                    _ => panic!()
                 };
                 for alt in alts.iter() {
                     match alt.pattern {
                         ConstructorPattern(ref id, _) => {
                             let tag = self.find_tag(typename, id.id())
-                                .unwrap_or_else(|| fail!("Could not find tag for {}::{}", typename, id.id()));
+                                .unwrap_or_else(|| panic!("Could not find tag for {}::{}", typename, id.id()));
                             function.instructions.push(TestTag(tag));
                             start_jumps.push(function.instructions.len());
                             function.instructions.push(CJump(0));
@@ -663,14 +667,14 @@ impl <'a> Compiler<'a> {
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     match alt.pattern {
                         ConstructorPattern(_, ref args) => {
-                            *function.instructions.get_mut(start_index) = CJump(function.instructions.len());
+                            function.instructions[start_index] = CJump(function.instructions.len());
                             function.instructions.push(Split);
                             for arg in args.iter() {
                                 self.new_stack_var(arg.id().clone());
                             }
                         }
                         IdentifierPattern(ref id) => {
-                            *function.instructions.get_mut(start_index) = Jump(function.instructions.len());
+                            function.instructions[start_index] = Jump(function.instructions.len());
                             self.new_stack_var(id.id().clone());
                         }
                     }
@@ -688,7 +692,7 @@ impl <'a> Compiler<'a> {
                     }
                 }
                 for &index in end_jumps.iter() {
-                    *function.instructions.get_mut(index) = Jump(function.instructions.len());
+                    function.instructions[index] = Jump(function.instructions.len());
                 }
             }
             Array(ref a) => {
@@ -709,7 +713,7 @@ impl <'a> Compiler<'a> {
         }
     }
 
-    fn compile_lambda(&mut self, lambda: &Lambda<TcIdent>, function: &mut FunctionEnv) -> CompiledFunction {
+    fn compile_lambda(&mut self, lambda: &LambdaStruct<TcIdent>, function: &mut FunctionEnv) -> CompiledFunction {
         self.closure_limits.push(self.stack.len());
         for arg in lambda.arguments.iter() {
             self.new_stack_var(*arg.id());
@@ -726,7 +730,7 @@ impl <'a> Compiler<'a> {
             match self.find(var, function).unwrap() {
                 Stack(index) => function.instructions.push(Push(index)),
                 UpVar(index) => function.instructions.push(PushUpVar(index)),
-                _ => fail!("Free variables can only be on the stack or another upvar")
+                _ => panic!("Free variables can only be on the stack or another upvar")
             }
         }
         let function_index = self.compiled_lambdas.len() + self.globals.next_function_index();
@@ -767,10 +771,10 @@ impl <'a> Compiler<'a> {
                 match *constraint_type {
                     Type(ref trait_id, _) => {
                         let impl_index = self.globals.find_trait_offset(trait_id, real_type)
-                            .unwrap_or_else(|| fail!("ICE"));
+                            .unwrap_or_else(|| panic!("ICE"));
                         function.instructions.push(PushGlobal(impl_index));
                     }
-                    _ => fail!()
+                    _ => panic!()
                 }
             }
         }
@@ -818,14 +822,14 @@ impl <'a> Compiler<'a> {
                                         None => ()
                                     }
                                 }
-                                fail!("{}   {}\n{}   {}", trait_func_type, id, function.dictionary, types)
+                                panic!("{}   {}\n{}   {}", trait_func_type, id, function.dictionary, types)
                             }
-                            x => fail!("ICE {}", x)
+                            x => panic!("ICE {}", x)
                         }
                     }
                 }
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
 }
@@ -846,16 +850,16 @@ fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mu
         (&TypeVariable(i), real_type) => {
             if i >= out.len() {
                 let x = i + 1 - out.len();
-                out.grow(x, &None);
+                out.grow(x, None);
             }
-            *out.get_mut(i) = Some(real_type);
+            out[i] = Some(real_type);
         }
         (&Generic(i), real_type) => {
             if i >= out.len() {
                 let x = i + 1 - out.len();
-                out.grow(x, &None);
+                out.grow(x, None);
             }
-            *out.get_mut(i) = Some(real_type);
+            out[i] = Some(real_type);
         }
         (&ArrayType(ref l), &ArrayType(ref r)) => find_real_type_(&**l, &**r, out),
         (&Type(_, ref l_args), &Type(_, ref r_args)) => {

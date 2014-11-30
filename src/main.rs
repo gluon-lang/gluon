@@ -1,4 +1,4 @@
-#![feature(globs, phase, macro_rules, default_type_params, overloaded_calls)]
+#![feature(globs, phase, macro_rules, default_type_params)]
 extern crate collections;
 #[phase(plugin, link)]
 extern crate log;
@@ -19,7 +19,7 @@ fn main() {
         let vm = VM::new();
         let mut buffer = ::std::io::stdin();
         let value = run_buffer_main(&vm, &mut buffer)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         println!("{}", value);
     }
     else if args[1].as_slice() == "-i" {

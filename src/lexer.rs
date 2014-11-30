@@ -1,9 +1,10 @@
 use collections::RingBuf;
-use std::from_str::FromStr;
+use std::str::FromStr;
 use std::fmt;
 
 use interner::{Interner, InternedStr};
 
+use self::Token::*;
 
 #[deriving(PartialEq, Clone, Show)]
 pub enum Token {
@@ -149,7 +150,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
         let result = self.peek_c;
         match self.peek_c {
             Some(c) => {
-                self.buffer.push_char(c);
+                self.buffer.push(c);
                 self.peek_c = match self.input.read_char() {
                     Ok(c) => Some(c),
                     Err(_) => None
@@ -183,7 +184,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
         loop {
             match self.peek_char() {
                 Some(x) => {
-                    if !x.is_digit() {
+                    if !x.is_digit(10) {
                         break;
                     }
                     self.read_char();
@@ -281,7 +282,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
                 _ => TOperator(self.intern_current())
             }
         }
-        else if c.is_digit() {
+        else if c.is_digit(10) {
             return self.scan_number();
         }
         else if c.is_alphabetic() || c == '_' {
@@ -300,7 +301,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
                         return TString(s)
                     }
                     Some(_) => (),
-                    None => fail!("Unexpected EOF")
+                    None => panic!("Unexpected EOF")
                 }
             }
         }
@@ -311,10 +312,10 @@ impl <'a, 'b> Lexer<'a, 'b> {
                         return TChar(x);
                     }
                     else {
-                        fail!("Multi char character")
+                        panic!("Multi char character")
                     }
                 }
-                None => fail!("Unexpected EOF")
+                None => panic!("Unexpected EOF")
             }
         }
         else {
@@ -338,6 +339,8 @@ impl <'a, 'b> Lexer<'a, 'b> {
 #[cfg(test)]
 mod tests {
     use lexer;
+    use lexer::Token::*;
+    use super::*;
     use interner::Interner;
     use std::io::BufReader;
 
@@ -352,14 +355,14 @@ mod tests {
         let mut lexer = lexer::Lexer::new(&mut interner, &mut buffer);
         let plus = lexer.interner.intern("+");
         let main = lexer.interner.intern("main");
-        assert_eq!(lexer.next(), &lexer::TFn);
-        assert_eq!(lexer.next(), &lexer::TIdentifier(main));
-        assert_eq!(lexer.next(), &lexer::TOpenParen);
-        assert_eq!(lexer.next(), &lexer::TCloseParen);
-        assert_eq!(lexer.next(), &lexer::TOpenBrace);
-        assert_eq!(lexer.next(), &lexer::TInteger(1));
-        assert_eq!(lexer.next(), &lexer::TOperator(plus));
-        assert_eq!(lexer.next(), &lexer::TInteger(2));
-        assert_eq!(lexer.next(), &lexer::TCloseBrace);
+        assert_eq!(lexer.next(), &TFn);
+        assert_eq!(lexer.next(), &TIdentifier(main));
+        assert_eq!(lexer.next(), &TOpenParen);
+        assert_eq!(lexer.next(), &TCloseParen);
+        assert_eq!(lexer.next(), &TOpenBrace);
+        assert_eq!(lexer.next(), &TInteger(1));
+        assert_eq!(lexer.next(), &TOperator(plus));
+        assert_eq!(lexer.next(), &TInteger(2));
+        assert_eq!(lexer.next(), &TCloseBrace);
     }
 }

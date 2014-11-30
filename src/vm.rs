@@ -7,38 +7,53 @@ use std::collections::HashMap;
 use ast;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, string_type_tc, int_type_tc, unit_type_tc, TcIdent, TcType, Type, FunctionType, Constrained, Generic, ArrayType, match_types};
+use ast::TypeEnum::*;
 use compiler::*;
+use compiler::Instruction::*;
 use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable};
 use fixed::*;
 
-pub struct Userdata<T> {
+use self::Named::*;
+use self::Global_::*;
+
+pub use vm::Value::{
+    Int,
+    Float,
+    String,
+    Data,
+    Function,
+    Closure,
+    TraitObject,
+    Userdata};
+
+pub struct Userdata_<T> {
     pub data: Rc<RefCell<T>>
 }
-impl <T> Userdata<T> {
-    pub fn new(v: T) -> Userdata<T> {
-        Userdata { data: Rc::new(RefCell::new(v)) }
+impl <T> Userdata_<T> {
+    pub fn new(v: T) -> Userdata_<T> {
+        Userdata_ { data: Rc::new(RefCell::new(v)) }
     }
     fn ptr(&self) -> *const () {
         (&*self.data as *const RefCell<T>) as *const ()
     }
 }
-impl <T> PartialEq for Userdata<T> {
-    fn eq(&self, o: &Userdata<T>) -> bool {
+impl <T> PartialEq for Userdata_<T> {
+    fn eq(&self, o: &Userdata_<T>) -> bool {
         self.ptr() == o.ptr()
     }
 }
-impl <T> Clone for Userdata<T> {
-    fn clone(&self) -> Userdata<T> {
-        Userdata { data: self.data.clone() }
+impl <T> Clone for Userdata_<T> {
+    fn clone(&self) -> Userdata_<T> {
+        Userdata_ { data: self.data.clone() }
     }
 }
 
-pub struct Data {
+pub struct DataStruct {
     value: GcPtr<Data_>
 }
 
-impl  Data {
+impl DataStruct {
 
     fn borrow(&self) -> &Data_ {
         & **self
@@ -48,24 +63,24 @@ impl  Data {
     }
 }
 
-impl  PartialEq for Data {
-    fn eq(&self, other: &Data) -> bool {
+impl  PartialEq for DataStruct {
+    fn eq(&self, other: &DataStruct) -> bool {
         self.tag == other.tag && self.fields == other.fields
     }
 }
 
-impl  Clone for Data {
-    fn clone(&self) -> Data {
-        Data { value: self.value }
+impl  Clone for DataStruct {
+    fn clone(&self) -> DataStruct {
+        DataStruct { value: self.value }
     }
 }
 
-impl  Deref<Data_> for Data {
+impl Deref<Data_> for DataStruct {
     fn deref(&self) -> &Data_ {
         &*self.value
     }
 }
-impl  DerefMut<Data_> for Data {
+impl  DerefMut<Data_> for DataStruct {
     fn deref_mut(&mut self) -> &mut Data_ {
         &mut *self.value
     }
@@ -82,11 +97,11 @@ pub enum Value {
     Int(int),
     Float(f64),
     String(InternedStr),
-    Data(Data),
+    Data(DataStruct),
     Function(uint),
-    Closure(Data),
-    TraitObject(Data),
-    Userdata(Userdata<Box<Any + 'static>>)
+    Closure(DataStruct),
+    TraitObject(DataStruct),
+    Userdata(Userdata_<Box<Any + 'static>>)
 }
 
 impl  Traverseable<Data_> for Data_ {
@@ -97,7 +112,7 @@ impl  Traverseable<Data_> for Data_ {
 
 impl  Traverseable<Data_> for Vec<Value> {
     fn traverse(&mut self, func: |&mut Data_|) {
-        for value in self.mut_iter() {
+        for value in self.iter_mut() {
             match *value {
                 Data(ref mut data) => func(&mut **data),
                 Closure(ref mut data) => func(&mut **data),
@@ -178,17 +193,17 @@ pub struct VMEnv<'a> {
 
 impl <'a> CompilerEnv for VMEnv<'a> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
-        match self.names.find(id) {
+        match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
-                Some(Global(index, g.typ.constraints.as_slice(), &g.typ.value))
+                Some(Variable::Global(index, g.typ.constraints.as_slice(), &g.typ.value))
             }
             Some(&TraitFn(trait_index, function_index)) => {
                 self.type_infos.traits
-                    .find(&trait_index)
+                    .get(&trait_index)
                     .and_then(|functions| {
                         if function_index < functions.len() {
-                            Some(TraitFunction(&functions[function_index].ref1().value))
+                            Some(Variable::TraitFunction(&functions[function_index].ref1().value))
                         }
                         else {
                             None
@@ -197,13 +212,13 @@ impl <'a> CompilerEnv for VMEnv<'a> {
             }
             _ => {
                 debug!("#### {} {}", id, self.type_infos.enums);
-                self.type_infos.structs.find(id)
-                    .map(|&(_, ref fields)| Constructor(0, fields.len()))
+                self.type_infos.structs.get(id)
+                    .map(|&(_, ref fields)| Variable::Constructor(0, fields.len()))
                     .or_else(|| {
                         self.type_infos.enums.values()
                             .flat_map(|ctors| ctors.iter().enumerate())
                             .find(|ctor| ctor.ref1().name.id() == id)
-                            .map(|(i, ctor)| Constructor(i, ctor.arguments.len()))
+                            .map(|(i, ctor)| Variable::Constructor(i, ctor.arguments.len()))
                     })
             }
         }
@@ -213,7 +228,7 @@ impl <'a> CompilerEnv for VMEnv<'a> {
     }
 
     fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
-        match self.type_infos.enums.find(enum_) {
+        match self.type_infos.enums.get(enum_) {
             Some(ctors) => {
                 ctors.iter()
                     .enumerate()
@@ -229,7 +244,7 @@ impl <'a> CompilerEnv for VMEnv<'a> {
             .map(|(_, func)| func.index)
     }
     fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<uint>> {
-        self.names.find(fn_name).and_then(|named| {
+        self.names.get(fn_name).and_then(|named| {
             match *named {
                 TraitFn(ref trait_name, _) => {
                     match (self.find_object_function(trait_name, fn_name), self.find_trait_offset(trait_name, typ)) {
@@ -252,7 +267,7 @@ impl <'a> CompilerEnv for VMEnv<'a> {
     }
     fn find_object_function(&self, trait_name: &InternedStr, fn_name: &InternedStr) -> Option<uint> {
         self.type_infos.traits
-            .find(trait_name)
+            .get(trait_name)
             .and_then(|trait_info| 
                 trait_info.iter()
                     .enumerate()
@@ -267,14 +282,14 @@ impl <'a> CompilerEnv for VMEnv<'a> {
 
 impl <'a> TypeEnv for VMEnv<'a> {
     fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraints], &TcType)> {
-        match self.names.find(id) {
+        match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
                 Some((g.typ.constraints.as_slice(), &g.typ.value))
             }
             Some(&TraitFn(trait_index, function_index)) => {
                 self.type_infos.traits
-                    .find(&trait_index)
+                    .get(&trait_index)
                     .and_then(|functions| {
                         if function_index < functions.len() {
                             let f = functions[function_index].ref1();
@@ -286,7 +301,7 @@ impl <'a> TypeEnv for VMEnv<'a> {
                     })
             }
             _ => {
-                self.type_infos.structs.find(id)
+                self.type_infos.structs.get(id)
                     .map(|type_fields| ([].as_slice(), type_fields.ref0()))
                     .or_else(|| {
                         self.type_infos.enums.values()
@@ -321,7 +336,7 @@ impl <'b> StackFrame<'b> {
         &(*self.stack)[self.offset + i]
     }
     pub fn get_mut(&mut self, i: uint) -> &mut Value {
-        self.stack.get_mut(self.offset + i)
+        &mut self.stack[self.offset + i]
     }
 
     pub fn push(&mut self, v: Value) {
@@ -334,7 +349,7 @@ impl <'b> StackFrame<'b> {
     pub fn pop(&mut self) -> Value {
         match self.stack.pop() {
             Some(x) => x,
-            None => fail!()
+            None => panic!()
         }
     }
     fn as_slice(&self) -> &[Value] {
@@ -370,34 +385,34 @@ impl VM {
 
     pub fn new_functions(&self, (fns, indexes): (Vec<CompiledFunction>, Vec<TraitFunctions>)) {
         let mut names = self.names.borrow_mut();
-        for trait_index in indexes.move_iter() {
+        for trait_index in indexes.into_iter() {
             //First index of this impl's functions
             let start_index = trait_index.index - self.globals.len();
             let func = &fns[start_index];
-            let is_registered = match names.find(&func.id) {
+            let is_registered = match names.get(&func.id) {
                 Some(&TraitFn(..)) => true,
                 None => false,
-                _ => fail!()
+                _ => panic!()
             };
             if !is_registered {
-                match self.type_infos.borrow().traits.find(&trait_index.trait_name) {
+                match self.type_infos.borrow().traits.get(&trait_index.trait_name) {
                     Some(trait_fns) => {
                         for (i, &(trait_fn, _)) in trait_fns.iter().enumerate() {
                             debug!("Register trait fn {}", trait_fn);
                             names.insert(func.id, TraitFn(trait_index.trait_name, i));
                         }
                     }
-                    None => fail!()
+                    None => panic!()
                 }
             }
             self.trait_indexes.push(trait_index);
         }
-        for f in fns.move_iter() {
+        for f in fns.into_iter() {
             let CompiledFunction { id: id, typ: typ, instructions: instructions } = f;
-            match names.find(&id) {
+            match names.get(&id) {
                 Some(&GlobalFn(..)) => {
                     if id != self.interner.borrow_mut().intern("") {//Lambdas have the empty string as name
-                        fail!("ICE: Global {} already exists", id);
+                        panic!("ICE: Global {} already exists", id);
                     }
                 }
                 Some(&TraitFn(..)) => (),
@@ -417,7 +432,7 @@ impl VM {
 
     pub fn get_type<T: 'static>(&self) -> &TcType {
         let id = TypeId::of::<T>();
-        self.typeids.find(&id)
+        self.typeids.get(&id)
             .unwrap_or_else(|| {
                 let desc = unsafe { get_tydesc::<T>() };
                 let name = if desc.is_not_null() {
@@ -426,7 +441,7 @@ impl VM {
                 else {
                     ""
                 };
-                fail!("Expected type {} to be inserted before get_type call", name)
+                panic!("Expected type {} to be inserted before get_type call", name)
             })
     }
 
@@ -448,7 +463,7 @@ impl VM {
         stack.pop()
     }
 
-    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) -> Result<(), String> {
+    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction) -> Result<(), ::std::string::String> {
         let id = self.intern(name);
         if self.names.borrow().contains_key(&id) {
             return Err(format!("{} is already defined", name))
@@ -473,7 +488,7 @@ impl VM {
             let id = TypeId::of::<T>();
             let typ = Type(n, Vec::new());
             try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
-            let t = self.typeids.find(&id).unwrap();
+            let t = self.typeids.get(&id).unwrap();
             type_infos.structs.insert(n, (typ, Vec::new()));
             Ok(t)
         }
@@ -493,10 +508,10 @@ impl VM {
     }
 
     fn new_data(&self, tag: uint, fields: Vec<Value>) -> Value {
-        Data(Data { value: self.gc.alloc(Data_ { tag: tag, fields: fields })})
+        Data(DataStruct { value: self.gc.alloc(Data_ { tag: tag, fields: fields })})
     }
-    fn new_data_and_collect(&self, roots: &mut Vec<Value>, tag: uint, fields: Vec<Value>) -> Data {
-        Data { value: self.gc.alloc_and_collect(roots, Data_ { tag: tag, fields: fields })}
+    fn new_data_and_collect(&self, roots: &mut Vec<Value>, tag: uint, fields: Vec<Value>) -> DataStruct {
+        DataStruct { value: self.gc.alloc_and_collect(roots, Data_ { tag: tag, fields: fields })}
     }
 
     fn execute_function<'b>(&self, stack: StackFrame<'b>, function: &Global) {
@@ -545,7 +560,7 @@ impl VM {
                             Closure(ref mut closure) => {
                                 (&self.globals[closure.tag], closure.fields.as_mut_slice())
                             }
-                            x => fail!("Cannot call {}", x)
+                            x => panic!("Cannot call {}", x)
                         };
                         debug!("Call {} :: {}", function.id, function.typ);
                         let new_stack = StackFrame::new(stack.stack, args, upvars);
@@ -581,7 +596,7 @@ impl VM {
                             let v = data.borrow().fields[i].clone();
                             stack.push(v);
                         }
-                        x => fail!("GetField on {}", x)
+                        x => panic!("GetField on {}", x)
                     }
                 }
                 SetField(i) => {
@@ -589,26 +604,26 @@ impl VM {
                     let data = stack.pop();
                     match data {
                         Data(data) => {
-                            *data.borrow_mut().fields.get_mut(i) = value;
+                            data.borrow_mut().fields[i] = value;
                         }
-                        _ => fail!()
+                        _ => panic!()
                     }
                 }
                 TestTag(tag) => {
                     let x = match *stack.top() {
                         Data(ref data) => if data.borrow().tag == tag { 1 } else { 0 },
-                        _ => fail!()
+                        _ => panic!()
                     };
                     stack.push(Int(x));
                 }
                 Split => {
                     match stack.pop() {
-                        Data(mut data) => {
+                        Data(data) => {
                             for field in data.fields.iter() {
                                 stack.push(field.clone());
                             }
                         }
-                        _ => fail!()
+                        _ => panic!()
                     }
                 }
                 Jump(i) => {
@@ -625,13 +640,13 @@ impl VM {
                     }
                 }
                 Pop(n) => {
-                    for i in range(0, n) {
+                    for _ in range(0, n) {
                         stack.pop();
                     }
                 }
                 Slide(n) => {
                     let v = stack.pop();
-                    for i in range(0, n) {
+                    for _ in range(0, n) {
                         stack.pop();
                     }
                     stack.push(v);
@@ -644,7 +659,7 @@ impl VM {
                             let v = array.borrow_mut().fields[index as uint].clone();
                             stack.push(v);
                         }
-                        (x, y) => fail!("{} {}", x, y)
+                        (x, y) => panic!("{} {}", x, y)
                     }
                 }
                 SetIndex => {
@@ -653,9 +668,9 @@ impl VM {
                     let array = stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
-                            *array.borrow_mut().fields.get_mut(index as uint) = value;
+                            array.borrow_mut().fields[index as uint] = value;
                         }
-                        _ => fail!()
+                        _ => panic!()
                     }
                 }
                 MakeClosure(fi, n) => {
@@ -685,14 +700,14 @@ impl VM {
                         &TraitObject(ref object) => {
                             Function(object.tag + i)
                         }
-                        _ => fail!()
+                        _ => panic!()
                     };
                     stack.push(func);
                 }
                 Unpack => {
                     match stack.pop() {
                         TraitObject(ref obj) => stack.push(obj.fields[0].clone()),
-                        _ => fail!()
+                        _ => panic!()
                     }
                 }
                 PushDictionaryMember(trait_index, function_offset) => {
@@ -700,10 +715,10 @@ impl VM {
                         Data(dict) => {
                             match dict.borrow().fields[trait_index] {
                                 Function(i) => Function(i + function_offset),
-                                _ => fail!()
+                                _ => panic!()
                             }
                         }
-                        ref x => fail!("PushDictionaryMember {}", x)
+                        ref x => panic!("PushDictionaryMember {}", x)
                     };
                     stack.push(func);
                 }
@@ -711,7 +726,7 @@ impl VM {
                     let dict = stack.upvars[0].clone();
                     let dict = match dict {
                         Data(data) => data.borrow().fields[index].clone(),
-                        _ => fail!()
+                        _ => panic!()
                     };
                     stack.push(dict);
                 }
@@ -727,13 +742,13 @@ impl VM {
                 FloatLT => binop(&mut stack, |l, r| {
                     match (l, r) {
                         (Float(l), Float(r)) => Int(if l < r { 1 } else { 0 }),
-                        _ => fail!()
+                        _ => panic!()
                     }
                 }),
                 FloatEQ => binop(&mut stack, |l, r| {
                     match (l, r) {
                         (Float(l), Float(r)) => Int(if l == r { 1 } else { 0 }),
-                        _ => fail!()
+                        _ => panic!()
                     }
                 })
             }
@@ -759,7 +774,7 @@ fn binop_int(stack: &mut StackFrame, f: |int, int| -> int) {
     binop(stack, |l, r| {
         match (l, r) {
             (Int(l), Int(r)) => Int(f(l, r)),
-            (l, r) => fail!("{} `intOp` {}", l, r)
+            (l, r) => panic!("{} `intOp` {}", l, r)
         }
     })
 }
@@ -768,7 +783,7 @@ fn binop_float(stack: &mut StackFrame, f: |f64, f64| -> f64) {
     binop(stack, |l, r| {
         match (l, r) {
             (Float(l), Float(r)) => Float(f(l, r)),
-            (l, r) => fail!("{} `floatOp` {}", l, r)
+            (l, r) => panic!("{} `floatOp` {}", l, r)
         }
     })
 }
@@ -779,7 +794,7 @@ fn array_length(_: &VM, mut stack: StackFrame) {
             let i = values.borrow().fields.len();
             stack.push(Int(i as int));
         }
-        x => fail!("{}", x)
+        x => panic!("{}", x)
     }
 }
 fn array_push(_: &VM, mut stack: StackFrame) {
@@ -789,7 +804,7 @@ fn array_push(_: &VM, mut stack: StackFrame) {
         Data(values) => {
             values.borrow_mut().fields.push(value);
         }
-        _ => fail!()
+        _ => panic!()
     }
 }
 fn string_append(vm: &VM, mut stack: StackFrame) {
@@ -797,12 +812,13 @@ fn string_append(vm: &VM, mut stack: StackFrame) {
         (&String(l), &String(r)) => {
             let l = l.as_slice();
             let r = r.as_slice();
-            let mut s = String::with_capacity(l.len() + r.len());
-            s = s.append(l).append(r);
+            let mut s = ::std::string::String::with_capacity(l.len() + r.len());
+            s.push_str(l);
+            s.push_str(r);
             let result = vm.interner.borrow_mut().intern(s.as_slice());
             stack.push(String(result));
         }
-        _ => fail!()
+        _ => panic!()
     }
 }
 
@@ -810,13 +826,13 @@ macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 )
 
-pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, String> {
+pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
     let mut parser = Parser::new(&mut *interner, buffer, |s| TcIdent { name: s, typ: unit_type_tc.clone() });
     parser.expression().map_err(|err| format!("{}", err))
 }
 
-pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), String> {
+pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::String> {
     use parser::Parser;
 
     let mut module = {
@@ -838,18 +854,18 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), String> {
     Ok(())
 }
 
-pub fn run_main(vm: &VM, s: &str) -> Result<Option<Value>, String> {
+pub fn run_main(vm: &VM, s: &str) -> Result<Option<Value>, ::std::string::String> {
     use std::io::BufReader;
     let mut buffer = BufReader::new(s.as_bytes());
     run_buffer_main(vm, &mut buffer)
 }
-pub fn run_buffer_main(vm: &VM, buffer: &mut Buffer) -> Result<Option<Value>, String> {
+pub fn run_buffer_main(vm: &VM, buffer: &mut Buffer) -> Result<Option<Value>, ::std::string::String> {
     try!(load_script(vm, buffer));
     let v = try!(run_function(vm, "main"));
     Ok(v)
 }
 
-pub fn run_function(vm: &VM, name: &str) -> Result<Option<Value>, String> {
+pub fn run_function(vm: &VM, name: &str) -> Result<Option<Value>, ::std::string::String> {
     let globals = vm.globals.borrow();
     let func = match globals.iter().find(|g| g.id.as_slice() == name) {
         Some(f) => &**f,
@@ -883,7 +899,7 @@ fn main() -> int {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(8)));
     }
 
@@ -904,7 +920,7 @@ enum AB {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(8)));
     }
     #[test]
@@ -939,12 +955,12 @@ impl Add for int {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
                 assert_eq!(data.fields, vec![Int(11), Int(5)]);
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
     #[test]
@@ -964,7 +980,7 @@ fn test(f: fn () -> int) -> int {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(52)));
     }
     #[test]
@@ -978,12 +994,12 @@ fn main() -> [int] {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
                 assert_eq!(data.fields, vec![Int(1), Int(2), Int(33)]);
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
     #[test]
@@ -998,7 +1014,7 @@ fn main() -> int {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(40)));
     }
     #[test]
@@ -1016,7 +1032,7 @@ fn main() -> int {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(123)));
     }
     #[test]
@@ -1039,12 +1055,12 @@ fn main() -> [int] {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
                 assert_eq!(data.fields, vec![Int(2), Int(4), Int(6)]);
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
     #[test]
@@ -1071,7 +1087,7 @@ fn main() -> int {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(3)));
     }
 
@@ -1099,7 +1115,7 @@ fn foldl<A, B>(as: [A], b: B, f: fn (A, B) -> B) -> B {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(6)));
     }
 
@@ -1149,12 +1165,12 @@ fn main() -> Pair {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
                 assert_eq!(data.fields, vec![Int(0), Int(1)]);
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
     #[test]
@@ -1218,12 +1234,12 @@ fn main() -> Pair {
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
                 assert_eq!(data.fields, vec![Int(1), Int(0)]);
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
 
@@ -1236,7 +1252,7 @@ r#"fn main() -> string {
         let mut vm = VM::new();
         let hello_world = vm.intern("Hello World");
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(String(hello_world)));
     }
     #[test]
@@ -1261,7 +1277,7 @@ impl Eq for float {
 ";
             let mut buffer = BufReader::new(text.as_bytes());
             load_script(&mut vm, &mut buffer)
-                .unwrap_or_else(|e| fail!("{}", e));
+                .unwrap_or_else(|e| panic!("{}", e));
         }
         {
             let text = 
@@ -1280,10 +1296,10 @@ fn main() -> bool {
 ";
             let mut buffer = BufReader::new(text.as_bytes());
             load_script(&mut vm, &mut buffer)
-                .unwrap_or_else(|e| fail!("{}", e));
+                .unwrap_or_else(|e| panic!("{}", e));
         }
         let value = run_function(&vm, "main")
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(1)));
     }
 
@@ -1300,7 +1316,7 @@ enum IntOrFloat {
 ";
             let mut buffer = BufReader::new(text.as_bytes());
             load_script(&mut vm, &mut buffer)
-                .unwrap_or_else(|e| fail!("{}", e));
+                .unwrap_or_else(|e| panic!("{}", e));
         }
         {
             let text = 
@@ -1314,10 +1330,10 @@ fn main() -> int {
 ";
             let mut buffer = BufReader::new(text.as_bytes());
             load_script(&mut vm, &mut buffer)
-                .unwrap_or_else(|e| fail!("{}", e));
+                .unwrap_or_else(|e| panic!("{}", e));
         }
         let value = run_function(&vm, "main")
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(1)));
     }
 
@@ -1336,7 +1352,7 @@ fn main() -> int {
 }"#;
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(0)));
     }
 }

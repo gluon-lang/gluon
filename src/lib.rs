@@ -1,5 +1,5 @@
 #![crate_type="lib"]
-#![feature(globs, unsafe_destructor, phase, macro_rules, default_type_params, overloaded_calls)]
+#![feature(globs, unsafe_destructor, phase, macro_rules, default_type_params)]
 extern crate collections;
 #[phase(plugin, link)]
 extern crate log;

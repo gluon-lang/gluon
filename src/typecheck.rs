@@ -1,11 +1,15 @@
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt;
 use scoped_map::ScopedMap;
 use ast;
 use ast::MutVisitor;
 use interner::InternedStr;
 
-pub use ast::{Type, FunctionType, TraitType, TypeVariable, BuiltinType, Generic, ArrayType};
+use self::TypeInfo::*;
+use self::TypeError::*;
+
+pub use ast::TypeEnum::{Type, FunctionType, TraitType, TypeVariable, BuiltinType, Generic, ArrayType};
 
 
 pub static int_type_tc: TcType = BuiltinType(ast::IntType);
@@ -32,7 +36,7 @@ impl Str for TcIdent {
     }
 }
 
-pub type TcType = ast::Type<InternedStr>;
+pub type TcType = ast::TypeEnum<InternedStr>;
 
 pub fn match_types(l: &TcType, r: &TcType) -> bool {
     fn type_eq<'a>(vars: &mut HashMap<uint, &'a TcType>, l: &'a TcType, r: &'a TcType) -> bool {
@@ -120,7 +124,7 @@ fn from_impl_type(constraints: &[ast::Constraints], decl: &mut ast::FunctionDecl
     //Add all constraints from the impl declaration to the functions declaration
     for constraint in constraints.iter() {
         let exists = {
-            let x = decl.type_variables.mut_iter()
+            let x = decl.type_variables.iter_mut()
                 .find(|func_constraint| func_constraint.type_variable == constraint.type_variable);
             match x {
                 Some(c) => {
@@ -233,7 +237,7 @@ enum TypeError {
     UndefinedField(InternedStr, InternedStr),
     UndefinedTrait(InternedStr),
     IndexError(TcType),
-    TypeError(&'static str)
+    StringError(&'static str)
 }
 
 pub type TcResult = Result<TcType, TypeError>;
@@ -294,7 +298,11 @@ impl TypeInfos {
         }
         for imp in module.impls.iter() {
             let imp_type = from_constrained_type(imp.type_variables.as_slice(), &imp.typ);
-            let set = self.impls.find_or_insert(imp.trait_name.id().clone(), Vec::new());
+            let trait_name = imp.trait_name.id().clone();
+            let set = match self.impls.entry(trait_name) {
+                Entry::Occupied(v) => v.into_mut(),
+                Entry::Vacant(v) => v.set(Vec::new())
+            };
             let constraints = imp.type_variables.iter()
                 .map(|constraints| {
                     let cs = constraints.constraints.iter()
@@ -308,16 +316,16 @@ impl TypeInfos {
     }
     pub fn extend(&mut self, other: TypeInfos) {
         let TypeInfos { structs: structs, enums: enums, impls: impls, traits: traits } = other;
-        for (id, struct_) in structs.move_iter() {
+        for (id, struct_) in structs.into_iter() {
             self.structs.insert(id, struct_);
         }
-        for (id, enum_) in enums.move_iter() {
+        for (id, enum_) in enums.into_iter() {
             self.enums.insert(id, enum_);
         }
-        for (id, impl_) in impls.move_iter() {
+        for (id, impl_) in impls.into_iter() {
             self.impls.insert(id, impl_);
         }
-        for (id, trait_) in traits.move_iter() {
+        for (id, trait_) in traits.into_iter() {
             self.traits.insert(id, trait_);
         }
     }
@@ -373,7 +381,7 @@ impl <T: fmt::Show> fmt::Show for Errors<T> {
     }
 }
 
-pub type TypeErrors = Errors<ast::Located<TypeError>>;
+pub type StringErrors = Errors<ast::Located<TypeError>>;
 
 impl <'a> Typecheck<'a> {
     
@@ -425,16 +433,16 @@ impl <'a> Typecheck<'a> {
         self.environment = Some(env);
     }
 
-    pub fn typecheck_module(&mut self, module: &mut ast::Module<TcIdent>) -> Result<(), TypeErrors> {
+    pub fn typecheck_module(&mut self, module: &mut ast::Module<TcIdent>) -> Result<(), StringErrors> {
         
-        for f in module.functions.mut_iter() {
+        for f in module.functions.iter_mut() {
             let decl = &mut f.declaration;
             let constrained_type = from_declaration(decl);
             decl.name.typ = constrained_type.value.clone();
             self.module.insert(decl.name.name, constrained_type);
         }
-        for t in module.traits.mut_iter() {
-            for func in t.declarations.mut_iter() {
+        for t in module.traits.iter_mut() {
+            for func in t.declarations.iter_mut() {
                 let constrained_type = from_declaration_with_self(func);
                 func.name.typ = constrained_type.value.clone();
                 self.module.insert(func.name.id().clone(), Constrained {
@@ -446,7 +454,7 @@ impl <'a> Typecheck<'a> {
                 });
             }
         }
-        for s in module.structs.mut_iter() {
+        for s in module.structs.iter_mut() {
             let args = s.fields.iter()
                 .map(|f| from_constrained_type(s.type_variables.as_slice(), &f.typ))
                 .collect();
@@ -459,9 +467,9 @@ impl <'a> Typecheck<'a> {
                 value: s.name.typ.clone()
             });
         }
-        for e in module.enums.mut_iter() {
+        for e in module.enums.iter_mut() {
             let type_variables = e.type_variables.as_slice();
-            for ctor in e.constructors.mut_iter() {
+            for ctor in e.constructors.iter_mut() {
                 let args = ctor.arguments.iter()
                     .map(|t| from_constrained_type(type_variables, t))
                     .collect();
@@ -476,10 +484,10 @@ impl <'a> Typecheck<'a> {
             }
         }
         self.type_infos.add_module(module);
-        for f in module.functions.mut_iter() {
+        for f in module.functions.iter_mut() {
             self.typecheck_function(f)
         }
-        for imp in module.impls.mut_iter() {
+        for imp in module.impls.iter_mut() {
             imp.typ = from_constrained_type(imp.type_variables.as_slice(), &imp.typ);
             let x = self.typecheck_impl(imp).map_err(ast::no_loc);
             self.errors.handle(x);
@@ -495,18 +503,18 @@ impl <'a> Typecheck<'a> {
         {
             let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
             let type_variables = imp.type_variables.as_slice();
-            for func in imp.functions.mut_iter() {
+            for func in imp.functions.iter_mut() {
                 let c_type = from_impl_type(type_variables, &mut func.declaration);
                 func.declaration.name.typ = c_type.value;
                 let trait_function_type = try!(trait_functions.iter()
                     .find(|& &(ref name, _)| name == func.declaration.name.id())
                     .map(Ok)
-                    .unwrap_or_else(|| Err(TypeError("Function does not exist in trait"))));
+                    .unwrap_or_else(|| Err(StringError("Function does not exist in trait"))));
                 let tf = self.subs.instantiate(&trait_function_type.ref1().value);
                 try!(self.unify(&tf, func.type_of().clone()));
             }
         }
-        for f in imp.functions.mut_iter() {
+        for f in imp.functions.iter_mut() {
             self.typecheck_function(f);
         }
         Ok(())
@@ -536,7 +544,7 @@ impl <'a> Typecheck<'a> {
                 }
                 self.subs.instantiate(&**return_type)
             }
-            _ => fail!("Non function type for function")
+            _ => panic!("Non function type for function")
         };
         let inferred_return_type = match self.typecheck(&mut function.expression) {
             Ok(typ) => typ,
@@ -565,11 +573,11 @@ impl <'a> Typecheck<'a> {
                     ast::Array(ref mut array) => self.tc.set_type(&mut array.id.typ),
                     ast::Lambda(ref mut lambda) => self.tc.set_type(&mut lambda.id.typ),
                     ast::Match(_, ref mut alts) => {
-                        for alt in alts.mut_iter() {
+                        for alt in alts.iter_mut() {
                             match alt.pattern {
                                 ast::ConstructorPattern(ref mut id, ref mut args) => {
                                     self.tc.set_type(&mut id.typ);
-                                    for arg in args.mut_iter() {
+                                    for arg in args.iter_mut() {
                                         self.tc.set_type(&mut arg.typ);
                                     }
                                 }
@@ -586,7 +594,7 @@ impl <'a> Typecheck<'a> {
         v.visit_expr(expr);
     }
 
-    pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, TypeErrors> {
+    pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, StringErrors> {
         let typ = match self.typecheck(expr) {
             Ok(typ) => typ,
             Err(err) => {
@@ -633,7 +641,7 @@ impl <'a> Typecheck<'a> {
                             return Err(WrongNumberOfArguments(arg_types.len(), args.len()));
                         }
                         for i in range(0, arg_types.len()) {
-                            let actual = try!(self.typecheck(args.get_mut(i)));
+                            let actual = try!(self.typecheck(&mut args[i]));
                             try!(self.unify(&arg_types[i], actual));
                         }
                         Ok(*return_type)
@@ -671,7 +679,7 @@ impl <'a> Typecheck<'a> {
                             Ok(lhs_type)
                         }
                         else {
-                            return Err(TypeError("Expected numbers in binop"))
+                            return Err(StringError("Expected numbers in binop"))
                         }
                     }
                     "&&" | "||" => self.unify(&bool_type_tc, lhs_type),
@@ -682,7 +690,7 @@ impl <'a> Typecheck<'a> {
             ast::Block(ref mut exprs) => {
                 self.stack.enter_scope();
                 let mut typ = BuiltinType(ast::UnitType);
-                for expr in exprs.mut_iter() {
+                for expr in exprs.iter_mut() {
                     typ = try!(self.typecheck(expr));
                 }
                 self.stack.exit_scope();
@@ -691,11 +699,11 @@ impl <'a> Typecheck<'a> {
             ast::Match(ref mut expr, ref mut alts) => {
                 let typ = try!(self.typecheck(&mut**expr));
                 self.stack.enter_scope();
-                try!(self.typecheck_pattern(&mut alts.get_mut(0).pattern, typ.clone()));
-                let alt1_type = try!(self.typecheck(&mut alts.get_mut(0).expression));
+                try!(self.typecheck_pattern(&mut alts[0].pattern, typ.clone()));
+                let alt1_type = try!(self.typecheck(&mut alts[0].expression));
                 self.stack.exit_scope();
 
-                for alt in alts.mut_iter().skip(1) {
+                for alt in alts.iter_mut().skip(1) {
                     self.stack.enter_scope();
                     try!(self.typecheck_pattern(&mut alt.pattern, typ.clone()));
                     let alt_type = try!(self.typecheck(&mut alt.expression));
@@ -737,20 +745,20 @@ impl <'a> Typecheck<'a> {
                                 };
                                 Ok(id.typ.clone())
                             }
-                            Enum(_) => Err(TypeError("Field access on enum type"))
+                            Enum(_) => Err(StringError("Field access on enum type"))
                         }
                     }
-                    FunctionType(..) => Err(TypeError("Field access on function")),
-                    BuiltinType(..) => Err(TypeError("Field acces on primitive")),
-                    TypeVariable(..) => Err(TypeError("Field acces on type variable")),
-                    Generic(..) => Err(TypeError("Field acces on generic")),
-                    ArrayType(..) => Err(TypeError("Field access on array")),
-                    TraitType(..) => Err(TypeError("Field access on trait object"))
+                    FunctionType(..) => Err(StringError("Field access on function")),
+                    BuiltinType(..) => Err(StringError("Field acces on primitive")),
+                    TypeVariable(..) => Err(StringError("Field acces on type variable")),
+                    Generic(..) => Err(StringError("Field acces on generic")),
+                    ArrayType(..) => Err(StringError("Field access on array")),
+                    TraitType(..) => Err(StringError("Field access on trait object"))
                 }
             }
             ast::Array(ref mut a) => {
                 let mut expected_type = self.subs.new_var();
-                for expr in a.expressions.mut_iter() {
+                for expr in a.expressions.iter_mut() {
                     let typ = try!(self.typecheck(expr));
                     expected_type = try!(self.unify(&expected_type, typ));
                 }
@@ -772,7 +780,7 @@ impl <'a> Typecheck<'a> {
             ast::Lambda(ref mut lambda) => {
                 self.stack.enter_scope();
                 let mut arg_types = Vec::new();
-                for arg in lambda.arguments.mut_iter() {
+                for arg in lambda.arguments.iter_mut() {
                     arg.typ = self.subs.new_var();
                     arg_types.push(arg.typ.clone());
                     self.stack_var(arg.name.clone(), arg.typ.clone());
@@ -788,7 +796,7 @@ impl <'a> Typecheck<'a> {
     fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
         let typename = match match_type {
             Type(id, _) => id,
-            _ => return Err(TypeError("Pattern matching only works on enums"))
+            _ => return Err(StringError("Pattern matching only works on enums"))
         };
         match *pattern {
             ast::ConstructorPattern(ref name, ref mut args) => {
@@ -797,20 +805,20 @@ impl <'a> Typecheck<'a> {
                     Enum(ref ctors) => {
                         match ctors.iter().find(|ctor| ctor.name.id() == name.id()) {
                             Some(ctor) => ctor.name.typ.clone(),
-                            None => return Err(TypeError("Undefined constructor"))
+                            None => return Err(StringError("Undefined constructor"))
                         }
                     }
-                    Struct(..) => return Err(TypeError("Pattern match on struct"))
+                    Struct(..) => return Err(StringError("Pattern match on struct"))
                 };
                 let ctor_type = self.subs.instantiate(&ctor_type);
                 let (argument_types, return_type) = match ctor_type {
                     FunctionType(argument_types, return_type) => {
                         (argument_types, *return_type)
                     }
-                    _ => return Err(TypeError("Enum constructor must be a function type"))
+                    _ => return Err(StringError("Enum constructor must be a function type"))
                 };
                 try!(self.unify(&match_type, return_type));
-                for (arg, typ) in args.iter().zip(argument_types.move_iter()) {
+                for (arg, typ) in args.iter().zip(argument_types.into_iter()) {
                     self.stack_var(arg.id().clone(), typ);
                 }
                 Ok(())
@@ -1020,14 +1028,14 @@ impl <'a> Typecheck<'a> {
                     }
                 }),
             FunctionType(ref mut args, ref mut return_type) => {
-                for arg in args.mut_iter() {
+                for arg in args.iter_mut() {
                     self.set_type(arg);
                 }
                 self.set_type(&mut **return_type);
                 None
             }
             Type(id, ref mut args) => {
-                for arg in args.mut_iter() {
+                for arg in args.iter_mut() {
                     self.set_type(arg);
                 }
                 if find_trait(&self.type_infos, &id).is_ok() {
@@ -1113,7 +1121,7 @@ impl Substitution {
         //Since we never have a cycle in the map we will never hold a &mut
         //to the same place
         let this: &mut Substitution = unsafe { ::std::mem::transmute(&*self) };
-        this.map.find_mut(&var).map(|typ| {
+        this.map.get_mut(&var).map(|typ| {
             match **typ {
                 TypeVariable(parent_var) if parent_var != var => {
                     match self.find(parent_var) {
@@ -1202,14 +1210,14 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
                 match op.as_slice() {
                     "+" | "-" | "*" => lhs.type_of(),
                     "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => &bool_type_tc,
-                    _ => fail!()
+                    _ => panic!()
                 }
             }
             ast::Let(..) | ast::While(..) | ast::Assign(..) => &unit_type_tc,
             ast::Call(ref func, _) => {
                 match func.type_of() {
                     &FunctionType(_, ref return_type) => &**return_type,
-                    x => fail!("{}", x)
+                    x => panic!("{}", x)
                 }
             }
             ast::Match(_, ref alts) => alts[0].expression.type_of(),
@@ -1217,7 +1225,7 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
             ast::Array(ref a) => a.id.type_of(),
             ast::ArrayAccess(ref array, _) => match array.type_of() {
                 &ArrayType(ref t) => &**t,
-                t => fail!("Not an array type {}", t)
+                t => panic!("Not an array type {}", t)
             },
             ast::Lambda(ref lambda) => lambda.id.type_of()
         }
@@ -1254,7 +1262,7 @@ mod tests {
         let mut interner = interner.borrow_mut();
         let mut parser = Parser::new(&mut *interner, &mut buffer, |s| TcIdent { typ: unit_type_tc.clone(), name: s });
         f(&mut parser)
-            .unwrap_or_else(|err| fail!(err))
+            .unwrap_or_else(|err| panic!(err))
     }
     #[test]
     fn while_() {
@@ -1262,7 +1270,7 @@ mod tests {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!(err))
+            .unwrap_or_else(|err| panic!(err))
 
     }
     #[test]
@@ -1282,7 +1290,7 @@ fn main() -> int {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err))
+            .unwrap_or_else(|err| panic!("{}", err))
 
     }
     #[test]
@@ -1311,7 +1319,7 @@ fn test(v: Vec) -> Vec {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err))
+            .unwrap_or_else(|err| panic!("{}", err))
 
     }
     #[test]
@@ -1371,7 +1379,7 @@ fn test(x: int) -> [int] {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
     }
     #[test]
     fn array_unify() {
@@ -1384,7 +1392,7 @@ fn test() -> [int] {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
     }
     #[test]
     fn lambda() {
@@ -1401,7 +1409,7 @@ fn adder(x: int) -> fn (int) -> int {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
     }
     #[test]
     fn generic_function() {
@@ -1418,7 +1426,7 @@ fn id<T>(x: T) -> T {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
     }
     #[test]
     fn generic_function_map() {
@@ -1436,12 +1444,12 @@ fn transform<A, B>(x: A, f: fn (A) -> B) -> B {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         match module.functions[0].expression.value {
             ::ast::Block(ref exprs) => {
                 assert_eq!(exprs[2].value.type_of(), &float_type_tc);
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
     #[test]
@@ -1477,7 +1485,7 @@ fn is_positive(x: float) -> Option<float> {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         match module.functions[0].expression.value {
             ast::Block(ref exprs) => {
                 match exprs[0].value {
@@ -1485,10 +1493,10 @@ fn is_positive(x: float) -> Option<float> {
                         assert_eq!(if_true.type_of(), if_false.type_of());
                         assert_eq!(if_false.type_of(), &Type(intern("Option"), vec![float_type_tc.clone()]));
                     }
-                    _ => fail!()
+                    _ => panic!()
                 }
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
     #[test]
@@ -1556,7 +1564,7 @@ fn test() -> bool {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
         match module.functions[0].expression.value {
             ast::Block(ref exprs) => {
                 match exprs[0].value {
@@ -1566,10 +1574,10 @@ fn test() -> bool {
                         assert_eq!(args[0].type_of(), &int_opt);
                         assert_eq!(args[1].type_of(), &int_opt);
                     }
-                    _ => fail!()
+                    _ => panic!()
                 }
             }
-            _ => fail!()
+            _ => panic!()
         }
     }
     #[test]
@@ -1609,7 +1617,7 @@ fn test(x: float) -> bool {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| fail!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
     }
     #[test]
     fn and_type_error() {

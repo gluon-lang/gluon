@@ -1,9 +1,8 @@
 use std::fmt;
 use ast::*;
 use interner::{Interner, InternedStr};
-use lexer::{
-    Lexer,
-    Token,
+use lexer::{Lexer, Token};
+use lexer::Token::{
     TInteger,
     TFloat,
     TString,
@@ -40,14 +39,16 @@ use lexer::{
     TEOF
 };
 
+use self::ParseError::*;
+
 macro_rules! expect(
     ($e: expr, $p: ident (..)) => ({
         match *$e.lexer.next() {
             x@$p(..) => x,
             actual => {
                 $e.lexer.backtrack();
-                static expected: &'static [&'static str] = &[stringify!($p)];
-                return Err($e.unexpected_token(expected, actual))
+                static EXPECTED: &'static [&'static str] = &[stringify!($p)];
+                return Err($e.unexpected_token(EXPECTED, actual))
             }
         }
     });
@@ -56,8 +57,8 @@ macro_rules! expect(
             x@$p => x,
             actual => {
                 $e.lexer.backtrack();
-                static expected: &'static [&'static str] = &[stringify!($p)];
-                return Err($e.unexpected_token(expected, actual))
+                static EXPECTED: &'static [&'static str] = &[stringify!($p)];
+                return Err($e.unexpected_token(EXPECTED, actual))
             }
         }
     })
@@ -68,8 +69,8 @@ macro_rules! expect1(
             $p($x) => $x,
             actual => {
                 $e.lexer.backtrack();
-                static expected: &'static [&'static str] = &[stringify!($p)];
-                return Err($e.unexpected_token(expected, actual))
+                static EXPECTED: &'static [&'static str] = &[stringify!($p)];
+                return Err($e.unexpected_token(EXPECTED, actual))
             }
         }
     })
@@ -170,7 +171,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 self.lexer.next();
                 let id = match expect!(self, TIdentifier(..)) {
                     TIdentifier(id) => id,
-                    _ => fail!()
+                    _ => panic!()
                 };
                 expect!(self, TAssign);
                 let expr = try!(self.expression());
@@ -296,7 +297,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 let args = try!(self.sep_by(|t| *t == TComma, |this| this.expression()));
                 expect!(self, TCloseBracket);
                 let dummy = self.lexer.interner.intern("[]");
-                Ok(Array(Array { id: self.make_id(dummy), expressions: args }))
+                Ok(Array(ArrayStruct { id: self.make_id(dummy), expressions: args }))
             }
             TLambda => {
                 let args = try!(self.many(|t| *t == TRArrow, |this| {
@@ -306,12 +307,12 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 expect!(self, TRArrow);
                 let body = box try!(self.expression());
                 let s = self.lexer.interner.intern("");
-                Ok(Lambda(Lambda { id: self.make_id(s), free_vars: Vec::new(), arguments: args, body: body }))
+                Ok(Lambda(LambdaStruct { id: self.make_id(s), free_vars: Vec::new(), arguments: args, body: body }))
             }
             x => {
                 self.lexer.backtrack();
-                static expected: &'static [&'static str] = &["TIdentifier", "(", "{", "TInteger", "TFloat", "TString", "true", "false", "if", "while", "match", "[", "\\"];
-                Err(self.unexpected_token(expected, x))
+                static EXPECTED: &'static [&'static str] = &["TIdentifier", "(", "{", "TInteger", "TFloat", "TString", "true", "false", "if", "while", "match", "[", "\\"];
+                Err(self.unexpected_token(EXPECTED, x))
             }
         }
     }
@@ -401,7 +402,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         }
     }
 
-    fn typ(&mut self) -> ParseResult<Type<InternedStr>> {
+    fn typ(&mut self) -> ParseResult<VMType> {
         let x = match *self.lexer.next() {
             TIdentifier(x) => {
                 match str_to_primitive_type(x) {
@@ -435,8 +436,8 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             }
             x => {
                 self.lexer.backtrack();
-                static expected: &'static [&'static str] = &["fn"];
-                return Err(self.unexpected_token(expected, x))
+                static EXPECTED: &'static [&'static str] = &["fn"];
+                return Err(self.unexpected_token(EXPECTED, x))
             }
         };
         Ok(x)
@@ -509,19 +510,19 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     }
     
     fn angle_brackets<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
-        static expected_lt: &'static [&'static str] = &["<"];
-        static expected_gt: &'static [&'static str] = &[">"];
+        static EXPECTED_LT: &'static [&'static str] = &["<"];
+        static EXPECTED_GT: &'static [&'static str] = &[">"];
         match *self.lexer.peek() {
             TOperator(s) if s.as_slice() == "<" => {
                 self.lexer.next();
                 let result = try!(f(self));
                 match *self.lexer.next() {
                     TOperator(x) if x.as_slice() == ">" => (),
-                    x => return Err(self.unexpected_token(expected_gt, x))
+                    x => return Err(self.unexpected_token(EXPECTED_GT, x))
                 }
                 Ok(result)
             }
-            x => Err(self.unexpected_token(expected_lt, x))
+            x => Err(self.unexpected_token(EXPECTED_LT, x))
         }
     }
     fn type_variables(&mut self) -> ParseResult<Vec<Constraints>> {
@@ -639,10 +640,10 @@ pub mod tests {
     fn id(s: &str) -> PExpr {
         no_loc(Identifier(intern(s)))
     }
-    fn field(s: &str, typ: Type<InternedStr>) -> Field {
+    fn field(s: &str, typ: VMType) -> Field {
         Field { name: intern(s), typ: typ }
     }
-    fn typ(s: &str) -> Type<InternedStr> {
+    fn typ(s: &str) -> VMType {
         Type(intern(s), Vec::new())
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
@@ -672,7 +673,7 @@ pub mod tests {
         let mut interner = interner.borrow_mut();
         let mut parser = Parser::new(&mut *interner, &mut buffer, |s| s);
         let x = f(&mut parser)
-            .unwrap_or_else(|err| fail!(err));
+            .unwrap_or_else(|err| panic!(err));
         x
     }
 
