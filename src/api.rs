@@ -6,22 +6,23 @@ use std::any::{Any, AnyRefExt};
 use std::boxed::BoxAny;
 
 pub trait VMType {
-    fn vm_type(_: Option<Self>, vm: &VM) -> &TcType;
+    fn vm_type<'a>(_: Option<Self>, vm: &'a VM) -> &'a TcType;
     fn make_type(x: Option<Self>, vm: &VM) -> TcType {
         VMType::vm_type(x, vm).clone()
     }
 }
-pub trait VMValue : VMType {
-    fn push(self, stack: &mut StackFrame);
-    fn from_value(value: Value) -> Option<Self>;
+pub trait VMValue<'a> : VMType {
+    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>);
+    fn from_value(value: Value<'a>) -> Option<Self>;
 }
+
 impl VMType for () {
-    fn vm_type(_: Option<()>, _: &VM) -> &TcType {
+    fn vm_type<'a>(_: Option<()>, _: &VM) -> &'a TcType {
         &UNIT_TYPE
     }
 }
-impl VMValue for () {
-    fn push(self, _: &mut StackFrame) {
+impl <'a> VMValue<'a> for () {
+    fn push<'b>(self, _: &mut StackFrame<'a, 'b>) {
     }
     fn from_value(_: Value) -> Option<()> {
         Some(())
@@ -29,15 +30,15 @@ impl VMValue for () {
 }
 
 impl VMType for int {
-    fn vm_type(_: Option<int>, _: &VM) -> &TcType {
+    fn vm_type<'a>(_: Option<int>, _: &'a VM) -> &'a TcType {
         &INT_TYPE
     }
 }
-impl VMValue for int {
-    fn push(self, stack: &mut StackFrame) {
+impl <'a> VMValue<'a> for int {
+    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Int(self));
     }
-    fn from_value(value: Value) -> Option<int> {
+    fn from_value(value: Value<'a>) -> Option<int> {
         match value {
             Int(i) => Some(i),
             _ => None
@@ -45,15 +46,15 @@ impl VMValue for int {
     }
 }
 impl VMType for f64 {
-    fn vm_type(_: Option<f64>, _: &VM) -> &TcType {
+    fn vm_type<'a>(_: Option<f64>, _: &'a VM) -> &'a TcType {
         &FLOAT_TYPE
     }
 }
-impl VMValue for f64 {
-    fn push(self, stack: &mut StackFrame) {
+impl <'a> VMValue<'a> for f64 {
+    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Float(self));
     }
-    fn from_value(value: Value) -> Option<f64> {
+    fn from_value(value: Value<'a>) -> Option<f64> {
         match value {
             Float(f) => Some(f),
             _ => None
@@ -61,15 +62,15 @@ impl VMValue for f64 {
     }
 }
 impl VMType for bool {
-    fn vm_type(_: Option<bool>, _: &VM) -> &TcType {
+    fn vm_type<'a>(_: Option<bool>, _: &'a VM) -> &'a TcType {
         &BOOL_TYPE
     }
 }
-impl VMValue for bool {
-    fn push(self, stack: &mut StackFrame) {
+impl <'a> VMValue<'a> for bool {
+    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Int(if self { 1 } else { 0 }));
     }
-    fn from_value(value: Value) -> Option<bool> {
+    fn from_value(value: Value<'a>) -> Option<bool> {
         match value {
             Int(1) => Some(true),
             Int(0) => Some(false),
@@ -78,15 +79,15 @@ impl VMValue for bool {
     }
 }
 impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
-    fn vm_type(_: Option<Box<T>>, vm: &VM) -> &TcType {
+    fn vm_type<'a>(_: Option<Box<T>>, vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
     }
 }
-impl <T: 'static + BoxAny + Clone> VMValue for Box<T> {
-    fn push(self, stack: &mut StackFrame) {
+impl <'a, T: 'static + BoxAny + Clone> VMValue<'a> for Box<T> {
+    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Userdata(Userdata_::new(self as Box<Any>)));
     }
-    fn from_value(value: Value) -> Option<Box<T>> {
+    fn from_value(value: Value<'a>) -> Option<Box<T>> {
         match value {
             Userdata(v) => v.data.borrow().downcast_ref::<T>().map(|x| box x.clone()),
             _ => None
@@ -94,15 +95,15 @@ impl <T: 'static + BoxAny + Clone> VMValue for Box<T> {
     }
 }
 impl <T: 'static> VMType for *mut T {
-    fn vm_type(_: Option<*mut T>, vm: &VM) -> &TcType {
+    fn vm_type<'a>(_: Option<*mut T>, vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
     }
 }
-impl <T: 'static> VMValue for *mut T {
-    fn push(self, stack: &mut StackFrame) {
+impl <'a, T: 'static> VMValue<'a> for *mut T {
+    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Userdata(Userdata_::new(box self as Box<Any>)));
     }
-    fn from_value(value: Value) -> Option<*mut T> {
+    fn from_value(value: Value<'a>) -> Option<*mut T> {
         match value {
             Userdata(v) => v.data.borrow().downcast_ref::<*mut T>().map(|x| *x),
             _ => None
@@ -110,21 +111,21 @@ impl <T: 'static> VMValue for *mut T {
     }
 }
 
-fn vm_type<'a, T: VMValue>(vm: &VM) -> &TcType {
+fn vm_type<'a, 'b, T: VMValue<'b>>(vm: &'a VM) -> &'a TcType {
     VMType::vm_type(None::<T>, vm)
 }
 
-fn make_type<'a, T: VMValue>(vm: &VM) -> TcType {
+fn make_type<'a, T: VMValue<'a>>(vm: &VM) -> TcType {
     VMType::make_type(None::<T>, vm)
 }
 
-pub trait Get<'a> {
-    fn get_function(vm: &'a VM, name: &str) -> Option<Self>;
+pub trait Get<'a, 'b> {
+    fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Self>;
 }
 macro_rules! make_get(
     ($($args:ident),*) => (
-impl <'a, $($args : VMValue,)* R: VMValue> Get<'a> for Callable<'a, ($($args,)*), R> {
-    fn get_function(vm: &'a VM, name: &str) -> Option<Callable<'a, ($($args,)*), R>> {
+impl <'a, 'b, $($args : VMValue<'b>,)* R: VMValue<'b>> Get<'a, 'b> for Callable<'a, 'b, ($($args,)*), R> {
+    fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Callable<'a, 'b, ($($args,)*), R>> {
         let value = match vm.get_global(name) {
             Some((function_ref, global)) => {
                 match global.type_of() {
@@ -161,8 +162,8 @@ make_get!(A, B, C, D)
 make_get!(A, B, C, D, E)
 make_get!(A, B, C, D, E, F, G)
 
-pub struct Callable<'a, Args, R> {
-    vm: &'a VM,
+pub struct Callable<'a, 'b: 'a , Args, R> {
+    vm: &'a VM<'b>,
     value: FunctionRef<Args, R>
 }
 struct FunctionRef<Args, R> {
@@ -170,16 +171,16 @@ struct FunctionRef<Args, R> {
 }
 
 impl <Args, R> VMType for FunctionRef<Args, R> {
-    fn vm_type(_: Option<FunctionRef<Args, R>>, vm: &VM) -> &TcType {
+    fn vm_type<'a>(_: Option<FunctionRef<Args, R>>, vm: &'a VM) -> &'a TcType {
         vm.get_type::<|Args|:'static -> R>()
     }
 }
 
-impl <Args, R> VMValue for FunctionRef<Args, R> {
-    fn push(self, stack: &mut StackFrame) {
+impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
+    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Function(self.value));
     }
-    fn from_value(value: Value) -> Option<FunctionRef<Args, R>> {
+    fn from_value(value: Value<'a>) -> Option<FunctionRef<Args, R>> {
         match value {
             Function(i) => Some(FunctionRef { value: i }),//TODO not type safe
             _ => None
@@ -187,7 +188,7 @@ impl <Args, R> VMValue for FunctionRef<Args, R> {
     }
 }
 
-impl <'a, A: VMValue, R: VMValue> Callable<'a, (A,), R> {
+impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
     pub fn call(&mut self, a: A) -> R {
         let mut vec = Vec::new();
         {
@@ -200,7 +201,7 @@ impl <'a, A: VMValue, R: VMValue> Callable<'a, (A,), R> {
             .expect("Wrong type")
     }
 }
-impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
+impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A, B), R> {
     pub fn call2(&mut self, a: A, b: B) -> R {
         let mut vec = Vec::new();
         {
@@ -215,30 +216,31 @@ impl <'a, A: VMValue, B: VMValue, R: VMValue> Callable<'a, (A, B), R> {
     }
 }
 
-pub fn get_function<'a, T: Get<'a>>(vm: &'a VM, name: &str) -> Option<T> {
+pub fn get_function<'a, 'b, T: Get<'a, 'b>>(vm: &'a VM<'b>, name: &str) -> Option<T> {
     Get::get_function(vm, name)
 }
 
-pub trait VMFunction {
-    fn unpack_and_call(mut stack: StackFrame, f: Self);
+pub trait VMFunction<'a> {
+    fn unpack_and_call<'b>(mut stack: StackFrame<'a, 'b>, f: Self);
 }
 
 macro_rules! make_vm_function(
     ($($args:ident),*) => (
-impl <$($args: VMValue,)* R: VMValue> VMType for fn ($($args),*) -> R {
+impl <'a, $($args: VMValue<'a>,)* R: VMValue<'a>> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
-    fn vm_type(_: Option<fn ($($args),*) -> R>, vm: &VM) -> &TcType {
+    fn vm_type<'a>(_: Option<fn ($($args),*) -> R>, vm: &'a VM) -> &'a TcType {
         vm.get_type::<fn ($($args),*) -> R>()
     }
     #[allow(non_snake_case)]
     fn make_type(_: Option<fn ($($args),*) -> R>, vm: &VM) -> TcType {
-        FunctionType(vec![$(make_type::<$args>(vm)),*], box make_type::<R>(vm))
+        let args = vec![$(make_type::<$args>(vm)),*];
+        FunctionType(args, box make_type::<R>(vm))
     }
 }
 
-impl <$($args : VMValue,)* R: VMValue> VMFunction for fn ($($args),*) -> R {
+impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($args),*) -> R {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
-    fn unpack_and_call(mut stack: StackFrame, f: fn ($($args),*) -> R) {
+    fn unpack_and_call<'b>(mut stack: StackFrame<'a, 'b>, f: fn ($($args),*) -> R) {
         let mut i = 0u;
         $(let $args = {
             let x = VMValue::from_value(stack[i].clone()).unwrap();
@@ -251,7 +253,7 @@ impl <$($args : VMValue,)* R: VMValue> VMFunction for fn ($($args),*) -> R {
 }
     )
 )
-pub fn unpack_and_call<F: VMFunction>(stack: StackFrame, f: F) {
+pub fn unpack_and_call<'a, 'b, F: VMFunction<'a>>(stack: StackFrame<'a, 'b>, f: F) {
     VMFunction::unpack_and_call(stack, f)
 }
 
@@ -267,7 +269,7 @@ make_vm_function!(A, B, C, D, E, F, G)
 #[macro_export]
 macro_rules! vm_function(
     ($func: expr) => ({
-        fn wrapper(_: &VM, stack: StackFrame) {
+        fn wrapper<'a, 'b>(_: &VM<'a>, stack: StackFrame<'a, 'b>) {
             unpack_and_call(stack, $func)
         }
         wrapper
