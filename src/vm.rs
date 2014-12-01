@@ -144,7 +144,7 @@ impl <'a> fmt::Show for Value<'a> {
     }
 }
 
-pub type ExternFunction<'a> = fn <'b>(&VM<'a>, StackFrame<'a, 'b>);
+pub type ExternFunction<'a> = for<'b> fn(&VM<'a>, StackFrame<'a, 'b>);
 
 #[deriving(Show)]
 pub struct Global<'a> {
