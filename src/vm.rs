@@ -13,7 +13,6 @@ use compiler::Instruction::*;
 use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable};
 use fixed::*;
-use std::kinds::marker::CovariantLifetime;
 
 use self::Named::*;
 use self::Global_::*;
@@ -183,7 +182,6 @@ pub struct VM<'a> {
     interner: RefCell<Interner>,
     names: RefCell<HashMap<InternedStr, Named>>,
     gc: Gc<Data_<'a>>,
-    m: CovariantLifetime<'a>
 }
 
 pub struct VMEnv<'a: 'b, 'b> {
@@ -376,7 +374,6 @@ impl <'a> VM<'a> {
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: Gc::new(),
-            m: CovariantLifetime
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
