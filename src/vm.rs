@@ -11,7 +11,7 @@ use ast::TypeEnum::*;
 use compiler::*;
 use compiler::Instruction::*;
 use interner::{Interner, InternedStr};
-use gc::{Gc, GcPtr, Traverseable};
+use gc::{Gc, GcPtr, Traverseable, DataDef};
 use fixed::*;
 
 use self::Named::*;
@@ -363,6 +363,30 @@ impl <'a, 'b> Index<uint, Value<'a>> for StackFrame<'a, 'b> {
     }
 }
 
+struct Def<'a:'b, 'b> {
+    tag: uint,
+    elems: &'b [Value<'a>]
+}
+impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
+    fn size(&self) -> uint {
+        use std::mem::size_of;
+        size_of::<uint>() + self.elems.len() * size_of::<Value<'a>>()
+    }
+    fn initialize(&self, result: *mut Data_<'a>) {
+        let result = unsafe { &mut *result };
+        result.tag = self.tag;
+        let vec = self.elems.iter().map(|x| x.clone()).collect();
+        unsafe {
+            ::std::ptr::write(&mut result.fields, vec);
+        }
+    }
+    fn make_ptr(&self, ptr: *mut ()) -> *mut Data_<'a> {
+        unsafe {
+            ::std::mem::transmute(ptr)
+        }
+    }
+}
+
 impl <'a> VM<'a> {
     
     pub fn new() -> VM<'a> {
@@ -508,10 +532,10 @@ impl <'a> VM<'a> {
     }
 
     fn new_data(&self, tag: uint, fields: Vec<Value<'a>>) -> Value<'a> {
-        Data(DataStruct { value: self.gc.alloc(Data_ { tag: tag, fields: fields })})
+        Data(DataStruct { value: self.gc.alloc(Def { tag: tag, elems: &*fields })})
     }
     fn new_data_and_collect(&self, roots: &mut Vec<Value<'a>>, tag: uint, fields: Vec<Value<'a>>) -> DataStruct<'a> {
-        DataStruct { value: self.gc.alloc_and_collect(roots, Data_ { tag: tag, fields: fields })}
+        DataStruct { value: self.gc.alloc_and_collect(roots, Def { tag: tag, elems: &*fields })}
     }
 
     fn execute_function<'b>(&self, stack: StackFrame<'a, 'b>, function: &Global<'a>) {

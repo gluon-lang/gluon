@@ -14,6 +14,12 @@ struct Gc_ {
     collect_limit: uint
 }
 
+pub trait DataDef<Sized? Result> {
+    fn size(&self) -> uint;
+    fn initialize(&self, ptr: *mut Result);
+    fn make_ptr(&self, ptr: *mut ()) -> *mut Result;
+}
+
 struct GcHeader {
     next: Option<AllocPtr>,
     value_size: uint,
@@ -106,14 +112,14 @@ impl Gc {
     pub fn new() -> Gc {
         Gc { gc: RefCell::new(Gc_ { values: None, allocated_objects: 0, collect_limit: 100 }) }
     }
-    pub fn alloc_and_collect<T, R>(&self, roots: &mut R, value: T) -> GcPtr<T>
-        where T: Traverseable<T>, R: Traverseable<T> {
-        let ptr = self.gc.borrow_mut().alloc_and_collect(roots, value);
+    pub fn alloc_and_collect<T, R, D>(&self, roots: &mut R, def: D) -> GcPtr<T>
+        where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> {
+        let ptr = self.gc.borrow_mut().alloc_and_collect(roots, def);
         GcPtr { ptr: ptr }
     }
-    pub fn alloc<T>(&self, value: T) -> GcPtr<T>
-        where T: Traverseable<T> {
-        let ptr = self.gc.borrow_mut().alloc(value);
+    pub fn alloc<T, D>(&self, def: D) -> GcPtr<T>
+        where T: Traverseable<T>, D: DataDef<T> {
+        let ptr = self.gc.borrow_mut().alloc(def);
         GcPtr { ptr: ptr }
     }
 
@@ -124,21 +130,21 @@ impl Gc {
 }
 impl Gc_ {
     
-    fn alloc_and_collect<T, R>(&mut self, roots: &mut R, value: T) -> *mut T
-        where T: Traverseable<T>, R: Traverseable<T> {
+    fn alloc_and_collect<T, R, D>(&mut self, roots: &mut R, def: D) -> *mut T
+        where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> {
         if self.allocated_objects >= self.collect_limit {
             self.collect(roots);
         }
-        self.alloc(value)
+        self.alloc(def)
     }
-    fn alloc<T>(&mut self, value: T) -> *mut T
-        where T: Traverseable<T> {
+    fn alloc<T, D>(&mut self, def: D) -> *mut T
+        where T: Traverseable<T>, D: DataDef<T> {
         let mut ptr = AllocPtr::new(mem::size_of::<T>());
         ptr.next = self.values.take();
         self.allocated_objects += 1;
         unsafe {
-            let p: *mut T = mem::transmute(ptr.value());
-            ptr::write(p, value);
+            let p: &mut T = &mut *def.make_ptr(ptr.value());
+            def.initialize(p);
             self.values = Some(ptr);
             p
         }
@@ -205,7 +211,7 @@ impl Gc_ {
 
 #[cfg(test)]
 mod tests {
-    use super::{Gc, Gc_, GcPtr, GcHeader, Traverseable};
+    use super::{Gc, Gc_, GcPtr, GcHeader, Traverseable, DataDef};
     use std::fmt;
 
     use self::Value::*;
@@ -231,6 +237,27 @@ mod tests {
     impl  fmt::Show for Data_ {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             self.fields.ptr.fmt(f)
+        }
+    }
+
+    struct Def<'a> {
+        elems: &'a [Value]
+    }
+    impl <'a> DataDef<Vec<Value>> for Def<'a> {
+        fn size(&self) -> uint {
+            use std::mem::size_of;
+            self.elems.len() * size_of::<Value>()
+        }
+        fn initialize(&self, result: *mut Vec<Value>) {
+            let vec = self.elems.iter().map(|x| *x).collect();
+            unsafe {
+                ::std::ptr::write(result, vec);
+            }
+        }
+        fn make_ptr(&self, ptr: *mut ()) -> *mut Vec<Value> {
+            unsafe {
+                ::std::mem::transmute(ptr)
+            }
         }
     }
 
@@ -284,7 +311,7 @@ mod tests {
     #[test]
     fn gc_header() {
         let gc: Gc = Gc::new();
-        let mut ptr = gc.alloc(Vec::new());
+        let mut ptr = gc.alloc(Def { elems: &[Int(1)] });
         let header: *mut _ = &mut *Gc_::gc_header(&mut *ptr);
         let other: *mut _ = &mut **gc.gc.borrow_mut().values.as_mut().unwrap();
         assert_eq!(header, other);
@@ -294,8 +321,8 @@ mod tests {
     fn basic() {
         let gc: Gc = Gc::new();
         let mut stack: Vec<Value> = Vec::new();
-        stack.push(new_data(gc.alloc(vec![Int(1)])));
-        let d2 = new_data(gc.alloc(vec![stack[0]]));
+        stack.push(new_data(gc.alloc(Def { elems: &[Int(1)] })));
+        let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }));
         stack.push(d2);
         assert_eq!(num_objects(&gc), 2);
         gc.collect(&mut stack);
