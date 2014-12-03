@@ -106,6 +106,9 @@ impl <Sized? T> DerefMut<T> for GcPtr<T> {
 pub trait Traverseable<Sized? T> for Sized? {
     fn traverse(&mut self, func: |&mut T|);
 }
+impl <T> Traverseable<T> for () {
+    fn traverse(&mut self, _: |&mut T|) { }
+}
 
 impl Gc {
 
@@ -113,7 +116,7 @@ impl Gc {
         Gc { gc: RefCell::new(Gc_ { values: None, allocated_objects: 0, collect_limit: 100 }) }
     }
     pub fn alloc_and_collect<Sized? T, Sized? R, D>(&self, roots: &mut R, def: D) -> GcPtr<T>
-        where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> {
+        where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> + Traverseable<T> {
         let ptr = self.gc.borrow_mut().alloc_and_collect(roots, def);
         GcPtr { ptr: ptr }
     }
@@ -125,19 +128,19 @@ impl Gc {
 
     pub fn collect<T, Sized? R>(&self, roots: &mut R)
         where T: Traverseable<T>, R: Traverseable<T> {
-        self.gc.borrow_mut().collect(roots);
+        self.gc.borrow_mut().collect(roots, &mut ());
     }
 }
 impl Gc_ {
     
-    fn alloc_and_collect<Sized? T, Sized? R, D>(&mut self, roots: &mut R, def: D) -> *mut T
-        where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> {
+    fn alloc_and_collect<Sized? T, Sized? R, D>(&mut self, roots: &mut R, mut def: D) -> *mut T
+        where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> + Traverseable<T> {
         if self.allocated_objects >= self.collect_limit {
-            self.collect(roots);
+            self.collect(roots, &mut def);
         }
         self.alloc(def)
     }
-    fn alloc<Sized? T, D>(&mut self, def: D) -> *mut T
+    fn alloc<Sized? T, D>(&mut self, mut def: D) -> *mut T
         where T: Traverseable<T>, D: DataDef<T> {
         let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
@@ -150,9 +153,10 @@ impl Gc_ {
         }
     }
 
-    fn collect<Sized? T, Sized? R>(&mut self, roots: &mut R)
-        where T: Traverseable<T>, R: Traverseable<T> {
+    fn collect<Sized? T, Sized? R, D>(&mut self, roots: &mut R, def: &mut D)
+        where T: Traverseable<T>, R: Traverseable<T>, D: Traverseable<T> {
         roots.traverse(|v| self.mark(v));
+        def.traverse(|v| self.mark(v));
         self.sweep();
     }
 

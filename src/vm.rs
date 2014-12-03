@@ -354,6 +354,9 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     fn as_slice(&self) -> &[Value<'a>] {
         self.stack.slice_from(self.offset)
     }
+    fn as_mut_slice(&mut self) -> &mut [Value<'a>] {
+        self.stack.slice_from_mut(self.offset)
+    }
 }
 
 impl <'a, 'b> Index<uint, Value<'a>> for StackFrame<'a, 'b> {
@@ -364,7 +367,7 @@ impl <'a, 'b> Index<uint, Value<'a>> for StackFrame<'a, 'b> {
 
 struct Def<'a:'b, 'b> {
     tag: uint,
-    elems: &'b [Value<'a>]
+    elems: &'b mut [Value<'a>]
 }
 impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
     fn size(&self) -> uint {
@@ -386,6 +389,12 @@ impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
             let x = Slice { data: &*ptr, len: self.elems.len() };
             ::std::mem::transmute(x)
         }
+    }
+}
+
+impl <'a, 'b> Traverseable<Data_<'a>> for Def<'a, 'b> {
+    fn traverse(&mut self, func: |&mut Data_<'a>|) {
+        self.elems.traverse(func);
     }
 }
 
@@ -532,10 +541,10 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn new_data(&self, tag: uint, fields: &[Value<'a>]) -> Value<'a> {
+    fn new_data(&self, tag: uint, fields: &mut [Value<'a>]) -> Value<'a> {
         Data(DataStruct { value: self.gc.alloc(Def { tag: tag, elems: fields })})
     }
-    fn new_data_and_collect(&self, roots: &mut [Value<'a>], tag: uint, fields: &[Value<'a>]) -> DataStruct<'a> {
+    fn new_data_and_collect(&self, roots: &mut [Value<'a>], tag: uint, fields: &mut [Value<'a>]) -> DataStruct<'a> {
         DataStruct { value: self.gc.alloc_and_collect(roots, Def { tag: tag, elems: fields })}
     }
 
@@ -607,7 +616,8 @@ impl <'a> VM<'a> {
                     }
                 }
                 Construct(tag, args) => {
-                    let d = self.new_data(tag, stack.as_slice().slice_from(stack.len() - args));
+                    let arg_start = stack.len() - args;
+                    let d = self.new_data(tag, stack.as_mut_slice().slice_from_mut(arg_start));
                     for _ in range(0, args) {
                         stack.pop();
                     } 
@@ -717,8 +727,9 @@ impl <'a> VM<'a> {
                     stack.upvars[i] = v;
                 }
                 ConstructTraitObject(i) => {
-                    let v = stack.pop();
-                    let object = TraitObject(self.new_data_and_collect(stack.stack.as_mut_slice(), i, ::std::slice::ref_slice(&v)));
+                    let mut v = stack.pop();
+                    let v = ::std::slice::mut_ref_slice(&mut v);
+                    let object = TraitObject(self.new_data_and_collect(stack.stack.as_mut_slice(), i, v));
                     stack.push(object);
                 }
                 PushTraitFunction(i) => {
