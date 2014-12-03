@@ -190,28 +190,22 @@ impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
 
 impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
     pub fn call(&mut self, a: A) -> R {
-        let mut vec = Vec::new();
-        {
-            let mut stack = StackFrame::new(&mut vec, 0, [].as_mut_slice());
-            self.value.push(&mut stack);
-            a.push(&mut stack);
-            self.vm.execute(stack, &[CallGlobal(1)]);
-        }
-        vec.pop().and_then(|value| VMValue::from_value(value))
+        let mut stack = StackFrame::new_empty(self.vm);
+        self.value.push(&mut stack);
+        a.push(&mut stack);
+        stack = self.vm.execute(stack, &[CallGlobal(1)]);
+        VMValue::from_value(stack.pop())
             .expect("Wrong type")
     }
 }
 impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A, B), R> {
     pub fn call2(&mut self, a: A, b: B) -> R {
-        let mut vec = Vec::new();
-        {
-            let mut stack = StackFrame::new(&mut vec, 0, [].as_mut_slice());
-            self.value.push(&mut stack);
-            a.push(&mut stack);
-            b.push(&mut stack);
-            self.vm.execute(stack, &[CallGlobal(2)]);
-        }
-        vec.pop().and_then(|value| VMValue::from_value(value))
+        let mut stack = StackFrame::new_empty(self.vm);
+        self.value.push(&mut stack);
+        a.push(&mut stack);
+        b.push(&mut stack);
+        stack = self.vm.execute(stack, &[CallGlobal(2)]);
+        VMValue::from_value(stack.pop())
             .expect("Wrong type")
     }
 }

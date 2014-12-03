@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use std::cell::{RefCell, Ref};
+use std::cell::{RefCell, Ref, UnsafeCell};
 use std::fmt;
 use std::intrinsics::{TypeId, get_tydesc};
 use std::any::Any;
@@ -181,6 +181,9 @@ pub struct VM<'a> {
     interner: RefCell<Interner>,
     names: RefCell<HashMap<InternedStr, Named>>,
     gc: Gc,
+    //Since the vm will be retrieved often and the borrowing from a RefCell does not work
+    //it needs to be in a unsafe cell
+    stack: UnsafeCell<Vec<Value<'a>>>
 }
 
 pub struct VMEnv<'a: 'b, 'b> {
@@ -327,6 +330,12 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
 
+    pub fn new_empty(vm: &VM<'a>) -> StackFrame<'a, 'b> {
+        let stack = unsafe { &mut *vm.stack.get() };
+        let offset = stack.len();
+        StackFrame { stack: stack, offset: offset, upvars: [].as_mut_slice() }
+    }
+
     pub fn len(&self) -> uint {
         self.stack.len() - self.offset
     }
@@ -409,6 +418,7 @@ impl <'a> VM<'a> {
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: Gc::new(),
+            stack: UnsafeCell::new(Vec::new())
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
@@ -480,18 +490,18 @@ impl <'a> VM<'a> {
     }
 
     pub fn run_function(&self, cf: &Global<'a>) -> Option<Value<'a>> {
-        let mut stack = Vec::new();
+        let mut stack = unsafe { &mut *self.stack.get() };
         {
-            let frame = StackFrame::new(&mut stack, 0, [].as_mut_slice());
+            let frame = StackFrame::new(stack, 0, [].as_mut_slice());
             self.execute_function(frame, cf);
         }
         stack.pop()
     }
 
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value<'a>> {
-        let mut stack = Vec::new();
+        let stack = unsafe { &mut *self.stack.get() };
         {
-            let frame = StackFrame::new(&mut stack, 0, [].as_mut_slice());
+            let frame = StackFrame::new(stack, 0, [].as_mut_slice());
             self.execute(frame, instructions);
         }
         stack.pop()
@@ -559,7 +569,7 @@ impl <'a> VM<'a> {
         }
     }
 
-    pub fn execute<'b>(&self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) {
+    pub fn execute<'b>(&self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> StackFrame<'a, 'b> {
         debug!("Enter frame with {}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
@@ -797,6 +807,7 @@ impl <'a> VM<'a> {
         else {
             debug!("--> ()");
         }
+        stack
     }
 }
 
