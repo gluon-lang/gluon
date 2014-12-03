@@ -1,5 +1,7 @@
 use std::ptr::RawPtr;
 use std::mem;
+use std::ptr;
+use std::rt::heap::{allocate, deallocate};
 use std::cell::RefCell;
 
 
@@ -7,17 +9,77 @@ pub struct Gc<T> {
     gc: RefCell<Gc_<T>>
 }
 struct Gc_<T> {
-    values: Option<Box<GcHeader<T>>>,
+    values: Option<AllocPtr>,
     allocated_objects: uint,
     collect_limit: uint
 }
 
-#[deriving(Clone, PartialEq)]
-struct GcHeader<T> {
-    next: Option<Box<GcHeader<T>>>,
+struct GcHeader {
+    next: Option<AllocPtr>,
+    value_size: uint,
     marked: bool,
-    value: T
 }
+
+
+struct AllocPtr {
+    ptr: *mut GcHeader
+}
+
+impl AllocPtr {
+    fn new(value_size: uint) -> AllocPtr {
+        unsafe {
+            let ptr = allocate(GcHeader::value_offset() + value_size, mem::align_of::<f64>());
+            let ptr: *mut GcHeader = mem::transmute(ptr);
+            ptr::write(ptr, GcHeader { next: None, value_size: value_size, marked: false });
+            AllocPtr { ptr: ptr }
+        }
+    }
+}
+
+#[unsafe_destructor]
+impl Drop for AllocPtr {
+    
+    fn drop(&mut self) {
+        unsafe {
+            ptr::read(&*self.ptr);
+            let size = GcHeader::value_offset() + self.value_size;
+            deallocate(mem::transmute::<*mut GcHeader, *mut u8>(self.ptr), size, mem::align_of::<f64>());
+        }
+    }
+}
+
+impl Deref<GcHeader> for AllocPtr {
+    fn deref(&self) -> &GcHeader {
+        unsafe { & *self.ptr }
+    }
+}
+
+impl DerefMut<GcHeader> for AllocPtr {
+    fn deref_mut(&mut self) -> &mut GcHeader {
+        unsafe { &mut *self.ptr }
+    }
+}
+
+impl GcHeader {
+
+    fn value(&self) -> *mut () {
+        unsafe {
+            let ptr: *mut u8 = mem::transmute(self);
+            ptr.offset(GcHeader::value_offset() as int) as *mut ()
+        }
+    }
+
+    fn value_offset() -> uint {
+        let hs = mem::size_of::<GcHeader>();
+        let max_align = mem::align_of::<f64>();
+        hs + ((max_align - (hs % max_align)) % max_align)
+    }
+
+    fn total_size<T>() -> uint {
+        GcHeader::value_offset() + mem::size_of::<T>()
+    }
+}
+
 
 pub struct GcPtr<T> {
     ptr: *mut T
@@ -66,9 +128,15 @@ impl <T: Traverseable<T>> Gc_<T> {
         self.alloc(value)
     }
     fn alloc(&mut self, value: T) -> *mut T {
-        self.values = Some(box GcHeader { next: self.values.take(), marked: false, value: value });
+        let mut ptr = AllocPtr::new(mem::size_of::<T>());
+        ptr.next = self.values.take();
         self.allocated_objects += 1;
-        &mut self.values.as_mut().unwrap().value
+        unsafe {
+            let p: *mut T = mem::transmute(ptr.value());
+            ptr::write(p, value);
+            self.values = Some(ptr);
+            p
+        }
     }
 
     fn collect<R: Traverseable<T>>(&mut self, roots: &mut R) {
@@ -76,20 +144,23 @@ impl <T: Traverseable<T>> Gc_<T> {
         self.sweep();
     }
 
-    fn gc_header(value: &mut T) -> &mut GcHeader<T> {
+    fn gc_header(value: &mut T) -> &mut GcHeader {
         unsafe {
             let p: *mut u8 = mem::transmute(&mut *value);
-            let header = p.offset(mem::size_of::<T>() as int - mem::size_of::<GcHeader<T>>() as int);
+            let header = p.offset(-(GcHeader::value_offset() as int));
             mem::transmute(header)
         }
     }
 
     fn mark(&mut self, value: &mut T) {
-        let header = Gc_::gc_header(value);
-        if !header.marked {
+        {
+            let header = Gc_::gc_header(value);
+            if header.marked {
+                return
+            }
             header.marked = true;
-            header.value.traverse(|child| self.mark(child));
         }
+        value.traverse(|child| self.mark(child));
     }
 
     fn sweep(&mut self) {
@@ -98,7 +169,7 @@ impl <T: Traverseable<T>> Gc_<T> {
         {
             let mut maybe_header = &mut first;
             loop {
-                let current: &mut Option<Box<GcHeader<T>>> = unsafe { mem::transmute(&*maybe_header) };
+                let current: &mut Option<AllocPtr> = unsafe { mem::transmute(&*maybe_header) };
                 maybe_header = match *maybe_header {
                     Some(ref mut header) => {
                         if !header.marked {
@@ -108,7 +179,7 @@ impl <T: Traverseable<T>> Gc_<T> {
                         }
                         else {
                             header.marked = false;
-                            let next: &mut Option<Box<GcHeader<T>>> = unsafe { mem::transmute(&mut header.next) };
+                            let next: &mut Option<AllocPtr> = unsafe { mem::transmute(&mut header.next) };
                             next
                         }
                     }
@@ -118,7 +189,7 @@ impl <T: Traverseable<T>> Gc_<T> {
         }
         self.values = first;
     }
-    fn free(&mut self, header: Option<Box<GcHeader<T>>>) {
+    fn free(&mut self, header: Option<AllocPtr>) {
         self.allocated_objects -= 1;
         drop(header);
     }
@@ -182,7 +253,7 @@ mod tests {
 
     fn num_objects<T>(gc: &Gc<T>) -> uint {
         let gc = gc.gc.borrow();
-        let mut header: &GcHeader<T> = match gc.values {
+        let mut header: &GcHeader = match gc.values {
             Some(ref x) => &**x,
             None => return 0
         };
