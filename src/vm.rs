@@ -532,11 +532,11 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn new_data(&self, tag: uint, fields: Vec<Value<'a>>) -> Value<'a> {
-        Data(DataStruct { value: self.gc.alloc(Def { tag: tag, elems: &*fields })})
+    fn new_data(&self, tag: uint, fields: &[Value<'a>]) -> Value<'a> {
+        Data(DataStruct { value: self.gc.alloc(Def { tag: tag, elems: fields })})
     }
-    fn new_data_and_collect(&self, roots: &mut Vec<Value<'a>>, tag: uint, fields: Vec<Value<'a>>) -> DataStruct<'a> {
-        DataStruct { value: self.gc.alloc_and_collect(&mut **roots, Def { tag: tag, elems: &*fields })}
+    fn new_data_and_collect(&self, roots: &mut [Value<'a>], tag: uint, fields: &[Value<'a>]) -> DataStruct<'a> {
+        DataStruct { value: self.gc.alloc_and_collect(roots, Def { tag: tag, elems: fields })}
     }
 
     fn execute_function<'b>(&self, stack: StackFrame<'a, 'b>, function: &Global<'a>) {
@@ -607,12 +607,10 @@ impl <'a> VM<'a> {
                     }
                 }
                 Construct(tag, args) => {
-                    let mut fields = Vec::new();
+                    let d = self.new_data(tag, stack.as_slice().slice_from(stack.len() - args));
                     for _ in range(0, args) {
-                        fields.push(stack.pop());
-                    }
-                    fields.reverse();
-                    let d = self.new_data(tag, fields);
+                        stack.pop();
+                    } 
                     stack.push(d);
                 }
                 GetField(i) => {
@@ -699,12 +697,15 @@ impl <'a> VM<'a> {
                     }
                 }
                 MakeClosure(fi, n) => {
-                    let mut upvars = Vec::with_capacity(n);
+                    let closure = {
+                        let i = stack.stack.len() - n;
+                        let (stack_after, args) = stack.stack.split_at_mut(i);
+                        args.reverse();
+                        Closure(self.new_data_and_collect(stack_after, fi, args))
+                    };
                     for _ in range(0, n) {
-                        let v = stack.pop();
-                        upvars.push(v);
+                        stack.pop();
                     }
-                    let closure = Closure(self.new_data_and_collect(stack.stack, fi, upvars));
                     stack.push(closure);
                 }
                 PushUpVar(i) => {
@@ -717,7 +718,7 @@ impl <'a> VM<'a> {
                 }
                 ConstructTraitObject(i) => {
                     let v = stack.pop();
-                    let object = TraitObject(self.new_data_and_collect(stack.stack, i, vec![v]));
+                    let object = TraitObject(self.new_data_and_collect(stack.stack.as_mut_slice(), i, ::std::slice::ref_slice(&v)));
                     stack.push(object);
                 }
                 PushTraitFunction(i) => {
