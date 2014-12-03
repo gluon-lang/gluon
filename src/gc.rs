@@ -91,13 +91,13 @@ pub struct GcPtr<Sized? T> {
     ptr: *mut T
 }
 
-impl <T> Deref<T> for GcPtr<T> {
+impl <Sized? T> Deref<T> for GcPtr<T> {
     fn deref(&self) -> &T {
         unsafe { & *self.ptr }
     }
 }
 
-impl <T> DerefMut<T> for GcPtr<T> {
+impl <Sized? T> DerefMut<T> for GcPtr<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *self.ptr }
     }
@@ -112,7 +112,7 @@ impl Gc {
     pub fn new() -> Gc {
         Gc { gc: RefCell::new(Gc_ { values: None, allocated_objects: 0, collect_limit: 100 }) }
     }
-    pub fn alloc_and_collect<Sized? T, R, D>(&self, roots: &mut R, def: D) -> GcPtr<T>
+    pub fn alloc_and_collect<Sized? T, Sized? R, D>(&self, roots: &mut R, def: D) -> GcPtr<T>
         where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> {
         let ptr = self.gc.borrow_mut().alloc_and_collect(roots, def);
         GcPtr { ptr: ptr }
@@ -123,14 +123,14 @@ impl Gc {
         GcPtr { ptr: ptr }
     }
 
-    pub fn collect<T, R>(&self, roots: &mut R)
+    pub fn collect<T, Sized? R>(&self, roots: &mut R)
         where T: Traverseable<T>, R: Traverseable<T> {
         self.gc.borrow_mut().collect(roots);
     }
 }
 impl Gc_ {
     
-    fn alloc_and_collect<Sized? T, R, D>(&mut self, roots: &mut R, def: D) -> *mut T
+    fn alloc_and_collect<Sized? T, Sized? R, D>(&mut self, roots: &mut R, def: D) -> *mut T
         where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> {
         if self.allocated_objects >= self.collect_limit {
             self.collect(roots);
@@ -139,7 +139,6 @@ impl Gc_ {
     }
     fn alloc<Sized? T, D>(&mut self, def: D) -> *mut T
         where T: Traverseable<T>, D: DataDef<T> {
-        debug!("aaaaaaa {}", def.size());
         let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
         self.allocated_objects += 1;
@@ -151,7 +150,7 @@ impl Gc_ {
         }
     }
 
-    fn collect<Sized? T, R>(&mut self, roots: &mut R)
+    fn collect<Sized? T, Sized? R>(&mut self, roots: &mut R)
         where T: Traverseable<T>, R: Traverseable<T> {
         roots.traverse(|v| self.mark(v));
         self.sweep();

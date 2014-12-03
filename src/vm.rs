@@ -86,10 +86,9 @@ impl <'a> DerefMut<Data_<'a>> for DataStruct<'a> {
     }
 }
 
-#[deriving(Clone, PartialEq)]
 pub struct Data_<'a> {
     tag: uint,
-    fields: Vec<Value<'a>>
+    fields: [Value<'a>]
 }
 
 #[deriving(Clone, PartialEq)]
@@ -110,7 +109,7 @@ impl <'a> Traverseable<Data_<'a>> for Data_<'a> {
     }
 }
 
-impl <'a> Traverseable<Data_<'a>> for Vec<Value<'a>> {
+impl <'a> Traverseable<Data_<'a>> for [Value<'a>] {
     fn traverse(&mut self, func: |&mut Data_<'a>|) {
         for value in self.iter_mut() {
             match *value {
@@ -133,11 +132,11 @@ impl <'a> fmt::Show for Value<'a> {
             String(x) => write!(f, "\"{}\"", x),
             Data(ref data) => {
                 let d = data.borrow();
-                write!(f, "{{{} {}}}", d.tag, d.fields)
+                write!(f, "{{{} {}}}", d.tag, &d.fields)
             }
             Function(i) => write!(f, "<function {}>", i),
-            Closure(ref closure) => write!(f, "<Closure {} {}>", closure.tag, closure.fields),
-            TraitObject(ref object) => write!(f, "<{} {}>", object.tag, object.fields),
+            Closure(ref closure) => write!(f, "<Closure {} {}>", closure.tag, &closure.fields),
+            TraitObject(ref object) => write!(f, "<{} {}>", object.tag, &object.fields),
             Userdata(ref ptr) => write!(f, "<Userdata {}>", &*ptr.data.borrow() as *const Box<Any>)
         }
     }
@@ -370,19 +369,22 @@ struct Def<'a:'b, 'b> {
 impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
     fn size(&self) -> uint {
         use std::mem::size_of;
-        size_of::<Data_<'a>>()
+        size_of::<uint>() + size_of::<Value<'a>>() * self.elems.len()
     }
     fn initialize(&self, result: *mut Data_<'a>) {
         let result = unsafe { &mut *result };
         result.tag = self.tag;
-        let vec = self.elems.iter().map(|x| x.clone()).collect();
-        unsafe {
-            ::std::ptr::write(&mut result.fields, vec);
+        for (field, value) in result.fields.iter_mut().zip(self.elems.iter()) {
+            unsafe {
+                ::std::ptr::write(field, value.clone());
+            }
         }
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut Data_<'a> {
         unsafe {
-            ::std::mem::transmute(ptr)
+            use std::raw::Slice;
+            let x = Slice { data: &*ptr, len: self.elems.len() };
+            ::std::mem::transmute(x)
         }
     }
 }
@@ -402,7 +404,6 @@ impl <'a> VM<'a> {
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
         let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), array_length);
-        let _ = vm.extern_function("array_push", vec![array_a.clone(), a.clone()], UNIT_TYPE.clone(), array_push);
         let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), string_append);
         vm
     }
@@ -535,7 +536,7 @@ impl <'a> VM<'a> {
         Data(DataStruct { value: self.gc.alloc(Def { tag: tag, elems: &*fields })})
     }
     fn new_data_and_collect(&self, roots: &mut Vec<Value<'a>>, tag: uint, fields: Vec<Value<'a>>) -> DataStruct<'a> {
-        DataStruct { value: self.gc.alloc_and_collect(roots, Def { tag: tag, elems: &*fields })}
+        DataStruct { value: self.gc.alloc_and_collect(&mut **roots, Def { tag: tag, elems: &*fields })}
     }
 
     fn execute_function<'b>(&self, stack: StackFrame<'a, 'b>, function: &Global<'a>) {
@@ -821,16 +822,6 @@ fn array_length(_: &VM, mut stack: StackFrame) {
         x => panic!("{}", x)
     }
 }
-fn array_push(_: &VM, mut stack: StackFrame) {
-    let value = stack.pop();
-    let data = stack.pop();
-    match data {
-        Data(values) => {
-            values.borrow_mut().fields.push(value);
-        }
-        _ => panic!()
-    }
-}
 fn string_append(vm: &VM, mut stack: StackFrame) {
     match (&stack[0], &stack[1]) {
         (&String(l), &String(r)) => {
@@ -982,7 +973,7 @@ impl Add for int {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
-                assert_eq!(data.fields, vec![Int(11), Int(5)]);
+                assert_eq!(&data.fields, [Int(11), Int(5)].as_slice());
             }
             _ => panic!()
         }
@@ -1021,7 +1012,7 @@ fn main() -> [int] {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
-                assert_eq!(data.fields, vec![Int(1), Int(2), Int(33)]);
+                assert_eq!(&data.fields, [Int(1), Int(2), Int(33)].as_slice());
             }
             _ => panic!()
         }
@@ -1082,7 +1073,7 @@ fn main() -> [int] {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
-                assert_eq!(data.fields, vec![Int(2), Int(4), Int(6)]);
+                assert_eq!(&data.fields, [Int(2), Int(4), Int(6)].as_slice());
             }
             _ => panic!()
         }
@@ -1192,7 +1183,7 @@ fn main() -> Pair {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
-                assert_eq!(data.fields, vec![Int(0), Int(1)]);
+                assert_eq!(&data.fields, [Int(0), Int(1)].as_slice());
             }
             _ => panic!()
         }
@@ -1261,7 +1252,7 @@ fn main() -> Pair {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Some(Data(ref data)) => {
-                assert_eq!(data.fields, vec![Int(1), Int(0)]);
+                assert_eq!(&data.fields, [Int(1), Int(0)].as_slice());
             }
             _ => panic!()
         }
