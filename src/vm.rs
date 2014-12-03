@@ -1050,34 +1050,7 @@ fn main() -> int {
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(123)));
     }
-    #[test]
-    fn array_map() {
-        let text = 
-r"
-fn map_int_array(xs: [int], f: fn (int) -> int) -> [int] {
-    let i = 0;
-    let result = [];
-    while i < array_length(xs) {
-        array_push(result, f(xs[i]));
-        i = i + 1;
-    }
-    result
-}
-fn main() -> [int] {
-    let xs = [1,2,3];
-    map_int_array(xs, \x -> x * 2)
-}
-";
-        let mut vm = VM::new();
-        let value = run_main(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
-        match value {
-            Some(Data(ref data)) => {
-                assert_eq!(&data.fields, [Int(2), Int(4), Int(6)].as_slice());
-            }
-            _ => panic!()
-        }
-    }
+
     #[test]
     fn trait_object() {
         let text = 
@@ -1111,27 +1084,15 @@ fn main() -> int {
         let text = 
 r"
 fn main() -> int {
-    let xs = map([1,2,3], \x -> x * 2);
-    xs[2]
+    let x = 100;
+    let f = \y -> x + y;
+    f(10)
 }
-fn map<A, B>(as: [A], f: fn (A) -> B) -> [B] {
-    foldl(as, [], \a bs -> { array_push(bs, f(a)); bs })
-}
-
-fn foldl<A, B>(as: [A], b: B, f: fn (A, B) -> B) -> B {
-    let i = 0;
-    while i < array_length(as) {
-        b = f(as[i], b);
-        i = i + 1;
-    }
-    b
-}
-
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(6)));
+        assert_eq!(value, Some(Int(110)));
     }
 
     #[test]
