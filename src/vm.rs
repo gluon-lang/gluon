@@ -181,7 +181,7 @@ pub struct VM<'a> {
     typeids: FixedMap<TypeId, TcType>,
     interner: RefCell<Interner>,
     names: RefCell<HashMap<InternedStr, Named>>,
-    gc: Gc<Data_<'a>>,
+    gc: Gc,
 }
 
 pub struct VMEnv<'a: 'b, 'b> {
