@@ -87,7 +87,7 @@ impl GcHeader {
 }
 
 
-pub struct GcPtr<T> {
+pub struct GcPtr<Sized? T> {
     ptr: *mut T
 }
 
@@ -103,7 +103,7 @@ impl <T> DerefMut<T> for GcPtr<T> {
     }
 }
 
-pub trait Traverseable<T> {
+pub trait Traverseable<Sized? T> for Sized? {
     fn traverse(&mut self, func: |&mut T|);
 }
 
@@ -112,12 +112,12 @@ impl Gc {
     pub fn new() -> Gc {
         Gc { gc: RefCell::new(Gc_ { values: None, allocated_objects: 0, collect_limit: 100 }) }
     }
-    pub fn alloc_and_collect<T, R, D>(&self, roots: &mut R, def: D) -> GcPtr<T>
+    pub fn alloc_and_collect<Sized? T, R, D>(&self, roots: &mut R, def: D) -> GcPtr<T>
         where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> {
         let ptr = self.gc.borrow_mut().alloc_and_collect(roots, def);
         GcPtr { ptr: ptr }
     }
-    pub fn alloc<T, D>(&self, def: D) -> GcPtr<T>
+    pub fn alloc<Sized? T, D>(&self, def: D) -> GcPtr<T>
         where T: Traverseable<T>, D: DataDef<T> {
         let ptr = self.gc.borrow_mut().alloc(def);
         GcPtr { ptr: ptr }
@@ -130,16 +130,17 @@ impl Gc {
 }
 impl Gc_ {
     
-    fn alloc_and_collect<T, R, D>(&mut self, roots: &mut R, def: D) -> *mut T
+    fn alloc_and_collect<Sized? T, R, D>(&mut self, roots: &mut R, def: D) -> *mut T
         where T: Traverseable<T>, R: Traverseable<T>, D: DataDef<T> {
         if self.allocated_objects >= self.collect_limit {
             self.collect(roots);
         }
         self.alloc(def)
     }
-    fn alloc<T, D>(&mut self, def: D) -> *mut T
+    fn alloc<Sized? T, D>(&mut self, def: D) -> *mut T
         where T: Traverseable<T>, D: DataDef<T> {
-        let mut ptr = AllocPtr::new(mem::size_of::<T>());
+        debug!("aaaaaaa {}", def.size());
+        let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
         self.allocated_objects += 1;
         unsafe {
@@ -150,22 +151,25 @@ impl Gc_ {
         }
     }
 
-    fn collect<T, R>(&mut self, roots: &mut R)
+    fn collect<Sized? T, R>(&mut self, roots: &mut R)
         where T: Traverseable<T>, R: Traverseable<T> {
         roots.traverse(|v| self.mark(v));
         self.sweep();
     }
 
-    fn gc_header<T>(value: &mut T) -> &mut GcHeader
+    fn gc_header<Sized? T>(value: &mut T) -> &mut GcHeader
         where T: Traverseable<T> {
+        debug!("HEADER");
         unsafe {
-            let p: *mut u8 = mem::transmute(&mut *value);
+            let p: *mut u8 = mem::transmute_copy(&value);
+            debug!("{} {}", mem::transmute::<*mut u8, uint>(p), mem::transmute::<*mut u8, uint>(p.offset(8)));
             let header = p.offset(-(GcHeader::value_offset() as int));
             mem::transmute(header)
         }
     }
 
-    fn mark<T: Traverseable<T>>(&mut self, value: &mut T) {
+    fn mark<Sized? T>(&mut self, value: &mut T)
+        where T: Traverseable<T> {
         {
             let header = Gc_::gc_header(value);
             if header.marked {

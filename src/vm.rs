@@ -370,7 +370,7 @@ struct Def<'a:'b, 'b> {
 impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
     fn size(&self) -> uint {
         use std::mem::size_of;
-        size_of::<uint>() + self.elems.len() * size_of::<Value<'a>>()
+        size_of::<Data_<'a>>()
     }
     fn initialize(&self, result: *mut Data_<'a>) {
         let result = unsafe { &mut *result };
