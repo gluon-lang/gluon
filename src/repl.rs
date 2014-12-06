@@ -3,14 +3,14 @@ use std::io::IoResult;
 
 use EmbedLang::typecheck::*;
 use EmbedLang::compiler::Compiler;
-use EmbedLang::vm::{VM, StackFrame, parse_expr, load_script};
+use EmbedLang::vm::{VM, parse_expr, load_script};
 
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 )
 
-fn print(_: &VM, mut stack: StackFrame) {
-    println!("{}", stack.pop());
+fn print(vm: &VM) {
+    println!("{}", vm.stack.pop());
 }
 
 pub fn run() {

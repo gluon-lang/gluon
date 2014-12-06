@@ -12,7 +12,7 @@ pub trait VMType {
     }
 }
 pub trait VMValue<'a> : VMType {
-    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>);
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>);
     fn from_value(value: Value<'a>) -> Option<Self>;
 }
 
@@ -22,7 +22,7 @@ impl VMType for () {
     }
 }
 impl <'a> VMValue<'a> for () {
-    fn push<'b>(self, _: &mut StackFrame<'a, 'b>) {
+    fn push<'b, 'c>(self, _: &mut StackFrame<'a, 'b, 'c>) {
     }
     fn from_value(_: Value) -> Option<()> {
         Some(())
@@ -35,7 +35,7 @@ impl VMType for int {
     }
 }
 impl <'a> VMValue<'a> for int {
-    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
         stack.push(Int(self));
     }
     fn from_value(value: Value<'a>) -> Option<int> {
@@ -51,7 +51,7 @@ impl VMType for f64 {
     }
 }
 impl <'a> VMValue<'a> for f64 {
-    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
         stack.push(Float(self));
     }
     fn from_value(value: Value<'a>) -> Option<f64> {
@@ -67,7 +67,7 @@ impl VMType for bool {
     }
 }
 impl <'a> VMValue<'a> for bool {
-    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
         stack.push(Int(if self { 1 } else { 0 }));
     }
     fn from_value(value: Value<'a>) -> Option<bool> {
@@ -84,7 +84,7 @@ impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
     }
 }
 impl <'a, T: 'static + BoxAny + Clone> VMValue<'a> for Box<T> {
-    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
         stack.push(Userdata(Userdata_::new(self as Box<Any>)));
     }
     fn from_value(value: Value<'a>) -> Option<Box<T>> {
@@ -100,7 +100,7 @@ impl <T: 'static> VMType for *mut T {
     }
 }
 impl <'a, T: 'static> VMValue<'a> for *mut T {
-    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
         stack.push(Userdata(Userdata_::new(box self as Box<Any>)));
     }
     fn from_value(value: Value<'a>) -> Option<*mut T> {
@@ -177,7 +177,7 @@ impl <Args, R> VMType for FunctionRef<Args, R> {
 }
 
 impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
-    fn push<'b>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
         stack.push(Function(self.value));
     }
     fn from_value(value: Value<'a>) -> Option<FunctionRef<Args, R>> {
@@ -215,7 +215,11 @@ pub fn get_function<'a, 'b, T: Get<'a, 'b>>(vm: &'a VM<'b>, name: &str) -> Optio
 }
 
 pub trait VMFunction<'a> {
-    fn unpack_and_call<'b>(mut stack: StackFrame<'a, 'b>, f: Self);
+    fn unpack_and_call(vm: &VM<'a>, f: Self);
+}
+macro_rules! count {
+    () => { 0 };
+    ($_e: ident $(, $rest: ident)*) => { 1 + count!($($rest),*) }
 }
 
 macro_rules! make_vm_function(
@@ -234,7 +238,9 @@ impl <'a, $($args: VMValue<'a>,)* R: VMValue<'a>> VMType for fn ($($args),*) -> 
 
 impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($args),*) -> R {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
-    fn unpack_and_call<'b>(mut stack: StackFrame<'a, 'b>, f: fn ($($args),*) -> R) {
+    fn unpack_and_call(vm: &VM<'a>, f: fn ($($args),*) -> R) {
+        let n_args = count!($($args),*);
+        let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, [].as_mut_slice());
         let mut i = 0u;
         $(let $args = {
             let x = VMValue::from_value(stack[i].clone()).unwrap();
@@ -247,8 +253,8 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($arg
 }
     )
 )
-pub fn unpack_and_call<'a, 'b, F: VMFunction<'a>>(stack: StackFrame<'a, 'b>, f: F) {
-    VMFunction::unpack_and_call(stack, f)
+pub fn unpack_and_call<'a, F: VMFunction<'a>>(vm: &VM<'a>, f: F) {
+    VMFunction::unpack_and_call(vm, f)
 }
 
 make_vm_function!()
@@ -263,8 +269,8 @@ make_vm_function!(A, B, C, D, E, F, G)
 #[macro_export]
 macro_rules! vm_function(
     ($func: expr) => ({
-        fn wrapper<'a, 'b>(_: &VM<'a>, stack: StackFrame<'a, 'b>) {
-            unpack_and_call(stack, $func)
+        fn wrapper<'a, 'b, 'c>(vm: &VM<'a>) {
+            unpack_and_call(vm, $func)
         }
         wrapper
     })
@@ -287,7 +293,7 @@ mod tests {
     use super::{Get, Callable, VMType, unpack_and_call};
 
     use typecheck::FunctionType;
-    use vm::{VM, load_script, StackFrame};
+    use vm::{VM, load_script};
     use std::io::BufReader;
 
     #[test]

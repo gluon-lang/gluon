@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use std::cell::{RefCell, Ref, UnsafeCell};
+use std::cell::{RefCell, RefMut, Ref};
 use std::fmt;
 use std::intrinsics::{TypeId, get_tydesc};
 use std::any::Any;
@@ -142,7 +142,7 @@ impl <'a> fmt::Show for Value<'a> {
     }
 }
 
-pub type ExternFunction<'a> = for<'b> fn(&VM<'a>, StackFrame<'a, 'b>);
+pub type ExternFunction<'a> = for<'b, 'c> fn(&VM<'a>);
 
 #[deriving(Show)]
 pub struct Global<'a> {
@@ -183,7 +183,7 @@ pub struct VM<'a> {
     gc: Gc,
     //Since the vm will be retrieved often and the borrowing from a RefCell does not work
     //it needs to be in a unsafe cell
-    stack: UnsafeCell<Vec<Value<'a>>>
+    pub stack: Stack<Value<'a>>
 }
 
 pub struct VMEnv<'a: 'b, 'b> {
@@ -319,19 +319,57 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     }
 }
 
-pub struct StackFrame<'a: 'b, 'b> {
-    stack: &'b mut Vec<Value<'a>>,
-    offset: uint,
-    upvars: &'b mut [Value<'a>]
+pub struct Stack<T> {
+    values: RefCell<Vec<T>>
 }
-impl <'a: 'b, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: &'b mut Vec<Value<'a>>, args: uint, upvars: &'b mut [Value<'a>]) -> StackFrame<'a, 'b> {
+
+impl <T: Clone> Stack<T> {
+    pub fn get(&self, index: uint) -> T {
+        self.values.borrow()[index].clone()
+    }
+
+    pub fn pop(&self) -> T {
+        self.values.borrow_mut()
+            .pop()
+            .expect("pop on empty stack")
+    }
+}
+
+impl <T> Stack<T> {
+    fn new() -> Stack<T> {
+        Stack { values: RefCell::new(Vec::new()) }
+    }
+
+    pub fn set(&self, index: uint, v: T) {
+        self.values.borrow_mut()[index] = v;
+    }
+
+    pub fn push(&self, v: T) {
+        self.values.borrow_mut().push(v)
+    }
+
+    pub fn len(&self) -> uint {
+        self.values.borrow().len()
+    }
+
+    pub fn borrow_mut(&self) -> RefMut<Vec<T>> {   
+        self.values.borrow_mut()
+    }
+}
+
+pub struct StackFrame<'a: 'b + 'c, 'b, 'c> {
+    stack: RefMut<'b, Vec<Value<'a>>>,
+    offset: uint,
+    upvars: &'c mut [Value<'a>]
+}
+impl <'a, 'b, 'c> StackFrame<'a, 'b, 'c> {
+    pub fn new(v: RefMut<'b, Vec<Value<'a>>>, args: uint, upvars: &'c mut [Value<'a>]) -> StackFrame<'a, 'b, 'c> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
 
-    pub fn new_empty(vm: &VM<'a>) -> StackFrame<'a, 'b> {
-        let stack = unsafe { &mut *vm.stack.get() };
+    pub fn new_empty(vm: &'b VM<'a>) -> StackFrame<'a, 'b, 'c> {
+        let stack = vm.stack.values.borrow_mut();
         let offset = stack.len();
         StackFrame { stack: stack, offset: offset, upvars: [].as_mut_slice() }
     }
@@ -343,6 +381,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     pub fn get(&self, i: uint) -> &Value<'a> {
         &(*self.stack)[self.offset + i]
     }
+
     pub fn get_mut(&mut self, i: uint) -> &mut Value<'a> {
         &mut self.stack[self.offset + i]
     }
@@ -350,6 +389,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     pub fn push(&mut self, v: Value<'a>) {
         self.stack.push(v);
     }
+
     pub fn top(&mut self) -> &Value<'a> {
         self.stack.last().unwrap()
     }
@@ -360,15 +400,17 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
             None => panic!()
         }
     }
+
     fn as_slice(&self) -> &[Value<'a>] {
         self.stack.slice_from(self.offset)
     }
+
     fn as_mut_slice(&mut self) -> &mut [Value<'a>] {
         self.stack.slice_from_mut(self.offset)
     }
 }
 
-impl <'a, 'b> Index<uint, Value<'a>> for StackFrame<'a, 'b> {
+impl <'a, 'b, 'c> Index<uint, Value<'a>> for StackFrame<'a, 'b, 'c> {
     fn index(&self, index: &uint) -> &Value<'a> {
         &(*self.stack)[self.offset + *index]
     }
@@ -418,7 +460,7 @@ impl <'a> VM<'a> {
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: Gc::new(),
-            stack: UnsafeCell::new(Vec::new())
+            stack: Stack::new()
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
@@ -490,21 +532,14 @@ impl <'a> VM<'a> {
     }
 
     pub fn run_function(&self, cf: &Global<'a>) -> Option<Value<'a>> {
-        let mut stack = unsafe { &mut *self.stack.get() };
-        {
-            let frame = StackFrame::new(stack, 0, [].as_mut_slice());
-            self.execute_function(frame, cf);
-        }
-        stack.pop()
+        self.call_function(0, [].as_mut_slice(), cf)
     }
 
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value<'a>> {
-        let stack = unsafe { &mut *self.stack.get() };
-        {
-            let frame = StackFrame::new(stack, 0, [].as_mut_slice());
-            self.execute(frame, instructions);
-        }
-        stack.pop()
+        let stack = self.stack.values.borrow_mut();
+        let frame = StackFrame::new(stack, 0, [].as_mut_slice());
+        let mut stack = self.execute(frame, instructions);
+        Some(stack.pop())
     }
 
     pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction<'a>) -> Result<(), ::std::string::String> {
@@ -558,18 +593,28 @@ impl <'a> VM<'a> {
         DataStruct { value: self.gc.alloc_and_collect(roots, Def { tag: tag, elems: fields })}
     }
 
-    fn execute_function<'b>(&self, stack: StackFrame<'a, 'b>, function: &Global<'a>) {
+    pub fn call_function<'b, 'c>(&self, args: uint, upvars: &'c mut [Value<'a>], function: &Global<'a>) -> Option<Value<'a>>  {
+        let stack = StackFrame::new(self.stack.values.borrow_mut(), args, upvars);
+        let x = self.execute_function(stack, function).pop();
+        Some(x)
+    }
+    fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b, 'c>, function: &Global<'a>) -> StackFrame<'a, 'b, 'c> {
         match function.value {
             Extern(func) => {
-                func(self, stack);
+                //Make sure that the stack is not borrowed during the external function call
+                //Necessary since we do not know what will happen during the function call
+                let StackFrame { stack, offset, upvars } = stack;
+                drop(stack);
+                func(self);
+                StackFrame::new(self.stack.borrow_mut(), offset, upvars)
             }
             Bytecode(ref instructions) => {
-                self.execute(stack, instructions.as_slice());
+                self.execute(stack, instructions.as_slice())
             }
         }
     }
 
-    pub fn execute<'b>(&self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> StackFrame<'a, 'b> {
+    pub fn execute<'b, 'c>(&'b self, mut stack: StackFrame<'a, 'b, 'c>, instructions: &[Instruction]) -> StackFrame<'a, 'b, 'c> {
         debug!("Enter frame with {}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
@@ -597,7 +642,7 @@ impl <'a> VM<'a> {
                     let function_index = stack.len() - 1 - args;
                     {
                         let mut f = stack.get(function_index).clone();
-                        let (function, upvars) = match f {
+                        let (function, new_upvars) = match f {
                             Function(index) => {
                                 (&self.globals[index], [].as_mut_slice())
                             }
@@ -607,8 +652,10 @@ impl <'a> VM<'a> {
                             x => panic!("Cannot call {}", x)
                         };
                         debug!("Call {} :: {}", function.id, function.typ);
-                        let new_stack = StackFrame::new(stack.stack, args, upvars);
-                        self.execute_function(new_stack, function);
+                        let StackFrame { stack: s, offset, upvars } = stack;
+                        let new_stack = StackFrame::new(s, args, new_upvars);
+                        let new_stack = self.execute_function(new_stack, function);
+                        stack = StackFrame { stack: new_stack.stack, offset: offset, upvars: upvars };
                     }
                     if stack.len() > function_index + args {
                         //Value was returned
@@ -836,16 +883,17 @@ fn binop_float(stack: &mut StackFrame, f: |f64, f64| -> f64) {
     })
 }
 
-fn array_length(_: &VM, mut stack: StackFrame) {
-    match stack.pop() {
+fn array_length(vm: &VM) {
+    match vm.stack.pop() {
         Data(values) => {
             let i = values.borrow().fields.len();
-            stack.push(Int(i as int));
+            vm.stack.push(Int(i as int));
         }
         x => panic!("{}", x)
     }
 }
-fn string_append(vm: &VM, mut stack: StackFrame) {
+fn string_append(vm: &VM) {
+    let mut stack = StackFrame::new(vm.stack.values.borrow_mut(), 2, [].as_mut_slice());
     match (&stack[0], &stack[1]) {
         (&String(l), &String(r)) => {
             let l = l.as_slice();
@@ -915,6 +963,7 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> Result<Option<Val
 #[cfg(test)]
 mod tests {
     use super::{VM, Data, Int, String, run_main, run_function, load_script};
+    use ast::INT_TYPE;
     use std::io::BufReader;
     ///Test that the stack is adjusted correctly after executing expressions as statements
     #[test]
@@ -1353,6 +1402,42 @@ fn main() -> int {
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Some(Int(0)));
+    }
+    #[test]
+    fn recursive_mixed_calls() {
+        let s =
+r"
+fn test() -> int {
+    rust_fn(10)
+}
+fn mul(x: int, y: int) -> int {
+    x * y
+}
+";
+    
+        fn rust_fn<'a, 'b, 'c>(vm: &VM<'a>) {
+            match vm.stack.pop() {
+                Int(i) => {
+                    vm.stack.push(Int(i));
+                    vm.stack.push(Int(15));
+                    let (_, function) = vm.get_global("mul")
+                            .expect("Expected 'mul' function");
+                    let result = vm.call_function(2, [].as_mut_slice(), function)
+                        .expect("Expected value from 'mul' function");
+                    vm.stack.push(result);
+                }
+                _ => panic!()
+            }
+        }
+        let mut vm = VM::new();
+        vm.extern_function("rust_fn", vec![INT_TYPE.clone()], INT_TYPE.clone(), rust_fn)
+            .unwrap_or_else(|e| panic!("{}", e));
+        let mut buffer = BufReader::new(s.as_bytes());
+        load_script(&mut vm, &mut buffer)
+            .unwrap_or_else(|e| panic!("{}", e));
+        let value = run_function(&vm, "test")
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Some(Int(150)));
     }
 }
 
