@@ -12,7 +12,7 @@ pub trait VMType {
     }
 }
 pub trait VMValue<'a> : VMType {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>);
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>);
     fn from_value(value: Value<'a>) -> Option<Self>;
 }
 
@@ -22,7 +22,7 @@ impl VMType for () {
     }
 }
 impl <'a> VMValue<'a> for () {
-    fn push<'b, 'c>(self, _: &mut StackFrame<'a, 'b, 'c>) {
+    fn push<'b, 'c>(self, _: &mut StackFrame<'a, 'b>) {
     }
     fn from_value(_: Value) -> Option<()> {
         Some(())
@@ -35,7 +35,7 @@ impl VMType for int {
     }
 }
 impl <'a> VMValue<'a> for int {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Int(self));
     }
     fn from_value(value: Value<'a>) -> Option<int> {
@@ -51,7 +51,7 @@ impl VMType for f64 {
     }
 }
 impl <'a> VMValue<'a> for f64 {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Float(self));
     }
     fn from_value(value: Value<'a>) -> Option<f64> {
@@ -67,7 +67,7 @@ impl VMType for bool {
     }
 }
 impl <'a> VMValue<'a> for bool {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Int(if self { 1 } else { 0 }));
     }
     fn from_value(value: Value<'a>) -> Option<bool> {
@@ -84,7 +84,7 @@ impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
     }
 }
 impl <'a, T: 'static + BoxAny + Clone> VMValue<'a> for Box<T> {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Userdata(Userdata_::new(self as Box<Any>)));
     }
     fn from_value(value: Value<'a>) -> Option<Box<T>> {
@@ -100,7 +100,7 @@ impl <T: 'static> VMType for *mut T {
     }
 }
 impl <'a, T: 'static> VMValue<'a> for *mut T {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Userdata(Userdata_::new(box self as Box<Any>)));
     }
     fn from_value(value: Value<'a>) -> Option<*mut T> {
@@ -179,7 +179,7 @@ impl <Args, R> VMType for FunctionRef<Args, R> {
 }
 
 impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b, 'c>) {
+    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Function(self.value));
     }
     fn from_value(value: Value<'a>) -> Option<FunctionRef<Args, R>> {
@@ -242,7 +242,7 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($arg
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(vm: &VM<'a>, f: fn ($($args),*) -> R) {
         let n_args = count!($($args),*);
-        let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, [].as_mut_slice());
+        let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0u;
         $(let $args = {
             let x = VMValue::from_value(stack[i].clone()).unwrap();

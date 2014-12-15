@@ -183,7 +183,7 @@ pub struct VM<'a> {
     gc: Gc,
     //Since the vm will be retrieved often and the borrowing from a RefCell does not work
     //it needs to be in a unsafe cell
-    pub stack: Stack<Value<'a>>
+    pub stack: RefCell<Stack<'a>>
 }
 
 pub struct VMEnv<'a: 'b, 'b> {
@@ -319,59 +319,56 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     }
 }
 
-pub struct Stack<T> {
-    values: RefCell<Vec<T>>
+pub struct Stack<'a> {
+    values: Vec<Value<'a>>,
+    frames: Vec<(uint, Option<GcPtr<Data_<'a>>>)>
 }
 
-impl <T: Clone> Stack<T> {
-    pub fn get(&self, index: uint) -> T {
-        self.values.borrow()[index].clone()
+impl <'a, 'b, 'c> Stack<'a> {
+
+    fn new() -> Stack<'a> {
+        Stack { values: Vec::new(), frames: Vec::new() }
     }
 
-    pub fn pop(&self) -> T {
-        self.values.borrow_mut()
+    pub fn get(&self, index: uint) -> Value<'a> {
+        self.values[index].clone()
+    }
+
+    pub fn pop(&mut self) -> Value<'a> {
+        self.values
             .pop()
             .expect("pop on empty stack")
     }
-}
 
-impl <T> Stack<T> {
-    fn new() -> Stack<T> {
-        Stack { values: RefCell::new(Vec::new()) }
+    pub fn set(&mut self, index: uint, v: Value<'a>) {
+        self.values[index] = v;
     }
 
-    pub fn set(&self, index: uint, v: T) {
-        self.values.borrow_mut()[index] = v;
-    }
-
-    pub fn push(&self, v: T) {
-        self.values.borrow_mut().push(v)
+    pub fn push(&mut self, v: Value<'a>) {
+        self.values.push(v)
     }
 
     pub fn len(&self) -> uint {
-        self.values.borrow().len()
+        self.values.len()
     }
 
-    pub fn borrow_mut(&self) -> RefMut<Vec<T>> {   
-        self.values.borrow_mut()
-    }
 }
 
-pub struct StackFrame<'a: 'b + 'c, 'b, 'c> {
-    stack: RefMut<'b, Vec<Value<'a>>>,
+pub struct StackFrame<'a: 'b, 'b> {
+    stack: RefMut<'b, Stack<'a>>,
     offset: uint,
-    upvars: &'c mut [Value<'a>]
+    upvars: Option<GcPtr<Data_<'a>>>
 }
-impl <'a, 'b, 'c> StackFrame<'a, 'b, 'c> {
-    pub fn new(v: RefMut<'b, Vec<Value<'a>>>, args: uint, upvars: &'c mut [Value<'a>]) -> StackFrame<'a, 'b, 'c> {
+impl <'a: 'b, 'b> StackFrame<'a, 'b> {
+    pub fn new(v: RefMut<'b, Stack<'a>>, args: uint, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
 
-    pub fn new_empty(vm: &'b VM<'a>) -> StackFrame<'a, 'b, 'c> {
-        let stack = vm.stack.values.borrow_mut();
+    pub fn new_empty(vm: &'b VM<'a>) -> StackFrame<'a, 'b> {
+        let stack = vm.stack.borrow_mut();
         let offset = stack.len();
-        StackFrame { stack: stack, offset: offset, upvars: [].as_mut_slice() }
+        StackFrame { stack: stack, offset: offset, upvars: None }
     }
 
     pub fn len(&self) -> uint {
@@ -379,40 +376,69 @@ impl <'a, 'b, 'c> StackFrame<'a, 'b, 'c> {
     }
 
     pub fn get(&self, i: uint) -> &Value<'a> {
-        &(*self.stack)[self.offset + i]
+        &self.stack.values[self.offset + i]
     }
 
     pub fn get_mut(&mut self, i: uint) -> &mut Value<'a> {
-        &mut self.stack[self.offset + i]
+        &mut self.stack.values[self.offset + i]
     }
 
     pub fn push(&mut self, v: Value<'a>) {
-        self.stack.push(v);
+        self.stack.values.push(v);
     }
 
     pub fn top(&mut self) -> &Value<'a> {
-        self.stack.last().unwrap()
+        self.stack.values.last().unwrap()
     }
 
     pub fn pop(&mut self) -> Value<'a> {
-        match self.stack.pop() {
-            Some(x) => x,
-            None => panic!()
-        }
+        self.stack.pop()
+    }
+
+    fn get_upvar(&self, index: uint) -> &Value<'a> {
+        let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
+        &upvars.fields[index]
     }
 
     fn as_slice(&self) -> &[Value<'a>] {
-        self.stack.slice_from(self.offset)
+        self.stack.values.slice_from(self.offset)
     }
 
     fn as_mut_slice(&mut self) -> &mut [Value<'a>] {
-        self.stack.slice_from_mut(self.offset)
+        self.stack.values.slice_from_mut(self.offset)
+    }
+
+    fn new_scope(stack: RefMut<'b, Stack<'a>>
+            , args: uint
+            , upvars: Option<GcPtr<Data_<'a>>>
+            , f: |StackFrame<'a, 'b>| -> StackFrame<'a, 'b>) -> StackFrame<'a, 'b> {
+        let stack = StackFrame::frame(stack, args, upvars);
+        let mut stack = f(stack);
+        stack.stack.frames.pop();
+        stack
+    }
+    fn scope(self
+            , args: uint
+            , new_upvars: Option<GcPtr<Data_<'a>>>
+            , f: |StackFrame<'a, 'b>| -> StackFrame<'a, 'b>) -> StackFrame<'a, 'b> {
+        let StackFrame { stack: s, offset, upvars } = self;
+        let new_stack = StackFrame::frame(s, args, new_upvars);
+        let mut new_stack = f(new_stack);
+        new_stack.stack.frames.pop();
+        StackFrame { stack: new_stack.stack, offset: offset, upvars: upvars }
+    }
+
+    fn frame(mut stack: RefMut<'b, Stack<'a>>, args: uint, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
+        assert!(stack.len() >= args);
+        let offset = stack.len() - args;
+        stack.frames.push((offset, upvars));
+        StackFrame { stack: stack, offset: offset, upvars: upvars }
     }
 }
 
-impl <'a, 'b, 'c> Index<uint, Value<'a>> for StackFrame<'a, 'b, 'c> {
+impl <'a, 'b, 'c> Index<uint, Value<'a>> for StackFrame<'a, 'b> {
     fn index(&self, index: &uint) -> &Value<'a> {
-        &(*self.stack)[self.offset + *index]
+        &self.stack.values[self.offset + *index]
     }
 }
 
@@ -460,13 +486,22 @@ impl <'a> VM<'a> {
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: Gc::new(),
-            stack: Stack::new()
+            stack: RefCell::new(Stack::new())
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
         let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), array_length);
         let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), string_append);
         vm
+    }
+
+    pub fn push(&self, v: Value<'a>) {
+        self.stack.borrow_mut().push(v)
+    }
+
+    pub fn pop(&self) -> Value<'a> {
+        self.stack.borrow_mut()
+            .pop()
     }
 
     pub fn new_functions(&self, (fns, indexes): (Vec<CompiledFunction>, Vec<TraitFunctions>)) {
@@ -532,14 +567,15 @@ impl <'a> VM<'a> {
     }
 
     pub fn run_function(&self, cf: &Global<'a>) -> Option<Value<'a>> {
-        self.call_function(0, [].as_mut_slice(), cf)
+        self.call_function(0, None, cf)
     }
 
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value<'a>> {
-        let stack = self.stack.values.borrow_mut();
-        let frame = StackFrame::new(stack, 0, [].as_mut_slice());
-        let mut stack = self.execute(frame, instructions);
-        Some(stack.pop())
+        let stack = self.stack.borrow_mut();
+        let mut frame = StackFrame::new_scope(stack, 0, None, |frame| {
+            self.execute(frame, instructions)
+        });
+        Some(frame.pop())
     }
 
     pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction<'a>) -> Result<(), ::std::string::String> {
@@ -593,12 +629,12 @@ impl <'a> VM<'a> {
         DataStruct { value: self.gc.alloc_and_collect(roots, Def { tag: tag, elems: fields })}
     }
 
-    pub fn call_function<'b, 'c>(&self, args: uint, upvars: &'c mut [Value<'a>], function: &Global<'a>) -> Option<Value<'a>>  {
-        let stack = StackFrame::new(self.stack.values.borrow_mut(), args, upvars);
+    pub fn call_function<'b, 'c>(&self, args: uint, upvars: Option<GcPtr<Data_<'a>>>, function: &Global<'a>) -> Option<Value<'a>>  {
+        let stack = StackFrame::new(self.stack.borrow_mut(), args, upvars);
         let x = self.execute_function(stack, function).pop();
         Some(x)
     }
-    fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b, 'c>, function: &Global<'a>) -> StackFrame<'a, 'b, 'c> {
+    fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Global<'a>) -> StackFrame<'a, 'b> {
         match function.value {
             Extern(func) => {
                 //Make sure that the stack is not borrowed during the external function call
@@ -614,7 +650,7 @@ impl <'a> VM<'a> {
         }
     }
 
-    pub fn execute<'b, 'c>(&'b self, mut stack: StackFrame<'a, 'b, 'c>, instructions: &[Instruction]) -> StackFrame<'a, 'b, 'c> {
+    pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> StackFrame<'a, 'b> {
         debug!("Enter frame with {}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
@@ -641,21 +677,20 @@ impl <'a> VM<'a> {
                 CallGlobal(args) => {
                     let function_index = stack.len() - 1 - args;
                     {
-                        let mut f = stack.get(function_index).clone();
+                        let f = stack.get(function_index).clone();
                         let (function, new_upvars) = match f {
                             Function(index) => {
-                                (&self.globals[index], [].as_mut_slice())
+                                (&self.globals[index], None)
                             }
-                            Closure(ref mut closure) => {
-                                (&self.globals[closure.tag], closure.fields.as_mut_slice())
+                            Closure(ref closure) => {
+                                (&self.globals[closure.tag], Some(closure.value))
                             }
                             x => panic!("Cannot call {}", x)
                         };
                         debug!("Call {} :: {}", function.id, function.typ);
-                        let StackFrame { stack: s, offset, upvars } = stack;
-                        let new_stack = StackFrame::new(s, args, new_upvars);
-                        let new_stack = self.execute_function(new_stack, function);
-                        stack = StackFrame { stack: new_stack.stack, offset: offset, upvars: upvars };
+                        stack = stack.scope(args, new_upvars, |new_stack| {
+                            self.execute_function(new_stack, function)
+                        });
                     }
                     if stack.len() > function_index + args {
                         //Value was returned
@@ -766,7 +801,7 @@ impl <'a> VM<'a> {
                 MakeClosure(fi, n) => {
                     let closure = {
                         let i = stack.stack.len() - n;
-                        let (stack_after, args) = stack.stack.split_at_mut(i);
+                        let (stack_after, args) = stack.stack.values.split_at_mut(i);
                         args.reverse();
                         Closure(self.new_data_and_collect(stack_after, fi, args))
                     };
@@ -776,17 +811,17 @@ impl <'a> VM<'a> {
                     stack.push(closure);
                 }
                 PushUpVar(i) => {
-                    let v = stack.upvars[i].clone();
+                    let v = stack.get_upvar(i).clone();
                     stack.push(v);
                 }
                 StoreUpVar(i) => {
                     let v = stack.pop();
-                    stack.upvars[i] = v;
+                    stack.upvars.expect("Upvar").fields[i] = v;
                 }
                 ConstructTraitObject(i) => {
                     let mut v = stack.pop();
                     let v = ::std::slice::mut_ref_slice(&mut v);
-                    let object = TraitObject(self.new_data_and_collect(stack.stack.as_mut_slice(), i, v));
+                    let object = TraitObject(self.new_data_and_collect(stack.stack.values.as_mut_slice(), i, v));
                     stack.push(object);
                 }
                 PushTraitFunction(i) => {
@@ -805,7 +840,7 @@ impl <'a> VM<'a> {
                     }
                 }
                 PushDictionaryMember(trait_index, function_offset) => {
-                    let func = match stack.upvars[0].clone()  {
+                    let func = match stack.get_upvar(0).clone()  {
                         Data(dict) => {
                             match dict.borrow().fields[trait_index] {
                                 Function(i) => Function(i + function_offset),
@@ -817,7 +852,7 @@ impl <'a> VM<'a> {
                     stack.push(func);
                 }
                 PushDictionary(index) => {
-                    let dict = stack.upvars[0].clone();
+                    let dict = stack.get_upvar(0).clone();
                     let dict = match dict {
                         Data(data) => data.borrow().fields[index].clone(),
                         _ => panic!()
@@ -884,16 +919,16 @@ fn binop_float(stack: &mut StackFrame, f: |f64, f64| -> f64) {
 }
 
 fn array_length(vm: &VM) {
-    match vm.stack.pop() {
+    match vm.pop() {
         Data(values) => {
             let i = values.borrow().fields.len();
-            vm.stack.push(Int(i as int));
+            vm.push(Int(i as int));
         }
         x => panic!("{}", x)
     }
 }
 fn string_append(vm: &VM) {
-    let mut stack = StackFrame::new(vm.stack.values.borrow_mut(), 2, [].as_mut_slice());
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     match (&stack[0], &stack[1]) {
         (&String(ref l), &String(ref r)) => {
             let l = l.as_slice();
@@ -1416,15 +1451,15 @@ fn mul(x: int, y: int) -> int {
 ";
     
         fn rust_fn<'a, 'b, 'c>(vm: &VM<'a>) {
-            match vm.stack.pop() {
+            match vm.pop() {
                 Int(i) => {
-                    vm.stack.push(Int(i));
-                    vm.stack.push(Int(15));
+                    vm.push(Int(i));
+                    vm.push(Int(15));
                     let (_, function) = vm.get_global("mul")
                             .expect("Expected 'mul' function");
-                    let result = vm.call_function(2, [].as_mut_slice(), function)
+                    let result = vm.call_function(2, None, function)
                         .expect("Expected value from 'mul' function");
-                    vm.stack.push(result);
+                    vm.push(result);
                 }
                 _ => panic!()
             }

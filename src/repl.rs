@@ -10,7 +10,7 @@ macro_rules! tryf(
 )
 
 fn print(vm: &VM) {
-    println!("{}", vm.stack.pop());
+    println!("{}", vm.pop());
 }
 
 pub fn run() {
