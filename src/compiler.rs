@@ -55,6 +55,8 @@ pub enum Instruction {
     FloatEQ,
 }
 
+impl Copy for Instruction { }
+
 pub type CExpr = LExpr<TcIdent>;
 
 pub enum Variable<'a> {
@@ -90,7 +92,7 @@ impl <'a> FunctionEnv<'a> {
         FunctionEnv { instructions: Vec::new(), free_vars: Vec::new(), dictionary: &[] }
     }
     fn upvar(&mut self, s: InternedStr) -> uint {
-        match self.free_vars.iter().enumerate().find(|t| *t.val1() == s).map(|t| t.val0()) {
+        match self.free_vars.iter().enumerate().find(|t| *t.1 == s).map(|t| t.0) {
             Some(index) => index,
             None => {
                 self.free_vars.push(s);
@@ -273,7 +275,7 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
 }
 
 pub struct Compiler<'a> {
-    globals: &'a CompilerEnv + 'a,
+    globals: &'a (CompilerEnv + 'a),
     stack: HashMap<InternedStr, uint>,
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<uint>,

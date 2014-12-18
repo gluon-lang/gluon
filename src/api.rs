@@ -170,6 +170,8 @@ struct FunctionRef<Args, R> {
     value: uint
 }
 
+impl <Args, R> Copy for FunctionRef<Args, R> { }
+
 impl <Args, R> VMType for FunctionRef<Args, R> {
     fn vm_type<'a>(_: Option<FunctionRef<Args, R>>, vm: &'a VM) -> &'a TcType {
         vm.get_type::<|Args|:'static -> R>()
@@ -226,7 +228,7 @@ macro_rules! make_vm_function(
     ($($args:ident),*) => (
 impl <'a, $($args: VMValue<'a>,)* R: VMValue<'a>> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
-    fn vm_type<'a>(_: Option<fn ($($args),*) -> R>, vm: &'a VM) -> &'a TcType {
+    fn vm_type<'r>(_: Option<fn ($($args),*) -> R>, vm: &'r VM) -> &'r TcType {
         vm.get_type::<fn ($($args),*) -> R>()
     }
     #[allow(non_snake_case)]

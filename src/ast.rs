@@ -49,6 +49,9 @@ pub enum BuiltinType_ {
     BoolType,
     UnitType
 }
+
+impl Copy for BuiltinType_ { }
+
 #[deriving(Clone, Eq, PartialEq, Hash)]
 pub enum TypeEnum<Id> {
     Type(Id, Vec<TypeEnum<Id>>),
@@ -69,6 +72,8 @@ pub enum LiteralStruct {
     String(InternedStr),
     Bool(bool)
 }
+
+impl Copy for LiteralStruct { }
 
 #[deriving(Clone, PartialEq, Show)]
 pub enum Pattern<Id> {

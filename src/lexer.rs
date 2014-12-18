@@ -44,12 +44,16 @@ pub enum Token {
     TEOF
 }
 
+impl Copy for Token { }
+
 #[deriving(Clone, PartialEq)]
 pub struct Location {
     pub column : int,
     pub row : int,
     pub absolute : int
 }
+
+impl Copy for Location { }
 
 impl Location {
     pub fn eof() -> Location {
@@ -73,7 +77,7 @@ fn is_operator(first_char : char) -> bool {
 }
 
 pub struct Lexer<'a, 'b> {
-    input: &'b mut Buffer + 'b,
+    input: &'b mut (Buffer + 'b),
     buffer: String,
     peek_c: Option<char>,
     location: Location,
@@ -100,7 +104,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
         self.location
     }
 
-    pub fn peek<'b>(&'b mut self) -> &'b Token {
+    pub fn peek(&mut self) -> &Token {
         if self.offset != 0 && self.tokens.len() != 0 {
             &self.tokens[self.tokens.len() - self.offset]
         }
@@ -112,7 +116,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
     }
     
     ///Returns the next token in the lexer
-    pub fn next<'b>(&'b mut self) -> &'b Token {
+    pub fn next(&mut self) -> &Token {
         if self.offset > 0 {
             self.offset -= 1;
         }
@@ -126,7 +130,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
     }
 
     ///Returns a reference to the current token
-    pub fn current<'b>(&'b self) -> &'b Token {
+    pub fn current(&self) -> &Token {
         &self.tokens[self.tokens.len() - self.offset - 1]
     }
 
@@ -171,7 +175,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
         result
     }
 
-    fn current_str<'b>(&'b self) -> &'b str {
+    fn current_str(&self) -> &str {
         self.buffer.as_slice()
     }
 
@@ -194,7 +198,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
         }
     }
     ///Scans a number, float or integer and returns the appropriate token
-    fn scan_number<'b>(&'b mut self) -> Token {
+    fn scan_number(&mut self) -> Token {
         self.scan_digits();
         let mut is_float = false;
         match self.peek_char() {
@@ -214,7 +218,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
     }
 
     ///Scans an identifier or a keyword
-    fn scan_identifier<'b>(&'b mut self) -> Token {
+    fn scan_identifier(&mut self) -> Token {
         loop {
             match self.peek_char() {
                 Some(ch) => {
@@ -246,7 +250,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
     
     ///Scans the character stream for the next token
     ///Return EOF token if the token stream has ehas ended
-    fn next_token<'b>(&'b mut self) -> Token {
+    fn next_token(&mut self) -> Token {
         let mut c = ' ';
         //Skip all whitespace before the token
         while c.is_whitespace() {

@@ -16,7 +16,7 @@ fn print(vm: &VM) {
 pub fn run() {
     let vm = VM::new();
     vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), print);
-    for line in ::std::io::stdin().lines() {
+    for line in ::std::io::stdin().lock().lines() {
         match run_line(&vm, line) {
             Ok(continue_repl) => {
                 if !continue_repl {
@@ -39,7 +39,7 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
             match vm.env().find_type_info(&vm.intern(args)) {
                 Some(info) => {
                     match info {
-                        Struct(&(ref typ, ref fields)) => {
+                        TypeInfo::Struct(&(ref typ, ref fields)) => {
                             println!("struct {} {{", args);
                             match *typ {
                                 FunctionType(ref field_types, _) => {
@@ -51,7 +51,7 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
                             }
                             println!("}}");
                         }
-                        Enum(constructors) => {
+                        TypeInfo::Enum(constructors) => {
                             println!("enum {} {{", args);
                             for ctor in constructors.iter()  {
                                 print!("    {}(", ctor.name.id());
@@ -73,7 +73,7 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
             }
             Ok(true)
         }
-        _ => Err("Invalid command ".to_string() + command.to_string())
+        _ => Err("Invalid command " + command.to_string())
     }
 }
 

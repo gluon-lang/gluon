@@ -205,7 +205,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                     .get(&trait_index)
                     .and_then(|functions| {
                         if function_index < functions.len() {
-                            Some(Variable::TraitFunction(&functions[function_index].ref1().value))
+                            Some(Variable::TraitFunction(&functions[function_index].1.value))
                         }
                         else {
                             None
@@ -219,7 +219,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                     .or_else(|| {
                         self.type_infos.enums.values()
                             .flat_map(|ctors| ctors.iter().enumerate())
-                            .find(|ctor| ctor.ref1().name.id() == id)
+                            .find(|ctor| ctor.1.name.id() == id)
                             .map(|(i, ctor)| Variable::Constructor(i, ctor.arguments.len()))
                     })
             }
@@ -273,7 +273,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             .and_then(|trait_info| 
                 trait_info.iter()
                     .enumerate()
-                    .find(|&(_, tup)| tup.ref0() == fn_name)
+                    .find(|&(_, tup)| tup.0 == *fn_name)
                     .map(|(i, _)| i)
             )
     }
@@ -294,7 +294,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
                     .get(&trait_index)
                     .and_then(|functions| {
                         if function_index < functions.len() {
-                            let f = functions[function_index].ref1();
+                            let f = &functions[function_index].1;
                             Some((f.constraints.as_slice(), &f.value))
                         }
                         else {
@@ -304,7 +304,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
             }
             _ => {
                 self.type_infos.structs.get(id)
-                    .map(|type_fields| ([].as_slice(), type_fields.ref0()))
+                    .map(|type_fields| ([].as_slice(), &type_fields.0))
                     .or_else(|| {
                         self.type_infos.enums.values()
                             .flat_map(|ctors| ctors.iter())
@@ -895,7 +895,7 @@ fn array_length(vm: &VM) {
 fn string_append(vm: &VM) {
     let mut stack = StackFrame::new(vm.stack.values.borrow_mut(), 2, [].as_mut_slice());
     match (&stack[0], &stack[1]) {
-        (&String(l), &String(r)) => {
+        (&String(ref l), &String(ref r)) => {
             let l = l.as_slice();
             let r = r.as_slice();
             let mut s = ::std::string::String::with_capacity(l.len() + r.len());

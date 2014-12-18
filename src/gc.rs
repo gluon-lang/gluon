@@ -80,16 +80,14 @@ impl GcHeader {
         let max_align = mem::align_of::<f64>();
         hs + ((max_align - (hs % max_align)) % max_align)
     }
-
-    fn total_size<T>() -> uint {
-        GcHeader::value_offset() + mem::size_of::<T>()
-    }
 }
 
 
 pub struct GcPtr<Sized? T> {
     ptr: *mut T
 }
+
+impl <Sized? T> Copy for GcPtr<T> {}
 
 impl <Sized? T> Deref<T> for GcPtr<T> {
     fn deref(&self) -> &T {
@@ -140,7 +138,7 @@ impl Gc_ {
         }
         self.alloc(def)
     }
-    fn alloc<Sized? T, D>(&mut self, mut def: D) -> *mut T
+    fn alloc<Sized? T, D>(&mut self, def: D) -> *mut T
         where T: Traverseable<T>, D: DataDef<T> {
         let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
@@ -226,6 +224,9 @@ mod tests {
     struct Data_ {
         fields: GcPtr<Vec<Value>>
     }
+
+    impl Copy for Data_ { }
+
     impl  Deref<Vec<Value>> for Data_ {
         fn deref(&self) -> &Vec<Value> {
             &*self.fields
@@ -273,6 +274,9 @@ mod tests {
         Int(int),
         Data(Data_)
     }
+
+    impl Copy for Value { }
+
     impl  Traverseable<Vec<Value>> for Vec<Value> {
         fn traverse(&mut self, func: |&mut Vec<Value>|) {
             for v in self.iter_mut() {

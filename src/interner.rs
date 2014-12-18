@@ -4,6 +4,8 @@ use std::fmt;
 #[deriving(Eq, PartialEq, Clone, Default, Hash)]
 pub struct InternedStr(&'static str);
 
+impl Copy for InternedStr { }
+
 #[deriving(Clone)]
 pub struct Interner {
     indexes: HashMap<&'static str, String>

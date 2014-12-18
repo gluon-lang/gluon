@@ -25,6 +25,7 @@ impl <K: Eq + Hash, V> FixedMap<K, V> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> uint {
         self.map.borrow().len()
     }
@@ -49,6 +50,8 @@ impl <T> FixedVec<T> {
     pub fn push(&self, value: T) {
         self.vec.borrow_mut().push(box value)
     }
+
+    #[allow(dead_code)]
     pub fn extend<I: Iterator<T>>(&self, iter: I) {
         self.vec.borrow_mut().extend(iter.map(|v| box v))
     }

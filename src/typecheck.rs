@@ -41,8 +41,8 @@ pub type TcType = ast::TypeEnum<InternedStr>;
 pub fn match_types(l: &TcType, r: &TcType) -> bool {
     fn type_eq<'a>(vars: &mut HashMap<uint, &'a TcType>, l: &'a TcType, r: &'a TcType) -> bool {
         match (l, r) {
-            (&TypeVariable(l), _) => var_eq(vars, l, r),
-            (&Generic(l), _) => var_eq(vars, l, r),
+            (&TypeVariable(ref l), _) => var_eq(vars, *l, r),
+            (&Generic(ref l), _) => var_eq(vars, *l, r),
             (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
                     l_args.iter()
@@ -65,7 +65,7 @@ pub fn match_types(l: &TcType, r: &TcType) -> bool {
                 && l_args.len() == r_args.len()
                 && l_args.iter().zip(r_args.iter()).all(|(l, r)| type_eq(vars, l, r))
             }
-            (&BuiltinType(l), &BuiltinType(r)) => l == r,
+            (&BuiltinType(ref l), &BuiltinType(ref r)) => l == r,
             _ => false
         }
     }
@@ -108,7 +108,7 @@ impl fmt::Show for TcType {
             TypeVariable(ref x) => x.fmt(f),
             Generic(x) => write!(f, "#{}", x),
             FunctionType(ref args, ref return_type) => write!(f, "fn {} -> {}", args, return_type),
-            BuiltinType(t) => t.fmt(f),
+            BuiltinType(ref t) => t.fmt(f),
             ArrayType(ref t) => write!(f, "[{}]", t)
         }
     }
@@ -154,7 +154,7 @@ fn from_declaration_with_self(decl: &ast::FunctionDeclaration<TcIdent>) -> Const
         else {
             variables.iter()
                 .enumerate()
-                .find(|v| v.ref1().type_variable == type_id).map(|v| v.val0())
+                .find(|v| v.1.type_variable == type_id).map(|v| v.0)
                 .map(|index| Generic(index + 1))
         }
     };
@@ -165,7 +165,7 @@ fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcT
     let type_handler = |type_id| {
         variables.iter()
             .enumerate()
-            .find(|v| v.ref1().type_variable == type_id).map(|v| v.val0())
+            .find(|v| v.1.type_variable == type_id).map(|v| v.0)
             .map(Generic)
     };
     from_declaration_(type_handler, decl)
@@ -192,19 +192,19 @@ pub fn from_constrained_type(variables: &[ast::Constraints], typ: &ast::VMType) 
     let mut type_handler = |type_id| {
         variables.iter()
             .enumerate()
-            .find(|v| v.ref1().type_variable == type_id).map(|v| v.val0())
+            .find(|v| v.1.type_variable == type_id).map(|v| v.0)
             .map(Generic)
     };
     from_generic_type(&mut type_handler, typ)
 }
 fn from_generic_type(type_handler: &mut |InternedStr| -> Option<TcType>, typ: &ast::VMType) -> TcType {
     match *typ {
-        ast::Type(type_id, ref args) => {
-            match (*type_handler)(type_id) {
+        ast::Type(ref type_id, ref args) => {
+            match (*type_handler)(*type_id) {
                 Some(typ) => typ,
                 None => {
                     let args2 = args.iter().map(|a| from_generic_type(type_handler, a)).collect();
-                    Type(type_id, args2)
+                    Type(*type_id, args2)
                 }
             }
         }
@@ -214,7 +214,7 @@ fn from_generic_type(type_handler: &mut |InternedStr| -> Option<TcType>, typ: &a
                 .collect();
             FunctionType(args2, box from_generic_type(type_handler, &**return_type))
         }
-        ast::BuiltinType(id) => BuiltinType(id),
+        ast::BuiltinType(ref id) => BuiltinType(*id),
         ast::ArrayType(ref typ) => ArrayType(box from_generic_type(type_handler, &**typ)),
         ast::TraitType(ref id, ref args) => {
             let args2 = args.iter()
@@ -222,8 +222,8 @@ fn from_generic_type(type_handler: &mut |InternedStr| -> Option<TcType>, typ: &a
                 .collect();
             Type(*id, args2)
         }
-        ast::TypeVariable(id) => TypeVariable(id),
-        ast::Generic(id) => Generic(id),
+        ast::TypeVariable(ref id) => TypeVariable(*id),
+        ast::Generic(ref id) => Generic(*id),
     }
 }
 
@@ -342,7 +342,7 @@ pub trait TypeEnv {
 }
 
 pub struct Typecheck<'a> {
-    environment: Option<&'a TypeEnv + 'a>,
+    environment: Option<&'a (TypeEnv + 'a)>,
     pub type_infos: TypeInfos,
     module: HashMap<InternedStr, Constrained<TcType>>,
     stack: ScopedMap<InternedStr, TcType>,
@@ -409,8 +409,8 @@ impl <'a> Typecheck<'a> {
             }
         };
         match t {
-            Some(t) => {
-                let x = self.subs.instantiate_constrained(t.val0(), t.val1());
+            Some((constraints, typ)) => {
+                let x = self.subs.instantiate_constrained(constraints, typ);
                 debug!("Find {} : {}", id, x);
                 Ok(x)
             }
@@ -510,7 +510,7 @@ impl <'a> Typecheck<'a> {
                     .find(|& &(ref name, _)| name == func.declaration.name.id())
                     .map(Ok)
                     .unwrap_or_else(|| Err(StringError("Function does not exist in trait"))));
-                let tf = self.subs.instantiate(&trait_function_type.ref1().value);
+                let tf = self.subs.instantiate(&trait_function_type.1.value);
                 try!(self.unify(&tf, func.type_of().clone()));
             }
         }
@@ -1034,13 +1034,13 @@ impl <'a> Typecheck<'a> {
                 self.set_type(&mut **return_type);
                 None
             }
-            Type(id, ref mut args) => {
+            Type(ref id, ref mut args) => {
                 for arg in args.iter_mut() {
                     self.set_type(arg);
                 }
-                if find_trait(&self.type_infos, &id).is_ok() {
+                if find_trait(&self.type_infos, id).is_ok() {
                     let a = ::std::mem::replace(args, Vec::new());
-                    Some(TraitType(id, a))
+                    Some(TraitType(*id, a))
                 }
                 else {
                     None
@@ -1164,13 +1164,13 @@ impl Substitution {
                 FunctionType(args2, box self.instantiate_(base, &**return_type))
             }
             ArrayType(ref typ) => ArrayType(box self.instantiate_(base, &**typ)),
-            Type(id, ref args) => {
+            Type(ref id, ref args) => {
                 let args2 = args.iter().map(|a| self.instantiate_(base, a)).collect();
-                Type(id, args2)
+                Type(*id, args2)
             }
-            TraitType(id, ref args) => {
+            TraitType(ref id, ref args) => {
                 let args2 = args.iter().map(|a| self.instantiate_(base, a)).collect();
-                TraitType(id, args2)
+                TraitType(*id, args2)
             }
             ref x => x.clone()
         }
