@@ -2,6 +2,7 @@ use collections::RingBuf;
 use std::str::FromStr;
 use std::fmt;
 
+use gc::Gc;
 use interner::{Interner, InternedStr};
 
 use self::Token::*;
@@ -84,12 +85,13 @@ pub struct Lexer<'a, 'b> {
     location: Location,
     tokens: RingBuf<Token>,
     offset: uint,
-    pub interner: &'a mut Interner
+    interner: &'a mut Interner,
+    gc: &'a Gc
 }
 
 impl <'a, 'b> Lexer<'a, 'b> {
 
-    pub fn new(interner: &'a mut Interner, s: &'b mut Buffer) -> Lexer<'a, 'b> {
+    pub fn new(interner: &'a mut Interner, gc: &'a Gc, s: &'b mut Buffer) -> Lexer<'a, 'b> {
         Lexer {
             peek_c: Some(s.read_char().unwrap()),
             input: s,
@@ -97,7 +99,8 @@ impl <'a, 'b> Lexer<'a, 'b> {
             location: Location { row: 1, column: 1, absolute: 0 },
             tokens: RingBuf::with_capacity(20),
             offset: 0,
-            interner: interner
+            interner: interner,
+            gc: gc
         }
     }
 
@@ -180,8 +183,11 @@ impl <'a, 'b> Lexer<'a, 'b> {
         self.buffer.as_slice()
     }
 
+    pub fn intern(&mut self, s: &str) -> InternedStr {
+        self.interner.intern(self.gc, s)
+    }
     fn intern_current(&mut self) -> InternedStr {
-        self.interner.intern(self.buffer.as_slice())
+        self.interner.intern(self.gc, self.buffer.as_slice())
     }
 
     ///Scans digits into a string
@@ -302,7 +308,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
                             .as_slice()
                             .slice_to(self.buffer.len() - 1)
                             .slice_from(1);
-                        let s = self.interner.intern(contents);
+                        let s = self.interner.intern(self.gc, contents);
                         return TString(s)
                     }
                     Some(_) => (),
@@ -345,6 +351,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
 mod tests {
     use lexer;
     use lexer::Token::*;
+    use gc::Gc;
     use interner::Interner;
     use std::io::BufReader;
 
@@ -355,10 +362,11 @@ mod tests {
     #[test]
     fn lex() {
         let mut buffer = buffer("fn main() { 1 + 2 }");
+        let gc = Gc::new();
         let mut interner = Interner::new();
-        let mut lexer = lexer::Lexer::new(&mut interner, &mut buffer);
-        let plus = lexer.interner.intern("+");
-        let main = lexer.interner.intern("main");
+        let mut lexer = lexer::Lexer::new(&mut interner, &gc, &mut buffer);
+        let plus = lexer.intern("+");
+        let main = lexer.intern("main");
         assert_eq!(lexer.next(), &TFn);
         assert_eq!(lexer.next(), &TIdentifier(main));
         assert_eq!(lexer.next(), &TOpenParen);

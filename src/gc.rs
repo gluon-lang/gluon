@@ -89,6 +89,12 @@ pub struct GcPtr<Sized? T> {
 
 impl <Sized? T> Copy for GcPtr<T> {}
 
+impl <Sized? T> Clone for GcPtr<T> {
+    fn clone(&self) -> GcPtr<T> {
+        GcPtr { ptr: self.ptr }
+    }
+}
+
 impl <Sized? T> Deref<T> for GcPtr<T> {
     fn deref(&self) -> &T {
         unsafe { & *self.ptr }
@@ -98,6 +104,23 @@ impl <Sized? T> Deref<T> for GcPtr<T> {
 impl <Sized? T> DerefMut<T> for GcPtr<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *self.ptr }
+    }
+}
+
+impl <Sized? T> ::std::borrow::BorrowFrom<GcPtr<T>> for T {
+    fn borrow_from(ptr: &GcPtr<T>) -> &T {
+        &**ptr
+    }
+}
+
+impl <Sized? T: Eq> Eq for GcPtr<T> { }
+impl <Sized? T: PartialEq> PartialEq for GcPtr<T> {
+    fn eq(&self, other: &GcPtr<T>) -> bool { **self == **other }
+}
+
+impl <S: ::std::hash::Writer, Sized? T: ::std::hash::Hash<S>> ::std::hash::Hash<S> for GcPtr<T> {
+    fn hash(&self, state: &mut S) {
+        (**self).hash(state)
     }
 }
 
@@ -128,7 +151,7 @@ impl Gc {
         GcPtr { ptr: ptr }
     }
     pub fn alloc<Sized? T, D>(&self, def: D) -> GcPtr<T>
-        where T: Traverseable<T>, D: DataDef<T> {
+        where D: DataDef<T> {
         let ptr = self.gc.borrow_mut().alloc(def);
         GcPtr { ptr: ptr }
     }
@@ -148,7 +171,7 @@ impl Gc_ {
         self.alloc(def)
     }
     fn alloc<Sized? T, D>(&mut self, def: D) -> *mut T
-        where T: Traverseable<T>, D: DataDef<T> {
+        where D: DataDef<T> {
         let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
         self.allocated_objects += 1;

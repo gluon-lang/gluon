@@ -535,7 +535,7 @@ impl <'a> VM<'a> {
             let CompiledFunction { id, typ, instructions } = f;
             match names.get(&id) {
                 Some(&GlobalFn(..)) => {
-                    if id != self.interner.borrow_mut().intern("") {//Lambdas have the empty string as name
+                    if id != self.intern("") {//Lambdas have the empty string as name
                         panic!("ICE: Global {} already exists", id);
                     }
                 }
@@ -613,7 +613,7 @@ impl <'a> VM<'a> {
     }
 
     pub fn intern(&self, s: &str) -> InternedStr {
-        self.interner.borrow_mut().intern(s)
+        self.interner.borrow_mut().intern(&self.gc, s)
     }
 
     pub fn env<'b>(&'b self) -> VMEnv<'a, 'b> {
@@ -942,7 +942,7 @@ fn string_append(vm: &VM) {
             let mut s = ::std::string::String::with_capacity(l.len() + r.len());
             s.push_str(l);
             s.push_str(r);
-            let result = vm.interner.borrow_mut().intern(s.as_slice());
+            let result = vm.intern(s.as_slice());
             stack.push(String(result));
         }
         _ => panic!()
@@ -955,7 +955,7 @@ macro_rules! tryf(
 
 pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
-    let mut parser = Parser::new(&mut *interner, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
+    let mut parser = Parser::new(&mut *interner, &vm.gc, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
     parser.expression().map_err(|err| format!("{}", err))
 }
 
@@ -964,7 +964,7 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::St
 
     let mut module = {
         let mut cell = vm.interner.borrow_mut();
-        let mut parser = Parser::new(&mut*cell, buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
+        let mut parser = Parser::new(&mut*cell, &vm.gc, buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
         tryf!(parser.module())
     };
     let (type_infos, functions) = {

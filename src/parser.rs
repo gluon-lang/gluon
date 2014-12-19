@@ -1,5 +1,6 @@
 use std::fmt;
 use ast::*;
+use gc::Gc;
 use interner::{Interner, InternedStr};
 use lexer::{Lexer, Token};
 use lexer::Token::{
@@ -137,9 +138,9 @@ pub struct Parser<'a, 'b, PString> {
 }
 
 impl <'a, 'b, PString> Parser<'a, 'b, PString> {
-    pub fn new<F>(interner: &'a mut Interner, input: &'b mut Buffer, make_id: F) -> Parser<'a, 'b, PString> 
+    pub fn new<F>(interner: &'a mut Interner, gc: &'a Gc, input: &'b mut Buffer, make_id: F) -> Parser<'a, 'b, PString> 
         where F: FnMut(InternedStr) -> PString + 'static {
-        Parser { lexer: Lexer::new(interner, input), make_id_f: box make_id }
+        Parser { lexer: Lexer::new(interner, gc, input), make_id_f: box make_id }
     }
 
     fn make_id(&mut self, s: InternedStr) -> PString {
@@ -294,7 +295,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             TOpenBracket => {
                 let args = try!(self.sep_by(|t| *t == TComma, |this| this.expression()));
                 expect!(self, TCloseBracket);
-                let dummy = self.lexer.interner.intern("[]");
+                let dummy = self.lexer.intern("[]");
                 Ok(Array(ArrayStruct { id: self.make_id(dummy), expressions: args }))
             }
             TLambda => {
@@ -304,7 +305,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 }));
                 expect!(self, TRArrow);
                 let body = box try!(self.expression());
-                let s = self.lexer.interner.intern("");
+                let s = self.lexer.intern("");
                 Ok(Lambda(LambdaStruct { id: self.make_id(s), free_vars: Vec::new(), arguments: args, body: body }))
             }
             x => {
@@ -678,7 +679,8 @@ pub mod tests {
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
-        let mut parser = Parser::new(&mut *interner, &mut buffer, |s| s);
+        let &(ref mut interner, ref gc) = &mut *interner;
+        let mut parser = Parser::new(interner, gc, &mut buffer, |s| s);
         let x = f(&mut parser)
             .unwrap_or_else(|err| panic!(err));
         x
