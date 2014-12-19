@@ -8,6 +8,8 @@ extern crate EmbedLang;
 #[cfg(not(test))]
 use EmbedLang::vm::{VM, run_main, run_buffer_main};
 
+use std::os::set_exit_status;
+
 mod repl;
 
 
@@ -18,8 +20,14 @@ fn main() {
     if args.len() == 1 {
         let vm = VM::new();
         let mut buffer = ::std::io::stdin();
-        let value = run_buffer_main(&vm, &mut buffer)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = match run_buffer_main(&vm, &mut buffer) {
+            Ok(value) => value,
+            Err(err) => {
+                println!("{}", err);
+                set_exit_status(1);
+                return
+            }
+        };
         println!("{}", value);
     }
     else if args[1].as_slice() == "-i" {

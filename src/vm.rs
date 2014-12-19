@@ -186,6 +186,9 @@ pub struct VM<'a> {
     pub stack: RefCell<Stack<'a>>
 }
 
+pub type VMError = ::std::string::String;
+pub type VMResult<T> = Result<T, VMError>;
+
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     trait_indexes: &'b FixedVec<TraitFunctions>,
@@ -408,24 +411,24 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.values.slice_from_mut(self.offset)
     }
 
-    fn new_scope(stack: RefMut<'b, Stack<'a>>
+    fn new_scope<E>(stack: RefMut<'b, Stack<'a>>
             , args: uint
             , upvars: Option<GcPtr<Data_<'a>>>
-            , f: |StackFrame<'a, 'b>| -> StackFrame<'a, 'b>) -> StackFrame<'a, 'b> {
+            , f: |StackFrame<'a, 'b>| -> Result<StackFrame<'a, 'b>, E>) -> Result<StackFrame<'a, 'b>, E> {
         let stack = StackFrame::frame(stack, args, upvars);
-        let mut stack = f(stack);
+        let mut stack = try!(f(stack));
         stack.stack.frames.pop();
-        stack
+        Ok(stack)
     }
-    fn scope(self
+    fn scope<E>(self
             , args: uint
             , new_upvars: Option<GcPtr<Data_<'a>>>
-            , f: |StackFrame<'a, 'b>| -> StackFrame<'a, 'b>) -> StackFrame<'a, 'b> {
+            , f: |StackFrame<'a, 'b>| -> Result<StackFrame<'a, 'b>, E>) -> Result<StackFrame<'a, 'b>, E> {
         let StackFrame { stack: s, offset, upvars } = self;
         let new_stack = StackFrame::frame(s, args, new_upvars);
-        let mut new_stack = f(new_stack);
+        let mut new_stack = try!(f(new_stack));
         new_stack.stack.frames.pop();
-        StackFrame { stack: new_stack.stack, offset: offset, upvars: upvars }
+        Ok(StackFrame { stack: new_stack.stack, offset: offset, upvars: upvars })
     }
 
     fn frame(mut stack: RefMut<'b, Stack<'a>>, args: uint, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
@@ -566,16 +569,16 @@ impl <'a> VM<'a> {
             })
     }
 
-    pub fn run_function(&self, cf: &Global<'a>) -> Option<Value<'a>> {
+    pub fn run_function(&self, cf: &Global<'a>) -> VMResult<Value<'a>> {
         self.call_function(0, None, cf)
     }
 
-    pub fn execute_instructions(&self, instructions: &[Instruction]) -> Option<Value<'a>> {
+    pub fn execute_instructions(&self, instructions: &[Instruction]) -> VMResult<Value<'a>> {
         let stack = self.stack.borrow_mut();
-        let mut frame = StackFrame::new_scope(stack, 0, None, |frame| {
+        let frame = StackFrame::new_scope(stack, 0, None, |frame| {
             self.execute(frame, instructions)
         });
-        Some(frame.pop())
+        frame.map(|mut frame| frame.pop())
     }
 
     pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction<'a>) -> Result<(), ::std::string::String> {
@@ -629,12 +632,12 @@ impl <'a> VM<'a> {
         DataStruct { value: self.gc.alloc_and_collect(roots, Def { tag: tag, elems: fields })}
     }
 
-    pub fn call_function<'b, 'c>(&self, args: uint, upvars: Option<GcPtr<Data_<'a>>>, function: &Global<'a>) -> Option<Value<'a>>  {
+    pub fn call_function<'b, 'c>(&self, args: uint, upvars: Option<GcPtr<Data_<'a>>>, function: &Global<'a>) -> VMResult<Value<'a>>  {
         let stack = StackFrame::new(self.stack.borrow_mut(), args, upvars);
-        let x = self.execute_function(stack, function).pop();
-        Some(x)
+        self.execute_function(stack, function)
+            .map(|mut stack| stack.pop())
     }
-    fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Global<'a>) -> StackFrame<'a, 'b> {
+    fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Global<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         match function.value {
             Extern(func) => {
                 //Make sure that the stack is not borrowed during the external function call
@@ -642,7 +645,7 @@ impl <'a> VM<'a> {
                 let StackFrame { stack, offset, upvars } = stack;
                 drop(stack);
                 func(self);
-                StackFrame::new(self.stack.borrow_mut(), offset, upvars)
+                Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
             }
             Bytecode(ref instructions) => {
                 self.execute(stack, instructions.as_slice())
@@ -650,7 +653,7 @@ impl <'a> VM<'a> {
         }
     }
 
-    pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> StackFrame<'a, 'b> {
+    pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         debug!("Enter frame with {}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
@@ -685,12 +688,12 @@ impl <'a> VM<'a> {
                             Closure(ref closure) => {
                                 (&self.globals[closure.tag], Some(closure.value))
                             }
-                            x => panic!("Cannot call {}", x)
+                            x => return Err(format!("Cannot call {}", x))
                         };
                         debug!("Call {} :: {}", function.id, function.typ);
-                        stack = stack.scope(args, new_upvars, |new_stack| {
+                        stack = try!(stack.scope(args, new_upvars, |new_stack| {
                             self.execute_function(new_stack, function)
-                        });
+                        }));
                     }
                     if stack.len() > function_index + args {
                         //Value was returned
@@ -721,7 +724,7 @@ impl <'a> VM<'a> {
                             let v = data.borrow().fields[i].clone();
                             stack.push(v);
                         }
-                        x => panic!("GetField on {}", x)
+                        x => return Err(format!("GetField on {}", x))
                     }
                 }
                 SetField(i) => {
@@ -731,13 +734,13 @@ impl <'a> VM<'a> {
                         Data(data) => {
                             data.borrow_mut().fields[i] = value;
                         }
-                        _ => panic!()
+                        _ => return Err("Op SetField called on non data type".to_string())
                     }
                 }
                 TestTag(tag) => {
                     let x = match *stack.top() {
                         Data(ref data) => if data.borrow().tag == tag { 1 } else { 0 },
-                        _ => panic!()
+                        _ => return Err("Op TestTag called on non data type".to_string())
                     };
                     stack.push(Int(x));
                 }
@@ -748,7 +751,7 @@ impl <'a> VM<'a> {
                                 stack.push(field.clone());
                             }
                         }
-                        _ => panic!()
+                        _ => return Err("Op Split called on non data type".to_string())
                     }
                 }
                 Jump(i) => {
@@ -784,7 +787,7 @@ impl <'a> VM<'a> {
                             let v = array.borrow_mut().fields[index as uint].clone();
                             stack.push(v);
                         }
-                        (x, y) => panic!("{} {}", x, y)
+                        (x, y) => return Err(format!("Op GetIndex called on invalid types {} {}", x, y))
                     }
                 }
                 SetIndex => {
@@ -795,7 +798,7 @@ impl <'a> VM<'a> {
                         (Data(array), Int(index)) => {
                             array.borrow_mut().fields[index as uint] = value;
                         }
-                        _ => panic!()
+                        (x, y) => return Err(format!("Op SetIndex called on invalid types {} {}", x, y))
                     }
                 }
                 MakeClosure(fi, n) => {
@@ -829,14 +832,14 @@ impl <'a> VM<'a> {
                         &TraitObject(ref object) => {
                             Function(object.tag + i)
                         }
-                        _ => panic!()
+                        _ => return Err(format!("Op PushTraitFunction called on object other than a TraitObject"))
                     };
                     stack.push(func);
                 }
                 Unpack => {
                     match stack.pop() {
                         TraitObject(ref obj) => stack.push(obj.fields[0].clone()),
-                        _ => panic!()
+                        _ => return Err(format!("Op Unpack called on object other than a TraitObject"))
                     }
                 }
                 PushDictionaryMember(trait_index, function_offset) => {
@@ -889,7 +892,7 @@ impl <'a> VM<'a> {
         else {
             debug!("--> ()");
         }
-        stack
+        Ok(stack)
     }
 }
 
@@ -975,24 +978,24 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::St
     Ok(())
 }
 
-pub fn run_main<'a>(vm: &VM<'a>, s: &str) -> Result<Option<Value<'a>>, ::std::string::String> {
+pub fn run_main<'a>(vm: &VM<'a>, s: &str) -> VMResult<Value<'a>> {
     use std::io::BufReader;
     let mut buffer = BufReader::new(s.as_bytes());
     run_buffer_main(vm, &mut buffer)
 }
-pub fn run_buffer_main<'a>(vm: &VM<'a>, buffer: &mut Buffer) -> Result<Option<Value<'a>>, ::std::string::String> {
+pub fn run_buffer_main<'a>(vm: &VM<'a>, buffer: &mut Buffer) -> VMResult<Value<'a>> {
     try!(load_script(vm, buffer));
     let v = try!(run_function(vm, "main"));
     Ok(v)
 }
 
-pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> Result<Option<Value<'a>>, ::std::string::String> {
+pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a>> {
     let globals = vm.globals.borrow();
     let func = match globals.iter().find(|g| g.id.as_slice() == name) {
         Some(f) => &**f,
         None => return Err(format!("Undefined function {}", name))
     };
-    Ok(vm.run_function(func))
+    vm.run_function(func)
 }
 
 #[cfg(test)]
@@ -1022,7 +1025,7 @@ fn main() -> int {
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(8)));
+        assert_eq!(value, Int(8));
     }
 
     #[test]
@@ -1043,7 +1046,7 @@ enum AB {
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(8)));
+        assert_eq!(value, Int(8));
     }
     #[test]
     fn call_trait_function() {
@@ -1079,7 +1082,7 @@ impl Add for int {
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
-            Some(Data(ref data)) => {
+            Data(ref data) => {
                 assert_eq!(&data.fields, [Int(11), Int(5)].as_slice());
             }
             _ => panic!()
@@ -1103,7 +1106,7 @@ fn test(f: fn () -> int) -> int {
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(52)));
+        assert_eq!(value, Int(52));
     }
     #[test]
     fn arrays() {
@@ -1118,7 +1121,7 @@ fn main() -> [int] {
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
-            Some(Data(ref data)) => {
+            Data(ref data) => {
                 assert_eq!(&data.fields, [Int(1), Int(2), Int(33)].as_slice());
             }
             _ => panic!()
@@ -1137,7 +1140,7 @@ fn main() -> int {
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(40)));
+        assert_eq!(value, Int(40));
     }
     #[test]
     fn lambda() {
@@ -1155,7 +1158,7 @@ fn main() -> int {
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(123)));
+        assert_eq!(value, Int(123));
     }
 
     #[test]
@@ -1183,7 +1186,7 @@ fn main() -> int {
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(3)));
+        assert_eq!(value, Int(3));
     }
 
     #[test]
@@ -1199,7 +1202,7 @@ fn main() -> int {
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(110)));
+        assert_eq!(value, Int(110));
     }
 
     #[test]
@@ -1250,7 +1253,7 @@ fn main() -> Pair {
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
-            Some(Data(ref data)) => {
+            Data(ref data) => {
                 assert_eq!(&data.fields, [Int(0), Int(1)].as_slice());
             }
             _ => panic!()
@@ -1319,7 +1322,7 @@ fn main() -> Pair {
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
-            Some(Data(ref data)) => {
+            Data(ref data) => {
                 assert_eq!(&data.fields, [Int(1), Int(0)].as_slice());
             }
             _ => panic!()
@@ -1336,7 +1339,7 @@ r#"fn main() -> string {
         let hello_world = vm.intern("Hello World");
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(String(hello_world)));
+        assert_eq!(value, String(hello_world));
     }
     #[test]
     fn call_trait_from_another_script() {
@@ -1383,7 +1386,7 @@ fn main() -> bool {
         }
         let value = run_function(&vm, "main")
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(1)));
+        assert_eq!(value, Int(1));
     }
 
     #[test]
@@ -1417,7 +1420,7 @@ fn main() -> int {
         }
         let value = run_function(&vm, "main")
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(1)));
+        assert_eq!(value, Int(1));
     }
 
     #[test]
@@ -1436,7 +1439,7 @@ fn main() -> int {
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(0)));
+        assert_eq!(value, Int(0));
     }
     #[test]
     fn recursive_mixed_calls() {
@@ -1458,7 +1461,7 @@ fn mul(x: int, y: int) -> int {
                     let (_, function) = vm.get_global("mul")
                             .expect("Expected 'mul' function");
                     let result = vm.call_function(2, None, function)
-                        .expect("Expected value from 'mul' function");
+                        .unwrap();
                     vm.push(result);
                 }
                 _ => panic!()
@@ -1472,7 +1475,7 @@ fn mul(x: int, y: int) -> int {
             .unwrap_or_else(|e| panic!("{}", e));
         let value = run_function(&vm, "test")
             .unwrap_or_else(|err| panic!("{}", err));
-        assert_eq!(value, Some(Int(150)));
+        assert_eq!(value, Int(150));
     }
 }
 

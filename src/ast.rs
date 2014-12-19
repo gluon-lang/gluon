@@ -37,8 +37,12 @@ impl <T> Deref<T> for Located<T> {
     }
 }
 
+pub fn located<T>(location: Location, value: T) -> Located<T> {
+    Located { location: location, value: value }
+}
+
 pub fn no_loc<T>(x: T) -> Located<T> {
-    Located { location: Location::eof(), value: x }
+    located(Location::eof(), x)
 }
 
 #[deriving(Clone, Eq, PartialEq, Show, Hash)]

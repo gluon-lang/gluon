@@ -41,7 +41,8 @@ pub enum Token {
     TRArrow,
     TMatchArrow,
     TLambda,
-    TEOF
+    TEOF,
+    TError(&'static str)
 }
 
 impl Copy for Token { }
@@ -305,21 +306,21 @@ impl <'a, 'b> Lexer<'a, 'b> {
                         return TString(s)
                     }
                     Some(_) => (),
-                    None => panic!("Unexpected EOF")
+                    None => return TError("Unexpected EOF when lexing string literal")
                 }
             }
         }
         else if c == '\'' {
             match self.read_char() {
                 Some(x) => {
-                    if self.read_char() == Some('\'') {
-                        return TChar(x);
+                    return if self.read_char() == Some('\'') {
+                        TChar(x)
                     }
                     else {
-                        panic!("Multi char character")
+                        TError("Attempted to lex a character literal with multiple character")
                     }
                 }
-                None => panic!("Unexpected EOF")
+                None => return TError("Unexpected EOF when lexing char literal")
             }
         }
         else {

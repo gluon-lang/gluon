@@ -169,10 +169,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let (expr, is_stm) = try!(match *self.lexer.peek() {
             TLet => {
                 self.lexer.next();
-                let id = match expect!(self, TIdentifier(..)) {
-                    TIdentifier(id) => id,
-                    _ => panic!()
-                };
+                let id = expect1!(self, TIdentifier(x));
                 expect!(self, TAssign);
                 let expr = try!(self.expression());
                 expect!(self, TSemicolon);

@@ -96,11 +96,8 @@ fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
                 compiler.compile_expr(&expr)
             };
             vm.new_functions((lambdas, Vec::new()));
-            let v = vm.execute_instructions(instructions.as_slice());
-            match v {
-                Some(v) => println!("{}", v),
-                None => println!("")
-            }
+            let v = try!(vm.execute_instructions(instructions.as_slice()));
+            println!("{}", v);
             Ok(true)
         }
     }

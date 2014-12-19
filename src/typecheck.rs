@@ -88,14 +88,16 @@ impl fmt::Show for TcType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn fmt_type(f: &mut fmt::Formatter, t: &InternedStr, args: &[TcType]) -> fmt::Result {
             try!(write!(f, "{}", t));
-            if args.len() != 0 {
-                try!(write!(f, "<"));
-                let mut args_iter = args.iter();
-                try!(write!(f, "{}", args_iter.next().unwrap()));
-                for arg in args_iter {
-                    try!(write!(f, ", {}", arg));
+            match args {
+                [ref first, rest..] => {
+                    try!(write!(f, "<"));
+                    try!(write!(f, "{}", first));
+                    for arg in rest.iter() {
+                        try!(write!(f, ", {}", arg));
+                    }
+                    try!(write!(f, ">"));
                 }
-                try!(write!(f, ">"));
+                [] => ()
             }
             Ok(())
         }
@@ -544,7 +546,11 @@ impl <'a> Typecheck<'a> {
                 }
                 self.subs.instantiate(&**return_type)
             }
-            _ => panic!("Non function type for function")
+            _ => {
+                let e = ast::located(function.expression.location, StringError("Non function type for function"));
+                self.errors.error(e);
+                return
+            }                
         };
         let inferred_return_type = match self.typecheck(&mut function.expression) {
             Ok(typ) => typ,
@@ -1199,11 +1205,9 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
             }
             ast::IfElse(_, ref arm, _) => arm.type_of(),
             ast::Block(ref exprs) => {
-                if exprs.len() == 0 {
-                    &UNIT_TYPE
-                }
-                else {
-                    exprs.last().unwrap().type_of()
+                match exprs.last() {
+                    Some(last) => last.type_of(),
+                    None => &UNIT_TYPE
                 }
             }
             ast::BinOp(ref lhs, ref op, _) => {

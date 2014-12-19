@@ -191,24 +191,28 @@ impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
 }
 
 impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
-    pub fn call(&mut self, a: A) -> R {
+    pub fn call(&mut self, a: A) -> Result<R, String> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(&mut stack);
         a.push(&mut stack);
-        stack = self.vm.execute(stack, &[CallGlobal(1)]);
-        VMValue::from_value(stack.pop())
-            .expect("Wrong type")
+        stack = try!(self.vm.execute(stack, &[CallGlobal(1)]));
+        match VMValue::from_value(stack.pop()) {
+            Some(x) => Ok(x),
+            None => Err("Wrong type".to_string())
+        }
     }
 }
 impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A, B), R> {
-    pub fn call2(&mut self, a: A, b: B) -> R {
+    pub fn call2(&mut self, a: A, b: B) -> Result<R, String> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(&mut stack);
         a.push(&mut stack);
         b.push(&mut stack);
-        stack = self.vm.execute(stack, &[CallGlobal(2)]);
-        VMValue::from_value(stack.pop())
-            .expect("Wrong type")
+        stack = try!(self.vm.execute(stack, &[CallGlobal(2)]));
+        match VMValue::from_value(stack.pop()) {
+            Some(x) => Ok(x),
+            None => Err("Wrong type".to_string())
+        }
     }
 }
 
@@ -316,12 +320,12 @@ fn mul(x: float, y: float) -> float {
         {
             let mut f: Callable<(int,), int> = Get::get_function(&vm, "add10")
                 .expect("No function");
-            let result = f.call(2);
+            let result = f.call(2).unwrap();
             assert_eq!(result, 12);
         }
         let mut f: Callable<(f64, f64), f64> = Get::get_function(&vm, "mul")
             .expect("No function");
-        let result = f.call2(4., 5.);
+        let result = f.call2(4., 5.).unwrap();
         assert_eq!(result, 20.);
     }
     #[test]
@@ -354,12 +358,12 @@ fn id(x: Test) -> Test {
         {
             let mut f: Callable<(*mut Test,), *mut Test> = Get::get_function(&vm, "id")
                 .expect("No function id");
-            let result = f.call(&mut test);
+            let result = f.call(&mut test).unwrap();
             assert!(result == &mut test as *mut Test);
         }
         let mut f: Callable<(*mut Test,), bool> = Get::get_function(&vm, "test")
             .expect("No function test");
-        let result = f.call(&mut test);
+        let result = f.call(&mut test).unwrap();
         assert!(result);
         assert_eq!(test.x, 123 * 2);
     }
