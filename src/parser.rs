@@ -133,16 +133,17 @@ pub type ParseResult<T> = Result<T, Located<ParseError>>;
 
 pub struct Parser<'a, 'b, PString> {
     lexer: Lexer<'a, 'b>,
-    make_id_f: |InternedStr|:'static -> PString
+    make_id_f: Box<FnMut(InternedStr) -> PString + 'static>
 }
 
 impl <'a, 'b, PString> Parser<'a, 'b, PString> {
-    pub fn new(interner: &'a mut Interner, input: &'b mut Buffer, make_id: |InternedStr|:'static -> PString) -> Parser<'a, 'b, PString> {
-        Parser { lexer: Lexer::new(interner, input), make_id_f: make_id }
+    pub fn new<F>(interner: &'a mut Interner, input: &'b mut Buffer, make_id: F) -> Parser<'a, 'b, PString> 
+        where F: FnMut(InternedStr) -> PString + 'static {
+        Parser { lexer: Lexer::new(interner, input), make_id_f: box make_id }
     }
 
     fn make_id(&mut self, s: InternedStr) -> PString {
-        (self.make_id_f)(s)
+        self.make_id_f.call_mut((s,))
     }
 
     pub fn module(&mut self) -> ParseResult<Module<PString>> {
@@ -506,7 +507,8 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         })
     }
     
-    fn angle_brackets<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
+    fn angle_brackets<F, T>(&mut self, f: F) -> ParseResult<T>
+        where F: FnOnce(&mut Parser<PString>) -> ParseResult<T> {
         static EXPECTED_LT: &'static [&'static str] = &["<"];
         static EXPECTED_GT: &'static [&'static str] = &[">"];
         match *self.lexer.peek() {
@@ -570,28 +572,34 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         Ok(Function { declaration: declaration, expression: expr })
     }
 
-    fn braces<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
+    fn braces<F, T>(&mut self, f: F) -> ParseResult<T>
+        where F: FnOnce(&mut Parser<PString>) -> ParseResult<T> {
         expect!(self, TOpenBrace);
         let x = try!(f(self));
         expect!(self, TCloseBrace);
         Ok(x)
     }
 
-    fn parens<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<T> {
+    fn parens<F, T>(&mut self, f: F) -> ParseResult<T>
+        where F: FnOnce(&mut Parser<PString>) -> ParseResult<T> {
         expect!(self, TOpenParen);
         let x = try!(f(self));
         expect!(self, TCloseParen);
         Ok(x)
     }
 
-    fn many<T>(&mut self, terminator: |&Token| -> bool, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
+    fn many<P, F, T>(&mut self, mut terminator: P, mut f: F) -> ParseResult<Vec<T>>
+        where P: FnMut(&Token) -> bool,
+              F: FnMut(&mut Parser<PString>) -> ParseResult<T> {
         let mut result = Vec::new();
         while !terminator(self.lexer.peek()) {
             result.push(try!(f(self)));
         }
         Ok(result)
     }
-    fn sep_by<T>(&mut self, sep: |&Token| -> bool, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<Vec<T>> {
+    fn sep_by<F, S, T>(&mut self, mut sep: S, mut f: F) -> ParseResult<Vec<T>>
+        where S: FnMut(&Token) -> bool,
+              F: FnMut(&mut Parser<PString>) -> ParseResult<T> {
         let mut result = Vec::new();
         match f(self) {
             Ok(x) => result.push(x),
@@ -604,7 +612,8 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         }
         Ok(result)
     }
-    fn located<T>(&mut self, f: |&mut Parser<PString>| -> ParseResult<T>) -> ParseResult<Located<T>> {
+    fn located<F, T>(&mut self, f: F) -> ParseResult<Located<T>>
+        where F: FnOnce(&mut Parser<PString>) -> ParseResult<T> {
         let location = self.lexer.location();
         let value = try!(f(self));
         Ok(Located { location: location, value: value })
@@ -664,7 +673,8 @@ pub mod tests {
         no_loc(Literal(Bool(b)))
     }
 
-    pub fn parse<T>(s: &str, f: |&mut Parser<InternedStr>|:'static -> ParseResult<T>) -> T {
+    pub fn parse<F, T>(s: &str, f: F) -> T
+        where F: FnOnce(&mut Parser<InternedStr>) -> ParseResult<T> {
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();

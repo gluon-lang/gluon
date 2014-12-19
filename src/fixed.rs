@@ -60,7 +60,8 @@ impl <T> FixedVec<T> {
         self.vec.borrow()
     }
 
-    pub fn find(&self, test: |&T| -> bool) -> Option<(uint, &T)> {
+    pub fn find<F>(&self, mut test: F) -> Option<(uint, &T)>
+        where F: FnMut(&T) -> bool {
         self.vec.try_borrow()
             .and_then(|vec| {
                 vec.iter()

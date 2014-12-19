@@ -102,10 +102,19 @@ impl <Sized? T> DerefMut<T> for GcPtr<T> {
 }
 
 pub trait Traverseable<Sized? T> for Sized? {
-    fn traverse(&mut self, func: |&mut T|);
+    fn traverse<F>(&mut self, func: F) where F: FnMut(&mut T);
 }
 impl <T> Traverseable<T> for () {
-    fn traverse(&mut self, _: |&mut T|) { }
+    fn traverse<F>(&mut self, _: F) where F: FnMut(&mut T) { }
+}
+
+impl <Sized? T, U> Traverseable<T> for [U]
+    where U: Traverseable<T> {
+    fn traverse<F>(&mut self, mut f: F) where F: FnMut(&mut T) {
+        for x in self.iter_mut() {
+            x.traverse(|v| f(v));
+        }
+    }
 }
 
 impl Gc {
@@ -158,21 +167,18 @@ impl Gc_ {
         self.sweep();
     }
 
-    fn gc_header<Sized? T>(value: &mut T) -> &mut GcHeader
-        where T: Traverseable<T> {
+    unsafe fn gc_header<Sized? T>(value: &mut T) -> &mut GcHeader {
         debug!("HEADER");
-        unsafe {
-            let p: *mut u8 = mem::transmute_copy(&value);
-            debug!("{} {}", mem::transmute::<*mut u8, uint>(p), mem::transmute::<*mut u8, uint>(p.offset(8)));
-            let header = p.offset(-(GcHeader::value_offset() as int));
-            mem::transmute(header)
-        }
+        let p: *mut u8 = mem::transmute_copy(&value);
+        debug!("{} {}", mem::transmute::<*mut u8, uint>(p), mem::transmute::<*mut u8, uint>(p.offset(8)));
+        let header = p.offset(-(GcHeader::value_offset() as int));
+        mem::transmute(header)
     }
 
     fn mark<Sized? T>(&mut self, value: &mut T)
         where T: Traverseable<T> {
         {
-            let header = Gc_::gc_header(value);
+            let header = unsafe { Gc_::gc_header(value) };
             if header.marked {
                 return
             }
@@ -278,7 +284,7 @@ mod tests {
     impl Copy for Value { }
 
     impl  Traverseable<Vec<Value>> for Vec<Value> {
-        fn traverse(&mut self, func: |&mut Vec<Value>|) {
+        fn traverse<F>(&mut self, mut func: F) where F: FnMut(&mut Vec<Value>) {
             for v in self.iter_mut() {
                 match *v {
                     Data(ref mut data) => func(&mut **data),
@@ -288,7 +294,7 @@ mod tests {
         }
     }
     impl  Traverseable<Vec<Value>> for Value {
-        fn traverse(&mut self, func: |&mut Vec<Value>|) {
+        fn traverse<F>(&mut self, mut func: F) where F: FnMut(&mut Vec<Value>) {
             match *self {
                 Data(ref mut data) => func(&mut **data),
                 _ => ()
@@ -323,7 +329,7 @@ mod tests {
     fn gc_header() {
         let gc: Gc = Gc::new();
         let mut ptr = gc.alloc(Def { elems: &[Int(1)] });
-        let header: *mut _ = &mut *Gc_::gc_header(&mut *ptr);
+        let header: *mut _ = unsafe { &mut *Gc_::gc_header(&mut *ptr) };
         let other: *mut _ = &mut **gc.gc.borrow_mut().values.as_mut().unwrap();
         assert_eq!(header, other);
     }

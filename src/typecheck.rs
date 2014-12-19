@@ -149,7 +149,7 @@ fn from_impl_type(constraints: &[ast::Constraints], decl: &mut ast::FunctionDecl
 
 fn from_declaration_with_self(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType> {
     let variables = decl.type_variables.as_slice();
-    let type_handler = |type_id: InternedStr| {
+    let type_handler = |&mut: type_id: InternedStr| {
         if type_id.as_slice() == "Self" {
             Some(Generic(0))
         }
@@ -164,7 +164,7 @@ fn from_declaration_with_self(decl: &ast::FunctionDeclaration<TcIdent>) -> Const
 }
 fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType> {
     let variables = decl.type_variables.as_slice();
-    let type_handler = |type_id| {
+    let type_handler = |&mut: type_id| {
         variables.iter()
             .enumerate()
             .find(|v| v.1.type_variable == type_id).map(|v| v.0)
@@ -172,7 +172,8 @@ fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcT
     };
     from_declaration_(type_handler, decl)
 }
-fn from_declaration_(mut type_handler: |InternedStr| -> Option<TcType>, decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType> {
+fn from_declaration_<F>(mut type_handler: F, decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType>
+    where F: FnMut(InternedStr) -> Option<TcType> {
     let args = decl.arguments.iter()
         .map(|f| from_generic_type(&mut type_handler, &f.typ))
         .collect();
@@ -191,7 +192,7 @@ fn from_declaration_(mut type_handler: |InternedStr| -> Option<TcType>, decl: &a
 }
 
 pub fn from_constrained_type(variables: &[ast::Constraints], typ: &ast::VMType) -> TcType {
-    let mut type_handler = |type_id| {
+    let mut type_handler = |&mut: type_id| {
         variables.iter()
             .enumerate()
             .find(|v| v.1.type_variable == type_id).map(|v| v.0)
@@ -199,7 +200,8 @@ pub fn from_constrained_type(variables: &[ast::Constraints], typ: &ast::VMType) 
     };
     from_generic_type(&mut type_handler, typ)
 }
-fn from_generic_type(type_handler: &mut |InternedStr| -> Option<TcType>, typ: &ast::VMType) -> TcType {
+fn from_generic_type<F>(type_handler: &mut F, typ: &ast::VMType) -> TcType
+    where F: FnMut(InternedStr) -> Option<TcType> {
     match *typ {
         ast::Type(ref type_id, ref args) => {
             match (*type_handler)(*type_id) {
@@ -1259,7 +1261,8 @@ mod tests {
     use parser::{Parser, ParseResult};
     use interner::tests::{get_local_interner, intern};
 
-    pub fn parse<T>(s: &str, f: |&mut Parser<TcIdent>|:'static -> ParseResult<T>) -> T {
+    pub fn parse<F, T>(s: &str, f: F) -> T
+        where F: FnOnce(&mut Parser<TcIdent>) -> ParseResult<T> {
         use std::io::BufReader;
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();

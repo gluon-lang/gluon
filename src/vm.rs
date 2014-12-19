@@ -104,20 +104,18 @@ pub enum Value<'a> {
 }
 
 impl <'a> Traverseable<Data_<'a>> for Data_<'a> {
-    fn traverse(&mut self, func: |&mut Data_<'a>|) {
+    fn traverse<F>(&mut self, func: F) where F: FnMut(&mut Data_<'a>) {
         self.fields.traverse(func);
     }
 }
 
-impl <'a> Traverseable<Data_<'a>> for [Value<'a>] {
-    fn traverse(&mut self, func: |&mut Data_<'a>|) {
-        for value in self.iter_mut() {
-            match *value {
-                Data(ref mut data) => func(&mut **data),
-                Closure(ref mut data) => func(&mut **data),
-                TraitObject(ref mut data) => func(&mut **data),
-                _ => ()
-            }
+impl <'a> Traverseable<Data_<'a>> for Value<'a> {
+    fn traverse<F>(&mut self, mut func: F) where F: FnMut(&mut Data_<'a>) {
+        match *self {
+            Data(ref mut data) => func(&mut **data),
+            Closure(ref mut data) => func(&mut **data),
+            TraitObject(ref mut data) => func(&mut **data),
+            _ => ()
         }
     }
 }
@@ -411,19 +409,21 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.values.slice_from_mut(self.offset)
     }
 
-    fn new_scope<E>(stack: RefMut<'b, Stack<'a>>
+    fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
             , args: uint
             , upvars: Option<GcPtr<Data_<'a>>>
-            , f: |StackFrame<'a, 'b>| -> Result<StackFrame<'a, 'b>, E>) -> Result<StackFrame<'a, 'b>, E> {
+            , f: F) -> Result<StackFrame<'a, 'b>, E> 
+        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
         let stack = StackFrame::frame(stack, args, upvars);
         let mut stack = try!(f(stack));
         stack.stack.frames.pop();
         Ok(stack)
     }
-    fn scope<E>(self
+    fn scope<E, F>(self
             , args: uint
             , new_upvars: Option<GcPtr<Data_<'a>>>
-            , f: |StackFrame<'a, 'b>| -> Result<StackFrame<'a, 'b>, E>) -> Result<StackFrame<'a, 'b>, E> {
+            , f: F) -> Result<StackFrame<'a, 'b>, E>
+        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
         let StackFrame { stack: s, offset, upvars } = self;
         let new_stack = StackFrame::frame(s, args, new_upvars);
         let mut new_stack = try!(f(new_stack));
@@ -473,7 +473,7 @@ impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
 }
 
 impl <'a, 'b> Traverseable<Data_<'a>> for Def<'a, 'b> {
-    fn traverse(&mut self, func: |&mut Data_<'a>|) {
+    fn traverse<F>(&mut self, func: F) where F: FnMut(&mut Data_<'a>) {
         self.elems.traverse(func);
     }
 }
@@ -897,14 +897,16 @@ impl <'a> VM<'a> {
 }
 
 #[inline]
-fn binop(stack: &mut StackFrame, f: |Value, Value| -> Value) {
+fn binop<'a, 'b, F>(stack: &mut StackFrame<'a, 'b>, f: F)
+    where F: FnOnce(Value<'a>, Value<'a>) -> Value<'a> {
     let r = stack.pop();
     let l = stack.pop();
     stack.push(f(l, r));
 }
 #[inline]
-fn binop_int(stack: &mut StackFrame, f: |int, int| -> int) {
-    binop(stack, |l, r| {
+fn binop_int<F>(stack: &mut StackFrame, f: F)
+    where F: FnOnce(int, int) -> int {
+    binop(stack, move |l, r| {
         match (l, r) {
             (Int(l), Int(r)) => Int(f(l, r)),
             (l, r) => panic!("{} `intOp` {}", l, r)
@@ -912,8 +914,9 @@ fn binop_int(stack: &mut StackFrame, f: |int, int| -> int) {
     })
 }
 #[inline]
-fn binop_float(stack: &mut StackFrame, f: |f64, f64| -> f64) {
-    binop(stack, |l, r| {
+fn binop_float<F>(stack: &mut StackFrame, f: F)
+    where F: FnOnce(f64, f64) -> f64 {
+    binop(stack, move |l, r| {
         match (l, r) {
             (Float(l), Float(r)) => Float(f(l, r)),
             (l, r) => panic!("{} `floatOp` {}", l, r)
