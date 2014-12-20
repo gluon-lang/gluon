@@ -1267,7 +1267,7 @@ mod tests {
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
-        let &(ref mut interner, ref gc) = &mut *interner;
+        let &(ref mut interner, ref mut gc) = &mut *interner;
         let mut parser = Parser::new(interner, gc, &mut buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
         f(&mut parser)
             .unwrap_or_else(|err| panic!(err))

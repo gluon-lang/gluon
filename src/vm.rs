@@ -103,20 +103,21 @@ pub enum Value<'a> {
     Userdata(Userdata_<Box<Any + 'static>>)
 }
 
-impl <'a> Traverseable<Data_<'a>> for Data_<'a> {
-    fn traverse<F>(&mut self, func: F) where F: FnMut(&mut Data_<'a>) {
-        self.fields.traverse(func);
+impl <'a> Traverseable for Data_<'a> {
+    fn traverse(&mut self, gc: &mut Gc) {
+        self.fields.traverse(gc);
     }
 }
 
-impl <'a> Traverseable<Data_<'a>> for Value<'a> {
-    fn traverse<F>(&mut self, mut func: F) where F: FnMut(&mut Data_<'a>) {
-        match *self {
-            Data(ref mut data) => func(&mut **data),
-            Closure(ref mut data) => func(&mut **data),
-            TraitObject(ref mut data) => func(&mut **data),
-            _ => ()
-        }
+impl <'a> Traverseable for Value<'a> {
+    fn traverse(&mut self, gc: &mut Gc) {
+        let mut ptr = match *self {
+            Data(ref mut data) => data.value,
+            Closure(ref mut data) => data.value,
+            TraitObject(ref mut data) => data.value,
+            _ => return
+        };
+        ptr.traverse(gc);
     }
 }
 
@@ -178,7 +179,7 @@ pub struct VM<'a> {
     typeids: FixedMap<TypeId, TcType>,
     interner: RefCell<Interner>,
     names: RefCell<HashMap<InternedStr, Named>>,
-    gc: Gc,
+    gc: RefCell<Gc>,
     //Since the vm will be retrieved often and the borrowing from a RefCell does not work
     //it needs to be in a unsafe cell
     pub stack: RefCell<Stack<'a>>
@@ -472,9 +473,9 @@ impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Traverseable<Data_<'a>> for Def<'a, 'b> {
-    fn traverse<F>(&mut self, func: F) where F: FnMut(&mut Data_<'a>) {
-        self.elems.traverse(func);
+impl <'a, 'b> Traverseable for Def<'a, 'b> {
+    fn traverse(&mut self, gc: &mut Gc) {
+        self.elems.traverse(gc);
     }
 }
 
@@ -488,7 +489,7 @@ impl <'a> VM<'a> {
             typeids: FixedMap::new(),
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
-            gc: Gc::new(),
+            gc: RefCell::new(Gc::new()),
             stack: RefCell::new(Stack::new())
         };
         let a = Generic(0);
@@ -613,7 +614,7 @@ impl <'a> VM<'a> {
     }
 
     pub fn intern(&self, s: &str) -> InternedStr {
-        self.interner.borrow_mut().intern(&self.gc, s)
+        self.interner.borrow_mut().intern(&mut *self.gc.borrow_mut(), s)
     }
 
     pub fn env<'b>(&'b self) -> VMEnv<'a, 'b> {
@@ -626,10 +627,10 @@ impl <'a> VM<'a> {
     }
 
     fn new_data(&self, tag: uint, fields: &mut [Value<'a>]) -> Value<'a> {
-        Data(DataStruct { value: self.gc.alloc(Def { tag: tag, elems: fields })})
+        Data(DataStruct { value: self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields })})
     }
     fn new_data_and_collect(&self, roots: &mut [Value<'a>], tag: uint, fields: &mut [Value<'a>]) -> DataStruct<'a> {
-        DataStruct { value: self.gc.alloc_and_collect(roots, Def { tag: tag, elems: fields })}
+        DataStruct { value: self.gc.borrow_mut().alloc_and_collect(roots, Def { tag: tag, elems: fields })}
     }
 
     pub fn call_function<'b, 'c>(&self, args: uint, upvars: Option<GcPtr<Data_<'a>>>, function: &Global<'a>) -> VMResult<Value<'a>>  {
@@ -955,7 +956,8 @@ macro_rules! tryf(
 
 pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
-    let mut parser = Parser::new(&mut *interner, &vm.gc, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
+        let mut gc = vm.gc.borrow_mut();
+    let mut parser = Parser::new(&mut *interner, &mut *gc, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
     parser.expression().map_err(|err| format!("{}", err))
 }
 
@@ -964,7 +966,8 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::St
 
     let mut module = {
         let mut cell = vm.interner.borrow_mut();
-        let mut parser = Parser::new(&mut*cell, &vm.gc, buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
+        let mut gc = vm.gc.borrow_mut();
+        let mut parser = Parser::new(&mut*cell, &mut *gc, buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
         tryf!(parser.module())
     };
     let (type_infos, functions) = {

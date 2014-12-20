@@ -138,7 +138,7 @@ pub struct Parser<'a, 'b, PString> {
 }
 
 impl <'a, 'b, PString> Parser<'a, 'b, PString> {
-    pub fn new<F>(interner: &'a mut Interner, gc: &'a Gc, input: &'b mut Buffer, make_id: F) -> Parser<'a, 'b, PString> 
+    pub fn new<F>(interner: &'a mut Interner, gc: &'a mut Gc, input: &'b mut Buffer, make_id: F) -> Parser<'a, 'b, PString> 
         where F: FnMut(InternedStr) -> PString + 'static {
         Parser { lexer: Lexer::new(interner, gc, input), make_id_f: box make_id }
     }
@@ -679,7 +679,7 @@ pub mod tests {
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
-        let &(ref mut interner, ref gc) = &mut *interner;
+        let &(ref mut interner, ref mut gc) = &mut *interner;
         let mut parser = Parser::new(interner, gc, &mut buffer, |s| s);
         let x = f(&mut parser)
             .unwrap_or_else(|err| panic!(err));

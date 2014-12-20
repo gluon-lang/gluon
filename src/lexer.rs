@@ -86,12 +86,12 @@ pub struct Lexer<'a, 'b> {
     tokens: RingBuf<Token>,
     offset: uint,
     interner: &'a mut Interner,
-    gc: &'a Gc
+    gc: &'a mut Gc
 }
 
 impl <'a, 'b> Lexer<'a, 'b> {
 
-    pub fn new(interner: &'a mut Interner, gc: &'a Gc, s: &'b mut Buffer) -> Lexer<'a, 'b> {
+    pub fn new(interner: &'a mut Interner, gc: &'a mut Gc, s: &'b mut Buffer) -> Lexer<'a, 'b> {
         Lexer {
             peek_c: Some(s.read_char().unwrap()),
             input: s,
@@ -362,9 +362,9 @@ mod tests {
     #[test]
     fn lex() {
         let mut buffer = buffer("fn main() { 1 + 2 }");
-        let gc = Gc::new();
+        let mut gc = Gc::new();
         let mut interner = Interner::new();
-        let mut lexer = lexer::Lexer::new(&mut interner, &gc, &mut buffer);
+        let mut lexer = lexer::Lexer::new(&mut interner, &mut gc, &mut buffer);
         let plus = lexer.intern("+");
         let main = lexer.intern("main");
         assert_eq!(lexer.next(), &TFn);

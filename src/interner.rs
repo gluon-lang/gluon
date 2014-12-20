@@ -39,7 +39,7 @@ impl Interner {
         Interner { indexes: HashMap::new() }
     }
 
-    pub fn intern(&mut self, gc: &Gc, s: &str) -> GcPtr<str> {
+    pub fn intern(&mut self, gc: &mut Gc, s: &str) -> GcPtr<str> {
         match self.indexes.get(s) {
             Some(interned_str) => {
                 return *interned_str
@@ -80,7 +80,7 @@ pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
 pub fn intern(s: &str) -> InternedStr {
     let i = get_local_interner();
     let mut i = i.borrow_mut();
-    let &(ref mut i, ref gc) = &mut *i;
+    let &(ref mut i, ref mut gc) = &mut *i;
     i.intern(gc, s)
 }
 
