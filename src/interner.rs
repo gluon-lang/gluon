@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::mem;
 
-use gc::{GcPtr, Gc, DataDef};
+use gc::{GcPtr, Gc, DataDef, Traverseable};
 
 pub type InternedStr = GcPtr<str>;
 
@@ -29,6 +29,14 @@ impl <'a> DataDef<str> for StrDef<'a> {
             let x = Slice { data: &*bytes, len: self.0.len() };
             let x: &[u8] = mem::transmute(x);
             mem::transmute(::std::str::from_utf8_unchecked(x))
+        }
+    }
+}
+
+impl Traverseable for Interner {
+    fn traverse(&mut self, gc: &mut Gc) {
+        for (_, v) in self.indexes.iter_mut() {
+            v.traverse(gc);
         }
     }
 }

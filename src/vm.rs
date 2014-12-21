@@ -479,6 +479,18 @@ impl <'a, 'b> Traverseable for Def<'a, 'b> {
     }
 }
 
+struct Roots<'a: 'b, 'b> {
+    stack: &'b mut [Value<'a>],
+    interner: &'b mut Interner
+}
+impl <'a, 'b> Traverseable for Roots<'a, 'b> {
+    fn traverse(&mut self, gc: &mut Gc) {
+        self.stack.traverse(gc);
+        //Also need to check the interned string table
+        self.interner.traverse(gc);
+    }
+}
+
 impl <'a> VM<'a> {
     
     pub fn new() -> VM<'a> {
@@ -626,11 +638,21 @@ impl <'a> VM<'a> {
         }
     }
 
+    pub fn collect(&self) {
+        let mut interner = self.interner.borrow_mut();
+        let mut stack = self.stack.borrow_mut();
+        let mut roots = Roots { stack: &mut *stack.values, interner: &mut *interner };
+        self.gc.borrow_mut().collect(&mut roots);
+    }
+
     fn new_data(&self, tag: uint, fields: &mut [Value<'a>]) -> Value<'a> {
         Data(DataStruct { value: self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields })})
     }
-    fn new_data_and_collect(&self, roots: &mut [Value<'a>], tag: uint, fields: &mut [Value<'a>]) -> DataStruct<'a> {
-        DataStruct { value: self.gc.borrow_mut().alloc_and_collect(roots, Def { tag: tag, elems: fields })}
+    fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: uint, fields: &mut [Value<'a>]) -> DataStruct<'a> {
+        let mut interner = self.interner.borrow_mut();
+        let mut roots = Roots { stack: stack, interner: &mut *interner };
+        let mut gc = self.gc.borrow_mut();
+        DataStruct { value: gc.alloc_and_collect(&mut roots, Def { tag: tag, elems: fields }) }
     }
 
     pub fn call_function<'b, 'c>(&self, args: uint, upvars: Option<GcPtr<Data_<'a>>>, function: &Global<'a>) -> VMResult<Value<'a>>  {
@@ -1482,6 +1504,41 @@ fn mul(x: int, y: int) -> int {
         let value = run_function(&vm, "test")
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(150));
+    }
+
+    #[test]
+    fn interned_strings_are_not_collected() {
+        let mut vm = VM::new();
+        {
+            let text = 
+r"
+enum IntOrFloat {
+    I(int),
+    F(float)
+}
+";
+            let mut buffer = BufReader::new(text.as_bytes());
+            load_script(&mut vm, &mut buffer)
+                .unwrap_or_else(|e| panic!("{}", e));
+        }
+        vm.collect();
+        {
+            let text = 
+r"
+fn main() -> int {
+    match F(2.0) {
+        I(x) => { x }
+        F(x) => { 1 }
+    }
+}
+";
+            let mut buffer = BufReader::new(text.as_bytes());
+            load_script(&mut vm, &mut buffer)
+                .unwrap_or_else(|e| panic!("{}", e));
+        }
+        let value = run_function(&vm, "main")
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(1));
     }
 }
 

@@ -126,8 +126,13 @@ impl <S: ::std::hash::Writer, Sized? T: ::std::hash::Hash<S>> ::std::hash::Hash<
 pub trait Traverseable for Sized? {
     fn traverse(&mut self, func: &mut Gc);
 }
+
 impl Traverseable for () {
     fn traverse(&mut self, _: &mut Gc) {}
+}
+
+impl Traverseable for str {
+    fn traverse(&mut self, _: &mut Gc) { }
 }
 
 impl <U> Traverseable for [U]
