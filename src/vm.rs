@@ -455,7 +455,7 @@ impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
         use std::mem::size_of;
         size_of::<uint>() + size_of::<Value<'a>>() * self.elems.len()
     }
-    fn initialize(&self, result: *mut Data_<'a>) {
+    fn initialize(self, result: *mut Data_<'a>) {
         let result = unsafe { &mut *result };
         result.tag = self.tag;
         for (field, value) in result.fields.iter_mut().zip(self.elems.iter()) {

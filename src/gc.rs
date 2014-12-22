@@ -12,7 +12,7 @@ pub struct Gc {
 
 pub trait DataDef<Sized? Result> {
     fn size(&self) -> uint;
-    fn initialize(&self, ptr: *mut Result);
+    fn initialize(self, ptr: *mut Result);
     fn make_ptr(&self, ptr: *mut ()) -> *mut Result;
 }
 
@@ -290,7 +290,7 @@ mod tests {
             use std::mem::size_of;
             self.elems.len() * size_of::<Value>()
         }
-        fn initialize(&self, result: *mut Vec<Value>) {
+        fn initialize(self, result: *mut Vec<Value>) {
             let vec = self.elems.iter().map(|x| *x).collect();
             unsafe {
                 ::std::ptr::write(result, vec);

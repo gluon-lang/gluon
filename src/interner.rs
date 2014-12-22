@@ -17,7 +17,7 @@ impl <'a> DataDef<str> for StrDef<'a> {
     fn size(&self) -> uint {
         self.0.len()
     }
-    fn initialize(&self, ptr: *mut str) {
+    fn initialize(self, ptr: *mut str) {
         let ptr: &mut [u8] = unsafe { mem::transmute::<&[u8], &mut [u8]>((&*ptr).as_bytes()) };
         assert_eq!(self.0.len(), ptr.len());
         ::std::slice::bytes::copy_memory(ptr, self.0.as_bytes());
