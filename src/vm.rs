@@ -141,7 +141,7 @@ impl <'a> fmt::Show for Value<'a> {
     }
 }
 
-pub type ExternFunction<'a> = for<'b, 'c> fn(&VM<'a>);
+pub type ExternFunction<'a> = Box<Fn(&VM<'a>) + 'static>;
 
 #[deriving(Show)]
 pub struct Global<'a> {
@@ -506,8 +506,8 @@ impl <'a> VM<'a> {
         };
         let a = Generic(0);
         let array_a = ArrayType(box a.clone());
-        let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), array_length);
-        let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), string_append);
+        let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
+        let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
         vm
     }
 
@@ -662,12 +662,12 @@ impl <'a> VM<'a> {
     }
     fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Global<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         match function.value {
-            Extern(func) => {
+            Extern(ref func) => {
                 //Make sure that the stack is not borrowed during the external function call
                 //Necessary since we do not know what will happen during the function call
                 let StackFrame { stack, offset, upvars } = stack;
                 drop(stack);
-                func(self);
+                func.call((self,));
                 Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
             }
             Bytecode(ref instructions) => {
@@ -1496,7 +1496,7 @@ fn mul(x: int, y: int) -> int {
             }
         }
         let mut vm = VM::new();
-        vm.extern_function("rust_fn", vec![INT_TYPE.clone()], INT_TYPE.clone(), rust_fn)
+        vm.extern_function("rust_fn", vec![INT_TYPE.clone()], INT_TYPE.clone(), box rust_fn)
             .unwrap_or_else(|e| panic!("{}", e));
         let mut buffer = BufReader::new(s.as_bytes());
         load_script(&mut vm, &mut buffer)

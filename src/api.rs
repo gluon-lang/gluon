@@ -1,5 +1,5 @@
 #![macro_escape]
-use vm::{VM, Value, Int, Float, Function, Userdata, Userdata_, StackFrame};
+use vm::{VM, VMResult, Value, Int, Float, Function, Userdata, Userdata_, StackFrame};
 use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
 use std::any::{Any, AnyRefExt};
@@ -111,11 +111,11 @@ impl <'a, T: 'static> VMValue<'a> for *mut T {
     }
 }
 
-fn vm_type<'a, 'b, T: VMValue<'b>>(vm: &'a VM) -> &'a TcType {
+fn vm_type<'a, T: VMType>(vm: &'a VM) -> &'a TcType {
     VMType::vm_type(None::<T>, vm)
 }
 
-fn make_type<'a, T: VMValue<'a>>(vm: &VM) -> TcType {
+fn make_type<T: VMType>(vm: &VM) -> TcType {
     VMType::make_type(None::<T>, vm)
 }
 
@@ -220,8 +220,9 @@ pub fn get_function<'a, 'b, T: Get<'a, 'b>>(vm: &'a VM<'b>, name: &str) -> Optio
     Get::get_function(vm, name)
 }
 
+
 pub trait VMFunction<'a> {
-    fn unpack_and_call(vm: &VM<'a>, f: Self);
+    fn unpack_and_call(vm: &VM<'a>, f: &Self);
 }
 macro_rules! count {
     () => { 0 };
@@ -244,7 +245,7 @@ impl <'a, $($args: VMValue<'a>,)* R: VMValue<'a>> VMType for fn ($($args),*) -> 
 
 impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($args),*) -> R {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
-    fn unpack_and_call(vm: &VM<'a>, f: fn ($($args),*) -> R) {
+    fn unpack_and_call(vm: &VM<'a>, f: &fn ($($args),*) -> R) {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0u;
@@ -253,13 +254,39 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($arg
             i += 1;
             x
         });*;
-        let r = f($($args),*);
+        let r = (*f)($($args),*);
+        r.push(&mut stack);
+    }
+}
+impl <'a, $($args: VMType,)* R: VMType> VMType for Box<Fn($($args),*) -> R + 'static> {
+    #[allow(non_snake_case)]
+    fn vm_type<'r>(_: Option<Box<Fn($($args),*) -> R>>, vm: &'r VM) -> &'r TcType {
+        vm.get_type::<Box<Fn($($args),*) -> R>>()
+    }
+    #[allow(non_snake_case)]
+    fn make_type(_: Option<Box<Fn($($args),*) -> R>>, vm: &VM) -> TcType {
+        let args = vec![$(make_type::<$args>(vm)),*];
+        FunctionType(args, box make_type::<R>(vm))
+    }
+}
+impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for Box<Fn($($args),*) -> R + 'static> {
+    #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
+    fn unpack_and_call(vm: &VM<'a>, f: &Box<Fn($($args),*) -> R>) {
+        let n_args = count!($($args),*);
+        let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
+        let mut i = 0u;
+        $(let $args = {
+            let x = VMValue::from_value(stack[i].clone()).unwrap();
+            i += 1;
+            x
+        });*;
+        let r = f.call(($($args,)*));
         r.push(&mut stack);
     }
 }
     )
 )
-pub fn unpack_and_call<'a, F: VMFunction<'a>>(vm: &VM<'a>, f: F) {
+pub fn unpack_and_call<'a, F: VMFunction<'a>>(vm: &VM<'a>, f: &F) {
     VMFunction::unpack_and_call(vm, f)
 }
 
@@ -282,23 +309,19 @@ macro_rules! vm_function(
     })
 )
 
-#[macro_export]
-macro_rules! define_function(
-    ($vm: expr, $name: expr, $func: expr) => ({
-        let vm = $vm;
-        let (args, ret) = match VMType::make_type(Some($func), vm) {
-            FunctionType(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
-            _ => panic!()
-        };
-        vm.extern_function($name, args, ret, vm_function!($func))
-    })
-)
+
+fn define_function<'a, F: VMFunction<'a> + VMType + 'static>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()> {
+    let (args, ret) = match VMType::make_type(None::<F>, vm) {
+        FunctionType(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
+        _ => panic!()
+    };
+    vm.extern_function(name, args, ret, box move |vm| unpack_and_call(vm, &f))
+}
 
 #[cfg(test)]
 mod tests {
-    use super::{Get, Callable, VMType, unpack_and_call};
+    use super::{Get, Callable, define_function};
 
-    use typecheck::FunctionType;
     use vm::{VM, load_script};
     use std::io::BufReader;
 
@@ -348,7 +371,7 @@ fn id(x: Test) -> Test {
         }
         vm.register_type::<Test>("Test")
             .unwrap_or_else(|_| panic!("Could not add type"));
-        (define_function!(&mut vm, "test", test))
+        define_function(&vm, "test", test)
             .unwrap_or_else(|err| panic!("{}", err));
         let mut buffer = BufReader::new(s.as_bytes());
         load_script(&mut vm, &mut buffer)
@@ -366,5 +389,16 @@ fn id(x: Test) -> Test {
         let result = f.call(&mut test).unwrap();
         assert!(result);
         assert_eq!(test.x, 123 * 2);
+    }
+    #[test]
+    fn function_object() {
+        let vm = VM::new();
+        define_function(&vm, "mul", (box |&:x:int, y:int| x * y) as Box<Fn(int, int) -> int>)
+            .unwrap_or_else(|err| panic!("{}", err));
+
+        let mut f: Callable<(int, int), int> = Get::get_function(&vm, "mul")
+            .expect("No function id");
+        let result = f.call2(2, 3).unwrap();
+        assert_eq!(result, 6);
     }
 }
