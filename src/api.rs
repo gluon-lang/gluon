@@ -329,10 +329,10 @@ mod tests {
     fn call_function() {
         let s =
 r"
-fn add10(x: int) -> int {
+fn add10(x: Int) -> Int {
     x + 10
 }
-fn mul(x: float, y: float) -> float {
+fn mul(x: Float, y: Float) -> Float {
     x * y
 }
 ";

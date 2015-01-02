@@ -526,7 +526,7 @@ impl <'a> Typecheck<'a> {
 
     
     fn typecheck_function(&mut self, function: &mut ast::Function<TcIdent>) {
-        debug!("Typecheck function {}", function.declaration.name.id());
+        debug!("Typecheck function {} :: {}", function.declaration.name.id(), function.declaration.name.typ);
         self.stack.clear();
         self.subs.clear();
         let return_type = match function.declaration.name.typ {
@@ -1270,7 +1270,7 @@ mod tests {
         let &(ref mut interner, ref mut gc) = &mut *interner;
         let mut parser = Parser::new(interner, gc, &mut buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
         f(&mut parser)
-            .unwrap_or_else(|err| panic!(err))
+            .unwrap_or_else(|err| panic!("{}", err))
     }
     #[test]
     fn while_() {
@@ -1278,7 +1278,7 @@ mod tests {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!(err))
+            .unwrap_or_else(|err| panic!("{}", err))
 
     }
     #[test]
@@ -1286,10 +1286,10 @@ mod tests {
         let text = 
 r"
 enum AB {
-    A(int),
-    B(float)
+    A(Int),
+    B(Float)
 }
-fn main() -> int {
+fn main() -> Int {
     match A(1) {
         A(x) => { x }
         B(x) => { 0 }
@@ -1306,8 +1306,8 @@ fn main() -> int {
         let text = 
 r"
 struct Vec {
-    x: int,
-    y: int
+    x: Int,
+    y: Int
 }
 
 trait Add {
@@ -1336,8 +1336,8 @@ fn test(v: Vec) -> Vec {
         let text = 
 r"
 struct Vec {
-    x: int,
-    y: int
+    x: Int,
+    y: Int
 }
 
 trait Add {
@@ -1345,7 +1345,7 @@ trait Add {
 }
 
 impl Add for Vec {
-    fn add(l: Vec, r: Vec) -> int {
+    fn add(l: Vec, r: Vec) -> Int {
         2
     }
 }
@@ -1359,11 +1359,11 @@ impl Add for Vec {
     fn function_type() {
         let text = 
 r"
-fn test(x: int) -> float {
+fn test(x: Int) -> Float {
     1.0
 }
 
-fn higher_order(x: int, f: fn (int) -> float) -> float {
+fn higher_order(x: Int, f: fn (Int) -> Float) -> Float {
     f(x)
 }
 
@@ -1380,7 +1380,7 @@ fn test2() {
     fn array_type() {
         let text = 
 r"
-fn test(x: int) -> [int] {
+fn test(x: Int) -> [Int] {
     [1,2,x]
 }
 ";
@@ -1393,7 +1393,7 @@ fn test(x: int) -> [int] {
     fn array_unify() {
         let text = 
 r"
-fn test() -> [int] {
+fn test() -> [Int] {
     []
 }
 ";
@@ -1406,11 +1406,11 @@ fn test() -> [int] {
     fn lambda() {
         let text = 
 r"
-fn main() -> int {
+fn main() -> Int {
     let f = adder(2);
     f(3)
 }
-fn adder(x: int) -> fn (int) -> int {
+fn adder(x: Int) -> fn (Int) -> Int {
     \y -> x + y
 }
 ";
@@ -1423,11 +1423,11 @@ fn adder(x: int) -> fn (int) -> int {
     fn generic_function() {
         let text = 
 r"
-fn main() -> int {
+fn main() -> Int {
     let x = 1;
     id(x)
 }
-fn id<T>(x: T) -> T {
+fn id(x: a) -> a {
     x
 }
 ";
@@ -1440,12 +1440,12 @@ fn id<T>(x: T) -> T {
     fn generic_function_map() {
         let text = 
 r"
-fn main() -> float {
+fn main() -> Float {
     let xs = [1,2,3,4];
     transform(xs, \x -> []);
     transform(1, \x -> 1.0)
 }
-fn transform<A, B>(x: A, f: fn (A) -> B) -> B {
+fn transform(x: a, f: fn (a) -> b) -> b {
     f(x)
 }
 ";
@@ -1464,7 +1464,7 @@ fn transform<A, B>(x: A, f: fn (A) -> B) -> B {
     fn specialized_generic_function_error() {
         let text = 
 r"
-fn id<T>(x: T) -> T {
+fn id(x: a) -> a {
     2
 }
 ";
@@ -1477,11 +1477,11 @@ fn id<T>(x: T) -> T {
     fn unify_parameterized_types() {
         let text = 
 r"
-enum Option<T> {
-    Some(T),
+enum Option<a> {
+    Some(a),
     None()
 }
-fn is_positive(x: float) -> Option<float> {
+fn is_positive(x: Float) -> Option<Float> {
     if x < 0.0 {
         None()
     }
@@ -1511,11 +1511,11 @@ fn is_positive(x: float) -> Option<float> {
     fn paramter_mismatch() {
         let text = 
 r"
-enum Option<T> {
-    Some(T),
+enum Option<a> {
+    Some(a),
     None()
 }
-fn test(x: float) -> Option<int> {
+fn test(x: Float) -> Option<Int> {
     if x < 0.0 {
         None()
     }
@@ -1536,19 +1536,19 @@ fn test(x: float) -> Option<int> {
         let text = 
 r"
 trait Eq {
-    fn eq(l: Self, r: Self) -> bool;
+    fn eq(l: Self, r: Self) -> Bool;
 }
-enum Option<T> {
-    Some(T),
+enum Option<a> {
+    Some(a),
     None()
 }
-impl Eq for int {
-    fn eq(l: int, r: int) -> bool {
+impl Eq for Int {
+    fn eq(l: Int, r: Int) -> Bool {
         l == r
     }
 }
-impl <T:Eq> Eq for Option<T> {
-    fn eq(l: Option<T>, r: Option<T>) -> bool {
+impl <a:Eq> Eq for Option<a> {
+    fn eq(l: Option<a>, r: Option<a>) -> Bool {
         match l {
             Some(l_val) => {
                 match r {
@@ -1565,7 +1565,7 @@ impl <T:Eq> Eq for Option<T> {
         }
     }
 }
-fn test() -> bool {
+fn test() -> Bool {
     eq(Some(2), None())
 }
 ";
@@ -1593,18 +1593,18 @@ fn test() -> bool {
         let text = 
 r"
 trait Eq {
-    fn eq(l: Self, r: Self) -> bool;
+    fn eq(l: Self, r: Self) -> Bool;
 }
-enum Option<T> {
-    Some(T),
+enum Option<a> {
+    Some(a),
     None()
 }
-impl <T:Eq> Eq for Option<T> {
-    fn eq(l: Option<T>, r: Option<T>) -> bool {
+impl <a:Eq> Eq for Option<a> {
+    fn eq(l: Option<a>, r: Option<a>) -> Bool {
         false
     }
 }
-fn test() -> bool {
+fn test() -> Bool {
     eq(Some(2), None())
 }
 ";
@@ -1618,7 +1618,7 @@ fn test() -> bool {
     fn and_or() {
         let text = 
 r"
-fn test(x: float) -> bool {
+fn test(x: Float) -> Bool {
     x < 0.0 && true || x > 1.0
 }
 ";
@@ -1631,7 +1631,7 @@ fn test(x: float) -> bool {
     fn and_type_error() {
         let text = 
 r"
-fn test() -> bool {
+fn test() -> Bool {
     1 && true
 }
 ";

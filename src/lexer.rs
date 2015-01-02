@@ -25,7 +25,8 @@ pub enum Token {
     TEnum,
     TTrait,
     TImpl,
-    TIdentifier(InternedStr),
+    TVariable(InternedStr),
+    TConstructor(InternedStr),
     TOpenBrace,
     TCloseBrace,
     TOpenParen,
@@ -251,7 +252,15 @@ impl <'a, 'b> Lexer<'a, 'b> {
             "let" => TLet,
             "true" => TTrue,
             "false" => TFalse,
-            _ => TIdentifier(self.intern_current()),
+            _ => {
+                let s = self.intern_current();
+                if s.char_at(0).is_uppercase() {
+                    TConstructor(s)
+                }
+                else {
+                    TVariable(s)
+                }
+            }
         }
     }
     
@@ -368,7 +377,7 @@ mod tests {
         let plus = lexer.intern("+");
         let main = lexer.intern("main");
         assert_eq!(lexer.next(), &TFn);
-        assert_eq!(lexer.next(), &TIdentifier(main));
+        assert_eq!(lexer.next(), &TVariable(main));
         assert_eq!(lexer.next(), &TOpenParen);
         assert_eq!(lexer.next(), &TCloseParen);
         assert_eq!(lexer.next(), &TOpenBrace);

@@ -198,10 +198,10 @@ pub static UNIT_TYPE: VMType = BuiltinType(UnitType);
 
 pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
     let t = match x.as_slice() {
-        "int" => INT_TYPE.clone(),
-        "float" => FLOAT_TYPE.clone(),
-        "string" => STRING_TYPE.clone(),
-        "bool" => BOOL_TYPE.clone(),
+        "Int" => INT_TYPE.clone(),
+        "Float" => FLOAT_TYPE.clone(),
+        "String" => STRING_TYPE.clone(),
+        "Bool" => BOOL_TYPE.clone(),
         _ => return None
     };
     Some(t)

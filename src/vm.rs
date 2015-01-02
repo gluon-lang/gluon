@@ -1036,7 +1036,7 @@ mod tests {
     fn stack_for_block() {
         let text =
 r"
-fn main() -> int {
+fn main() -> Int {
     10 + 2;
     let y = {
         let a = 1000;
@@ -1060,15 +1060,15 @@ fn main() -> int {
     fn unpack_enum() {
         let text =
 r"
-fn main() -> int {
+fn main() -> Int {
     match A(8) {
         A(x) => { x }
         B(y) => { 0 }
     }
 }
 enum AB {
-    A(int),
-    B(float)
+    A(Int),
+    B(Float)
 }
 ";
         let mut vm = VM::new();
@@ -1087,8 +1087,8 @@ fn main() -> Vec {
     x
 }
 struct Vec {
-    x: int,
-    y: int
+    x: Int,
+    y: Int
 }
 
 trait Add {
@@ -1100,8 +1100,8 @@ impl Add for Vec {
         Vec(l.x + r.x, l.y + r.y)
     }
 }
-impl Add for int {
-    fn add(l: int, r: int) -> int {
+impl Add for Int {
+    fn add(l: Int, r: Int) -> Int {
         l + r
     }
 }
@@ -1120,14 +1120,14 @@ impl Add for int {
     fn pass_function_value() {
         let text = 
 r"
-fn main() -> int {
+fn main() -> Int {
     test(lazy)
 }
-fn lazy() -> int {
+fn lazy() -> Int {
     42
 }
 
-fn test(f: fn () -> int) -> int {
+fn test(f: fn () -> Int) -> Int {
     f() + 10
 }
 ";
@@ -1140,7 +1140,7 @@ fn test(f: fn () -> int) -> int {
     fn arrays() {
         let text = 
 r"
-fn main() -> [int] {
+fn main() -> [Int] {
     let x = [10, 20, 30];
     [1,2, x[2] + 3]
 }
@@ -1159,7 +1159,7 @@ fn main() -> [int] {
     fn array_assign() {
         let text = 
 r"
-fn main() -> int {
+fn main() -> Int {
     let x = [10, 20, 30];
     x[2] = x[2] + 10;
     x[2]
@@ -1174,7 +1174,7 @@ fn main() -> int {
     fn lambda() {
         let text = 
 r"
-fn main() -> int {
+fn main() -> Int {
     let y = 100;
     let f = \x -> {
         y = y + x;
@@ -1195,19 +1195,19 @@ fn main() -> int {
 r"
 
 trait Collection {
-    fn len(x: Self) -> int;
+    fn len(x: Self) -> Int;
 }
-impl Collection for [int] {
-    fn len(x: [int]) -> int {
+impl Collection for [Int] {
+    fn len(x: [Int]) -> Int {
         array_length(x)
     }
 }
 
-fn test(c: Collection) -> int {
+fn test(c: Collection) -> Int {
     len(c)
 }
 
-fn main() -> int {
+fn main() -> Int {
     test([0, 0, 0])
 }
 ";
@@ -1221,7 +1221,7 @@ fn main() -> int {
     fn upvar_index() {
         let text = 
 r"
-fn main() -> int {
+fn main() -> Int {
     let x = 100;
     let f = \y -> x + y;
     f(10)
@@ -1238,19 +1238,19 @@ fn main() -> int {
         let text = 
 r"
 trait Eq {
-    fn eq(l: Self, r: Self) -> bool;
+    fn eq(l: Self, r: Self) -> Bool;
 }
-enum Option<T> {
-    Some(T),
+enum Option<a> {
+    Some(a),
     None()
 }
-impl Eq for int {
-    fn eq(l: int, r: int) -> bool {
+impl Eq for Int {
+    fn eq(l: Int, r: Int) -> Bool {
         l == r
     }
 }
-impl <T:Eq> Eq for Option<T> {
-    fn eq(l: Option<T>, r: Option<T>) -> bool {
+impl <a:Eq> Eq for Option<a> {
+    fn eq(l: Option<a>, r: Option<a>) -> Bool {
         match l {
             Some(l_val) => {
                 match r {
@@ -1268,8 +1268,8 @@ impl <T:Eq> Eq for Option<T> {
     }
 }
 struct Pair {
-    x: bool,
-    y: bool
+    x: Bool,
+    y: Bool
 }
 fn main() -> Pair {
     let x = eq(Some(2), None());
@@ -1292,24 +1292,24 @@ fn main() -> Pair {
         let text = 
 r"
 trait Eq {
-    fn eq(l: Self, r: Self) -> bool;
+    fn eq(l: Self, r: Self) -> Bool;
 }
-enum Option<T> {
-    Some(T),
+enum Option<a> {
+    Some(a),
     None()
 }
-impl Eq for int {
-    fn eq(l: int, r: int) -> bool {
+impl Eq for Int {
+    fn eq(l: Int, r: Int) -> Bool {
         l == r
     }
 }
-impl Eq for float {
-    fn eq(l: float, r: float) -> bool {
+impl Eq for Float {
+    fn eq(l: Float, r: Float) -> Bool {
         l == r
     }
 }
-impl <T:Eq> Eq for Option<T> {
-    fn eq(l: Option<T>, r: Option<T>) -> bool {
+impl <a:Eq> Eq for Option<a> {
+    fn eq(l: Option<a>, r: Option<a>) -> Bool {
         match l {
             Some(l_val) => {
                 match r {
@@ -1326,7 +1326,7 @@ impl <T:Eq> Eq for Option<T> {
         }
     }
 }
-fn test<T: Eq, U: Eq>(opt: Option<T>, x: U, y: U) -> bool {
+fn test<a: Eq, b: Eq>(opt: Option<a>, x: b, y: b) -> Bool {
     if eq(x, y) {
         eq(opt, None())
     }
@@ -1335,8 +1335,8 @@ fn test<T: Eq, U: Eq>(opt: Option<T>, x: U, y: U) -> bool {
     }
 }
 struct Pair {
-    x: bool,
-    y: bool
+    x: Bool,
+    y: Bool
 }
 fn main() -> Pair {
     let a = None();
@@ -1360,7 +1360,7 @@ fn main() -> Pair {
     #[test]
     fn strings() {
         let text = 
-r#"fn main() -> string {
+r#"fn main() -> String {
     string_append("Hello", " World")
 }"#;
         let mut vm = VM::new();
@@ -1376,15 +1376,15 @@ r#"fn main() -> string {
             let text = 
 r"
 trait Eq {
-    fn eq(l: Self, r: Self) -> bool;
+    fn eq(l: Self, r: Self) -> Bool;
 }
-impl Eq for int {
-    fn eq(l: int, r: int) -> bool {
+impl Eq for Int {
+    fn eq(l: Int, r: Int) -> Bool {
         l == r
     }
 }
-impl Eq for float {
-    fn eq(l: float, r: float) -> bool {
+impl Eq for Float {
+    fn eq(l: Float, r: Float) -> Bool {
         l == r
     }
 }
@@ -1396,10 +1396,10 @@ impl Eq for float {
         {
             let text = 
 r"
-fn test<T: Eq>(x: T, y: T) -> bool {
+fn test<a: Eq>(x: a, y: a) -> Bool {
     eq(x, y)
 }
-fn main() -> bool {
+fn main() -> Bool {
     if eq(1.0, 1.0) {
         test(13, 13)
     }
@@ -1424,8 +1424,8 @@ fn main() -> bool {
             let text = 
 r"
 enum IntOrFloat {
-    I(int),
-    F(float)
+    I(Int),
+    F(Float)
 }
 ";
             let mut buffer = BufReader::new(text.as_bytes());
@@ -1435,7 +1435,7 @@ enum IntOrFloat {
         {
             let text = 
 r"
-fn main() -> int {
+fn main() -> Int {
     match F(2.0) {
         I(x) => { x }
         F(x) => { 1 }
@@ -1455,7 +1455,7 @@ fn main() -> int {
     fn and_operator() {
         let text = 
 r#"
-fn main() -> int {
+fn main() -> Int {
     let x = 0;
     if false && { x = 100; true } {
     }
@@ -1473,10 +1473,10 @@ fn main() -> int {
     fn recursive_mixed_calls() {
         let s =
 r"
-fn test() -> int {
+fn test() -> Int {
     rust_fn(10)
 }
-fn mul(x: int, y: int) -> int {
+fn mul(x: Int, y: Int) -> Int {
     x * y
 }
 ";
@@ -1513,8 +1513,8 @@ fn mul(x: int, y: int) -> int {
             let text = 
 r"
 enum IntOrFloat {
-    I(int),
-    F(float)
+    I(Int),
+    F(Float)
 }
 ";
             let mut buffer = BufReader::new(text.as_bytes());
@@ -1525,7 +1525,7 @@ enum IntOrFloat {
         {
             let text = 
 r"
-fn main() -> int {
+fn main() -> Int {
     match F(2.0) {
         I(x) => { x }
         F(x) => { 1 }
