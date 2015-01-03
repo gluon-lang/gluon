@@ -1,34 +1,52 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::mem;
+use std::ops::Deref;
+use std::borrow::BorrowFrom;
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
 
-pub type InternedStr = GcPtr<str>;
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct InternedStr(GcPtr<[u8]>);
+
+unsafe impl Sync for InternedStr { }
+
+impl Deref for InternedStr {
+    type Target = str;
+    fn deref(&self) -> &str {
+        unsafe { ::std::mem::transmute::<&[u8], &str>(&*self.0) }
+    }
+}
+
+impl BorrowFrom<InternedStr> for str {
+    fn borrow_from(s: &InternedStr) -> &str {
+        &**s
+    }
+}
 
 
 pub struct Interner {
-    indexes: HashMap<GcPtr<str>, GcPtr<str>>
+    indexes: HashMap<InternedStr, InternedStr>
 }
 
 struct StrDef<'a>(&'a str);
 
-impl <'a> DataDef<str> for StrDef<'a> {
+impl <'a> DataDef<[u8]> for StrDef<'a> {
     fn size(&self) -> uint {
         self.0.len()
     }
-    fn initialize(self, ptr: *mut str) {
-        let ptr: &mut [u8] = unsafe { mem::transmute::<&[u8], &mut [u8]>((&*ptr).as_bytes()) };
+    fn initialize(self, ptr: *mut [u8]) {
+        let ptr: &mut [u8] = unsafe { &mut *ptr };
         assert_eq!(self.0.len(), ptr.len());
         ::std::slice::bytes::copy_memory(ptr, self.0.as_bytes());
     }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut str {
+    fn make_ptr(&self, ptr: *mut ()) -> *mut [u8] {
         unsafe {
             use std::raw::Slice;
             let bytes = mem::transmute::<*mut (), *mut u8>(ptr);
-            let x = Slice { data: &*bytes, len: self.0.len() };
-            let x: &[u8] = mem::transmute(x);
-            mem::transmute(::std::str::from_utf8_unchecked(x))
+            let x = Slice { data: bytes, len: self.0.len() };
+            mem::transmute(x)
         }
     }
 }
@@ -36,7 +54,7 @@ impl <'a> DataDef<str> for StrDef<'a> {
 impl Traverseable for Interner {
     fn traverse(&mut self, gc: &mut Gc) {
         for (_, v) in self.indexes.iter_mut() {
-            v.traverse(gc);
+            v.0.traverse(gc);
         }
     }
 }
@@ -47,14 +65,14 @@ impl Interner {
         Interner { indexes: HashMap::new() }
     }
 
-    pub fn intern(&mut self, gc: &mut Gc, s: &str) -> GcPtr<str> {
+    pub fn intern(&mut self, gc: &mut Gc, s: &str) -> InternedStr {
         match self.indexes.get(s) {
             Some(interned_str) => {
                 return *interned_str
             }
             None => ()
         }
-        let gc_str: GcPtr<str> = gc.alloc(StrDef(s));
+        let gc_str = InternedStr(gc.alloc(StrDef(s)));
         self.indexes.insert(gc_str, gc_str);
         gc_str
     }
@@ -81,7 +99,7 @@ pub mod tests {
 
 ///Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
-    thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>> = Rc::new(RefCell::new((Interner::new(), Gc::new()))))
+    thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>> = Rc::new(RefCell::new((Interner::new(), Gc::new()))));
     INTERNER.with(|interner| interner.clone())
 }
 

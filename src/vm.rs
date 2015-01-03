@@ -4,6 +4,7 @@ use std::fmt;
 use std::intrinsics::{TypeId, get_tydesc};
 use std::any::Any;
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut, Index};
 use ast;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, Constrained, match_types};
@@ -75,12 +76,13 @@ impl <'a> Clone for DataStruct<'a> {
     }
 }
 
-impl <'a> Deref<Data_<'a>> for DataStruct<'a> {
+impl <'a> Deref for DataStruct<'a> {
+    type Target = Data_<'a>;
     fn deref(&self) -> &Data_<'a> {
         &*self.value
     }
 }
-impl <'a> DerefMut<Data_<'a>> for DataStruct<'a> {
+impl <'a> DerefMut for DataStruct<'a> {
     fn deref_mut(&mut self) -> &mut Data_<'a> {
         &mut *self.value
     }
@@ -91,7 +93,7 @@ pub struct Data_<'a> {
     fields: [Value<'a>]
 }
 
-#[deriving(Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Value<'a> {
     Int(int),
     Float(f64),
@@ -143,7 +145,7 @@ impl <'a> fmt::Show for Value<'a> {
 
 pub type ExternFunction<'a> = Box<Fn(&VM<'a>) + 'static>;
 
-#[deriving(Show)]
+#[derive(Show)]
 pub struct Global<'a> {
     id: InternedStr,
     typ: Constrained<TcType>,
@@ -974,7 +976,7 @@ fn string_append(vm: &VM) {
 
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
-)
+);
 
 pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();

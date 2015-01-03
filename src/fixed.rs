@@ -2,6 +2,8 @@ use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::mem::transmute;
+use std::iter::FromIterator;
+use std::ops::Index;
 
 //A mapping between K and V where once a value has been inserted it cannot be changed
 //Through this and the fact the all values are stored as pointers it is possible to safely

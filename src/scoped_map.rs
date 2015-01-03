@@ -1,6 +1,6 @@
 extern crate collections;
 use std::collections::HashMap;
-use std::collections::hash_map::{Entry, MutEntries};
+use std::collections::hash_map::{Entry, IterMut};
 use std::hash::Hash;
 use std::hash::RandomSipHasher;
 
@@ -65,7 +65,7 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         false
     }
     ///Returns an iterator of the (key, values) pairs inserted in the map
-    pub fn iter_mut<'a>(&'a mut self) -> MutEntries<'a, K, Vec<V>> {
+    pub fn iter_mut<'a>(&'a mut self) -> IterMut<'a, K, Vec<V>> {
         self.map.iter_mut()
     }
 

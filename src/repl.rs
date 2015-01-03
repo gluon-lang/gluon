@@ -5,9 +5,9 @@ use EmbedLang::typecheck::*;
 use EmbedLang::compiler::Compiler;
 use EmbedLang::vm::{VM, parse_expr, load_script};
 
-macro_rules! tryf(
+macro_rules! tryf {
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
-)
+}
 
 fn print(vm: &VM) {
     println!("{}", vm.pop());
@@ -73,7 +73,7 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
             }
             Ok(true)
         }
-        _ => Err("Invalid command " + command.to_string())
+        _ => Err("Invalid command ".to_string() + command.to_string().as_slice())
     }
 }
 

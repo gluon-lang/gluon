@@ -43,7 +43,7 @@ use lexer::Token::{
 
 use self::ParseError::*;
 
-macro_rules! expect(
+macro_rules! expect {
     ($e: expr, $p: ident (..)) => ({
         match *$e.lexer.next() {
             x@$p(..) => x,
@@ -64,8 +64,9 @@ macro_rules! expect(
             }
         }
     })
-)
-macro_rules! expect1(
+}
+
+macro_rules! expect1 {
     ($e: expr, $p: ident ($x: ident)) => ({
         match *$e.lexer.next() {
             $p($x) => $x,
@@ -76,16 +77,17 @@ macro_rules! expect1(
             }
         }
     })
-)
+}
 
-macro_rules! matches(
+macro_rules! matches {
     ($e: expr, $p: pat) => (
         match $e {
             $p => true,
             _ => false
         }
     )
-)
+}
+
 fn precedence(s : &str) -> int {
     match s {
         "&&" | "||" => 0,
@@ -710,7 +712,7 @@ pub mod tests {
         let &(ref mut interner, ref mut gc) = &mut *interner;
         let mut parser = Parser::new(interner, gc, &mut buffer, |s| s);
         let x = f(&mut parser)
-            .unwrap_or_else(|err| panic!(err));
+            .unwrap_or_else(|err| panic!("{}", err));
         x
     }
 

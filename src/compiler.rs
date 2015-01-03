@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 use interner::*;
 use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function, Constraints};
-use ast::TypeEnum::*;
 use typecheck::*;
+use self::Instruction::*;
+use self::Variable::*;
 
-pub use self::Instruction::*;
-pub use self::Variable::*;
-
-#[deriving(Show)]
+#[derive(Show)]
 pub enum Instruction {
     PushInt(int),
     PushFloat(f64),
@@ -73,7 +71,7 @@ pub struct CompiledFunction {
     pub instructions: Vec<Instruction>
 }
 
-#[deriving(PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct TraitFunctions {
     //The where the first function of the implemented trait is at
     pub index: uint,

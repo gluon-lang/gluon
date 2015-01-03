@@ -19,7 +19,7 @@ pub static BOOL_TYPE: TcType = BuiltinType(ast::BoolType);
 pub static UNIT_TYPE: TcType = BuiltinType(ast::UnitType);
 
 
-#[deriving(Clone, Eq, PartialEq, Show)]
+#[derive(Clone, Eq, PartialEq, Show)]
 pub struct TcIdent {
     pub typ: TcType,
     pub name: InternedStr
@@ -116,7 +116,7 @@ impl fmt::Show for TcType {
     }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 pub struct Constrained<T> {
     pub constraints: Vec<ast::Constraints>,
     pub value: T
@@ -231,7 +231,7 @@ fn from_generic_type<F>(type_handler: &mut F, typ: &ast::VMType) -> TcType
     }
 }
 
-#[deriving(Show)]
+#[derive(Show)]
 enum TypeError {
     UndefinedVariable(InternedStr),
     NotAFunction(TcType),

@@ -7,7 +7,7 @@ use interner::{Interner, InternedStr};
 
 use self::Token::*;
 
-#[deriving(PartialEq, Clone, Show)]
+#[derive(PartialEq, Clone, Show)]
 pub enum Token {
     TInteger(int),
     TFloat(f64),
@@ -49,7 +49,7 @@ pub enum Token {
 
 impl Copy for Token { }
 
-#[deriving(Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Location {
     pub column : int,
     pub row : int,

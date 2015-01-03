@@ -1,7 +1,8 @@
-use std::ptr::RawPtr;
+use std::ptr::PtrExt;
 use std::mem;
 use std::ptr;
 use std::rt::heap::{allocate, deallocate};
+use std::ops::{Deref, DerefMut};
 
 
 pub struct Gc {
@@ -50,13 +51,14 @@ impl Drop for AllocPtr {
     }
 }
 
-impl Deref<GcHeader> for AllocPtr {
+impl Deref for AllocPtr {
+    type Target = GcHeader;
     fn deref(&self) -> &GcHeader {
         unsafe { & *self.ptr }
     }
 }
 
-impl DerefMut<GcHeader> for AllocPtr {
+impl DerefMut for AllocPtr {
     fn deref_mut(&mut self) -> &mut GcHeader {
         unsafe { &mut *self.ptr }
     }
@@ -91,13 +93,14 @@ impl <Sized? T> Clone for GcPtr<T> {
     }
 }
 
-impl <Sized? T> Deref<T> for GcPtr<T> {
+impl <Sized? T> Deref for GcPtr<T> {
+    type Target = T;
     fn deref(&self) -> &T {
         unsafe { & *self.ptr }
     }
 }
 
-impl <Sized? T> DerefMut<T> for GcPtr<T> {
+impl <Sized? T> DerefMut for GcPtr<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *self.ptr }
     }
@@ -128,7 +131,10 @@ pub trait Traverseable for Sized? {
 }
 
 impl Traverseable for () {
-    fn traverse(&mut self, _: &mut Gc) {}
+    fn traverse(&mut self, _: &mut Gc) { }
+}
+impl Traverseable for u8 {
+    fn traverse(&mut self, _: &mut Gc) { }
 }
 
 impl Traverseable for str {
@@ -251,6 +257,7 @@ impl Gc {
 #[cfg(test)]
 mod tests {
     use super::{Gc, GcPtr, GcHeader, Traverseable, DataDef};
+    use std::ops::{Deref, DerefMut};
     use std::fmt;
 
     use self::Value::*;
@@ -261,12 +268,13 @@ mod tests {
 
     impl Copy for Data_ { }
 
-    impl  Deref<Vec<Value>> for Data_ {
+    impl Deref for Data_ {
+        type Target = Vec<Value>;
         fn deref(&self) -> &Vec<Value> {
             &*self.fields
         }
     }
-    impl  DerefMut<Vec<Value>> for Data_ {
+    impl DerefMut for Data_ {
         fn deref_mut(&mut self) -> &mut Vec<Value> {
             &mut *self.fields
         }
@@ -303,7 +311,7 @@ mod tests {
         }
     }
 
-    #[deriving(PartialEq, Show)]
+    #[derive(PartialEq, Show)]
     enum Value {
         Int(int),
         Data(Data_)

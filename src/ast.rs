@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use interner::{InternedStr};
 pub use lexer::Location;
 pub use self::BuiltinType_::{StringType, IntType, FloatType, BoolType, UnitType};
@@ -21,7 +22,7 @@ pub use self::Expr::{
     Lambda};
 
 
-#[deriving(Clone, Show)]
+#[derive(Clone, Show)]
 pub struct Located<T> {
     pub location: Location,
     pub value: T
@@ -31,7 +32,8 @@ impl <T: PartialEq> PartialEq for Located<T> {
         self.value == other.value
     }
 }
-impl <T> Deref<T> for Located<T> {
+impl <T> Deref for Located<T> {
+    type Target = T;
     fn deref(&self) -> &T {
         &self.value
     }
@@ -45,7 +47,7 @@ pub fn no_loc<T>(x: T) -> Located<T> {
     located(Location::eof(), x)
 }
 
-#[deriving(Clone, Eq, PartialEq, Show, Hash)]
+#[derive(Clone, Eq, PartialEq, Show, Hash)]
 pub enum BuiltinType_ {
     StringType,
     IntType,
@@ -56,7 +58,7 @@ pub enum BuiltinType_ {
 
 impl Copy for BuiltinType_ { }
 
-#[deriving(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub enum TypeEnum<Id> {
     Type(Id, Vec<TypeEnum<Id>>),
     TraitType(Id, Vec<TypeEnum<Id>>),
@@ -69,7 +71,7 @@ pub enum TypeEnum<Id> {
 
 pub type VMType = TypeEnum<InternedStr>;
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub enum LiteralStruct {
     Integer(int),
     Float(f64),
@@ -79,26 +81,26 @@ pub enum LiteralStruct {
 
 impl Copy for LiteralStruct { }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub enum Pattern<Id> {
     ConstructorPattern(Id, Vec<Id>),
     IdentifierPattern(Id)
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Alternative<Id> {
     pub pattern: Pattern<Id>,
     pub expression: LExpr<Id>
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct ArrayStruct<Id> {
     //Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub expressions: Vec<LExpr<Id>>
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct LambdaStruct<Id> {
     //Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
@@ -109,7 +111,7 @@ pub struct LambdaStruct<Id> {
 
 pub type LExpr<Id> = Located<Expr<Id>>;
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub enum Expr<Id> {
     Identifier(Id),
     Literal(LiteralStruct),
@@ -127,53 +129,53 @@ pub enum Expr<Id> {
     Lambda(LambdaStruct<Id>)
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Field {
     pub name: InternedStr,
     pub typ: TypeEnum<InternedStr>
 }
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Constraints {
     pub type_variable: InternedStr,
     pub constraints: Vec<VMType>
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Function<Id> {
     pub declaration: FunctionDeclaration<Id>,
     pub expression: LExpr<Id>
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Struct<Id> {
     pub name: Id,
     pub type_variables: Vec<Constraints>,
     pub fields: Vec<Field>
 }
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Constructor<Id> {
     pub name: Id,
     pub arguments: Vec<TypeEnum<InternedStr>>
 }
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Enum<Id> {
     pub name: Id,
     pub type_variables: Vec<Constraints>,
     pub constructors: Vec<Constructor<Id>>
 }
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct FunctionDeclaration<Id> {
     pub name: Id,
     pub type_variables: Vec<Constraints>,
     pub arguments: Vec<Field>,
     pub return_type: TypeEnum<InternedStr>,
 }
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Trait<Id> {
     pub name: Id,
     pub declarations: Vec<FunctionDeclaration<Id>>
 }
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Impl<Id> {
     pub trait_name: Id,
     pub type_variables: Vec<Constraints>,
@@ -181,7 +183,7 @@ pub struct Impl<Id> {
     pub functions: Vec<Function<Id>>
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Show)]
 pub struct Module<Id> {
     pub enums: Vec<Enum<Id>>,
     pub functions: Vec<Function<Id>>,
@@ -208,13 +210,13 @@ pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
 }
 
 
-pub trait MutVisitor<T> {
+pub trait MutVisitor<T> for Sized? {
     fn visit_expr(&mut self, e: &mut LExpr<T>) {
         walk_mut_expr(self, e);
     }
 }
 
-pub fn walk_mut_expr<T, V: MutVisitor<T>>(v: &mut V, e: &mut LExpr<T>) {
+pub fn walk_mut_expr<T, Sized? V: MutVisitor<T>>(v: &mut V, e: &mut LExpr<T>) {
     match e.value {
         IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
