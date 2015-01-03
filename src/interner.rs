@@ -53,8 +53,8 @@ impl <'a> DataDef for StrDef<'a> {
 }
 
 impl Traverseable for Interner {
-    fn traverse(&mut self, gc: &mut Gc) {
-        for (_, v) in self.indexes.iter_mut() {
+    fn traverse(&self, gc: &mut Gc) {
+        for (_, v) in self.indexes.iter() {
             v.0.traverse(gc);
         }
     }

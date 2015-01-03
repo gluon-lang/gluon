@@ -106,17 +106,17 @@ pub enum Value<'a> {
 }
 
 impl <'a> Traverseable for Data_<'a> {
-    fn traverse(&mut self, gc: &mut Gc) {
+    fn traverse(&self, gc: &mut Gc) {
         self.fields.traverse(gc);
     }
 }
 
 impl <'a> Traverseable for Value<'a> {
-    fn traverse(&mut self, gc: &mut Gc) {
-        let mut ptr = match *self {
-            Data(ref mut data) => data.value,
-            Closure(ref mut data) => data.value,
-            TraitObject(ref mut data) => data.value,
+    fn traverse(&self, gc: &mut Gc) {
+        let ptr = match *self {
+            Data(ref data) => data.value,
+            Closure(ref data) => data.value,
+            TraitObject(ref data) => data.value,
             _ => return
         };
         ptr.traverse(gc);
@@ -477,7 +477,7 @@ impl <'a, 'b> DataDef for Def<'a, 'b> {
 }
 
 impl <'a, 'b> Traverseable for Def<'a, 'b> {
-    fn traverse(&mut self, gc: &mut Gc) {
+    fn traverse(&self, gc: &mut Gc) {
         self.elems.traverse(gc);
     }
 }
@@ -487,7 +487,7 @@ struct Roots<'a: 'b, 'b> {
     interner: &'b mut Interner
 }
 impl <'a, 'b> Traverseable for Roots<'a, 'b> {
-    fn traverse(&mut self, gc: &mut Gc) {
+    fn traverse(&self, gc: &mut Gc) {
         self.stack.traverse(gc);
         //Also need to check the interned string table
         self.interner.traverse(gc);
