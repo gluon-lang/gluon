@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::iter::repeat;
 use interner::*;
 use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function, Constraints};
 use typecheck::*;
@@ -850,14 +851,14 @@ fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mu
         (&TypeVariable(i), real_type) => {
             if i >= out.len() {
                 let x = i + 1 - out.len();
-                out.grow(x, None);
+                out.extend(repeat(None).take(x));
             }
             out[i] = Some(real_type);
         }
         (&Generic(i), real_type) => {
             if i >= out.len() {
                 let x = i + 1 - out.len();
-                out.grow(x, None);
+                out.extend(repeat(None).take(x));
             }
             out[i] = Some(real_type);
         }

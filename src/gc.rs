@@ -11,10 +11,11 @@ pub struct Gc {
     collect_limit: uint
 }
 
-pub trait DataDef<Sized? Result> {
+pub trait DataDef {
+    type Sized? Value;
     fn size(&self) -> uint;
-    fn initialize(self, ptr: *mut Result);
-    fn make_ptr(&self, ptr: *mut ()) -> *mut Result;
+    fn initialize(self, ptr: *mut <Self as DataDef>::Value);
+    fn make_ptr(&self, ptr: *mut ()) -> *mut <Self as DataDef>::Value;
 }
 
 struct GcHeader {
@@ -167,7 +168,7 @@ impl Gc {
         Gc { values: None, allocated_objects: 0, collect_limit: 100 }
     }
     pub fn alloc_and_collect<Sized? T, Sized? R, D>(&mut self, roots: &mut R, mut def: D) -> GcPtr<T>
-        where T: Traverseable, R: Traverseable, D: DataDef<T> + Traverseable {
+        where T: Traverseable, R: Traverseable, D: DataDef<Value=T> + Traverseable {
         if self.allocated_objects >= self.collect_limit {
             self.collect2(roots, &mut def);
         }
@@ -175,7 +176,7 @@ impl Gc {
     }
 
     pub fn alloc<Sized? T, D>(&mut self, def: D) -> GcPtr<T>
-        where D: DataDef<T> {
+        where D: DataDef<Value=T> {
         let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
         self.allocated_objects += 1;
@@ -293,7 +294,8 @@ mod tests {
     struct Def<'a> {
         elems: &'a [Value]
     }
-    impl <'a> DataDef<Vec<Value>> for Def<'a> {
+    impl <'a> DataDef for Def<'a> {
+        type Value = Vec<Value>;
         fn size(&self) -> uint {
             use std::mem::size_of;
             self.elems.len() * size_of::<Value>()

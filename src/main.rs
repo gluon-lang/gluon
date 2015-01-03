@@ -8,6 +8,7 @@ extern crate EmbedLang;
 #[cfg(not(test))]
 use EmbedLang::vm::{VM, run_main, run_buffer_main};
 
+#[cfg(not(test))]
 use std::os::set_exit_status;
 
 mod repl;

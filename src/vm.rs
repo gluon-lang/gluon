@@ -452,7 +452,8 @@ struct Def<'a:'b, 'b> {
     tag: uint,
     elems: &'b mut [Value<'a>]
 }
-impl <'a, 'b> DataDef<Data_<'a>> for Def<'a, 'b> {
+impl <'a, 'b> DataDef for Def<'a, 'b> {
+    type Value = Data_<'a>;
     fn size(&self) -> uint {
         use std::mem::size_of;
         size_of::<uint>() + size_of::<Value<'a>>() * self.elems.len()
@@ -574,7 +575,7 @@ impl <'a> VM<'a> {
         self.typeids.get(&id)
             .unwrap_or_else(|| {
                 let desc = unsafe { get_tydesc::<T>() };
-                let name = if desc.is_not_null() {
+                let name = if !desc.is_null() {
                     unsafe { &*desc }.name
                 }
                 else {

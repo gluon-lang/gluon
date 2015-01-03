@@ -32,7 +32,8 @@ pub struct Interner {
 
 struct StrDef<'a>(&'a str);
 
-impl <'a> DataDef<[u8]> for StrDef<'a> {
+impl <'a> DataDef for StrDef<'a> {
+    type Value = [u8];
     fn size(&self) -> uint {
         self.0.len()
     }

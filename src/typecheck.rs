@@ -573,7 +573,8 @@ impl <'a> Typecheck<'a> {
     fn replace_vars(&mut self, expr: &mut ast::LExpr<TcIdent>) {
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { tc: &'a mut Typecheck<'b> }
-        impl <'a, 'b> MutVisitor<TcIdent> for ReplaceVisitor<'a, 'b> {
+        impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
+            type T = TcIdent;
             fn visit_expr(&mut self, e: &mut ast::LExpr<TcIdent>) {
                 match e.value {
                     ast::Identifier(ref mut id) => self.tc.set_type(&mut id.typ),
