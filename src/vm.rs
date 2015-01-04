@@ -27,7 +27,7 @@ pub use vm::Value::{
     TraitObject,
     Userdata};
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct Userdata_ {
     pub data: GcPtr<RefCell<Box<Any>>>
 }
@@ -43,11 +43,6 @@ impl Userdata_ {
 impl PartialEq for Userdata_ {
     fn eq(&self, o: &Userdata_) -> bool {
         self.ptr() == o.ptr()
-    }
-}
-impl Clone for Userdata_ {
-    fn clone(&self) -> Userdata_ {
-        Userdata_ { data: self.data.clone() }
     }
 }
 
@@ -69,30 +64,14 @@ impl <T: 'static> DataDef for UserDataDef<T> {
     }
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct DataStruct<'a> {
     value: GcPtr<Data_<'a>>
-}
-
-impl <'a> DataStruct<'a> {
-
-    fn borrow(&self) -> &Data_<'a> {
-        & **self
-    }
-    fn borrow_mut(&self) -> &mut Data_<'a> {
-        unsafe { ::std::mem::transmute(& **self) }
-    }
 }
 
 impl <'a> PartialEq for DataStruct<'a> {
     fn eq(&self, other: &DataStruct<'a>) -> bool {
         self.tag == other.tag && self.fields == other.fields
-    }
-}
-
-impl <'a> Clone for DataStruct<'a> {
-    fn clone(&self) -> DataStruct<'a> {
-        DataStruct { value: self.value }
     }
 }
 
@@ -149,8 +128,6 @@ impl <'a> Traverseable for Value<'a> {
     }
 }
 
-type Dict = Vec<uint>;
-
 impl <'a> fmt::Show for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -158,13 +135,12 @@ impl <'a> fmt::Show for Value<'a> {
             Float(x) => write!(f, "{}f", x),
             String(x) => write!(f, "\"{}\"", x),
             Data(ref data) => {
-                let d = data.borrow();
-                write!(f, "{{{} {}}}", d.tag, &d.fields)
+                write!(f, "{{{} {}}}", data.tag, &data.fields)
             }
             Function(i) => write!(f, "<function {}>", i),
             Closure(ref closure) => write!(f, "<Closure {} {}>", closure.tag, &closure.fields),
             TraitObject(ref object) => write!(f, "<{} {}>", object.tag, &object.fields),
-            Userdata(ref ptr) => write!(f, "<Userdata {}>", &*ptr.data.borrow() as *const Box<Any>)
+            Userdata(ref data) => write!(f, "<Userdata {}>", data.ptr())
         }
     }
 }
@@ -773,7 +749,7 @@ impl <'a> VM<'a> {
                 GetField(i) => {
                     match stack.pop() {
                         Data(data) => {
-                            let v = data.borrow().fields[i].get();
+                            let v = data.fields[i].get();
                             stack.push(v);
                         }
                         x => return Err(format!("GetField on {}", x))
@@ -784,14 +760,14 @@ impl <'a> VM<'a> {
                     let data = stack.pop();
                     match data {
                         Data(data) => {
-                            data.borrow_mut().fields[i].set(value);
+                            data.fields[i].set(value);
                         }
                         _ => return Err("Op SetField called on non data type".to_string())
                     }
                 }
                 TestTag(tag) => {
                     let x = match *stack.top() {
-                        Data(ref data) => if data.borrow().tag == tag { 1 } else { 0 },
+                        Data(ref data) => if data.tag == tag { 1 } else { 0 },
                         _ => return Err("Op TestTag called on non data type".to_string())
                     };
                     stack.push(Int(x));
@@ -836,7 +812,7 @@ impl <'a> VM<'a> {
                     let array = stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
-                            let v = array.borrow_mut().fields[index as uint].get();
+                            let v = array.fields[index as uint].get();
                             stack.push(v);
                         }
                         (x, y) => return Err(format!("Op GetIndex called on invalid types {} {}", x, y))
@@ -848,7 +824,7 @@ impl <'a> VM<'a> {
                     let array = stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
-                            array.borrow_mut().fields[index as uint].set(value);
+                            array.fields[index as uint].set(value);
                         }
                         (x, y) => return Err(format!("Op SetIndex called on invalid types {} {}", x, y))
                     }
@@ -897,7 +873,7 @@ impl <'a> VM<'a> {
                 PushDictionaryMember(trait_index, function_offset) => {
                     let func = match stack.get_upvar(0).clone()  {
                         Data(dict) => {
-                            match dict.borrow().fields[trait_index].get() {
+                            match dict.fields[trait_index].get() {
                                 Function(i) => Function(i + function_offset),
                                 _ => panic!()
                             }
@@ -909,7 +885,7 @@ impl <'a> VM<'a> {
                 PushDictionary(index) => {
                     let dict = stack.get_upvar(0).clone();
                     let dict = match dict {
-                        Data(data) => data.borrow().fields[index].get(),
+                        Data(data) => data.fields[index].get(),
                         _ => panic!()
                     };
                     stack.push(dict);
@@ -979,7 +955,7 @@ fn binop_float<F>(stack: &mut StackFrame, f: F)
 fn array_length(vm: &VM) {
     match vm.pop() {
         Data(values) => {
-            let i = values.borrow().fields.len();
+            let i = values.fields.len();
             vm.push(Int(i as int));
         }
         x => panic!("{}", x)
