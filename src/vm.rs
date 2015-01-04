@@ -28,25 +28,41 @@ pub use vm::Value::{
     TraitObject,
     Userdata};
 
-pub struct Userdata_<T> {
-    pub data: Rc<RefCell<T>>
+pub struct Userdata_ {
+    pub data: GcPtr<RefCell<Box<Any>>>
 }
-impl <T> Userdata_<T> {
-    pub fn new(v: T) -> Userdata_<T> {
-        Userdata_ { data: Rc::new(RefCell::new(v)) }
-    }
+
+impl Userdata_ {
     fn ptr(&self) -> *const () {
-        (&*self.data as *const RefCell<T>) as *const ()
+        (&*self.data as *const RefCell<Box<Any>>) as *const ()
     }
 }
-impl <T> PartialEq for Userdata_<T> {
-    fn eq(&self, o: &Userdata_<T>) -> bool {
+impl PartialEq for Userdata_ {
+    fn eq(&self, o: &Userdata_) -> bool {
         self.ptr() == o.ptr()
     }
 }
-impl <T> Clone for Userdata_<T> {
-    fn clone(&self) -> Userdata_<T> {
+impl <T> Clone for Userdata_ {
+    fn clone(&self) -> Userdata_ {
         Userdata_ { data: self.data.clone() }
+    }
+}
+
+struct UserDataDef<T>(T);
+
+impl <T> DataDef for UserDataDef<T> {
+    type Value = RefCell<Box<Any>>;
+    fn size(&self) -> uint {
+        use std::mem::size_of;
+        size_of::< <Self as DataDef>::Value>()
+    }
+    fn initialize(self, result: *mut RefCell<Box<Any>>) {
+        unsafe {
+            ::std::ptr::write(result, RefCell::new(box self.0 as Box<Any>));
+        }
+    }
+    fn make_ptr(&self, ptr: *mut ()) -> *mut RefCell<Box<Any>> {
+        unsafe { ptr as *mut _ }
     }
 }
 

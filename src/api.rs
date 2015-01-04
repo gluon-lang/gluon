@@ -194,8 +194,8 @@ impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
 impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
     pub fn call(&mut self, a: A) -> Result<R, String> {
         let mut stack = StackFrame::new_empty(self.vm);
-        self.value.push(&mut stack);
-        a.push(&mut stack);
+        self.value.push(self.vm, &mut stack);
+        a.push(self.vm, &mut stack);
         stack = try!(self.vm.execute(stack, &[CallGlobal(1)]));
         match VMValue::from_value(stack.pop()) {
             Some(x) => Ok(x),
