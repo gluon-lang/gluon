@@ -33,8 +33,8 @@ struct AllocPtr {
 impl AllocPtr {
     fn new(value_size: uint) -> AllocPtr {
         unsafe {
-            let ptr = allocate(GcHeader::value_offset() + value_size, mem::align_of::<f64>());
-            let ptr: *mut GcHeader = mem::transmute(ptr);
+            let alloc_size = GcHeader::value_offset() + value_size;
+            let ptr = allocate(alloc_size, mem::align_of::<f64>()) as *mut GcHeader;
             ptr::write(ptr, GcHeader {
                 next: None,
                 value_size: Cell::new(value_size),
@@ -52,7 +52,7 @@ impl Drop for AllocPtr {
         unsafe {
             ptr::read(&*self.ptr);
             let size = GcHeader::value_offset() + self.value_size.get();
-            deallocate(mem::transmute::<*mut GcHeader, *mut u8>(self.ptr), size, mem::align_of::<f64>());
+            deallocate(self.ptr as *mut u8, size, mem::align_of::<f64>());
         }
     }
 }
@@ -74,8 +74,8 @@ impl GcHeader {
 
     fn value(&self) -> *mut () {
         unsafe {
-            let ptr: *mut u8 = mem::transmute(self);
-            ptr.offset(GcHeader::value_offset() as int) as *mut ()
+            let bytes = (self as *const GcHeader) as *mut u8;
+            bytes.offset(GcHeader::value_offset() as int) as *mut ()
         }
     }
 
@@ -251,13 +251,14 @@ impl Gc {
     }
 
     unsafe fn gc_header<Sized? T>(value: &GcPtr<T>) -> &GcHeader {
-        debug!("HEADER");
+        //Use of transmute_copy allows us to get the pointer
+        //to the data regardless of wether T is unsized or not
+        //(DST is structured as (ptr, len))
+        //TODO: Better way of doing this?
         let p: *mut u8 = mem::transmute_copy(&value.ptr);
-        debug!("{} {}", mem::transmute::<*mut u8, uint>(p), mem::transmute::<*mut u8, uint>(p.offset(8)));
         let header = p.offset(-(GcHeader::value_offset() as int));
-        mem::transmute(header)
+        &*(header as *const GcHeader)
     }
-
 }
 
 
@@ -308,9 +309,7 @@ mod tests {
             }
         }
         fn make_ptr(&self, ptr: *mut ()) -> *mut Vec<Value> {
-            unsafe {
-                ::std::mem::transmute(ptr)
-            }
+            ptr as *mut _
         }
     }
 

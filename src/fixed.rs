@@ -1,9 +1,18 @@
 use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
 use std::hash::Hash;
-use std::mem::transmute;
 use std::iter::FromIterator;
 use std::ops::Index;
+
+//NOTE: transmute is used to circumvent the borrow checker in this module
+//This is safe since the containers hold boxed values meaning allocating larger
+//storage does not invalidate the references that are handed out and because values
+//can only be inserted, never modified (this could be done with a Rc pointer as well but
+//is not done for efficiency since it is not needed)
+
+unsafe fn forget_lifetime<'a, 'b, Sized? T>(x: &'a T) -> &'b T {
+    ::std::mem::transmute(x) 
+}
 
 //A mapping between K and V where once a value has been inserted it cannot be changed
 //Through this and the fact the all values are stored as pointers it is possible to safely
@@ -35,7 +44,7 @@ impl <K: Eq + Hash, V> FixedMap<K, V> {
     pub fn get(&self, k: &K) -> Option<&V> {
         self.map.borrow()
             .get(k)
-            .map(|x| unsafe { transmute::<&V, &V>(&**x) })
+            .map(|x| unsafe { forget_lifetime(&**x) })
     }
 
 }
@@ -69,7 +78,7 @@ impl <T> FixedVec<T> {
                 vec.iter()
                     .enumerate()
                     .find(|&(_, boxed)| test(&**boxed))
-                    .map(|(i, boxed)| (i, unsafe { transmute::<&T, &T>(&**boxed) }))
+                    .map(|(i, boxed)| (i, unsafe { forget_lifetime(&**boxed) }))
             })
     }
 
@@ -82,7 +91,7 @@ impl <T> Index<uint, T> for FixedVec<T> {
     fn index(&self, index: &uint) -> &T {
         let vec = self.vec.borrow();
         let result = &*(*vec)[*index];
-        unsafe { transmute::<&T, &T>(result) }
+        unsafe { forget_lifetime(result) }
     }
 }
 

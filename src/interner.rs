@@ -15,7 +15,7 @@ unsafe impl Sync for InternedStr { }
 impl Deref for InternedStr {
     type Target = str;
     fn deref(&self) -> &str {
-        unsafe { ::std::mem::transmute::<&[u8], &str>(&*self.0) }
+        unsafe { ::std::str::from_utf8_unchecked(&*self.0) }
     }
 }
 
@@ -45,8 +45,7 @@ impl <'a> DataDef for StrDef<'a> {
     fn make_ptr(&self, ptr: *mut ()) -> *mut [u8] {
         unsafe {
             use std::raw::Slice;
-            let bytes = mem::transmute::<*mut (), *mut u8>(ptr);
-            let x = Slice { data: bytes, len: self.0.len() };
+            let x = Slice { data: ptr as *mut u8, len: self.0.len() };
             mem::transmute(x)
         }
     }
