@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn gc_header() {
         let mut gc: Gc = Gc::new();
-        let mut ptr = gc.alloc(Def { elems: &[Int(1)] });
+        let ptr = gc.alloc(Def { elems: &[Int(1)] });
         let header: *const _ = unsafe { Gc::gc_header(&ptr) };
         let other: *const _ = &**gc.values.as_mut().unwrap();
         assert_eq!(header, other);

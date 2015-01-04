@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use std::cell::{RefCell, RefMut, Ref};
 use std::fmt;
 use std::intrinsics::{TypeId, get_tydesc};
@@ -28,11 +27,15 @@ pub use vm::Value::{
     TraitObject,
     Userdata};
 
+#[derive(Copy)]
 pub struct Userdata_ {
     pub data: GcPtr<RefCell<Box<Any>>>
 }
 
 impl Userdata_ {
+    pub fn new<T: 'static>(vm: &VM, v: T) -> Userdata_ {
+        Userdata_ { data: vm.gc.borrow_mut().alloc(UserDataDef(v)) }
+    }
     fn ptr(&self) -> *const () {
         (&*self.data as *const RefCell<Box<Any>>) as *const ()
     }
@@ -42,7 +45,7 @@ impl PartialEq for Userdata_ {
         self.ptr() == o.ptr()
     }
 }
-impl <T> Clone for Userdata_ {
+impl Clone for Userdata_ {
     fn clone(&self) -> Userdata_ {
         Userdata_ { data: self.data.clone() }
     }
@@ -50,7 +53,7 @@ impl <T> Clone for Userdata_ {
 
 struct UserDataDef<T>(T);
 
-impl <T> DataDef for UserDataDef<T> {
+impl <T: 'static> DataDef for UserDataDef<T> {
     type Value = RefCell<Box<Any>>;
     fn size(&self) -> uint {
         use std::mem::size_of;
@@ -62,7 +65,7 @@ impl <T> DataDef for UserDataDef<T> {
         }
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut RefCell<Box<Any>> {
-        unsafe { ptr as *mut _ }
+        ptr as *mut _
     }
 }
 
@@ -118,7 +121,7 @@ pub enum Value<'a> {
     Function(uint),
     Closure(DataStruct<'a>),
     TraitObject(DataStruct<'a>),
-    Userdata(Userdata_<Box<Any + 'static>>)
+    Userdata(Userdata_)
 }
 
 impl <'a> Traverseable for Data_<'a> {

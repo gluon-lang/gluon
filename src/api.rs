@@ -2,7 +2,7 @@
 use vm::{VM, VMResult, Value, Int, Float, Function, Userdata, Userdata_, StackFrame};
 use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
-use std::any::{Any, AnyRefExt};
+use std::any::AnyRefExt;
 use std::boxed::BoxAny;
 
 pub trait VMType {
@@ -12,7 +12,7 @@ pub trait VMType {
     }
 }
 pub trait VMValue<'a> : VMType {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>);
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>);
     fn from_value(value: Value<'a>) -> Option<Self>;
 }
 
@@ -22,7 +22,7 @@ impl VMType for () {
     }
 }
 impl <'a> VMValue<'a> for () {
-    fn push<'b, 'c>(self, _: &mut StackFrame<'a, 'b>) {
+    fn push<'b>(self, _: &VM<'a>, _: &mut StackFrame<'a, 'b>) {
     }
     fn from_value(_: Value) -> Option<()> {
         Some(())
@@ -35,7 +35,7 @@ impl VMType for int {
     }
 }
 impl <'a> VMValue<'a> for int {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Int(self));
     }
     fn from_value(value: Value<'a>) -> Option<int> {
@@ -51,7 +51,7 @@ impl VMType for f64 {
     }
 }
 impl <'a> VMValue<'a> for f64 {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Float(self));
     }
     fn from_value(value: Value<'a>) -> Option<f64> {
@@ -67,7 +67,7 @@ impl VMType for bool {
     }
 }
 impl <'a> VMValue<'a> for bool {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Int(if self { 1 } else { 0 }));
     }
     fn from_value(value: Value<'a>) -> Option<bool> {
@@ -84,8 +84,8 @@ impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
     }
 }
 impl <'a, T: 'static + BoxAny + Clone> VMValue<'a> for Box<T> {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
-        stack.push(Userdata(Userdata_::new(self as Box<Any>)));
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
+        stack.push(Userdata(Userdata_::new(vm, self)));
     }
     fn from_value(value: Value<'a>) -> Option<Box<T>> {
         match value {
@@ -100,8 +100,8 @@ impl <T: 'static> VMType for *mut T {
     }
 }
 impl <'a, T: 'static> VMValue<'a> for *mut T {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
-        stack.push(Userdata(Userdata_::new(box self as Box<Any>)));
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
+        stack.push(Userdata(Userdata_::new(vm, self)));
     }
     fn from_value(value: Value<'a>) -> Option<*mut T> {
         match value {
@@ -180,7 +180,7 @@ impl <Args, R> VMType for FunctionRef<Args, R> {
 }
 
 impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
-    fn push<'b, 'c>(self, stack: &mut StackFrame<'a, 'b>) {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Function(self.value));
     }
     fn from_value(value: Value<'a>) -> Option<FunctionRef<Args, R>> {
@@ -206,9 +206,9 @@ impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
 impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A, B), R> {
     pub fn call2(&mut self, a: A, b: B) -> Result<R, String> {
         let mut stack = StackFrame::new_empty(self.vm);
-        self.value.push(&mut stack);
-        a.push(&mut stack);
-        b.push(&mut stack);
+        self.value.push(self.vm, &mut stack);
+        a.push(self.vm, &mut stack);
+        b.push(self.vm, &mut stack);
         stack = try!(self.vm.execute(stack, &[CallGlobal(2)]));
         match VMValue::from_value(stack.pop()) {
             Some(x) => Ok(x),
@@ -256,7 +256,7 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($arg
             x
         });*;
         let r = (*f)($($args),*);
-        r.push(&mut stack);
+        r.push(vm, &mut stack);
     }
 }
 impl <'a, $($args: VMType,)* R: VMType> VMType for Box<Fn($($args),*) -> R + 'static> {
@@ -282,7 +282,7 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for Box<Fn($($
             x
         });*;
         let r = f.call(($($args,)*));
-        r.push(&mut stack);
+        r.push(vm, &mut stack);
     }
 }
     )
