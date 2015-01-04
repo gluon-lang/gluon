@@ -88,7 +88,7 @@ impl GcHeader {
 
 
 pub struct GcPtr<Sized? T> {
-    ptr: *mut T
+    ptr: *const T
 }
 
 impl <Sized? T> Copy for GcPtr<T> {}
@@ -103,12 +103,6 @@ impl <Sized? T> Deref for GcPtr<T> {
     type Target = T;
     fn deref(&self) -> &T {
         unsafe { & *self.ptr }
-    }
-}
-
-impl <Sized? T> DerefMut for GcPtr<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.ptr }
     }
 }
 
@@ -145,6 +139,13 @@ impl Traverseable for u8 {
 
 impl Traverseable for str {
     fn traverse(&self, _: &mut Gc) { }
+}
+
+impl <T> Traverseable for Cell<T>
+    where T: Traverseable + Copy {
+    fn traverse(&self, f: &mut Gc) {
+        self.get().traverse(f);
+    }
 }
 
 impl <U> Traverseable for [U]
@@ -263,7 +264,7 @@ impl Gc {
 #[cfg(test)]
 mod tests {
     use super::{Gc, GcPtr, GcHeader, Traverseable, DataDef};
-    use std::ops::{Deref, DerefMut};
+    use std::ops::Deref;
     use std::fmt;
 
     use self::Value::*;
@@ -280,17 +281,12 @@ mod tests {
             &*self.fields
         }
     }
-    impl DerefMut for Data_ {
-        fn deref_mut(&mut self) -> &mut Vec<Value> {
-            &mut *self.fields
-        }
-    }
-    impl  PartialEq for Data_ {
+    impl PartialEq for Data_ {
         fn eq(&self, other: &Data_) -> bool {
             self.fields.ptr == other.fields.ptr
         }
     }
-    impl  fmt::Show for Data_ {
+    impl fmt::Show for Data_ {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             self.fields.ptr.fmt(f)
         }

@@ -1,9 +1,9 @@
-use std::cell::{RefCell, RefMut, Ref};
+use std::cell::{Cell, RefCell, RefMut, Ref};
 use std::fmt;
 use std::intrinsics::{TypeId, get_tydesc};
 use std::any::Any;
 use std::collections::HashMap;
-use std::ops::{Deref, DerefMut, Index};
+use std::ops::{Deref, Index};
 use ast;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, Constrained, match_types};
@@ -69,6 +69,7 @@ impl <T: 'static> DataDef for UserDataDef<T> {
     }
 }
 
+#[derive(Copy)]
 pub struct DataStruct<'a> {
     value: GcPtr<Data_<'a>>
 }
@@ -101,18 +102,13 @@ impl <'a> Deref for DataStruct<'a> {
         &*self.value
     }
 }
-impl <'a> DerefMut for DataStruct<'a> {
-    fn deref_mut(&mut self) -> &mut Data_<'a> {
-        &mut *self.value
-    }
-}
 
 pub struct Data_<'a> {
     tag: uint,
-    fields: [Value<'a>]
+    fields: [Cell<Value<'a>>]
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Value<'a> {
     Int(int),
     Float(f64),
@@ -122,6 +118,17 @@ pub enum Value<'a> {
     Closure(DataStruct<'a>),
     TraitObject(DataStruct<'a>),
     Userdata(Userdata_)
+}
+
+impl <'a> PartialEq<Value<'a>> for Cell<Value<'a>> {
+    fn eq(&self, other: &Value<'a>) -> bool {
+        self.get() == *other
+    }
+}
+impl <'a> PartialEq<Cell<Value<'a>>> for Value<'a> {
+    fn eq(&self, other: &Cell<Value<'a>>) -> bool {
+        *self == other.get()
+    }
 }
 
 impl <'a> Traverseable for Data_<'a> {
@@ -418,9 +425,9 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.pop()
     }
 
-    fn get_upvar(&self, index: uint) -> &Value<'a> {
+    fn get_upvar(&self, index: uint) -> Value<'a> {
         let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
-        &upvars.fields[index]
+        upvars.fields[index].get()
     }
 
     fn as_slice(&self) -> &[Value<'a>] {
@@ -480,9 +487,9 @@ impl <'a, 'b> DataDef for Def<'a, 'b> {
     fn initialize(self, result: *mut Data_<'a>) {
         let result = unsafe { &mut *result };
         result.tag = self.tag;
-        for (field, value) in result.fields.iter_mut().zip(self.elems.iter()) {
+        for (field, value) in result.fields.iter().zip(self.elems.iter()) {
             unsafe {
-                ::std::ptr::write(field, value.clone());
+                ::std::ptr::write(field.as_unsafe_cell().get(), value.clone());
             }
         }
     }
@@ -766,7 +773,7 @@ impl <'a> VM<'a> {
                 GetField(i) => {
                     match stack.pop() {
                         Data(data) => {
-                            let v = data.borrow().fields[i].clone();
+                            let v = data.borrow().fields[i].get();
                             stack.push(v);
                         }
                         x => return Err(format!("GetField on {}", x))
@@ -777,7 +784,7 @@ impl <'a> VM<'a> {
                     let data = stack.pop();
                     match data {
                         Data(data) => {
-                            data.borrow_mut().fields[i] = value;
+                            data.borrow_mut().fields[i].set(value);
                         }
                         _ => return Err("Op SetField called on non data type".to_string())
                     }
@@ -792,7 +799,7 @@ impl <'a> VM<'a> {
                 Split => {
                     match stack.pop() {
                         Data(data) => {
-                            for field in data.fields.iter() {
+                            for field in data.fields.iter().map(|x| x.get()) {
                                 stack.push(field.clone());
                             }
                         }
@@ -829,7 +836,7 @@ impl <'a> VM<'a> {
                     let array = stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
-                            let v = array.borrow_mut().fields[index as uint].clone();
+                            let v = array.borrow_mut().fields[index as uint].get();
                             stack.push(v);
                         }
                         (x, y) => return Err(format!("Op GetIndex called on invalid types {} {}", x, y))
@@ -841,7 +848,7 @@ impl <'a> VM<'a> {
                     let array = stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
-                            array.borrow_mut().fields[index as uint] = value;
+                            array.borrow_mut().fields[index as uint].set(value);
                         }
                         (x, y) => return Err(format!("Op SetIndex called on invalid types {} {}", x, y))
                     }
@@ -864,7 +871,7 @@ impl <'a> VM<'a> {
                 }
                 StoreUpVar(i) => {
                     let v = stack.pop();
-                    stack.upvars.expect("Upvar").fields[i] = v;
+                    stack.upvars.expect("Upvar").fields[i].set(v);
                 }
                 ConstructTraitObject(i) => {
                     let mut v = stack.pop();
@@ -883,14 +890,14 @@ impl <'a> VM<'a> {
                 }
                 Unpack => {
                     match stack.pop() {
-                        TraitObject(ref obj) => stack.push(obj.fields[0].clone()),
+                        TraitObject(ref obj) => stack.push(obj.fields[0].get().clone()),
                         _ => return Err(format!("Op Unpack called on object other than a TraitObject"))
                     }
                 }
                 PushDictionaryMember(trait_index, function_offset) => {
                     let func = match stack.get_upvar(0).clone()  {
                         Data(dict) => {
-                            match dict.borrow().fields[trait_index] {
+                            match dict.borrow().fields[trait_index].get() {
                                 Function(i) => Function(i + function_offset),
                                 _ => panic!()
                             }
@@ -902,7 +909,7 @@ impl <'a> VM<'a> {
                 PushDictionary(index) => {
                     let dict = stack.get_upvar(0).clone();
                     let dict = match dict {
-                        Data(data) => data.borrow().fields[index].clone(),
+                        Data(data) => data.borrow().fields[index].get(),
                         _ => panic!()
                     };
                     stack.push(dict);
