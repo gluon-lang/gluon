@@ -330,10 +330,12 @@ mod tests {
     fn call_function() {
         let s =
 r"
-fn add10(x: Int) -> Int {
+add10 : (Int) -> Int;
+add10 = \x -> {
     x + 10
 }
-fn mul(x: Float, y: Float) -> Float {
+mul : (Float, Float) -> Float;
+mul = \x y -> {
     x * y
 }
 ";
@@ -356,7 +358,8 @@ fn mul(x: Float, y: Float) -> Float {
     fn pass_userdata() {
         let s =
 r"
-fn id(x: Test) -> Test {
+id : (Test) -> Test;
+id = \x -> {
     x
 }
 ";

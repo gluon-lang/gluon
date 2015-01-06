@@ -361,14 +361,18 @@ impl <'a> Compiler<'a> {
 
     pub fn compile_function(&mut self, function: &Function<TcIdent>) -> CompiledFunction {
         debug!("-- Compiling {}", function.declaration.name.id());
-        for arg in function.declaration.arguments.iter() {
-            self.new_stack_var(arg.name);
+        let (arguments, body) = match function.expression.value {
+            Lambda(ref lambda) => (&*lambda.arguments, &*lambda.body),
+            _ => panic!("Not a lambda in function declaration")
+        };
+        for arg in arguments.iter() {
+            self.new_stack_var(*arg.id());
         }
         let mut f = FunctionEnv::new();
         f.dictionary = function.declaration.type_variables.as_slice();
-        self.compile(&function.expression, &mut f);
-        for arg in function.declaration.arguments.iter() {
-            self.stack.remove(&arg.name);
+        self.compile(body, &mut f);
+        for arg in arguments.iter() {
+            self.stack.remove(arg.id());
         }
 
         let FunctionEnv { instructions, .. } = f;

@@ -174,7 +174,7 @@ pub struct Enum<Id> {
 pub struct FunctionDeclaration<Id> {
     pub name: Id,
     pub type_variables: Vec<Constraints>,
-    pub arguments: Vec<Field>,
+    pub arguments: Vec<TypeEnum<InternedStr>>,
     pub return_type: TypeEnum<InternedStr>,
 }
 #[derive(Clone, PartialEq, Debug)]

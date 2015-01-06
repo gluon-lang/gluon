@@ -163,7 +163,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let mut impls = Vec::new();
         loop {
             match *self.lexer.peek() {
-                TFn => fns.push(try!(self.function())),
+                TVariable(..) => fns.push(try!(self.function())),
                 TStruct => structs.push(try!(self.struct_())),
                 TEnum => enums.push(try!(self.enum_())),
                 TTrait => traits.push(try!(self.trait_())),
@@ -310,22 +310,25 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 let dummy = self.lexer.intern("[]");
                 Ok(Array(ArrayStruct { id: self.make_id(dummy), expressions: args }))
             }
-            TLambda => {
-                let args = try!(self.many(|t| *t == TRArrow, |this| {
-                    let id = expect1!(this, TVariable(x));
-                    Ok(this.make_id(id))
-                }));
-                expect!(self, TRArrow);
-                let body = box try!(self.expression());
-                let s = self.lexer.intern("");
-                Ok(Lambda(LambdaStruct { id: self.make_id(s), free_vars: Vec::new(), arguments: args, body: body }))
-            }
+            TLambda => { self.lexer.backtrack(); self.lambda() }
             x => {
                 self.lexer.backtrack();
                 static EXPECTED: &'static [&'static str] = &["TVariable", "(", "{", "TInteger", "TFloat", "TString", "true", "false", "if", "while", "match", "[", "\\"];
                 Err(self.unexpected_token(EXPECTED, x))
             }
         }
+    }
+
+    fn lambda(&mut self) -> ParseResult<Expr<PString>> {
+        expect!(self, TLambda);
+        let args = try!(self.many(|t| *t == TRArrow, |this| {
+            let id = expect1!(this, TVariable(x));
+            Ok(this.make_id(id))
+        }));
+        expect!(self, TRArrow);
+        let body = box try!(self.expression());
+        let s = self.lexer.intern("");
+        Ok(Lambda(LambdaStruct { id: self.make_id(s), free_vars: Vec::new(), arguments: args, body: body }))
     }
 
     fn block(&mut self) -> ParseResult<LExpr<PString>> {
@@ -463,6 +466,10 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 expect!(self, TCloseBracket);
                 ArrayType(box t)
             }
+            TOpenParen => {
+                expect!(self, TCloseParen);
+                UNIT_TYPE.clone()
+            }
             x => {
                 self.lexer.backtrack();
                 static EXPECTED: &'static [&'static str] = &["fn"];
@@ -575,32 +582,33 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         }
     }
 
+    pub fn function(&mut self) -> ParseResult<Function<PString>> {
+        let declaration = try!(self.function_declaration());
+        expect!(self, TSemicolon);
+        expect1!(self, TVariable(x));
+        expect!(self, TAssign);
+        let expr = try!(self.located(|this| this.lambda()));
+
+        Ok(Function {
+            declaration: declaration,
+            expression: expr
+        })
+    }
     pub fn function_declaration(&mut self) -> ParseResult<FunctionDeclaration<PString>> {
-        expect!(self, TFn);
         let name = expect1!(self, TVariable(x));
-        let type_variables = try!(self.type_variables());
+        expect!(self, TColon);
+        let type_variables = try!(self.type_variables());;
         let arguments = try!(self.parens(|this|
-            this.sep_by(|t| matches!(t, &TComma), |this| this.field())
+            this.sep_by(|t| matches!(t, &TComma), |this| this.typ())
         ));
-        let return_type = if matches!(self.lexer.peek(), &TRArrow) {
-            self.lexer.next();
-            try!(self.typ())
-        }
-        else {
-            UNIT_TYPE.clone()
-        };
+        expect!(self, TRArrow);
+        let return_type = try!(self.typ());
         Ok(FunctionDeclaration {
             name: self.make_id(name),
             type_variables: type_variables,
             arguments: arguments,
             return_type: return_type
         })
-    }
-
-    pub fn function(&mut self) -> ParseResult<Function<PString>> {
-        let declaration = try!(self.function_declaration());
-        let expr = try!(self.block());
-        Ok(Function { declaration: declaration, expression: expr })
     }
 
     fn braces<F, T>(&mut self, f: F) -> ParseResult<T>
@@ -699,6 +707,14 @@ pub mod tests {
     fn block(xs: Vec<PExpr>) -> PExpr {
         no_loc(Block(xs))
     }
+    fn lambda(args: Vec<InternedStr>, body: PExpr) -> PExpr {
+        no_loc(Lambda(LambdaStruct {
+            id: intern(""),
+            free_vars: Vec::new(),
+            arguments: args,
+            body: box body 
+        }))
+    }
 
     fn bool(b: bool) -> PExpr {
         no_loc(Literal(Bool(b)))
@@ -728,30 +744,38 @@ pub mod tests {
     }
     #[test]
     fn function() {
-        let func = parse("fn main(x: Int, y: Float) { }", |p| p.function());
+        let s =
+r"
+main : (Int,Float) -> ();
+main = \x y -> { }";
+        let func = parse(s, |p| p.function());
         let expected = Function {
             declaration: FunctionDeclaration {
                 name: intern("main"),
                 type_variables: Vec::new(),
-                arguments: vec!(field("x", INT_TYPE.clone()), field("y", FLOAT_TYPE.clone())),
+                arguments: vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()),
                 return_type: UNIT_TYPE.clone()
             },
-            expression: block(vec!())
+            expression: lambda(vec![intern("x"), intern("y")], block(vec!()))
         };
         assert_eq!(func, expected);
     }
     #[test]
     fn generic_function() {
-        let func = parse("fn id(x: a) -> a { x }", |p| p.function());
+        let func = parse(
+r"
+id : (a) -> a;
+id = \x -> { x }
+", |p| p.function());
         let a = Generic(0);
         let expected = Function {
             declaration: FunctionDeclaration {
                 name: intern("id"),
                 type_variables: Vec::new(),
-                arguments: vec![field("x", a.clone())],
+                arguments: vec![a.clone()],
                 return_type: a.clone()
             },
-            expression: block(vec![id("x")])
+            expression: lambda(vec![intern("x")], block(vec![id("x")]))
         };
         assert_eq!(func, expected);
     }
@@ -787,20 +811,25 @@ pub mod tests {
     }
     #[test]
     fn trait_() {
-        let module = parse("trait Test { fn test(x: Self) -> Int; fn test2(x: Int, y: Self); }", |p| p.trait_());
+        let module = parse(
+r"
+trait Test {
+    test : (Self) -> Int;
+    test2 : (Int, Self) -> ();
+}", |p| p.trait_());
         let expected = Trait {
             name: intern("Test"),
             declarations: vec![
                 FunctionDeclaration {
                     name: intern("test"),
                     type_variables: Vec::new(),
-                    arguments: vec![field("x", typ("Self"))],
+                    arguments: vec![typ("Self")],
                     return_type: INT_TYPE.clone()
                 },
                 FunctionDeclaration {
                     name: intern("test2"),
                     type_variables: Vec::new(),
-                    arguments: vec![field("x", INT_TYPE.clone()), field("y", typ("Self"))],
+                    arguments: vec![INT_TYPE.clone(), typ("Self")],
                     return_type: UNIT_TYPE.clone()
                 },
             ]
@@ -810,17 +839,29 @@ pub mod tests {
     #[test]
     fn impl_() {
         parse(
-r"impl Test for Int { fn test(x: Self) -> Int { x } fn test2(x: Int, y: Self) { x + y; } }", |p| p.impl_());
+r"
+impl Test for Int {
+    test : (Self) -> Int;
+    test = \x -> { x }
+
+    test2 : (Int, Self) -> ();
+    test2 = \x y -> { x + y; }
+}
+", |p| p.impl_());
     }
+
     #[test]
     fn function_type() {
         let typ = parse("fn () -> fn (Int) -> Float", |p| p.typ());
         assert_eq!(typ, FunctionType(Vec::new(), box FunctionType(vec![INT_TYPE.clone()], box FLOAT_TYPE.clone())));
     }
+
     #[test]
-    fn lambda() {
+    fn create_lambda() {
         parse(
-r"fn main() -> fn (int) -> float {
+r"
+main : () -> fn (int) -> float;
+main = \ -> {
     \x -> 1.0
 }", |p| p.function());
     }
@@ -839,7 +880,8 @@ struct Named<a> {
 trait Test {
 }
 
-fn test<a: Test>(x: a) -> Option<a> {
+test : <a: Test> (a) -> Option<a>;
+test = \x -> {
     Some(x)
 }
 

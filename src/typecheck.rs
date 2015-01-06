@@ -175,7 +175,7 @@ fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcT
 fn from_declaration_<F>(mut type_handler: F, decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType>
     where F: FnMut(InternedStr) -> Option<TcType> {
     let args = decl.arguments.iter()
-        .map(|f| from_generic_type(&mut type_handler, &f.typ))
+        .map(|f| from_generic_type(&mut type_handler, f))
         .collect();
     let constraints = decl.type_variables.iter()
         .map(|constraints| {
@@ -536,11 +536,15 @@ impl <'a> Typecheck<'a> {
         debug!("Typecheck function {} :: {:?}", function.declaration.name.id(), function.declaration.name.typ);
         self.stack.clear();
         self.subs.clear();
+        let (arguments, body) = match function.expression.value {
+            ast::Lambda(ref mut lambda) => (&mut *lambda.arguments, &mut *lambda.body),
+            _ => panic!("Not a lambda in function declaration")
+        };
         let return_type = match function.declaration.name.typ {
             FunctionType(ref arg_types, ref return_type) => {
                 self.subs.var_id += 1;
                 let base = self.subs.var_id;
-                for (typ, arg) in arg_types.iter().zip(function.declaration.arguments.iter()) {
+                for (typ, arg) in arg_types.iter().zip(arguments.iter()) {
                     let typ = self.subs.instantiate_(base, typ);
                     debug!("{} {:?}", arg.name, typ);
                     self.stack_var(arg.name.clone(), typ);
@@ -561,7 +565,7 @@ impl <'a> Typecheck<'a> {
                 return
             }                
         };
-        let inferred_return_type = match self.typecheck(&mut function.expression) {
+        let inferred_return_type = match self.typecheck(body) {
             Ok(typ) => typ,
             Err(err) => {
                 self.errors.error(ast::Located { location: function.expression.location, value: err });
@@ -569,7 +573,7 @@ impl <'a> Typecheck<'a> {
             }
         };
         match self.merge(return_type, inferred_return_type) {
-            Ok(_) => self.replace_vars(&mut function.expression),
+            Ok(_) => self.replace_vars(body),
             Err(err) => {
                 debug!("End {} ==> {:?}", function.declaration.name.id(), err);
                 self.errors.error(ast::Located { location: function.expression.location, value: err });
@@ -1282,7 +1286,10 @@ mod tests {
     }
     #[test]
     fn while_() {
-        let text = "fn main() { let x = 2; while x < 10 { x } }";
+        let text =
+r"
+main : () -> ();
+main = \ -> { let x = 2; while x < 10 { x } }";
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
@@ -1297,7 +1304,8 @@ enum AB {
     A(Int),
     B(Float)
 }
-fn main() -> Int {
+main : () -> Int;
+main = \ -> {
     match A(1) {
         A(x) => { x }
         B(x) => { 0 }
@@ -1319,16 +1327,18 @@ struct Vec {
 }
 
 trait Add {
-    fn add(l: Self, r: Self) -> Self;
+    add : (Self, Self) -> Self;
 }
 
 impl Add for Vec {
-    fn add(l: Vec, r: Vec) -> Vec {
+    add : (Vec, Vec) -> Vec;
+    add = \l r -> {
         Vec(l.x + r.x, l.y + r.y)
     }
 }
 
-fn test(v: Vec) -> Vec {
+test : (Vec) -> Vec;
+test = \v -> {
     add(v, Vec(1, 1))
 }
 ";
@@ -1349,11 +1359,12 @@ struct Vec {
 }
 
 trait Add {
-    fn add(l: Self, r: Self) -> Self;
+    add : (Self, Self) -> Self;
 }
 
 impl Add for Vec {
-    fn add(l: Vec, r: Vec) -> Int {
+    add : (Vec, Vec) -> Int;
+    add = \x y -> {
         2
     }
 }
@@ -1367,15 +1378,18 @@ impl Add for Vec {
     fn function_type() {
         let text = 
 r"
-fn test(x: Int) -> Float {
+test : (Int) -> Float;
+test = \x -> {
     1.0
 }
 
-fn higher_order(x: Int, f: fn (Int) -> Float) -> Float {
+higher_order : (Int, fn (Int) -> Float) -> Float;
+higher_order = \x f -> {
     f(x)
 }
 
-fn test2() {
+test2 : () -> ();
+test2 = \ -> {
     higher_order(1, test);
 }
 ";
@@ -1388,7 +1402,8 @@ fn test2() {
     fn array_type() {
         let text = 
 r"
-fn test(x: Int) -> [Int] {
+test : (Int) -> [Int];
+test = \x -> {
     [1,2,x]
 }
 ";
@@ -1401,9 +1416,8 @@ fn test(x: Int) -> [Int] {
     fn array_unify() {
         let text = 
 r"
-fn test() -> [Int] {
-    []
-}
+test : () -> [Int];
+test = \ -> [];
 ";
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
@@ -1414,11 +1428,13 @@ fn test() -> [Int] {
     fn lambda() {
         let text = 
 r"
-fn main() -> Int {
+main : () -> Int;
+main = \ -> {
     let f = adder(2);
     f(3)
 }
-fn adder(x: Int) -> fn (Int) -> Int {
+adder : (Int) -> fn (Int) -> Int;
+adder = \x -> {
     \y -> x + y
 }
 ";
@@ -1431,13 +1447,13 @@ fn adder(x: Int) -> fn (Int) -> Int {
     fn generic_function() {
         let text = 
 r"
-fn main() -> Int {
+main : () -> Int;
+main = \ -> {
     let x = 1;
     id(x)
 }
-fn id(x: a) -> a {
-    x
-}
+id : (a) -> a;
+id = \x -> x;
 ";
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
@@ -1448,12 +1464,14 @@ fn id(x: a) -> a {
     fn generic_function_map() {
         let text = 
 r"
-fn main() -> Float {
+main : () -> Float;
+main = \ -> {
     let xs = [1,2,3,4];
     transform(xs, \x -> []);
     transform(1, \x -> 1.0)
 }
-fn transform(x: a, f: fn (a) -> b) -> b {
+transform : (a, fn (a) -> b) -> b;
+transform = \x f -> {
     f(x)
 }
 ";
@@ -1462,8 +1480,13 @@ fn transform(x: a, f: fn (a) -> b) -> b {
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
         match module.functions[0].expression.value {
-            ::ast::Block(ref exprs) => {
-                assert_eq!(exprs[2].value.type_of(), &FLOAT_TYPE);
+            ast::Lambda(ref lambda) => {
+                match lambda.body.value {
+                    ast::Block(ref exprs) => {
+                        assert_eq!(exprs[2].value.type_of(), &FLOAT_TYPE);
+                    }
+                    _ => panic!()
+                }
             }
             _ => panic!()
         }
@@ -1472,9 +1495,8 @@ fn transform(x: a, f: fn (a) -> b) -> b {
     fn specialized_generic_function_error() {
         let text = 
 r"
-fn id(x: a) -> a {
-    2
-}
+id : (a) -> a;
+id = \x -> 2;
 ";
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
@@ -1490,7 +1512,8 @@ enum Option<a> {
     Some(a),
     None()
 }
-fn is_positive(x: Float) -> Option<Float> {
+is_positive : (Float) -> Option<Float>;
+is_positive = \x -> {
     if x < 0.0 {
         None()
     }
@@ -1504,11 +1527,16 @@ fn is_positive(x: Float) -> Option<Float> {
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
         match module.functions[0].expression.value {
-            ast::Block(ref exprs) => {
-                match exprs[0].value {
-                    ast::IfElse(_, ref if_true, ref if_false) => {
-                        assert_eq!(if_true.type_of(), if_false.type_of());
-                        assert_eq!(if_false.type_of(), &Type(intern("Option"), vec![FLOAT_TYPE.clone()]));
+            ast::Lambda(ref lambda) => {
+                match lambda.body.value {
+                    ast::Block(ref exprs) => {
+                        match exprs[0].value {
+                            ast::IfElse(_, ref if_true, ref if_false) => {
+                                assert_eq!(if_true.type_of(), if_false.type_of());
+                                assert_eq!(if_false.type_of(), &Type(intern("Option"), vec![FLOAT_TYPE.clone()]));
+                            }
+                            _ => panic!()
+                        }
                     }
                     _ => panic!()
                 }
@@ -1524,7 +1552,8 @@ enum Option<a> {
     Some(a),
     None()
 }
-fn test(x: Float) -> Option<Int> {
+test: (Float) -> Option<Int>;
+test = \x -> {
     if x < 0.0 {
         None()
     }
@@ -1546,19 +1575,21 @@ fn test(x: Float) -> Option<Int> {
         let text = 
 r"
 trait Eq {
-    fn eq(l: Self, r: Self) -> Bool;
+    eq : (Self, Self) -> Bool;
 }
 enum Option<a> {
     Some(a),
     None()
 }
 impl Eq for Int {
-    fn eq(l: Int, r: Int) -> Bool {
+    eq : (Int, Int) -> Bool;
+    eq = \l r -> {
         l == r
     }
 }
 impl <a:Eq> Eq for Option<a> {
-    fn eq(l: Option<a>, r: Option<a>) -> Bool {
+    eq : (Option<a>, Option<a>) -> Bool;
+    eq = \l r -> {
         match l {
             Some(l_val) => {
                 match r {
@@ -1575,7 +1606,8 @@ impl <a:Eq> Eq for Option<a> {
         }
     }
 }
-fn test() -> Bool {
+test : () -> Bool;
+test = \ -> {
     eq(Some(2), None())
 }
 ";
@@ -1584,18 +1616,23 @@ fn test() -> Bool {
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
         match module.functions[0].expression.value {
-            ast::Block(ref exprs) => {
-                match exprs[0].value {
-                    ast::Call(ref f, ref args) => {
-                        let int_opt = Type(intern("Option"), vec![INT_TYPE.clone()]);
-                        assert_eq!(f.type_of(), &(FunctionType(vec![int_opt.clone(), int_opt.clone()], box BOOL_TYPE.clone())));
-                        assert_eq!(args[0].type_of(), &int_opt);
-                        assert_eq!(args[1].type_of(), &int_opt);
+            ast::Lambda(ref lambda) => {
+                match lambda.body.value {
+                    ast::Block(ref exprs) => {
+                        match exprs[0].value {
+                            ast::Call(ref f, ref args) => {
+                                let int_opt = Type(intern("Option"), vec![INT_TYPE.clone()]);
+                                assert_eq!(f.type_of(), &(FunctionType(vec![int_opt.clone(), int_opt.clone()], box BOOL_TYPE.clone())));
+                                assert_eq!(args[0].type_of(), &int_opt);
+                                assert_eq!(args[1].type_of(), &int_opt);
+                            }
+                            ref x => panic!("{:?}", x)
+                        }
                     }
-                    _ => panic!()
+                    ref x => panic!("{:?}", x)
                 }
             }
-            _ => panic!()
+            ref x => panic!("{:?}", x)
         }
     }
     #[test]
@@ -1603,20 +1640,19 @@ fn test() -> Bool {
         let text = 
 r"
 trait Eq {
-    fn eq(l: Self, r: Self) -> Bool;
+    eq : (Self, Self) -> Bool;
 }
 enum Option<a> {
     Some(a),
     None()
 }
 impl <a:Eq> Eq for Option<a> {
-    fn eq(l: Option<a>, r: Option<a>) -> Bool {
-        false
-    }
+    eq : (Option<a>, Option<a>) -> Bool;
+    eq = \l r -> false
 }
-fn test() -> Bool {
-    eq(Some(2), None())
-}
+test : () -> Bool;
+test = \ -> eq(Some(2), None());
+
 ";
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
@@ -1629,9 +1665,8 @@ fn test() -> Bool {
     fn and_or() {
         let text = 
 r"
-fn test(x: Float) -> Bool {
-    x < 0.0 && true || x > 1.0
-}
+test : (Float) -> Bool;
+test = \x -> x < 0.0 && true || x > 1.0;
 ";
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
@@ -1642,7 +1677,8 @@ fn test(x: Float) -> Bool {
     fn and_type_error() {
         let text = 
 r"
-fn test() -> Bool {
+test : () -> Bool;
+test = \ -> {
     1 && true
 }
 ";
