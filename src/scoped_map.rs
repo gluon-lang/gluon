@@ -88,7 +88,7 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn swap(&mut self, k: K, v: V) -> Option<V> {
         let vec = match self.map.entry(k.clone()) {
             Entry::Occupied(v) => v.into_mut(),
-            Entry::Vacant(v) => v.set(Vec::new())
+            Entry::Vacant(v) => v.insert(Vec::new())
         };
         if vec.len() != 0 {
             let r  = vec.pop();
@@ -122,7 +122,7 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn insert(&mut self, k: K, v: V) -> bool {
         let vec = match self.map.entry(k.clone()) {
             Entry::Occupied(v) => v.into_mut(),
-            Entry::Vacant(v) => v.set(Vec::new())
+            Entry::Vacant(v) => v.insert(Vec::new())
         };
         vec.push(v);
         self.scopes.push(Some(k));

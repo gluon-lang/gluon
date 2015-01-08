@@ -10,7 +10,7 @@ use std::ops::Index;
 //can only be inserted, never modified (this could be done with a Rc pointer as well but
 //is not done for efficiency since it is not needed)
 
-unsafe fn forget_lifetime<'a, 'b, Sized? T>(x: &'a T) -> &'b T {
+unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x) 
 }
 
@@ -63,7 +63,7 @@ impl <T> FixedVec<T> {
     }
 
     #[allow(dead_code)]
-    pub fn extend<I: Iterator<T>>(&self, iter: I) {
+    pub fn extend<I: Iterator<Item=T>>(&self, iter: I) {
         self.vec.borrow_mut().extend(iter.map(|v| box v))
     }
 
@@ -87,7 +87,8 @@ impl <T> FixedVec<T> {
     }
 }
 
-impl <T> Index<uint, T> for FixedVec<T> {
+impl <T> Index<uint> for FixedVec<T> {
+    type Output = T;
     fn index(&self, index: &uint) -> &T {
         let vec = self.vec.borrow();
         let result = &*(*vec)[*index];
@@ -97,7 +98,7 @@ impl <T> Index<uint, T> for FixedVec<T> {
 
 
 impl <A> FromIterator<A> for FixedVec<A> {
-    fn from_iter<T: Iterator<A>>(iterator: T) -> FixedVec<A> {
+    fn from_iter<T: Iterator<Item=A>>(iterator: T) -> FixedVec<A> {
         let vec: Vec<_> = iterator.map(|x| box x).collect();
         FixedVec { vec: RefCell::new(vec) }
     }

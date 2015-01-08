@@ -303,9 +303,9 @@ impl TypeInfos {
         for imp in module.impls.iter() {
             let imp_type = from_constrained_type(imp.type_variables.as_slice(), &imp.typ);
             let trait_name = imp.trait_name.id().clone();
-            let set = match self.impls.entry(trait_name) {
+            let set = match self.impls.entry(&trait_name) {
                 Entry::Occupied(v) => v.into_mut(),
-                Entry::Vacant(v) => v.set(Vec::new())
+                Entry::Vacant(v) => v.insert(Vec::new())
             };
             let constraints = imp.type_variables.iter()
                 .map(|constraints| {

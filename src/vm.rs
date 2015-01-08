@@ -444,7 +444,8 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 }
 
-impl <'a, 'b, 'c> Index<uint, Value<'a>> for StackFrame<'a, 'b> {
+impl <'a, 'b, 'c> Index<uint> for StackFrame<'a, 'b> {
+    type Output = Value<'a>;
     fn index(&self, index: &uint) -> &Value<'a> {
         &self.stack.values[self.offset + *index]
     }
@@ -964,7 +965,7 @@ fn array_length(vm: &VM) {
 fn string_append(vm: &VM) {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     match (&stack[0], &stack[1]) {
-        (&String(ref l), &String(ref r)) => {
+        (&String(l), &String(r)) => {
             let l = l.as_slice();
             let r = r.as_slice();
             let mut s = ::std::string::String::with_capacity(l.len() + r.len());

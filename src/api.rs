@@ -1,8 +1,6 @@
-#![macro_escape]
 use vm::{VM, VMResult, Value, Int, Float, Function, Userdata, Userdata_, StackFrame};
 use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
-use std::any::AnyRefExt;
 use std::boxed::BoxAny;
 
 pub trait VMType {
@@ -175,7 +173,7 @@ impl <Args, R> Copy for FunctionRef<Args, R> { }
 
 impl <Args, R> VMType for FunctionRef<Args, R> {
     fn vm_type<'a>(_: Option<&FunctionRef<Args, R>>, vm: &'a VM) -> &'a TcType {
-        vm.get_type::<|Args|:'static -> R>()
+        vm.get_type::<&fn (Args) -> R>()
     }
 }
 

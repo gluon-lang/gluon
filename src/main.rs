@@ -1,6 +1,5 @@
-#![feature(globs, phase, macro_rules, default_type_params)]
 extern crate collections;
-#[phase(plugin, link)]
+#[macro_use]
 extern crate log;
 
 extern crate EmbedLang;

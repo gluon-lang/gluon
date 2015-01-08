@@ -210,14 +210,14 @@ pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
 }
 
 
-pub trait MutVisitor for Sized? {
+pub trait MutVisitor {
     type T;
     fn visit_expr(&mut self, e: &mut LExpr< <Self as MutVisitor>::T>) {
         walk_mut_expr(self, e);
     }
 }
 
-pub fn walk_mut_expr<T, Sized? V: MutVisitor<T=T>>(v: &mut V, e: &mut LExpr<T>) {
+pub fn walk_mut_expr<T, V: ?Sized + MutVisitor<T=T>>(v: &mut V, e: &mut LExpr<T>) {
     match e.value {
         IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);

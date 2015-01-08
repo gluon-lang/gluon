@@ -13,7 +13,7 @@ pub struct Gc {
 }
 
 pub trait DataDef {
-    type Sized? Value;
+    type Value: ?Sized;
     fn size(&self) -> uint;
     fn initialize(self, ptr: *mut <Self as DataDef>::Value);
     fn make_ptr(&self, ptr: *mut ()) -> *mut <Self as DataDef>::Value;
@@ -87,37 +87,37 @@ impl GcHeader {
 }
 
 
-pub struct GcPtr<Sized? T> {
+pub struct GcPtr<T: ?Sized> {
     ptr: *const T
 }
 
-impl <Sized? T> Copy for GcPtr<T> {}
+impl <T: ?Sized> Copy for GcPtr<T> {}
 
-impl <Sized? T> Clone for GcPtr<T> {
+impl <T: ?Sized> Clone for GcPtr<T> {
     fn clone(&self) -> GcPtr<T> {
         GcPtr { ptr: self.ptr }
     }
 }
 
-impl <Sized? T> Deref for GcPtr<T> {
+impl <T: ?Sized> Deref for GcPtr<T> {
     type Target = T;
     fn deref(&self) -> &T {
         unsafe { & *self.ptr }
     }
 }
 
-impl <Sized? T> ::std::borrow::BorrowFrom<GcPtr<T>> for T {
+impl <T: ?Sized> ::std::borrow::BorrowFrom<GcPtr<T>> for T {
     fn borrow_from(ptr: &GcPtr<T>) -> &T {
         &**ptr
     }
 }
 
-impl <Sized? T: Eq> Eq for GcPtr<T> { }
-impl <Sized? T: PartialEq> PartialEq for GcPtr<T> {
+impl <T: ?Sized + Eq> Eq for GcPtr<T> { }
+impl <T: ?Sized + PartialEq> PartialEq for GcPtr<T> {
     fn eq(&self, other: &GcPtr<T>) -> bool { **self == **other }
 }
 
-impl <S: ::std::hash::Writer, Sized? T: ::std::hash::Hash<S>> ::std::hash::Hash<S> for GcPtr<T> {
+impl <S: ::std::hash::Writer, T: ?Sized + ::std::hash::Hash<S>> ::std::hash::Hash<S> for GcPtr<T> {
     fn hash(&self, state: &mut S) {
         (**self).hash(state)
     }
@@ -126,7 +126,7 @@ impl <S: ::std::hash::Writer, Sized? T: ::std::hash::Hash<S>> ::std::hash::Hash<
 ///Trait which must be implemented on all root types which contain GcPtr
 ///The type implementing Traverseable must call traverse on each of its fields
 ///which in turn contains GcPtr
-pub trait Traverseable for Sized? {
+pub trait Traverseable {
     fn traverse(&self, func: &mut Gc);
 }
 
@@ -158,7 +158,7 @@ impl <U> Traverseable for [U]
 }
 
 ///When traversing a GcPtr we need to mark it
-impl <Sized? T> Traverseable for GcPtr<T>
+impl <T: ?Sized> Traverseable for GcPtr<T>
     where T: Traverseable {
     fn traverse(&self, gc: &mut Gc) {
         if !gc.mark(*self) {
@@ -173,7 +173,7 @@ impl Gc {
     pub fn new() -> Gc {
         Gc { values: None, allocated_objects: 0, collect_limit: 100 }
     }
-    pub fn alloc_and_collect<Sized? T, Sized? R, D>(&mut self, roots: &mut R, mut def: D) -> GcPtr<T>
+    pub fn alloc_and_collect<T: ?Sized, R: ?Sized, D>(&mut self, roots: &mut R, mut def: D) -> GcPtr<T>
         where T: Traverseable, R: Traverseable, D: DataDef<Value=T> + Traverseable {
         if self.allocated_objects >= self.collect_limit {
             self.collect2(roots, &mut def);
@@ -181,7 +181,7 @@ impl Gc {
         self.alloc(def)
     }
 
-    pub fn alloc<Sized? T, D>(&mut self, def: D) -> GcPtr<T>
+    pub fn alloc<T: ?Sized, D>(&mut self, def: D) -> GcPtr<T>
         where D: DataDef<Value=T> {
         let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
@@ -194,12 +194,12 @@ impl Gc {
         }
     }
 
-    pub fn collect<Sized? R>(&mut self, roots: &mut R)
+    pub fn collect<R: ?Sized>(&mut self, roots: &mut R)
         where R: Traverseable {
         self.collect2(roots, &mut ());
     }
     
-    fn collect2<Sized? R, D>(&mut self, roots: &mut R, def: &mut D)
+    fn collect2<R: ?Sized, D>(&mut self, roots: &mut R, def: &mut D)
         where R: Traverseable, D: Traverseable {
         roots.traverse(self);
         def.traverse(self);
@@ -208,7 +208,7 @@ impl Gc {
 
     ///Marks the GcPtr
     ///Returns true if the pointer was already marked
-    fn mark<Sized? T>(&mut self, value: GcPtr<T>) -> bool {
+    fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
         let header = unsafe { Gc::gc_header(&value) };
         if header.marked.get() {
             return true
@@ -250,7 +250,7 @@ impl Gc {
         drop(header);
     }
 
-    unsafe fn gc_header<Sized? T>(value: &GcPtr<T>) -> &GcHeader {
+    unsafe fn gc_header<T: ?Sized>(value: &GcPtr<T>) -> &GcHeader {
         //Use of transmute_copy allows us to get the pointer
         //to the data regardless of wether T is unsized or not
         //(DST is structured as (ptr, len))

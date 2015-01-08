@@ -1,7 +1,7 @@
 #![crate_type="lib"]
-#![feature(globs, unsafe_destructor, phase, macro_rules, default_type_params, unboxed_closures, associated_types, old_orphan_check)]
+#![feature(unsafe_destructor, unboxed_closures, old_orphan_check)]
 extern crate collections;
-#[phase(plugin, link)]
+#[macro_use]
 extern crate log;
 
 pub use interner::InternedStr;
@@ -20,5 +20,6 @@ pub mod compiler;
 pub mod vm;
 mod gc;
 mod fixed;
+#[macro_use]
 pub mod api;
 
