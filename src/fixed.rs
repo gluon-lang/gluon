@@ -38,7 +38,7 @@ impl <K: Eq + Hash<Hasher>, V> FixedMap<K, V> {
     }
 
     #[allow(dead_code)]
-    pub fn len(&self) -> uint {
+    pub fn len(&self) -> usize {
         self.map.borrow().len()
     }
 
@@ -72,7 +72,7 @@ impl <T> FixedVec<T> {
         self.vec.borrow()
     }
 
-    pub fn find<F>(&self, mut test: F) -> Option<(uint, &T)>
+    pub fn find<F>(&self, mut test: F) -> Option<(usize, &T)>
         where F: FnMut(&T) -> bool {
         self.vec.try_borrow()
             .and_then(|vec| {
@@ -83,14 +83,14 @@ impl <T> FixedVec<T> {
             })
     }
 
-    pub fn len(&self) -> uint {
+    pub fn len(&self) -> usize {
         self.vec.borrow().len()
     }
 }
 
-impl <T> Index<uint> for FixedVec<T> {
+impl <T> Index<usize> for FixedVec<T> {
     type Output = T;
-    fn index(&self, index: &uint) -> &T {
+    fn index(&self, index: &usize) -> &T {
         let vec = self.vec.borrow();
         let result = &*(*vec)[*index];
         unsafe { forget_lifetime(result) }

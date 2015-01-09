@@ -8,35 +8,35 @@ use self::Variable::*;
 
 #[derive(Show)]
 pub enum Instruction {
-    PushInt(int),
+    PushInt(isize),
     PushFloat(f64),
     PushString(InternedStr),
-    Push(uint),
-    PushGlobal(uint),
-    Store(uint),
-    CallGlobal(uint),
-    Construct(uint, uint),
-    GetField(uint),
-    SetField(uint),
+    Push(usize),
+    PushGlobal(usize),
+    Store(usize),
+    CallGlobal(usize),
+    Construct(usize, usize),
+    GetField(usize),
+    SetField(usize),
     Split,
-    TestTag(uint),
-    Jump(uint),
-    CJump(uint),
-    Pop(uint),
-    Slide(uint),
+    TestTag(usize),
+    Jump(usize),
+    CJump(usize),
+    Pop(usize),
+    Slide(usize),
 
     //Creates a closure with 'n' upvariables
     //Pops the 'n' values on top of the stack and creates a closure
-    MakeClosure(uint, uint),
-    PushUpVar(uint),
-    StoreUpVar(uint),
+    MakeClosure(usize, usize),
+    PushUpVar(usize),
+    StoreUpVar(usize),
 
-    ConstructTraitObject(uint),
-    PushTraitFunction(uint),
+    ConstructTraitObject(usize),
+    PushTraitFunction(usize),
     Unpack,
 
-    PushDictionaryMember(uint, uint),
-    PushDictionary(uint),
+    PushDictionaryMember(u32, u32),
+    PushDictionary(usize),
 
     GetIndex,
     SetIndex,
@@ -59,11 +59,11 @@ impl Copy for Instruction { }
 pub type CExpr = LExpr<TcIdent>;
 
 pub enum Variable<'a> {
-    Stack(uint),
-    Global(uint, &'a [Constraints], &'a TcType),
-    Constructor(uint, uint),
+    Stack(usize),
+    Global(usize, &'a [Constraints], &'a TcType),
+    Constructor(usize, usize),
     TraitFunction(&'a TcType),
-    UpVar(uint)
+    UpVar(usize)
 }
 
 pub struct CompiledFunction {
@@ -75,7 +75,7 @@ pub struct CompiledFunction {
 #[derive(PartialEq, Clone)]
 pub struct TraitFunctions {
     //The where the first function of the implemented trait is at
-    pub index: uint,
+    pub index: usize,
     pub trait_name: InternedStr,
     pub impl_type: TcType
 }
@@ -90,7 +90,7 @@ impl <'a> FunctionEnv<'a> {
     pub fn new() -> FunctionEnv<'a> {
         FunctionEnv { instructions: Vec::new(), free_vars: Vec::new(), dictionary: &[] }
     }
-    fn upvar(&mut self, s: InternedStr) -> uint {
+    fn upvar(&mut self, s: InternedStr) -> usize {
         match self.free_vars.iter().enumerate().find(|t| *t.1 == s).map(|t| t.0) {
             Some(index) => index,
             None => {
@@ -109,12 +109,12 @@ pub struct TypeResult<'a, T> {
 
 pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
-    fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<uint>;
-    fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<uint>;
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint>;
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<uint>>;
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint>;
-    fn next_function_index(&self) -> uint;
+    fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<usize>;
+    fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<usize>;
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize>;
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>>;
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize>;
+    fn next_function_index(&self) -> usize;
 }
 
 impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
@@ -127,24 +127,24 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
             })
             .or_else(|| outer.find_var(s))
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
         let &(ref outer, ref inner) = self;
         inner.find_field(struct_, field)
             .or_else(|| outer.find_field(struct_, field))
     }
 
-    fn find_tag(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+    fn find_tag(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
         let &(ref outer, ref inner) = self;
         inner.find_tag(struct_, field)
             .or_else(|| outer.find_tag(struct_, field))
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
         let &(ref outer, ref inner) = self;
         inner.find_trait_offset(trait_name, trait_type)
             .map(|index| index + outer.next_function_index())
             .or_else(|| outer.find_trait_offset(trait_name, trait_type))
     }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<uint>> {
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
         let &(ref outer, ref inner) = self;
         inner.find_trait_function(typ, id)
             .map(|mut result| {
@@ -153,12 +153,12 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
             })
             .or_else(|| outer.find_trait_function(typ, id))
     }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize> {
         let &(ref outer, ref inner) = self;
         inner.find_object_function(trait_type, name)
             .or_else(|| outer.find_object_function(trait_type, name))
     }
-    fn next_function_index(&self) -> uint {
+    fn next_function_index(&self) -> usize {
         let &(ref outer, ref inner) = self;
         outer.next_function_index() + inner.next_function_index()
     }
@@ -192,7 +192,7 @@ impl CompilerEnv for Module<TcIdent> {
                     .map(|decl| TraitFunction(&decl.name.typ))
             })
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
         self.structs.iter()
             .find(|s| s.name.id() == struct_)
             .map(|s| s.fields.iter()
@@ -200,7 +200,7 @@ impl CompilerEnv for Module<TcIdent> {
                 .find(|&(_, f)| f.name == *field)
                 .map(|(i, _)| i).unwrap())
     }
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
         self.enums.iter()
             .find(|e| e.name.id() == enum_)
             .map(|e| e.constructors.iter()
@@ -208,7 +208,7 @@ impl CompilerEnv for Module<TcIdent> {
                 .find(|&(_, c)| c.name.id() == ctor_name)
                 .map(|(i, _)| i).unwrap())
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
         let mut offset = self.functions.len();
         self.impls.iter()
             .find(|imp| {
@@ -217,7 +217,7 @@ impl CompilerEnv for Module<TcIdent> {
             })
             .map(|imp| offset - imp.functions.len())
     }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<uint>> {
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
         let mut offset = self.functions.len();
         for imp in self.impls.iter() {
             if match_types(&imp.typ, typ) {
@@ -235,7 +235,7 @@ impl CompilerEnv for Module<TcIdent> {
         }
         None
     }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize> {
         self.traits.iter()
             .find(|trait_| trait_.name.id() == trait_type)
             .and_then(|trait_| trait_.declarations.iter().enumerate()
@@ -243,7 +243,7 @@ impl CompilerEnv for Module<TcIdent> {
                 .map(|(i, _)| i)
             )
     }
-    fn next_function_index(&self) -> uint {
+    fn next_function_index(&self) -> usize {
         self.functions.len() + self.impls.iter().fold(0, |y, i| i.functions.len() + y)
     }
 }
@@ -252,32 +252,32 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
         (*self).find_var(s)
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
         (*self).find_field(struct_, field)
     }
 
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
         (*self).find_tag(enum_, ctor_name)
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
         (*self).find_trait_offset(trait_name, trait_type)
     }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<uint>> {
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
         (*self).find_trait_function(typ, id)
     }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<uint> {
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize> {
         (*self).find_object_function(trait_type, name)
     }
-    fn next_function_index(&self) -> uint {
+    fn next_function_index(&self) -> usize {
         (*self).next_function_index()
     }
 }
 
 pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
-    stack: HashMap<InternedStr, uint>,
+    stack: HashMap<InternedStr, usize>,
     //Stack which holds indexes for where each closure starts its stack variables
-    closure_limits: Vec<uint>,
+    closure_limits: Vec<usize>,
     compiled_lambdas: Vec<CompiledFunction>,
 }
 
@@ -312,15 +312,15 @@ impl <'a> Compiler<'a> {
             .or_else(||  self.globals.find_var(s))
     }
 
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
         self.globals.find_field(struct_, field)
     }
 
-    fn find_tag(&self, enum_: &InternedStr, constructor: &InternedStr) -> Option<uint> {
+    fn find_tag(&self, enum_: &InternedStr, constructor: &InternedStr) -> Option<usize> {
         self.globals.find_tag(enum_, constructor)
     }
 
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<uint>> {
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
         self.globals.find_trait_function(typ, id)
     }
 
@@ -332,7 +332,7 @@ impl <'a> Compiler<'a> {
         self.stack.insert(s, v);
     }
 
-    fn stack_size(&self) -> uint {
+    fn stack_size(&self) -> usize {
         self.stack.len()
     }
 
@@ -399,7 +399,7 @@ impl <'a> Compiler<'a> {
         match expr.value {
             Literal(ref lit) => {
                 match *lit {
-                    Integer(i) => function.instructions.push(PushInt(i)),
+                    Integer(i) => function.instructions.push(PushInt(i as isize)),
                     Float(f) => function.instructions.push(PushFloat(f)),
                     Bool(b) => function.instructions.push(PushInt(if b { 1 } else { 0 })),
                     String(s) => function.instructions.push(PushString(s))
@@ -759,7 +759,7 @@ impl <'a> Compiler<'a> {
         function.instructions.push(Construct(0, dict_size));
     }
 
-    fn add_dictionary(&self, i: uint, constraint_type: &TcType, real_type: &TcType, function: &mut FunctionEnv) -> uint {
+    fn add_dictionary(&self, i: usize, constraint_type: &TcType, real_type: &TcType, function: &mut FunctionEnv) -> usize {
         match real_type {
             &TypeVariable(_) => {
                 debug!("In dict");
@@ -806,8 +806,8 @@ impl <'a> Compiler<'a> {
                     }
                     None => {//Function must be in the dictionary
                         match types[0] {
-                            Some(&TypeVariable(var_index)) if var_index - 1 < function.dictionary.len() => {
-                                let constraint = &function.dictionary[var_index - 1];
+                            Some(&TypeVariable(var_index)) if (var_index as usize - 1) < function.dictionary.len() => {
+                                let constraint = &function.dictionary[var_index as usize - 1];
                                 for trait_type in constraint.constraints.iter() {
                                     let func_index = match *trait_type {
                                         Type(ref trait_name, _) => {
@@ -817,7 +817,7 @@ impl <'a> Compiler<'a> {
                                     };
                                     match func_index {
                                         Some(index) => {
-                                            function.instructions.push(PushDictionaryMember(var_index - 1, index));
+                                            function.instructions.push(PushDictionaryMember(var_index - 1, index as u32));
                                             return
                                         }
                                         None => ()
@@ -849,6 +849,7 @@ fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mu
             find_real_type_(&**l_ret, &**r_ret, out)
         }
         (&TypeVariable(i), real_type) => {
+            let i = i as usize;
             if i >= out.len() {
                 let x = i + 1 - out.len();
                 out.extend(repeat(None).take(x));
@@ -856,6 +857,7 @@ fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mu
             out[i] = Some(real_type);
         }
         (&Generic(i), real_type) => {
+            let i = i as usize;
             if i >= out.len() {
                 let x = i + 1 - out.len();
                 out.extend(repeat(None).take(x));

@@ -50,7 +50,7 @@ struct UserDataDef<T>(T);
 
 impl <T: 'static> DataDef for UserDataDef<T> {
     type Value = RefCell<Box<Any>>;
-    fn size(&self) -> uint {
+    fn size(&self) -> usize {
         use std::mem::size_of;
         size_of::< <Self as DataDef>::Value>()
     }
@@ -83,17 +83,19 @@ impl <'a> Deref for DataStruct<'a> {
 }
 
 pub struct Data_<'a> {
-    tag: uint,
+    tag: usize,
     fields: [Cell<Value<'a>>]
 }
 
+pub type VMInt = isize;
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum Value<'a> {
-    Int(int),
+    Int(VMInt),
     Float(f64),
     String(InternedStr),
     Data(DataStruct<'a>),
-    Function(uint),
+    Function(usize),
     Closure(DataStruct<'a>),
     TraitObject(DataStruct<'a>),
     Userdata(Userdata_)
@@ -172,8 +174,8 @@ impl <'a> fmt::Show for Global_<'a> {
 }
 
 enum Named {
-    GlobalFn(uint),
-    TraitFn(InternedStr, uint),
+    GlobalFn(usize),
+    TraitFn(InternedStr, usize),
 }
 
 pub struct VM<'a> {
@@ -231,11 +233,11 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             }
         }
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<uint> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
         (*self).find_field(struct_, field)
     }
 
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<uint> {
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
         match self.type_infos.enums.get(enum_) {
             Some(ctors) => {
                 ctors.iter()
@@ -246,12 +248,12 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             None => None
         }
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<uint> {
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
         self.trait_indexes
             .find(|func| func.trait_name == *trait_name && match_types(&func.impl_type, trait_type))
             .map(|(_, func)| func.index)
     }
-    fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<uint>> {
+    fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<usize>> {
         self.names.get(fn_name).and_then(|named| {
             match *named {
                 TraitFn(ref trait_name, _) => {
@@ -273,7 +275,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             }
         })
     }
-    fn find_object_function(&self, trait_name: &InternedStr, fn_name: &InternedStr) -> Option<uint> {
+    fn find_object_function(&self, trait_name: &InternedStr, fn_name: &InternedStr) -> Option<usize> {
         self.type_infos.traits
             .get(trait_name)
             .and_then(|trait_info| 
@@ -283,7 +285,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                     .map(|(i, _)| i)
             )
     }
-    fn next_function_index(&self) -> uint {
+    fn next_function_index(&self) -> usize {
         self.globals.borrow().len()
     }
 }
@@ -327,7 +329,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
 
 pub struct Stack<'a> {
     values: Vec<Value<'a>>,
-    frames: Vec<(uint, Option<GcPtr<Data_<'a>>>)>
+    frames: Vec<(usize, Option<GcPtr<Data_<'a>>>)>
 }
 
 impl <'a, 'b, 'c> Stack<'a> {
@@ -336,7 +338,7 @@ impl <'a, 'b, 'c> Stack<'a> {
         Stack { values: Vec::new(), frames: Vec::new() }
     }
 
-    pub fn get(&self, index: uint) -> Value<'a> {
+    pub fn get(&self, index: usize) -> Value<'a> {
         self.values[index].clone()
     }
 
@@ -346,7 +348,7 @@ impl <'a, 'b, 'c> Stack<'a> {
             .expect("pop on empty stack")
     }
 
-    pub fn set(&mut self, index: uint, v: Value<'a>) {
+    pub fn set(&mut self, index: usize, v: Value<'a>) {
         self.values[index] = v;
     }
 
@@ -354,7 +356,7 @@ impl <'a, 'b, 'c> Stack<'a> {
         self.values.push(v)
     }
 
-    pub fn len(&self) -> uint {
+    pub fn len(&self) -> usize {
         self.values.len()
     }
 
@@ -362,11 +364,11 @@ impl <'a, 'b, 'c> Stack<'a> {
 
 pub struct StackFrame<'a: 'b, 'b> {
     stack: RefMut<'b, Stack<'a>>,
-    offset: uint,
+    offset: usize,
     upvars: Option<GcPtr<Data_<'a>>>
 }
 impl <'a: 'b, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: RefMut<'b, Stack<'a>>, args: uint, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
+    pub fn new(v: RefMut<'b, Stack<'a>>, args: usize, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
@@ -377,15 +379,15 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         StackFrame { stack: stack, offset: offset, upvars: None }
     }
 
-    pub fn len(&self) -> uint {
+    pub fn len(&self) -> usize {
         self.stack.len() - self.offset
     }
 
-    pub fn get(&self, i: uint) -> &Value<'a> {
+    pub fn get(&self, i: usize) -> &Value<'a> {
         &self.stack.values[self.offset + i]
     }
 
-    pub fn get_mut(&mut self, i: uint) -> &mut Value<'a> {
+    pub fn get_mut(&mut self, i: usize) -> &mut Value<'a> {
         &mut self.stack.values[self.offset + i]
     }
 
@@ -401,7 +403,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.pop()
     }
 
-    fn get_upvar(&self, index: uint) -> Value<'a> {
+    fn get_upvar(&self, index: usize) -> Value<'a> {
         let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
         upvars.fields[index].get()
     }
@@ -415,7 +417,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 
     fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
-            , args: uint
+            , args: usize
             , upvars: Option<GcPtr<Data_<'a>>>
             , f: F) -> Result<StackFrame<'a, 'b>, E> 
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
@@ -425,7 +427,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         Ok(stack)
     }
     fn scope<E, F>(self
-            , args: uint
+            , args: usize
             , new_upvars: Option<GcPtr<Data_<'a>>>
             , f: F) -> Result<StackFrame<'a, 'b>, E>
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
@@ -436,7 +438,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         Ok(StackFrame { stack: new_stack.stack, offset: offset, upvars: upvars })
     }
 
-    fn frame(mut stack: RefMut<'b, Stack<'a>>, args: uint, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
+    fn frame(mut stack: RefMut<'b, Stack<'a>>, args: usize, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
         assert!(stack.len() >= args);
         let offset = stack.len() - args;
         stack.frames.push((offset, upvars));
@@ -444,22 +446,22 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 }
 
-impl <'a, 'b, 'c> Index<uint> for StackFrame<'a, 'b> {
+impl <'a, 'b, 'c> Index<usize> for StackFrame<'a, 'b> {
     type Output = Value<'a>;
-    fn index(&self, index: &uint) -> &Value<'a> {
+    fn index(&self, index: &usize) -> &Value<'a> {
         &self.stack.values[self.offset + *index]
     }
 }
 
 struct Def<'a:'b, 'b> {
-    tag: uint,
+    tag: usize,
     elems: &'b mut [Value<'a>]
 }
 impl <'a, 'b> DataDef for Def<'a, 'b> {
     type Value = Data_<'a>;
-    fn size(&self) -> uint {
+    fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<uint>() + size_of::<Value<'a>>() * self.elems.len()
+        size_of::<usize>() + size_of::<Value<'a>>() * self.elems.len()
     }
     fn initialize(self, result: *mut Data_<'a>) {
         let result = unsafe { &mut *result };
@@ -568,7 +570,7 @@ impl <'a> VM<'a> {
         }
     }
 
-    pub fn get_global(&self, name: &str) -> Option<(uint, &Global<'a>)> {
+    pub fn get_global(&self, name: &str) -> Option<(usize, &Global<'a>)> {
         let n = self.intern(name);
         self.globals.find(|g| n == g.id)
     }
@@ -651,17 +653,17 @@ impl <'a> VM<'a> {
         self.gc.borrow_mut().collect(&mut roots);
     }
 
-    fn new_data(&self, tag: uint, fields: &mut [Value<'a>]) -> Value<'a> {
+    fn new_data(&self, tag: usize, fields: &mut [Value<'a>]) -> Value<'a> {
         Data(DataStruct { value: self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields })})
     }
-    fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: uint, fields: &mut [Value<'a>]) -> DataStruct<'a> {
+    fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: usize, fields: &mut [Value<'a>]) -> DataStruct<'a> {
         let mut interner = self.interner.borrow_mut();
         let mut roots = Roots { stack: stack, interner: &mut *interner };
         let mut gc = self.gc.borrow_mut();
         DataStruct { value: gc.alloc_and_collect(&mut roots, Def { tag: tag, elems: fields }) }
     }
 
-    pub fn call_function<'b, 'c>(&self, args: uint, upvars: Option<GcPtr<Data_<'a>>>, function: &Global<'a>) -> VMResult<Value<'a>>  {
+    pub fn call_function<'b, 'c>(&self, args: usize, upvars: Option<GcPtr<Data_<'a>>>, function: &Global<'a>) -> VMResult<Value<'a>>  {
         let stack = StackFrame::new(self.stack.borrow_mut(), args, upvars);
         self.execute_function(stack, function)
             .map(|mut stack| stack.pop())
@@ -813,7 +815,7 @@ impl <'a> VM<'a> {
                     let array = stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
-                            let v = array.fields[index as uint].get();
+                            let v = array.fields[index as usize].get();
                             stack.push(v);
                         }
                         (x, y) => return Err(format!("Op GetIndex called on invalid types {:?} {:?}", x, y))
@@ -825,7 +827,7 @@ impl <'a> VM<'a> {
                     let array = stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
-                            array.fields[index as uint].set(value);
+                            array.fields[index as usize].set(value);
                         }
                         (x, y) => return Err(format!("Op SetIndex called on invalid types {:?} {:?}", x, y))
                     }
@@ -874,8 +876,8 @@ impl <'a> VM<'a> {
                 PushDictionaryMember(trait_index, function_offset) => {
                     let func = match stack.get_upvar(0).clone()  {
                         Data(dict) => {
-                            match dict.fields[trait_index].get() {
-                                Function(i) => Function(i + function_offset),
+                            match dict.fields[trait_index as usize].get() {
+                                Function(i) => Function(i + function_offset as usize),
                                 _ => panic!()
                             }
                         }
@@ -934,7 +936,7 @@ fn binop<'a, 'b, F>(stack: &mut StackFrame<'a, 'b>, f: F)
 }
 #[inline]
 fn binop_int<F>(stack: &mut StackFrame, f: F)
-    where F: FnOnce(int, int) -> int {
+    where F: FnOnce(VMInt, VMInt) -> VMInt {
     binop(stack, move |l, r| {
         match (l, r) {
             (Int(l), Int(r)) => Int(f(l, r)),
@@ -957,7 +959,7 @@ fn array_length(vm: &VM) {
     match vm.pop() {
         Data(values) => {
             let i = values.fields.len();
-            vm.push(Int(i as int));
+            vm.push(Int(i as VMInt));
         }
         x => panic!("{:?}", x)
     }

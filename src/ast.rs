@@ -62,8 +62,8 @@ impl Copy for BuiltinType_ { }
 pub enum TypeEnum<Id> {
     Type(Id, Vec<TypeEnum<Id>>),
     TraitType(Id, Vec<TypeEnum<Id>>),
-    TypeVariable(uint),
-    Generic(uint),
+    TypeVariable(u32),
+    Generic(u32),
     FunctionType(Vec<TypeEnum<Id>>, Box<TypeEnum<Id>>),
     BuiltinType(BuiltinType_),
     ArrayType(Box<TypeEnum<Id>>)
@@ -73,7 +73,7 @@ pub type VMType = TypeEnum<InternedStr>;
 
 #[derive(Clone, PartialEq, Show)]
 pub enum LiteralStruct {
-    Integer(int),
+    Integer(i64),
     Float(f64),
     String(InternedStr),
     Bool(bool)

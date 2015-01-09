@@ -39,7 +39,7 @@ impl Str for TcIdent {
 pub type TcType = ast::TypeEnum<InternedStr>;
 
 pub fn match_types(l: &TcType, r: &TcType) -> bool {
-    fn type_eq<'a>(vars: &mut HashMap<uint, &'a TcType>, l: &'a TcType, r: &'a TcType) -> bool {
+    fn type_eq<'a>(vars: &mut HashMap<u32, &'a TcType>, l: &'a TcType, r: &'a TcType) -> bool {
         match (l, r) {
             (&TypeVariable(ref l), _) => var_eq(vars, *l, r),
             (&Generic(ref l), _) => var_eq(vars, *l, r),
@@ -70,7 +70,7 @@ pub fn match_types(l: &TcType, r: &TcType) -> bool {
         }
     }
 
-    fn var_eq<'a>(mapping: &mut HashMap<uint, &'a TcType>, l: uint, r: &'a TcType) -> bool {
+    fn var_eq<'a>(mapping: &mut HashMap<u32, &'a TcType>, l: u32, r: &'a TcType) -> bool {
         match mapping.get(&l) {
             Some(x) => return *x == r,
             None => ()
@@ -157,7 +157,7 @@ fn from_declaration_with_self(decl: &ast::FunctionDeclaration<TcIdent>) -> Const
             variables.iter()
                 .enumerate()
                 .find(|v| v.1.type_variable == type_id).map(|v| v.0)
-                .map(|index| Generic(index + 1))
+                .map(|index| Generic(index as u32 + 1))
         }
     };
     from_declaration_(type_handler, decl)
@@ -167,8 +167,8 @@ fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcT
     let type_handler = |&mut: type_id| {
         variables.iter()
             .enumerate()
-            .find(|v| v.1.type_variable == type_id).map(|v| v.0)
-            .map(Generic)
+            .find(|v| v.1.type_variable == type_id)
+            .map(|v| Generic(v.0 as u32))
     };
     from_declaration_(type_handler, decl)
 }
@@ -195,8 +195,8 @@ pub fn from_constrained_type(variables: &[ast::Constraints], typ: &ast::VMType) 
     let mut type_handler = |&mut: type_id| {
         variables.iter()
             .enumerate()
-            .find(|v| v.1.type_variable == type_id).map(|v| v.0)
-            .map(Generic)
+            .find(|v| v.1.type_variable == type_id)
+            .map(|v| Generic(v.0 as u32))
     };
     from_generic_type(&mut type_handler, typ)
 }
@@ -235,7 +235,7 @@ fn from_generic_type<F>(type_handler: &mut F, typ: &ast::VMType) -> TcType
 enum TypeError {
     UndefinedVariable(InternedStr),
     NotAFunction(TcType),
-    WrongNumberOfArguments(uint, uint),
+    WrongNumberOfArguments(usize, usize),
     TypeMismatch(TcType, TcType),
     UndefinedStruct(InternedStr),
     UndefinedField(InternedStr, InternedStr),
@@ -284,7 +284,7 @@ impl TypeInfos {
             let args = s.fields.iter()
                 .map(|f| from_constrained_type(s.type_variables.as_slice(), &f.typ))
                 .collect();
-            let variables = range(0, s.type_variables.len())
+            let variables = range(0, s.type_variables.len() as u32)
                 .map(|i| Generic(i))
                 .collect();
             let typ = FunctionType(args, box Type(s.name.name, variables));
@@ -462,7 +462,7 @@ impl <'a> Typecheck<'a> {
             let args = s.fields.iter()
                 .map(|f| from_constrained_type(s.type_variables.as_slice(), &f.typ))
                 .collect();
-            let variables = range(0, s.type_variables.len())
+            let variables = range(0, s.type_variables.len() as u32)
                 .map(|i| Generic(i))
                 .collect();
             s.name.typ = FunctionType(args, box Type(s.name.name, variables));
@@ -477,7 +477,7 @@ impl <'a> Typecheck<'a> {
                 let args = ctor.arguments.iter()
                     .map(|t| from_constrained_type(type_variables, t))
                     .collect();
-                let variables = range(0, e.type_variables.len())
+                let variables = range(0, e.type_variables.len() as u32)
                     .map(|i| Generic(i))
                     .collect();
                 ctor.name.typ = FunctionType(args, box Type(e.name.name, variables));
@@ -540,7 +540,7 @@ impl <'a> Typecheck<'a> {
                 }
                 let vars = function.declaration.type_variables.as_slice();
                 for (i, constraint) in function.declaration.type_variables.iter().enumerate() {
-                    let var_id = base + i;
+                    let var_id = base + i as u32;
                     let types = constraint.constraints.iter()
                         .map(|typ| from_constrained_type(vars, typ))
                         .collect();
@@ -858,7 +858,7 @@ impl <'a> Typecheck<'a> {
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
             (&TypeVariable(ref l), _) => {
-                if self.check_constraints(l, actual) {
+                if self.check_constraints(*l, actual) {
                     self.subs.union(*l, actual);
                     true
                 }
@@ -867,7 +867,7 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (_, &TypeVariable(ref r)) => {
-                if self.check_constraints(r, expected) {
+                if self.check_constraints(*r, expected) {
                     self.subs.union(*r, expected);
                     true
                 }
@@ -967,8 +967,8 @@ impl <'a> Typecheck<'a> {
                 && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.check_impl(constraints, l, r))
             }
             (&Generic(index), _) => {
-                if index < constraints.len() {
-                    constraints[index].constraints.iter()
+                if (index as usize) < constraints.len() {
+                    constraints[index as usize].constraints.iter()
                         .all(|constraint_type| {
                             match *constraint_type {
                                 Type(ref trait_id, _) => self.has_impl_of_trait(actual, trait_id),
@@ -1003,13 +1003,13 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn check_constraints(&self, variable: &uint, typ: &TcType) -> bool {
-        debug!("Constraint check {:?} {:?} ==> {:?}", variable, self.subs.constraints.get(variable), typ);
+    fn check_constraints(&self, variable: u32, typ: &TcType) -> bool {
+        debug!("Constraint check {:?} {:?} ==> {:?}", variable, self.subs.constraints.get(&variable), typ);
         match *typ {
             TypeVariable(_) => return true,
             _ => ()
         }
-        match self.subs.constraints.get(variable) {
+        match self.subs.constraints.get(&variable) {
             Some(trait_types) => {
                 trait_types.iter()
                     .all(|trait_type| {
@@ -1067,9 +1067,9 @@ impl <'a> Typecheck<'a> {
 }
 
 struct Substitution {
-    map: HashMap<uint, Box<TcType>>,
-    constraints: HashMap<uint, Vec<TcType>>,
-    var_id: uint
+    map: HashMap<u32, Box<TcType>>,
+    constraints: HashMap<u32, Vec<TcType>>,
+    var_id: u32
 }
 impl Substitution {
     fn new() -> Substitution {
@@ -1082,7 +1082,7 @@ impl Substitution {
         self.var_id = 0;
     }
 
-    fn union(&self, id: uint, typ: &TcType) {
+    fn union(&self, id: u32, typ: &TcType) {
         {
             let id_type = self.find(id);
             let other_type = self.real_type(typ);
@@ -1099,7 +1099,7 @@ impl Substitution {
             _ => this.assign_union(id, typ.clone())
         }
     }
-    fn assign_union(&mut self, id: uint, typ: TcType) {
+    fn assign_union(&mut self, id: u32, typ: TcType) {
         match self.constraints.remove(&id) {
             Some(constraints) => {
                 match typ {
@@ -1124,7 +1124,7 @@ impl Substitution {
         }
     }
 
-    fn find(&self, var: uint) -> Option<&TcType> {
+    fn find(&self, var: u32) -> Option<&TcType> {
         //Use unsafe so that we can hold a reference into the map and continue
         //to look for parents
         //Since we never have a cycle in the map we will never hold a &mut
@@ -1153,7 +1153,7 @@ impl Substitution {
         self.var_id += 1;
         let base = self.var_id;
         for (i, constraint) in constraints.iter().enumerate() {
-            self.constraints.insert(base + i, constraint.constraints.clone());
+            self.constraints.insert(base + i as u32, constraint.constraints.clone());
         }
         self.instantiate_(base, typ)
     }
@@ -1162,7 +1162,7 @@ impl Substitution {
         let base = self.var_id;
         self.instantiate_(base, typ)
     }
-    fn instantiate_(&mut self, base: uint, typ: &TcType) -> TcType {
+    fn instantiate_(&mut self, base: u32, typ: &TcType) -> TcType {
         match *typ {
             Generic(x) => {
                 self.var_id = ::std::cmp::max(base + x, self.var_id);

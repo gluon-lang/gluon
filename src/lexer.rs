@@ -9,7 +9,7 @@ use self::Token::*;
 
 #[derive(PartialEq, Clone, Show)]
 pub enum Token {
-    TInteger(int),
+    TInteger(i64),
     TFloat(f64),
     TString(InternedStr),
     TChar(char),
@@ -51,9 +51,9 @@ impl Copy for Token { }
 
 #[derive(Clone, PartialEq)]
 pub struct Location {
-    pub column : int,
-    pub row : int,
-    pub absolute : int
+    pub column : i32,
+    pub row : i32,
+    pub absolute : i32
 }
 
 impl Copy for Location { }
@@ -85,7 +85,7 @@ pub struct Lexer<'a, 'b> {
     peek_c: Option<char>,
     location: Location,
     tokens: RingBuf<Token>,
-    offset: uint,
+    offset: usize,
     interner: &'a mut Interner,
     gc: &'a mut Gc
 }

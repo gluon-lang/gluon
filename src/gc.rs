@@ -8,20 +8,20 @@ use std::cell::Cell;
 
 pub struct Gc {
     values: Option<AllocPtr>,
-    allocated_objects: uint,
-    collect_limit: uint
+    allocated_objects: usize,
+    collect_limit: usize
 }
 
 pub trait DataDef {
     type Value: ?Sized;
-    fn size(&self) -> uint;
+    fn size(&self) -> usize;
     fn initialize(self, ptr: *mut <Self as DataDef>::Value);
     fn make_ptr(&self, ptr: *mut ()) -> *mut <Self as DataDef>::Value;
 }
 
 struct GcHeader {
     next: Option<AllocPtr>,
-    value_size: Cell<uint>,
+    value_size: Cell<usize>,
     marked: Cell<bool>,
 }
 
@@ -31,7 +31,7 @@ struct AllocPtr {
 }
 
 impl AllocPtr {
-    fn new(value_size: uint) -> AllocPtr {
+    fn new(value_size: usize) -> AllocPtr {
         unsafe {
             let alloc_size = GcHeader::value_offset() + value_size;
             let ptr = allocate(alloc_size, mem::align_of::<f64>()) as *mut GcHeader;
@@ -75,11 +75,11 @@ impl GcHeader {
     fn value(&self) -> *mut () {
         unsafe {
             let bytes = (self as *const GcHeader) as *mut u8;
-            bytes.offset(GcHeader::value_offset() as int) as *mut ()
+            bytes.offset(GcHeader::value_offset() as isize) as *mut ()
         }
     }
 
-    fn value_offset() -> uint {
+    fn value_offset() -> usize {
         let hs = mem::size_of::<GcHeader>();
         let max_align = mem::align_of::<f64>();
         hs + ((max_align - (hs % max_align)) % max_align)
@@ -256,7 +256,7 @@ impl Gc {
         //(DST is structured as (ptr, len))
         //TODO: Better way of doing this?
         let p: *mut u8 = mem::transmute_copy(&value.ptr);
-        let header = p.offset(-(GcHeader::value_offset() as int));
+        let header = p.offset(-(GcHeader::value_offset() as isize));
         &*(header as *const GcHeader)
     }
 }
@@ -298,7 +298,7 @@ mod tests {
     }
     impl <'a> DataDef for Def<'a> {
         type Value = Vec<Value>;
-        fn size(&self) -> uint {
+        fn size(&self) -> usize {
             use std::mem::size_of;
             self.elems.len() * size_of::<Value>()
         }
@@ -315,7 +315,7 @@ mod tests {
 
     #[derive(PartialEq, Show)]
     enum Value {
-        Int(int),
+        Int(i32),
         Data(Data_)
     }
 
@@ -344,7 +344,7 @@ mod tests {
         }
     }
 
-    fn num_objects(gc: &Gc) -> uint {
+    fn num_objects(gc: &Gc) -> usize {
         let mut header: &GcHeader = match gc.values {
             Some(ref x) => &**x,
             None => return 0

@@ -1,4 +1,4 @@
-use vm::{VM, VMResult, Value, Int, Float, Function, Userdata, Userdata_, StackFrame};
+use vm::{VM, VMResult, Value, Int, Float, Function, Userdata, Userdata_, StackFrame, VMInt};
 use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
 use std::boxed::BoxAny;
@@ -27,16 +27,16 @@ impl <'a> VMValue<'a> for () {
     }
 }
 
-impl VMType for int {
-    fn vm_type<'a>(_: Option<&int>, _: &'a VM) -> &'a TcType {
+impl VMType for VMInt {
+    fn vm_type<'a>(_: Option<&VMInt>, _: &'a VM) -> &'a TcType {
         &INT_TYPE
     }
 }
-impl <'a> VMValue<'a> for int {
+impl <'a> VMValue<'a> for VMInt {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Int(self));
     }
-    fn from_value(value: Value<'a>) -> Option<int> {
+    fn from_value(value: Value<'a>) -> Option<VMInt> {
         match value {
             Int(i) => Some(i),
             _ => None
@@ -166,7 +166,7 @@ pub struct Callable<'a, 'b: 'a , Args, R> {
     value: FunctionRef<Args, R>
 }
 struct FunctionRef<Args, R> {
-    value: uint
+    value: usize
 }
 
 impl <Args, R> Copy for FunctionRef<Args, R> { }
@@ -248,7 +248,7 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($arg
     fn unpack_and_call(vm: &VM<'a>, f: &fn ($($args),*) -> R) {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
-        let mut i = 0u;
+        let mut i = 0us;
         $(let $args = {
             let x = VMValue::from_value(stack[i].clone()).unwrap();
             i += 1;
@@ -274,7 +274,7 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for Box<Fn($($
     fn unpack_and_call(vm: &VM<'a>, f: &Box<Fn($($args),*) -> R>) {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
-        let mut i = 0u;
+        let mut i = 0us;
         $(let $args = {
             let x = VMValue::from_value(stack[i].clone()).unwrap();
             i += 1;
@@ -323,7 +323,7 @@ fn define_function<'a, F: VMFunction<'a> + VMType + 'static>(vm: &VM<'a>, name: 
 mod tests {
     use super::{Get, Callable, define_function};
 
-    use vm::{VM, load_script};
+    use vm::{VM, VMInt, load_script};
     use std::io::BufReader;
 
     #[test]
@@ -342,7 +342,7 @@ fn mul(x: Float, y: Float) -> Float {
         load_script(&mut vm, &mut buffer)
             .unwrap_or_else(|err| panic!("{}", err));
         {
-            let mut f: Callable<(int,), int> = Get::get_function(&vm, "add10")
+            let mut f: Callable<(VMInt,), VMInt> = Get::get_function(&vm, "add10")
                 .expect("No function");
             let result = f.call(2).unwrap();
             assert_eq!(result, 12);
@@ -368,7 +368,7 @@ fn id(x: Test) -> Test {
             x
         }
         struct Test {
-            x: int
+            x: VMInt
         }
         vm.register_type::<Test>("Test")
             .unwrap_or_else(|_| panic!("Could not add type"));
@@ -394,10 +394,10 @@ fn id(x: Test) -> Test {
     #[test]
     fn function_object() {
         let vm = VM::new();
-        define_function(&vm, "mul", (box |&:x:int, y:int| x * y) as Box<Fn(int, int) -> int>)
+        define_function(&vm, "mul", (box |&:x:VMInt, y:VMInt| x * y) as Box<Fn(VMInt, VMInt) -> VMInt>)
             .unwrap_or_else(|err| panic!("{}", err));
 
-        let mut f: Callable<(int, int), int> = Get::get_function(&vm, "mul")
+        let mut f: Callable<(VMInt, VMInt), VMInt> = Get::get_function(&vm, "mul")
             .expect("No function id");
         let result = f.call2(2, 3).unwrap();
         assert_eq!(result, 6);

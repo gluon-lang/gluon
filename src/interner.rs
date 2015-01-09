@@ -34,7 +34,7 @@ struct StrDef<'a>(&'a str);
 
 impl <'a> DataDef for StrDef<'a> {
     type Value = [u8];
-    fn size(&self) -> uint {
+    fn size(&self) -> usize {
         self.0.len()
     }
     fn initialize(self, ptr: *mut [u8]) {

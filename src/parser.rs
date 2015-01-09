@@ -88,7 +88,7 @@ macro_rules! matches {
     )
 }
 
-fn precedence(s : &str) -> int {
+fn precedence(s : &str) -> i32 {
     match s {
         "&&" | "||" => 0,
         "+" => 1,
@@ -345,7 +345,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         Ok(Block(exprs))
     }
 
-    fn binary_expression(&mut self, mut lhs: LExpr<PString>, min_precedence : int) -> ParseResult<LExpr<PString>> {
+    fn binary_expression(&mut self, mut lhs: LExpr<PString>, min_precedence : i32) -> ParseResult<LExpr<PString>> {
         self.lexer.next();
         loop {
             let location = self.lexer.location();
@@ -447,7 +447,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                         self.type_variables.len() - 1
                     }
                 };
-                Generic(var)
+                Generic(var as u32)
             }
             TFn => {
                 let args = try!(self.parens(|this|
@@ -668,7 +668,7 @@ pub mod tests {
     fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
         no_loc(BinOp(box l, intern(s), box r))
     }
-    fn int(i: int) -> PExpr {
+    fn int(i: i64) -> PExpr {
         no_loc(Literal(Integer(i)))
     }
     fn let_(s: &str, e: PExpr) -> PExpr {

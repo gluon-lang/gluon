@@ -39,10 +39,10 @@ impl <K: Eq + Hash<Hasher> + Clone, V> ScopedMap<K, V> {
     pub fn remove(&mut self, k: &K) -> bool {
         match self.map.get_mut(k).map(|x| x.pop()) {
             Some(..) => {
-                let mut i = self.scopes.len() as int - 1;
+                let mut i = self.scopes.len() as isize - 1;
                 while i >= 0 {
-                    if self.scopes[i as uint].as_ref().map_or(false, |x| x == k) {
-                        self.scopes.remove(i as uint);
+                    if self.scopes[i as usize].as_ref().map_or(false, |x| x == k) {
+                        self.scopes.remove(i as usize);
                     }
                     i -= 1;
                 }
@@ -75,7 +75,7 @@ impl <K: Eq + Hash<Hasher> + Clone, V> ScopedMap<K, V> {
 
     ///Returns the number of elements in the container.
     ///Shadowed elements are not counted
-    pub fn len(&self) -> uint { self.map.len() }
+    pub fn len(&self) -> usize { self.map.len() }
 
     ///Removes all elements
     pub fn clear(&mut self) {
@@ -103,10 +103,10 @@ impl <K: Eq + Hash<Hasher> + Clone, V> ScopedMap<K, V> {
     pub fn pop(&mut self, k: &K) -> Option<V> {
         match self.map.get_mut(k).and_then(|x| x.pop()) {
             Some(v) => {
-                let mut i = self.scopes.len() as int - 1;
+                let mut i = self.scopes.len() as isize - 1;
                 while i >= 0 {
-                    if self.scopes[i as uint].as_ref().map_or(false, |x| x == k) {
-                        self.scopes.remove(i as uint);
+                    if self.scopes[i as usize].as_ref().map_or(false, |x| x == k) {
+                        self.scopes.remove(i as usize);
                     }
                     i -= 1;
                 }
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn test() {
         let mut map = ScopedMap::new();
-        map.insert("a", 0i);
+        map.insert("a", 0is);
         map.insert("b", 1);
         map.enter_scope();
         assert_eq!(map.find(&"a"), Some(&0));
