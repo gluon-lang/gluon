@@ -15,3 +15,5 @@ path = "src/lib.rs"
 
 name = "repl"
 path = "src/main.rs"
+
+[dependencies.log]
