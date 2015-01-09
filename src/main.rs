@@ -1,4 +1,3 @@
-extern crate collections;
 #[macro_use]
 extern crate log;
 

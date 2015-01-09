@@ -73,16 +73,15 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
             }
             Ok(true)
         }
-        _ => Err("Invalid command ".to_string() + command.to_string().as_slice())
+        _ => Err("Invalid command ".to_string() + &*command.to_string())
     }
 }
 
 fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
     let expr_str = tryf!(line);
-    let slice = expr_str.as_slice();
-    match slice.char_at(0) {
+    match expr_str.char_at(0) {
         ':' => {
-            run_command(vm, slice.char_at(1), expr_str.as_slice().slice_from(2).trim())
+            run_command(vm, expr_str.char_at(1), expr_str[2..].trim())
         }
         _ =>  {
             let mut buffer = BufReader::new(expr_str.as_bytes());
@@ -96,7 +95,7 @@ fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
                 compiler.compile_expr(&expr)
             };
             vm.new_functions((lambdas, Vec::new()));
-            let v = try!(vm.execute_instructions(instructions.as_slice()));
+            let v = try!(vm.execute_instructions(&*instructions));
             println!("{:?}", v);
             Ok(true)
         }
