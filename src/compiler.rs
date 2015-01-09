@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::iter::repeat;
 use interner::*;
+use ast;
 use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function, Constraints};
 use typecheck::*;
 use self::Instruction::*;
@@ -170,13 +171,9 @@ impl CompilerEnv for Module<TcIdent> {
             .enumerate()
             .find(|&(_, f)| f.declaration.name.id() == id)
             .map(|(i, f)| Global(i, f.declaration.type_variables.as_slice(), &f.declaration.name.typ))
-            .or_else(|| self.structs.iter()
-                .find(|s| s.name.id() == id)
-                .map(|s| Constructor(0, s.fields.len()))
-            )
             .or_else(|| {
-                for e in self.enums.iter() {
-                    let x = e.constructors.iter().enumerate()
+                for d in self.datas.iter() {
+                    let x = d.constructors.iter().enumerate()
                         .find(|&(_, ctor)| ctor.name.id() == id)
                         .map(|(i, ctor)| Constructor(i, ctor.arguments.len()));
                     if x.is_some() {
@@ -192,16 +189,21 @@ impl CompilerEnv for Module<TcIdent> {
                     .map(|decl| TraitFunction(&decl.name.typ))
             })
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
-        self.structs.iter()
-            .find(|s| s.name.id() == struct_)
-            .map(|s| s.fields.iter()
-                .enumerate()
-                .find(|&(_, f)| f.name == *field)
-                .map(|(i, _)| i).unwrap())
+    fn find_field(&self, data_name: &InternedStr, field: &InternedStr) -> Option<usize> {
+        self.datas.iter()
+            .find(|d| d.name.id() == data_name)
+            .and_then(|d| match &*d.constructors {
+                [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
+                    fields.iter()
+                        .enumerate()
+                        .find(|&(_, f)| f.name == *field)
+                        .map(|(i, _)| i)
+                }
+                _ => None
+            })
     }
     fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
-        self.enums.iter()
+        self.datas.iter()
             .find(|e| e.name.id() == enum_)
             .map(|e| e.constructors.iter()
                 .enumerate()

@@ -6,7 +6,6 @@ use ast;
 use ast::MutVisitor;
 use interner::InternedStr;
 
-use self::TypeInfo::*;
 use self::TypeError::*;
 
 pub use ast::TypeEnum::{Type, FunctionType, TraitType, TypeVariable, BuiltinType, Generic, ArrayType};
@@ -252,15 +251,8 @@ impl fmt::Display for TypeError {
 
 pub type TcResult = Result<TcType, TypeError>;
 
-
-pub enum TypeInfo<'a> {
-    Struct(&'a (TcType, Vec<InternedStr>)),
-    Enum(&'a [ast::Constructor<TcIdent>])
-}
-
 pub struct TypeInfos {
-    pub structs: HashMap<InternedStr, (TcType, Vec<InternedStr>)>,
-    pub enums: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
+    pub datas: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
     pub impls: HashMap<InternedStr, Vec<Constrained<TcType>>>,
     pub traits: HashMap<InternedStr, Vec<(InternedStr, Constrained<TcType>)>>
 }
@@ -268,36 +260,21 @@ pub struct TypeInfos {
 impl TypeInfos {
     pub fn new() -> TypeInfos {
         TypeInfos {
-            structs: HashMap::new(),
-            enums: HashMap::new(),
+            datas: HashMap::new(),
             traits: HashMap::new(),
             impls: HashMap::new()
         }
     }
-    pub fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
-        self.structs.get(id)
-            .map(Struct)
-            .or_else(|| self.enums.get(id).map(|e| Enum(e.as_slice())))
+    pub fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]> {
+        self.datas.get(id)
+            .map(|vec| &**vec)
     }
     pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, Constrained<TcType>)]> {
         self.traits.get(name).map(|v| v.as_slice())
     }
     pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
-        for s in module.structs.iter() {
-            let fields = s.fields.iter()
-                .map(|field| field.name)
-                .collect();
-            let args = s.fields.iter()
-                .map(|f| from_constrained_type(s.type_variables.as_slice(), &f.typ))
-                .collect();
-            let variables = range(0, s.type_variables.len() as u32)
-                .map(|i| Generic(i))
-                .collect();
-            let typ = FunctionType(args, box Type(s.name.name, variables));
-            self.structs.insert(s.name.name, (typ, fields));
-        }
-        for e in module.enums.iter() {
-            self.enums.insert(e.name.name, e.constructors.clone());
+        for data in module.datas.iter() {
+            self.datas.insert(data.name.name, data.constructors.clone());
         }
         for t in module.traits.iter() {
             let function_types = t.declarations.iter().map(|f| {
@@ -325,12 +302,9 @@ impl TypeInfos {
         }
     }
     pub fn extend(&mut self, other: TypeInfos) {
-        let TypeInfos { structs, enums, impls, traits } = other;
-        for (id, struct_) in structs.into_iter() {
-            self.structs.insert(id, struct_);
-        }
-        for (id, enum_) in enums.into_iter() {
-            self.enums.insert(id, enum_);
+        let TypeInfos { datas, impls, traits } = other;
+        for (id, data) in datas.into_iter() {
+            self.datas.insert(id, data);
         }
         for (id, impl_) in impls.into_iter() {
             self.impls.insert(id, impl_);
@@ -348,7 +322,7 @@ fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(Inter
 
 pub trait TypeEnv {
     fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraints], &TcType)>;
-    fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo>;
+    fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]>;
 }
 
 pub struct Typecheck<'a> {
@@ -429,7 +403,7 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn find_type_info(&self, id: &InternedStr) -> Result<TypeInfo, TypeError> {
+    fn find_type_info(&self, id: &InternedStr) -> Result<&[ast::Constructor<TcIdent>], TypeError> {
         self.type_infos.find_type_info(id)
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
             .map(|s| Ok(s))
@@ -465,29 +439,17 @@ impl <'a> Typecheck<'a> {
                 });
             }
         }
-        for s in module.structs.iter_mut() {
-            let args = s.fields.iter()
-                .map(|f| from_constrained_type(s.type_variables.as_slice(), &f.typ))
-                .collect();
-            let variables = range(0, s.type_variables.len() as u32)
-                .map(|i| Generic(i))
-                .collect();
-            s.name.typ = FunctionType(args, box Type(s.name.name, variables));
-            self.module.insert(s.name.name, Constrained {
-                constraints: Vec::new(),
-                value: s.name.typ.clone()
-            });
-        }
-        for e in module.enums.iter_mut() {
-            let type_variables = e.type_variables.as_slice();
-            for ctor in e.constructors.iter_mut() {
-                let args = ctor.arguments.iter()
-                    .map(|t| from_constrained_type(type_variables, t))
-                    .collect();
-                let variables = range(0, e.type_variables.len() as u32)
+        for data in module.datas.iter_mut() {
+            let type_variables = data.type_variables.as_slice();
+            for ctor in data.constructors.iter_mut() {
+                let mut args = Vec::new();
+                ctor.arguments.each_type(|t| {
+                    args.push(from_constrained_type(type_variables, t));
+                });
+                let variables = range(0, data.type_variables.len() as u32)
                     .map(|i| Generic(i))
                     .collect();
-                ctor.name.typ = FunctionType(args, box Type(e.name.name, variables));
+                ctor.name.typ = FunctionType(args, box Type(data.name.name, variables));
                 self.module.insert(ctor.name.name, Constrained {
                     constraints: Vec::new(),
                     value: ctor.name.typ.clone()
@@ -747,26 +709,20 @@ impl <'a> Typecheck<'a> {
                 let typ = try!(self.typecheck(&mut **expr));
                 match typ {
                     Type(ref struct_id, _) => {
-                        let type_info = try!(self.find_type_info(struct_id));
-                        match type_info {
-                            Struct(&(ref typ, ref fields)) => {
-                                let field_type = match *typ {
-                                    FunctionType(ref field_types, _) => {
-                                        fields.iter()
-                                            .zip(field_types.iter())
-                                            .find(|&(name, _)| name == id.id())
-                                            .map(|(_, typ)| typ.clone())
-                                    }
-                                    _ => None
-                                };
-                                id.typ = match field_type {
-                                    Some(typ) => typ,
-                                    None => return Err(UndefinedField(struct_id.clone(), id.name.clone()))
-                                };
-                                Ok(id.typ.clone())
+                        let constructors = try!(self.find_type_info(struct_id));
+                        let field_type = match constructors {
+                            [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
+                                fields.iter()
+                                    .find(|field| field.name == *id.id())
+                                    .map(|field| field.typ.clone())
                             }
-                            Enum(_) => Err(StringError("Field access on enum type"))
-                        }
+                            _ => return Err(StringError("Field access on enum type"))
+                        };
+                        id.typ = match field_type {
+                            Some(typ) => typ,
+                            None => return Err(UndefinedField(struct_id.clone(), id.name.clone()))
+                        };
+                        Ok(id.typ.clone())
                     }
                     FunctionType(..) => Err(StringError("Field access on function")),
                     BuiltinType(..) => Err(StringError("Field acces on primitive")),
@@ -821,14 +777,12 @@ impl <'a> Typecheck<'a> {
         match *pattern {
             ast::ConstructorPattern(ref name, ref mut args) => {
                 //Find the enum constructor and return the types for its arguments
-                let ctor_type = match try!(self.find_type_info(&typename)) {
-                    Enum(ref ctors) => {
-                        match ctors.iter().find(|ctor| ctor.name.id() == name.id()) {
-                            Some(ctor) => ctor.name.typ.clone(),
-                            None => return Err(StringError("Undefined constructor"))
-                        }
+                let ctor_type = {
+                    let constructors = try!(self.find_type_info(&typename));
+                    match constructors.iter().find(|ctor| ctor.name.id() == name.id()) {
+                        Some(ctor) => ctor.name.typ.clone(),
+                        None => return Err(StringError("Undefined constructor"))
                     }
-                    Struct(..) => return Err(StringError("Pattern match on struct"))
                 };
                 let ctor_type = self.subs.instantiate(&ctor_type);
                 let (argument_types, return_type) = match ctor_type {
@@ -1300,10 +1254,8 @@ main = \ -> { let x = 2; while x < 10 { x } }";
     fn enums() {
         let text = 
 r"
-enum AB {
-    A(Int),
-    B(Float)
-}
+data AB = A(Int) | B(Float)
+
 main : () -> Int;
 main = \ -> {
     match A(1) {
@@ -1321,7 +1273,7 @@ main = \ -> {
     fn trait_function() {
         let text = 
 r"
-struct Vec {
+data Vec = Vec {
     x: Int,
     y: Int
 }
@@ -1353,7 +1305,7 @@ test = \v -> {
     fn traits_wrong_self() {
         let text = 
 r"
-struct Vec {
+data Vec = Vec {
     x: Int,
     y: Int
 }
@@ -1508,10 +1460,8 @@ id = \x -> 2;
     fn unify_parameterized_types() {
         let text = 
 r"
-enum Option<a> {
-    Some(a),
-    None()
-}
+data Option<a> = Some(a) | None()
+
 is_positive : (Float) -> Option<Float>;
 is_positive = \x -> {
     if x < 0.0 {
@@ -1548,10 +1498,8 @@ is_positive = \x -> {
     fn paramter_mismatch() {
         let text = 
 r"
-enum Option<a> {
-    Some(a),
-    None()
-}
+data Option<a> = Some(a) | None()
+
 test: (Float) -> Option<Int>;
 test = \x -> {
     if x < 0.0 {
@@ -1577,10 +1525,8 @@ r"
 trait Eq {
     eq : (Self, Self) -> Bool;
 }
-enum Option<a> {
-    Some(a),
-    None()
-}
+data Option<a> = Some(a) | None()
+
 impl Eq for Int {
     eq : (Int, Int) -> Bool;
     eq = \l r -> {
@@ -1642,10 +1588,8 @@ r"
 trait Eq {
     eq : (Self, Self) -> Bool;
 }
-enum Option<a> {
-    Some(a),
-    None()
-}
+data Option<a> = Some(a) | None()
+
 impl <a:Eq> Eq for Option<a> {
     eq : (Option<a>, Option<a>) -> Bool;
     eq = \l r -> false

@@ -16,8 +16,7 @@ use lexer::Token::{
     TFor,
     TMatch,
     TFn,
-    TStruct,
-    TEnum,
+    TData,
     TTrait,
     TImpl,
     TVariable,
@@ -47,21 +46,13 @@ macro_rules! expect {
     ($e: expr, $p: ident (..)) => ({
         match *$e.lexer.next() {
             x@$p(..) => x,
-            actual => {
-                $e.lexer.backtrack();
-                static EXPECTED: &'static [&'static str] = &[stringify!($p)];
-                return Err($e.unexpected_token(EXPECTED, actual))
-            }
+            actual => unexpected!($e, actual, $p)
         }
     });
     ($e: expr, $p: ident) => ({
         match *$e.lexer.next() {
             x@$p => x,
-            actual => {
-                $e.lexer.backtrack();
-                static EXPECTED: &'static [&'static str] = &[stringify!($p)];
-                return Err($e.unexpected_token(EXPECTED, actual))
-            }
+            actual => unexpected!($e, actual, $p)
         }
     })
 }
@@ -70,11 +61,7 @@ macro_rules! expect1 {
     ($e: expr, $p: ident ($x: ident)) => ({
         match *$e.lexer.next() {
             $p($x) => $x,
-            actual => {
-                $e.lexer.backtrack();
-                static EXPECTED: &'static [&'static str] = &[stringify!($p)];
-                return Err($e.unexpected_token(EXPECTED, actual))
-            }
+            actual => unexpected!($e, actual, $p)
         }
     })
 }
@@ -87,6 +74,14 @@ macro_rules! matches {
         }
     )
 }
+
+macro_rules! unexpected (
+    ($parser: expr, $token: expr, $($expected: expr),+) => { {
+        $parser.lexer.backtrack();
+        static EXPECTED: &'static [&'static str] = &[$(stringify!($expected)),+];
+        return Err($parser.unexpected_token(EXPECTED, $token))
+    } }
+);
 
 fn precedence(s : &str) -> i32 {
     match s {
@@ -157,22 +152,20 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
 
     pub fn module(&mut self) -> ParseResult<Module<PString>> {
         let mut fns = Vec::new();
-        let mut structs = Vec::new();
-        let mut enums = Vec::new();
+        let mut datas = Vec::new();
         let mut traits = Vec::new();
         let mut impls = Vec::new();
         loop {
             match *self.lexer.peek() {
                 TVariable(..) => fns.push(try!(self.function())),
-                TStruct => structs.push(try!(self.struct_())),
-                TEnum => enums.push(try!(self.enum_())),
+                TData => datas.push(try!(self.data())),
                 TTrait => traits.push(try!(self.trait_())),
                 TImpl => impls.push(try!(self.impl_())),
                 _ => break
             }
             self.type_variables.clear();
         }
-        Ok(Module { enums: enums, functions: fns, structs: structs, traits: traits, impls: impls })
+        Ok(Module { datas: datas, functions: fns, traits: traits, impls: impls })
     }
 
     fn statement(&mut self) -> ParseResult<(LExpr<PString>, bool)> {
@@ -487,37 +480,39 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         Ok(Field { name: name, typ: typ })
     }
 
-    pub fn enum_(&mut self) -> ParseResult<Enum<PString>> {
-        expect!(self, TEnum);
+    pub fn data(&mut self) -> ParseResult<Data<PString>> {
+        expect!(self, TData);
         let name = expect1!(self, TConstructor(x));
         let type_variables = try!(self.type_variables());
-        let constructors = try!(self.braces(
-            |this| this.sep_by(
-                |t| *t == TComma, |this| this.constructor()
-            )
-        ));
-        Ok(Enum { name: self.make_id(name), type_variables: type_variables, constructors: constructors })
+        expect!(self, TAssign);
+        let pipe = TOperator(self.lexer.intern("|"));
+        let constructors = try!(self.sep_by(
+            |t| *t == pipe, |this| this.constructor())
+        );
+        Ok(Data { name: self.make_id(name), type_variables: type_variables, constructors: constructors })
     }
     pub fn constructor(&mut self) -> ParseResult<Constructor<PString>> {
         let name = expect1!(self, TConstructor(x));
-        let arguments = try!(self.parens(
-            |this| this.sep_by(
-                |t| *t == TComma, |this| this.typ()
-            )
-        ));
-        Ok(Constructor { name: self.make_id(name), arguments: arguments })
-    }
-
-    pub fn struct_(&mut self) -> ParseResult<Struct<PString>> {
-        expect!(self, TStruct);
-        let name = expect1!(self, TConstructor(x));
-        let type_variables = try!(self.type_variables());
-        let fields = try!(self.braces(
-            |this| this.sep_by(
-                |t| *t == TComma, |this| this.field()
-            )
-        ));
-        Ok(Struct { name: self.make_id(name), type_variables: type_variables, fields: fields })
+        let constructor_type = match *self.lexer.peek() {
+            TOpenParen => {
+                let arguments = try!(self.parens(
+                    |this| this.sep_by(
+                        |t| *t == TComma, |this| this.typ()
+                    )
+                ));
+                ConstructorType::Tuple(arguments)
+            }
+            TOpenBrace => {
+                let fields = try!(self.braces(
+                    |this| this.sep_by(
+                        |t| *t == TComma, |this| this.field()
+                    )
+                ));
+                ConstructorType::Record(fields)
+            }
+            x => unexpected!(self, x, TOpenParen, TOpenBrace)
+        };
+        Ok(Constructor { name: self.make_id(name), arguments: constructor_type })
     }
 
     pub fn trait_(&mut self) -> ParseResult<Trait<PString>> {
@@ -800,12 +795,15 @@ id = \x -> { x }
         assert_eq!(expr, block(vec![assign(id("y"), int(2)), int(2)]));
     }
     #[test]
-    fn struct_() {
-        let module = parse("struct Test { y: Int, f: Float }", |p| p.struct_());
-        let expected = Struct {
+    fn data() {
+        let module = parse("data Test = Test { y: Int, f: Float }", |p| p.data());
+        let expected = Data {
             name: intern("Test"),
             type_variables: Vec::new(),
-            fields: vec![field("y", INT_TYPE.clone()), field("f", FLOAT_TYPE.clone())]
+            constructors: vec![Constructor {
+                name: intern("Test"),
+                arguments: ConstructorType::Record(vec![field("y", INT_TYPE.clone()), field("f", FLOAT_TYPE.clone())])
+            }]
         };
         assert_eq!(module, expected);
     }
@@ -868,11 +866,9 @@ main = \ -> {
     #[test]
     fn parameterized_types() {
         parse(
-r"enum Option<a> {
-    Some(a),
-    None()
-}
-struct Named<a> {
+r"data Option<a> = Some(a) |None()
+
+data Named<a> = Named {
     name: String,
     value: a
 }

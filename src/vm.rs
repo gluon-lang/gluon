@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, Index};
 use ast;
 use parser::Parser;
-use typecheck::{Typecheck, TypeEnv, TypeInfo, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, Constrained, match_types};
+use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, Constrained, match_types};
 use ast::TypeEnum::*;
 use compiler::*;
 use compiler::Instruction::*;
@@ -221,15 +221,10 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                     })
             }
             _ => {
-                debug!("#### {:?} {:?}", id, self.type_infos.enums);
-                self.type_infos.structs.get(id)
-                    .map(|&(_, ref fields)| Variable::Constructor(0, fields.len()))
-                    .or_else(|| {
-                        self.type_infos.enums.values()
-                            .flat_map(|ctors| ctors.iter().enumerate())
-                            .find(|ctor| ctor.1.name.id() == id)
-                            .map(|(i, ctor)| Variable::Constructor(i, ctor.arguments.len()))
-                    })
+                self.type_infos.datas.values()
+                    .flat_map(|ctors| ctors.iter().enumerate())
+                    .find(|ctor| ctor.1.name.id() == id)
+                    .map(|(i, ctor)| Variable::Constructor(i, ctor.arguments.len()))
             }
         }
     }
@@ -237,8 +232,8 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         (*self).find_field(struct_, field)
     }
 
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
-        match self.type_infos.enums.get(enum_) {
+    fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
+        match self.type_infos.datas.get(data_name) {
             Some(ctors) => {
                 ctors.iter()
                     .enumerate()
@@ -311,18 +306,14 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
                     })
             }
             _ => {
-                self.type_infos.structs.get(id)
-                    .map(|type_fields| ([].as_slice(), &type_fields.0))
-                    .or_else(|| {
-                        self.type_infos.enums.values()
-                            .flat_map(|ctors| ctors.iter())
-                            .find(|ctor| ctor.name.id() == id)
-                            .map(|ctor| ([].as_slice(), &ctor.name.typ))
-                    })
+                self.type_infos.datas.values()
+                    .flat_map(|ctors| ctors.iter())
+                    .find(|ctor| ctor.name.id() == id)
+                    .map(|ctor| ([].as_slice(), &ctor.name.typ))
             }
         }
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<TypeInfo> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]> {
         self.type_infos.find_type_info(id)
     }
 }
@@ -620,7 +611,7 @@ impl <'a> VM<'a> {
     pub fn register_type<T: 'static>(&mut self, name: &str) -> Result<&TcType, ()> {
         let n = self.intern(name);
         let mut type_infos = self.type_infos.borrow_mut();
-        if type_infos.structs.contains_key(&n) {
+        if type_infos.datas.contains_key(&n) {
             Err(())
         }
         else {
@@ -628,7 +619,11 @@ impl <'a> VM<'a> {
             let typ = Type(n, Vec::new());
             try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
             let t = self.typeids.get(&id).unwrap();
-            type_infos.structs.insert(n, (typ, Vec::new()));
+            let ctor = ast::Constructor {
+                name: TcIdent { name: n, typ: typ },
+                arguments: ast::ConstructorType::Record(Vec::new())
+            };
+            type_infos.datas.insert(n, vec![ctor]);
             Ok(t)
         }
     }
@@ -1076,10 +1071,7 @@ main = \ -> {
         B(y) => { 0 }
     }
 }
-enum AB {
-    A(Int),
-    B(Float)
-}
+data AB = A(Int) | B(Float)
 ";
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
@@ -1097,7 +1089,7 @@ main = \ -> {
     x.y = add(x.y, 3);
     x
 }
-struct Vec {
+data Vec = Vec {
     x: Int,
     y: Int
 }
@@ -1263,10 +1255,8 @@ r"
 trait Eq {
     eq : (Self, Self) -> Bool;
 }
-enum Option<a> {
-    Some(a),
-    None()
-}
+data Option<a> = Some(a) | None()
+
 impl Eq for Int {
     eq : (Int, Int) -> Bool;
     eq = \l r -> {
@@ -1292,7 +1282,7 @@ impl <a:Eq> Eq for Option<a> {
         }
     }
 }
-struct Pair {
+data Pair = Pair {
     x: Bool,
     y: Bool
 }
@@ -1320,10 +1310,8 @@ r"
 trait Eq {
     eq : (Self, Self) -> Bool;
 }
-enum Option<a> {
-    Some(a),
-    None()
-}
+data Option<a> = Some(a) | None()
+
 impl Eq for Int {
     eq : (Int, Int) -> Bool;
     eq = \l r -> {
@@ -1364,7 +1352,7 @@ test = \opt x y -> {
         false
     }
 }
-struct Pair {
+data Pair = Pair {
     x: Bool,
     y: Bool
 }
@@ -1460,10 +1448,8 @@ main = \ -> {
         {
             let text = 
 r"
-enum IntOrFloat {
-    I(Int),
-    F(Float)
-}
+data IntOrFloat = I(Int) | F(Float)
+
 ";
             let mut buffer = BufReader::new(text.as_bytes());
             load_script(&mut vm, &mut buffer)
@@ -1553,10 +1539,8 @@ mul = \x y -> {
         {
             let text = 
 r"
-enum IntOrFloat {
-    I(Int),
-    F(Float)
-}
+data IntOrFloat = I(Int) | F(Float)
+
 ";
             let mut buffer = BufReader::new(text.as_bytes());
             load_script(&mut vm, &mut buffer)
@@ -1581,6 +1565,23 @@ main = \ -> {
         let value = run_function(&vm, "main")
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(1));
+    }
+
+    #[test]
+    fn field_access() {
+        let text = 
+r#"
+data Test = Test { x: Int, y: Float }
+
+main : () -> Int;
+main = \ -> {
+    let x = Test(123, 0.0);
+    x.x
+}"#;
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(123));
     }
 }
 

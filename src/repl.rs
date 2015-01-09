@@ -37,37 +37,23 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
         }
         't' => {
             match vm.env().find_type_info(&vm.intern(args)) {
-                Some(info) => {
-                    match info {
-                        TypeInfo::Struct(&(ref typ, ref fields)) => {
-                            println!("struct {} {{", args);
-                            match *typ {
-                                FunctionType(ref field_types, _) => {
-                                    for (name, typ) in fields.iter().zip(field_types.iter()) {
-                                        println!("    {}: {:?},", name, typ);
-                                    }
-                                }
-                                _ => ()
+                Some(constructors) => {
+                    println!("data {} {{", args);
+                    for ctor in constructors.iter()  {
+                        print!("    {}(", ctor.name.id());
+                        let mut first = true;
+                        ctor.arguments.each_type(|arg| {
+                            if first {
+                                first = false;
+                                print!("{:?}", arg);
                             }
-                            println!("}}");
-                        }
-                        TypeInfo::Enum(constructors) => {
-                            println!("enum {} {{", args);
-                            for ctor in constructors.iter()  {
-                                print!("    {}(", ctor.name.id());
-                                let mut args = ctor.arguments.iter();
-                                match args.next() {
-                                    Some(arg) => print!("{:?}", arg),
-                                    None => ()
-                                }
-                                for arg in args {
-                                    print!(",{:?}", arg);
-                                }
-                                println!("),");
+                            else {
+                                print!(", {:?}", arg);
                             }
-                            println!("}}");
-                        }
+                        });
+                        println!("),");
                     }
+                    println!("}}");
                 }
                 None => println!("{} is not a type", args)
             }

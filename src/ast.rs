@@ -154,18 +154,34 @@ pub struct Function<Id> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Struct<Id> {
-    pub name: Id,
-    pub type_variables: Vec<Constraints>,
-    pub fields: Vec<Field>
+pub enum ConstructorType {
+    Tuple(Vec<TypeEnum<InternedStr>>),
+    Record(Vec<Field>)
 }
-#[derive(Clone, PartialEq, Debug)]
+
+#[derive(Clone, PartialEq, Show)]
 pub struct Constructor<Id> {
     pub name: Id,
-    pub arguments: Vec<TypeEnum<InternedStr>>
+    pub arguments: ConstructorType
 }
+
+impl ConstructorType {
+    pub fn each_type<F>(&self, mut f: F) where F: FnMut(&TypeEnum<InternedStr>) {
+        match *self {
+            ConstructorType::Tuple(ref args) => for t in args.iter() { f(t); },
+            ConstructorType::Record(ref fields) => for field in fields.iter() { f(&field.typ); }
+        }
+    }
+    pub fn len(&self) -> usize {
+        match *self {
+            ConstructorType::Tuple(ref args) => args.len(),
+            ConstructorType::Record(ref fields) => fields.len()
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
-pub struct Enum<Id> {
+pub struct Data<Id> {
     pub name: Id,
     pub type_variables: Vec<Constraints>,
     pub constructors: Vec<Constructor<Id>>
@@ -192,9 +208,8 @@ pub struct Impl<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Module<Id> {
-    pub enums: Vec<Enum<Id>>,
+    pub datas: Vec<Data<Id>>,
     pub functions: Vec<Function<Id>>,
-    pub structs: Vec<Struct<Id>>,
     pub traits: Vec<Trait<Id>>,
     pub impls: Vec<Impl<Id>>
 }
