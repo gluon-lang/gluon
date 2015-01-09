@@ -86,6 +86,11 @@ impl Str for InternedStr {
 
 impl fmt::Show for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.as_slice())
+    }
+}
+impl fmt::String for InternedStr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.as_slice())
     }
 }
@@ -106,7 +111,7 @@ pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
 pub fn intern(s: &str) -> InternedStr {
     let i = get_local_interner();
     let mut i = i.borrow_mut();
-    let &(ref mut i, ref mut gc) = &mut *i;
+    let &mut(ref mut i, ref mut gc) = &mut *i;
     i.intern(gc, s)
 }
 

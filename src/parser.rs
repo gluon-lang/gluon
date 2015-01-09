@@ -128,7 +128,7 @@ enum ParseError {
 impl fmt::Show for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            UnexpectedToken(expected, actual) => write!(f, "Unexpected token {}, expected {}", actual, expected),
+            UnexpectedToken(expected, actual) => write!(f, "Unexpected token {:?}, expected {:?}", actual, expected),
         }
     }
 }
@@ -709,10 +709,10 @@ pub mod tests {
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
-        let &(ref mut interner, ref mut gc) = &mut *interner;
+        let &mut(ref mut interner, ref mut gc) = &mut *interner;
         let mut parser = Parser::new(interner, gc, &mut buffer, |s| s);
         let x = f(&mut parser)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
         x
     }
 

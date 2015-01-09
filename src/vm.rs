@@ -131,16 +131,16 @@ impl <'a> Traverseable for Value<'a> {
 impl <'a> fmt::Show for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Int(i) => write!(f, "{}", i),
-            Float(x) => write!(f, "{}f", x),
-            String(x) => write!(f, "\"{}\"", x),
+            Int(i) => write!(f, "{:?}", i),
+            Float(x) => write!(f, "{:?}f", x),
+            String(x) => write!(f, "\"{:?}\"", x),
             Data(ref data) => {
-                write!(f, "{{{} {}}}", data.tag, &data.fields)
+                write!(f, "{{{:?} {:?}}}", data.tag, &data.fields)
             }
-            Function(i) => write!(f, "<function {}>", i),
-            Closure(ref closure) => write!(f, "<Closure {} {}>", closure.tag, &closure.fields),
-            TraitObject(ref object) => write!(f, "<{} {}>", object.tag, &object.fields),
-            Userdata(ref data) => write!(f, "<Userdata {}>", data.ptr())
+            Function(i) => write!(f, "<function {:?}>", i),
+            Closure(ref closure) => write!(f, "<Closure {:?} {:?}>", closure.tag, &closure.fields),
+            TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, &object.fields),
+            Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr())
         }
     }
 }
@@ -165,7 +165,7 @@ impl <'a> Typed for Global<'a> {
 impl <'a> fmt::Show for Global_<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self { 
-            Bytecode(ref is) => write!(f, "Bytecode {}", is),
+            Bytecode(ref is) => write!(f, "Bytecode {:?}", is),
             Extern(_) => write!(f, "<extern>")
         }
     }
@@ -219,7 +219,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                     })
             }
             _ => {
-                debug!("#### {} {}", id, self.type_infos.enums);
+                debug!("#### {:?} {:?}", id, self.type_infos.enums);
                 self.type_infos.structs.get(id)
                     .map(|&(_, ref fields)| Variable::Constructor(0, fields.len()))
                     .or_else(|| {
@@ -683,11 +683,11 @@ impl <'a> VM<'a> {
     }
 
     pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
-        debug!("Enter frame with {}", stack.as_slice());
+        debug!("Enter frame with {:?}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
             let instr = instructions[index];
-            debug!("{}: {}", index, instr);
+            debug!("{:?}: {:?}", index, instr);
             match instr {
                 Push(i) => {
                     let v = stack.get(i).clone();
@@ -717,9 +717,9 @@ impl <'a> VM<'a> {
                             Closure(ref closure) => {
                                 (&self.globals[closure.tag], Some(closure.value))
                             }
-                            x => return Err(format!("Cannot call {}", x))
+                            x => return Err(format!("Cannot call {:?}", x))
                         };
-                        debug!("Call {} :: {}", function.id, function.typ);
+                        debug!("Call {:?} :: {:?}", function.id, function.typ);
                         stack = try!(stack.scope(args, new_upvars, |new_stack| {
                             self.execute_function(new_stack, function)
                         }));
@@ -727,7 +727,7 @@ impl <'a> VM<'a> {
                     if stack.len() > function_index + args {
                         //Value was returned
                         let result = stack.pop();
-                        debug!("Return {}", result);
+                        debug!("Return {:?}", result);
                         while stack.len() > function_index {
                             stack.pop();
                         }
@@ -753,7 +753,7 @@ impl <'a> VM<'a> {
                             let v = data.fields[i].get();
                             stack.push(v);
                         }
-                        x => return Err(format!("GetField on {}", x))
+                        x => return Err(format!("GetField on {:?}", x))
                     }
                 }
                 SetField(i) => {
@@ -816,7 +816,7 @@ impl <'a> VM<'a> {
                             let v = array.fields[index as uint].get();
                             stack.push(v);
                         }
-                        (x, y) => return Err(format!("Op GetIndex called on invalid types {} {}", x, y))
+                        (x, y) => return Err(format!("Op GetIndex called on invalid types {:?} {:?}", x, y))
                     }
                 }
                 SetIndex => {
@@ -827,7 +827,7 @@ impl <'a> VM<'a> {
                         (Data(array), Int(index)) => {
                             array.fields[index as uint].set(value);
                         }
-                        (x, y) => return Err(format!("Op SetIndex called on invalid types {} {}", x, y))
+                        (x, y) => return Err(format!("Op SetIndex called on invalid types {:?} {:?}", x, y))
                     }
                 }
                 MakeClosure(fi, n) => {
@@ -879,7 +879,7 @@ impl <'a> VM<'a> {
                                 _ => panic!()
                             }
                         }
-                        ref x => panic!("PushDictionaryMember {}", x)
+                        ref x => panic!("PushDictionaryMember {:?}", x)
                     };
                     stack.push(func);
                 }
@@ -916,7 +916,7 @@ impl <'a> VM<'a> {
             index += 1;
         }
         if stack.len() != 0 {
-            debug!("--> {}", stack.top());
+            debug!("--> {:?}", stack.top());
         }
         else {
             debug!("--> ()");
@@ -938,7 +938,7 @@ fn binop_int<F>(stack: &mut StackFrame, f: F)
     binop(stack, move |l, r| {
         match (l, r) {
             (Int(l), Int(r)) => Int(f(l, r)),
-            (l, r) => panic!("{} `intOp` {}", l, r)
+            (l, r) => panic!("{:?} `intOp` {:?}", l, r)
         }
     })
 }
@@ -948,7 +948,7 @@ fn binop_float<F>(stack: &mut StackFrame, f: F)
     binop(stack, move |l, r| {
         match (l, r) {
             (Float(l), Float(r)) => Float(f(l, r)),
-            (l, r) => panic!("{} `floatOp` {}", l, r)
+            (l, r) => panic!("{:?} `floatOp` {:?}", l, r)
         }
     })
 }
@@ -959,7 +959,7 @@ fn array_length(vm: &VM) {
             let i = values.fields.len();
             vm.push(Int(i as int));
         }
-        x => panic!("{}", x)
+        x => panic!("{:?}", x)
     }
 }
 fn string_append(vm: &VM) {
@@ -979,14 +979,14 @@ fn string_append(vm: &VM) {
 }
 
 macro_rules! tryf(
-    ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
+    ($e:expr) => (try!(($e).map_err(|e| format!("{:?}", e))))
 );
 
 pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
     let mut parser = Parser::new(&mut *interner, &mut *gc, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
-    parser.expression().map_err(|err| format!("{}", err))
+    parser.expression().map_err(|err| format!("{:?}", err))
 }
 
 pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::String> {

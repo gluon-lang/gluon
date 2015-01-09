@@ -6,16 +6,16 @@ use EmbedLang::compiler::Compiler;
 use EmbedLang::vm::{VM, parse_expr, load_script};
 
 macro_rules! tryf {
-    ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
+    ($e:expr) => (try!(($e).map_err(|e| format!("{:?}", e))))
 }
 
 fn print(vm: &VM) {
-    println!("{}", vm.pop());
+    println!("{:?}", vm.pop());
 }
 
 pub fn run() {
     let vm = VM::new();
-    vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), box print);
+    vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), Box::new(print));
     for line in ::std::io::stdin().lock().lines() {
         match run_line(&vm, line) {
             Ok(continue_repl) => {
@@ -44,7 +44,7 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
                             match *typ {
                                 FunctionType(ref field_types, _) => {
                                     for (name, typ) in fields.iter().zip(field_types.iter()) {
-                                        println!("    {}: {},", name, typ);
+                                        println!("    {}: {:?},", name, typ);
                                     }
                                 }
                                 _ => ()
@@ -57,11 +57,11 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
                                 print!("    {}(", ctor.name.id());
                                 let mut args = ctor.arguments.iter();
                                 match args.next() {
-                                    Some(arg) => print!("{}", arg),
+                                    Some(arg) => print!("{:?}", arg),
                                     None => ()
                                 }
                                 for arg in args {
-                                    print!(",{}", arg);
+                                    print!(",{:?}", arg);
                                 }
                                 println!("),");
                             }
@@ -97,7 +97,7 @@ fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
             };
             vm.new_functions((lambdas, Vec::new()));
             let v = try!(vm.execute_instructions(instructions.as_slice()));
-            println!("{}", v);
+            println!("{:?}", v);
             Ok(true)
         }
     }

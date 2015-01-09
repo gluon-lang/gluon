@@ -87,13 +87,13 @@ pub fn match_types(l: &TcType, r: &TcType) -> bool {
 impl fmt::Show for TcType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn fmt_type(f: &mut fmt::Formatter, t: &InternedStr, args: &[TcType]) -> fmt::Result {
-            try!(write!(f, "{}", t));
+            try!(write!(f, "{:?}", t));
             match args {
                 [ref first, rest..] => {
                     try!(write!(f, "<"));
-                    try!(write!(f, "{}", first));
+                    try!(write!(f, "{:?}", first));
                     for arg in rest.iter() {
-                        try!(write!(f, ", {}", arg));
+                        try!(write!(f, ", {:?}", arg));
                     }
                     try!(write!(f, ">"));
                 }
@@ -108,10 +108,10 @@ impl fmt::Show for TcType {
                 fmt_type(f, t, args.as_slice())
             }
             TypeVariable(ref x) => x.fmt(f),
-            Generic(x) => write!(f, "#{}", x),
-            FunctionType(ref args, ref return_type) => write!(f, "fn {} -> {}", args, return_type),
+            Generic(x) => write!(f, "#{:?}", x),
+            FunctionType(ref args, ref return_type) => write!(f, "fn {:?} -> {:?}", args, return_type),
             BuiltinType(ref t) => t.fmt(f),
-            ArrayType(ref t) => write!(f, "[{}]", t)
+            ArrayType(ref t) => write!(f, "[{:?}]", t)
         }
     }
 }
@@ -303,7 +303,7 @@ impl TypeInfos {
         for imp in module.impls.iter() {
             let imp_type = from_constrained_type(imp.type_variables.as_slice(), &imp.typ);
             let trait_name = imp.trait_name.id().clone();
-            let set = match self.impls.entry(&trait_name) {
+            let set = match self.impls.entry(trait_name) {
                 Entry::Occupied(v) => v.into_mut(),
                 Entry::Vacant(v) => v.insert(Vec::new())
             };
@@ -379,7 +379,7 @@ impl <T> Errors<T> {
 impl <T: fmt::Show> fmt::Show for Errors<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for error in self.errors.iter() {
-            try!(write!(f, "{}\n", error));
+            try!(write!(f, "{:?}\n", error));
         }
         Ok(())
     }
@@ -415,7 +415,7 @@ impl <'a> Typecheck<'a> {
         match t {
             Some((constraints, typ)) => {
                 let x = self.subs.instantiate_constrained(constraints, typ);
-                debug!("Find {} : {}", id, x);
+                debug!("Find {} : {:?}", id, x);
                 Ok(x)
             }
             None => Err(UndefinedVariable(id.clone()))
@@ -526,7 +526,7 @@ impl <'a> Typecheck<'a> {
 
     
     fn typecheck_function(&mut self, function: &mut ast::Function<TcIdent>) {
-        debug!("Typecheck function {} :: {}", function.declaration.name.id(), function.declaration.name.typ);
+        debug!("Typecheck function {} :: {:?}", function.declaration.name.id(), function.declaration.name.typ);
         self.stack.clear();
         self.subs.clear();
         let return_type = match function.declaration.name.typ {
@@ -535,7 +535,7 @@ impl <'a> Typecheck<'a> {
                 let base = self.subs.var_id;
                 for (typ, arg) in arg_types.iter().zip(function.declaration.arguments.iter()) {
                     let typ = self.subs.instantiate_(base, typ);
-                    debug!("{} {}", arg.name, typ);
+                    debug!("{} {:?}", arg.name, typ);
                     self.stack_var(arg.name.clone(), typ);
                 }
                 let vars = function.declaration.type_variables.as_slice();
@@ -564,7 +564,7 @@ impl <'a> Typecheck<'a> {
         match self.merge(return_type, inferred_return_type) {
             Ok(_) => self.replace_vars(&mut function.expression),
             Err(err) => {
-                debug!("End {} ==> {}", function.declaration.name.id(), err);
+                debug!("End {} ==> {:?}", function.declaration.name.id(), err);
                 self.errors.error(ast::Located { location: function.expression.location, value: err });
             }
         }
@@ -840,7 +840,7 @@ impl <'a> Typecheck<'a> {
     }
 
     fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult {
-        debug!("Unify {} <=> {}", expected, actual);
+        debug!("Unify {:?} <=> {:?}", expected, actual);
         if self.unify_(expected, &actual) {
             self.set_type(&mut actual);
             Ok(actual)
@@ -855,7 +855,7 @@ impl <'a> Typecheck<'a> {
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
         let expected = self.subs.real_type(expected);
         let actual = self.subs.real_type(actual);
-        debug!("{} <=> {}", expected, actual);
+        debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
             (&TypeVariable(ref l), _) => {
                 if self.check_constraints(l, actual) {
@@ -885,7 +885,7 @@ impl <'a> Typecheck<'a> {
             }
             (&ArrayType(ref l), &ArrayType(ref r)) => self.unify_(&**l, &**r),
             (&Type(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
-                debug!("Found trait {} ", l);
+                debug!("Found trait {:?} ", l);
                 self.has_impl_of_trait(actual, l)
             }
             (&Type(ref l, ref l_args), &Type(ref r, ref r_args)) => {
@@ -909,7 +909,7 @@ impl <'a> Typecheck<'a> {
     fn merge_(&self, expected: &TcType, actual: &TcType) -> bool {
         let expected = self.subs.real_type(expected);
         let actual = self.subs.real_type(actual);
-        debug!("Merge {} {}", expected, actual);
+        debug!("Merge {:?} {:?}", expected, actual);
         match (expected, actual) {
             (_, &TypeVariable(ref r)) => {
                 self.subs.union(*r, expected);
@@ -941,7 +941,7 @@ impl <'a> Typecheck<'a> {
     fn check_impl(&self, constraints: &[ast::Constraints], expected: &TcType, actual: &TcType) -> bool {
         let expected = self.subs.real_type(expected);
         let actual = self.subs.real_type(actual);
-        debug!("Check impl {} {}", expected, actual);
+        debug!("Check impl {:?} {:?}", expected, actual);
         match (expected, actual) {
             (_, &TypeVariable(_)) => {
                 true
@@ -984,7 +984,7 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn has_impl_of_trait(&self, typ: &TcType, trait_id: &InternedStr) -> bool {
-        debug!("Check impl {} {}", typ, trait_id);
+        debug!("Check impl {:?} {:?}", typ, trait_id);
         //If the type is the trait it self it passes the check
         match *typ {
             Type(ref id, _) if id == trait_id => return true,
@@ -1004,7 +1004,7 @@ impl <'a> Typecheck<'a> {
     }
 
     fn check_constraints(&self, variable: &uint, typ: &TcType) -> bool {
-        debug!("Constraint check {} {} ==> {}", variable, self.subs.constraints.get(variable), typ);
+        debug!("Constraint check {:?} {:?} ==> {:?}", variable, self.subs.constraints.get(variable), typ);
         match *typ {
             TypeVariable(_) => return true,
             _ => ()
@@ -1224,7 +1224,7 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
             ast::Call(ref func, _) => {
                 match func.type_of() {
                     &FunctionType(_, ref return_type) => &**return_type,
-                    x => panic!("{}", x)
+                    x => panic!("{:?}", x)
                 }
             }
             ast::Match(_, ref alts) => alts[0].expression.type_of(),
@@ -1232,7 +1232,7 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
             ast::Array(ref a) => a.id.type_of(),
             ast::ArrayAccess(ref array, _) => match array.type_of() {
                 &ArrayType(ref t) => &**t,
-                t => panic!("Not an array type {}", t)
+                t => panic!("Not an array type {:?}", t)
             },
             ast::Lambda(ref lambda) => lambda.id.type_of()
         }
@@ -1268,10 +1268,10 @@ mod tests {
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
-        let &(ref mut interner, ref mut gc) = &mut *interner;
+        let &mut (ref mut interner, ref mut gc) = &mut *interner;
         let mut parser = Parser::new(interner, gc, &mut buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
         f(&mut parser)
-            .unwrap_or_else(|err| panic!("{}", err))
+            .unwrap_or_else(|err| panic!("{:?}", err))
     }
     #[test]
     fn while_() {
@@ -1279,7 +1279,7 @@ mod tests {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err))
+            .unwrap_or_else(|err| panic!("{:?}", err))
 
     }
     #[test]
@@ -1299,7 +1299,7 @@ fn main() -> Int {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err))
+            .unwrap_or_else(|err| panic!("{:?}", err))
 
     }
     #[test]
@@ -1328,7 +1328,7 @@ fn test(v: Vec) -> Vec {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err))
+            .unwrap_or_else(|err| panic!("{:?}", err))
 
     }
     #[test]
@@ -1388,7 +1388,7 @@ fn test(x: Int) -> [Int] {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
     }
     #[test]
     fn array_unify() {
@@ -1401,7 +1401,7 @@ fn test() -> [Int] {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
     }
     #[test]
     fn lambda() {
@@ -1418,7 +1418,7 @@ fn adder(x: Int) -> fn (Int) -> Int {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
     }
     #[test]
     fn generic_function() {
@@ -1435,7 +1435,7 @@ fn id(x: a) -> a {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
     }
     #[test]
     fn generic_function_map() {
@@ -1453,7 +1453,7 @@ fn transform(x: a, f: fn (a) -> b) -> b {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
         match module.functions[0].expression.value {
             ::ast::Block(ref exprs) => {
                 assert_eq!(exprs[2].value.type_of(), &FLOAT_TYPE);
@@ -1494,7 +1494,7 @@ fn is_positive(x: Float) -> Option<Float> {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
         match module.functions[0].expression.value {
             ast::Block(ref exprs) => {
                 match exprs[0].value {
@@ -1573,7 +1573,7 @@ fn test() -> Bool {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
         match module.functions[0].expression.value {
             ast::Block(ref exprs) => {
                 match exprs[0].value {
@@ -1626,7 +1626,7 @@ fn test(x: Float) -> Bool {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:?}", err));
     }
     #[test]
     fn and_type_error() {

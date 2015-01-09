@@ -420,7 +420,7 @@ impl <'a> Compiler<'a> {
                         }
                     }
                     TraitFunction(typ) => self.compile_trait_function(typ, id, function),
-                    Constructor(..) => panic!("Constructor {} is not fully applied", id)
+                    Constructor(..) => panic!("Constructor {:?} is not fully applied", id)
                 }
             }
             IfElse(ref pred, ref if_true, ref if_false) => {
@@ -518,7 +518,7 @@ impl <'a> Compiler<'a> {
                         }
                     }
                     else {
-                        panic!("Unexpected type {} in expression {}", typ, op.id())
+                        panic!("Unexpected type {:?} in expression {}", typ, op.id())
                     };
                     function.instructions.push(instr);
                 }
@@ -601,13 +601,13 @@ impl <'a> Compiler<'a> {
                     Identifier(ref id) => {
                         self.compile(&**rhs, function);
                         let var = self.find(id.id(), function)
-                            .unwrap_or_else(|| panic!("Undefined variable {}", id));
+                            .unwrap_or_else(|| panic!("Undefined variable {:?}", id));
                         match var {
                             Stack(i) => function.instructions.push(Store(i)),
                             UpVar(i) => function.instructions.push(StoreUpVar(i)),
-                            Global(..) => panic!("Assignment to global {}", id),
-                            Constructor(..) => panic!("Assignment to constructor {}", id),
-                            TraitFunction(..) => panic!("Assignment to trait function {}", id),
+                            Global(..) => panic!("Assignment to global {:?}", id),
+                            Constructor(..) => panic!("Assignment to constructor {:?}", id),
+                            TraitFunction(..) => panic!("Assignment to trait function {:?}", id),
                         }
                     }
                     FieldAccess(ref expr, ref field) => {
@@ -628,7 +628,7 @@ impl <'a> Compiler<'a> {
                         self.compile(&**rhs, function);
                         function.instructions.push(SetIndex);
                     }
-                    _ => panic!("Assignment to {}", lhs)
+                    _ => panic!("Assignment to {:?}", lhs)
                 }
             }
             FieldAccess(ref expr, ref field) => {
@@ -748,7 +748,7 @@ impl <'a> Compiler<'a> {
                         , function_type: &TcType
                         , expr_type: &TcType
                         , function: &mut FunctionEnv) {
-        debug!("Find type for dictionary {} <=> {}", function_type, expr_type);
+        debug!("Find type for dictionary {:?} <=> {:?}", function_type, expr_type);
         let real_types = find_real_type(function_type, expr_type);
         let mut dict_size = 0;
         for (i, (constraint, real_type)) in constraints.iter().zip(real_types.iter()).enumerate() {
@@ -768,7 +768,7 @@ impl <'a> Compiler<'a> {
                 function.instructions.push(PushDictionary(i));
             }
             real_type => {
-                debug!("Found {} for {}", real_type, constraint_type);
+                debug!("Found {:?} for {:?}", real_type, constraint_type);
                 match *constraint_type {
                     Type(ref trait_id, _) => {
                         let impl_index = self.globals.find_trait_offset(trait_id, real_type)
@@ -783,7 +783,7 @@ impl <'a> Compiler<'a> {
     }
 
     fn compile_trait_function(&self, trait_func_type: &TcType, id: &TcIdent, function: &mut FunctionEnv) {
-        debug!("Find real {} <=> {}", trait_func_type, id.typ);
+        debug!("Find real {:?} <=> {:?}", trait_func_type, id.typ);
         let types = find_real_type(trait_func_type, &id.typ);
         assert!(types.len() != 0);
         match types[0] {
@@ -793,7 +793,7 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(PushTraitFunction(index));
                 }
             Some(t0) => {
-                debug!("Find trait function {} {}", types, id.id());
+                debug!("Find trait function {:?} {:?}", types, id.id());
                 match self.find_trait_function(t0, id.id()) {
                     Some(result) => {//Found a match
                         if result.constraints.iter().any(|c| c.constraints.len() != 0) {
@@ -823,9 +823,9 @@ impl <'a> Compiler<'a> {
                                         None => ()
                                     }
                                 }
-                                panic!("{}   {}\n{}   {}", trait_func_type, id, function.dictionary, types)
+                                panic!("{:?}   {:?}\n{:?}   {:?}", trait_func_type, id, function.dictionary, types)
                             }
-                            x => panic!("ICE {}", x)
+                            x => panic!("ICE {:?}", x)
                         }
                     }
                 }

@@ -117,7 +117,7 @@ impl <T: ?Sized + PartialEq> PartialEq for GcPtr<T> {
     fn eq(&self, other: &GcPtr<T>) -> bool { **self == **other }
 }
 
-impl <S: ::std::hash::Writer, T: ?Sized + ::std::hash::Hash<S>> ::std::hash::Hash<S> for GcPtr<T> {
+impl <S: ::std::hash::Hasher, T: ?Sized + ::std::hash::Hash<S>> ::std::hash::Hash<S> for GcPtr<T> {
     fn hash(&self, state: &mut S) {
         (**self).hash(state)
     }

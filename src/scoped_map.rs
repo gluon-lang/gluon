@@ -1,8 +1,7 @@
 extern crate collections;
 use std::collections::HashMap;
-use std::collections::hash_map::{Entry, IterMut};
+use std::collections::hash_map::{Entry, IterMut, Hasher};
 use std::hash::Hash;
-use std::hash::RandomSipHasher;
 
 ///A map struct which allows for the introduction of different scopes
 ///Introducing a new scope will make it possible to introduce additional
@@ -11,14 +10,14 @@ use std::hash::RandomSipHasher;
 pub struct ScopedMap<K, V> {
     ///A hashmap storing a key -> value mapping
     ///Stores a vector of values in which the value at the top is value returned from 'find'
-    map: HashMap<K, Vec<V>, RandomSipHasher>,
+    map: HashMap<K, Vec<V>>,
     ///A vector of scopes, when entering a scope, None is added as a marker
     ///when later exiting a scope, values are removed from the map until the marker is found
     scopes: Vec<Option<K>>
 }
 
 #[allow(dead_code)]
-impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
+impl <K: Eq + Hash<Hasher> + Clone, V> ScopedMap<K, V> {
     pub fn new() -> ScopedMap<K, V> {
         ScopedMap { map: HashMap::new(), scopes: Vec::new() }
     }

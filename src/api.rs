@@ -225,7 +225,8 @@ pub trait VMFunction<'a> {
 }
 macro_rules! count {
     () => { 0 };
-    ($_e: ident $(, $rest: ident)*) => { 1 + count!($($rest),*) }
+    ($_e: ident) => { 1 };
+    ($_e: ident, $($rest: ident),*) => { 1 + count!($($rest),*) }
 }
 
 macro_rules! make_vm_function {
