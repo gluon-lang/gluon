@@ -70,7 +70,7 @@ pub enum TypeEnum<Id> {
     Type(Id, Vec<TypeEnum<Id>>),
     TraitType(Id, Vec<TypeEnum<Id>>),
     TypeVariable(u32),
-    Generic(u32),
+    Generic(InternedStr),
     FunctionType(Vec<TypeEnum<Id>>, Box<TypeEnum<Id>>),
     BuiltinType(BuiltinType_),
     ArrayType(Box<TypeEnum<Id>>)
@@ -142,9 +142,9 @@ pub struct Field {
     pub typ: TypeEnum<InternedStr>
 }
 #[derive(Clone, PartialEq, Debug)]
-pub struct Constraints {
-    pub type_variable: InternedStr,
-    pub constraints: Vec<VMType>
+pub struct Constraint<T = InternedStr> {
+    pub name: InternedStr,
+    pub type_variable: T,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -183,25 +183,26 @@ impl ConstructorType {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Data<Id> {
     pub name: Id,
-    pub type_variables: Vec<Constraints>,
+    pub type_variables: Vec<InternedStr>,
     pub constructors: Vec<Constructor<Id>>
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct FunctionDeclaration<Id> {
     pub name: Id,
-    pub type_variables: Vec<Constraints>,
+    pub type_variables: Vec<Constraint>,
     pub arguments: Vec<TypeEnum<InternedStr>>,
     pub return_type: TypeEnum<InternedStr>,
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct Trait<Id> {
     pub name: Id,
+    pub self_variable: InternedStr,
     pub declarations: Vec<FunctionDeclaration<Id>>
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct Impl<Id> {
     pub trait_name: Id,
-    pub type_variables: Vec<Constraints>,
+    pub type_variables: Vec<Constraint>,
     pub typ: TypeEnum<InternedStr>,
     pub functions: Vec<Function<Id>>
 }

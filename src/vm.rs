@@ -286,7 +286,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
 }
 
 impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
-    fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraints], &TcType)> {
+    fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraint], &TcType)> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
@@ -503,7 +503,7 @@ impl <'a> VM<'a> {
             gc: RefCell::new(Gc::new()),
             stack: RefCell::new(Stack::new())
         };
-        let a = Generic(0);
+        let a = Generic(vm.intern("a"));
         let array_a = ArrayType(box a.clone());
         let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
         let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
@@ -1255,7 +1255,7 @@ r"
 trait Eq {
     eq : (Self, Self) -> Bool;
 }
-data Option<a> = Some(a) | None()
+data Option a = Some(a) | None()
 
 impl Eq for Int {
     eq : (Int, Int) -> Bool;
@@ -1310,7 +1310,7 @@ r"
 trait Eq {
     eq : (Self, Self) -> Bool;
 }
-data Option<a> = Some(a) | None()
+data Option a = Some(a) | None()
 
 impl Eq for Int {
     eq : (Int, Int) -> Bool;

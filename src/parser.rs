@@ -433,18 +433,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                     }
                 }
             }
-            TVariable(name) => {
-                let maybe_index = self.type_variables.iter()
-                    .position(|n| *n == name);
-                let var = match maybe_index {
-                    Some(var) => var,
-                    None => {
-                        self.type_variables.push(name);
-                        self.type_variables.len() - 1
-                    }
-                };
-                Generic(var as u32)
-            }
+            TVariable(name) => Generic(name),
             TFn => {
                 let args = try!(self.parens(|this|
                     this.sep_by(|t| *t == TComma, |this|
@@ -483,7 +472,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn data(&mut self) -> ParseResult<Data<PString>> {
         expect!(self, TData);
         let name = expect1!(self, TConstructor(x));
-        let type_variables = try!(self.type_variables());
+        let type_variables = try!(self.many(|t| *t == TAssign, |this| Ok(expect1!(this, TVariable(x)))));
         expect!(self, TAssign);
         let pipe = TOperator(self.lexer.intern("|"));
         let constructors = try!(self.sep_by(
@@ -518,12 +507,13 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn trait_(&mut self) -> ParseResult<Trait<PString>> {
         expect!(self, TTrait);
         let name = expect1!(self, TConstructor(x));
+        let self_variable = self.lexer.intern("Self");;//expect1!(self, TVariable(x));//TODO parse an actual variable
         let declarations = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| {
             let decl = try!(this.function_declaration());
             expect!(this, TSemicolon);
             Ok(decl)
         })));
-        Ok(Trait { name: self.make_id(name), declarations: declarations })
+        Ok(Trait { name: self.make_id(name), self_variable: self_variable, declarations: declarations })
     }
     pub fn impl_(&mut self) -> ParseResult<Impl<PString>> {
         expect!(self, TImpl);
@@ -557,7 +547,24 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             x => Err(self.unexpected_token(EXPECTED_LT, x))
         }
     }
-    fn type_variables(&mut self) -> ParseResult<Vec<Constraints>> {
+
+    fn constraints(&mut self) -> ParseResult<Vec<Constraint>> {
+        match *self.lexer.peek() {
+            TOpenParen => {
+                self.lexer.next();
+                let vars = try!(self.sep_by(|t| *t == TComma, |this| {
+                    let name = expect1!(this, TConstructor(x));
+                    let var = expect1!(this, TVariable(x));
+                    Ok(Constraint { name: name, type_variable: var })
+                }));
+                expect!(self, TCloseParen);
+                Ok(vars)
+            }
+            _ => Ok(Vec::new())
+        }
+    }
+
+    fn type_variables(&mut self) -> ParseResult<Vec<Constraint>> {
         match *self.lexer.peek() {
             TOperator(s) if s.as_slice() == "<" => {
                 let vars = try!(self.angle_brackets(|this| this.sep_by(|t| *t == TComma, |this| {
@@ -565,11 +572,11 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                     let constraints = match *this.lexer.peek() {
                         TColon => {
                             this.lexer.next();
-                            vec![try!(this.typ())]
+                            expect1!(this, TConstructor(x))
                         }
-                        _ => Vec::new()
+                        _ => panic!()
                     };
-                    Ok(Constraints { type_variable: id, constraints: constraints })
+                    Ok(Constraint { type_variable: id, name: constraints })
                 })));
                 Ok(vars)
             }
@@ -592,7 +599,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn function_declaration(&mut self) -> ParseResult<FunctionDeclaration<PString>> {
         let name = expect1!(self, TVariable(x));
         expect!(self, TColon);
-        let type_variables = try!(self.type_variables());;
+        let type_variables = try!(self.type_variables());
         let arguments = try!(self.parens(|this|
             this.sep_by(|t| matches!(t, &TComma), |this| this.typ())
         ));
@@ -762,7 +769,7 @@ r"
 id : (a) -> a;
 id = \x -> { x }
 ", |p| p.function());
-        let a = Generic(0);
+        let a = Generic(intern("a"));
         let expected = Function {
             declaration: FunctionDeclaration {
                 name: intern("id"),
@@ -817,6 +824,7 @@ trait Test {
 }", |p| p.trait_());
         let expected = Trait {
             name: intern("Test"),
+            self_variable: intern("Self"),
             declarations: vec![
                 FunctionDeclaration {
                     name: intern("test"),
@@ -866,9 +874,9 @@ main = \ -> {
     #[test]
     fn parameterized_types() {
         parse(
-r"data Option<a> = Some(a) |None()
+r"data Option a = Some(a) |None()
 
-data Named<a> = Named {
+data Named a = Named {
     name: String,
     value: a
 }

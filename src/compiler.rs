@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::iter::repeat;
 use interner::*;
 use ast;
-use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function, Constraints};
+use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function, Constraint};
 use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
@@ -61,7 +60,7 @@ pub type CExpr = LExpr<TcIdent>;
 
 pub enum Variable<'a> {
     Stack(usize),
-    Global(usize, &'a [Constraints], &'a TcType),
+    Global(usize, &'a [Constraint], &'a TcType),
     Constructor(usize, usize),
     TraitFunction(&'a TcType),
     UpVar(usize)
@@ -84,7 +83,7 @@ pub struct TraitFunctions {
 pub struct FunctionEnv<'a> {
     pub instructions: Vec<Instruction>,
     pub free_vars: Vec<InternedStr>,
-    pub dictionary: &'a [Constraints]//Typevariable -> Trait
+    pub dictionary: &'a [Constraint]//Typevariable -> Trait
 }
 
 impl <'a> FunctionEnv<'a> {
@@ -103,7 +102,7 @@ impl <'a> FunctionEnv<'a> {
 }
 
 pub struct TypeResult<'a, T> {
-    pub constraints: &'a [Constraints],
+    pub constraints: &'a [Constraint],
     pub typ: &'a TcType,
     pub value: T
 }
@@ -378,15 +377,7 @@ impl <'a> Compiler<'a> {
         }
 
         let FunctionEnv { instructions, .. } = f;
-        let variables = function.declaration.type_variables.as_slice();
-        let constraints = variables.iter()
-            .map(|constraints| {
-                let cs = constraints.constraints.iter()
-                    .map(|typ| from_constrained_type(variables, typ))
-                    .collect();
-                Constraints { type_variable: constraints.type_variable, constraints: cs }
-            }
-            ).collect();
+        let constraints = function.declaration.type_variables.clone();
         CompiledFunction {
             id: function.declaration.name.id().clone(),
             typ: Constrained { constraints: constraints, value: function.type_of().clone() },
@@ -416,7 +407,7 @@ impl <'a> Compiler<'a> {
                     Stack(index) => function.instructions.push(Push(index)),
                     UpVar(index) => function.instructions.push(PushUpVar(index)),
                     Global(index, constraints, typ) => {
-                        if constraints.iter().any(|c| c.constraints.len() != 0) {
+                        if constraints.len() != 0 {
                             debug!("Compile dictionary for {}", id.id());
                             self.compile_dictionary(constraints, typ, expr.type_of(), function);
                             function.instructions.push(MakeClosure(index, 1));
@@ -750,22 +741,21 @@ impl <'a> Compiler<'a> {
     }
 
     fn compile_dictionary(&self
-                        , constraints: &[Constraints]
+                        , constraints: &[Constraint]
                         , function_type: &TcType
                         , expr_type: &TcType
                         , function: &mut FunctionEnv) {
         debug!("Find type for dictionary {:?} <=> {:?}", function_type, expr_type);
         let real_types = find_real_type(function_type, expr_type);
         let mut dict_size = 0;
-        for (i, (constraint, real_type)) in constraints.iter().zip(real_types.iter()).enumerate() {
-            if constraint.constraints.len() != 0 {
-                dict_size += self.add_dictionary(i, &constraint.constraints[0], real_type.unwrap(), function);
-            }
+        for (i, constraint) in constraints.iter().enumerate() {
+            let real_type = real_types[constraint.type_variable];
+            dict_size += self.add_dictionary(i, constraint, real_type, function);
         }
         function.instructions.push(Construct(0, dict_size));
     }
 
-    fn add_dictionary(&self, i: usize, constraint_type: &TcType, real_type: &TcType, function: &mut FunctionEnv) -> usize {
+    fn add_dictionary(&self, i: usize, constraint: &Constraint, real_type: &TcType, function: &mut FunctionEnv) -> usize {
         match real_type {
             &TypeVariable(_) => {
                 debug!("In dict");
@@ -774,15 +764,10 @@ impl <'a> Compiler<'a> {
                 function.instructions.push(PushDictionary(i));
             }
             real_type => {
-                debug!("Found {:?} for {:?}", real_type, constraint_type);
-                match *constraint_type {
-                    Type(ref trait_id, _) => {
-                        let impl_index = self.globals.find_trait_offset(trait_id, real_type)
-                            .unwrap_or_else(|| panic!("ICE"));
-                        function.instructions.push(PushGlobal(impl_index));
-                    }
-                    _ => panic!()
-                }
+                debug!("Found {:?} for {:?}", real_type, constraint);
+                let impl_index = self.globals.find_trait_offset(&constraint.name, real_type)
+                    .unwrap_or_else(|| panic!("ICE"));
+                function.instructions.push(PushGlobal(impl_index));
             }
         }
         1
@@ -791,6 +776,7 @@ impl <'a> Compiler<'a> {
     fn compile_trait_function(&self, trait_func_type: &TcType, id: &TcIdent, function: &mut FunctionEnv) {
         debug!("Find real {:?} <=> {:?}", trait_func_type, id.typ);
         let types = find_real_type(trait_func_type, &id.typ);
+        let types: Vec<_> = types.into_iter().map(|tup| Some(tup.1)).collect();//TODO
         assert!(types.len() != 0);
         match types[0] {
             Some(&TraitType(ref trait_name, _)) => {//TODO parameterized traits
@@ -802,7 +788,7 @@ impl <'a> Compiler<'a> {
                 debug!("Find trait function {:?} {:?}", types, id.id());
                 match self.find_trait_function(t0, id.id()) {
                     Some(result) => {//Found a match
-                        if result.constraints.iter().any(|c| c.constraints.len() != 0) {
+                        if result.constraints.len() != 0 {
                             self.compile_dictionary(result.constraints, result.typ, &id.typ, function);
                             function.instructions.push(MakeClosure(result.value, 1));
                         }
@@ -814,24 +800,17 @@ impl <'a> Compiler<'a> {
                         match types[0] {
                             Some(&TypeVariable(var_index)) if (var_index as usize - 1) < function.dictionary.len() => {
                                 let constraint = &function.dictionary[var_index as usize - 1];
-                                for trait_type in constraint.constraints.iter() {
-                                    let func_index = match *trait_type {
-                                        Type(ref trait_name, _) => {
-                                            self.globals.find_object_function(trait_name, id.id())
-                                        }
-                                        _ => None
-                                    };
-                                    match func_index {
-                                        Some(index) => {
-                                            function.instructions.push(PushDictionaryMember(var_index - 1, index as u32));
-                                            return
-                                        }
-                                        None => ()
+                                let func_index = self.globals.find_object_function(&constraint.name, id.id());
+                                match func_index {
+                                    Some(index) => {
+                                        function.instructions.push(PushDictionaryMember(var_index - 1, index as u32));
+                                        return
                                     }
+                                    None => ()
                                 }
                                 panic!("{:?}   {:?}\n{:?}   {:?}", trait_func_type, id, function.dictionary, types)
                             }
-                            x => panic!("ICE {:?}", x)
+                            x => panic!("ICE {:?} {:?}", x, function.dictionary)
                         }
                     }
                 }
@@ -841,12 +820,12 @@ impl <'a> Compiler<'a> {
     }
 }
 
-fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> Vec<Option<&'a TcType>> {
-    let mut result = Vec::new();
+fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> HashMap<InternedStr, &'a TcType> {
+    let mut result = HashMap::new();
     find_real_type_(trait_func_type, real_type, &mut result);
     result
 }
-fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mut Vec<Option<&'a TcType>>) {
+fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mut HashMap<InternedStr, &'a TcType>) {
     match (trait_func_type, real_type) {
         (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
             for (l, r) in l_args.iter().zip(r_args.iter()) {
@@ -854,21 +833,11 @@ fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mu
             }
             find_real_type_(&**l_ret, &**r_ret, out)
         }
-        (&TypeVariable(i), real_type) => {
-            let i = i as usize;
-            if i >= out.len() {
-                let x = i + 1 - out.len();
-                out.extend(repeat(None).take(x));
-            }
-            out[i] = Some(real_type);
+        (&TypeVariable(_), _) => {
+            panic!()
         }
         (&Generic(i), real_type) => {
-            let i = i as usize;
-            if i >= out.len() {
-                let x = i + 1 - out.len();
-                out.extend(repeat(None).take(x));
-            }
-            out[i] = Some(real_type);
+            out.insert(i, real_type);
         }
         (&ArrayType(ref l), &ArrayType(ref r)) => find_real_type_(&**l, &**r, out),
         (&Type(_, ref l_args), &Type(_, ref r_args)) => {
