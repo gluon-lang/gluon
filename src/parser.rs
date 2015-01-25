@@ -125,7 +125,7 @@ enum ParseError {
     UnexpectedToken(&'static [&'static str], Token)
 }
 
-impl fmt::Show for ParseError {
+impl fmt::Debug for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             UnexpectedToken(expected, actual) => write!(f, "Unexpected token {:?}, expected {:?}", actual, expected),

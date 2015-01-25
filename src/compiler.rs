@@ -6,7 +6,7 @@ use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
 
-#[derive(Show)]
+#[derive(Debug)]
 pub enum Instruction {
     PushInt(isize),
     PushFloat(f64),
@@ -439,7 +439,7 @@ impl <'a> Compiler<'a> {
             }
             Block(ref exprs) => {
                 if exprs.len() != 0 {
-                    for expr in exprs.slice_to(exprs.len() - 1).iter() {
+                    for expr in exprs[..exprs.len() - 1].iter() {
                         self.compile(expr, function);
                         //Since this line is executed as a statement we need to remove
                         //the value from the stack if it exists

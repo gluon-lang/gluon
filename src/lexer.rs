@@ -7,7 +7,7 @@ use interner::{Interner, InternedStr};
 
 use self::Token::*;
 
-#[derive(PartialEq, Clone, Show)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum Token {
     TInteger(i64),
     TFloat(f64),
@@ -49,7 +49,7 @@ pub enum Token {
 
 impl Copy for Token { }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Location {
     pub column : i32,
     pub row : i32,
@@ -64,7 +64,7 @@ impl Location {
     }
 }
 
-impl fmt::Show for Location {
+impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Line {}, Row {}", self.row, self.column)
     }
@@ -313,10 +313,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
                 match self.read_char() {
                     Some('"') => {
                         //Drop the '"' at the start and end
-                        let contents = self.buffer
-                            .as_slice()
-                            .slice_to(self.buffer.len() - 1)
-                            .slice_from(1);
+                        let contents = &self.buffer[1..self.buffer.len() - 1];
                         let s = self.interner.intern(self.gc, contents);
                         return TString(s)
                     }

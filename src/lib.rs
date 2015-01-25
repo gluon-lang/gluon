@@ -1,5 +1,5 @@
 #![crate_type="lib"]
-#![feature(unsafe_destructor, unboxed_closures, old_orphan_check, box_syntax)]
+#![feature(unsafe_destructor, unboxed_closures, box_syntax)]
 #![allow(unstable)]
 extern crate collections;
 #[macro_use]

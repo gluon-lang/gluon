@@ -19,7 +19,7 @@ pub static BOOL_TYPE: TcType = BuiltinType(ast::BoolType);
 pub static UNIT_TYPE: TcType = BuiltinType(ast::UnitType);
 
 
-#[derive(Clone, Eq, PartialEq, Show)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct TcIdent {
     pub typ: TcType,
     pub name: InternedStr
@@ -84,7 +84,7 @@ pub fn match_types(l: &TcType, r: &TcType) -> bool {
 }
 
 
-impl fmt::Show for TcType {
+impl fmt::Debug for TcType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn fmt_type(f: &mut fmt::Formatter, t: &InternedStr, args: &[TcType]) -> fmt::Result {
             try!(write!(f, "{:?}", t));
@@ -116,7 +116,7 @@ impl fmt::Show for TcType {
     }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 pub struct Constrained<T> {
     pub constraints: Vec<ast::Constraints>,
     pub value: T
@@ -231,7 +231,7 @@ fn from_generic_type<F>(type_handler: &mut F, typ: &ast::VMType) -> TcType
     }
 }
 
-#[derive(Show)]
+#[derive(Debug)]
 enum TypeError {
     UndefinedVariable(InternedStr),
     NotAFunction(TcType),
@@ -242,6 +242,12 @@ enum TypeError {
     UndefinedTrait(InternedStr),
     IndexError(TcType),
     StringError(&'static str)
+}
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", *self)
+    }
 }
 
 pub type TcResult = Result<TcType, TypeError>;
@@ -354,6 +360,7 @@ pub struct Typecheck<'a> {
     errors: Errors<ast::Located<TypeError>>
 }
 
+#[derive(Debug)]
 struct Errors<T> {
     errors: Vec<T>
 }
@@ -376,10 +383,10 @@ impl <T> Errors<T> {
     }
 }
 
-impl <T: fmt::Show> fmt::Show for Errors<T> {
+impl <T: fmt::Display> fmt::Display for Errors<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for error in self.errors.iter() {
-            try!(write!(f, "{:?}\n", error));
+            try!(write!(f, "{}\n", error));
         }
         Ok(())
     }
@@ -1472,7 +1479,8 @@ fn id(x: a) -> a {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_err();
+            .err()
+            .unwrap();
     }
     #[test]
     fn unify_parameterized_types() {
@@ -1528,7 +1536,8 @@ fn test(x: Float) -> Option<Int> {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_err();
+            .err()
+            .unwrap();
     }
 
 
@@ -1612,7 +1621,8 @@ fn test() -> Bool {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_err();
+            .err()
+            .unwrap();
     }
 
     #[test]
@@ -1639,6 +1649,7 @@ fn test() -> Bool {
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
-            .unwrap_err();
+            .err()
+            .unwrap();
     }
 }

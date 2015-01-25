@@ -84,12 +84,12 @@ impl Str for InternedStr {
     }
 }
 
-impl fmt::Show for InternedStr {
+impl fmt::Debug for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.as_slice())
     }
 }
-impl fmt::String for InternedStr {
+impl fmt::Display for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.as_slice())
     }

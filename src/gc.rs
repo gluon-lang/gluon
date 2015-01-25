@@ -287,7 +287,7 @@ mod tests {
             self.fields.ptr == other.fields.ptr
         }
     }
-    impl fmt::Show for Data_ {
+    impl fmt::Debug for Data_ {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             self.fields.ptr.fmt(f)
         }
@@ -313,7 +313,7 @@ mod tests {
         }
     }
 
-    #[derive(PartialEq, Show)]
+    #[derive(PartialEq, Debug)]
     enum Value {
         Int(i32),
         Data(Data_)

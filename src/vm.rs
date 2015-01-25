@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell, RefMut, Ref};
 use std::fmt;
-use std::intrinsics::{TypeId, get_tydesc};
-use std::any::Any;
+use std::intrinsics::get_tydesc;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::ops::{Deref, Index};
 use ast;
@@ -130,7 +130,7 @@ impl <'a> Traverseable for Value<'a> {
     }
 }
 
-impl <'a> fmt::Show for Value<'a> {
+impl <'a> fmt::Debug for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Int(i) => write!(f, "{:?}", i),
@@ -149,7 +149,7 @@ impl <'a> fmt::Show for Value<'a> {
 
 pub type ExternFunction<'a> = Box<Fn(&VM<'a>) + 'static>;
 
-#[derive(Show)]
+#[derive(Debug)]
 pub struct Global<'a> {
     id: InternedStr,
     typ: Constrained<TcType>,
@@ -164,7 +164,7 @@ impl <'a> Typed for Global<'a> {
         &self.typ.value
     }
 }
-impl <'a> fmt::Show for Global_<'a> {
+impl <'a> fmt::Debug for Global_<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self { 
             Bytecode(ref is) => write!(f, "Bytecode {:?}", is),
@@ -409,11 +409,11 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 
     fn as_slice(&self) -> &[Value<'a>] {
-        self.stack.values.slice_from(self.offset)
+        &self.stack.values[self.offset..]
     }
 
     fn as_mut_slice(&mut self) -> &mut [Value<'a>] {
-        self.stack.values.slice_from_mut(self.offset)
+        &mut self.stack.values[self.offset..]
     }
 
     fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
@@ -743,7 +743,7 @@ impl <'a> VM<'a> {
                 }
                 Construct(tag, args) => {
                     let arg_start = stack.len() - args;
-                    let d = self.new_data(tag, stack.as_mut_slice().slice_from_mut(arg_start));
+                    let d = self.new_data(tag, &mut stack.as_mut_slice()[arg_start..]);
                     for _ in range(0, args) {
                         stack.pop();
                     } 
