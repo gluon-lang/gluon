@@ -1279,8 +1279,8 @@ data Vec = Vec {
     y: Int
 }
 
-trait Add {
-    add : (Self, Self) -> Self;
+trait Add a {
+    add : (a, a) -> a;
 }
 
 impl Add for Vec {
@@ -1311,8 +1311,8 @@ data Vec = Vec {
     y: Int
 }
 
-trait Add {
-    add : (Self, Self) -> Self;
+trait Add a {
+    add : (a, a) -> a;
 }
 
 impl Add for Vec {
@@ -1523,8 +1523,8 @@ test = \x -> {
     fn typecheck_trait_for_generic_types() {
         let text = 
 r"
-trait Eq {
-    eq : (Self, Self) -> Bool;
+trait Eq a {
+    eq : (a, a) -> Bool;
 }
 data Option a = Some(a) | None()
 
@@ -1586,8 +1586,8 @@ test = \ -> {
     fn error_no_impl_for_parameter() {
         let text = 
 r"
-trait Eq {
-    eq : (Self, Self) -> Bool;
+trait Eq a {
+    eq : (a, a) -> Bool;
 }
 data Option a = Some(a) | None()
 

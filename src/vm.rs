@@ -1094,8 +1094,8 @@ data Vec = Vec {
     y: Int
 }
 
-trait Add {
-    add : (Self, Self) -> Self;
+trait Add a {
+    add : (a, a) -> a;
 }
 
 impl Add for Vec {
@@ -1205,8 +1205,8 @@ main = \ -> {
         let text = 
 r"
 
-trait Collection {
-    len : (Self) -> Int;
+trait Collection a {
+    len : (a) -> Int;
 }
 impl Collection for [Int] {
     len : ([Int]) -> Int;
@@ -1252,8 +1252,8 @@ main = \ -> {
     fn call_generic_constrained_function() {
         let text = 
 r"
-trait Eq {
-    eq : (Self, Self) -> Bool;
+trait Eq a {
+    eq : (a, a) -> Bool;
 }
 data Option a = Some(a) | None()
 
@@ -1307,8 +1307,8 @@ main = \ -> {
     fn call_generic_constrained_multi_parameters_function() {
         let text = 
 r"
-trait Eq {
-    eq : (Self, Self) -> Bool;
+trait Eq a {
+    eq : (a, a) -> Bool;
 }
 data Option a = Some(a) | None()
 
@@ -1396,8 +1396,8 @@ main = \ -> {
         {
             let text = 
 r"
-trait Eq {
-    eq : (Self, Self) -> Bool;
+trait Eq a {
+    eq : (a, a) -> Bool;
 }
 impl Eq for Int {
     eq : (Int, Int) -> Bool;

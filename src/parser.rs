@@ -507,7 +507,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn trait_(&mut self) -> ParseResult<Trait<PString>> {
         expect!(self, TTrait);
         let name = expect1!(self, TConstructor(x));
-        let self_variable = self.lexer.intern("Self");;//expect1!(self, TVariable(x));//TODO parse an actual variable
+        let self_variable = expect1!(self, TVariable(x));
         let declarations = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| {
             let decl = try!(this.function_declaration());
             expect!(this, TSemicolon);
@@ -693,6 +693,9 @@ pub mod tests {
     fn typ(s: &str) -> VMType {
         Type(intern(s), Vec::new())
     }
+    fn generic(s: &str) -> VMType {
+        Generic(intern(s))
+    }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
         no_loc(Call(box e, args))
     }
@@ -818,24 +821,24 @@ id = \x -> { x }
     fn trait_() {
         let module = parse(
 r"
-trait Test {
-    test : (Self) -> Int;
-    test2 : (Int, Self) -> ();
+trait Test a {
+    test : (a) -> Int;
+    test2 : (Int, a) -> ();
 }", |p| p.trait_());
         let expected = Trait {
             name: intern("Test"),
-            self_variable: intern("Self"),
+            self_variable: intern("a"),
             declarations: vec![
                 FunctionDeclaration {
                     name: intern("test"),
                     type_variables: Vec::new(),
-                    arguments: vec![typ("Self")],
+                    arguments: vec![generic("a")],
                     return_type: INT_TYPE.clone()
                 },
                 FunctionDeclaration {
                     name: intern("test2"),
                     type_variables: Vec::new(),
-                    arguments: vec![INT_TYPE.clone(), typ("Self")],
+                    arguments: vec![INT_TYPE.clone(), generic("a")],
                     return_type: UNIT_TYPE.clone()
                 },
             ]
@@ -847,10 +850,10 @@ trait Test {
         parse(
 r"
 impl Test for Int {
-    test : (Self) -> Int;
+    test : (Int) -> Int;
     test = \x -> { x }
 
-    test2 : (Int, Self) -> ();
+    test2 : (Int, Int) -> ();
     test2 = \x y -> { x + y; }
 }
 ", |p| p.impl_());
@@ -881,8 +884,7 @@ data Named a = Named {
     value: a
 }
 
-trait Test {
-}
+trait Test a { }
 
 test : <a: Test> (a) -> Option<a>;
 test = \x -> {
