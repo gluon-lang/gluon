@@ -1263,8 +1263,8 @@ impl Eq for Int {
         l == r
     }
 }
-impl <a:Eq> Eq for Option<a> {
-    eq : (Option<a>, Option<a>) -> Bool;
+impl <a:Eq> Eq for Option a {
+    eq : (Option a, Option a) -> Bool;
     eq = \l r -> {
         match l {
             Some(l_val) => {
@@ -1324,8 +1324,8 @@ impl Eq for Float {
         l == r
     }
 }
-impl <a:Eq> Eq for Option<a> {
-    eq : (Option<a>, Option<a>) -> Bool;
+impl <a:Eq> Eq for Option a {
+    eq : (Option a, Option a) -> Bool;
     eq = \l r -> {
         match l {
             Some(l_val) => {
@@ -1343,7 +1343,7 @@ impl <a:Eq> Eq for Option<a> {
         }
     }
 }
-test : <a: Eq, b: Eq> (Option<a>, b, b) -> Bool;
+test : <a: Eq, b: Eq> (Option a, b, b) -> Bool;
 test = \opt x y -> {
     if eq(x, y) {
         eq(opt, None())

@@ -1463,7 +1463,7 @@ id = \x -> 2;
 r"
 data Option a = Some(a) | None()
 
-is_positive : (Float) -> Option<Float>;
+is_positive : (Float) -> Option Float;
 is_positive = \x -> {
     if x < 0.0 {
         None()
@@ -1501,7 +1501,7 @@ is_positive = \x -> {
 r"
 data Option a = Some(a) | None()
 
-test: (Float) -> Option<Int>;
+test: (Float) -> Option Int;
 test = \x -> {
     if x < 0.0 {
         None()
@@ -1534,8 +1534,8 @@ impl Eq for Int {
         l == r
     }
 }
-impl <a:Eq> Eq for Option<a> {
-    eq : (Option<a>, Option<a>) -> Bool;
+impl <a:Eq> Eq for Option a {
+    eq : (Option a, Option a) -> Bool;
     eq = \l r -> {
         match l {
             Some(l_val) => {
@@ -1591,8 +1591,8 @@ trait Eq a {
 }
 data Option a = Some(a) | None()
 
-impl <a:Eq> Eq for Option<a> {
-    eq : (Option<a>, Option<a>) -> Bool;
+impl <a:Eq> Eq for Option a {
+    eq : (Option a, Option a) -> Bool;
     eq = \l r -> false
 }
 test : () -> Bool;

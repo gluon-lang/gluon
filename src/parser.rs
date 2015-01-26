@@ -416,20 +416,21 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     }
 
     fn typ(&mut self) -> ParseResult<VMType> {
+        self.typ_(false)
+    }
+    fn typ_(&mut self, is_argument: bool) -> ParseResult<VMType> {
         let x = match *self.lexer.next() {
             TConstructor(x) => {
                 match str_to_primitive_type(x) {
                     Some(t) => t,
                     None => {
-                        let vars = match *self.lexer.peek() {
-                            TOperator(op) if op.as_slice() == "<" => {
-                                try!(self.angle_brackets(|this| {
-                                    this.sep_by(|t| *t == TComma, |this| this.typ())
-                                }))
-                            }
-                            _ => Vec::new()
+                        let args = if is_argument {
+                            Vec::new()
+                        }
+                        else {
+                            try!(self.type_arguments())
                         };
-                        Type(x, vars)
+                        Type(x, args)
                     }
                 }
             }
@@ -454,11 +455,22 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             }
             x => {
                 self.lexer.backtrack();
-                static EXPECTED: &'static [&'static str] = &["fn"];
+                static EXPECTED: &'static [&'static str] = &["identifier", "fn", "[", "("];
                 return Err(self.unexpected_token(EXPECTED, x))
             }
         };
         Ok(x)
+    }
+
+    fn type_arguments(&mut self) -> ParseResult<Vec<VMType>> {
+        let mut result = Vec::new();
+        loop {
+            let v = match self.typ_(true) {
+                Ok(v) => v,
+                Err(_) => return Ok(result)
+            };
+            result.push(v);
+        }
     }
     
     fn field(&mut self) -> ParseResult<Field> {
@@ -886,7 +898,7 @@ data Named a = Named {
 
 trait Test a { }
 
-test : <a: Test> (a) -> Option<a>;
+test : <a: Test> (a) -> Option a;
 test = \x -> {
     Some(x)
 }
