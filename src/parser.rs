@@ -484,13 +484,13 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn data(&mut self) -> ParseResult<Data<PString>> {
         expect!(self, TData);
         let name = expect1!(self, TConstructor(x));
-        let type_variables = try!(self.many(|t| *t == TAssign, |this| Ok(expect1!(this, TVariable(x)))));
+        let constraints = try!(self.many(|t| *t == TAssign, |this| Ok(expect1!(this, TVariable(x)))));
         expect!(self, TAssign);
         let pipe = TOperator(self.lexer.intern("|"));
         let constructors = try!(self.sep_by(
             |t| *t == pipe, |this| this.constructor())
         );
-        Ok(Data { name: self.make_id(name), type_variables: type_variables, constructors: constructors })
+        Ok(Data { name: self.make_id(name), constraints: constraints, constructors: constructors })
     }
     pub fn constructor(&mut self) -> ParseResult<Constructor<PString>> {
         let name = expect1!(self, TConstructor(x));
@@ -529,14 +529,14 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     }
     pub fn impl_(&mut self) -> ParseResult<Impl<PString>> {
         expect!(self, TImpl);
-        let type_variables = try!(self.type_variables());
+        let constraints = try!(self.constraints());
         let trait_name = expect1!(self, TConstructor(x));
         expect!(self, TFor);
         let typ = try!(self.typ());
         let functions = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| this.function() )));
         Ok(Impl {
             trait_name: self.make_id(trait_name),
-            type_variables: type_variables,
+            constraints: constraints,
             typ: typ,
             functions: functions
         })
@@ -562,33 +562,11 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
 
     fn constraints(&mut self) -> ParseResult<Vec<Constraint>> {
         match *self.lexer.peek() {
-            TOpenParen => {
-                self.lexer.next();
-                let vars = try!(self.sep_by(|t| *t == TComma, |this| {
-                    let name = expect1!(this, TConstructor(x));
-                    let var = expect1!(this, TVariable(x));
-                    Ok(Constraint { name: name, type_variable: var })
-                }));
-                expect!(self, TCloseParen);
-                Ok(vars)
-            }
-            _ => Ok(Vec::new())
-        }
-    }
-
-    fn type_variables(&mut self) -> ParseResult<Vec<Constraint>> {
-        match *self.lexer.peek() {
             TOperator(s) if s.as_slice() == "<" => {
                 let vars = try!(self.angle_brackets(|this| this.sep_by(|t| *t == TComma, |this| {
-                    let id = expect1!(this, TVariable(x));
-                    let constraints = match *this.lexer.peek() {
-                        TColon => {
-                            this.lexer.next();
-                            expect1!(this, TConstructor(x))
-                        }
-                        _ => panic!()
-                    };
-                    Ok(Constraint { type_variable: id, name: constraints })
+                    let name = expect1!(this, TConstructor(x));
+                    let type_variable = expect1!(this, TVariable(x));
+                    Ok(Constraint { type_variable: type_variable, name: name })
                 })));
                 Ok(vars)
             }
@@ -611,7 +589,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn function_declaration(&mut self) -> ParseResult<FunctionDeclaration<PString>> {
         let name = expect1!(self, TVariable(x));
         expect!(self, TColon);
-        let type_variables = try!(self.type_variables());
+        let constraints = try!(self.constraints());
         let arguments = try!(self.parens(|this|
             this.sep_by(|t| matches!(t, &TComma), |this| this.typ())
         ));
@@ -619,7 +597,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let return_type = try!(self.typ());
         Ok(FunctionDeclaration {
             name: self.make_id(name),
-            type_variables: type_variables,
+            constraints: constraints,
             arguments: arguments,
             return_type: return_type
         })
@@ -769,7 +747,7 @@ main = \x y -> { }";
         let expected = Function {
             declaration: FunctionDeclaration {
                 name: intern("main"),
-                type_variables: Vec::new(),
+                constraints: Vec::new(),
                 arguments: vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()),
                 return_type: UNIT_TYPE.clone()
             },
@@ -788,7 +766,7 @@ id = \x -> { x }
         let expected = Function {
             declaration: FunctionDeclaration {
                 name: intern("id"),
-                type_variables: Vec::new(),
+                constraints: Vec::new(),
                 arguments: vec![a.clone()],
                 return_type: a.clone()
             },
@@ -821,7 +799,7 @@ id = \x -> { x }
         let module = parse("data Test = Test { y: Int, f: Float }", |p| p.data());
         let expected = Data {
             name: intern("Test"),
-            type_variables: Vec::new(),
+            constraints: Vec::new(),
             constructors: vec![Constructor {
                 name: intern("Test"),
                 arguments: ConstructorType::Record(vec![field("y", INT_TYPE.clone()), field("f", FLOAT_TYPE.clone())])
@@ -843,13 +821,13 @@ trait Test a {
             declarations: vec![
                 FunctionDeclaration {
                     name: intern("test"),
-                    type_variables: Vec::new(),
+                    constraints: Vec::new(),
                     arguments: vec![generic("a")],
                     return_type: INT_TYPE.clone()
                 },
                 FunctionDeclaration {
                     name: intern("test2"),
-                    type_variables: Vec::new(),
+                    constraints: Vec::new(),
                     arguments: vec![INT_TYPE.clone(), generic("a")],
                     return_type: UNIT_TYPE.clone()
                 },
@@ -898,7 +876,7 @@ data Named a = Named {
 
 trait Test a { }
 
-test : <a: Test> (a) -> Option a;
+test : <Test a> (a) -> Option a;
 test = \x -> {
     Some(x)
 }

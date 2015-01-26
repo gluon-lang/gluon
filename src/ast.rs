@@ -183,13 +183,13 @@ impl ConstructorType {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Data<Id> {
     pub name: Id,
-    pub type_variables: Vec<InternedStr>,
+    pub constraints: Vec<InternedStr>,
     pub constructors: Vec<Constructor<Id>>
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct FunctionDeclaration<Id> {
     pub name: Id,
-    pub type_variables: Vec<Constraint>,
+    pub constraints: Vec<Constraint>,
     pub arguments: Vec<TypeEnum<InternedStr>>,
     pub return_type: TypeEnum<InternedStr>,
 }
@@ -202,7 +202,7 @@ pub struct Trait<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Impl<Id> {
     pub trait_name: Id,
-    pub type_variables: Vec<Constraint>,
+    pub constraints: Vec<Constraint>,
     pub typ: TypeEnum<InternedStr>,
     pub functions: Vec<Function<Id>>
 }

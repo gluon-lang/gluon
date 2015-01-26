@@ -169,7 +169,7 @@ impl CompilerEnv for Module<TcIdent> {
         self.functions.iter()
             .enumerate()
             .find(|&(_, f)| f.declaration.name.id() == id)
-            .map(|(i, f)| Global(i, f.declaration.type_variables.as_slice(), &f.declaration.name.typ))
+            .map(|(i, f)| Global(i, f.declaration.constraints.as_slice(), &f.declaration.name.typ))
             .or_else(|| {
                 for d in self.datas.iter() {
                     let x = d.constructors.iter().enumerate()
@@ -225,7 +225,7 @@ impl CompilerEnv for Module<TcIdent> {
                 for (i, func) in imp.functions.iter().enumerate() {
                     if func.declaration.name.id() == id {
                         return Some(TypeResult {
-                            constraints: func.declaration.type_variables.as_slice(),
+                            constraints: func.declaration.constraints.as_slice(),
                             typ: func.type_of(),
                             value: offset + i
                         });
@@ -370,14 +370,14 @@ impl <'a> Compiler<'a> {
             self.new_stack_var(*arg.id());
         }
         let mut f = FunctionEnv::new();
-        f.dictionary = function.declaration.type_variables.as_slice();
+        f.dictionary = function.declaration.constraints.as_slice();
         self.compile(body, &mut f);
         for arg in arguments.iter() {
             self.stack.remove(arg.id());
         }
 
         let FunctionEnv { instructions, .. } = f;
-        let constraints = function.declaration.type_variables.clone();
+        let constraints = function.declaration.constraints.clone();
         CompiledFunction {
             id: function.declaration.name.id().clone(),
             typ: Constrained { constraints: constraints, value: function.type_of().clone() },
