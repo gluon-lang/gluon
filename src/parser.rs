@@ -65,6 +65,15 @@ macro_rules! expect1 {
     })
 }
 
+macro_rules! match_token {
+    ($parser: expr { $($p: ident => $e: expr)+ }) => {
+        match *$parser.lexer.peek() {
+            $($p => $e)+
+            token => unexpected!($parser, token, $($p),+)
+        }
+    }
+}
+
 macro_rules! matches {
     ($e: expr, $p: pat) => (
         match $e {
@@ -583,7 +592,10 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         expect!(self, TSemicolon);
         expect1!(self, TVariable(x));
         expect!(self, TAssign);
-        let expr = try!(self.located(|this| this.lambda()));
+        let expr = try!(match_token!(self {
+            TOpenBrace => { self.block() }
+            TLambda => { self.located(|this| this.lambda()) }
+        }));
 
         Ok(Global {
             declaration: declaration,
@@ -877,5 +889,20 @@ test = \x -> {
 }
 
 ", |p| p.module());
+    }
+    #[test]
+    fn global_variable() {
+        let text = 
+r#"
+
+global : Int;
+global = { 123 }
+
+"#;
+        let module = parse(text, |p| p.module());
+        assert_eq!(module.globals[0], Global {
+            declaration: GlobalDeclaration { name: intern("global"), constraints: Vec::new(), typ: INT_TYPE.clone() },
+            expression: block(vec![int(123)])
+        });
     }
 }
