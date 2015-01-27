@@ -121,7 +121,7 @@ pub struct Constrained<T, I = InternedStr> {
     pub value: T
 }
 
-fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType> {
+fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclaration<TcIdent>) -> Constrained<TcType> {
     //Add all constraints from the impl declaration to the functions declaration
     for constraint in constraints.iter() {
         let exists = {
@@ -136,7 +136,7 @@ fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::FunctionDecla
     from_declaration(decl)
 }
 
-fn from_declaration_with_self(decl: &ast::FunctionDeclaration<TcIdent>, self_var: InternedStr) -> Constrained<TcType> {
+fn from_declaration_with_self(decl: &ast::GlobalDeclaration<TcIdent>, self_var: InternedStr) -> Constrained<TcType> {
     let constraints = decl.constraints.as_slice();
     let type_handler = |&mut: type_id: InternedStr| {
         if type_id == self_var {
@@ -150,7 +150,7 @@ fn from_declaration_with_self(decl: &ast::FunctionDeclaration<TcIdent>, self_var
     };
     from_declaration_(type_handler, decl)
 }
-fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType> {
+fn from_declaration(decl: &ast::GlobalDeclaration<TcIdent>) -> Constrained<TcType> {
     let constraints = decl.constraints.as_slice();
     let type_handler = |&mut: type_id| {
         constraints.iter()
@@ -159,14 +159,11 @@ fn from_declaration(decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcT
     };
     from_declaration_(type_handler, decl)
 }
-fn from_declaration_<F>(mut type_handler: F, decl: &ast::FunctionDeclaration<TcIdent>) -> Constrained<TcType>
+fn from_declaration_<F>(mut type_handler: F, decl: &ast::GlobalDeclaration<TcIdent>) -> Constrained<TcType>
     where F: FnMut(InternedStr) -> Option<TcType> {
-    let args = decl.arguments.iter()
-        .map(|f| from_generic_type(&mut type_handler, f))
-        .collect();
     Constrained {
         constraints: decl.constraints.clone(),
-        value: FunctionType(args, box from_generic_type(&mut type_handler, &decl.return_type))
+        value: from_generic_type(&mut type_handler, &decl.typ)
     }
 }
 

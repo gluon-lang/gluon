@@ -441,7 +441,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             }
             TOpenParen => {
                 if is_argument == false {
-                    let args = try!(self.many(|t| *t == TCloseParen, |this| this.typ()));
+                    let args = try!(self.sep_by(|t| *t == TComma, |this| this.typ()));
                     expect!(self, TCloseParen);
                     if args.len() != 0 || *self.lexer.peek() == TRArrow {
                         expect!(self, TRArrow);
@@ -590,20 +590,15 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             expression: expr
         })
     }
-    pub fn function_declaration(&mut self) -> ParseResult<FunctionDeclaration<PString>> {
+    pub fn function_declaration(&mut self) -> ParseResult<GlobalDeclaration<PString>> {
         let name = expect1!(self, TVariable(x));
         expect!(self, TColon);
         let constraints = try!(self.constraints());
-        let arguments = try!(self.parens(|this|
-            this.sep_by(|t| matches!(t, &TComma), |this| this.typ())
-        ));
-        expect!(self, TRArrow);
-        let return_type = try!(self.typ());
-        Ok(FunctionDeclaration {
+        let typ = try!(self.typ());
+        Ok(GlobalDeclaration {
             name: self.make_id(name),
             constraints: constraints,
-            arguments: arguments,
-            return_type: return_type
+            typ: typ
         })
     }
 
@@ -749,11 +744,10 @@ main : (Int,Float) -> ();
 main = \x y -> { }";
         let func = parse(s, |p| p.function());
         let expected = Function {
-            declaration: FunctionDeclaration {
+            declaration: GlobalDeclaration {
                 name: intern("main"),
                 constraints: Vec::new(),
-                arguments: vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()),
-                return_type: UNIT_TYPE.clone()
+                typ: FunctionType(vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()), box UNIT_TYPE.clone())
             },
             expression: lambda(vec![intern("x"), intern("y")], block(vec!()))
         };
@@ -768,11 +762,10 @@ id = \x -> { x }
 ", |p| p.function());
         let a = Generic(intern("a"));
         let expected = Function {
-            declaration: FunctionDeclaration {
+            declaration: GlobalDeclaration {
                 name: intern("id"),
                 constraints: Vec::new(),
-                arguments: vec![a.clone()],
-                return_type: a.clone()
+                typ: FunctionType(vec![a.clone()], box a.clone())
             },
             expression: lambda(vec![intern("x")], block(vec![id("x")]))
         };
@@ -823,17 +816,15 @@ trait Test a {
             name: intern("Test"),
             self_variable: intern("a"),
             declarations: vec![
-                FunctionDeclaration {
+                GlobalDeclaration {
                     name: intern("test"),
                     constraints: Vec::new(),
-                    arguments: vec![generic("a")],
-                    return_type: INT_TYPE.clone()
+                    typ: FunctionType(vec![generic("a")], box INT_TYPE.clone())
                 },
-                FunctionDeclaration {
+                GlobalDeclaration {
                     name: intern("test2"),
                     constraints: Vec::new(),
-                    arguments: vec![INT_TYPE.clone(), generic("a")],
-                    return_type: UNIT_TYPE.clone()
+                    typ: FunctionType(vec![INT_TYPE.clone(), generic("a")], box UNIT_TYPE.clone())
                 },
             ]
         };
