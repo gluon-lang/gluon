@@ -20,7 +20,6 @@ pub enum Token {
     TWhile,
     TFor,
     TMatch,
-    TFn,
     TData,
     TTrait,
     TImpl,
@@ -243,7 +242,6 @@ impl <'a, 'b> Lexer<'a, 'b> {
             "while" => TWhile,
             "for" => TFor,
             "match" => TMatch,
-            "fn" => TFn,
             "trait" => TTrait,
             "impl" => TImpl,
             "data" => TData,
@@ -365,16 +363,22 @@ mod tests {
 
     #[test]
     fn lex() {
-        let mut buffer = buffer("fn main() { 1 + 2 }");
+        let mut buffer = buffer("main : () -> Int; main = { 1 + 2 }");
         let mut gc = Gc::new();
         let mut interner = Interner::new();
         let mut lexer = lexer::Lexer::new(&mut interner, &mut gc, &mut buffer);
         let plus = lexer.intern("+");
         let main = lexer.intern("main");
-        assert_eq!(lexer.next(), &TFn);
+        let i = lexer.intern("Int");
         assert_eq!(lexer.next(), &TVariable(main));
+        assert_eq!(lexer.next(), &TColon);
         assert_eq!(lexer.next(), &TOpenParen);
         assert_eq!(lexer.next(), &TCloseParen);
+        assert_eq!(lexer.next(), &TRArrow);
+        assert_eq!(lexer.next(), &TConstructor(i));
+        assert_eq!(lexer.next(), &TSemicolon);
+        assert_eq!(lexer.next(), &TVariable(main));
+        assert_eq!(lexer.next(), &TAssign);
         assert_eq!(lexer.next(), &TOpenBrace);
         assert_eq!(lexer.next(), &TInteger(1));
         assert_eq!(lexer.next(), &TOperator(plus));

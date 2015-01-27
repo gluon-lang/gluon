@@ -1134,7 +1134,7 @@ lazy = \ -> {
     42
 }
 
-test : (fn () -> Int) -> Int;
+test : (() -> Int) -> Int;
 test = \f -> {
     f() + 10
 }

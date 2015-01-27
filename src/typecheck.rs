@@ -1336,7 +1336,7 @@ test = \x -> {
     1.0
 }
 
-higher_order : (Int, fn (Int) -> Float) -> Float;
+higher_order : (Int, (Int) -> Float) -> Float;
 higher_order = \x f -> {
     f(x)
 }
@@ -1386,7 +1386,7 @@ main = \ -> {
     let f = adder(2);
     f(3)
 }
-adder : (Int) -> fn (Int) -> Int;
+adder : (Int) -> (Int) -> Int;
 adder = \x -> {
     \y -> x + y
 }
@@ -1423,7 +1423,7 @@ main = \ -> {
     transform(xs, \x -> []);
     transform(1, \x -> 1.0)
 }
-transform : (a, fn (a) -> b) -> b;
+transform : (a, (a) -> b) -> b;
 transform = \x f -> {
     f(x)
 }

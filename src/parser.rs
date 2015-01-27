@@ -15,7 +15,6 @@ use lexer::Token::{
     TWhile,
     TFor,
     TMatch,
-    TFn,
     TData,
     TTrait,
     TImpl,
@@ -435,27 +434,32 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 }
             }
             TVariable(name) => Generic(name),
-            TFn => {
-                let args = try!(self.parens(|this|
-                    this.sep_by(|t| *t == TComma, |this|
-                        this.typ()
-                    )
-                ));
-                expect!(self, TRArrow);
-                FunctionType(args, box try!(self.typ()))
-            }
             TOpenBracket => {
                 let t = try!(self.typ());
                 expect!(self, TCloseBracket);
                 ArrayType(box t)
             }
             TOpenParen => {
-                expect!(self, TCloseParen);
-                UNIT_TYPE.clone()
+                if is_argument == false {
+                    let args = try!(self.many(|t| *t == TCloseParen, |this| this.typ()));
+                    expect!(self, TCloseParen);
+                    if args.len() != 0 || *self.lexer.peek() == TRArrow {
+                        expect!(self, TRArrow);
+                        let return_type = try!(self.typ());
+                        FunctionType(args, box return_type)
+                    }
+                    else {
+                        UNIT_TYPE.clone()
+                    }
+                }
+                else {
+                    expect!(self, TCloseParen);
+                    UNIT_TYPE.clone()
+                }
             }
             x => {
                 self.lexer.backtrack();
-                static EXPECTED: &'static [&'static str] = &["identifier", "fn", "[", "("];
+                static EXPECTED: &'static [&'static str] = &["identifier", "[", "("];
                 return Err(self.unexpected_token(EXPECTED, x))
             }
         };
@@ -851,7 +855,7 @@ impl Test for Int {
 
     #[test]
     fn function_type() {
-        let typ = parse("fn () -> fn (Int) -> Float", |p| p.typ());
+        let typ = parse("() -> (Int) -> Float", |p| p.typ());
         assert_eq!(typ, FunctionType(Vec::new(), box FunctionType(vec![INT_TYPE.clone()], box FLOAT_TYPE.clone())));
     }
 
@@ -859,7 +863,7 @@ impl Test for Int {
     fn create_lambda() {
         parse(
 r"
-main : () -> fn (int) -> float;
+main : () -> (int) -> float;
 main = \ -> {
     \x -> 1.0
 }", |p| p.function());
