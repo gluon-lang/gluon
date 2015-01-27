@@ -150,13 +150,13 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     }
 
     pub fn module(&mut self) -> ParseResult<Module<PString>> {
-        let mut fns = Vec::new();
+        let mut globals = Vec::new();
         let mut datas = Vec::new();
         let mut traits = Vec::new();
         let mut impls = Vec::new();
         loop {
             match *self.lexer.peek() {
-                TVariable(..) => fns.push(try!(self.function())),
+                TVariable(..) => globals.push(try!(self.global())),
                 TData => datas.push(try!(self.data())),
                 TTrait => traits.push(try!(self.trait_())),
                 TImpl => impls.push(try!(self.impl_())),
@@ -164,7 +164,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             }
             self.type_variables.clear();
         }
-        Ok(Module { datas: datas, functions: fns, traits: traits, impls: impls })
+        Ok(Module { datas: datas, globals: globals, traits: traits, impls: impls })
     }
 
     fn statement(&mut self) -> ParseResult<(LExpr<PString>, bool)> {
@@ -525,7 +525,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let name = expect1!(self, TConstructor(x));
         let self_variable = expect1!(self, TVariable(x));
         let declarations = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| {
-            let decl = try!(this.function_declaration());
+            let decl = try!(this.global_declaration());
             expect!(this, TSemicolon);
             Ok(decl)
         })));
@@ -537,12 +537,12 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let trait_name = expect1!(self, TConstructor(x));
         expect!(self, TFor);
         let typ = try!(self.typ());
-        let functions = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| this.function() )));
+        let globals = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| this.global() )));
         Ok(Impl {
             trait_name: self.make_id(trait_name),
             constraints: constraints,
             typ: typ,
-            functions: functions
+            globals: globals
         })
     }
     
@@ -578,19 +578,19 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         }
     }
 
-    pub fn function(&mut self) -> ParseResult<Function<PString>> {
-        let declaration = try!(self.function_declaration());
+    pub fn global(&mut self) -> ParseResult<Global<PString>> {
+        let declaration = try!(self.global_declaration());
         expect!(self, TSemicolon);
         expect1!(self, TVariable(x));
         expect!(self, TAssign);
         let expr = try!(self.located(|this| this.lambda()));
 
-        Ok(Function {
+        Ok(Global {
             declaration: declaration,
             expression: expr
         })
     }
-    pub fn function_declaration(&mut self) -> ParseResult<GlobalDeclaration<PString>> {
+    pub fn global_declaration(&mut self) -> ParseResult<GlobalDeclaration<PString>> {
         let name = expect1!(self, TVariable(x));
         expect!(self, TColon);
         let constraints = try!(self.constraints());
@@ -742,8 +742,8 @@ pub mod tests {
 r"
 main : (Int,Float) -> ();
 main = \x y -> { }";
-        let func = parse(s, |p| p.function());
-        let expected = Function {
+        let func = parse(s, |p| p.global());
+        let expected = Global {
             declaration: GlobalDeclaration {
                 name: intern("main"),
                 constraints: Vec::new(),
@@ -759,9 +759,9 @@ main = \x y -> { }";
 r"
 id : (a) -> a;
 id = \x -> { x }
-", |p| p.function());
+", |p| p.global());
         let a = Generic(intern("a"));
-        let expected = Function {
+        let expected = Global {
             declaration: GlobalDeclaration {
                 name: intern("id"),
                 constraints: Vec::new(),
@@ -857,7 +857,7 @@ r"
 main : () -> (int) -> float;
 main = \ -> {
     \x -> 1.0
-}", |p| p.function());
+}", |p| p.global());
     }
     #[test]
     fn parameterized_types() {

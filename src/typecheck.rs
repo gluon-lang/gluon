@@ -122,7 +122,7 @@ pub struct Constrained<T, I = InternedStr> {
 }
 
 fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclaration<TcIdent>) -> Constrained<TcType> {
-    //Add all constraints from the impl declaration to the functions declaration
+    //Add all constraints from the impl declaration to the globals declaration
     for constraint in constraints.iter() {
         let exists = {
             decl.constraints.iter()
@@ -388,7 +388,7 @@ impl <'a> Typecheck<'a> {
 
     pub fn typecheck_module(&mut self, module: &mut ast::Module<TcIdent>) -> Result<(), StringErrors> {
         
-        for f in module.functions.iter_mut() {
+        for f in module.globals.iter_mut() {
             let decl = &mut f.declaration;
             let constrained_type = from_declaration(decl);
             decl.name.typ = constrained_type.value.clone();
@@ -430,7 +430,7 @@ impl <'a> Typecheck<'a> {
             }
         }
         self.type_infos.add_module(module);
-        for f in module.functions.iter_mut() {
+        for f in module.globals.iter_mut() {
             self.typecheck_function(f)
         }
         for imp in module.impls.iter_mut() {
@@ -447,12 +447,12 @@ impl <'a> Typecheck<'a> {
     }
     fn typecheck_impl(&mut self, imp: &mut ast::Impl<TcIdent>) -> Result<(), TypeError> {
         {
-            let trait_functions = try!(find_trait(&self.type_infos, imp.trait_name.id()));
+            let trait_globals = try!(find_trait(&self.type_infos, imp.trait_name.id()));
             let type_variables = imp.constraints.as_slice();
-            for func in imp.functions.iter_mut() {
+            for func in imp.globals.iter_mut() {
                 let c_type = from_impl_type(type_variables, &mut func.declaration);
                 func.declaration.name.typ = c_type.value;
-                let trait_function_type = try!(trait_functions.iter()
+                let trait_function_type = try!(trait_globals.iter()
                     .find(|& &(ref name, _)| name == func.declaration.name.id())
                     .map(Ok)
                     .unwrap_or_else(|| Err(StringError("Function does not exist in trait"))));
@@ -460,14 +460,14 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&tf, func.type_of().clone()));
             }
         }
-        for f in imp.functions.iter_mut() {
+        for f in imp.globals.iter_mut() {
             self.typecheck_function(f);
         }
         Ok(())
     }
 
     
-    fn typecheck_function(&mut self, function: &mut ast::Function<TcIdent>) {
+    fn typecheck_function(&mut self, function: &mut ast::Global<TcIdent>) {
         debug!("Typecheck function {} :: {:?}", function.declaration.name.id(), function.declaration.name.typ);
         self.stack.clear();
         self.subs.clear();
@@ -1035,7 +1035,7 @@ impl Substitution {
         }
         let this: &mut Substitution = unsafe { ::std::mem::transmute(self) };
         //Always make sure the mapping is from a higher variable to a lower
-        //This way the resulting variables are always equal to any variables in the functions
+        //This way the resulting variables are always equal to any variables in the globals
         //declaration
         match *typ {
             TypeVariable(other_id) if id < other_id => this.assign_union(other_id, TypeVariable(id)),
@@ -1202,7 +1202,7 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
     }
 }
 
-impl <T: Typed> Typed for ast::Function<T> {
+impl <T: Typed> Typed for ast::Global<T> {
     fn type_of(&self) -> &TcType {
         self.declaration.name.type_of()
     }
@@ -1429,7 +1429,7 @@ transform = \x f -> {
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
-        match module.functions[0].expression.value {
+        match module.globals[0].expression.value {
             ast::Lambda(ref lambda) => {
                 match lambda.body.value {
                     ast::Block(ref exprs) => {
@@ -1474,7 +1474,7 @@ is_positive = \x -> {
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
-        match module.functions[0].expression.value {
+        match module.globals[0].expression.value {
             ast::Lambda(ref lambda) => {
                 match lambda.body.value {
                     ast::Block(ref exprs) => {
@@ -1559,7 +1559,7 @@ test = \ -> {
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
-        match module.functions[0].expression.value {
+        match module.globals[0].expression.value {
             ast::Lambda(ref lambda) => {
                 match lambda.body.value {
                     ast::Block(ref exprs) => {

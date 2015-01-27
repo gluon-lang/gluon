@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use interner::*;
 use ast;
-use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Function, Constraint};
+use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint};
 use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
@@ -166,7 +166,7 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
 
 impl CompilerEnv for Module<TcIdent> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
-        self.functions.iter()
+        self.globals.iter()
             .enumerate()
             .find(|&(_, f)| f.declaration.name.id() == id)
             .map(|(i, f)| Global(i, f.declaration.constraints.as_slice(), &f.declaration.name.typ))
@@ -210,19 +210,19 @@ impl CompilerEnv for Module<TcIdent> {
                 .map(|(i, _)| i).unwrap())
     }
     fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
-        let mut offset = self.functions.len();
+        let mut offset = self.globals.len();
         self.impls.iter()
             .find(|imp| {
-                offset += imp.functions.len();
+                offset += imp.globals.len();
                 imp.trait_name.id() == trait_name && match_types(&imp.typ, trait_type)
             })
-            .map(|imp| offset - imp.functions.len())
+            .map(|imp| offset - imp.globals.len())
     }
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
-        let mut offset = self.functions.len();
+        let mut offset = self.globals.len();
         for imp in self.impls.iter() {
             if match_types(&imp.typ, typ) {
-                for (i, func) in imp.functions.iter().enumerate() {
+                for (i, func) in imp.globals.iter().enumerate() {
                     if func.declaration.name.id() == id {
                         return Some(TypeResult {
                             constraints: func.declaration.constraints.as_slice(),
@@ -232,7 +232,7 @@ impl CompilerEnv for Module<TcIdent> {
                     }
                 }
             }
-            offset += imp.functions.len();
+            offset += imp.globals.len();
         }
         None
     }
@@ -245,7 +245,7 @@ impl CompilerEnv for Module<TcIdent> {
             )
     }
     fn next_function_index(&self) -> usize {
-        self.functions.len() + self.impls.iter().fold(0, |y, i| i.functions.len() + y)
+        self.globals.len() + self.impls.iter().fold(0, |y, i| i.globals.len() + y)
     }
 }
 
@@ -338,29 +338,29 @@ impl <'a> Compiler<'a> {
     }
 
     pub fn compile_module(&mut self, module: &Module<TcIdent>) -> (Vec<CompiledFunction>, Vec<TraitFunctions>) {
-        let mut functions: Vec<CompiledFunction> = module.functions.iter()
+        let mut globals: Vec<CompiledFunction> = module.globals.iter()
             .map(|f| self.compile_function(f))
             .collect();
-        let mut trait_functions = Vec::new();
+        let mut trait_globals = Vec::new();
         let offset = self.globals.next_function_index() - module.next_function_index();
         for imp in module.impls.iter() {
-            trait_functions.push(TraitFunctions {
-                index: offset + functions.len(),
+            trait_globals.push(TraitFunctions {
+                index: offset + globals.len(),
                 trait_name: imp.trait_name.id().clone(),
                 impl_type: imp.typ.clone()
             });
-            for f in imp.functions.iter() {
-                functions.push(self.compile_function(f));
+            for f in imp.globals.iter() {
+                globals.push(self.compile_function(f));
             }
         }
         let lambdas = ::std::mem::replace(&mut self.compiled_lambdas, Vec::new());
-        functions.extend(lambdas.into_iter());
+        globals.extend(lambdas.into_iter());
 
 
-        (functions, trait_functions)
+        (globals, trait_globals)
     }
 
-    pub fn compile_function(&mut self, function: &Function<TcIdent>) -> CompiledFunction {
+    pub fn compile_function(&mut self, function: &ast::Global<TcIdent>) -> CompiledFunction {
         debug!("-- Compiling {}", function.declaration.name.id());
         let (arguments, body) = match function.expression.value {
             Lambda(ref lambda) => (&*lambda.arguments, &*lambda.body),
@@ -722,7 +722,7 @@ impl <'a> Compiler<'a> {
             self.stack.remove(arg.id());
         }
         self.closure_limits.pop();
-        //Insert all free variables into the above functions free variables
+        //Insert all free variables into the above globals free variables
         //if they arent in that lambdas scope
         for var in f.free_vars.iter() {
             match self.find(var, function).unwrap() {

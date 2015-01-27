@@ -148,7 +148,7 @@ pub struct Constraint<T = InternedStr> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Function<Id> {
+pub struct Global<Id> {
     pub declaration: GlobalDeclaration<Id>,
     pub expression: LExpr<Id>
 }
@@ -203,13 +203,13 @@ pub struct Impl<Id> {
     pub trait_name: Id,
     pub constraints: Vec<Constraint>,
     pub typ: TypeEnum<InternedStr>,
-    pub functions: Vec<Function<Id>>
+    pub globals: Vec<Global<Id>>
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Module<Id> {
     pub datas: Vec<Data<Id>>,
-    pub functions: Vec<Function<Id>>,
+    pub globals: Vec<Global<Id>>,
     pub traits: Vec<Trait<Id>>,
     pub impls: Vec<Impl<Id>>
 }
