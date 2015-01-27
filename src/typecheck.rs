@@ -431,7 +431,7 @@ impl <'a> Typecheck<'a> {
         }
         self.type_infos.add_module(module);
         for f in module.globals.iter_mut() {
-            self.typecheck_function(f)
+            self.typecheck_global(f)
         }
         for imp in module.impls.iter_mut() {
             imp.typ = from_constrained_type(imp.constraints.as_slice(), &imp.typ);
@@ -461,28 +461,24 @@ impl <'a> Typecheck<'a> {
             }
         }
         for f in imp.globals.iter_mut() {
-            self.typecheck_function(f);
+            self.typecheck_global(f);
         }
         Ok(())
     }
 
     
-    fn typecheck_function(&mut self, function: &mut ast::Global<TcIdent>) {
-        debug!("Typecheck function {} :: {:?}", function.declaration.name.id(), function.declaration.name.typ);
+    fn typecheck_global(&mut self, global: &mut ast::Global<TcIdent>) {
+        debug!("Typecheck global {} :: {:?}", global.declaration.name.id(), global.declaration.name.typ);
         self.stack.clear();
         self.subs.clear();
-        let (arguments, body) = match function.expression.value {
-            ast::Lambda(ref mut lambda) => (&mut *lambda.arguments, &mut *lambda.body),
-            _ => panic!("Not a lambda in function declaration")
-        };
-        let return_type = match function.declaration.name.typ {
-            FunctionType(ref arg_types, ref return_type) => {
-                for (typ, arg) in arg_types.iter().zip(arguments.iter()) {
+        let (real_type, inferred_type) = match (&global.declaration.name.typ, &mut global.expression) {
+            (&FunctionType(ref arg_types, ref return_type), &mut ast::Located { value: ast::Lambda(ref mut lambda), location }) => {
+                for (typ, arg) in arg_types.iter().zip(lambda.arguments.iter()) {
                     let typ = self.subs.instantiate(typ);
                     debug!("{} {:?}", arg.name, typ);
                     self.stack_var(arg.name.clone(), typ);
                 }
-                for constraint in function.declaration.constraints.iter() {
+                for constraint in global.declaration.constraints.iter() {
                     let c = Type(constraint.name, Vec::new());
                     let var = self.subs.variable_for(constraint.type_variable);
                     match self.subs.constraints.entry(var) {
@@ -494,26 +490,33 @@ impl <'a> Typecheck<'a> {
                         }
                     }
                 }
-                self.subs.instantiate(&**return_type)
+                let real_type = self.subs.instantiate(&**return_type);
+                let inferred_type = match self.typecheck(&mut *lambda.body) {
+                    Ok(typ) => typ,
+                    Err(err) => {
+                        self.errors.error(ast::Located { location: location, value: err });
+                        return;
+                    }
+                };
+                (real_type, inferred_type)
             }
-            _ => {
-                let e = ast::located(function.expression.location, StringError("Non function type for function"));
-                self.errors.error(e);
-                return
-            }                
-        };
-        let inferred_return_type = match self.typecheck(body) {
-            Ok(typ) => typ,
-            Err(err) => {
-                self.errors.error(ast::Located { location: function.expression.location, value: err });
-                return;
+            (generic_type, expr) => {
+                let real_type = self.subs.instantiate(generic_type);
+                let inferred_type = match self.typecheck(expr) {
+                    Ok(typ) => typ,
+                    Err(err) => {
+                        self.errors.error(ast::Located { location: expr.location, value: err });
+                        return;
+                    }
+                };
+                (real_type, inferred_type)
             }
         };
-        match self.merge(return_type, inferred_return_type) {
-            Ok(_) => self.replace_vars(body),
+        match self.merge(real_type, inferred_type) {
+            Ok(_) => self.replace_vars(&mut global.expression),
             Err(err) => {
-                debug!("End {} ==> {:?}", function.declaration.name.id(), err);
-                self.errors.error(ast::Located { location: function.expression.location, value: err });
+                debug!("End {} ==> {:?}", global.declaration.name.id(), err);
+                self.errors.error(ast::Located { location: global.expression.location, value: err });
             }
         }
     }
@@ -1623,6 +1626,38 @@ test = \ -> {
     1 && true
 }
 ";
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .err()
+            .unwrap();
+    }
+    #[test]
+    fn global_variable() {
+        let text = 
+r#"
+
+global : Int;
+global = { 123 }
+
+main : () -> Int;
+main = \ -> { global + 2 }
+
+"#;
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .unwrap_or_else(|err| panic!("{:?}", err));
+    }
+    #[test]
+    fn global_variable_error() {
+        let text = 
+r#"
+
+global : Int;
+global = { "" }
+
+"#;
         let mut module = parse(text, |p| p.module());
         let mut tc = Typecheck::new();
         tc.typecheck_module(&mut module)
