@@ -126,6 +126,7 @@ impl <'a, 'b, $($args : VMValue<'b>,)* R: VMValue<'b>> Get<'a, 'b> for Callable<
     fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Callable<'a, 'b, ($($args,)*), R>> {
         let value = match vm.get_global(name) {
             Some((function_ref, global)) => {
+                println!("{:?} {:?}", function_ref, global);
                 match global.type_of() {
                     &FunctionType(ref args, ref return_type) => {
                         let mut arg_iter = args.iter();
@@ -324,7 +325,7 @@ mod tests {
     use super::{Get, Callable, define_function};
 
     use vm::{VM, VMInt, load_script};
-    use std::io::BufReader;
+    use std::old_io::BufReader;
 
     #[test]
     fn call_function() {

@@ -15,7 +15,6 @@ use gc::{Gc, GcPtr, Traverseable, DataDef};
 use fixed::*;
 
 use self::Named::*;
-use self::Global_::*;
 
 pub use vm::Value::{
     Int,
@@ -153,9 +152,9 @@ pub type ExternFunction<'a> = Box<Fn(&VM<'a>) + 'static>;
 pub struct Global<'a> {
     id: InternedStr,
     typ: Constrained<TcType>,
-    value: Global_<'a>
+    value: Cell<Value<'a>>
 }
-enum Global_<'a> {
+enum Function_<'a> {
     Bytecode(Vec<Instruction>),
     Extern(ExternFunction<'a>)
 }
@@ -164,11 +163,11 @@ impl <'a> Typed for Global<'a> {
         &self.typ.value
     }
 }
-impl <'a> fmt::Debug for Global_<'a> {
+impl <'a> fmt::Debug for Function_<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self { 
-            Bytecode(ref is) => write!(f, "Bytecode {:?}", is),
-            Extern(_) => write!(f, "<extern>")
+            Function_::Bytecode(ref is) => write!(f, "Bytecode {:?}", is),
+            Function_::Extern(_) => write!(f, "<extern>")
         }
     }
 }
@@ -179,6 +178,7 @@ enum Named {
 }
 
 pub struct VM<'a> {
+    functions: FixedVec<Function_<'a>>,
     globals: FixedVec<Global<'a>>,
     trait_indexes: FixedVec<TraitFunctions>,
     type_infos: RefCell<TypeInfos>,
@@ -229,7 +229,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         }
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
-        (*self).find_field(struct_, field)
+        panic!("find field {} {}", struct_, field)
     }
 
     fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
@@ -254,7 +254,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                 TraitFn(ref trait_name, _) => {
                     match (self.find_object_function(trait_name, fn_name), self.find_trait_offset(trait_name, typ)) {
                         (Some(function_offset), Some(trait_offset)) => {
-                            debug!("{} {} {}", function_offset, trait_offset, self.globals.borrow().len());
+                            debug!("{} {} {}", function_offset, trait_offset, self.globals.len());
                             let global_index = function_offset + trait_offset;
                             let global = &self.globals[global_index];
                             Some(TypeResult {
@@ -281,7 +281,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             )
     }
     fn next_function_index(&self) -> usize {
-        self.globals.borrow().len()
+        self.globals.len()
     }
 }
 
@@ -495,6 +495,7 @@ impl <'a> VM<'a> {
     pub fn new() -> VM<'a> {
         let vm = VM {
             globals: FixedVec::new(),
+            functions: FixedVec::new(),
             trait_indexes: FixedVec::new(),
             type_infos: RefCell::new(TypeInfos::new()),
             typeids: FixedMap::new(),
@@ -519,12 +520,16 @@ impl <'a> VM<'a> {
             .pop()
     }
 
-    pub fn new_functions(&self, (fns, indexes): (Vec<CompiledFunction>, Vec<TraitFunctions>)) {
+    pub fn new_functions(&self, Assembly { anonymous_functions, trait_functions: indexes, globals }: Assembly) {
         let mut names = self.names.borrow_mut();
+        let empty = self.intern("");
         for trait_index in indexes.into_iter() {
             //First index of this impl's functions
-            let start_index = trait_index.index - self.globals.len();
-            let func = &fns[start_index];
+            let start_index = trait_index.index - self.functions.len();
+            let func = match globals[start_index] {
+                Binding::Function(ref f) => f,
+                _ => panic!()
+            };
             let is_registered = match names.get(&func.id) {
                 Some(&TraitFn(..)) => true,
                 None => false,
@@ -534,8 +539,8 @@ impl <'a> VM<'a> {
                 match self.type_infos.borrow().traits.get(&trait_index.trait_name) {
                     Some(trait_fns) => {
                         for (i, &(trait_fn, _)) in trait_fns.iter().enumerate() {
-                            debug!("Register trait fn {}", trait_fn);
-                            names.insert(func.id, TraitFn(trait_index.trait_name, i));
+                            debug!("Register trait fn '{}'", trait_fn);
+                            names.insert(trait_fn, TraitFn(trait_index.trait_name, i));
                         }
                     }
                     None => panic!()
@@ -543,21 +548,31 @@ impl <'a> VM<'a> {
             }
             self.trait_indexes.push(trait_index);
         }
-        for f in fns.into_iter() {
-            let CompiledFunction { id, typ, instructions } = f;
-            match names.get(&id) {
-                Some(&GlobalFn(..)) => {
-                    if id != self.intern("") {//Lambdas have the empty string as name
-                        panic!("ICE: Global {} already exists", id);
+        //Fix the 'fns' Vec so that lambdas are last
+        for global in globals {
+            let g = match global {
+                Binding::Function(f) => {
+                    let CompiledFunction { id, typ, instructions } = f;
+                    match names.get(&id) {
+                        Some(&GlobalFn(..)) => panic!("ICE: Global '{}' already exists", id),
+                        Some(&TraitFn(..)) => (),
+                        None => {
+                            names.insert(id, GlobalFn(self.functions.len()));
+                        }
                     }
+                    debug!("Register '{}' : {:?} at ({}, {})", id, typ, self.functions.len(), self.globals.len());
+                    self.functions.push(Function_::Bytecode(instructions));
+                    Global { id: id, typ: typ, value: Cell::new(Function(self.functions.len() - 1)) }
                 }
-                Some(&TraitFn(..)) => (),
-                None => {
-                    debug!("Register fn {}", id);
-                    names.insert(id, GlobalFn(self.globals.len()));
+                Binding::Other(id, typ) => {
+                    Global { id: id, typ: typ, value: Cell::new(Int(0)) }
                 }
-            }
-            self.globals.push(Global { id: id, typ: typ, value: Bytecode(instructions) });
+            };
+            self.globals.push(g);
+        }
+        for f in anonymous_functions {
+            let CompiledFunction { instructions, .. } = f;
+            self.functions.push(Function_::Bytecode(instructions));
         }
     }
 
@@ -601,9 +616,10 @@ impl <'a> VM<'a> {
         let global = Global {
             id: id,
             typ: Constrained { constraints: Vec::new(), value: FunctionType(args, box return_type) },
-            value: Extern(f)
+            value: Cell::new(Function(self.functions.borrow().len()))
         };
-        self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
+        self.names.borrow_mut().insert(id, GlobalFn(self.functions.len()));
+        self.functions.push(Function_::Extern(f));
         self.globals.push(global);
         Ok(())
     }
@@ -658,14 +674,20 @@ impl <'a> VM<'a> {
         DataStruct { value: gc.alloc_and_collect(&mut roots, Def { tag: tag, elems: fields }) }
     }
 
-    pub fn call_function<'b, 'c>(&self, args: usize, upvars: Option<GcPtr<Data_<'a>>>, function: &Global<'a>) -> VMResult<Value<'a>>  {
-        let stack = StackFrame::new(self.stack.borrow_mut(), args, upvars);
-        self.execute_function(stack, function)
-            .map(|mut stack| stack.pop())
+    pub fn call_function<'b, 'c>(&self, args: usize, upvars: Option<GcPtr<Data_<'a>>>, global: &Global<'a>) -> VMResult<Value<'a>>  {
+        match global.value.get() {
+            Function(i) if i < self.functions.len() => {
+                let function = &self.functions[i];
+                let stack = StackFrame::new(self.stack.borrow_mut(), args, upvars);
+                self.execute_function(stack, function)
+                    .map(|mut stack| stack.pop())
+            }
+            x => Err(format!("Tried to call a non function object: '{:?}'", x))
+        }
     }
-    fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Global<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
-        match function.value {
-            Extern(ref func) => {
+    fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Function_<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+        match *function {
+            Function_::Extern(ref func) => {
                 //Make sure that the stack is not borrowed during the external function call
                 //Necessary since we do not know what will happen during the function call
                 let StackFrame { stack, offset, upvars } = stack;
@@ -673,7 +695,7 @@ impl <'a> VM<'a> {
                 func.call((self,));
                 Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
             }
-            Bytecode(ref instructions) => {
+            Function_::Bytecode(ref instructions) => {
                 self.execute(stack, instructions.as_slice())
             }
         }
@@ -697,26 +719,29 @@ impl <'a> VM<'a> {
                     stack.push(String(s));
                 }
                 PushGlobal(i) => {
-                    stack.push(Function(i));
+                    stack.push(self.globals[i].value.get());
                 }
                 PushFloat(f) => stack.push(Float(f)),
                 Store(i) => {
                     *stack.get_mut(i) = stack.pop();
                 }
+                StoreGlobal(i) => {
+                    panic!("Unimplemented instruction StoreGlobal");
+                }
                 CallGlobal(args) => {
+                    debug!("{:?}", stack.as_slice());
                     let function_index = stack.len() - 1 - args;
                     {
                         let f = stack.get(function_index).clone();
                         let (function, new_upvars) = match f {
                             Function(index) => {
-                                (&self.globals[index], None)
+                                (&self.functions[index], None)
                             }
                             Closure(ref closure) => {
-                                (&self.globals[closure.tag], Some(closure.value))
+                                (&self.functions[closure.tag], Some(closure.value))
                             }
                             x => return Err(format!("Cannot call {:?}", x))
                         };
-                        debug!("Call {:?} :: {:?}", function.id, function.typ);
                         stack = try!(stack.scope(args, new_upvars, |new_stack| {
                             self.execute_function(new_stack, function)
                         }));
@@ -996,8 +1021,8 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::St
         tryf!(parser.module())
     };
     let (type_infos, functions) = {
-        let mut tc = Typecheck::new();
         let env = vm.env();
+        let mut tc = Typecheck::new();
         tc.add_environment(&env);
         tryf!(tc.typecheck_module(&mut module));
         let env = (vm.env(), &module);
@@ -1010,7 +1035,7 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::St
 }
 
 pub fn run_main<'a>(vm: &VM<'a>, s: &str) -> VMResult<Value<'a>> {
-    use std::io::BufReader;
+    use std::old_io::BufReader;
     let mut buffer = BufReader::new(s.as_bytes());
     run_buffer_main(vm, &mut buffer)
 }
@@ -1021,9 +1046,8 @@ pub fn run_buffer_main<'a>(vm: &VM<'a>, buffer: &mut Buffer) -> VMResult<Value<'
 }
 
 pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a>> {
-    let globals = vm.globals.borrow();
-    let func = match globals.iter().find(|g| g.id.as_slice() == name) {
-        Some(f) => &**f,
+    let func = match vm.globals.find(|g| g.id.as_slice() == name) {
+        Some((_, f)) => f,
         None => return Err(format!("Undefined function {}", name))
     };
     vm.run_function(func)
@@ -1033,7 +1057,7 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 mod tests {
     use super::{VM, Data, Int, String, run_main, run_function, load_script};
     use ast::INT_TYPE;
-    use std::io::BufReader;
+    use std::old_io::BufReader;
     ///Test that the stack is adjusted correctly after executing expressions as statements
     #[test]
     fn stack_for_block() {
@@ -1578,6 +1602,22 @@ main = \ -> {
     let x = Test(123, 0.0);
     x.x
 }"#;
+        let mut vm = VM::new();
+        let value = run_main(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(123));
+    }
+    #[test]
+    fn global_access() {
+        let text = 
+r#"
+
+global : Int;
+global = { 123 }
+
+main : () -> Int;
+main = \ -> { global }
+"#;
         let mut vm = VM::new();
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));

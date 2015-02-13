@@ -590,11 +590,20 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     pub fn global(&mut self) -> ParseResult<Global<PString>> {
         let declaration = try!(self.global_declaration());
         expect!(self, TSemicolon);
-        expect1!(self, TVariable(x));
+        let name = expect1!(self, TVariable(x));
         expect!(self, TAssign);
         let expr = try!(match_token!(self {
             TOpenBrace => { self.block() }
-            TLambda => { self.located(|this| this.lambda()) }
+            TLambda => {
+                self.located(move |this| {
+                    let mut lambda = try!(this.lambda());
+                    //Give top level lambdas a name, needed to work the the vm's current name lookup
+                    if let Expr::Lambda(ref mut l) = lambda {
+                        l.id = this.make_id(name);
+                    }
+                    Ok(lambda)
+                })
+            }
         }));
 
         Ok(Global {
@@ -670,7 +679,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
 pub mod tests {
     use super::{Parser, ParseResult};
     use ast::*;
-    use std::io::BufReader;
+    use std::old_io::BufReader;
     use interner::*;
     use interner::tests::*;
     
@@ -713,9 +722,9 @@ pub mod tests {
     fn block(xs: Vec<PExpr>) -> PExpr {
         no_loc(Block(xs))
     }
-    fn lambda(args: Vec<InternedStr>, body: PExpr) -> PExpr {
+    fn lambda(name: &str, args: Vec<InternedStr>, body: PExpr) -> PExpr {
         no_loc(Lambda(LambdaStruct {
-            id: intern(""),
+            id: intern(name),
             free_vars: Vec::new(),
             arguments: args,
             body: box body 
@@ -761,7 +770,7 @@ main = \x y -> { }";
                 constraints: Vec::new(),
                 typ: FunctionType(vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()), box UNIT_TYPE.clone())
             },
-            expression: lambda(vec![intern("x"), intern("y")], block(vec!()))
+            expression: lambda("main", vec![intern("x"), intern("y")], block(vec!()))
         };
         assert_eq!(func, expected);
     }
@@ -779,7 +788,7 @@ id = \x -> { x }
                 constraints: Vec::new(),
                 typ: FunctionType(vec![a.clone()], box a.clone())
             },
-            expression: lambda(vec![intern("x")], block(vec![id("x")]))
+            expression: lambda("id", vec![intern("x")], block(vec![id("x")]))
         };
         assert_eq!(func, expected);
     }

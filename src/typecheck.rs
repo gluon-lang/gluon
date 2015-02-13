@@ -138,7 +138,7 @@ fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclara
 
 fn from_declaration_with_self(decl: &ast::GlobalDeclaration<TcIdent>, self_var: InternedStr) -> Constrained<TcType> {
     let constraints = decl.constraints.as_slice();
-    let type_handler = |&mut: type_id: InternedStr| {
+    let type_handler = |type_id: InternedStr| {
         if type_id == self_var {
             Some(Generic(self_var))
         }
@@ -152,7 +152,7 @@ fn from_declaration_with_self(decl: &ast::GlobalDeclaration<TcIdent>, self_var: 
 }
 fn from_declaration(decl: &ast::GlobalDeclaration<TcIdent>) -> Constrained<TcType> {
     let constraints = decl.constraints.as_slice();
-    let type_handler = |&mut: type_id| {
+    let type_handler = |type_id| {
         constraints.iter()
             .find(|v| v.type_variable == type_id)
             .map(|v| Generic(v.type_variable))
@@ -168,7 +168,7 @@ fn from_declaration_<F>(mut type_handler: F, decl: &ast::GlobalDeclaration<TcIde
 }
 
 pub fn from_constrained_type(variables: &[ast::Constraint], typ: &ast::VMType) -> TcType {
-    let mut type_handler = |&mut: type_id| {
+    let mut type_handler = |type_id| {
         variables.iter()
             .find(|v| v.type_variable == type_id)
             .map(|v| Generic(v.type_variable))
@@ -411,7 +411,7 @@ impl <'a> Typecheck<'a> {
             let type_variables = data.constraints.as_slice();
             for ctor in data.constructors.iter_mut() {
                 let mut args = Vec::new();
-                let mut type_handler = |&mut: type_id| {
+                let mut type_handler = |type_id| {
                     type_variables.iter()
                         .find(|v| **v == type_id)
                         .map(|v| Generic(*v))
@@ -498,6 +498,7 @@ impl <'a> Typecheck<'a> {
                         return;
                     }
                 };
+                lambda.id.typ = global.declaration.name.typ.clone();
                 (real_type, inferred_type)
             }
             (generic_type, expr) => {
@@ -1230,7 +1231,7 @@ mod tests {
 
     pub fn parse<F, T>(s: &str, f: F) -> T
         where F: FnOnce(&mut Parser<TcIdent>) -> ParseResult<T> {
-        use std::io::BufReader;
+        use std::old_io::BufReader;
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();

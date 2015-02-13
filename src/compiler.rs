@@ -14,6 +14,7 @@ pub enum Instruction {
     Push(usize),
     PushGlobal(usize),
     Store(usize),
+    StoreGlobal(usize),
     CallGlobal(usize),
     Construct(usize, usize),
     GetField(usize),
@@ -66,6 +67,19 @@ pub enum Variable<'a> {
     UpVar(usize)
 }
 
+pub struct Assembly {
+    pub globals: Vec<Binding>,
+    pub anonymous_functions: Vec<CompiledFunction>,
+    pub trait_functions: Vec<TraitFunctions>
+}
+
+#[derive(Debug)]
+pub enum Binding {
+    Function(CompiledFunction),
+    Other(InternedStr, Constrained<TcType>)
+}
+
+#[derive(Debug)]
 pub struct CompiledFunction {
     pub id: InternedStr,
     pub typ: Constrained<TcType>,
@@ -101,6 +115,7 @@ impl <'a> FunctionEnv<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct TypeResult<'a, T> {
     pub constraints: &'a [Constraint],
     pub typ: &'a TcType,
@@ -337,10 +352,13 @@ impl <'a> Compiler<'a> {
         self.stack.len()
     }
 
-    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> (Vec<CompiledFunction>, Vec<TraitFunctions>) {
-        let mut globals: Vec<CompiledFunction> = module.globals.iter()
-            .map(|f| self.compile_function(f))
-            .collect();
+    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Assembly {
+        let mut initializer = FunctionEnv::new();
+        let mut globals = Vec::new();
+        for global in module.globals.iter() {
+            let index = globals.len();
+            globals.push(self.compile_global(&mut initializer, index, global));
+        }
         let mut trait_globals = Vec::new();
         let offset = self.globals.next_function_index() - module.next_function_index();
         for imp in module.impls.iter() {
@@ -350,38 +368,39 @@ impl <'a> Compiler<'a> {
                 impl_type: imp.typ.clone()
             });
             for f in imp.globals.iter() {
-                globals.push(self.compile_function(f));
+                let index = globals.len();
+                globals.push(self.compile_global(&mut initializer, index, f));
             }
         }
         let lambdas = ::std::mem::replace(&mut self.compiled_lambdas, Vec::new());
-        globals.extend(lambdas.into_iter());
 
-
-        (globals, trait_globals)
+        Assembly {
+            anonymous_functions: lambdas,
+            globals: globals,
+            trait_functions: trait_globals
+        }
     }
 
-    pub fn compile_function(&mut self, function: &ast::Global<TcIdent>) -> CompiledFunction {
+    pub fn compile_global(&mut self, initializer: &mut FunctionEnv, index: usize, function: &ast::Global<TcIdent>) -> Binding {
         debug!("-- Compiling {}", function.declaration.name.id());
-        let (arguments, body) = match function.expression.value {
-            Lambda(ref lambda) => (&*lambda.arguments, &*lambda.body),
-            _ => panic!("Not a lambda in function declaration")
-        };
-        for arg in arguments.iter() {
-            self.new_stack_var(*arg.id());
-        }
         let mut f = FunctionEnv::new();
         f.dictionary = function.declaration.constraints.as_slice();
-        self.compile(body, &mut f);
-        for arg in arguments.iter() {
-            self.stack.remove(arg.id());
+        self.compile(&function.expression, &mut f);
+        initializer.instructions.push(StoreGlobal(index));
+        if let Lambda(_) = function.expression.value {
+            Binding::Function(self.compiled_lambdas.pop().unwrap())
         }
-
-        let FunctionEnv { instructions, .. } = f;
-        let constraints = function.declaration.constraints.clone();
-        CompiledFunction {
-            id: function.declaration.name.id().clone(),
-            typ: Constrained { constraints: constraints, value: function.type_of().clone() },
-            instructions: instructions
+        else {
+            Binding::Other(function.declaration.name.name, Constrained { constraints: Vec::new(), value: function.declaration.typ.clone() })
+        }
+    }
+    pub fn compile_function(&mut self, f: &mut FunctionEnv, lambda: &ast::LambdaStruct<TcIdent>) {
+        for arg in lambda.arguments.iter() {
+            self.new_stack_var(*arg.id());
+        }
+        self.compile(&lambda.body, f);
+        for arg in lambda.arguments.iter() {
+            self.stack.remove(arg.id());
         }
     }
 
@@ -717,6 +736,7 @@ impl <'a> Compiler<'a> {
             self.new_stack_var(*arg.id());
         }
         let mut f = FunctionEnv::new();
+        f.dictionary = function.dictionary.clone();
         self.compile(&*lambda.body, &mut f);
         for arg in lambda.arguments.iter() {
             self.stack.remove(arg.id());
@@ -793,6 +813,7 @@ impl <'a> Compiler<'a> {
                             function.instructions.push(MakeClosure(result.value, 1));
                         }
                         else {
+                            debug!("PUSH {:?}", result);
                             function.instructions.push(PushGlobal(result.value));
                         }
                     }

@@ -159,7 +159,7 @@ pub enum ConstructorType {
     Record(Vec<Field>)
 }
 
-#[derive(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Constructor<Id> {
     pub name: Id,
     pub arguments: ConstructorType

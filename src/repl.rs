@@ -1,8 +1,8 @@
-use std::io::BufReader;
-use std::io::IoResult;
+use std::old_io::{BufReader, IoResult};
+use std::old_path::Path;
 
 use EmbedLang::typecheck::*;
-use EmbedLang::compiler::Compiler;
+use EmbedLang::compiler::{Assembly, Compiler};
 use EmbedLang::vm::{VM, parse_expr, load_script};
 
 macro_rules! tryf {
@@ -16,7 +16,7 @@ fn print(vm: &VM) {
 pub fn run() {
     let vm = VM::new();
     vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), Box::new(print));
-    for line in ::std::io::stdin().lock().lines() {
+    for line in ::std::old_io::stdin().lock().lines() {
         match run_line(&vm, line) {
             Ok(continue_repl) => {
                 if !continue_repl {
@@ -80,7 +80,7 @@ fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
                 let mut compiler = Compiler::new(&env);
                 compiler.compile_expr(&expr)
             };
-            vm.new_functions((lambdas, Vec::new()));
+            vm.new_functions(Assembly { anonymous_functions: lambdas, trait_functions: Vec::new(), globals: Vec::new() });
             let v = try!(vm.execute_instructions(&*instructions));
             println!("{:?}", v);
             Ok(true)
@@ -89,8 +89,7 @@ fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
 }
 
 fn load_file(vm: &VM, filename: &str) -> Result<(), String> {
-    use std::io::{File, BufferedReader};
-    use std::path::Path;
+    use std::old_io::{File, BufferedReader};
     let file = tryf!(File::open(&Path::new(filename)));
     let mut buffer = BufferedReader::new(file);
     load_script(vm, &mut buffer)

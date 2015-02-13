@@ -355,9 +355,9 @@ mod tests {
     use lexer::Token::*;
     use gc::Gc;
     use interner::Interner;
-    use std::io::BufReader;
+    use std::old_io::BufReader;
 
-    fn buffer<'a>(s: &'a str) -> BufReader<'a> {
+    fn buffer(s: &str) -> BufReader {
         BufReader::new(s.as_bytes())
     }
 

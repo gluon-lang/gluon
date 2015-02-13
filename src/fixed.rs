@@ -74,13 +74,10 @@ impl <T> FixedVec<T> {
 
     pub fn find<F>(&self, mut test: F) -> Option<(usize, &T)>
         where F: FnMut(&T) -> bool {
-        self.vec.try_borrow()
-            .and_then(|vec| {
-                vec.iter()
-                    .enumerate()
-                    .find(|&(_, boxed)| test(&**boxed))
-                    .map(|(i, boxed)| (i, unsafe { forget_lifetime(&**boxed) }))
-            })
+        self.vec.borrow().iter()
+            .enumerate()
+            .find(|&(_, boxed)| test(&**boxed))
+            .map(|(i, boxed)| (i, unsafe { forget_lifetime(&**boxed) }))
     }
 
     pub fn len(&self) -> usize {
