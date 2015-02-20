@@ -254,7 +254,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                 TraitFn(ref trait_name, _) => {
                     match (self.find_object_function(trait_name, fn_name), self.find_trait_offset(trait_name, typ)) {
                         (Some(function_offset), Some(trait_offset)) => {
-                            debug!("{} {} {}", function_offset, trait_offset, self.globals.len());
+                            println!("{} {} {}", function_offset, trait_offset, self.globals.len());
                             let global_index = function_offset + trait_offset;
                             let global = &self.globals[global_index];
                             Some(TypeResult {
@@ -520,17 +520,16 @@ impl <'a> VM<'a> {
             .pop()
     }
 
-    pub fn new_functions(&self, Assembly { anonymous_functions, trait_functions: indexes, globals }: Assembly) {
+    pub fn new_functions(&self, Assembly { initializer, anonymous_functions, trait_functions: indexes, globals }: Assembly) {
         let mut names = self.names.borrow_mut();
-        let empty = self.intern("");
         for trait_index in indexes.into_iter() {
             //First index of this impl's functions
             let start_index = trait_index.index - self.functions.len();
-            let func = match globals[start_index] {
-                Binding::Function(ref f) => f,
+            let id = match globals[start_index] {
+                Binding::Function(ref id, _, _) => id,
                 _ => panic!()
             };
-            let is_registered = match names.get(&func.id) {
+            let is_registered = match names.get(id) {
                 Some(&TraitFn(..)) => true,
                 None => false,
                 _ => panic!()
@@ -539,7 +538,7 @@ impl <'a> VM<'a> {
                 match self.type_infos.borrow().traits.get(&trait_index.trait_name) {
                     Some(trait_fns) => {
                         for (i, &(trait_fn, _)) in trait_fns.iter().enumerate() {
-                            debug!("Register trait fn '{}'", trait_fn);
+                            println!("Register trait fn '{}'", trait_fn);
                             names.insert(trait_fn, TraitFn(trait_index.trait_name, i));
                         }
                     }
@@ -551,8 +550,7 @@ impl <'a> VM<'a> {
         //Fix the 'fns' Vec so that lambdas are last
         for global in globals {
             let g = match global {
-                Binding::Function(f) => {
-                    let CompiledFunction { id, typ, instructions } = f;
+                Binding::Function(id, typ, index) => {
                     match names.get(&id) {
                         Some(&GlobalFn(..)) => panic!("ICE: Global '{}' already exists", id),
                         Some(&TraitFn(..)) => (),
@@ -560,9 +558,7 @@ impl <'a> VM<'a> {
                             names.insert(id, GlobalFn(self.functions.len()));
                         }
                     }
-                    debug!("Register '{}' : {:?} at ({}, {})", id, typ, self.functions.len(), self.globals.len());
-                    self.functions.push(Function_::Bytecode(instructions));
-                    Global { id: id, typ: typ, value: Cell::new(Function(self.functions.len() - 1)) }
+                    Global { id: id, typ: typ, value: Cell::new(Function(index)) }
                 }
                 Binding::Other(id, typ) => {
                     Global { id: id, typ: typ, value: Cell::new(Int(0)) }
@@ -574,6 +570,9 @@ impl <'a> VM<'a> {
             let CompiledFunction { instructions, .. } = f;
             self.functions.push(Function_::Bytecode(instructions));
         }
+        println!("Run initializer");
+        self.execute_instructions(&initializer).unwrap();
+        println!("Done initializer");
     }
 
     pub fn get_global(&self, name: &str) -> Option<(usize, &Global<'a>)> {
@@ -605,7 +604,14 @@ impl <'a> VM<'a> {
         let frame = StackFrame::new_scope(stack, 0, None, |frame| {
             self.execute(frame, instructions)
         });
-        frame.map(|mut frame| frame.pop())
+        frame.map(|mut frame| {
+            if frame.len() > 0 {
+                frame.pop()
+            }
+            else {
+                Int(0)
+            }
+        })
     }
 
     pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction<'a>) -> Result<(), ::std::string::String> {
@@ -675,15 +681,15 @@ impl <'a> VM<'a> {
     }
 
     pub fn call_function<'b, 'c>(&self, args: usize, upvars: Option<GcPtr<Data_<'a>>>, global: &Global<'a>) -> VMResult<Value<'a>>  {
-        match global.value.get() {
-            Function(i) if i < self.functions.len() => {
-                let function = &self.functions[i];
-                let stack = StackFrame::new(self.stack.borrow_mut(), args, upvars);
-                self.execute_function(stack, function)
-                    .map(|mut stack| stack.pop())
-            }
-            x => Err(format!("Tried to call a non function object: '{:?}'", x))
-        }
+        let i = match global.value.get() {
+            Function(i) if i < self.functions.len() => i,
+            Closure(d) if d.tag < self.functions.len() => d.tag,
+            x => return Err(format!("Tried to call a non function object: '{:?}' / {}", x, self.functions.len()))
+        };
+        let function = &self.functions[i];
+        let stack = StackFrame::new(self.stack.borrow_mut(), args, upvars);
+        self.execute_function(stack, function)
+            .map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
     }
     fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Function_<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         match *function {
@@ -702,11 +708,11 @@ impl <'a> VM<'a> {
     }
 
     pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
-        debug!("Enter frame with {:?}", stack.as_slice());
+        println!("Enter frame with {:?}", stack.as_slice());
         let mut index = 0;
         while index < instructions.len() {
             let instr = instructions[index];
-            debug!("{:?}: {:?}", index, instr);
+            println!("{:?}: {:?}", index, instr);
             match instr {
                 Push(i) => {
                     let v = stack.get(i).clone();
@@ -726,10 +732,10 @@ impl <'a> VM<'a> {
                     *stack.get_mut(i) = stack.pop();
                 }
                 StoreGlobal(i) => {
-                    panic!("Unimplemented instruction StoreGlobal");
+                    let v = stack.pop();
+                    self.globals[i].value.set(v);
                 }
                 CallGlobal(args) => {
-                    debug!("{:?}", stack.as_slice());
                     let function_index = stack.len() - 1 - args;
                     {
                         let f = stack.get(function_index).clone();
@@ -749,7 +755,7 @@ impl <'a> VM<'a> {
                     if stack.len() > function_index + args {
                         //Value was returned
                         let result = stack.pop();
-                        debug!("Return {:?}", result);
+                        println!("Return {:?}", result);
                         while stack.len() > function_index {
                             stack.pop();
                         }
@@ -938,10 +944,10 @@ impl <'a> VM<'a> {
             index += 1;
         }
         if stack.len() != 0 {
-            debug!("--> {:?}", stack.top());
+            println!("--> {:?}", stack.top());
         }
         else {
-            debug!("--> ()");
+            println!("--> ()");
         }
         Ok(stack)
     }

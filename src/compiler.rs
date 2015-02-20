@@ -68,6 +68,7 @@ pub enum Variable<'a> {
 }
 
 pub struct Assembly {
+    pub initializer: Vec<Instruction>,
     pub globals: Vec<Binding>,
     pub anonymous_functions: Vec<CompiledFunction>,
     pub trait_functions: Vec<TraitFunctions>
@@ -75,7 +76,7 @@ pub struct Assembly {
 
 #[derive(Debug)]
 pub enum Binding {
-    Function(CompiledFunction),
+    Function(InternedStr, Constrained<TcType>, usize),
     Other(InternedStr, Constrained<TcType>)
 }
 
@@ -375,23 +376,28 @@ impl <'a> Compiler<'a> {
         let lambdas = ::std::mem::replace(&mut self.compiled_lambdas, Vec::new());
 
         Assembly {
+            initializer: initializer.instructions,
             anonymous_functions: lambdas,
             globals: globals,
             trait_functions: trait_globals
         }
     }
 
-    pub fn compile_global(&mut self, initializer: &mut FunctionEnv, index: usize, function: &ast::Global<TcIdent>) -> Binding {
+    pub fn compile_global<'b>(&mut self, initializer: &mut FunctionEnv<'b>, index: usize, function: &'b ast::Global<TcIdent>) -> Binding {
         debug!("-- Compiling {}", function.declaration.name.id());
-        let mut f = FunctionEnv::new();
-        f.dictionary = function.declaration.constraints.as_slice();
-        self.compile(&function.expression, &mut f);
+        initializer.dictionary = function.declaration.constraints.as_slice();
+        self.compile(&function.expression, initializer);
         initializer.instructions.push(StoreGlobal(index));
+        let name = function.declaration.name.name;
+        let typ = Constrained {
+            constraints: function.declaration.constraints.clone(),
+            value: function.declaration.typ.clone()
+        };
         if let Lambda(_) = function.expression.value {
-            Binding::Function(self.compiled_lambdas.pop().unwrap())
+            Binding::Function(name, typ, self.compiled_lambdas.len() - 1)
         }
         else {
-            Binding::Other(function.declaration.name.name, Constrained { constraints: Vec::new(), value: function.declaration.typ.clone() })
+            Binding::Other(name, typ)
         }
     }
     pub fn compile_function(&mut self, f: &mut FunctionEnv, lambda: &ast::LambdaStruct<TcIdent>) {

@@ -80,7 +80,7 @@ fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
                 let mut compiler = Compiler::new(&env);
                 compiler.compile_expr(&expr)
             };
-            vm.new_functions(Assembly { anonymous_functions: lambdas, trait_functions: Vec::new(), globals: Vec::new() });
+            vm.new_functions(Assembly { initializer: Vec::new(), anonymous_functions: lambdas, trait_functions: Vec::new(), globals: Vec::new() });
             let v = try!(vm.execute_instructions(&*instructions));
             println!("{:?}", v);
             Ok(true)
