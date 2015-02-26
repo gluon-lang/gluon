@@ -2,6 +2,7 @@ use vm::{VM, VMResult, Value, Int, Float, Function, Userdata, Userdata_, StackFr
 use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
 use std::boxed::BoxAny;
+use std::marker::PhantomData;
 
 pub trait VMType {
     fn vm_type<'a>(_: Option<&Self>, vm: &'a VM) -> &'a TcType;
@@ -134,7 +135,7 @@ impl <'a, 'b, $($args : VMValue<'b>,)* R: VMValue<'b>> Get<'a, 'b> for Callable<
                             arg_iter.next().unwrap() == vm_type::<$args>(vm)
                             } &&)* true;
                         if arg_iter.next().is_none() && ok && **return_type == *vm_type::<R>(vm) {
-                            Some(FunctionRef { value: function_ref })
+                            Some(FunctionRef { value: function_ref, _marker: PhantomData })
                         }
                         else {
                             None
@@ -167,7 +168,8 @@ pub struct Callable<'a, 'b: 'a , Args, R> {
     value: FunctionRef<Args, R>
 }
 struct FunctionRef<Args, R> {
-    value: usize
+    value: usize,
+    _marker: PhantomData<fn (Args) -> R>
 }
 
 impl <Args, R> Copy for FunctionRef<Args, R> { }
@@ -184,7 +186,7 @@ impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
     }
     fn from_value(value: Value<'a>) -> Option<FunctionRef<Args, R>> {
         match value {
-            Function(i) => Some(FunctionRef { value: i }),//TODO not type safe
+            Function(i) => Some(FunctionRef { value: i, _marker: PhantomData }),//TODO not type safe
             _ => None
         }
     }
@@ -249,7 +251,7 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($arg
     fn unpack_and_call(vm: &VM<'a>, f: &fn ($($args),*) -> R) {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
-        let mut i = 0us;
+        let mut i = 0;
         $(let $args = {
             let x = VMValue::from_value(stack[i].clone()).unwrap();
             i += 1;
@@ -275,13 +277,13 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for Box<Fn($($
     fn unpack_and_call(vm: &VM<'a>, f: &Box<Fn($($args),*) -> R>) {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
-        let mut i = 0us;
+        let mut i = 0;
         $(let $args = {
             let x = VMValue::from_value(stack[i].clone()).unwrap();
             i += 1;
             x
         });*;
-        let r = f.call(($($args,)*));
+        let r = f($($args),*);
         r.push(vm, &mut stack);
     }
 }

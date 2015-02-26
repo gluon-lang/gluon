@@ -155,7 +155,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     }
 
     fn make_id(&mut self, s: InternedStr) -> PString {
-        self.make_id_f.call_mut((s,))
+        (self.make_id_f)(s)
     }
 
     pub fn module(&mut self) -> ParseResult<Module<PString>> {

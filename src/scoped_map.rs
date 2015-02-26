@@ -1,6 +1,6 @@
 extern crate collections;
 use std::collections::HashMap;
-use std::collections::hash_map::{Entry, IterMut, Hasher};
+use std::collections::hash_map::{Entry, IterMut};
 use std::hash::Hash;
 
 ///A map struct which allows for the introduction of different scopes
@@ -17,7 +17,7 @@ pub struct ScopedMap<K, V> {
 }
 
 #[allow(dead_code)]
-impl <K: Eq + Hash<Hasher> + Clone, V> ScopedMap<K, V> {
+impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn new() -> ScopedMap<K, V> {
         ScopedMap { map: HashMap::new(), scopes: Vec::new() }
     }
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn test() {
         let mut map = ScopedMap::new();
-        map.insert("a", 0is);
+        map.insert("a", 0);
         map.insert("b", 1);
         map.enter_scope();
         assert_eq!(map.find(&"a"), Some(&0));

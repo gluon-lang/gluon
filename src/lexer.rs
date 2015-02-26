@@ -1,4 +1,4 @@
-use collections::RingBuf;
+use std::collections::VecDeque;
 use std::str::FromStr;
 use std::fmt;
 
@@ -82,7 +82,7 @@ pub struct Lexer<'a, 'b> {
     buffer: String,
     peek_c: Option<char>,
     location: Location,
-    tokens: RingBuf<Token>,
+    tokens: VecDeque<Token>,
     offset: usize,
     interner: &'a mut Interner,
     gc: &'a mut Gc
@@ -96,7 +96,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
             input: s,
             buffer: String::new(),
             location: Location { row: 1, column: 1, absolute: 0 },
-            tokens: RingBuf::with_capacity(20),
+            tokens: VecDeque::with_capacity(20),
             offset: 0,
             interner: interner,
             gc: gc

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::mem;
 use std::ops::Deref;
-use std::borrow::BorrowFrom;
+use std::borrow::Borrow;
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
 
@@ -19,9 +19,9 @@ impl Deref for InternedStr {
     }
 }
 
-impl BorrowFrom<InternedStr> for str {
-    fn borrow_from(s: &InternedStr) -> &str {
-        &**s
+impl Borrow<str> for InternedStr {
+    fn borrow(&self) -> &str {
+        &**self
     }
 }
 

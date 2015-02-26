@@ -1,6 +1,7 @@
 use std::ptr::PtrExt;
 use std::mem;
 use std::ptr;
+use std::hash::{Hash, Hasher};
 use std::rt::heap::{allocate, deallocate};
 use std::ops::{Deref, DerefMut};
 use std::cell::Cell;
@@ -106,9 +107,9 @@ impl <T: ?Sized> Deref for GcPtr<T> {
     }
 }
 
-impl <T: ?Sized> ::std::borrow::BorrowFrom<GcPtr<T>> for T {
-    fn borrow_from(ptr: &GcPtr<T>) -> &T {
-        &**ptr
+impl <T: ?Sized> ::std::borrow::Borrow<T> for GcPtr<T> {
+    fn borrow(&self) -> &T {
+        &**self
     }
 }
 
@@ -117,8 +118,9 @@ impl <T: ?Sized + PartialEq> PartialEq for GcPtr<T> {
     fn eq(&self, other: &GcPtr<T>) -> bool { **self == **other }
 }
 
-impl <S: ::std::hash::Hasher, T: ?Sized + ::std::hash::Hash<S>> ::std::hash::Hash<S> for GcPtr<T> {
-    fn hash(&self, state: &mut S) {
+impl <T: ?Sized + Hash> Hash for GcPtr<T> {
+    fn hash<H>(&self, state: &mut H)
+        where H: Hasher {
         (**self).hash(state)
     }
 }

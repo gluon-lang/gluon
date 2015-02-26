@@ -698,7 +698,7 @@ impl <'a> VM<'a> {
                 //Necessary since we do not know what will happen during the function call
                 let StackFrame { stack, offset, upvars } = stack;
                 drop(stack);
-                func.call((self,));
+                func(self);
                 Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
             }
             Function_::Bytecode(ref instructions) => {

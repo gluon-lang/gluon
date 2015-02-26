@@ -16,7 +16,8 @@ fn print(vm: &VM) {
 pub fn run() {
     let vm = VM::new();
     vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), Box::new(print));
-    for line in ::std::old_io::stdin().lock().lines() {
+    let mut stdin = ::std::old_io::stdin();
+    for line in stdin.lock().lines() {
         match run_line(&vm, line) {
             Ok(continue_repl) => {
                 if !continue_repl {

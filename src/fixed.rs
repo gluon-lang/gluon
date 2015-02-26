@@ -1,8 +1,7 @@
 use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
-use std::collections::hash_map::{Hasher};
 use std::hash::Hash;
-use std::iter::FromIterator;
+use std::iter::{FromIterator, IntoIterator};
 use std::ops::Index;
 
 //NOTE: transmute is used to circumvent the borrow checker in this module
@@ -21,7 +20,7 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
 pub struct FixedMap<K, V> {
     map: RefCell<HashMap<K, Box<V>>>
 }
-impl <K: Eq + Hash<Hasher>, V> FixedMap<K, V> {
+impl <K: Eq + Hash, V> FixedMap<K, V> {
 
     pub fn new() -> FixedMap<K, V> {
         FixedMap { map: RefCell::new(HashMap::new()) }
@@ -96,8 +95,8 @@ impl <T> Index<usize> for FixedVec<T> {
 
 
 impl <A> FromIterator<A> for FixedVec<A> {
-    fn from_iter<T: Iterator<Item=A>>(iterator: T) -> FixedVec<A> {
-        let vec: Vec<_> = iterator.map(|x| box x).collect();
+    fn from_iter<T: IntoIterator<Item=A>>(iterator: T) -> FixedVec<A> {
+        let vec: Vec<_> = iterator.into_iter().map(|x| box x).collect();
         FixedVec { vec: RefCell::new(vec) }
     }
 }
