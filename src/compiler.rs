@@ -131,6 +131,7 @@ pub trait CompilerEnv {
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>>;
     fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize>;
     fn next_function_index(&self) -> usize;
+    fn next_global_index(&self) -> usize;
 }
 
 impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
@@ -177,6 +178,10 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     fn next_function_index(&self) -> usize {
         let &(ref outer, ref inner) = self;
         outer.next_function_index() + inner.next_function_index()
+    }
+    fn next_global_index(&self) -> usize {
+        let &(ref outer, ref inner) = self;
+        outer.next_global_index() + inner.next_global_index()
     }
 }
 
@@ -263,6 +268,9 @@ impl CompilerEnv for Module<TcIdent> {
     fn next_function_index(&self) -> usize {
         self.globals.len() + self.impls.iter().fold(0, |y, i| i.globals.len() + y)
     }
+    fn next_global_index(&self) -> usize {
+        self.globals.len() + self.impls.iter().fold(0, |y, i| i.globals.len() + y)
+    }
 }
 
 impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
@@ -288,6 +296,9 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn next_function_index(&self) -> usize {
         (*self).next_function_index()
     }
+    fn next_global_index(&self) -> usize {
+        (*self).next_global_index()
+    }
 }
 
 pub struct Compiler<'a> {
@@ -296,6 +307,7 @@ pub struct Compiler<'a> {
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<usize>,
     compiled_lambdas: Vec<CompiledFunction>,
+    function_offset: usize,
 }
 
 impl <'a> Compiler<'a> {
@@ -306,6 +318,7 @@ impl <'a> Compiler<'a> {
             stack: HashMap::new(),
             closure_limits: Vec::new(),
             compiled_lambdas: Vec::new(),
+            function_offset: 0
         }
     }
 
@@ -356,20 +369,21 @@ impl <'a> Compiler<'a> {
     pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Assembly {
         let mut initializer = FunctionEnv::new();
         let mut globals = Vec::new();
+        let global_offset = self.globals.next_global_index() - module.next_global_index();
+        self.function_offset = self.globals.next_function_index() - module.next_function_index();
         for global in module.globals.iter() {
-            let index = globals.len();
+            let index = global_offset + globals.len();
             globals.push(self.compile_global(&mut initializer, index, global));
         }
         let mut trait_globals = Vec::new();
-        let offset = self.globals.next_function_index() - module.next_function_index();
         for imp in module.impls.iter() {
             trait_globals.push(TraitFunctions {
-                index: offset + globals.len(),
+                index: global_offset + globals.len(),
                 trait_name: imp.trait_name.id().clone(),
                 impl_type: imp.typ.clone()
             });
             for f in imp.globals.iter() {
-                let index = globals.len();
+                let index = global_offset + globals.len();
                 globals.push(self.compile_global(&mut initializer, index, f));
             }
         }
@@ -394,7 +408,7 @@ impl <'a> Compiler<'a> {
             value: function.declaration.typ.clone()
         };
         if let Lambda(_) = function.expression.value {
-            Binding::Function(name, typ, self.compiled_lambdas.len() - 1)
+            Binding::Function(name, typ, self.function_offset + self.compiled_lambdas.len() - 1)
         }
         else {
             Binding::Other(name, typ)
@@ -757,8 +771,8 @@ impl <'a> Compiler<'a> {
                 _ => panic!("Free variables can only be on the stack or another upvar")
             }
         }
-        let function_index = self.compiled_lambdas.len() + self.globals.next_function_index();
-        function.instructions.push(MakeClosure(function_index,f.free_vars.len()));
+        let function_index = self.function_offset + self.compiled_lambdas.len();
+        function.instructions.push(MakeClosure(function_index, f.free_vars.len()));
         CompiledFunction {
             id: lambda.id.id().clone(),
             typ: Constrained { constraints: Vec::new(), value: lambda.id.typ.clone() },
