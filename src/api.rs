@@ -2,12 +2,12 @@ use vm::{VM, VMResult, Value, Int, Float, Function, Userdata, Userdata_, StackFr
 use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
 use std::boxed::BoxAny;
-use std::marker::PhantomData;
+use std::marker::{PhantomData, PhantomFn};
 
-pub trait VMType {
-    fn vm_type<'a>(_: Option<&Self>, vm: &'a VM) -> &'a TcType;
-    fn make_type(x: Option<&Self>, vm: &VM) -> TcType {
-        VMType::vm_type(x, vm).clone()
+pub trait VMType: PhantomFn<Self> {
+    fn vm_type<'a>(vm: &'a VM) -> &'a TcType;
+    fn make_type(vm: &VM) -> TcType {
+        <Self as VMType>::vm_type(vm).clone()
     }
 }
 pub trait VMValue<'a> : VMType {
@@ -16,7 +16,7 @@ pub trait VMValue<'a> : VMType {
 }
 
 impl VMType for () {
-    fn vm_type<'a>(_: Option<&()>, _: &VM) -> &'a TcType {
+    fn vm_type<'a>(_: &VM) -> &'a TcType {
         &UNIT_TYPE
     }
 }
@@ -29,7 +29,7 @@ impl <'a> VMValue<'a> for () {
 }
 
 impl VMType for VMInt {
-    fn vm_type<'a>(_: Option<&VMInt>, _: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
         &INT_TYPE
     }
 }
@@ -45,7 +45,7 @@ impl <'a> VMValue<'a> for VMInt {
     }
 }
 impl VMType for f64 {
-    fn vm_type<'a>(_: Option<&f64>, _: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
         &FLOAT_TYPE
     }
 }
@@ -61,7 +61,7 @@ impl <'a> VMValue<'a> for f64 {
     }
 }
 impl VMType for bool {
-    fn vm_type<'a>(_: Option<&bool>, _: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
         &BOOL_TYPE
     }
 }
@@ -78,7 +78,7 @@ impl <'a> VMValue<'a> for bool {
     }
 }
 impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
-    fn vm_type<'a>(_: Option<&Box<T>>, vm: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
     }
 }
@@ -94,7 +94,7 @@ impl <'a, T: 'static + BoxAny + Clone> VMValue<'a> for Box<T> {
     }
 }
 impl <T: 'static> VMType for *mut T {
-    fn vm_type<'a>(_: Option<&*mut T>, vm: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
     }
 }
@@ -111,11 +111,11 @@ impl <'a, T: 'static> VMValue<'a> for *mut T {
 }
 
 fn vm_type<'a, T: VMType>(vm: &'a VM) -> &'a TcType {
-    VMType::vm_type(None::<&T>, vm)
+    <T as VMType>::vm_type(vm)
 }
 
 fn make_type<T: VMType>(vm: &VM) -> TcType {
-    VMType::make_type(None::<&T>, vm)
+    <T as VMType>::make_type(vm)
 }
 
 pub trait Get<'a, 'b> {
@@ -175,7 +175,7 @@ struct FunctionRef<Args, R> {
 impl <Args, R> Copy for FunctionRef<Args, R> { }
 
 impl <Args, R> VMType for FunctionRef<Args, R> {
-    fn vm_type<'a>(_: Option<&FunctionRef<Args, R>>, vm: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
         vm.get_type::<&fn (Args) -> R>()
     }
 }
@@ -236,11 +236,11 @@ macro_rules! make_vm_function {
     ($($args:ident),*) => (
 impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
-    fn vm_type<'r>(_: Option<&fn ($($args),*) -> R>, vm: &'r VM) -> &'r TcType {
+    fn vm_type<'r>(vm: &'r VM) -> &'r TcType {
         vm.get_type::<fn ($($args),*) -> R>()
     }
     #[allow(non_snake_case)]
-    fn make_type(_: Option<&fn ($($args),*) -> R>, vm: &VM) -> TcType {
+    fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
         FunctionType(args, box make_type::<R>(vm))
     }
@@ -263,11 +263,11 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($arg
 }
 impl <'a, $($args: VMType,)* R: VMType> VMType for Box<Fn($($args),*) -> R + 'static> {
     #[allow(non_snake_case)]
-    fn vm_type<'r>(_: Option<&Box<Fn($($args),*) -> R>>, vm: &'r VM) -> &'r TcType {
+    fn vm_type<'r>(vm: &'r VM) -> &'r TcType {
         vm.get_type::<Box<Fn($($args),*) -> R>>()
     }
     #[allow(non_snake_case)]
-    fn make_type(_: Option<&Box<Fn($($args),*) -> R>>, vm: &VM) -> TcType {
+    fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
         FunctionType(args, box make_type::<R>(vm))
     }
@@ -315,7 +315,7 @@ macro_rules! vm_function {
 
 
 fn define_function<'a, F: VMFunction<'a> + VMType + 'static>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()> {
-    let (args, ret) = match VMType::make_type(None::<&F>, vm) {
+    let (args, ret) = match make_type::<F>(vm) {
         FunctionType(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
         _ => panic!()
     };
