@@ -115,29 +115,23 @@ impl fmt::Debug for TcType {
     }
 }
 
-#[derive(Debug)]
-pub struct Constrained<T, I = InternedStr> {
-    pub constraints: Vec<ast::Constraint<I>>,
-    pub value: T
-}
-
-fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclaration<TcIdent>) -> Constrained<TcType> {
+fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclaration<TcIdent>) -> ast::Constrained<TcType> {
     //Add all constraints from the impl declaration to the globals declaration
     for constraint in constraints.iter() {
         let exists = {
-            decl.constraints.iter()
+            decl.typ.constraints.iter()
                 .find(|func_constraint| *func_constraint == constraint)
                 .is_some()
         };
         if !exists {
-            decl.constraints.push(constraint.clone());
+            decl.typ.constraints.push(constraint.clone());
         }
     }
     from_declaration(decl)
 }
 
-fn from_declaration_with_self(decl: &ast::GlobalDeclaration<TcIdent>, self_var: InternedStr) -> Constrained<TcType> {
-    let constraints = decl.constraints.as_slice();
+fn from_declaration_with_self(decl: &ast::GlobalDeclaration<TcIdent>, self_var: InternedStr) -> ast::Constrained<TcType> {
+    let constraints = decl.typ.constraints.as_slice();
     let type_handler = |type_id: InternedStr| {
         if type_id == self_var {
             Some(Generic(self_var))
@@ -150,8 +144,8 @@ fn from_declaration_with_self(decl: &ast::GlobalDeclaration<TcIdent>, self_var: 
     };
     from_declaration_(type_handler, decl)
 }
-fn from_declaration(decl: &ast::GlobalDeclaration<TcIdent>) -> Constrained<TcType> {
-    let constraints = decl.constraints.as_slice();
+fn from_declaration(decl: &ast::GlobalDeclaration<TcIdent>) -> ast::Constrained<TcType> {
+    let constraints = decl.typ.constraints.as_slice();
     let type_handler = |type_id| {
         constraints.iter()
             .find(|v| v.type_variable == type_id)
@@ -159,11 +153,11 @@ fn from_declaration(decl: &ast::GlobalDeclaration<TcIdent>) -> Constrained<TcTyp
     };
     from_declaration_(type_handler, decl)
 }
-fn from_declaration_<F>(mut type_handler: F, decl: &ast::GlobalDeclaration<TcIdent>) -> Constrained<TcType>
+fn from_declaration_<F>(mut type_handler: F, decl: &ast::GlobalDeclaration<TcIdent>) -> ast::Constrained<TcType>
     where F: FnMut(InternedStr) -> Option<TcType> {
-    Constrained {
-        constraints: decl.constraints.clone(),
-        value: from_generic_type(&mut type_handler, &decl.typ)
+    ast::Constrained {
+        constraints: decl.typ.constraints.clone(),
+        value: from_generic_type(&mut type_handler, &decl.typ.value)
     }
 }
 
@@ -229,8 +223,8 @@ pub type TcResult = Result<TcType, TypeError>;
 
 pub struct TypeInfos {
     pub datas: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
-    pub impls: HashMap<InternedStr, Vec<Constrained<TcType>>>,
-    pub traits: HashMap<InternedStr, Vec<(InternedStr, Constrained<TcType>)>>
+    pub impls: HashMap<InternedStr, Vec<ast::Constrained<TcType>>>,
+    pub traits: HashMap<InternedStr, Vec<(InternedStr, ast::Constrained<TcType>)>>
 }
 
 impl TypeInfos {
@@ -245,7 +239,7 @@ impl TypeInfos {
         self.datas.get(id)
             .map(|vec| &**vec)
     }
-    pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, Constrained<TcType>)]> {
+    pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, ast::Constrained<TcType>)]> {
         self.traits.get(name).map(|v| v.as_slice())
     }
     pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
@@ -266,7 +260,7 @@ impl TypeInfos {
                 Entry::Occupied(v) => v.into_mut(),
                 Entry::Vacant(v) => v.insert(Vec::new())
             };
-            set.push(Constrained { constraints: imp.constraints.clone(), value: imp_type });
+            set.push(ast::Constrained { constraints: imp.constraints.clone(), value: imp_type });
         }
     }
     pub fn extend(&mut self, other: TypeInfos) {
@@ -282,7 +276,7 @@ impl TypeInfos {
         }
     }
 }
-fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(InternedStr, Constrained<TcType>)], TypeError> {
+fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(InternedStr, ast::Constrained<TcType>)], TypeError> {
     this.find_trait(name)
         .map(Ok)
         .unwrap_or_else(|| Err(UndefinedTrait(name.clone())))
@@ -296,7 +290,7 @@ pub trait TypeEnv {
 pub struct Typecheck<'a> {
     environment: Option<&'a (TypeEnv + 'a)>,
     pub type_infos: TypeInfos,
-    module: HashMap<InternedStr, Constrained<TcType>>,
+    module: HashMap<InternedStr, ast::Constrained<TcType>>,
     stack: ScopedMap<InternedStr, TcType>,
     subs: Substitution,
     errors: Errors<ast::Located<TypeError>>
@@ -398,7 +392,7 @@ impl <'a> Typecheck<'a> {
             for func in t.declarations.iter_mut() {
                 let constrained_type = from_declaration_with_self(func, t.self_variable);
                 func.name.typ = constrained_type.value.clone();
-                self.module.insert(func.name.id().clone(), Constrained {
+                self.module.insert(func.name.id().clone(), ast::Constrained {
                     constraints: vec![ast::Constraint {
                         type_variable: t.self_variable,
                         name: t.name.name,
@@ -423,7 +417,7 @@ impl <'a> Typecheck<'a> {
                     .map(|cs| Generic(*cs))
                     .collect();
                 ctor.name.typ = FunctionType(args, box Type(data.name.name, variables));
-                self.module.insert(ctor.name.name, Constrained {
+                self.module.insert(ctor.name.name, ast::Constrained {
                     constraints: Vec::new(),
                     value: ctor.name.typ.clone()
                 });
@@ -478,7 +472,7 @@ impl <'a> Typecheck<'a> {
                     debug!("{} {:?}", arg.name, typ);
                     self.stack_var(arg.name.clone(), typ);
                 }
-                for constraint in global.declaration.constraints.iter() {
+                for constraint in global.declaration.typ.constraints.iter() {
                     let c = Type(constraint.name, Vec::new());
                     let var = self.subs.variable_for(constraint.type_variable);
                     match self.subs.constraints.entry(var) {

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use interner::*;
 use ast;
-use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint};
+use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
 use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
@@ -190,7 +190,7 @@ impl CompilerEnv for Module<TcIdent> {
         self.globals.iter()
             .enumerate()
             .find(|&(_, f)| f.declaration.name.id() == id)
-            .map(|(i, f)| Global(i, f.declaration.constraints.as_slice(), &f.declaration.name.typ))
+            .map(|(i, f)| Global(i, f.declaration.typ.constraints.as_slice(), &f.declaration.name.typ))
             .or_else(|| {
                 for d in self.datas.iter() {
                     let x = d.constructors.iter().enumerate()
@@ -246,7 +246,7 @@ impl CompilerEnv for Module<TcIdent> {
                 for (i, func) in imp.globals.iter().enumerate() {
                     if func.declaration.name.id() == id {
                         return Some(TypeResult {
-                            constraints: func.declaration.constraints.as_slice(),
+                            constraints: func.declaration.typ.constraints.as_slice(),
                             typ: func.type_of(),
                             value: offset + i
                         });
@@ -399,14 +399,11 @@ impl <'a> Compiler<'a> {
 
     pub fn compile_global<'b>(&mut self, initializer: &mut FunctionEnv<'b>, index: usize, function: &'b ast::Global<TcIdent>) -> Binding {
         debug!("-- Compiling {}", function.declaration.name.id());
-        initializer.dictionary = function.declaration.constraints.as_slice();
+        initializer.dictionary = function.declaration.typ.constraints.as_slice();
         self.compile(&function.expression, initializer);
         initializer.instructions.push(StoreGlobal(index));
         let name = function.declaration.name.name;
-        let typ = Constrained {
-            constraints: function.declaration.constraints.clone(),
-            value: function.declaration.typ.clone()
-        };
+        let typ = function.declaration.typ.clone();
         if let Lambda(_) = function.expression.value {
             Binding::Function(name, typ, self.function_offset + self.compiled_lambdas.len() - 1)
         }

@@ -618,8 +618,10 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let typ = try!(self.typ());
         Ok(GlobalDeclaration {
             name: self.make_id(name),
-            constraints: constraints,
-            typ: typ
+            typ: Constrained {
+                constraints: constraints,
+                value: typ
+            }
         })
     }
 
@@ -767,8 +769,10 @@ main = \x y -> { }";
         let expected = Global {
             declaration: GlobalDeclaration {
                 name: intern("main"),
-                constraints: Vec::new(),
-                typ: FunctionType(vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()), box UNIT_TYPE.clone())
+                typ: Constrained {
+                    constraints: Vec::new(),
+                    value: FunctionType(vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()), box UNIT_TYPE.clone())
+                }
             },
             expression: lambda("main", vec![intern("x"), intern("y")], block(vec!()))
         };
@@ -785,8 +789,10 @@ id = \x -> { x }
         let expected = Global {
             declaration: GlobalDeclaration {
                 name: intern("id"),
-                constraints: Vec::new(),
-                typ: FunctionType(vec![a.clone()], box a.clone())
+                typ: Constrained {
+                    constraints: Vec::new(),
+                    value: FunctionType(vec![a.clone()], box a.clone())
+                }
             },
             expression: lambda("id", vec![intern("x")], block(vec![id("x")]))
         };
@@ -839,13 +845,17 @@ trait Test a {
             declarations: vec![
                 GlobalDeclaration {
                     name: intern("test"),
-                    constraints: Vec::new(),
-                    typ: FunctionType(vec![generic("a")], box INT_TYPE.clone())
+                    typ: Constrained {
+                        constraints: Vec::new(),
+                        value: FunctionType(vec![generic("a")], box INT_TYPE.clone())
+                    }
                 },
                 GlobalDeclaration {
                     name: intern("test2"),
-                    constraints: Vec::new(),
-                    typ: FunctionType(vec![INT_TYPE.clone(), generic("a")], box UNIT_TYPE.clone())
+                    typ: Constrained {
+                        constraints: Vec::new(),
+                        value: FunctionType(vec![INT_TYPE.clone(), generic("a")], box UNIT_TYPE.clone())
+                    }
                 },
             ]
         };
@@ -910,7 +920,10 @@ global = { 123 }
 "#;
         let module = parse(text, |p| p.module());
         assert_eq!(module.globals[0], Global {
-            declaration: GlobalDeclaration { name: intern("global"), constraints: Vec::new(), typ: INT_TYPE.clone() },
+            declaration: GlobalDeclaration {
+                name: intern("global"),
+                typ: Constrained { constraints: Vec::new(), value: INT_TYPE.clone() }
+            },
             expression: block(vec![int(123)])
         });
     }

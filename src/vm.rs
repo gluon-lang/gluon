@@ -3,10 +3,11 @@ use std::fmt;
 use std::intrinsics::get_tydesc;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::ops::{Deref, Index};
+use std::ops::{Deref, Index, IndexMut};
 use ast;
 use parser::Parser;
-use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, Constrained, match_types};
+use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, match_types};
+use ast::Constrained;
 use ast::TypeEnum::*;
 use compiler::*;
 use compiler::Instruction::*;
@@ -378,14 +379,6 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.len() - self.offset
     }
 
-    pub fn get(&self, i: usize) -> &Value<'a> {
-        &self.stack.values[self.offset + i]
-    }
-
-    pub fn get_mut(&mut self, i: usize) -> &mut Value<'a> {
-        &mut self.stack.values[self.offset + i]
-    }
-
     pub fn push(&mut self, v: Value<'a>) {
         self.stack.values.push(v);
     }
@@ -441,10 +434,15 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 }
 
-impl <'a, 'b, 'c> Index<usize> for StackFrame<'a, 'b> {
+impl <'a, 'b> Index<usize> for StackFrame<'a, 'b> {
     type Output = Value<'a>;
     fn index(&self, index: &usize) -> &Value<'a> {
         &self.stack.values[self.offset + *index]
+    }
+}
+impl <'a, 'b> IndexMut<usize> for StackFrame<'a, 'b> {
+    fn index_mut(&mut self, index: &usize) -> &mut Value<'a> {
+        &mut self.stack.values[self.offset + *index]
     }
 }
 
@@ -716,12 +714,11 @@ impl <'a> VM<'a> {
     pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         debug!("Enter frame with {:?}", stack.as_slice());
         let mut index = 0;
-        while index < instructions.len() {
-            let instr = instructions[index];
+        while let Some(&instr) = instructions.get(index) {
             debug!("{:?}: {:?}", index, instr);
             match instr {
                 Push(i) => {
-                    let v = stack.get(i).clone();
+                    let v = stack[i].clone();
                     stack.push(v);
                 }
                 PushInt(i) => {
@@ -735,7 +732,7 @@ impl <'a> VM<'a> {
                 }
                 PushFloat(f) => stack.push(Float(f)),
                 Store(i) => {
-                    *stack.get_mut(i) = stack.pop();
+                    stack[i] = stack.pop();
                 }
                 StoreGlobal(i) => {
                     let v = stack.pop();
@@ -744,7 +741,7 @@ impl <'a> VM<'a> {
                 CallGlobal(args) => {
                     let function_index = stack.len() - 1 - args;
                     {
-                        let f = stack.get(function_index).clone();
+                        let f = stack[function_index].clone();
                         let (function, new_upvars) = match f {
                             Function(index) => {
                                 (&self.functions[index], None)
