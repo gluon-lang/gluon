@@ -3,6 +3,7 @@
 extern crate collections;
 #[macro_use]
 extern crate log;
+extern crate env_logger;
 
 pub use interner::InternedStr;
 pub use parser::ParseResult;

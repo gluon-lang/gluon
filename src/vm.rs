@@ -3,7 +3,7 @@ use std::fmt;
 use std::intrinsics::get_tydesc;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::ops::{Deref, Index, IndexMut};
+use std::ops::{Deref, DerefMut, Index, IndexMut};
 use ast;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, match_types};
@@ -64,6 +64,104 @@ impl <T: 'static> DataDef for UserDataDef<T> {
     }
 }
 
+impl <'a> DataDef for Function_<'a> {
+    type Value = Function_<'a>;
+    fn size(&self) -> usize {
+        use std::mem::size_of;
+        size_of::< <Self as DataDef>::Value>()
+    }
+    fn initialize(self, result: *mut Function_<'a>) {
+        unsafe {
+            ::std::ptr::write(result, self);
+        }
+    }
+    fn make_ptr(&self, ptr: *mut ()) -> *mut Function_<'a> {
+        ptr as *mut _
+    }
+}
+
+pub struct ClosureData<'a> {
+    function: GcPtr<BytecodeFunction>,
+    upvars: [Cell<Value<'a>>]
+}
+
+impl <'a> PartialEq for ClosureData<'a> {
+    fn eq(&self, _: &ClosureData<'a>) -> bool {
+        false
+    }
+}
+
+impl <'a> Traverseable for ClosureData<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.function.traverse(gc);
+        self.upvars.traverse(gc);
+    }
+}
+
+struct ClosureDataDef<'a: 'b, 'b>(GcPtr<BytecodeFunction>, &'b [Value<'a>]);
+impl <'a, 'b> Traverseable for ClosureDataDef<'a, 'b> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.0.traverse(gc);
+        self.1.traverse(gc);
+    }
+}
+impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
+    type Value = ClosureData<'a>;
+    fn size(&self) -> usize {
+        use std::mem::size_of;
+        size_of::<GcPtr<BytecodeFunction>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
+    }
+    fn initialize(self, result: *mut ClosureData<'a>) {
+        let result = unsafe { &mut *result };
+        result.function = self.0;
+        for (field, value) in result.upvars.iter().zip(self.1.iter()) {
+            unsafe {
+                ::std::ptr::write(field.as_unsafe_cell().get(), value.clone());
+            }
+        }
+    }
+    fn make_ptr(&self, ptr: *mut ()) -> *mut ClosureData<'a> {
+        unsafe {
+            use std::raw::Slice;
+            let x = Slice { data: &*ptr, len: self.1.len() };
+            ::std::mem::transmute(x)
+        }
+    }
+}
+
+pub struct BytecodeFunction {
+    instructions: Vec<Instruction>,
+    inner_functions: Vec<GcPtr<BytecodeFunction>>
+}
+
+impl DataDef for BytecodeFunction {
+    type Value = BytecodeFunction;
+    fn size(&self) -> usize {
+        use std::mem::size_of;
+        size_of::< <Self as DataDef>::Value>()
+    }
+    fn initialize(self, result: *mut BytecodeFunction) {
+        unsafe {
+            ::std::ptr::write(result, self);
+        }
+    }
+    fn make_ptr(&self, ptr: *mut ()) -> *mut BytecodeFunction {
+        ptr as *mut _
+    }
+}
+
+impl Traverseable for BytecodeFunction {
+    fn traverse(&self, _gc: &mut Gc) {
+        
+    }
+}
+impl <'a, 'b> Traverseable for (GcPtr<BytecodeFunction>, &'b [Value<'a>]) {
+    fn traverse(&self, gc: &mut Gc) {
+        self.0.traverse(gc);
+        self.1.traverse(gc);
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct DataStruct<'a> {
     value: GcPtr<Data_<'a>>
@@ -95,8 +193,8 @@ pub enum Value<'a> {
     Float(f64),
     String(InternedStr),
     Data(DataStruct<'a>),
-    Function(usize),
-    Closure(DataStruct<'a>),
+    Function(GcPtr<Function_<'a>>),
+    Closure(GcPtr<ClosureData<'a>>),
     TraitObject(DataStruct<'a>),
     Userdata(Userdata_)
 }
@@ -120,13 +218,12 @@ impl <'a> Traverseable for Data_<'a> {
 
 impl <'a> Traverseable for Value<'a> {
     fn traverse(&self, gc: &mut Gc) {
-        let ptr = match *self {
-            Data(ref data) => data.value,
-            Closure(ref data) => data.value,
-            TraitObject(ref data) => data.value,
-            _ => return
-        };
-        ptr.traverse(gc);
+        match *self {
+            Data(ref data) => data.traverse(gc),
+            Closure(ref data) => data.traverse(gc),
+            TraitObject(ref data) => data.value.traverse(gc),
+            _ => ()
+        }
     }
 }
 
@@ -139,8 +236,8 @@ impl <'a> fmt::Debug for Value<'a> {
             Data(ref data) => {
                 write!(f, "{{{:?} {:?}}}", data.tag, &data.fields)
             }
-            Function(i) => write!(f, "<function {:?}>", i),
-            Closure(ref closure) => write!(f, "<Closure {:?} {:?}>", closure.tag, &closure.fields),
+            Function(ref func) => write!(f, "{:?}", **func),
+            Closure(ref closure) => write!(f, "<Closure {:?}>", &closure.upvars),
             TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, &object.fields),
             Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr())
         }
@@ -151,12 +248,12 @@ pub type ExternFunction<'a> = Box<Fn(&VM<'a>) + 'static>;
 
 #[derive(Debug)]
 pub struct Global<'a> {
-    id: InternedStr,
-    typ: Constrained<TcType>,
-    value: Cell<Value<'a>>
+    pub id: InternedStr,
+    pub typ: Constrained<TcType>,
+    pub value: Cell<Value<'a>>
 }
-enum Function_<'a> {
-    Bytecode(Vec<Instruction>),
+pub enum Function_<'a> {
+    Bytecode(BytecodeFunction),
     Extern(ExternFunction<'a>)
 }
 impl <'a> Typed for Global<'a> {
@@ -164,10 +261,15 @@ impl <'a> Typed for Global<'a> {
         &self.typ.value
     }
 }
+impl <'a> PartialEq for Function_<'a> {
+    fn eq(&self, _other: &Function_<'a>) -> bool {
+        false//TODO?
+    }
+}
 impl <'a> fmt::Debug for Function_<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self { 
-            Function_::Bytecode(ref is) => write!(f, "Bytecode {:?}", is),
+            Function_::Bytecode(_) => write!(f, "<Bytecode>"),
             Function_::Extern(_) => write!(f, "<extern>")
         }
     }
@@ -325,7 +427,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
 
 pub struct Stack<'a> {
     values: Vec<Value<'a>>,
-    frames: Vec<(usize, Option<GcPtr<Data_<'a>>>)>
+    frames: Vec<(usize, Option<GcPtr<ClosureData<'a>>>)>
 }
 
 impl <'a, 'b, 'c> Stack<'a> {
@@ -361,10 +463,10 @@ impl <'a, 'b, 'c> Stack<'a> {
 pub struct StackFrame<'a: 'b, 'b> {
     stack: RefMut<'b, Stack<'a>>,
     offset: usize,
-    upvars: Option<GcPtr<Data_<'a>>>
+    upvars: Option<GcPtr<ClosureData<'a>>>
 }
 impl <'a: 'b, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: RefMut<'b, Stack<'a>>, args: usize, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
+    pub fn new(v: RefMut<'b, Stack<'a>>, args: usize, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
@@ -393,7 +495,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
 
     fn get_upvar(&self, index: usize) -> Value<'a> {
         let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
-        upvars.fields[index].get()
+        upvars.upvars[index].get()
     }
 
     fn as_slice(&self) -> &[Value<'a>] {
@@ -406,7 +508,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
 
     fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
             , args: usize
-            , upvars: Option<GcPtr<Data_<'a>>>
+            , upvars: Option<GcPtr<ClosureData<'a>>>
             , f: F) -> Result<StackFrame<'a, 'b>, E> 
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
         let stack = StackFrame::frame(stack, args, upvars);
@@ -416,7 +518,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
     fn scope<E, F>(self
             , args: usize
-            , new_upvars: Option<GcPtr<Data_<'a>>>
+            , new_upvars: Option<GcPtr<ClosureData<'a>>>
             , f: F) -> Result<StackFrame<'a, 'b>, E>
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
         let StackFrame { stack: s, offset, upvars } = self;
@@ -426,11 +528,24 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         Ok(StackFrame { stack: new_stack.stack, offset: offset, upvars: upvars })
     }
 
-    fn frame(mut stack: RefMut<'b, Stack<'a>>, args: usize, upvars: Option<GcPtr<Data_<'a>>>) -> StackFrame<'a, 'b> {
+    fn frame(mut stack: RefMut<'b, Stack<'a>>, args: usize, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
         assert!(stack.len() >= args);
         let offset = stack.len() - args;
         stack.frames.push((offset, upvars));
         StackFrame { stack: stack, offset: offset, upvars: upvars }
+    }
+}
+
+impl <'a, 'b> Deref for StackFrame<'a, 'b> {
+    type Target = [Value<'a>];
+    fn deref(&self) -> &[Value<'a>] {
+        &self.stack.values[self.offset..]
+    }
+}
+
+impl <'a, 'b> DerefMut for StackFrame<'a, 'b> {
+    fn deref_mut(&mut self) -> &mut [Value<'a>] {
+        &mut self.stack.values[self.offset..]
     }
 }
 
@@ -526,12 +641,9 @@ impl <'a> VM<'a> {
         let mut names = self.names.borrow_mut();
         for trait_index in indexes.into_iter() {
             //First index of this impl's functions
-            let start_index = trait_index.index - self.functions.len();
-            let id = match globals[start_index] {
-                Binding::Function(ref id, _, _) => id,
-                _ => panic!()
-            };
-            let is_registered = match names.get(id) {
+            let start_index = trait_index.index - self.globals.len();
+            let id = globals[start_index].name;
+            let is_registered = match names.get(&id) {
                 Some(&TraitFn(..)) => true,
                 None => false,
                 _ => panic!()
@@ -549,37 +661,40 @@ impl <'a> VM<'a> {
             }
             self.trait_indexes.push(trait_index);
         }
-        for global in globals {
-            let g = match global {
-                Binding::Function(id, typ, index) => {
-                    match names.get(&id) {
-                        Some(&GlobalFn(..)) => panic!("ICE: Global '{}' already exists", id),
-                        Some(&TraitFn(..)) => (),
-                        None => {
-                            names.insert(id, GlobalFn(self.functions.len()));
-                        }
-                    }
-                    Global { id: id, typ: typ, value: Cell::new(Function(index)) }
+        for Binding { name, typ } in globals {
+            match names.get(&name) {
+                Some(&GlobalFn(..)) => panic!("ICE: Global '{}' already exists", name),
+                Some(&TraitFn(..)) => (),
+                None => {
+                    names.insert(name, GlobalFn(self.globals.len()));
                 }
-                Binding::Other(id, typ) => {
-                    Global { id: id, typ: typ, value: Cell::new(Int(0)) }
-                }
-            };
-            self.globals.push(g);
+            }
+            let global = Global { id: name, typ: typ, value: Cell::new(Int(0)) };//TODO Initialize value now?
+            self.globals.push(global);
         }
+        let mut functions = Vec::new();
         for f in anonymous_functions {
-            let CompiledFunction { instructions, id, .. } = f;
-            debug!("Function {} at {}", id, self.functions.len());
-            self.functions.push(Function_::Bytecode(instructions));
+            debug!("Function {} at {}", f.id, self.functions.len());
+            fn create_function(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
+                let CompiledFunction { instructions, inner_functions, .. } = f;
+                let fs = inner_functions.into_iter()
+                    .map(|inner| create_function(gc, inner))
+                    .collect();
+                gc.alloc(BytecodeFunction { instructions: instructions, inner_functions: fs })
+            }
+            functions.push(create_function(&mut self.gc.borrow_mut(), f));
         }
         debug!("Run initializer");
-        self.execute_instructions(&initializer).unwrap();
+        let stack = self.stack.borrow_mut();
+        StackFrame::new_scope(stack, 0, None, |frame| {
+            self.execute(frame, &initializer, &functions)
+        }).unwrap();
         debug!("Done initializer");
     }
 
-    pub fn get_global(&self, name: &str) -> Option<(usize, &Global<'a>)> {
+    pub fn get_global(&self, name: &str) -> Option<&Global<'a>> {
         let n = self.intern(name);
-        self.globals.find(|g| n == g.id)
+        self.globals.find(|g| n == g.id).map(|tup| tup.1)
     }
 
     pub fn get_type<T: 'static>(&self) -> &TcType {
@@ -598,13 +713,13 @@ impl <'a> VM<'a> {
     }
 
     pub fn run_function(&self, cf: &Global<'a>) -> VMResult<Value<'a>> {
-        self.call_function(0, None, cf)
+        self.call_function(0, cf)
     }
 
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> VMResult<Value<'a>> {
         let stack = self.stack.borrow_mut();
         let frame = StackFrame::new_scope(stack, 0, None, |frame| {
-            self.execute(frame, instructions)
+            self.execute(frame, instructions, &[])
         });
         frame.map(|mut frame| {
             if frame.len() > 0 {
@@ -624,10 +739,9 @@ impl <'a> VM<'a> {
         let global = Global {
             id: id,
             typ: Constrained { constraints: Vec::new(), value: FunctionType(args, box return_type) },
-            value: Cell::new(Function(self.functions.borrow().len()))
+            value: Cell::new(Function(self.gc.borrow_mut().alloc(Function_::Extern(f))))
         };
-        self.names.borrow_mut().insert(id, GlobalFn(self.functions.len()));
-        self.functions.push(Function_::Extern(f));
+        self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(global);
         Ok(())
     }
@@ -682,18 +796,27 @@ impl <'a> VM<'a> {
         let mut gc = self.gc.borrow_mut();
         DataStruct { value: gc.alloc_and_collect(&mut roots, Def { tag: tag, elems: fields }) }
     }
+    fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &mut [Value<'a>]) -> GcPtr<ClosureData<'a>> {
+        let mut interner = self.interner.borrow_mut();
+        let mut roots = Roots { stack: stack, interner: &mut *interner };
+        let mut gc = self.gc.borrow_mut();
+        gc.alloc_and_collect(&mut roots, ClosureDataDef(func, &*fields))
+    }
 
-    pub fn call_function<'b, 'c>(&self, args: usize, upvars: Option<GcPtr<Data_<'a>>>, global: &Global<'a>) -> VMResult<Value<'a>>  {
+    pub fn call_function<'b, 'c>(&self, args: usize, global: &Global<'a>) -> VMResult<Value<'a>>  {
         debug!("Call function {:?}", global);
-        let i = match global.value.get() {
-            Function(i) if i < self.functions.len() => i,
-            Closure(d) if d.tag < self.functions.len() => d.tag,
+        let stack = match global.value.get() {
+            Function(ptr) => {
+                let stack = StackFrame::new(self.stack.borrow_mut(), args, None);
+                self.execute_function(stack, &ptr)
+            }
+            Closure(closure) => {
+                let stack = StackFrame::new(self.stack.borrow_mut(), args, Some(closure));
+                self.execute(stack, &closure.function.instructions, &closure.function.inner_functions)
+            }
             x => return Err(format!("Tried to call a non function object: '{:?}' / {}", x, self.functions.len()))
         };
-        let function = &self.functions[i];
-        let stack = StackFrame::new(self.stack.borrow_mut(), args, upvars);
-        self.execute_function(stack, function)
-            .map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
+        stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
     }
     fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Function_<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         match *function {
@@ -705,13 +828,13 @@ impl <'a> VM<'a> {
                 func(self);
                 Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
             }
-            Function_::Bytecode(ref instructions) => {
-                self.execute(stack, instructions.as_slice())
+            Function_::Bytecode(ref function) => {
+                self.execute(stack, function.instructions.as_slice(), &function.inner_functions)
             }
         }
     }
 
-    pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction]) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction], functions: &[GcPtr<BytecodeFunction>]) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         debug!("Enter frame with {:?}", stack.as_slice());
         let mut index = 0;
         while let Some(&instr) = instructions.get(index) {
@@ -742,18 +865,19 @@ impl <'a> VM<'a> {
                     let function_index = stack.len() - 1 - args;
                     {
                         let f = stack[function_index].clone();
-                        let (function, new_upvars) = match f {
-                            Function(index) => {
-                                (&self.functions[index], None)
+                        match f {
+                            Function(ref f) => {
+                                stack = try!(stack.scope(args, None, |new_stack| {
+                                    self.execute_function(new_stack, f)
+                                }));
                             }
                             Closure(ref closure) => {
-                                (&self.functions[closure.tag], Some(closure.value))
+                                stack = try!(stack.scope(args, Some(*closure), |new_stack| {
+                                    self.execute(new_stack, &closure.function.instructions, &closure.function.inner_functions)
+                                }));
                             }
                             x => return Err(format!("Cannot call {:?}", x))
-                        };
-                        stack = try!(stack.scope(args, new_upvars, |new_stack| {
-                            self.execute_function(new_stack, function)
-                        }));
+                        }
                     }
                     if stack.len() > function_index + args {
                         //Value was returned
@@ -866,11 +990,23 @@ impl <'a> VM<'a> {
                         let i = stack.stack.len() - n;
                         let (stack_after, args) = stack.stack.values.split_at_mut(i);
                         args.reverse();
-                        Closure(self.new_data_and_collect(stack_after, fi, args))
+                        let func = functions[fi];
+                        Closure(self.new_closure_and_collect(stack_after, func, args))
                     };
                     for _ in range(0, n) {
                         stack.pop();
                     }
+                    stack.push(closure);
+                }
+                InstantiateConstrained(gi) => {
+                    let closure = {
+                        let dict = stack.pop();
+                        let func = match self.globals[gi].value.get() {
+                            Closure(closure) => closure.function,
+                            _ => panic!()
+                        };
+                        Closure(self.new_closure_and_collect(&mut stack, func, [dict].as_mut_slice()))
+                    };
                     stack.push(closure);
                 }
                 PushUpVar(i) => {
@@ -879,7 +1015,7 @@ impl <'a> VM<'a> {
                 }
                 StoreUpVar(i) => {
                     let v = stack.pop();
-                    stack.upvars.expect("Upvar").fields[i].set(v);
+                    stack.upvars.expect("Upvar").upvars[i].set(v);
                 }
                 ConstructTraitObject(i) => {
                     let mut v = stack.pop();
@@ -890,7 +1026,8 @@ impl <'a> VM<'a> {
                 PushTraitFunction(i) => {
                     let func = match stack.top() {
                         &TraitObject(ref object) => {
-                            Function(object.tag + i)
+                            debug!("PushTraitFunction {:?}", self.globals[object.tag + i]);
+                            self.globals[object.tag + i].value.get()
                         }
                         _ => return Err(format!("Op PushTraitFunction called on object other than a TraitObject"))
                     };
@@ -906,7 +1043,7 @@ impl <'a> VM<'a> {
                     let func = match stack.get_upvar(0).clone()  {
                         Data(dict) => {
                             match dict.fields[trait_index as usize].get() {
-                                Closure(d) => self.globals[d.tag + function_offset as usize].value.get(),
+                                Int(i) => self.globals[i as usize + function_offset as usize].value.get(),
                                 x => panic!("PushDictionaryMember {:?}", x)
                             }
                         }
@@ -1546,9 +1683,9 @@ mul = \x y -> {
                 Int(i) => {
                     vm.push(Int(i));
                     vm.push(Int(15));
-                    let (_, function) = vm.get_global("mul")
+                    let function = vm.get_global("mul")
                             .expect("Expected 'mul' function");
-                    let result = vm.call_function(2, None, function)
+                    let result = vm.call_function(2, function)
                         .unwrap();
                     vm.push(result);
                 }

@@ -29,6 +29,7 @@ pub enum Instruction {
     //Creates a closure with 'n' upvariables
     //Pops the 'n' values on top of the stack and creates a closure
     MakeClosure(usize, usize),
+    InstantiateConstrained(usize),
     PushUpVar(usize),
     StoreUpVar(usize),
 
@@ -75,16 +76,17 @@ pub struct Assembly {
 }
 
 #[derive(Debug)]
-pub enum Binding {
-    Function(InternedStr, Constrained<TcType>, usize),
-    Other(InternedStr, Constrained<TcType>)
+pub struct Binding {
+    pub name: InternedStr,
+    pub typ: Constrained<TcType>,
 }
 
 #[derive(Debug)]
 pub struct CompiledFunction {
     pub id: InternedStr,
     pub typ: Constrained<TcType>,
-    pub instructions: Vec<Instruction>
+    pub instructions: Vec<Instruction>,
+    pub inner_functions: Vec<CompiledFunction>
 }
 
 #[derive(PartialEq, Clone)]
@@ -98,12 +100,13 @@ pub struct TraitFunctions {
 pub struct FunctionEnv<'a> {
     pub instructions: Vec<Instruction>,
     pub free_vars: Vec<InternedStr>,
-    pub dictionary: &'a [Constraint]//Typevariable -> Trait
+    pub dictionary: &'a [Constraint],//Typevariable -> Trait
+    pub inner_functions: Vec<CompiledFunction>
 }
 
 impl <'a> FunctionEnv<'a> {
     pub fn new() -> FunctionEnv<'a> {
-        FunctionEnv { instructions: Vec::new(), free_vars: Vec::new(), dictionary: &[] }
+        FunctionEnv { instructions: Vec::new(), free_vars: Vec::new(), dictionary: &[], inner_functions: Vec::new() }
     }
     fn upvar(&mut self, s: InternedStr) -> usize {
         match self.free_vars.iter().enumerate().find(|t| *t.1 == s).map(|t| t.0) {
@@ -139,7 +142,7 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         let &(ref outer, ref inner) = self;
         inner.find_var(s)
             .map(|var| match var {
-                Global(i, x, y) => Global(i + outer.next_function_index(), x, y),
+                Global(i, x, y) => Global(i + outer.next_global_index(), x, y),
                 var => var
             })
             .or_else(|| outer.find_var(s))
@@ -158,14 +161,14 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
         let &(ref outer, ref inner) = self;
         inner.find_trait_offset(trait_name, trait_type)
-            .map(|index| index + outer.next_function_index())
+            .map(|index| index + outer.next_global_index())
             .or_else(|| outer.find_trait_offset(trait_name, trait_type))
     }
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
         let &(ref outer, ref inner) = self;
         inner.find_trait_function(typ, id)
             .map(|mut result| {
-                result.value += outer.next_function_index();
+                result.value += outer.next_global_index();
                 result
             })
             .or_else(|| outer.find_trait_function(typ, id))
@@ -306,7 +309,6 @@ pub struct Compiler<'a> {
     stack: HashMap<InternedStr, usize>,
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<usize>,
-    compiled_lambdas: Vec<CompiledFunction>,
     function_offset: usize,
 }
 
@@ -317,7 +319,6 @@ impl <'a> Compiler<'a> {
             globals: globals,
             stack: HashMap::new(),
             closure_limits: Vec::new(),
-            compiled_lambdas: Vec::new(),
             function_offset: 0
         }
     }
@@ -387,11 +388,12 @@ impl <'a> Compiler<'a> {
                 globals.push(self.compile_global(&mut initializer, index, f));
             }
         }
-        let lambdas = ::std::mem::replace(&mut self.compiled_lambdas, Vec::new());
 
+        let FunctionEnv { instructions, inner_functions, .. } = initializer;
+        debug!("Done compiling module");
         Assembly {
-            initializer: initializer.instructions,
-            anonymous_functions: lambdas,
+            initializer: instructions,
+            anonymous_functions: inner_functions,
             globals: globals,
             trait_functions: trait_globals
         }
@@ -404,12 +406,7 @@ impl <'a> Compiler<'a> {
         initializer.instructions.push(StoreGlobal(index));
         let name = function.declaration.name.name;
         let typ = function.declaration.typ.clone();
-        if let Lambda(_) = function.expression.value {
-            Binding::Function(name, typ, self.function_offset + self.compiled_lambdas.len() - 1)
-        }
-        else {
-            Binding::Other(name, typ)
-        }
+        Binding { name: name, typ: typ }
     }
     pub fn compile_function(&mut self, f: &mut FunctionEnv, lambda: &ast::LambdaStruct<TcIdent>) {
         for arg in lambda.arguments.iter() {
@@ -424,8 +421,8 @@ impl <'a> Compiler<'a> {
     pub fn compile_expr(&mut self, expr: &CExpr) -> (Vec<Instruction>, Vec<CompiledFunction>) {
         let mut env = FunctionEnv::new();
         self.compile(expr, &mut env);
-        let lambdas = ::std::mem::replace(&mut self.compiled_lambdas, Vec::new());
-        (env.instructions, lambdas)
+        let FunctionEnv { instructions, inner_functions, .. } = env;
+        (instructions, inner_functions)
     }
 
     fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv) {
@@ -446,7 +443,7 @@ impl <'a> Compiler<'a> {
                         if constraints.len() != 0 {
                             debug!("Compile dictionary for {}", id.id());
                             self.compile_dictionary(constraints, typ, expr.type_of(), function);
-                            function.instructions.push(MakeClosure(index, 1));
+                            function.instructions.push(InstantiateConstrained(index));
                         }
                         else {
                             function.instructions.push(PushGlobal(index));
@@ -742,18 +739,18 @@ impl <'a> Compiler<'a> {
             }
             Lambda(ref lambda) => {
                 let cf = self.compile_lambda(lambda, function);
-                self.compiled_lambdas.push(cf);
+                function.inner_functions.push(cf);
             }
         }
     }
 
-    fn compile_lambda(&mut self, lambda: &LambdaStruct<TcIdent>, function: &mut FunctionEnv) -> CompiledFunction {
+    fn compile_lambda(&mut self, lambda: &LambdaStruct<TcIdent>, parent: &mut FunctionEnv) -> CompiledFunction {
         self.closure_limits.push(self.stack.len());
         for arg in lambda.arguments.iter() {
             self.new_stack_var(*arg.id());
         }
         let mut f = FunctionEnv::new();
-        f.dictionary = function.dictionary.clone();
+        f.dictionary = parent.dictionary.clone();
         self.compile(&*lambda.body, &mut f);
         for arg in lambda.arguments.iter() {
             self.stack.remove(arg.id());
@@ -762,18 +759,20 @@ impl <'a> Compiler<'a> {
         //Insert all free variables into the above globals free variables
         //if they arent in that lambdas scope
         for var in f.free_vars.iter() {
-            match self.find(var, function).unwrap() {
-                Stack(index) => function.instructions.push(Push(index)),
-                UpVar(index) => function.instructions.push(PushUpVar(index)),
+            match self.find(var, parent).unwrap() {
+                Stack(index) => parent.instructions.push(Push(index)),
+                UpVar(index) => parent.instructions.push(PushUpVar(index)),
                 _ => panic!("Free variables can only be on the stack or another upvar")
             }
         }
-        let function_index = self.function_offset + self.compiled_lambdas.len();
-        function.instructions.push(MakeClosure(function_index, f.free_vars.len()));
+        let function_index = parent.inner_functions.len();
+        parent.instructions.push(MakeClosure(function_index, f.free_vars.len()));
+        let FunctionEnv { instructions, inner_functions, .. } = f;
         CompiledFunction {
             id: lambda.id.id().clone(),
             typ: Constrained { constraints: Vec::new(), value: lambda.id.typ.clone() },
-            instructions: f.instructions
+            instructions: instructions,
+            inner_functions: inner_functions
         }
     }
 
@@ -804,7 +803,7 @@ impl <'a> Compiler<'a> {
                 debug!("Found {:?} for {:?}", real_type, constraint);
                 let impl_index = self.globals.find_trait_offset(&constraint.name, real_type)
                     .unwrap_or_else(|| panic!("ICE"));
-                function.instructions.push(PushGlobal(impl_index));
+                function.instructions.push(PushInt(impl_index as isize));
             }
         }
         1
@@ -827,7 +826,7 @@ impl <'a> Compiler<'a> {
                     Some(result) => {//Found a match
                         if result.constraints.len() != 0 {
                             self.compile_dictionary(result.constraints, result.typ, &id.typ, function);
-                            function.instructions.push(MakeClosure(result.value, 1));
+                            function.instructions.push(InstantiateConstrained(result.value));
                         }
                         else {
                             debug!("PUSH {:?}", result);

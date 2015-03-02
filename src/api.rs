@@ -1,4 +1,4 @@
-use vm::{VM, VMResult, Value, Int, Float, Function, Userdata, Userdata_, StackFrame, VMInt};
+use vm::{VM, VMResult, Value, Int, Float, Userdata, Userdata_, StackFrame, VMInt};
 use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
 use std::boxed::BoxAny;
@@ -126,8 +126,7 @@ macro_rules! make_get {
 impl <'a, 'b, $($args : VMValue<'b>,)* R: VMValue<'b>> Get<'a, 'b> for Callable<'a, 'b, ($($args,)*), R> {
     fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Callable<'a, 'b, ($($args,)*), R>> {
         let value = match vm.get_global(name) {
-            Some((function_ref, global)) => {
-                println!("{:?} {:?}", function_ref, global);
+            Some(global) => {
                 match global.type_of() {
                     &FunctionType(ref args, ref return_type) => {
                         let mut arg_iter = args.iter();
@@ -135,7 +134,7 @@ impl <'a, 'b, $($args : VMValue<'b>,)* R: VMValue<'b>> Get<'a, 'b> for Callable<
                             arg_iter.next().unwrap() == vm_type::<$args>(vm)
                             } &&)* true;
                         if arg_iter.next().is_none() && ok && **return_type == *vm_type::<R>(vm) {
-                            Some(FunctionRef { value: function_ref, _marker: PhantomData })
+                            Some(FunctionRef { value: global.value.get(), _marker: PhantomData })
                         }
                         else {
                             None
@@ -165,30 +164,27 @@ make_get!(A, B, C, D, E, F, G);
 
 pub struct Callable<'a, 'b: 'a , Args, R> {
     vm: &'a VM<'b>,
-    value: FunctionRef<Args, R>
+    value: FunctionRef<'b, Args, R>
 }
-struct FunctionRef<Args, R> {
-    value: usize,
+struct FunctionRef<'a, Args, R> {
+    value: Value<'a>,
     _marker: PhantomData<fn (Args) -> R>
 }
 
-impl <Args, R> Copy for FunctionRef<Args, R> { }
+impl <'a, Args, R> Copy for FunctionRef<'a, Args, R> { }
 
-impl <Args, R> VMType for FunctionRef<Args, R> {
+impl <'b, Args, R> VMType for FunctionRef<'b, Args, R> {
     fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
         vm.get_type::<&fn (Args) -> R>()
     }
 }
 
-impl <'a, Args, R> VMValue<'a> for FunctionRef<Args, R> {
+impl <'a, Args, R> VMValue<'a> for FunctionRef<'a, Args, R> {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
-        stack.push(Function(self.value));
+        stack.push(self.value);
     }
-    fn from_value(value: Value<'a>) -> Option<FunctionRef<Args, R>> {
-        match value {
-            Function(i) => Some(FunctionRef { value: i, _marker: PhantomData }),//TODO not type safe
-            _ => None
-        }
+    fn from_value(value: Value<'a>) -> Option<FunctionRef<'a, Args, R>> {
+        Some(FunctionRef { value: value, _marker: PhantomData })//TODO not type safe
     }
 }
 
@@ -197,7 +193,7 @@ impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
         a.push(self.vm, &mut stack);
-        stack = try!(self.vm.execute(stack, &[CallGlobal(1)]));
+        stack = try!(self.vm.execute(stack, &[CallGlobal(1)], &[]));
         match VMValue::from_value(stack.pop()) {
             Some(x) => Ok(x),
             None => Err("Wrong type".to_string())
@@ -210,7 +206,7 @@ impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (
         self.value.push(self.vm, &mut stack);
         a.push(self.vm, &mut stack);
         b.push(self.vm, &mut stack);
-        stack = try!(self.vm.execute(stack, &[CallGlobal(2)]));
+        stack = try!(self.vm.execute(stack, &[CallGlobal(2)], &[]));
         match VMValue::from_value(stack.pop()) {
             Some(x) => Ok(x),
             None => Err("Wrong type".to_string())

@@ -17,3 +17,4 @@ name = "repl"
 path = "src/main.rs"
 
 [dependencies.log]
+[dependencies.env_logger]
