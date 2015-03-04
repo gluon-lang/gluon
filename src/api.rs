@@ -1,4 +1,4 @@
-use vm::{VM, VMResult, Value, Int, Float, Userdata, Userdata_, StackFrame, VMInt};
+use vm::{VM, VMResult, Value, Userdata_, StackFrame, VMInt};
 use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
 use std::boxed::BoxAny;
@@ -35,11 +35,11 @@ impl VMType for VMInt {
 }
 impl <'a> VMValue<'a> for VMInt {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
-        stack.push(Int(self));
+        stack.push(Value::Int(self));
     }
     fn from_value(value: Value<'a>) -> Option<VMInt> {
         match value {
-            Int(i) => Some(i),
+            Value::Int(i) => Some(i),
             _ => None
         }
     }
@@ -51,11 +51,11 @@ impl VMType for f64 {
 }
 impl <'a> VMValue<'a> for f64 {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
-        stack.push(Float(self));
+        stack.push(Value::Float(self));
     }
     fn from_value(value: Value<'a>) -> Option<f64> {
         match value {
-            Float(f) => Some(f),
+            Value::Float(f) => Some(f),
             _ => None
         }
     }
@@ -67,12 +67,12 @@ impl VMType for bool {
 }
 impl <'a> VMValue<'a> for bool {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
-        stack.push(Int(if self { 1 } else { 0 }));
+        stack.push(Value::Int(if self { 1 } else { 0 }));
     }
     fn from_value(value: Value<'a>) -> Option<bool> {
         match value {
-            Int(1) => Some(true),
-            Int(0) => Some(false),
+            Value::Int(1) => Some(true),
+            Value::Int(0) => Some(false),
             _ => None
         }
     }
@@ -84,11 +84,11 @@ impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
 }
 impl <'a, T: 'static + BoxAny + Clone> VMValue<'a> for Box<T> {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
-        stack.push(Userdata(Userdata_::new(vm, self)));
+        stack.push(Value::Userdata(Userdata_::new(vm, self)));
     }
     fn from_value(value: Value<'a>) -> Option<Box<T>> {
         match value {
-            Userdata(v) => v.data.borrow().downcast_ref::<T>().map(|x| box x.clone()),
+            Value::Userdata(v) => v.data.borrow().downcast_ref::<T>().map(|x| box x.clone()),
             _ => None
         }
     }
@@ -100,11 +100,11 @@ impl <T: 'static> VMType for *mut T {
 }
 impl <'a, T: 'static> VMValue<'a> for *mut T {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
-        stack.push(Userdata(Userdata_::new(vm, self)));
+        stack.push(Value::Userdata(Userdata_::new(vm, self)));
     }
     fn from_value(value: Value<'a>) -> Option<*mut T> {
         match value {
-            Userdata(v) => v.data.borrow().downcast_ref::<*mut T>().map(|x| *x),
+            Value::Userdata(v) => v.data.borrow().downcast_ref::<*mut T>().map(|x| *x),
             _ => None
         }
     }

@@ -17,7 +17,7 @@ use fixed::*;
 
 use self::Named::*;
 
-pub use vm::Value::{
+use vm::Value::{
     Int,
     Float,
     String,
@@ -1201,7 +1201,8 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 
 #[cfg(test)]
 mod tests {
-    use super::{VM, Data, Int, String, run_main, run_function, load_script};
+    use super::{VM, run_main, run_function, load_script};
+    use super::Value::{Data, Int, String};
     use ast::INT_TYPE;
     use std::old_io::BufReader;
     ///Test that the stack is adjusted correctly after executing expressions as statements
