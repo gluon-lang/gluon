@@ -1,4 +1,5 @@
 use std::ptr::PtrExt;
+use std::fmt;
 use std::mem;
 use std::ptr;
 use std::hash::{Hash, Hasher};
@@ -7,6 +8,7 @@ use std::ops::{Deref, DerefMut};
 use std::cell::Cell;
 
 
+#[derive(Debug)]
 pub struct Gc {
     values: Option<AllocPtr>,
     allocated_objects: usize,
@@ -20,6 +22,7 @@ pub trait DataDef {
     fn make_ptr(&self, ptr: *mut ()) -> *mut <Self as DataDef>::Value;
 }
 
+#[derive(Debug)]
 struct GcHeader {
     next: Option<AllocPtr>,
     value_size: Cell<usize>,
@@ -43,6 +46,12 @@ impl AllocPtr {
             });
             AllocPtr { ptr: ptr }
         }
+    }
+}
+
+impl fmt::Debug for AllocPtr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "AllocPtr {{ ptr: {:?} }}", &**self)
     }
 }
 
@@ -185,6 +194,16 @@ impl Gc {
 
     pub fn alloc<T: ?Sized, D>(&mut self, def: D) -> GcPtr<T>
         where D: DataDef<Value=T> {
+        debug!("ALLOC: {}, size: {}", unsafe {
+            let desc = ::std::intrinsics::get_tydesc::<T>();
+            if desc.is_null() {
+                "<unknown>"
+            }
+            else {
+                (*desc).name
+            }
+        }, def.size());
+
         let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
         self.allocated_objects += 1;
@@ -200,6 +219,26 @@ impl Gc {
         where R: Traverseable {
         self.collect2(roots, &mut ());
     }
+
+
+    pub fn object_count(&self) -> usize {
+        let mut header: &GcHeader = match self.values {
+            Some(ref x) => &**x,
+            None => return 0
+        };
+        let mut count = 1;
+        loop {
+            match header.next {
+                Some(ref ptr) => {
+                    count += 1;
+                    header = &**ptr;
+                }
+                None => break
+            }
+        }
+        count
+    }
+
     
     fn collect2<R: ?Sized, D>(&mut self, roots: &mut R, def: &mut D)
         where R: Traverseable, D: Traverseable {
@@ -249,6 +288,7 @@ impl Gc {
     }
     fn free(&mut self, header: Option<AllocPtr>) {
         self.allocated_objects -= 1;
+        debug!("FREE: {:?}", header);
         drop(header);
     }
 
@@ -266,7 +306,7 @@ impl Gc {
 
 #[cfg(test)]
 mod tests {
-    use super::{Gc, GcPtr, GcHeader, Traverseable, DataDef};
+    use super::{Gc, GcPtr, Traverseable, DataDef};
     use std::ops::Deref;
     use std::fmt;
 
@@ -346,24 +386,6 @@ mod tests {
         }
     }
 
-    fn num_objects(gc: &Gc) -> usize {
-        let mut header: &GcHeader = match gc.values {
-            Some(ref x) => &**x,
-            None => return 0
-        };
-        let mut count = 1;
-        loop {
-            match header.next {
-                Some(ref ptr) => {
-                    count += 1;
-                    header = &**ptr;
-                }
-                None => break
-            }
-        }
-        count
-    }
-
     fn new_data(p: GcPtr<Vec<Value>>) -> Value {
         Data(Data_ { fields: p })
     }
@@ -384,9 +406,9 @@ mod tests {
         stack.push(new_data(gc.alloc(Def { elems: &[Int(1)] })));
         let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }));
         stack.push(d2);
-        assert_eq!(num_objects(&gc), 2);
+        assert_eq!(gc.object_count(), 2);
         gc.collect(&mut stack);
-        assert_eq!(num_objects(&gc), 2);
+        assert_eq!(gc.object_count(), 2);
         match stack[0] {
             Data(ref data) => assert_eq!((**data)[0], Int(1)),
             _ => panic!()
@@ -398,6 +420,6 @@ mod tests {
         stack.pop();
         stack.pop();
         gc.collect(&mut stack);
-        assert_eq!(num_objects(&gc), 0);
+        assert_eq!(gc.object_count(), 0);
     }
 }

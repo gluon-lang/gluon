@@ -46,7 +46,6 @@ impl <K: Eq + Hash, V> FixedMap<K, V> {
             .get(k)
             .map(|x| unsafe { forget_lifetime(&**x) })
     }
-
 }
 
 pub struct FixedVec<T> {

@@ -151,8 +151,8 @@ impl DataDef for BytecodeFunction {
 }
 
 impl Traverseable for BytecodeFunction {
-    fn traverse(&self, _gc: &mut Gc) {
-        
+    fn traverse(&self, gc: &mut Gc) {
+        self.inner_functions.traverse(gc);
     }
 }
 impl <'a, 'b> Traverseable for (GcPtr<BytecodeFunction>, &'b [Value<'a>]) {
@@ -220,6 +220,7 @@ impl <'a> Traverseable for Value<'a> {
     fn traverse(&self, gc: &mut Gc) {
         match *self {
             Data(ref data) => data.traverse(gc),
+            Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
             TraitObject(ref data) => data.value.traverse(gc),
             _ => ()
@@ -252,6 +253,14 @@ pub struct Global<'a> {
     pub typ: Constrained<TcType>,
     pub value: Cell<Value<'a>>
 }
+
+impl <'a> Traverseable for Global<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.id.traverse(gc);
+        self.value.traverse(gc);
+    }
+}
+
 pub enum Function_<'a> {
     Bytecode(BytecodeFunction),
     Extern(ExternFunction<'a>)
@@ -264,6 +273,15 @@ impl <'a> Typed for Global<'a> {
 impl <'a> PartialEq for Function_<'a> {
     fn eq(&self, _other: &Function_<'a>) -> bool {
         false//TODO?
+    }
+}
+
+impl <'a> Traverseable for Function_<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        match *self { 
+            Function_::Bytecode(ref f) => f.traverse(gc),
+            Function_::Extern(_) => ()
+        }
     }
 }
 impl <'a> fmt::Debug for Function_<'a> {
@@ -591,11 +609,15 @@ impl <'a, 'b> Traverseable for Def<'a, 'b> {
 }
 
 struct Roots<'a: 'b, 'b> {
+    globals: &'b FixedVec<Global<'a>>,
     stack: &'b mut [Value<'a>],
     interner: &'b mut Interner
 }
 impl <'a, 'b> Traverseable for Roots<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
+        for g in self.globals.borrow().iter() {
+            g.traverse(gc);
+        }
         self.stack.traverse(gc);
         //Also need to check the interned string table
         self.interner.traverse(gc);
@@ -776,7 +798,7 @@ impl <'a> VM<'a> {
     pub fn collect(&self) {
         let mut interner = self.interner.borrow_mut();
         let mut stack = self.stack.borrow_mut();
-        let mut roots = Roots { stack: &mut *stack.values, interner: &mut *interner };
+        let mut roots = Roots { globals: &self.globals, stack: &mut *stack.values, interner: &mut *interner };
         self.gc.borrow_mut().collect(&mut roots);
     }
 
@@ -785,13 +807,13 @@ impl <'a> VM<'a> {
     }
     fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: usize, fields: &mut [Value<'a>]) -> DataStruct<'a> {
         let mut interner = self.interner.borrow_mut();
-        let mut roots = Roots { stack: stack, interner: &mut *interner };
+        let mut roots = Roots { globals: &self.globals, stack: stack, interner: &mut *interner };
         let mut gc = self.gc.borrow_mut();
         DataStruct { value: gc.alloc_and_collect(&mut roots, Def { tag: tag, elems: fields }) }
     }
     fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &mut [Value<'a>]) -> GcPtr<ClosureData<'a>> {
         let mut interner = self.interner.borrow_mut();
-        let mut roots = Roots { stack: stack, interner: &mut *interner };
+        let mut roots = Roots { globals: &self.globals, stack: stack, interner: &mut *interner };
         let mut gc = self.gc.borrow_mut();
         gc.alloc_and_collect(&mut roots, ClosureDataDef(func, &*fields))
     }
@@ -1762,6 +1784,22 @@ main = \ -> { global }
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(123));
+    }
+
+    #[test]
+    fn dont_collect_globals() {
+        ::env_logger::init().unwrap();
+        let text = 
+r#"
+main : () -> Int;
+main = \ -> { 1 }
+"#;
+        let mut vm = VM::new();
+        run_main(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        let pre_collect = vm.gc.borrow().object_count();
+        vm.collect();
+        assert_eq!(pre_collect, vm.gc.borrow().object_count());
     }
 }
 
