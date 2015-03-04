@@ -133,7 +133,6 @@ pub trait CompilerEnv {
     fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize>;
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>>;
     fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize>;
-    fn next_function_index(&self) -> usize;
     fn next_global_index(&self) -> usize;
 }
 
@@ -177,10 +176,6 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         let &(ref outer, ref inner) = self;
         inner.find_object_function(trait_type, name)
             .or_else(|| outer.find_object_function(trait_type, name))
-    }
-    fn next_function_index(&self) -> usize {
-        let &(ref outer, ref inner) = self;
-        outer.next_function_index() + inner.next_function_index()
     }
     fn next_global_index(&self) -> usize {
         let &(ref outer, ref inner) = self;
@@ -268,9 +263,6 @@ impl CompilerEnv for Module<TcIdent> {
                 .map(|(i, _)| i)
             )
     }
-    fn next_function_index(&self) -> usize {
-        self.globals.len() + self.impls.iter().fold(0, |y, i| i.globals.len() + y)
-    }
     fn next_global_index(&self) -> usize {
         self.globals.len() + self.impls.iter().fold(0, |y, i| i.globals.len() + y)
     }
@@ -296,9 +288,6 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize> {
         (*self).find_object_function(trait_type, name)
     }
-    fn next_function_index(&self) -> usize {
-        (*self).next_function_index()
-    }
     fn next_global_index(&self) -> usize {
         (*self).next_global_index()
     }
@@ -309,7 +298,6 @@ pub struct Compiler<'a> {
     stack: HashMap<InternedStr, usize>,
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<usize>,
-    function_offset: usize,
 }
 
 impl <'a> Compiler<'a> {
@@ -319,7 +307,6 @@ impl <'a> Compiler<'a> {
             globals: globals,
             stack: HashMap::new(),
             closure_limits: Vec::new(),
-            function_offset: 0
         }
     }
 
@@ -371,7 +358,6 @@ impl <'a> Compiler<'a> {
         let mut initializer = FunctionEnv::new();
         let mut globals = Vec::new();
         let global_offset = self.globals.next_global_index() - module.next_global_index();
-        self.function_offset = self.globals.next_function_index() - module.next_function_index();
         for global in module.globals.iter() {
             let index = global_offset + globals.len();
             globals.push(self.compile_global(&mut initializer, index, global));

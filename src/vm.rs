@@ -281,7 +281,6 @@ enum Named {
 }
 
 pub struct VM<'a> {
-    functions: FixedVec<Function_<'a>>,
     globals: FixedVec<Global<'a>>,
     trait_indexes: FixedVec<TraitFunctions>,
     type_infos: RefCell<TypeInfos>,
@@ -301,7 +300,6 @@ pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     trait_indexes: &'b FixedVec<TraitFunctions>,
     globals: &'b FixedVec<Global<'a>>,
-    functions: &'b FixedVec<Function_<'a>>,
     names: Ref<'b, HashMap<InternedStr, Named>>
 }
 
@@ -383,9 +381,6 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                     .find(|&(_, tup)| tup.0 == *fn_name)
                     .map(|(i, _)| i)
             )
-    }
-    fn next_function_index(&self) -> usize {
-        self.functions.len()
     }
     fn next_global_index(&self) -> usize {
         self.globals.len()
@@ -612,7 +607,6 @@ impl <'a> VM<'a> {
     pub fn new() -> VM<'a> {
         let vm = VM {
             globals: FixedVec::new(),
-            functions: FixedVec::new(),
             trait_indexes: FixedVec::new(),
             type_infos: RefCell::new(TypeInfos::new()),
             typeids: FixedMap::new(),
@@ -674,7 +668,7 @@ impl <'a> VM<'a> {
         }
         let mut functions = Vec::new();
         for f in anonymous_functions {
-            debug!("Function {} at {}", f.id, self.functions.len());
+            debug!("Function {} at {}", f.id, functions.len());
             fn create_function(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
                 let CompiledFunction { instructions, inner_functions, .. } = f;
                 let fs = inner_functions.into_iter()
@@ -775,7 +769,6 @@ impl <'a> VM<'a> {
             type_infos: self.type_infos.borrow(),
             trait_indexes: &self.trait_indexes,
             globals: &self.globals,
-            functions: &self.functions,
             names: self.names.borrow()
         }
     }
@@ -814,7 +807,7 @@ impl <'a> VM<'a> {
                 let stack = StackFrame::new(self.stack.borrow_mut(), args, Some(closure));
                 self.execute(stack, &closure.function.instructions, &closure.function.inner_functions)
             }
-            x => return Err(format!("Tried to call a non function object: '{:?}' / {}", x, self.functions.len()))
+            x => return Err(format!("Tried to call a non function object: '{:?}'", x))
         };
         stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
     }
