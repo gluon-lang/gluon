@@ -1,13 +1,26 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Deref;
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
 
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Eq)]
 pub struct InternedStr(GcPtr<[u8]>);
+
+impl PartialEq<InternedStr> for InternedStr {
+    fn eq(&self, other: &InternedStr) -> bool {
+        self.as_ptr() == other.as_ptr()
+    }
+}
+
+impl Hash for InternedStr {
+    fn hash<H>(&self, hasher: &mut H) where H: Hasher {
+        self.as_ptr().hash(hasher)
+    }
+}
 
 unsafe impl Sync for InternedStr { }
 
