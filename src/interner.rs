@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::mem;
 use std::ops::Deref;
-use std::borrow::Borrow;
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
 
@@ -19,15 +18,12 @@ impl Deref for InternedStr {
     }
 }
 
-impl Borrow<str> for InternedStr {
-    fn borrow(&self) -> &str {
-        &**self
-    }
-}
-
-
 pub struct Interner {
-    indexes: HashMap<InternedStr, InternedStr>
+    //For this map and this map only we can't use InternedStr as keys since the hash should
+    //not be expected to be the same as ordinary strings, we use a transmute to &'static str to
+    //have the keys as strings without any unsafety as the keys do not escape the interner and they
+    //live as long as their values
+    indexes: HashMap<&'static str, InternedStr>
 }
 
 struct StrDef<'a>(&'a str);
@@ -73,7 +69,10 @@ impl Interner {
             None => ()
         }
         let gc_str = InternedStr(gc.alloc(StrDef(s)));
-        self.indexes.insert(gc_str, gc_str);
+        //The key will live as long as the value it refers to and the static str never escapes
+        //outside interner so this is safe
+        let key: &'static str = unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };
+        self.indexes.insert(key, gc_str);
         gc_str
     }
 }
