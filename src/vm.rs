@@ -796,26 +796,36 @@ impl <'a> VM<'a> {
     }
 
     pub fn collect(&self) {
-        let mut interner = self.interner.borrow_mut();
         let mut stack = self.stack.borrow_mut();
-        let mut roots = Roots { globals: &self.globals, stack: &mut *stack.values, interner: &mut *interner };
-        self.gc.borrow_mut().collect(&mut roots);
+        self.with_roots(&mut stack.values, |gc, mut roots| {
+            unsafe { gc.collect(&mut roots); }
+        })
     }
 
     fn new_data(&self, tag: usize, fields: &mut [Value<'a>]) -> Value<'a> {
         Data(DataStruct { value: self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields })})
     }
     fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: usize, fields: &mut [Value<'a>]) -> DataStruct<'a> {
-        let mut interner = self.interner.borrow_mut();
-        let mut roots = Roots { globals: &self.globals, stack: stack, interner: &mut *interner };
-        let mut gc = self.gc.borrow_mut();
-        DataStruct { value: gc.alloc_and_collect(&mut roots, Def { tag: tag, elems: fields }) }
+        DataStruct { value: self.alloc(stack, Def { tag: tag, elems: fields }) }
     }
     fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &mut [Value<'a>]) -> GcPtr<ClosureData<'a>> {
+        self.alloc(stack, ClosureDataDef(func, &*fields))
+    }
+
+    fn with_roots<F, R>(&self, stack: &mut [Value<'a>], f: F) -> R
+        where F: for<'b> FnOnce(&mut Gc, Roots<'a, 'b>) -> R {
         let mut interner = self.interner.borrow_mut();
-        let mut roots = Roots { globals: &self.globals, stack: stack, interner: &mut *interner };
+        let roots = Roots { globals: &self.globals, stack: stack, interner: &mut *interner };
         let mut gc = self.gc.borrow_mut();
-        gc.alloc_and_collect(&mut roots, ClosureDataDef(func, &*fields))
+        f(&mut gc, roots)
+    }
+
+    fn alloc<D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<D::Value>
+        where D: DataDef + Traverseable,
+              D::Value: Traverseable {
+        self.with_roots(stack, |gc, mut roots| {
+            unsafe { gc.alloc_and_collect(&mut roots, def) }
+        })
     }
 
     pub fn call_function<'b, 'c>(&self, args: usize, global: &Global<'a>) -> VMResult<Value<'a>>  {

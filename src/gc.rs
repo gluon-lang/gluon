@@ -184,7 +184,9 @@ impl Gc {
     pub fn new() -> Gc {
         Gc { values: None, allocated_objects: 0, collect_limit: 100 }
     }
-    pub fn alloc_and_collect<T: ?Sized, R: ?Sized, D>(&mut self, roots: &mut R, mut def: D) -> GcPtr<T>
+
+    ///Unsafe since it calls collects if memory needs to be collected
+    pub unsafe fn alloc_and_collect<T: ?Sized, R: ?Sized, D>(&mut self, roots: &mut R, mut def: D) -> GcPtr<T>
         where T: Traverseable, R: Traverseable, D: DataDef<Value=T> + Traverseable {
         if self.allocated_objects >= self.collect_limit {
             self.collect2(roots, &mut def);
@@ -215,7 +217,9 @@ impl Gc {
         }
     }
 
-    pub fn collect<R: ?Sized>(&mut self, roots: &mut R)
+    ///Does a mark and sweep collection by walking from `roots`. This function is unsafe since
+    ///roots need to cover all reachable object.
+    pub unsafe fn collect<R: ?Sized>(&mut self, roots: &mut R)
         where R: Traverseable {
         self.collect2(roots, &mut ());
     }
@@ -407,7 +411,7 @@ mod tests {
         let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }));
         stack.push(d2);
         assert_eq!(gc.object_count(), 2);
-        gc.collect(&mut stack);
+        unsafe { gc.collect(&mut stack); }
         assert_eq!(gc.object_count(), 2);
         match stack[0] {
             Data(ref data) => assert_eq!((**data)[0], Int(1)),
@@ -419,7 +423,7 @@ mod tests {
         }
         stack.pop();
         stack.pop();
-        gc.collect(&mut stack);
+        unsafe { gc.collect(&mut stack); }
         assert_eq!(gc.object_count(), 0);
     }
 }
