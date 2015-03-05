@@ -25,7 +25,9 @@ use vm::Value::{
     Function,
     Closure,
     TraitObject,
-    Userdata};
+    Userdata,
+    Bottom
+};
 
 #[derive(Copy, Clone)]
 pub struct Userdata_ {
@@ -196,7 +198,8 @@ pub enum Value<'a> {
     Function(GcPtr<Function_<'a>>),
     Closure(GcPtr<ClosureData<'a>>),
     TraitObject(DataStruct<'a>),
-    Userdata(Userdata_)
+    Userdata(Userdata_),
+    Bottom//Special value used to mark that a global was used before it was initialized
 }
 
 impl <'a> PartialEq<Value<'a>> for Cell<Value<'a>> {
@@ -240,9 +243,19 @@ impl <'a> fmt::Debug for Value<'a> {
             Function(ref func) => write!(f, "{:?}", **func),
             Closure(ref closure) => write!(f, "<Closure {:?}>", &closure.upvars),
             TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, &object.fields),
-            Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr())
+            Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
+            Bottom => write!(f, "Bottom")
         }
     }
+}
+
+macro_rules! get_global {
+    ($vm: ident, $i: expr) => (
+        match $vm.globals[$i].value.get() {
+            Bottom => return Err(format!("Global '{}' was used before it was initialized", $vm.globals[$i].id)),
+            x => x
+        }
+    )
 }
 
 pub type ExternFunction<'a> = Box<Fn(&VM<'a>) + 'static>;
@@ -685,7 +698,7 @@ impl <'a> VM<'a> {
                     names.insert(name, GlobalFn(self.globals.len()));
                 }
             }
-            let global = Global { id: name, typ: typ, value: Cell::new(Int(0)) };//TODO Initialize value now?
+            let global = Global { id: name, typ: typ, value: Cell::new(Bottom) };//TODO Initialize value now?
             self.globals.push(global);
         }
         let mut functions = Vec::new();
@@ -876,7 +889,8 @@ impl <'a> VM<'a> {
                     stack.push(String(s));
                 }
                 PushGlobal(i) => {
-                    stack.push(self.globals[i].value.get());
+                    let x = get_global!(self, i);
+                    stack.push(x);
                 }
                 PushFloat(f) => stack.push(Float(f)),
                 Store(i) => {
@@ -1026,7 +1040,7 @@ impl <'a> VM<'a> {
                 InstantiateConstrained(gi) => {
                     let closure = {
                         let dict = stack.pop();
-                        let func = match self.globals[gi].value.get() {
+                        let func = match get_global!(self, gi) {
                             Closure(closure) => closure.function,
                             _ => panic!()
                         };
@@ -1052,7 +1066,7 @@ impl <'a> VM<'a> {
                     let func = match stack.top() {
                         &TraitObject(ref object) => {
                             debug!("PushTraitFunction {:?}", self.globals[object.tag + i]);
-                            self.globals[object.tag + i].value.get()
+                            get_global!(self, object.tag + i)
                         }
                         _ => return Err(format!("Op PushTraitFunction called on object other than a TraitObject"))
                     };
@@ -1068,7 +1082,7 @@ impl <'a> VM<'a> {
                     let func = match stack.get_upvar(0).clone()  {
                         Data(dict) => {
                             match dict.fields[trait_index as usize].get() {
-                                Int(i) => self.globals[i as usize + function_offset as usize].value.get(),
+                                Int(i) => get_global!(self, i as usize + function_offset as usize),
                                 x => panic!("PushDictionaryMember {:?}", x)
                             }
                         }
@@ -1798,7 +1812,6 @@ main = \ -> { global }
 
     #[test]
     fn dont_collect_globals() {
-        ::env_logger::init().unwrap();
         let text = 
 r#"
 main : () -> Int;
@@ -1810,6 +1823,21 @@ main = \ -> { 1 }
         let pre_collect = vm.gc.borrow().object_count();
         vm.collect();
         assert_eq!(pre_collect, vm.gc.borrow().object_count());
+    }
+
+    #[test]
+    fn access_unitialized_global() {
+        let text = 
+r#"
+main : () -> Int;
+main = \ -> { g }
+
+g : Int;
+g = 123
+"#;
+        let mut vm = VM::new();
+        let result = run_main(&mut vm, text);
+        assert!(result.is_err());
     }
 }
 
