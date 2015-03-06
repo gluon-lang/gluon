@@ -8,7 +8,7 @@ use gc::{GcPtr, Gc, DataDef, Traverseable};
 
 
 #[derive(Copy, Clone, Eq)]
-pub struct InternedStr(GcPtr<[u8]>);
+pub struct InternedStr(GcPtr<str>);
 
 impl PartialEq<InternedStr> for InternedStr {
     fn eq(&self, other: &InternedStr) -> bool {
@@ -27,7 +27,13 @@ unsafe impl Sync for InternedStr { }
 impl Deref for InternedStr {
     type Target = str;
     fn deref(&self) -> &str {
-        unsafe { ::std::str::from_utf8_unchecked(&*self.0) }
+        &self.0
+    }
+}
+
+impl InternedStr {
+    pub fn inner(&self) -> GcPtr<str> {
+        self.0
     }
 }
 
@@ -39,22 +45,20 @@ pub struct Interner {
     indexes: HashMap<&'static str, InternedStr>
 }
 
-struct StrDef<'a>(&'a str);
-
-impl <'a> DataDef for StrDef<'a> {
-    type Value = [u8];
+impl <'a> DataDef for &'a str {
+    type Value = str;
     fn size(&self) -> usize {
-        self.0.len()
+        self.len()
     }
-    fn initialize(self, ptr: *mut [u8]) {
-        let ptr: &mut [u8] = unsafe { &mut *ptr };
-        assert_eq!(self.0.len(), ptr.len());
-        ::std::slice::bytes::copy_memory(ptr, self.0.as_bytes());
+    fn initialize(self, ptr: *mut str) {
+        let ptr: &mut [u8] = unsafe { mem::transmute::<*mut str, &mut [u8]>(ptr) };
+        assert_eq!(self.len(), ptr.len());
+        ::std::slice::bytes::copy_memory(ptr, self.as_bytes());
     }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut [u8] {
+    fn make_ptr(&self, ptr: *mut ()) -> *mut str {
         unsafe {
             use std::raw::Slice;
-            let x = Slice { data: ptr as *mut u8, len: self.0.len() };
+            let x = Slice { data: ptr as *mut u8, len: self.len() };
             mem::transmute(x)
         }
     }
@@ -81,7 +85,7 @@ impl Interner {
             }
             None => ()
         }
-        let gc_str = InternedStr(gc.alloc(StrDef(s)));
+        let gc_str = InternedStr(gc.alloc(s));
         //The key will live as long as the value it refers to and the static str never escapes
         //outside interner so this is safe
         let key: &'static str = unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };

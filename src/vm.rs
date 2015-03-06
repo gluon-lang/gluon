@@ -193,7 +193,7 @@ pub type VMInt = isize;
 pub enum Value<'a> {
     Int(VMInt),
     Float(f64),
-    String(InternedStr),
+    String(GcPtr<str>),
     Data(DataStruct<'a>),
     Function(GcPtr<Function_<'a>>),
     Closure(GcPtr<ClosureData<'a>>),
@@ -236,7 +236,7 @@ impl <'a> fmt::Debug for Value<'a> {
         match *self {
             Int(i) => write!(f, "{:?}", i),
             Float(x) => write!(f, "{:?}f", x),
-            String(x) => write!(f, "\"{:?}\"", x),
+            String(x) => write!(f, "\"{:?}\"", &*x),
             Data(ref data) => {
                 write!(f, "{{{:?} {:?}}}", data.tag, &data.fields)
             }
@@ -833,9 +833,8 @@ impl <'a> VM<'a> {
         f(&mut gc, roots)
     }
 
-    fn alloc<D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<D::Value>
-        where D: DataDef + Traverseable,
-              D::Value: Traverseable {
+    fn alloc<T: ?Sized, D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<T>
+        where D: DataDef<Value=T> + Traverseable {
         self.with_roots(stack, |gc, mut roots| {
             unsafe { gc.alloc_and_collect(&mut roots, def) }
         })
@@ -886,7 +885,7 @@ impl <'a> VM<'a> {
                     stack.push(Int(i));
                 }
                 PushString(s) => {
-                    stack.push(String(s));
+                    stack.push(String(s.inner()));
                 }
                 PushGlobal(i) => {
                     let x = get_global!(self, i);
@@ -1178,8 +1177,7 @@ fn string_append(vm: &VM) {
             let mut s = ::std::string::String::with_capacity(l.len() + r.len());
             s.push_str(l);
             s.push_str(r);
-            let result = vm.intern(s.as_slice());
-            stack.push(String(result));
+            stack.push(String(vm.gc.borrow_mut().alloc(s.as_slice())));
         }
         _ => panic!()
     }
@@ -1595,7 +1593,7 @@ main = \ -> {
     string_append("Hello", " World")
 }"#;
         let mut vm = VM::new();
-        let hello_world = vm.intern("Hello World");
+        let hello_world = vm.gc.borrow_mut().alloc("Hello World");
         let value = run_main(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, String(hello_world));

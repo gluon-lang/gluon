@@ -141,6 +141,11 @@ pub trait Traverseable {
     fn traverse(&self, func: &mut Gc);
 }
 
+impl <'a, T> Traverseable for &'a T
+    where T: Traverseable {
+    fn traverse(&self, gc: &mut Gc) { (**self).traverse(gc); }
+}
+
 impl Traverseable for () {
     fn traverse(&self, _: &mut Gc) { }
 }
@@ -187,7 +192,7 @@ impl Gc {
 
     ///Unsafe since it calls collects if memory needs to be collected
     pub unsafe fn alloc_and_collect<T: ?Sized, R: ?Sized, D>(&mut self, roots: &mut R, mut def: D) -> GcPtr<T>
-        where T: Traverseable, R: Traverseable, D: DataDef<Value=T> + Traverseable {
+        where R: Traverseable, D: DataDef<Value=T> + Traverseable {
         if self.allocated_objects >= self.collect_limit {
             self.collect2(roots, &mut def);
         }
