@@ -1,4 +1,5 @@
 use std::fmt;
+use std::io::BufRead;
 use ast::*;
 use gc::Gc;
 use interner::{Interner, InternedStr};
@@ -145,7 +146,7 @@ pub struct Parser<'a, 'b, PString> {
 }
 
 impl <'a, 'b, PString> Parser<'a, 'b, PString> {
-    pub fn new<F>(interner: &'a mut Interner, gc: &'a mut Gc, input: &'b mut Buffer, make_id: F) -> Parser<'a, 'b, PString> 
+    pub fn new<F>(interner: &'a mut Interner, gc: &'a mut Gc, input: &'b mut BufRead, make_id: F) -> Parser<'a, 'b, PString> 
         where F: FnMut(InternedStr) -> PString + 'static {
         Parser {
             lexer: Lexer::new(interner, gc, input),
@@ -681,7 +682,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
 pub mod tests {
     use super::{Parser, ParseResult};
     use ast::*;
-    use std::old_io::BufReader;
+    use std::io::BufReader;
     use interner::*;
     use interner::tests::*;
     

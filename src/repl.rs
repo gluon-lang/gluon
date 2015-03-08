@@ -1,5 +1,5 @@
-use std::old_io::{BufReader, IoResult};
-use std::old_path::Path;
+use std::io;
+use std::io::BufReadExt;
 
 use EmbedLang::typecheck::*;
 use EmbedLang::compiler::{Assembly, Compiler};
@@ -16,7 +16,7 @@ fn print(vm: &VM) {
 pub fn run() {
     let vm = VM::new();
     vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), Box::new(print));
-    let mut stdin = ::std::old_io::stdin();
+    let stdin = io::stdin();
     for line in stdin.lock().lines() {
         match run_line(&vm, line) {
             Ok(continue_repl) => {
@@ -64,14 +64,14 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
     }
 }
 
-fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
+fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, String> {
     let expr_str = tryf!(line);
     match expr_str.char_at(0) {
         ':' => {
             run_command(vm, expr_str.char_at(1), expr_str[2..].trim())
         }
         _ =>  {
-            let mut buffer = BufReader::new(expr_str.as_bytes());
+            let mut buffer = io::BufReader::new(expr_str.as_bytes());
             let mut expr = try!(parse_expr(&mut buffer, vm));
             let (instructions, lambdas) = {
                 let env = vm.env();
@@ -90,9 +90,10 @@ fn run_line(vm: &VM, line: IoResult<String>) -> Result<bool, String> {
 }
 
 fn load_file(vm: &VM, filename: &str) -> Result<(), String> {
-    use std::old_io::{File, BufferedReader};
+    use std::fs::File;
+    use std::io::BufReader;
     let file = tryf!(File::open(&Path::new(filename)));
-    let mut buffer = BufferedReader::new(file);
+    let mut buffer = BufReader::new(file);
     load_script(vm, &mut buffer)
 }
 

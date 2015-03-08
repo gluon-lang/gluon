@@ -4,6 +4,7 @@ use std::intrinsics::get_tydesc;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
+use std::io::{BufReader, BufRead};
 use ast;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, match_types};
@@ -1187,14 +1188,14 @@ macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{:?}", e))))
 );
 
-pub fn parse_expr(buffer: &mut Buffer, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
+pub fn parse_expr(buffer: &mut BufRead, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
     let mut parser = Parser::new(&mut *interner, &mut *gc, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
     parser.expression().map_err(|err| format!("{:?}", err))
 }
 
-pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::String> {
+pub fn load_script(vm: &VM, buffer: &mut BufRead) -> Result<(), ::std::string::String> {
     use parser::Parser;
 
     let mut module = {
@@ -1218,11 +1219,10 @@ pub fn load_script(vm: &VM, buffer: &mut Buffer) -> Result<(), ::std::string::St
 }
 
 pub fn run_main<'a>(vm: &VM<'a>, s: &str) -> VMResult<Value<'a>> {
-    use std::old_io::BufReader;
     let mut buffer = BufReader::new(s.as_bytes());
     run_buffer_main(vm, &mut buffer)
 }
-pub fn run_buffer_main<'a>(vm: &VM<'a>, buffer: &mut Buffer) -> VMResult<Value<'a>> {
+pub fn run_buffer_main<'a>(vm: &VM<'a>, buffer: &mut BufRead) -> VMResult<Value<'a>> {
     try!(load_script(vm, buffer));
     let v = try!(run_function(vm, "main"));
     Ok(v)
@@ -1241,7 +1241,7 @@ mod tests {
     use super::{VM, run_main, run_function, load_script};
     use super::Value::{Data, Int, String};
     use ast::INT_TYPE;
-    use std::old_io::BufReader;
+    use std::io::BufReader;
     ///Test that the stack is adjusted correctly after executing expressions as statements
     #[test]
     fn stack_for_block() {

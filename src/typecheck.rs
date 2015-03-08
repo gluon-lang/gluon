@@ -1225,7 +1225,7 @@ mod tests {
 
     pub fn parse<F, T>(s: &str, f: F) -> T
         where F: FnOnce(&mut Parser<TcIdent>) -> ParseResult<T> {
-        use std::old_io::BufReader;
+        use std::io::BufReader;
         let mut buffer = BufReader::new(s.as_bytes());
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();

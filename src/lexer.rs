@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::io::{BufRead, ReadExt};
 use std::str::FromStr;
 use std::fmt;
 
@@ -78,7 +79,7 @@ fn is_operator(first_char : char) -> bool {
 }
 
 pub struct Lexer<'a, 'b> {
-    input: &'b mut (Buffer + 'b),
+    input: ::std::io::Chars<&'b mut (BufRead + 'b)>,
     buffer: String,
     peek_c: Option<char>,
     location: Location,
@@ -90,10 +91,11 @@ pub struct Lexer<'a, 'b> {
 
 impl <'a, 'b> Lexer<'a, 'b> {
 
-    pub fn new(interner: &'a mut Interner, gc: &'a mut Gc, s: &'b mut Buffer) -> Lexer<'a, 'b> {
+    pub fn new(interner: &'a mut Interner, gc: &'a mut Gc, s: &'b mut BufRead) -> Lexer<'a, 'b> {
+        let mut chars = s.chars();
         Lexer {
-            peek_c: Some(s.read_char().unwrap()),
-            input: s,
+            peek_c: chars.next().and_then(|result| result.ok()),
+            input: chars,
             buffer: String::new(),
             location: Location { row: 1, column: 1, absolute: 0 },
             tokens: VecDeque::with_capacity(20),
@@ -158,10 +160,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
         match self.peek_c {
             Some(c) => {
                 self.buffer.push(c);
-                self.peek_c = match self.input.read_char() {
-                    Ok(c) => Some(c),
-                    Err(_) => None
-                };
+                self.peek_c = self.input.next().and_then(|result| result.ok());
                 self.location.absolute += 1;
                 self.location.column += 1;
                 if c == '\n' || c == '\r' {
@@ -169,7 +168,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
                     self.location.row += 1;
                     //If this is a \n\r line ending skip the next char without increasing the location
                     if c == '\r' && self.peek_c == Some('\n') {
-                        self.peek_c = self.input.read_char().ok();
+                        self.peek_c = self.input.next().and_then(|result| result.ok());
                     }
                 }
             }
@@ -177,7 +176,6 @@ impl <'a, 'b> Lexer<'a, 'b> {
         }
         result
     }
-
     fn current_str(&self) -> &str {
         self.buffer.as_slice()
     }
@@ -355,15 +353,11 @@ mod tests {
     use lexer::Token::*;
     use gc::Gc;
     use interner::Interner;
-    use std::old_io::BufReader;
-
-    fn buffer(s: &str) -> BufReader {
-        BufReader::new(s.as_bytes())
-    }
+    use std::io::BufReader;
 
     #[test]
     fn lex() {
-        let mut buffer = buffer("main : () -> Int; main = { 1 + 2 }");
+        let mut buffer = BufReader::new("main : () -> Int; main = { 1 + 2 }".as_bytes());
         let mut gc = Gc::new();
         let mut interner = Interner::new();
         let mut lexer = lexer::Lexer::new(&mut interner, &mut gc, &mut buffer);

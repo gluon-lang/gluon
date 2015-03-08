@@ -323,7 +323,7 @@ mod tests {
     use super::{Get, Callable, define_function};
 
     use vm::{VM, VMInt, load_script};
-    use std::old_io::BufReader;
+    use std::io::BufReader;
 
     #[test]
     fn call_function() {
@@ -396,7 +396,7 @@ id = \x -> {
     #[test]
     fn function_object() {
         let vm = VM::new();
-        define_function(&vm, "mul", (box |&:x:VMInt, y:VMInt| x * y) as Box<Fn(VMInt, VMInt) -> VMInt>)
+        define_function(&vm, "mul", (box |x:VMInt, y:VMInt| x * y) as Box<Fn(VMInt, VMInt) -> VMInt>)
             .unwrap_or_else(|err| panic!("{}", err));
 
         let mut f: Callable<(VMInt, VMInt), VMInt> = Get::get_function(&vm, "mul")

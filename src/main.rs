@@ -1,4 +1,4 @@
-#![feature(collections, old_path, old_io)]
+#![feature(collections, old_path, io)]
 #[macro_use]
 extern crate log;
 
