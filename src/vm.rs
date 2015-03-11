@@ -134,7 +134,14 @@ impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
 
 pub struct BytecodeFunction {
     instructions: Vec<Instruction>,
-    inner_functions: Vec<GcPtr<BytecodeFunction>>
+    inner_functions: Vec<GcPtr<BytecodeFunction>>,
+    strings: Vec<InternedStr>
+}
+
+impl BytecodeFunction {
+    pub fn new() -> BytecodeFunction {
+        BytecodeFunction { instructions: Vec::new(), inner_functions: Vec::new(), strings: Vec::new() }
+    }
 }
 
 impl DataDef for BytecodeFunction {
@@ -702,22 +709,22 @@ impl <'a> VM<'a> {
             let global = Global { id: name, typ: typ, value: Cell::new(Bottom) };//TODO Initialize value now?
             self.globals.push(global);
         }
-        let mut functions = Vec::new();
+        let mut function = BytecodeFunction::new();
         for f in anonymous_functions {
-            debug!("Function {} at {}", f.id, functions.len());
+            debug!("Function {} at {}", f.id, function.inner_functions.len());
             fn create_function(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
-                let CompiledFunction { instructions, inner_functions, .. } = f;
+                let CompiledFunction { instructions, inner_functions, strings, .. } = f;
                 let fs = inner_functions.into_iter()
                     .map(|inner| create_function(gc, inner))
                     .collect();
-                gc.alloc(BytecodeFunction { instructions: instructions, inner_functions: fs })
+                gc.alloc(BytecodeFunction { instructions: instructions, inner_functions: fs, strings: strings })
             }
-            functions.push(create_function(&mut self.gc.borrow_mut(), f));
+            function.inner_functions.push(create_function(&mut self.gc.borrow_mut(), f));
         }
         debug!("Run initializer");
         let stack = self.stack.borrow_mut();
         StackFrame::new_scope(stack, 0, None, |frame| {
-            self.execute(frame, &initializer, &functions)
+            self.execute(frame, &initializer, &function)
         }).unwrap();
         debug!("Done initializer");
     }
@@ -749,7 +756,7 @@ impl <'a> VM<'a> {
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> VMResult<Value<'a>> {
         let stack = self.stack.borrow_mut();
         let frame = StackFrame::new_scope(stack, 0, None, |frame| {
-            self.execute(frame, instructions, &[])
+            self.execute(frame, instructions, &BytecodeFunction::new())
         });
         frame.map(|mut frame| {
             if frame.len() > 0 {
@@ -850,7 +857,7 @@ impl <'a> VM<'a> {
             }
             Closure(closure) => {
                 let stack = StackFrame::new(self.stack.borrow_mut(), args, Some(closure));
-                self.execute(stack, &closure.function.instructions, &closure.function.inner_functions)
+                self.execute(stack, &closure.function.instructions, &closure.function)
             }
             x => return Err(format!("Tried to call a non function object: '{:?}'", x))
         };
@@ -867,12 +874,12 @@ impl <'a> VM<'a> {
                 Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
             }
             Function_::Bytecode(ref function) => {
-                self.execute(stack, function.instructions.as_slice(), &function.inner_functions)
+                self.execute(stack, function.instructions.as_slice(), &function)
             }
         }
     }
 
-    pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction], functions: &[GcPtr<BytecodeFunction>]) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction], function: &BytecodeFunction) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         debug!("Enter frame with {:?}", stack.as_slice());
         let mut index = 0;
         while let Some(&instr) = instructions.get(index) {
@@ -885,8 +892,8 @@ impl <'a> VM<'a> {
                 PushInt(i) => {
                     stack.push(Int(i));
                 }
-                PushString(s) => {
-                    stack.push(String(s.inner()));
+                PushString(string_index) => {
+                    stack.push(String(function.strings[string_index].inner()));
                 }
                 PushGlobal(i) => {
                     let x = get_global!(self, i);
@@ -912,7 +919,7 @@ impl <'a> VM<'a> {
                             }
                             Closure(ref closure) => {
                                 stack = try!(stack.scope(args, Some(*closure), |new_stack| {
-                                    self.execute(new_stack, &closure.function.instructions, &closure.function.inner_functions)
+                                    self.execute(new_stack, &closure.function.instructions, &closure.function)
                                 }));
                             }
                             x => return Err(format!("Cannot call {:?}", x))
@@ -1029,7 +1036,7 @@ impl <'a> VM<'a> {
                         let i = stack.stack.len() - n;
                         let (stack_after, args) = stack.stack.values.split_at_mut(i);
                         args.reverse();
-                        let func = functions[fi];
+                        let func = function.inner_functions[fi];
                         Closure(self.new_closure_and_collect(stack_after, func, args))
                     };
                     for _ in range(0, n) {

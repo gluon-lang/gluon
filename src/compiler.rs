@@ -10,7 +10,7 @@ use self::Variable::*;
 pub enum Instruction {
     PushInt(isize),
     PushFloat(f64),
-    PushString(InternedStr),
+    PushString(usize),
     Push(usize),
     PushGlobal(usize),
     Store(usize),
@@ -86,7 +86,8 @@ pub struct CompiledFunction {
     pub id: InternedStr,
     pub typ: Constrained<TcType>,
     pub instructions: Vec<Instruction>,
-    pub inner_functions: Vec<CompiledFunction>
+    pub inner_functions: Vec<CompiledFunction>,
+    pub strings: Vec<InternedStr>
 }
 
 #[derive(PartialEq, Clone)]
@@ -101,12 +102,19 @@ pub struct FunctionEnv<'a> {
     pub instructions: Vec<Instruction>,
     pub free_vars: Vec<InternedStr>,
     pub dictionary: &'a [Constraint],//Typevariable -> Trait
-    pub inner_functions: Vec<CompiledFunction>
+    pub inner_functions: Vec<CompiledFunction>,
+    pub strings: Vec<InternedStr>
 }
 
 impl <'a> FunctionEnv<'a> {
     pub fn new() -> FunctionEnv<'a> {
-        FunctionEnv { instructions: Vec::new(), free_vars: Vec::new(), dictionary: &[], inner_functions: Vec::new() }
+        FunctionEnv {
+            instructions: Vec::new(),
+            free_vars: Vec::new(),
+            dictionary: &[],
+            inner_functions: Vec::new(),
+            strings: Vec::new()
+        }
     }
     fn upvar(&mut self, s: InternedStr) -> usize {
         match self.free_vars.iter().enumerate().find(|t| *t.1 == s).map(|t| t.0) {
@@ -418,7 +426,10 @@ impl <'a> Compiler<'a> {
                     Integer(i) => function.instructions.push(PushInt(i as isize)),
                     Float(f) => function.instructions.push(PushFloat(f)),
                     Bool(b) => function.instructions.push(PushInt(if b { 1 } else { 0 })),
-                    String(s) => function.instructions.push(PushString(s))
+                    String(s) => {
+                        function.instructions.push(PushString(function.strings.len()));
+                        function.strings.push(s);
+                    }
                 }
             }
             Identifier(ref id) => {
@@ -753,12 +764,13 @@ impl <'a> Compiler<'a> {
         }
         let function_index = parent.inner_functions.len();
         parent.instructions.push(MakeClosure(function_index, f.free_vars.len()));
-        let FunctionEnv { instructions, inner_functions, .. } = f;
+        let FunctionEnv { instructions, inner_functions, strings, .. } = f;
         CompiledFunction {
             id: lambda.id.id().clone(),
             typ: Constrained { constraints: Vec::new(), value: lambda.id.typ.clone() },
             instructions: instructions,
-            inner_functions: inner_functions
+            inner_functions: inner_functions,
+            strings: strings
         }
     }
 
