@@ -49,6 +49,10 @@ impl PartialEq for Userdata_ {
     }
 }
 
+impl Traverseable for RefCell<Box<Any>> {
+    fn traverse(&self, _: &mut Gc) { }
+}
+
 pub struct ClosureData<'a> {
     function: GcPtr<BytecodeFunction>,
     upvars: [Cell<Value<'a>>]
@@ -162,10 +166,12 @@ impl <'a> PartialEq<Cell<Value<'a>>> for Value<'a> {
 impl <'a> Traverseable for Value<'a> {
     fn traverse(&self, gc: &mut Gc) {
         match *self {
+            String(ref data) => data.traverse(gc),
             Data(ref data) => data.traverse(gc),
             Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
             TraitObject(ref data) => data.traverse(gc),
+            Userdata(ref data) => data.data.traverse(gc),
             _ => ()
         }
     }
