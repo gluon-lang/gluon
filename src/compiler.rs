@@ -6,39 +6,42 @@ use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
 
+pub type VMIndex = u32;
+pub type VMTag = u32;
+
 #[derive(Debug)]
 pub enum Instruction {
     PushInt(isize),
     PushFloat(f64),
-    PushString(usize),
-    Push(usize),
-    PushGlobal(usize),
-    Store(usize),
-    StoreGlobal(usize),
-    CallGlobal(usize),
-    Construct(usize, usize),
-    GetField(usize),
-    SetField(usize),
+    PushString(VMIndex),
+    Push(VMIndex),
+    PushGlobal(VMIndex),
+    Store(VMIndex),
+    StoreGlobal(VMIndex),
+    CallGlobal(VMIndex),
+    Construct(VMIndex, VMIndex),
+    GetField(VMIndex),
+    SetField(VMIndex),
     Split,
-    TestTag(usize),
-    Jump(usize),
-    CJump(usize),
-    Pop(usize),
-    Slide(usize),
+    TestTag(VMTag),
+    Jump(VMIndex),
+    CJump(VMIndex),
+    Pop(VMIndex),
+    Slide(VMIndex),
 
     //Creates a closure with 'n' upvariables
     //Pops the 'n' values on top of the stack and creates a closure
-    MakeClosure(usize, usize),
-    InstantiateConstrained(usize),
-    PushUpVar(usize),
-    StoreUpVar(usize),
+    MakeClosure(VMIndex, VMIndex),
+    InstantiateConstrained(VMIndex),
+    PushUpVar(VMIndex),
+    StoreUpVar(VMIndex),
 
-    ConstructTraitObject(usize),
-    PushTraitFunction(usize),
+    ConstructTraitObject(VMIndex),
+    PushTraitFunction(VMIndex),
     Unpack,
 
-    PushDictionaryMember(u32, u32),
-    PushDictionary(usize),
+    PushDictionaryMember(VMIndex, VMIndex),
+    PushDictionary(VMIndex),
 
     GetIndex,
     SetIndex,
@@ -61,11 +64,11 @@ impl Copy for Instruction { }
 pub type CExpr = LExpr<TcIdent>;
 
 pub enum Variable<'a> {
-    Stack(usize),
-    Global(usize, &'a [Constraint], &'a TcType),
-    Constructor(usize, usize),
+    Stack(VMIndex),
+    Global(VMIndex, &'a [Constraint], &'a TcType),
+    Constructor(VMTag, VMIndex),
     TraitFunction(&'a TcType),
-    UpVar(usize)
+    UpVar(VMIndex)
 }
 
 pub struct Assembly {
@@ -93,7 +96,7 @@ pub struct CompiledFunction {
 #[derive(PartialEq, Clone)]
 pub struct TraitFunctions {
     //The where the first function of the implemented trait is at
-    pub index: usize,
+    pub index: VMIndex,
     pub trait_name: InternedStr,
     pub impl_type: TcType
 }
@@ -116,12 +119,12 @@ impl <'a> FunctionEnv<'a> {
             strings: Vec::new()
         }
     }
-    fn upvar(&mut self, s: InternedStr) -> usize {
-        match self.free_vars.iter().enumerate().find(|t| *t.1 == s).map(|t| t.0) {
+    fn upvar(&mut self, s: InternedStr) -> VMIndex {
+        match (0..).zip(self.free_vars.iter()).find(|t| *t.1 == s).map(|t| t.0) {
             Some(index) => index,
             None => {
                 self.free_vars.push(s);
-                self.free_vars.len() - 1
+                (self.free_vars.len() - 1) as VMIndex
             }
         }
     }
@@ -136,12 +139,12 @@ pub struct TypeResult<'a, T> {
 
 pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
-    fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<usize>;
-    fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<usize>;
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize>;
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>>;
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize>;
-    fn next_global_index(&self) -> usize;
+    fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<VMIndex>;
+    fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<VMTag>;
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex>;
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>>;
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex>;
+    fn next_global_index(&self) -> VMIndex;
 }
 
 impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
@@ -154,24 +157,24 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
             })
             .or_else(|| outer.find_var(s))
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         let &(ref outer, ref inner) = self;
         inner.find_field(struct_, field)
             .or_else(|| outer.find_field(struct_, field))
     }
 
-    fn find_tag(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
+    fn find_tag(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMTag> {
         let &(ref outer, ref inner) = self;
         inner.find_tag(struct_, field)
             .or_else(|| outer.find_tag(struct_, field))
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
         let &(ref outer, ref inner) = self;
         inner.find_trait_offset(trait_name, trait_type)
             .map(|index| index + outer.next_global_index())
             .or_else(|| outer.find_trait_offset(trait_name, trait_type))
     }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {
         let &(ref outer, ref inner) = self;
         inner.find_trait_function(typ, id)
             .map(|mut result| {
@@ -180,12 +183,12 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
             })
             .or_else(|| outer.find_trait_function(typ, id))
     }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize> {
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex> {
         let &(ref outer, ref inner) = self;
         inner.find_object_function(trait_type, name)
             .or_else(|| outer.find_object_function(trait_type, name))
     }
-    fn next_global_index(&self) -> usize {
+    fn next_global_index(&self) -> VMIndex {
         let &(ref outer, ref inner) = self;
         outer.next_global_index() + inner.next_global_index()
     }
@@ -193,15 +196,14 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
 
 impl CompilerEnv for Module<TcIdent> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
-        self.globals.iter()
-            .enumerate()
+        (0..).zip(self.globals.iter())
             .find(|&(_, f)| f.declaration.name.id() == id)
             .map(|(i, f)| Global(i, f.declaration.typ.constraints.as_slice(), &f.declaration.name.typ))
             .or_else(|| {
                 for d in self.datas.iter() {
-                    let x = d.constructors.iter().enumerate()
+                    let x = (0..).zip(d.constructors.iter())
                         .find(|&(_, ctor)| ctor.name.id() == id)
-                        .map(|(i, ctor)| Constructor(i, ctor.arguments.len()));
+                        .map(|(i, ctor)| Constructor(i, ctor.arguments.len() as VMIndex));
                     if x.is_some() {
                         return x
                     }
@@ -215,41 +217,39 @@ impl CompilerEnv for Module<TcIdent> {
                     .map(|decl| TraitFunction(&decl.name.typ))
             })
     }
-    fn find_field(&self, data_name: &InternedStr, field: &InternedStr) -> Option<usize> {
+    fn find_field(&self, data_name: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         self.datas.iter()
             .find(|d| d.name.id() == data_name)
             .and_then(|d| match &*d.constructors {
                 [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
-                    fields.iter()
-                        .enumerate()
+                    (0..).zip(fields.iter())
                         .find(|&(_, f)| f.name == *field)
                         .map(|(i, _)| i)
                 }
                 _ => None
             })
     }
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
         self.datas.iter()
             .find(|e| e.name.id() == enum_)
-            .map(|e| e.constructors.iter()
-                .enumerate()
+            .map(|e| (0..).zip(e.constructors.iter())
                 .find(|&(_, c)| c.name.id() == ctor_name)
                 .map(|(i, _)| i).unwrap())
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
         let mut offset = self.globals.len();
         self.impls.iter()
             .find(|imp| {
                 offset += imp.globals.len();
                 imp.trait_name.id() == trait_name && match_types(&imp.typ, trait_type)
             })
-            .map(|imp| offset - imp.globals.len())
+            .map(|imp| (offset - imp.globals.len()) as VMIndex)
     }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
-        let mut offset = self.globals.len();
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {
+        let mut offset = self.globals.len() as VMIndex;
         for imp in self.impls.iter() {
             if match_types(&imp.typ, typ) {
-                for (i, func) in imp.globals.iter().enumerate() {
+                for (i, func) in (0..).zip(imp.globals.iter()) {
                     if func.declaration.name.id() == id {
                         return Some(TypeResult {
                             constraints: func.declaration.typ.constraints.as_slice(),
@@ -259,20 +259,20 @@ impl CompilerEnv for Module<TcIdent> {
                     }
                 }
             }
-            offset += imp.globals.len();
+            offset += imp.globals.len() as VMIndex;
         }
         None
     }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize> {
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex> {
         self.traits.iter()
             .find(|trait_| trait_.name.id() == trait_type)
-            .and_then(|trait_| trait_.declarations.iter().enumerate()
+            .and_then(|trait_| (0..).zip(trait_.declarations.iter())
                 .find(|&(_, func)| func.name.id() == name)
                 .map(|(i, _)| i)
             )
     }
-    fn next_global_index(&self) -> usize {
-        self.globals.len() + self.impls.iter().fold(0, |y, i| i.globals.len() + y)
+    fn next_global_index(&self) -> VMIndex {
+        self.globals.len() as VMIndex + self.impls.iter().fold(0, |y, i| i.globals.len() as VMIndex + y)
     }
 }
 
@@ -280,32 +280,32 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
         (*self).find_var(s)
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         (*self).find_field(struct_, field)
     }
 
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
         (*self).find_tag(enum_, ctor_name)
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
         (*self).find_trait_offset(trait_name, trait_type)
     }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {
         (*self).find_trait_function(typ, id)
     }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<usize> {
+    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex> {
         (*self).find_object_function(trait_type, name)
     }
-    fn next_global_index(&self) -> usize {
+    fn next_global_index(&self) -> VMIndex {
         (*self).next_global_index()
     }
 }
 
 pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
-    stack: HashMap<InternedStr, usize>,
+    stack: HashMap<InternedStr, VMIndex>,
     //Stack which holds indexes for where each closure starts its stack variables
-    closure_limits: Vec<usize>,
+    closure_limits: Vec<VMIndex>,
 }
 
 impl <'a> Compiler<'a> {
@@ -338,28 +338,28 @@ impl <'a> Compiler<'a> {
             .or_else(||  self.globals.find_var(s))
     }
 
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         self.globals.find_field(struct_, field)
     }
 
-    fn find_tag(&self, enum_: &InternedStr, constructor: &InternedStr) -> Option<usize> {
+    fn find_tag(&self, enum_: &InternedStr, constructor: &InternedStr) -> Option<VMTag> {
         self.globals.find_tag(enum_, constructor)
     }
 
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<usize>> {
+    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {
         self.globals.find_trait_function(typ, id)
     }
 
     fn new_stack_var(&mut self, s: InternedStr) {
-        let v = self.stack.len();
+        let v = self.stack.len() as VMIndex;
         if self.stack.get(&s).is_some() {
             panic!("Variable shadowing is not allowed")
         }
         self.stack.insert(s, v);
     }
 
-    fn stack_size(&self) -> usize {
-        self.stack.len()
+    fn stack_size(&self) -> VMIndex {
+        self.stack.len() as VMIndex
     }
 
     pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Assembly {
@@ -367,18 +367,18 @@ impl <'a> Compiler<'a> {
         let mut globals = Vec::new();
         let global_offset = self.globals.next_global_index() - module.next_global_index();
         for global in module.globals.iter() {
-            let index = global_offset + globals.len();
+            let index = global_offset + globals.len() as VMIndex;
             globals.push(self.compile_global(&mut initializer, index, global));
         }
         let mut trait_globals = Vec::new();
         for imp in module.impls.iter() {
             trait_globals.push(TraitFunctions {
-                index: global_offset + globals.len(),
+                index: global_offset + globals.len() as VMIndex,
                 trait_name: imp.trait_name.id().clone(),
                 impl_type: imp.typ.clone()
             });
             for f in imp.globals.iter() {
-                let index = global_offset + globals.len();
+                let index = global_offset + globals.len() as VMIndex;
                 globals.push(self.compile_global(&mut initializer, index, f));
             }
         }
@@ -393,7 +393,7 @@ impl <'a> Compiler<'a> {
         }
     }
 
-    pub fn compile_global<'b>(&mut self, initializer: &mut FunctionEnv<'b>, index: usize, function: &'b ast::Global<TcIdent>) -> Binding {
+    pub fn compile_global<'b>(&mut self, initializer: &mut FunctionEnv<'b>, index: VMIndex, function: &'b ast::Global<TcIdent>) -> Binding {
         debug!("-- Compiling {}", function.declaration.name.id());
         initializer.dictionary = function.declaration.typ.constraints.as_slice();
         self.compile(&function.expression, initializer);
@@ -427,7 +427,7 @@ impl <'a> Compiler<'a> {
                     Float(f) => function.instructions.push(PushFloat(f)),
                     Bool(b) => function.instructions.push(PushInt(if b { 1 } else { 0 })),
                     String(s) => {
-                        function.instructions.push(PushString(function.strings.len()));
+                        function.instructions.push(PushString(function.strings.len() as VMIndex));
                         function.strings.push(s);
                     }
                 }
@@ -460,9 +460,9 @@ impl <'a> Compiler<'a> {
                 }
                 let false_jump_index = function.instructions.len();
                 function.instructions.push(Jump(0));
-                function.instructions[jump_index] = CJump(function.instructions.len());
+                function.instructions[jump_index] = CJump(function.instructions.len() as VMIndex);
                 self.compile(&**if_true, function);
-                function.instructions[false_jump_index] = Jump(function.instructions.len());
+                function.instructions[false_jump_index] = Jump(function.instructions.len() as VMIndex);
             }
             Block(ref exprs) => {
                 if exprs.len() != 0 {
@@ -503,11 +503,11 @@ impl <'a> Compiler<'a> {
                 if op.as_slice() == "&&" {
                     self.compile(&**lhs, function);
                     let lhs_end = function.instructions.len();
-                    function.instructions.push(CJump(lhs_end + 3));//Jump to rhs evaluation
+                    function.instructions.push(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
                     function.instructions.push(PushInt(0));
                     function.instructions.push(Jump(0));//lhs false, jump to after rhs
                     self.compile(&**rhs, function);
-                    function.instructions[lhs_end + 2] = Jump(function.instructions.len());//replace jump instruction
+                    function.instructions[lhs_end + 2] = Jump(function.instructions.len() as VMIndex);//replace jump instruction
                 }
                 else if op.as_slice() == "||" {
                     self.compile(&**lhs, function);
@@ -515,10 +515,10 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(CJump(0));
                     self.compile(&**rhs, function);
                     function.instructions.push(Jump(0));
-                    function.instructions[lhs_end] = CJump(function.instructions.len());
+                    function.instructions[lhs_end] = CJump(function.instructions.len() as VMIndex);
                     function.instructions.push(PushInt(1));
                     let end = function.instructions.len();
-                    function.instructions[end - 2] = Jump(end);
+                    function.instructions[end - 2] = Jump(end as VMIndex);
                 }
                 else {
                     self.compile(&**lhs, function);
@@ -607,7 +607,7 @@ impl <'a> Compiler<'a> {
                         _ => ()
                     }
                 }
-                function.instructions.push(CallGlobal(args.len()));
+                function.instructions.push(CallGlobal(args.len() as VMIndex));
             }
             While(ref pred, ref expr) => {
                 //jump #test
@@ -619,9 +619,9 @@ impl <'a> Compiler<'a> {
                 let pre_jump_index = function.instructions.len();
                 function.instructions.push(Jump(0));
                 self.compile(&**expr, function);
-                function.instructions[pre_jump_index] = Jump(function.instructions.len());
+                function.instructions[pre_jump_index] = Jump(function.instructions.len() as VMIndex);
                 self.compile(&**pred, function);
-                function.instructions.push(CJump(pre_jump_index + 1));
+                function.instructions.push(CJump(pre_jump_index as VMIndex + 1));
             }
             Assign(ref lhs, ref rhs) => {
                 match ***lhs {
@@ -695,14 +695,14 @@ impl <'a> Compiler<'a> {
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     match alt.pattern {
                         ConstructorPattern(_, ref args) => {
-                            function.instructions[start_index] = CJump(function.instructions.len());
+                            function.instructions[start_index] = CJump(function.instructions.len() as VMIndex);
                             function.instructions.push(Split);
                             for arg in args.iter() {
                                 self.new_stack_var(arg.id().clone());
                             }
                         }
                         IdentifierPattern(ref id) => {
-                            function.instructions[start_index] = Jump(function.instructions.len());
+                            function.instructions[start_index] = Jump(function.instructions.len() as VMIndex);
                             self.new_stack_var(id.id().clone());
                         }
                     }
@@ -720,14 +720,14 @@ impl <'a> Compiler<'a> {
                     }
                 }
                 for &index in end_jumps.iter() {
-                    function.instructions[index] = Jump(function.instructions.len());
+                    function.instructions[index] = Jump(function.instructions.len() as VMIndex);
                 }
             }
             Array(ref a) => {
                 for expr in a.expressions.iter() {
                     self.compile(expr, function);
                 }
-                function.instructions.push(Construct(0, a.expressions.len()));
+                function.instructions.push(Construct(0, a.expressions.len() as VMIndex));
             }
             ArrayAccess(ref array, ref index) => {
                 self.compile(&**array, function);
@@ -742,7 +742,7 @@ impl <'a> Compiler<'a> {
     }
 
     fn compile_lambda(&mut self, lambda: &LambdaStruct<TcIdent>, parent: &mut FunctionEnv) -> CompiledFunction {
-        self.closure_limits.push(self.stack.len());
+        self.closure_limits.push(self.stack.len() as VMIndex);
         for arg in lambda.arguments.iter() {
             self.new_stack_var(*arg.id());
         }
@@ -762,8 +762,8 @@ impl <'a> Compiler<'a> {
                 _ => panic!("Free variables can only be on the stack or another upvar")
             }
         }
-        let function_index = parent.inner_functions.len();
-        parent.instructions.push(MakeClosure(function_index, f.free_vars.len()));
+        let function_index = parent.inner_functions.len() as VMIndex;
+        parent.instructions.push(MakeClosure(function_index, f.free_vars.len() as VMIndex));
         let FunctionEnv { instructions, inner_functions, strings, .. } = f;
         CompiledFunction {
             id: lambda.id.id().clone(),
@@ -784,12 +784,12 @@ impl <'a> Compiler<'a> {
         let mut dict_size = 0;
         for (i, constraint) in constraints.iter().enumerate() {
             let real_type = real_types[constraint.type_variable];
-            dict_size += self.add_dictionary(i, constraint, real_type, function);
+            dict_size += self.add_dictionary(i as VMIndex, constraint, real_type, function);
         }
         function.instructions.push(Construct(0, dict_size));
     }
 
-    fn add_dictionary(&self, i: usize, constraint: &Constraint, real_type: &TcType, function: &mut FunctionEnv) -> usize {
+    fn add_dictionary(&self, i: VMIndex, constraint: &Constraint, real_type: &TcType, function: &mut FunctionEnv) -> VMIndex {
         match real_type {
             &TypeVariable(_) => {
                 debug!("In dict");

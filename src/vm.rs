@@ -191,7 +191,7 @@ impl <'a> Deref for DataStruct<'a> {
 }
 
 pub struct Data_<'a> {
-    tag: usize,
+    tag: VMTag,
     fields: [Cell<Value<'a>>]
 }
 
@@ -347,7 +347,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
-                Some(Variable::Global(index, g.typ.constraints.as_slice(), &g.typ.value))
+                Some(Variable::Global(index as VMIndex, g.typ.constraints.as_slice(), &g.typ.value))
             }
             Some(&TraitFn(trait_index, function_index)) => {
                 self.type_infos.traits
@@ -365,31 +365,31 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                 self.type_infos.datas.values()
                     .flat_map(|ctors| ctors.iter().enumerate())
                     .find(|ctor| ctor.1.name.id() == id)
-                    .map(|(i, ctor)| Variable::Constructor(i, ctor.arguments.len()))
+                    .map(|(i, ctor)| Variable::Constructor(i as VMTag, ctor.arguments.len() as VMIndex))
             }
         }
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<usize> {
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         panic!("find field {} {}", struct_, field)
     }
 
-    fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<usize> {
+    fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
         match self.type_infos.datas.get(data_name) {
             Some(ctors) => {
                 ctors.iter()
                     .enumerate()
                     .find(|&(_, c)| c.name.id() == ctor_name)
-                    .map(|(i, _)| i)
+                    .map(|(i, _)| i as VMIndex)
             }
             None => None
         }
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<usize> {
+    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
         self.trait_indexes
             .find(|func| func.trait_name == *trait_name && match_types(&func.impl_type, trait_type))
-            .map(|(_, func)| func.index)
+            .map(|(_, func)| func.index as VMIndex)
     }
-    fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<usize>> {
+    fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<VMIndex>> {
         self.names.get(fn_name).and_then(|named| {
             match *named {
                 TraitFn(ref trait_name, _) => {
@@ -397,7 +397,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                         (Some(function_offset), Some(trait_offset)) => {
                             debug!("{} {} {}", function_offset, trait_offset, self.globals.len());
                             let global_index = function_offset + trait_offset;
-                            let global = &self.globals[global_index];
+                            let global = &self.globals[global_index as usize];
                             Some(TypeResult {
                                 constraints: global.typ.constraints.as_slice(),
                                 typ: &global.typ.value,
@@ -411,18 +411,18 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             }
         })
     }
-    fn find_object_function(&self, trait_name: &InternedStr, fn_name: &InternedStr) -> Option<usize> {
+    fn find_object_function(&self, trait_name: &InternedStr, fn_name: &InternedStr) -> Option<VMIndex> {
         self.type_infos.traits
             .get(trait_name)
             .and_then(|trait_info| 
                 trait_info.iter()
                     .enumerate()
                     .find(|&(_, tup)| tup.0 == *fn_name)
-                    .map(|(i, _)| i)
+                    .map(|(i, _)| i as VMIndex)
             )
     }
-    fn next_global_index(&self) -> usize {
-        self.globals.len()
+    fn next_global_index(&self) -> VMIndex {
+        self.globals.len() as VMIndex
     }
 }
 
@@ -461,7 +461,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
 
 pub struct Stack<'a> {
     values: Vec<Value<'a>>,
-    frames: Vec<(usize, Option<GcPtr<ClosureData<'a>>>)>
+    frames: Vec<(VMIndex, Option<GcPtr<ClosureData<'a>>>)>
 }
 
 impl <'a, 'b, 'c> Stack<'a> {
@@ -488,19 +488,19 @@ impl <'a, 'b, 'c> Stack<'a> {
         self.values.push(v)
     }
 
-    pub fn len(&self) -> usize {
-        self.values.len()
+    pub fn len(&self) -> VMIndex {
+        self.values.len() as VMIndex
     }
 
 }
 
 pub struct StackFrame<'a: 'b, 'b> {
     stack: RefMut<'b, Stack<'a>>,
-    offset: usize,
+    offset: VMIndex,
     upvars: Option<GcPtr<ClosureData<'a>>>
 }
 impl <'a: 'b, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: RefMut<'b, Stack<'a>>, args: usize, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
+    pub fn new(v: RefMut<'b, Stack<'a>>, args: VMIndex, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
         StackFrame { stack: v, offset: offset, upvars: upvars }
     }
@@ -511,7 +511,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         StackFrame { stack: stack, offset: offset, upvars: None }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> VMIndex {
         self.stack.len() - self.offset
     }
 
@@ -527,21 +527,26 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.pop()
     }
 
-    fn get_upvar(&self, index: usize) -> Value<'a> {
+    fn set_upvar(&self, index: VMIndex, v: Value<'a>) {
         let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
-        upvars.upvars[index].get()
+        upvars.upvars[index as usize].set(v)
+    }
+
+    fn get_upvar(&self, index: VMIndex) -> Value<'a> {
+        let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
+        upvars.upvars[index as usize].get()
     }
 
     fn as_slice(&self) -> &[Value<'a>] {
-        &self.stack.values[self.offset..]
+        &self.stack.values[self.offset as usize..]
     }
 
     fn as_mut_slice(&mut self) -> &mut [Value<'a>] {
-        &mut self.stack.values[self.offset..]
+        &mut self.stack.values[self.offset as usize..]
     }
 
     fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
-            , args: usize
+            , args: VMIndex
             , upvars: Option<GcPtr<ClosureData<'a>>>
             , f: F) -> Result<StackFrame<'a, 'b>, E> 
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
@@ -551,7 +556,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         Ok(stack)
     }
     fn scope<E, F>(self
-            , args: usize
+            , args: VMIndex
             , new_upvars: Option<GcPtr<ClosureData<'a>>>
             , f: F) -> Result<StackFrame<'a, 'b>, E>
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
@@ -562,7 +567,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         Ok(StackFrame { stack: new_stack.stack, offset: offset, upvars: upvars })
     }
 
-    fn frame(mut stack: RefMut<'b, Stack<'a>>, args: usize, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
+    fn frame(mut stack: RefMut<'b, Stack<'a>>, args: VMIndex, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
         assert!(stack.len() >= args);
         let offset = stack.len() - args;
         stack.frames.push((offset, upvars));
@@ -573,30 +578,30 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
 impl <'a, 'b> Deref for StackFrame<'a, 'b> {
     type Target = [Value<'a>];
     fn deref(&self) -> &[Value<'a>] {
-        &self.stack.values[self.offset..]
+        &self.stack.values[self.offset as usize..]
     }
 }
 
 impl <'a, 'b> DerefMut for StackFrame<'a, 'b> {
     fn deref_mut(&mut self) -> &mut [Value<'a>] {
-        &mut self.stack.values[self.offset..]
+        &mut self.stack.values[self.offset as usize..]
     }
 }
 
-impl <'a, 'b> Index<usize> for StackFrame<'a, 'b> {
+impl <'a, 'b> Index<VMIndex> for StackFrame<'a, 'b> {
     type Output = Value<'a>;
-    fn index(&self, index: &usize) -> &Value<'a> {
-        &self.stack.values[self.offset + *index]
+    fn index(&self, index: &VMIndex) -> &Value<'a> {
+        &self.stack.values[(self.offset + *index) as usize]
     }
 }
-impl <'a, 'b> IndexMut<usize> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, index: &usize) -> &mut Value<'a> {
-        &mut self.stack.values[self.offset + *index]
+impl <'a, 'b> IndexMut<VMIndex> for StackFrame<'a, 'b> {
+    fn index_mut(&mut self, index: &VMIndex) -> &mut Value<'a> {
+        &mut self.stack.values[(self.offset + *index) as usize]
     }
 }
 
 struct Def<'a:'b, 'b> {
-    tag: usize,
+    tag: VMTag,
     elems: &'b mut [Value<'a>]
 }
 impl <'a, 'b> DataDef for Def<'a, 'b> {
@@ -678,7 +683,7 @@ impl <'a> VM<'a> {
         let mut names = self.names.borrow_mut();
         for trait_index in indexes.into_iter() {
             //First index of this impl's functions
-            let start_index = trait_index.index - self.globals.len();
+            let start_index = trait_index.index as usize - self.globals.len();
             let id = globals[start_index].name;
             let is_registered = match names.get(&id) {
                 Some(&TraitFn(..)) => true,
@@ -823,10 +828,10 @@ impl <'a> VM<'a> {
         })
     }
 
-    fn new_data(&self, tag: usize, fields: &mut [Value<'a>]) -> Value<'a> {
+    fn new_data(&self, tag: VMTag, fields: &mut [Value<'a>]) -> Value<'a> {
         Data(DataStruct { value: self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields })})
     }
-    fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: usize, fields: &mut [Value<'a>]) -> DataStruct<'a> {
+    fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> DataStruct<'a> {
         DataStruct { value: self.alloc(stack, Def { tag: tag, elems: fields }) }
     }
     fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &mut [Value<'a>]) -> GcPtr<ClosureData<'a>> {
@@ -848,7 +853,7 @@ impl <'a> VM<'a> {
         })
     }
 
-    pub fn call_function<'b, 'c>(&self, args: usize, global: &Global<'a>) -> VMResult<Value<'a>>  {
+    pub fn call_function<'b, 'c>(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>>  {
         debug!("Call function {:?}", global);
         let stack = match global.value.get() {
             Function(ptr) => {
@@ -893,10 +898,10 @@ impl <'a> VM<'a> {
                     stack.push(Int(i));
                 }
                 PushString(string_index) => {
-                    stack.push(String(function.strings[string_index].inner()));
+                    stack.push(String(function.strings[string_index as usize].inner()));
                 }
                 PushGlobal(i) => {
-                    let x = get_global!(self, i);
+                    let x = get_global!(self, i as usize);
                     stack.push(x);
                 }
                 PushFloat(f) => stack.push(Float(f)),
@@ -905,7 +910,7 @@ impl <'a> VM<'a> {
                 }
                 StoreGlobal(i) => {
                     let v = stack.pop();
-                    self.globals[i].value.set(v);
+                    self.globals[i as usize].value.set(v);
                 }
                 CallGlobal(args) => {
                     let function_index = stack.len() - 1 - args;
@@ -941,7 +946,7 @@ impl <'a> VM<'a> {
                     }
                 }
                 Construct(tag, args) => {
-                    let arg_start = stack.len() - args;
+                    let arg_start = (stack.len() - args) as usize;
                     let d = self.new_data(tag, &mut stack.as_mut_slice()[arg_start..]);
                     for _ in range(0, args) {
                         stack.pop();
@@ -951,7 +956,7 @@ impl <'a> VM<'a> {
                 GetField(i) => {
                     match stack.pop() {
                         Data(data) => {
-                            let v = data.fields[i].get();
+                            let v = data.fields[i as usize].get();
                             stack.push(v);
                         }
                         x => return Err(format!("GetField on {:?}", x))
@@ -962,7 +967,7 @@ impl <'a> VM<'a> {
                     let data = stack.pop();
                     match data {
                         Data(data) => {
-                            data.fields[i].set(value);
+                            data.fields[i as usize].set(value);
                         }
                         _ => return Err("Op SetField called on non data type".to_string())
                     }
@@ -985,14 +990,14 @@ impl <'a> VM<'a> {
                     }
                 }
                 Jump(i) => {
-                    index = i;
+                    index = i as usize;
                     continue
                 }
                 CJump(i) => {
                     match stack.pop() {
                         Int(0) => (),
                         _ => {
-                            index = i;
+                            index = i as usize;
                             continue
                         }
                     }
@@ -1034,9 +1039,9 @@ impl <'a> VM<'a> {
                 MakeClosure(fi, n) => {
                     let closure = {
                         let i = stack.stack.len() - n;
-                        let (stack_after, args) = stack.stack.values.split_at_mut(i);
+                        let (stack_after, args) = stack.stack.values.split_at_mut(i as usize);
                         args.reverse();
-                        let func = function.inner_functions[fi];
+                        let func = function.inner_functions[fi as usize];
                         Closure(self.new_closure_and_collect(stack_after, func, args))
                     };
                     for _ in range(0, n) {
@@ -1047,7 +1052,7 @@ impl <'a> VM<'a> {
                 InstantiateConstrained(gi) => {
                     let closure = {
                         let dict = stack.pop();
-                        let func = match get_global!(self, gi) {
+                        let func = match get_global!(self, gi as usize) {
                             Closure(closure) => closure.function,
                             _ => panic!()
                         };
@@ -1061,7 +1066,7 @@ impl <'a> VM<'a> {
                 }
                 StoreUpVar(i) => {
                     let v = stack.pop();
-                    stack.upvars.expect("Upvar").upvars[i].set(v);
+                    stack.set_upvar(i, v);
                 }
                 ConstructTraitObject(i) => {
                     let mut v = stack.pop();
@@ -1072,8 +1077,8 @@ impl <'a> VM<'a> {
                 PushTraitFunction(i) => {
                     let func = match stack.top() {
                         &TraitObject(ref object) => {
-                            debug!("PushTraitFunction {:?}", self.globals[object.tag + i]);
-                            get_global!(self, object.tag + i)
+                            debug!("PushTraitFunction {:?}", self.globals[(object.tag + i) as usize]);
+                            get_global!(self, (object.tag + i) as usize)
                         }
                         _ => return Err(format!("Op PushTraitFunction called on object other than a TraitObject"))
                     };
@@ -1100,7 +1105,7 @@ impl <'a> VM<'a> {
                 PushDictionary(index) => {
                     let dict = stack.get_upvar(0).clone();
                     let dict = match dict {
-                        Data(data) => data.fields[index].get(),
+                        Data(data) => data.fields[index as usize].get(),
                         _ => panic!()
                     };
                     stack.push(dict);
