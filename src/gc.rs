@@ -15,11 +15,31 @@ pub struct Gc {
     collect_limit: usize
 }
 
-pub trait DataDef {
+pub unsafe trait DataDef {
     type Value: ?Sized;
     fn size(&self) -> usize;
     fn initialize(self, ptr: *mut <Self as DataDef>::Value);
     fn make_ptr(&self, ptr: *mut ()) -> *mut <Self as DataDef>::Value;
+}
+
+///Datadefinition that moves its value directly into the pointer
+///useful for sized types
+pub struct Move<T>(pub T);
+
+unsafe impl <T> DataDef for Move<T> {
+    type Value = T;
+    fn size(&self) -> usize {
+        use std::mem::size_of;
+        size_of::<T>()
+    }
+    fn initialize(self, result: *mut T) {
+        unsafe {
+            ::std::ptr::write(result, self.0);
+        }
+    }
+    fn make_ptr(&self, ptr: *mut ()) -> *mut T {
+        ptr as *mut T
+    }
 }
 
 #[derive(Debug)]
@@ -347,7 +367,7 @@ mod tests {
     struct Def<'a> {
         elems: &'a [Value]
     }
-    impl <'a> DataDef for Def<'a> {
+    unsafe impl <'a> DataDef for Def<'a> {
         type Value = Vec<Value>;
         fn size(&self) -> usize {
             use std::mem::size_of;

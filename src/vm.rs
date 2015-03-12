@@ -13,7 +13,7 @@ use ast::TypeEnum::*;
 use compiler::*;
 use compiler::Instruction::*;
 use interner::{Interner, InternedStr};
-use gc::{Gc, GcPtr, Traverseable, DataDef};
+use gc::{Gc, GcPtr, Traverseable, DataDef, Move};
 use fixed::*;
 
 use self::Named::*;
@@ -37,7 +37,7 @@ pub struct Userdata_ {
 
 impl Userdata_ {
     pub fn new<T: 'static>(vm: &VM, v: T) -> Userdata_ {
-        Userdata_ { data: vm.gc.borrow_mut().alloc(UserDataDef(v)) }
+        Userdata_ { data: vm.gc.borrow_mut().alloc(Move(RefCell::new(box v as Box<Any>))) }
     }
     fn ptr(&self) -> *const () {
         (&*self.data as *const RefCell<Box<Any>>) as *const ()
@@ -46,40 +46,6 @@ impl Userdata_ {
 impl PartialEq for Userdata_ {
     fn eq(&self, o: &Userdata_) -> bool {
         self.ptr() == o.ptr()
-    }
-}
-
-struct UserDataDef<T>(T);
-
-impl <T: 'static> DataDef for UserDataDef<T> {
-    type Value = RefCell<Box<Any>>;
-    fn size(&self) -> usize {
-        use std::mem::size_of;
-        size_of::< <Self as DataDef>::Value>()
-    }
-    fn initialize(self, result: *mut RefCell<Box<Any>>) {
-        unsafe {
-            ::std::ptr::write(result, RefCell::new(box self.0 as Box<Any>));
-        }
-    }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut RefCell<Box<Any>> {
-        ptr as *mut _
-    }
-}
-
-impl <'a> DataDef for Function_<'a> {
-    type Value = Function_<'a>;
-    fn size(&self) -> usize {
-        use std::mem::size_of;
-        size_of::< <Self as DataDef>::Value>()
-    }
-    fn initialize(self, result: *mut Function_<'a>) {
-        unsafe {
-            ::std::ptr::write(result, self);
-        }
-    }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut Function_<'a> {
-        ptr as *mut _
     }
 }
 
@@ -108,7 +74,7 @@ impl <'a, 'b> Traverseable for ClosureDataDef<'a, 'b> {
         self.1.traverse(gc);
     }
 }
-impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
+unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
     type Value = ClosureData<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
@@ -144,55 +110,27 @@ impl BytecodeFunction {
     }
 }
 
-impl DataDef for BytecodeFunction {
-    type Value = BytecodeFunction;
-    fn size(&self) -> usize {
-        use std::mem::size_of;
-        size_of::< <Self as DataDef>::Value>()
-    }
-    fn initialize(self, result: *mut BytecodeFunction) {
-        unsafe {
-            ::std::ptr::write(result, self);
-        }
-    }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut BytecodeFunction {
-        ptr as *mut _
-    }
-}
-
 impl Traverseable for BytecodeFunction {
     fn traverse(&self, gc: &mut Gc) {
         self.inner_functions.traverse(gc);
     }
 }
-impl <'a, 'b> Traverseable for (GcPtr<BytecodeFunction>, &'b [Value<'a>]) {
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc);
-        self.1.traverse(gc);
-    }
+
+pub struct DataStruct<'a> {
+    tag: VMTag,
+    fields: [Cell<Value<'a>>]
 }
 
-#[derive(Copy, Clone)]
-pub struct DataStruct<'a> {
-    value: GcPtr<Data_<'a>>
+impl <'a> Traverseable for DataStruct<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.fields.traverse(gc);
+    }
 }
 
 impl <'a> PartialEq for DataStruct<'a> {
     fn eq(&self, other: &DataStruct<'a>) -> bool {
         self.tag == other.tag && self.fields == other.fields
     }
-}
-
-impl <'a> Deref for DataStruct<'a> {
-    type Target = Data_<'a>;
-    fn deref(&self) -> &Data_<'a> {
-        &*self.value
-    }
-}
-
-pub struct Data_<'a> {
-    tag: VMTag,
-    fields: [Cell<Value<'a>>]
 }
 
 pub type VMInt = isize;
@@ -202,10 +140,10 @@ pub enum Value<'a> {
     Int(VMInt),
     Float(f64),
     String(GcPtr<str>),
-    Data(DataStruct<'a>),
+    Data(GcPtr<DataStruct<'a>>),
     Function(GcPtr<Function_<'a>>),
     Closure(GcPtr<ClosureData<'a>>),
-    TraitObject(DataStruct<'a>),
+    TraitObject(GcPtr<DataStruct<'a>>),
     Userdata(Userdata_),
     Bottom//Special value used to mark that a global was used before it was initialized
 }
@@ -221,19 +159,13 @@ impl <'a> PartialEq<Cell<Value<'a>>> for Value<'a> {
     }
 }
 
-impl <'a> Traverseable for Data_<'a> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.fields.traverse(gc);
-    }
-}
-
 impl <'a> Traverseable for Value<'a> {
     fn traverse(&self, gc: &mut Gc) {
         match *self {
             Data(ref data) => data.traverse(gc),
             Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
-            TraitObject(ref data) => data.value.traverse(gc),
+            TraitObject(ref data) => data.traverse(gc),
             _ => ()
         }
     }
@@ -464,7 +396,7 @@ pub struct Stack<'a> {
     frames: Vec<(VMIndex, Option<GcPtr<ClosureData<'a>>>)>
 }
 
-impl <'a, 'b, 'c> Stack<'a> {
+impl <'a> Stack<'a> {
 
     fn new() -> Stack<'a> {
         Stack { values: Vec::new(), frames: Vec::new() }
@@ -604,13 +536,13 @@ struct Def<'a:'b, 'b> {
     tag: VMTag,
     elems: &'b mut [Value<'a>]
 }
-impl <'a, 'b> DataDef for Def<'a, 'b> {
-    type Value = Data_<'a>;
+unsafe impl <'a, 'b> DataDef for Def<'a, 'b> {
+    type Value = DataStruct<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
         size_of::<usize>() + size_of::<Value<'a>>() * self.elems.len()
     }
-    fn initialize(self, result: *mut Data_<'a>) {
+    fn initialize(self, result: *mut DataStruct<'a>) {
         let result = unsafe { &mut *result };
         result.tag = self.tag;
         for (field, value) in result.fields.iter().zip(self.elems.iter()) {
@@ -619,7 +551,7 @@ impl <'a, 'b> DataDef for Def<'a, 'b> {
             }
         }
     }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut Data_<'a> {
+    fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {
         unsafe {
             use std::raw::Slice;
             let x = Slice { data: &*ptr, len: self.elems.len() };
@@ -722,7 +654,7 @@ impl <'a> VM<'a> {
                 let fs = inner_functions.into_iter()
                     .map(|inner| create_function(gc, inner))
                     .collect();
-                gc.alloc(BytecodeFunction { instructions: instructions, inner_functions: fs, strings: strings })
+                gc.alloc(Move(BytecodeFunction { instructions: instructions, inner_functions: fs, strings: strings }))
             }
             function.inner_functions.push(create_function(&mut self.gc.borrow_mut(), f));
         }
@@ -781,7 +713,7 @@ impl <'a> VM<'a> {
         let global = Global {
             id: id,
             typ: Constrained { constraints: Vec::new(), value: FunctionType(args, box return_type) },
-            value: Cell::new(Function(self.gc.borrow_mut().alloc(Function_::Extern(f))))
+            value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(Function_::Extern(f)))))
         };
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(global);
@@ -829,10 +761,10 @@ impl <'a> VM<'a> {
     }
 
     fn new_data(&self, tag: VMTag, fields: &mut [Value<'a>]) -> Value<'a> {
-        Data(DataStruct { value: self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields })})
+        Data(self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields }))
     }
-    fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> DataStruct<'a> {
-        DataStruct { value: self.alloc(stack, Def { tag: tag, elems: fields }) }
+    fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> GcPtr<DataStruct<'a>> {
+       self.alloc(stack, Def { tag: tag, elems: fields })
     }
     fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &mut [Value<'a>]) -> GcPtr<ClosureData<'a>> {
         self.alloc(stack, ClosureDataDef(func, &*fields))
@@ -853,7 +785,7 @@ impl <'a> VM<'a> {
         })
     }
 
-    pub fn call_function<'b, 'c>(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>>  {
+    pub fn call_function(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>>  {
         debug!("Call function {:?}", global);
         let stack = match global.value.get() {
             Function(ptr) => {
@@ -868,7 +800,7 @@ impl <'a> VM<'a> {
         };
         stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
     }
-    fn execute_function<'b, 'c>(&'b self, stack: StackFrame<'a, 'b>, function: &Function_<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &Function_<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         match *function {
             Function_::Extern(ref func) => {
                 //Make sure that the stack is not borrowed during the external function call
@@ -1728,7 +1660,7 @@ mul = \x y -> {
 }
 ";
     
-        fn rust_fn<'a, 'b, 'c>(vm: &VM<'a>) {
+        fn rust_fn<'a>(vm: &VM<'a>) {
             match vm.pop() {
                 Int(i) => {
                     vm.push(Int(i));

@@ -45,7 +45,7 @@ pub struct Interner {
     indexes: HashMap<&'static str, InternedStr>
 }
 
-impl <'a> DataDef for &'a str {
+unsafe impl <'a> DataDef for &'a str {
     type Value = str;
     fn size(&self) -> usize {
         self.len()
