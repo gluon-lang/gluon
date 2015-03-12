@@ -54,7 +54,7 @@ pub fn no_loc<T>(x: T) -> Located<T> {
     located(Location::eof(), x)
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType_ {
     StringType,
     IntType,
@@ -62,8 +62,6 @@ pub enum BuiltinType_ {
     BoolType,
     UnitType
 }
-
-impl Copy for BuiltinType_ { }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum TypeEnum<Id> {
@@ -78,15 +76,13 @@ pub enum TypeEnum<Id> {
 
 pub type VMType = TypeEnum<InternedStr>;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum LiteralStruct {
     Integer(i64),
     Float(f64),
     String(InternedStr),
     Bool(bool)
 }
-
-impl Copy for LiteralStruct { }
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id> {

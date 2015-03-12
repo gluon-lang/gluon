@@ -8,7 +8,7 @@ use interner::{Interner, InternedStr};
 
 use self::Token::*;
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub enum Token {
     TInteger(i64),
     TFloat(f64),
@@ -46,16 +46,12 @@ pub enum Token {
     TError(&'static str)
 }
 
-impl Copy for Token { }
-
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Location {
     pub column : i32,
     pub row : i32,
     pub absolute : i32
 }
-
-impl Copy for Location { }
 
 impl Location {
     pub fn eof() -> Location {

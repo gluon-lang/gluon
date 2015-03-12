@@ -9,7 +9,7 @@ use self::Variable::*;
 pub type VMIndex = u32;
 pub type VMTag = u32;
 
-#[derive(Debug)]
+#[derive(Copy, Debug)]
 pub enum Instruction {
     PushInt(isize),
     PushFloat(f64),
@@ -58,8 +58,6 @@ pub enum Instruction {
     FloatLT,
     FloatEQ,
 }
-
-impl Copy for Instruction { }
 
 pub type CExpr = LExpr<TcIdent>;
 

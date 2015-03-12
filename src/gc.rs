@@ -341,11 +341,10 @@ mod tests {
 
     use self::Value::*;
 
+    #[derive(Copy)]
     struct Data_ {
         fields: GcPtr<Vec<Value>>
     }
-
-    impl Copy for Data_ { }
 
     impl Deref for Data_ {
         type Target = Vec<Value>;
@@ -384,13 +383,11 @@ mod tests {
         }
     }
 
-    #[derive(PartialEq, Debug)]
+    #[derive(Copy, PartialEq, Debug)]
     enum Value {
         Int(i32),
         Data(Data_)
     }
-
-    impl Copy for Value { }
 
     impl Traverseable for Vec<Value> {
         fn traverse(&self, gc: &mut Gc) {
