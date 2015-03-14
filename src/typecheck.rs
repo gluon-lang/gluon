@@ -465,10 +465,15 @@ impl <'a> Typecheck<'a> {
         debug!("Typecheck global {} :: {:?}", global.declaration.name.id(), global.declaration.name.typ);
         self.stack.clear();
         self.subs.clear();
+
+        //Cache the generic -> variable mapping for the type of this function
+        let mut variables = HashMap::new();
+        ::std::mem::swap(&mut variables, &mut self.subs.variables);
+
         let (real_type, inferred_type) = match (&global.declaration.name.typ, &mut global.expression) {
             (&FunctionType(ref arg_types, ref return_type), &mut ast::Located { value: ast::Lambda(ref mut lambda), location }) => {
                 for (typ, arg) in arg_types.iter().zip(lambda.arguments.iter()) {
-                    let typ = self.subs.instantiate(typ);
+                    let typ = self.subs.instantiate_(typ);
                     debug!("{} {:?}", arg.name, typ);
                     self.stack_var(arg.name.clone(), typ);
                 }
@@ -484,7 +489,8 @@ impl <'a> Typecheck<'a> {
                         }
                     }
                 }
-                let real_type = self.subs.instantiate(&**return_type);
+                let real_type = self.subs.instantiate_(&**return_type);
+                ::std::mem::swap(&mut variables, &mut self.subs.variables);
                 let inferred_type = match self.typecheck(&mut *lambda.body) {
                     Ok(typ) => typ,
                     Err(err) => {
@@ -496,7 +502,8 @@ impl <'a> Typecheck<'a> {
                 (real_type, inferred_type)
             }
             (generic_type, expr) => {
-                let real_type = self.subs.instantiate(generic_type);
+                let real_type = self.subs.instantiate_(generic_type);
+                ::std::mem::swap(&mut variables, &mut self.subs.variables);
                 let inferred_type = match self.typecheck(expr) {
                     Ok(typ) => typ,
                     Err(err) => {
@@ -508,7 +515,7 @@ impl <'a> Typecheck<'a> {
             }
         };
         match self.merge(real_type, inferred_type) {
-            Ok(_) => self.replace_vars(&mut global.expression),
+            Ok(_) => self.replace_vars(&variables, &mut global.expression),
             Err(err) => {
                 debug!("End {} ==> {:?}", global.declaration.name.id(), err);
                 self.errors.error(ast::Located { location: global.expression.location, value: err });
@@ -516,7 +523,12 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn replace_vars(&mut self, expr: &mut ast::LExpr<TcIdent>) {
+    fn replace_vars(&mut self, variables: &HashMap<InternedStr, u32>, expr: &mut ast::LExpr<TcIdent>) {
+        //Insert all type variables in the type declaration so that they get replaced by their
+        //corresponding generic variable
+        for (generic_id, var_id) in variables {
+            self.subs.map.insert(*var_id, box Generic(*generic_id));
+        }
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { tc: &'a mut Typecheck<'b> }
         impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
@@ -545,8 +557,7 @@ impl <'a> Typecheck<'a> {
                 ast::walk_mut_expr(self, e);
             }
         }
-        let mut v = ReplaceVisitor { tc: self };
-        v.visit_expr(expr);
+        ReplaceVisitor { tc: self }.visit_expr(expr);
     }
 
     pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, StringErrors> {
@@ -561,7 +572,7 @@ impl <'a> Typecheck<'a> {
             Err(::std::mem::replace(&mut self.errors, Errors::new()))
         }
         else {
-            self.replace_vars(expr);
+            self.replace_vars(&HashMap::new(), expr);
             Ok(typ)
         }
     }
@@ -953,44 +964,32 @@ impl <'a> Typecheck<'a> {
     }
 
     fn set_type(&self, t: &mut TcType) {
-        let replacement = match *t {
-            TypeVariable(id) => self.subs.find(id)
-                .map(|t| match *t {
-                    Type(ref id, ref args) if find_trait(&self.type_infos, id).is_ok() => {
-                        TraitType(id.clone(), args.clone())
-                    }
-                    _ => {
-                        let mut t = t.clone();
-                        self.set_type(&mut t);
-                        t
-                    }
-                }),
-            FunctionType(ref mut args, ref mut return_type) => {
-                for arg in args.iter_mut() {
-                    self.set_type(arg);
+        ast::walk_mut_type(t, &mut |typ| {
+            let replacement = match *typ {
+                TypeVariable(id) => {
+                    self.subs.find(id)
+                        .map(|t| match *t {
+                            Type(ref id, ref args) if find_trait(&self.type_infos, id).is_ok() => {
+                                TraitType(id.clone(), args.clone())
+                            }
+                            _ => {
+                                let mut t = t.clone();
+                                self.set_type(&mut t);
+                                t
+                            }
+                        })
                 }
-                self.set_type(&mut **return_type);
-                None
-            }
-            Type(ref id, ref mut args) => {
-                for arg in args.iter_mut() {
-                    self.set_type(arg);
-                }
-                if find_trait(&self.type_infos, id).is_ok() {
+                Type(ref id, ref mut args) if find_trait(&self.type_infos, id).is_ok() => {
                     let a = ::std::mem::replace(args, Vec::new());
                     Some(TraitType(*id, a))
                 }
-                else {
-                    None
-                }
+                _ => None
+            };
+            match replacement {
+                Some(x) => *typ = x,
+                None => ()
             }
-            ArrayType(ref mut typ) => { self.set_type(&mut **typ); None }
-            _ => None
-        };
-        match replacement {
-            Some(x) => *t = x,
-            None => ()
-        }
+        });
     }
 
 }
@@ -1003,7 +1002,12 @@ struct Substitution {
 }
 impl Substitution {
     fn new() -> Substitution {
-        Substitution { map: HashMap::new(), constraints: HashMap::new(), variables: HashMap::new(), var_id: 0 }
+        Substitution {
+            map: HashMap::new(),
+            constraints: HashMap::new(),
+            variables: HashMap::new(),
+            var_id: 0
+        }
     }
 
     fn variable_for(&mut self, id: InternedStr) -> u32 {
@@ -1091,55 +1095,47 @@ impl Substitution {
     }
 
     fn instantiate_constrained(&mut self, constraints: &[ast::Constraint], typ: &TcType) -> TcType {
-        self.var_id += 1;
-        let mut map = HashMap::new();
-        let base = self.var_id;
+        self.variables.clear();
         for constraint in constraints.iter() {
             let c = Type(constraint.name, Vec::new());
-            let next = base + map.len() as u32;
-            match map.entry(constraint.type_variable) {
+            match self.variables.entry(constraint.type_variable) {
                 Entry::Vacant(entry) => {
-                    entry.insert(next);
-                    debug!("aaaaaaa {} ---- {:?}", next, c);
-                    self.constraints.insert(next, vec![c]);
-                    self.var_id = ::std::cmp::max(next, self.var_id);
+                    self.var_id += 1;
+                    entry.insert(self.var_id);
+                    self.constraints.insert(self.var_id, vec![c]);
                 }
                 Entry::Occupied(entry) => {
                     self.constraints[*entry.get()].push(c);
                 }
             }
         }
-        self.instantiate_(base, typ, &mut map)
+        self.instantiate_(typ)
     }
     fn instantiate(&mut self, typ: &TcType) -> TcType {
-        self.var_id += 1;
-        let base = self.var_id;
-        let mut map = HashMap::new();
-        self.instantiate_(base, typ, &mut map)
+        self.variables.clear();
+        self.instantiate_(typ)
     }
-    fn instantiate_(&mut self, base: u32, typ: &TcType, vars: &mut HashMap<InternedStr, u32>) -> TcType {
+    fn instantiate_(&mut self, typ: &TcType) -> TcType {
         match *typ {
             Generic(x) => {
-                let offset = vars.len() as u32;
-                let var = match vars.entry(x) {
-                    Entry::Vacant(entry) => *entry.insert(base + offset),
+                let var = match self.variables.entry(x) {
+                    Entry::Vacant(entry) => { self.var_id += 1; *entry.insert(self.var_id) }
                     Entry::Occupied(entry) => *entry.get()
                 };
-                self.var_id = ::std::cmp::max(var, self.var_id);
                 debug!("bbbbbb {} {}", x, var);
                 TypeVariable(var)
             }
             FunctionType(ref args, ref return_type) => {
-                let args2 = args.iter().map(|a| self.instantiate_(base, a, vars)).collect();
-                FunctionType(args2, box self.instantiate_(base, &**return_type, vars))
+                let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
+                FunctionType(args2, box self.instantiate_(&**return_type))
             }
-            ArrayType(ref typ) => ArrayType(box self.instantiate_(base, &**typ, vars)),
+            ArrayType(ref typ) => ArrayType(box self.instantiate_(&**typ)),
             Type(ref id, ref args) => {
-                let args2 = args.iter().map(|a| self.instantiate_(base, a, vars)).collect();
+                let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
                 Type(*id, args2)
             }
             TraitType(ref id, ref args) => {
-                let args2 = args.iter().map(|a| self.instantiate_(base, a, vars)).collect();
+                let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
                 TraitType(*id, args2)
             }
             ref x => x.clone()

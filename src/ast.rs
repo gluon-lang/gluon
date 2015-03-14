@@ -299,3 +299,31 @@ pub fn walk_mut_expr<T, V: ?Sized + MutVisitor<T=T>>(v: &mut V, e: &mut LExpr<T>
         Literal(..) | Identifier(..) => ()
     }
 }
+
+
+pub fn walk_mut_type<F, I>(typ: &mut TypeEnum<I>, f: &mut F)
+    where F: FnMut(&mut TypeEnum<I>) {
+    f(typ);
+    match *typ {
+        Type(_, ref mut args) => {
+            for a in args {
+                walk_mut_type(a, f);
+            }
+        }
+        TraitType(_, ref mut args) => {
+            for a in args {
+                walk_mut_type(a, f);
+            }
+        }
+        ArrayType(ref mut inner) => {
+            walk_mut_type(&mut **inner, f);
+        }
+        FunctionType(ref mut args, ref mut ret) => {
+            for a in args {
+                walk_mut_type(a, f);
+            }
+            walk_mut_type(&mut **ret, f);
+        }
+        _ => ()
+    }
+}

@@ -780,19 +780,22 @@ impl <'a> Compiler<'a> {
         debug!("Find type for dictionary {:?} <=> {:?}", function_type, expr_type);
         let real_types = find_real_type(function_type, expr_type);
         let mut dict_size = 0;
-        for (i, constraint) in constraints.iter().enumerate() {
+        for constraint in constraints.iter() {
             let real_type = real_types[constraint.type_variable];
-            dict_size += self.add_dictionary(i as VMIndex, constraint, real_type, function);
+            dict_size += self.add_dictionary(constraint, real_type, function);
         }
         function.instructions.push(Construct(0, dict_size));
     }
 
-    fn add_dictionary(&self, i: VMIndex, constraint: &Constraint, real_type: &TcType, function: &mut FunctionEnv) -> VMIndex {
+    fn add_dictionary(&self, constraint: &Constraint, real_type: &TcType, function: &mut FunctionEnv) -> VMIndex {
         match real_type {
-            &TypeVariable(_) => {
+            &Generic(var) => {
                 debug!("In dict");
                 //Load dictionary from stack
-                //TODO actually look for what part of the dictionary that is needed
+                let i = (0..).zip(function.dictionary.iter())
+                    .find(|&(_, constraint)| constraint.type_variable == var)
+                    .map(|(i, _)| i)
+                    .expect("ICE: Expected type variable from enclosing function");
                 function.instructions.push(PushDictionary(i));
             }
             real_type => {
@@ -831,12 +834,14 @@ impl <'a> Compiler<'a> {
                     }
                     None => {//Function must be in the dictionary
                         match types[0] {
-                            Some(&TypeVariable(var_index)) if (var_index as usize - 1) < function.dictionary.len() => {
-                                let constraint = &function.dictionary[var_index as usize - 1];
+                            Some(&Generic(var)) => {
+                                let (var_index, constraint) = (0..).zip(function.dictionary.iter())
+                                    .find(|&(_, constraint)| constraint.type_variable == var)
+                                    .expect("ICE: Expected variable in dictionary");
                                 let func_index = self.globals.find_object_function(&constraint.name, id.id());
                                 match func_index {
                                     Some(index) => {
-                                        function.instructions.push(PushDictionaryMember(var_index - 1, index as u32));
+                                        function.instructions.push(PushDictionaryMember(var_index, index as u32));
                                         return
                                     }
                                     None => ()
@@ -855,6 +860,7 @@ impl <'a> Compiler<'a> {
 
 fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> HashMap<InternedStr, &'a TcType> {
     let mut result = HashMap::new();
+    println!("{:?} <> {:?}", trait_func_type, real_type);
     find_real_type_(trait_func_type, real_type, &mut result);
     result
 }
