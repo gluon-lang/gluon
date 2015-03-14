@@ -265,13 +265,13 @@ impl TypeInfos {
     }
     pub fn extend(&mut self, other: TypeInfos) {
         let TypeInfos { datas, impls, traits } = other;
-        for (id, data) in datas.into_iter() {
+        for (id, data) in datas {
             self.datas.insert(id, data);
         }
-        for (id, impl_) in impls.into_iter() {
+        for (id, impl_) in impls {
             self.impls.insert(id, impl_);
         }
-        for (id, trait_) in traits.into_iter() {
+        for (id, trait_) in traits {
             self.traits.insert(id, trait_);
         }
     }
@@ -1098,14 +1098,13 @@ impl Substitution {
         self.variables.clear();
         for constraint in constraints.iter() {
             let c = Type(constraint.name, Vec::new());
-            match self.variables.entry(constraint.type_variable) {
+            let var = self.variable_for(constraint.type_variable);
+            match self.constraints.entry(var) {
                 Entry::Vacant(entry) => {
-                    self.var_id += 1;
-                    entry.insert(self.var_id);
-                    self.constraints.insert(self.var_id, vec![c]);
+                    entry.insert(vec![c]);
                 }
                 Entry::Occupied(entry) => {
-                    self.constraints[*entry.get()].push(c);
+                    entry.into_mut().push(c);
                 }
             }
         }
@@ -1118,11 +1117,8 @@ impl Substitution {
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
         match *typ {
             Generic(x) => {
-                let var = match self.variables.entry(x) {
-                    Entry::Vacant(entry) => { self.var_id += 1; *entry.insert(self.var_id) }
-                    Entry::Occupied(entry) => *entry.get()
-                };
-                debug!("bbbbbb {} {}", x, var);
+                let var = self.variable_for(x);
+                debug!("Bind generic {} -> {}", x, var);
                 TypeVariable(var)
             }
             FunctionType(ref args, ref return_type) => {

@@ -8,14 +8,14 @@ extern crate EmbedLang;
 use EmbedLang::vm::{VM, run_main, run_buffer_main};
 
 #[cfg(not(test))]
-use std::env::set_exit_status;
+use std::env;
 
 mod repl;
 
 
 #[cfg(not(test))]
 fn main() {
-    let args: Vec<_> = ::std::env::args().collect();
+    let args: Vec<_> = env::args().collect();
     if args.len() == 1 {
         let vm = VM::new();
         let buffer = ::std::io::stdin();
@@ -23,7 +23,7 @@ fn main() {
             Ok(value) => value,
             Err(err) => {
                 println!("{}", err);
-                set_exit_status(1);
+                env::set_exit_status(1);
                 return
             }
         };

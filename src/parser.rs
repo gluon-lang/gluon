@@ -8,7 +8,6 @@ use lexer::Token::{
     TInteger,
     TFloat,
     TString,
-    TChar,
     TTrue,
     TFalse,
     TIf,
@@ -37,7 +36,6 @@ use lexer::Token::{
     TRArrow,
     TMatchArrow,
     TLambda,
-    TEOF
 };
 
 use self::ParseError::*;

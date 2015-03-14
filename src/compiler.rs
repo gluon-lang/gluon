@@ -811,15 +811,15 @@ impl <'a> Compiler<'a> {
     fn compile_trait_function(&self, trait_func_type: &TcType, id: &TcIdent, function: &mut FunctionEnv) {
         debug!("Find real {:?} <=> {:?}", trait_func_type, id.typ);
         let types = find_real_type(trait_func_type, &id.typ);
-        let types: Vec<_> = types.into_iter().map(|tup| Some(tup.1)).collect();//TODO
+        let types: Vec<_> = types.into_iter().map(|tup| tup.1).collect();//TODO
         assert!(types.len() != 0);
         match types[0] {
-            Some(&TraitType(ref trait_name, _)) => {//TODO parameterized traits
+            &TraitType(ref trait_name, _) => {//TODO parameterized traits
                     let index = self.globals.find_object_function(trait_name, id.id())
                         .expect("Trait object function does not exist");
                     function.instructions.push(PushTraitFunction(index));
                 }
-            Some(t0) => {
+            t0 => {
                 debug!("Find trait function {:?} {:?}", types, id.id());
                 match self.find_trait_function(t0, id.id()) {
                     Some(result) => {//Found a match
@@ -834,7 +834,7 @@ impl <'a> Compiler<'a> {
                     }
                     None => {//Function must be in the dictionary
                         match types[0] {
-                            Some(&Generic(var)) => {
+                            &Generic(var) => {
                                 let (var_index, constraint) = (0..).zip(function.dictionary.iter())
                                     .find(|&(_, constraint)| constraint.type_variable == var)
                                     .expect("ICE: Expected variable in dictionary");
@@ -853,14 +853,12 @@ impl <'a> Compiler<'a> {
                     }
                 }
             }
-            _ => panic!()
         }
     }
 }
 
 fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> HashMap<InternedStr, &'a TcType> {
     let mut result = HashMap::new();
-    println!("{:?} <> {:?}", trait_func_type, real_type);
     find_real_type_(trait_func_type, real_type, &mut result);
     result
 }

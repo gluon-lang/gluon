@@ -1,5 +1,5 @@
 #![crate_type="lib"]
-#![feature(unsafe_destructor, box_syntax, alloc, core, collections, io, std_misc, unicode)]
+#![feature(unsafe_destructor, box_syntax, alloc, core, collections, io, std_misc)]
 extern crate collections;
 #[macro_use]
 extern crate log;
