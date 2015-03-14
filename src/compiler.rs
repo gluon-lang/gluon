@@ -575,7 +575,7 @@ impl <'a> Compiler<'a> {
                 }
                 self.compile(&**func, function);
                 let arg_types = match *func.type_of() {
-                    FunctionType(ref args, _) => args.as_slice(),
+                    Type::Function(ref args, _) => args.as_slice(),
                     _ => panic!("Non function type inferred in call")
                 };
                 let is_trait_func = match func.value {
@@ -592,12 +592,12 @@ impl <'a> Compiler<'a> {
                 for (arg, real_arg_type) in args.iter().zip(arg_types.iter()) {
                     self.compile(arg, function);
                     match (arg.type_of(), real_arg_type, is_trait_func) {
-                        (&TraitType(..), &TraitType(..), true) => {
+                        (&Type::Trait(..), &Type::Trait(..), true) => {
                             //Call through a trait object
                             //Need to unpack the trait object for this argument
                             function.instructions.push(Unpack);
                         }
-                        (actual, &TraitType(ref id, _), _) => {
+                        (actual, &Type::Trait(ref id, _), _) => {
                             let offset = self.globals.find_trait_offset(id, actual)
                                 .expect("Missing trait");
                             function.instructions.push(ConstructTraitObject(offset));
@@ -639,7 +639,7 @@ impl <'a> Compiler<'a> {
                         self.compile(&**expr, function);
                         self.compile(&**rhs, function);
                         let field_index = match *expr.type_of() {
-                            Type(ref id, _) => {
+                            Type::Data(ref id, _) => {
                                 self.find_field(id, field.id())
                                     .unwrap()
                             }
@@ -659,7 +659,7 @@ impl <'a> Compiler<'a> {
             FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function);
                 let field_index = match *expr.type_of() {
-                    Type(ref id, _) => {
+                    Type::Data(ref id, _) => {
                         self.find_field(id, field.id())
                             .unwrap()
                     }
@@ -672,7 +672,7 @@ impl <'a> Compiler<'a> {
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
                 let typename = match expr.type_of() {
-                    &Type(ref id, _) => id,
+                    &Type::Data(ref id, _) => id,
                     _ => panic!()
                 };
                 for alt in alts.iter() {
@@ -789,7 +789,7 @@ impl <'a> Compiler<'a> {
 
     fn add_dictionary(&self, constraint: &Constraint, real_type: &TcType, function: &mut FunctionEnv) -> VMIndex {
         match real_type {
-            &Generic(var) => {
+            &Type::Generic(var) => {
                 debug!("In dict");
                 //Load dictionary from stack
                 let i = (0..).zip(function.dictionary.iter())
@@ -814,7 +814,7 @@ impl <'a> Compiler<'a> {
         let types: Vec<_> = types.into_iter().map(|tup| tup.1).collect();//TODO
         assert!(types.len() != 0);
         match types[0] {
-            &TraitType(ref trait_name, _) => {//TODO parameterized traits
+            &Type::Trait(ref trait_name, _) => {//TODO parameterized traits
                     let index = self.globals.find_object_function(trait_name, id.id())
                         .expect("Trait object function does not exist");
                     function.instructions.push(PushTraitFunction(index));
@@ -834,7 +834,7 @@ impl <'a> Compiler<'a> {
                     }
                     None => {//Function must be in the dictionary
                         match types[0] {
-                            &Generic(var) => {
+                            &Type::Generic(var) => {
                                 let (var_index, constraint) = (0..).zip(function.dictionary.iter())
                                     .find(|&(_, constraint)| constraint.type_variable == var)
                                     .expect("ICE: Expected variable in dictionary");
@@ -864,25 +864,25 @@ fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> HashMa
 }
 fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mut HashMap<InternedStr, &'a TcType>) {
     match (trait_func_type, real_type) {
-        (&FunctionType(ref l_args, ref l_ret), &FunctionType(ref r_args, ref r_ret)) => {
+        (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
             for (l, r) in l_args.iter().zip(r_args.iter()) {
                 find_real_type_(l, r, out);
             }
             find_real_type_(&**l_ret, &**r_ret, out)
         }
-        (&TypeVariable(_), _) => {
+        (&Type::Variable(_), _) => {
             panic!()
         }
-        (&Generic(i), real_type) => {
+        (&Type::Generic(i), real_type) => {
             out.insert(i, real_type);
         }
-        (&ArrayType(ref l), &ArrayType(ref r)) => find_real_type_(&**l, &**r, out),
-        (&Type(_, ref l_args), &Type(_, ref r_args)) => {
+        (&Type::Array(ref l), &Type::Array(ref r)) => find_real_type_(&**l, &**r, out),
+        (&Type::Data(_, ref l_args), &Type::Data(_, ref r_args)) => {
             for (l, r) in l_args.iter().zip(r_args.iter()) {
                 find_real_type_(l, r, out);
             }
         }
-        (&TraitType(_, ref l_args), &TraitType(_, ref r_args)) => {
+        (&Type::Trait(_, ref l_args), &Type::Trait(_, ref r_args)) => {
             for (l, r) in l_args.iter().zip(r_args.iter()) {
                 find_real_type_(l, r, out);
             }

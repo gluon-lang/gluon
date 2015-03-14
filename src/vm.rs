@@ -8,8 +8,7 @@ use std::io::{BufReader, BufRead};
 use ast;
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, match_types};
-use ast::Constrained;
-use ast::TypeEnum::*;
+use ast::{Constrained, Type};
 use compiler::*;
 use compiler::Instruction::*;
 use interner::{Interner, InternedStr};
@@ -601,8 +600,8 @@ impl <'a> VM<'a> {
             gc: RefCell::new(Gc::new()),
             stack: RefCell::new(Stack::new())
         };
-        let a = Generic(vm.intern("a"));
-        let array_a = ArrayType(box a.clone());
+        let a = Type::Generic(vm.intern("a"));
+        let array_a = Type::Array(box a.clone());
         let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
         let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
         vm
@@ -718,7 +717,7 @@ impl <'a> VM<'a> {
         }
         let global = Global {
             id: id,
-            typ: Constrained { constraints: Vec::new(), value: FunctionType(args, box return_type) },
+            typ: Constrained { constraints: Vec::new(), value: Type::Function(args, box return_type) },
             value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(Function_::Extern(f)))))
         };
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
@@ -734,7 +733,7 @@ impl <'a> VM<'a> {
         }
         else {
             let id = TypeId::of::<T>();
-            let typ = Type(n, Vec::new());
+            let typ = Type::Data(n, Vec::new());
             try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
             let t = self.typeids.get(&id).unwrap();
             let ctor = ast::Constructor {

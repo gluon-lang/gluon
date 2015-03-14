@@ -2,8 +2,7 @@ use std::ops::Deref;
 use std::fmt;
 use interner::{InternedStr};
 pub use lexer::Location;
-pub use self::BuiltinType_::{StringType, IntType, FloatType, BoolType, UnitType};
-pub use self::TypeEnum::{Type, TraitType, TypeVariable, Generic, FunctionType, BuiltinType, ArrayType};
+pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType};
 pub use self::Pattern::{ConstructorPattern, IdentifierPattern};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
 pub use self::Expr::{
@@ -55,7 +54,7 @@ pub fn no_loc<T>(x: T) -> Located<T> {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
-pub enum BuiltinType_ {
+pub enum BuiltinType {
     StringType,
     IntType,
     FloatType,
@@ -64,17 +63,17 @@ pub enum BuiltinType_ {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum TypeEnum<Id> {
-    Type(Id, Vec<TypeEnum<Id>>),
-    TraitType(Id, Vec<TypeEnum<Id>>),
-    TypeVariable(u32),
+pub enum Type<Id> {
+    Data(Id, Vec<Type<Id>>),
+    Trait(Id, Vec<Type<Id>>),
+    Variable(u32),
     Generic(InternedStr),
-    FunctionType(Vec<TypeEnum<Id>>, Box<TypeEnum<Id>>),
-    BuiltinType(BuiltinType_),
-    ArrayType(Box<TypeEnum<Id>>)
+    Function(Vec<Type<Id>>, Box<Type<Id>>),
+    Builtin(BuiltinType),
+    Array(Box<Type<Id>>)
 }
 
-pub type VMType = TypeEnum<InternedStr>;
+pub type VMType = Type<InternedStr>;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum LiteralStruct {
@@ -135,7 +134,7 @@ pub enum Expr<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Field {
     pub name: InternedStr,
-    pub typ: TypeEnum<InternedStr>
+    pub typ: Type<InternedStr>
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct Constraint<T = InternedStr> {
@@ -158,7 +157,7 @@ pub struct Global<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum ConstructorType {
-    Tuple(Vec<TypeEnum<InternedStr>>),
+    Tuple(Vec<Type<InternedStr>>),
     Record(Vec<Field>)
 }
 
@@ -169,7 +168,7 @@ pub struct Constructor<Id> {
 }
 
 impl ConstructorType {
-    pub fn each_type<F>(&self, mut f: F) where F: FnMut(&TypeEnum<InternedStr>) {
+    pub fn each_type<F>(&self, mut f: F) where F: FnMut(&Type<InternedStr>) {
         match *self {
             ConstructorType::Tuple(ref args) => for t in args.iter() { f(t); },
             ConstructorType::Record(ref fields) => for field in fields.iter() { f(&field.typ); }
@@ -192,7 +191,7 @@ pub struct Data<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct GlobalDeclaration<Id> {
     pub name: Id,
-    pub typ: Constrained<TypeEnum<InternedStr>>,
+    pub typ: Constrained<Type<InternedStr>>,
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct Trait<Id> {
@@ -204,7 +203,7 @@ pub struct Trait<Id> {
 pub struct Impl<Id> {
     pub trait_name: Id,
     pub constraints: Vec<Constraint>,
-    pub typ: TypeEnum<InternedStr>,
+    pub typ: Type<InternedStr>,
     pub globals: Vec<Global<Id>>
 }
 
@@ -216,11 +215,11 @@ pub struct Module<Id> {
     pub impls: Vec<Impl<Id>>
 }
 
-pub static INT_TYPE: VMType = BuiltinType(IntType);
-pub static FLOAT_TYPE: VMType = BuiltinType(FloatType);
-pub static STRING_TYPE: VMType = BuiltinType(StringType);
-pub static BOOL_TYPE: VMType = BuiltinType(BoolType);
-pub static UNIT_TYPE: VMType = BuiltinType(UnitType);
+pub static INT_TYPE: VMType = Type::Builtin(IntType);
+pub static FLOAT_TYPE: VMType = Type::Builtin(FloatType);
+pub static STRING_TYPE: VMType = Type::Builtin(StringType);
+pub static BOOL_TYPE: VMType = Type::Builtin(BoolType);
+pub static UNIT_TYPE: VMType = Type::Builtin(UnitType);
 
 pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
     let t = match x.as_slice() {
@@ -232,7 +231,7 @@ pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
     };
     Some(t)
 }
-pub fn primitive_type_to_str(t: BuiltinType_) -> &'static str {
+pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
     match t {
         StringType => "String",
         IntType => "Int",
@@ -242,15 +241,15 @@ pub fn primitive_type_to_str(t: BuiltinType_) -> &'static str {
     }
 }
 
-impl fmt::Display for BuiltinType_ {
+impl fmt::Display for BuiltinType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         primitive_type_to_str(*self).fmt(f)
     }
 }
 
-impl <I: fmt::Display> fmt::Display for TypeEnum<I> {
+impl <I: fmt::Display> fmt::Display for Type<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_type<I>(f: &mut fmt::Formatter, t: &I, args: &[TypeEnum<I>]) -> fmt::Result
+        fn fmt_type<I>(f: &mut fmt::Formatter, t: &I, args: &[Type<I>]) -> fmt::Result
             where I: fmt::Display {
             try!(write!(f, "{}", t));
             match args {
@@ -267,14 +266,14 @@ impl <I: fmt::Display> fmt::Display for TypeEnum<I> {
             Ok(())
         }
         match *self {
-            Type(ref t, ref args) => fmt_type(f, t, &args),
-            TraitType(ref t, ref args) => {
+            Type::Data(ref t, ref args) => fmt_type(f, t, &args),
+            Type::Trait(ref t, ref args) => {
                 try!(write!(f, "$"));
                 fmt_type(f, t, &args)
             }
-            TypeVariable(ref x) => x.fmt(f),
-            Generic(x) => write!(f, "#{}", x),
-            FunctionType(ref args, ref return_type) => {
+            Type::Variable(ref x) => x.fmt(f),
+            Type::Generic(x) => write!(f, "#{}", x),
+            Type::Function(ref args, ref return_type) => {
                 try!(write!(f, "("));
                 for arg in args {
                     try!(write!(f, "{}", arg));
@@ -282,8 +281,8 @@ impl <I: fmt::Display> fmt::Display for TypeEnum<I> {
                 try!(write!(f, ") -> {}", return_type));
                 Ok(())
             }
-            BuiltinType(ref t) => t.fmt(f),
-            ArrayType(ref t) => write!(f, "[{}]", t)
+            Type::Builtin(ref t) => t.fmt(f),
+            Type::Array(ref t) => write!(f, "[{}]", t)
         }
     }
 }
@@ -356,24 +355,24 @@ pub fn walk_mut_expr<T, V: ?Sized + MutVisitor<T=T>>(v: &mut V, e: &mut LExpr<T>
 }
 
 
-pub fn walk_mut_type<F, I>(typ: &mut TypeEnum<I>, f: &mut F)
-    where F: FnMut(&mut TypeEnum<I>) {
+pub fn walk_mut_type<F, I>(typ: &mut Type<I>, f: &mut F)
+    where F: FnMut(&mut Type<I>) {
     f(typ);
     match *typ {
-        Type(_, ref mut args) => {
+        Type::Data(_, ref mut args) => {
             for a in args {
                 walk_mut_type(a, f);
             }
         }
-        TraitType(_, ref mut args) => {
+        Type::Trait(_, ref mut args) => {
             for a in args {
                 walk_mut_type(a, f);
             }
         }
-        ArrayType(ref mut inner) => {
+        Type::Array(ref mut inner) => {
             walk_mut_type(&mut **inner, f);
         }
-        FunctionType(ref mut args, ref mut ret) => {
+        Type::Function(ref mut args, ref mut ret) => {
             for a in args {
                 walk_mut_type(a, f);
             }

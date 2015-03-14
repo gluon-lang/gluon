@@ -1,5 +1,5 @@
 use vm::{VM, VMResult, BytecodeFunction, Value, Userdata_, StackFrame, VMInt};
-use typecheck::{TcType, Typed, FunctionType, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
+use typecheck::{TcType, Typed, Type, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::CallGlobal;
 use std::boxed::BoxAny;
 use std::marker::{PhantomData, PhantomFn};
@@ -128,7 +128,7 @@ impl <'a, 'b, $($args : VMValue<'b>,)* R: VMValue<'b>> Get<'a, 'b> for Callable<
         let value = match vm.get_global(name) {
             Some(global) => {
                 match global.type_of() {
-                    &FunctionType(ref args, ref return_type) => {
+                    &Type::Function(ref args, ref return_type) => {
                         let mut arg_iter = args.iter();
                         let ok = $({
                             arg_iter.next().unwrap() == vm_type::<$args>(vm)
@@ -238,7 +238,7 @@ impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        FunctionType(args, box make_type::<R>(vm))
+        Type::Function(args, box make_type::<R>(vm))
     }
 }
 
@@ -265,7 +265,7 @@ impl <'a, $($args: VMType,)* R: VMType> VMType for Box<Fn($($args),*) -> R + 'st
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        FunctionType(args, box make_type::<R>(vm))
+        Type::Function(args, box make_type::<R>(vm))
     }
 }
 impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for Box<Fn($($args),*) -> R + 'static> {
@@ -312,7 +312,7 @@ macro_rules! vm_function {
 
 fn define_function<'a, F: VMFunction<'a> + VMType + 'static>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()> {
     let (args, ret) = match make_type::<F>(vm) {
-        FunctionType(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
+        Type::Function(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
         _ => panic!()
     };
     vm.extern_function(name, args, ret, box move |vm| unpack_and_call(vm, &f))

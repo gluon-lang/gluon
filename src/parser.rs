@@ -437,15 +437,15 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                         else {
                             try!(self.type_arguments())
                         };
-                        Type(x, args)
+                        Type::Data(x, args)
                     }
                 }
             }
-            TVariable(name) => Generic(name),
+            TVariable(name) => Type::Generic(name),
             TOpenBracket => {
                 let t = try!(self.typ());
                 expect!(self, TCloseBracket);
-                ArrayType(box t)
+                Type::Array(box t)
             }
             TOpenParen => {
                 if is_argument == false {
@@ -454,7 +454,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                     if args.len() != 0 || *self.lexer.peek() == TRArrow {
                         expect!(self, TRArrow);
                         let return_type = try!(self.typ());
-                        FunctionType(args, box return_type)
+                        Type::Function(args, box return_type)
                     }
                     else {
                         UNIT_TYPE.clone()
@@ -702,10 +702,10 @@ pub mod tests {
         Field { name: intern(s), typ: typ }
     }
     fn typ(s: &str) -> VMType {
-        Type(intern(s), Vec::new())
+        Type::Data(intern(s), Vec::new())
     }
     fn generic(s: &str) -> VMType {
-        Generic(intern(s))
+        Type::Generic(intern(s))
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
         no_loc(Call(box e, args))
@@ -770,7 +770,7 @@ main = \x y -> { }";
                 name: intern("main"),
                 typ: Constrained {
                     constraints: Vec::new(),
-                    value: FunctionType(vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()), box UNIT_TYPE.clone())
+                    value: Type::Function(vec!(INT_TYPE.clone(), FLOAT_TYPE.clone()), box UNIT_TYPE.clone())
                 }
             },
             expression: lambda("main", vec![intern("x"), intern("y")], block(vec!()))
@@ -784,13 +784,13 @@ r"
 id : (a) -> a;
 id = \x -> { x }
 ", |p| p.global());
-        let a = Generic(intern("a"));
+        let a = Type::Generic(intern("a"));
         let expected = Global {
             declaration: GlobalDeclaration {
                 name: intern("id"),
                 typ: Constrained {
                     constraints: Vec::new(),
-                    value: FunctionType(vec![a.clone()], box a.clone())
+                    value: Type::Function(vec![a.clone()], box a.clone())
                 }
             },
             expression: lambda("id", vec![intern("x")], block(vec![id("x")]))
@@ -846,14 +846,14 @@ trait Test a {
                     name: intern("test"),
                     typ: Constrained {
                         constraints: Vec::new(),
-                        value: FunctionType(vec![generic("a")], box INT_TYPE.clone())
+                        value: Type::Function(vec![generic("a")], box INT_TYPE.clone())
                     }
                 },
                 GlobalDeclaration {
                     name: intern("test2"),
                     typ: Constrained {
                         constraints: Vec::new(),
-                        value: FunctionType(vec![INT_TYPE.clone(), generic("a")], box UNIT_TYPE.clone())
+                        value: Type::Function(vec![INT_TYPE.clone(), generic("a")], box UNIT_TYPE.clone())
                     }
                 },
             ]
@@ -877,7 +877,7 @@ impl Test for Int {
     #[test]
     fn function_type() {
         let typ = parse("() -> (Int) -> Float", |p| p.typ());
-        assert_eq!(typ, FunctionType(Vec::new(), box FunctionType(vec![INT_TYPE.clone()], box FLOAT_TYPE.clone())));
+        assert_eq!(typ, Type::Function(Vec::new(), box Type::Function(vec![INT_TYPE.clone()], box FLOAT_TYPE.clone())));
     }
 
     #[test]
