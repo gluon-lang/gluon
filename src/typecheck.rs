@@ -83,38 +83,6 @@ pub fn match_types(l: &TcType, r: &TcType) -> bool {
 }
 
 
-impl fmt::Debug for TcType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_type(f: &mut fmt::Formatter, t: &InternedStr, args: &[TcType]) -> fmt::Result {
-            try!(write!(f, "{:?}", t));
-            match args {
-                [ref first, rest..] => {
-                    try!(write!(f, "<"));
-                    try!(write!(f, "{:?}", first));
-                    for arg in rest.iter() {
-                        try!(write!(f, ", {:?}", arg));
-                    }
-                    try!(write!(f, ">"));
-                }
-                [] => ()
-            }
-            Ok(())
-        }
-        match *self {
-            Type(ref t, ref args) => fmt_type(f, t, args.as_slice()),
-            TraitType(ref t, ref args) => {
-                try!(write!(f, "$"));
-                fmt_type(f, t, args.as_slice())
-            }
-            TypeVariable(ref x) => x.fmt(f),
-            Generic(x) => write!(f, "#{:?}", x),
-            FunctionType(ref args, ref return_type) => write!(f, "fn {:?} -> {:?}", args, return_type),
-            BuiltinType(ref t) => t.fmt(f),
-            ArrayType(ref t) => write!(f, "[{:?}]", t)
-        }
-    }
-}
-
 fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclaration<TcIdent>) -> ast::Constrained<TcType> {
     //Add all constraints from the impl declaration to the globals declaration
     for constraint in constraints.iter() {

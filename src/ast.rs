@@ -63,7 +63,7 @@ pub enum BuiltinType_ {
     UnitType
 }
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum TypeEnum<Id> {
     Type(Id, Vec<TypeEnum<Id>>),
     TraitType(Id, Vec<TypeEnum<Id>>),
@@ -231,6 +231,61 @@ pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
         _ => return None
     };
     Some(t)
+}
+pub fn primitive_type_to_str(t: BuiltinType_) -> &'static str {
+    match t {
+        StringType => "String",
+        IntType => "Int",
+        FloatType => "Float",
+        BoolType => "Bool",
+        UnitType => "()"
+    }
+}
+
+impl fmt::Display for BuiltinType_ {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        primitive_type_to_str(*self).fmt(f)
+    }
+}
+
+impl <I: fmt::Display> fmt::Display for TypeEnum<I> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt_type<I>(f: &mut fmt::Formatter, t: &I, args: &[TypeEnum<I>]) -> fmt::Result
+            where I: fmt::Display {
+            try!(write!(f, "{}", t));
+            match args {
+                [ref first, rest..] => {
+                    try!(write!(f, "<"));
+                    try!(write!(f, "{}", first));
+                    for arg in rest {
+                        try!(write!(f, ", {}", arg));
+                    }
+                    try!(write!(f, ">"));
+                }
+                [] => ()
+            }
+            Ok(())
+        }
+        match *self {
+            Type(ref t, ref args) => fmt_type(f, t, &args),
+            TraitType(ref t, ref args) => {
+                try!(write!(f, "$"));
+                fmt_type(f, t, &args)
+            }
+            TypeVariable(ref x) => x.fmt(f),
+            Generic(x) => write!(f, "#{}", x),
+            FunctionType(ref args, ref return_type) => {
+                try!(write!(f, "("));
+                for arg in args {
+                    try!(write!(f, "{}", arg));
+                }
+                try!(write!(f, ") -> {}", return_type));
+                Ok(())
+            }
+            BuiltinType(ref t) => t.fmt(f),
+            ArrayType(ref t) => write!(f, "[{}]", t)
+        }
+    }
 }
 
 
