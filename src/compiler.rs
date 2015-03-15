@@ -301,7 +301,7 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
 
 pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
-    stack: HashMap<InternedStr, VMIndex>,
+    stack: Vec<InternedStr>,
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<VMIndex>,
 }
@@ -311,29 +311,30 @@ impl <'a> Compiler<'a> {
     pub fn new(globals: &'a CompilerEnv) -> Compiler<'a> {
         Compiler {
             globals: globals,
-            stack: HashMap::new(),
+            stack: Vec::new(),
             closure_limits: Vec::new(),
         }
     }
 
-    fn find(&self, s: &InternedStr, env: &mut FunctionEnv) -> Option<Variable> {
-        self.stack.get(s)
-            .map(|x| {
+    fn find(&self, id: &InternedStr, env: &mut FunctionEnv) -> Option<Variable> {
+        (0..).zip(self.stack.iter())
+            .find(|&(_, var)| var == id)
+            .map(|(index, _)| {
                 if self.closure_limits.len() != 0 {
                     let closure_stack_start = *self.closure_limits.last().unwrap();
-                    if *x < closure_stack_start {
-                        let i = env.upvar(*s);
+                    if index < closure_stack_start {
+                        let i = env.upvar(*id);
                         UpVar(i)
                     }
                     else {
-                        Stack(*x - closure_stack_start)
+                        Stack(index - closure_stack_start)
                     }
                 }
                 else {
-                    Stack(*x)
+                    Stack(index)
                 }
             })
-            .or_else(||  self.globals.find_var(s))
+            .or_else(||  self.globals.find_var(id))
     }
 
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
@@ -349,11 +350,10 @@ impl <'a> Compiler<'a> {
     }
 
     fn new_stack_var(&mut self, s: InternedStr) {
-        let v = self.stack.len() as VMIndex;
-        if self.stack.get(&s).is_some() {
+        if self.stack.iter().find(|i| **i == s).is_some() {
             panic!("Variable shadowing is not allowed")
         }
-        self.stack.insert(s, v);
+        self.stack.push(s);
     }
 
     fn stack_size(&self) -> VMIndex {
@@ -405,8 +405,8 @@ impl <'a> Compiler<'a> {
             self.new_stack_var(*arg.id());
         }
         self.compile(&lambda.body, f);
-        for arg in lambda.arguments.iter() {
-            self.stack.remove(arg.id());
+        for _ in 0..lambda.arguments.len() {
+            self.stack.pop();
         }
     }
 
@@ -463,6 +463,7 @@ impl <'a> Compiler<'a> {
                 function.instructions[false_jump_index] = Jump(function.instructions.len() as VMIndex);
             }
             Expr::Block(ref exprs) => {
+                let begin_stack_size = self.stack_size();
                 if exprs.len() != 0 {
                     for expr in exprs[..exprs.len() - 1].iter() {
                         self.compile(expr, function);
@@ -475,18 +476,12 @@ impl <'a> Compiler<'a> {
                     let last = exprs.last().unwrap();
                     self.compile(last, function);
                 }
-                let stack_size = self.stack_size();
-                for expr in exprs.iter() {
-                    match expr.value {
-                        Expr::Let(ref id, _) => {
-                            self.stack.remove(id.id());
-                        }
-                        _ => ()
-                    }
-                }
                 //If the stack has changed size during the block we need to adjust
                 //it back to its initial size
-                let diff_size = stack_size - self.stack_size();
+                let diff_size = self.stack_size() - begin_stack_size;
+                for _ in 0..diff_size {
+                    self.stack.pop();
+                }
                 if diff_size != 0 {
                     if *expr.type_of() == UNIT_TYPE {
                         function.instructions.push(Pop(diff_size));
@@ -710,11 +705,11 @@ impl <'a> Compiler<'a> {
 
                     match alt.pattern {
                         ConstructorPattern(_, ref args) => {
-                            for arg in args.iter() {
-                                self.stack.remove(arg.id());
+                            for _ in 0..args.len() {
+                                self.stack.pop();
                             }
                         }
-                        IdentifierPattern(ref id) => { self.stack.remove(id.id()); }
+                        IdentifierPattern(_) => { self.stack.pop(); }
                     }
                 }
                 for &index in end_jumps.iter() {
@@ -747,10 +742,11 @@ impl <'a> Compiler<'a> {
         let mut f = FunctionEnv::new();
         f.dictionary = parent.dictionary.clone();
         self.compile(&*lambda.body, &mut f);
-        for arg in lambda.arguments.iter() {
-            self.stack.remove(arg.id());
+
+        let previous_len = self.closure_limits.pop().unwrap();
+        while previous_len < self.stack_size() {
+            self.stack.pop();
         }
-        self.closure_limits.pop();
         //Insert all free variables into the above globals free variables
         //if they arent in that lambdas scope
         for var in f.free_vars.iter() {
