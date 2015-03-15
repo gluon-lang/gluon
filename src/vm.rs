@@ -306,8 +306,19 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             }
         }
     }
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
-        panic!("find field {} {}", struct_, field)
+    fn find_field(&self, data_name: &InternedStr, field_name: &InternedStr) -> Option<VMIndex> {
+        self.type_infos.datas.get(data_name)
+            .and_then(|ctors| {
+                match &ctors[..] {
+                    [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
+                        fields.iter()
+                            .enumerate()
+                            .find(|&(_, f)| f.name == *field_name)
+                            .map(|(i, _)| i as VMIndex)
+                    }
+                    _ => None
+                }
+            })
     }
 
     fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
@@ -1630,6 +1641,30 @@ main = \ -> {
         let value = run_function(&vm, "main")
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(1));
+    }
+
+    #[test]
+    fn use_field_from_another_script() {
+        let mut vm = VM::new();
+        {
+            let text = "data Data = Data { x: Int }";
+            let mut buffer = BufReader::new(text.as_bytes());
+            load_script(&mut vm, &mut buffer)
+                .unwrap_or_else(|e| panic!("{}", e));
+        }
+        {
+            let text = 
+r"
+main : () -> Int;
+main = \ -> { let d = Data(123); d.x }
+";
+            let mut buffer = BufReader::new(text.as_bytes());
+            load_script(&mut vm, &mut buffer)
+                .unwrap_or_else(|e| panic!("{}", e));
+        }
+        let value = run_function(&vm, "main")
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(123));
     }
 
     #[test]
