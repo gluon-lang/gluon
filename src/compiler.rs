@@ -808,23 +808,43 @@ impl <'a> Compiler<'a> {
         1
     }
 
-    fn compile_trait_function(&self, trait_func_type: &TcType, id: &TcIdent, function: &mut FunctionEnv) {
-        debug!("Find real {:?} <=> {:?}", trait_func_type, id.typ);
-        let types = find_real_type(trait_func_type, &id.typ);
-        let types: Vec<_> = types.into_iter().map(|tup| tup.1).collect();//TODO
-        assert!(types.len() != 0);
-        match types[0] {
+    fn compile_trait_function(&self, trait_func_type: &TcType, expr_id: &TcIdent, function: &mut FunctionEnv) {
+        debug!("Find real {:?} <=> {:?}", trait_func_type, expr_id.typ);
+        let types = find_real_type(trait_func_type, &expr_id.typ);
+        //Traits can only take a single type parameter so there should only be 1 real type
+        assert!(types.len() == 1);
+        let typ = types.into_iter().map(|tup| tup.1)
+            .next()
+            .unwrap();
+        match typ {
+            //The real type is a trait object so load it from the object
             &Type::Trait(ref trait_name, _) => {//TODO parameterized traits
-                    let index = self.globals.find_object_function(trait_name, id.id())
-                        .expect("Trait object function does not exist");
-                    function.instructions.push(PushTraitFunction(index));
+                let index = self.globals.find_object_function(trait_name, expr_id.id())
+                    .expect("Trait object function does not exist");
+                function.instructions.push(PushTraitFunction(index));
+            }
+            //The real function lies in the callers dictionary
+            &Type::Generic(var) => {
+                let (var_index, constraint) = (0..).zip(function.dictionary.iter())
+                    .find(|&(_, constraint)| constraint.type_variable == var)
+                    .expect("ICE: Expected variable in dictionary");
+                let func_index = self.globals.find_object_function(&constraint.name, expr_id.id());
+                match func_index {
+                    Some(index) => {
+                        function.instructions.push(PushDictionaryMember(var_index, index as u32));
+                        return
+                    }
+                    None => ()
                 }
+                panic!("ICE: {:?}   {:?}\n{:?}   {:?}", trait_func_type, expr_id, function.dictionary, typ)
+            }
+            //Call of a function from a trait where the type implementing the trait is known
             t0 => {
-                debug!("Find trait function {:?} {:?}", types, id.id());
-                match self.find_trait_function(t0, id.id()) {
+                debug!("Find trait function {:?} {:?}", typ, expr_id.id());
+                match self.find_trait_function(t0, expr_id.id()) {
                     Some(result) => {//Found a match
                         if result.constraints.len() != 0 {
-                            self.compile_dictionary(result.constraints, result.typ, &id.typ, function);
+                            self.compile_dictionary(result.constraints, result.typ, &expr_id.typ, function);
                             function.instructions.push(InstantiateConstrained(result.value));
                         }
                         else {
@@ -832,25 +852,7 @@ impl <'a> Compiler<'a> {
                             function.instructions.push(PushGlobal(result.value));
                         }
                     }
-                    None => {//Function must be in the dictionary
-                        match types[0] {
-                            &Type::Generic(var) => {
-                                let (var_index, constraint) = (0..).zip(function.dictionary.iter())
-                                    .find(|&(_, constraint)| constraint.type_variable == var)
-                                    .expect("ICE: Expected variable in dictionary");
-                                let func_index = self.globals.find_object_function(&constraint.name, id.id());
-                                match func_index {
-                                    Some(index) => {
-                                        function.instructions.push(PushDictionaryMember(var_index, index as u32));
-                                        return
-                                    }
-                                    None => ()
-                                }
-                                panic!("{:?}   {:?}\n{:?}   {:?}", trait_func_type, id, function.dictionary, types)
-                            }
-                            x => panic!("ICE {:?} {:?}", x, function.dictionary)
-                        }
-                    }
+                    None => panic!("ICE: {:?}   {:?}\n{:?}   {:?}", trait_func_type, expr_id, function.dictionary, typ)
                 }
             }
         }
