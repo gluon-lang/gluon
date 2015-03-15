@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::io::{BufRead, ReadExt};
+use std::io::{BufRead, Read};
 use std::str::FromStr;
 use std::fmt;
 

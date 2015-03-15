@@ -1,5 +1,5 @@
 use std::io;
-use std::io::BufReadExt;
+use std::io::BufRead;
 
 use EmbedLang::typecheck::*;
 use EmbedLang::compiler::{Assembly, Compiler};
@@ -93,6 +93,7 @@ fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, String> {
 fn load_file(vm: &VM, filename: &str) -> Result<(), String> {
     use std::fs::File;
     use std::io::BufReader;
+    use std::path::Path;
     let file = tryf!(File::open(&Path::new(filename)));
     let mut buffer = BufReader::new(file);
     load_script(vm, &mut buffer)
