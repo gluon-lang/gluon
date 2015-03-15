@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use interner::*;
 use ast;
-use ast::{Module, LExpr, Identifier, Literal, While, IfElse, Block, FieldAccess, Match, Assign, Call, Let, BinOp, Array, ArrayAccess, Lambda, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
+use ast::{Module, LExpr, Expr, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
 use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
@@ -18,7 +18,7 @@ pub enum Instruction {
     PushGlobal(VMIndex),
     Store(VMIndex),
     StoreGlobal(VMIndex),
-    CallGlobal(VMIndex),
+    Call(VMIndex),
     Construct(VMIndex, VMIndex),
     GetField(VMIndex),
     SetField(VMIndex),
@@ -419,7 +419,7 @@ impl <'a> Compiler<'a> {
 
     fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv) {
         match expr.value {
-            Literal(ref lit) => {
+            Expr::Literal(ref lit) => {
                 match *lit {
                     Integer(i) => function.instructions.push(PushInt(i as isize)),
                     Float(f) => function.instructions.push(PushFloat(f)),
@@ -430,7 +430,7 @@ impl <'a> Compiler<'a> {
                     }
                 }
             }
-            Identifier(ref id) => {
+            Expr::Identifier(ref id) => {
                 match self.find(id.id(), function).unwrap_or_else(|| panic!("Undefined variable {}", id.id())) {
                     Stack(index) => function.instructions.push(Push(index)),
                     UpVar(index) => function.instructions.push(PushUpVar(index)),
@@ -448,7 +448,7 @@ impl <'a> Compiler<'a> {
                     Constructor(..) => panic!("Constructor {:?} is not fully applied", id)
                 }
             }
-            IfElse(ref pred, ref if_true, ref if_false) => {
+            Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 self.compile(&**pred, function);
                 let jump_index = function.instructions.len();
                 function.instructions.push(CJump(0));
@@ -462,7 +462,7 @@ impl <'a> Compiler<'a> {
                 self.compile(&**if_true, function);
                 function.instructions[false_jump_index] = Jump(function.instructions.len() as VMIndex);
             }
-            Block(ref exprs) => {
+            Expr::Block(ref exprs) => {
                 if exprs.len() != 0 {
                     for expr in exprs[..exprs.len() - 1].iter() {
                         self.compile(expr, function);
@@ -478,7 +478,7 @@ impl <'a> Compiler<'a> {
                 let stack_size = self.stack_size();
                 for expr in exprs.iter() {
                     match expr.value {
-                        Let(ref id, _) => {
+                        Expr::Let(ref id, _) => {
                             self.stack.remove(id.id());
                         }
                         _ => ()
@@ -497,7 +497,7 @@ impl <'a> Compiler<'a> {
                 }
                 
             }
-            BinOp(ref lhs, ref op, ref rhs) => {
+            Expr::BinOp(ref lhs, ref op, ref rhs) => {
                 if op.as_slice() == "&&" {
                     self.compile(&**lhs, function);
                     let lhs_end = function.instructions.len();
@@ -548,7 +548,7 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(instr);
                 }
             }
-            Let(ref id, ref expr) => {
+            Expr::Let(ref id, ref expr) => {
                 self.compile(&**expr, function);
                 self.new_stack_var(*id.id());
                 //unit expressions do not return a value so we need to add a dummy value
@@ -557,9 +557,9 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(PushInt(0));
                 }
             }
-            Call(ref func, ref args) => {
+            Expr::Call(ref func, ref args) => {
                 match func.value {
-                    Identifier(ref id) => {
+                    Expr::Identifier(ref id) => {
                         match self.find(id.id(), function).unwrap_or_else(|| panic!("Undefined variable {}", id.id())) {
                             Constructor(tag, num_args) => {
                                 for arg in args.iter() {
@@ -579,7 +579,7 @@ impl <'a> Compiler<'a> {
                     _ => panic!("Non function type inferred in call")
                 };
                 let is_trait_func = match func.value {
-                    Identifier(ref func_id) => {
+                    Expr::Identifier(ref func_id) => {
                         self.find(func_id.id(), function).map(|x| {
                             match x {
                                 TraitFunction(_) => true,
@@ -605,9 +605,9 @@ impl <'a> Compiler<'a> {
                         _ => ()
                     }
                 }
-                function.instructions.push(CallGlobal(args.len() as VMIndex));
+                function.instructions.push(Call(args.len() as VMIndex));
             }
-            While(ref pred, ref expr) => {
+            Expr::While(ref pred, ref expr) => {
                 //jump #test
                 //#start:
                 //[compile(expr)]
@@ -621,9 +621,9 @@ impl <'a> Compiler<'a> {
                 self.compile(&**pred, function);
                 function.instructions.push(CJump(pre_jump_index as VMIndex + 1));
             }
-            Assign(ref lhs, ref rhs) => {
+            Expr::Assign(ref lhs, ref rhs) => {
                 match ***lhs {
-                    Identifier(ref id) => {
+                    Expr::Identifier(ref id) => {
                         self.compile(&**rhs, function);
                         let var = self.find(id.id(), function)
                             .unwrap_or_else(|| panic!("Undefined variable {:?}", id));
@@ -635,7 +635,7 @@ impl <'a> Compiler<'a> {
                             TraitFunction(..) => panic!("Assignment to trait function {:?}", id),
                         }
                     }
-                    FieldAccess(ref expr, ref field) => {
+                    Expr::FieldAccess(ref expr, ref field) => {
                         self.compile(&**expr, function);
                         self.compile(&**rhs, function);
                         let field_index = match *expr.type_of() {
@@ -647,7 +647,7 @@ impl <'a> Compiler<'a> {
                         };
                         function.instructions.push(SetField(field_index));
                     }
-                    ArrayAccess(ref expr, ref index) => {
+                    Expr::ArrayAccess(ref expr, ref index) => {
                         self.compile(&**expr, function);
                         self.compile(&**index, function);
                         self.compile(&**rhs, function);
@@ -656,7 +656,7 @@ impl <'a> Compiler<'a> {
                     _ => panic!("Assignment to {:?}", lhs)
                 }
             }
-            FieldAccess(ref expr, ref field) => {
+            Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function);
                 let field_index = match *expr.type_of() {
                     Type::Data(ref id, _) => {
@@ -667,7 +667,7 @@ impl <'a> Compiler<'a> {
                 };
                 function.instructions.push(GetField(field_index));
             }
-            Match(ref expr, ref alts) => {
+            Expr::Match(ref expr, ref alts) => {
                 self.compile(&**expr, function);
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
@@ -721,18 +721,18 @@ impl <'a> Compiler<'a> {
                     function.instructions[index] = Jump(function.instructions.len() as VMIndex);
                 }
             }
-            Array(ref a) => {
+            Expr::Array(ref a) => {
                 for expr in a.expressions.iter() {
                     self.compile(expr, function);
                 }
                 function.instructions.push(Construct(0, a.expressions.len() as VMIndex));
             }
-            ArrayAccess(ref array, ref index) => {
+            Expr::ArrayAccess(ref array, ref index) => {
                 self.compile(&**array, function);
                 self.compile(&**index, function);
                 function.instructions.push(GetIndex);
             }
-            Lambda(ref lambda) => {
+            Expr::Lambda(ref lambda) => {
                 let cf = self.compile_lambda(lambda, function);
                 function.inner_functions.push(cf);
             }

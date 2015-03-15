@@ -849,7 +849,7 @@ impl <'a> VM<'a> {
                     let v = stack.pop();
                     self.globals[i as usize].value.set(v);
                 }
-                CallGlobal(args) => {
+                Call(args) => {
                     let function_index = stack.len() - 1 - args;
                     {
                         let f = stack[function_index].clone();

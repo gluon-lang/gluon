@@ -1,6 +1,6 @@
 use vm::{VM, VMResult, BytecodeFunction, Value, Userdata_, StackFrame, VMInt};
 use typecheck::{TcType, Typed, Type, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
-use compiler::Instruction::CallGlobal;
+use compiler::Instruction::Call;
 use std::boxed::BoxAny;
 use std::marker::{PhantomData, PhantomFn};
 
@@ -193,7 +193,7 @@ impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
         a.push(self.vm, &mut stack);
-        stack = try!(self.vm.execute(stack, &[CallGlobal(1)], &BytecodeFunction::new()));
+        stack = try!(self.vm.execute(stack, &[Call(1)], &BytecodeFunction::new()));
         match VMValue::from_value(stack.pop()) {
             Some(x) => Ok(x),
             None => Err("Wrong type".to_string())
@@ -206,7 +206,7 @@ impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (
         self.value.push(self.vm, &mut stack);
         a.push(self.vm, &mut stack);
         b.push(self.vm, &mut stack);
-        stack = try!(self.vm.execute(stack, &[CallGlobal(2)], &BytecodeFunction::new()));
+        stack = try!(self.vm.execute(stack, &[Call(2)], &BytecodeFunction::new()));
         match VMValue::from_value(stack.pop()) {
             Some(x) => Ok(x),
             None => Err("Wrong type".to_string())
