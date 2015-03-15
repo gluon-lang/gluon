@@ -83,7 +83,7 @@ pub fn match_types(l: &TcType, r: &TcType) -> bool {
 }
 
 
-fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclaration<TcIdent>) -> ast::Constrained<TcType> {
+fn add_impl_constraints(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclaration<TcIdent>) {
     //Add all constraints from the impl declaration to the globals declaration
     for constraint in constraints.iter() {
         let exists = {
@@ -94,77 +94,6 @@ fn from_impl_type(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclara
         if !exists {
             decl.typ.constraints.push(constraint.clone());
         }
-    }
-    from_declaration(decl)
-}
-
-fn from_declaration_with_self(decl: &ast::GlobalDeclaration<TcIdent>, self_var: InternedStr) -> ast::Constrained<TcType> {
-    let constraints = decl.typ.constraints.as_slice();
-    let type_handler = |type_id: InternedStr| {
-        if type_id == self_var {
-            Some(Type::Generic(self_var))
-        }
-        else {
-            constraints.iter()
-                .find(|v| v.type_variable == type_id)
-                .map(|v| Type::Generic(v.type_variable))
-        }
-    };
-    from_declaration_(type_handler, decl)
-}
-fn from_declaration(decl: &ast::GlobalDeclaration<TcIdent>) -> ast::Constrained<TcType> {
-    let constraints = decl.typ.constraints.as_slice();
-    let type_handler = |type_id| {
-        constraints.iter()
-            .find(|v| v.type_variable == type_id)
-            .map(|v| Type::Generic(v.type_variable))
-    };
-    from_declaration_(type_handler, decl)
-}
-fn from_declaration_<F>(mut type_handler: F, decl: &ast::GlobalDeclaration<TcIdent>) -> ast::Constrained<TcType>
-    where F: FnMut(InternedStr) -> Option<TcType> {
-    ast::Constrained {
-        constraints: decl.typ.constraints.clone(),
-        value: from_generic_type(&mut type_handler, &decl.typ.value)
-    }
-}
-
-pub fn from_constrained_type(variables: &[ast::Constraint], typ: &ast::VMType) -> TcType {
-    let mut type_handler = |type_id| {
-        variables.iter()
-            .find(|v| v.type_variable == type_id)
-            .map(|v| Type::Generic(v.type_variable))
-    };
-    from_generic_type(&mut type_handler, typ)
-}
-fn from_generic_type<F>(type_handler: &mut F, typ: &ast::VMType) -> TcType
-    where F: FnMut(InternedStr) -> Option<TcType> {
-    match *typ {
-        ast::Type::Data(ref type_id, ref args) => {
-            match (*type_handler)(*type_id) {
-                Some(typ) => typ,
-                None => {
-                    let args2 = args.iter().map(|a| from_generic_type(type_handler, a)).collect();
-                    Type::Data(*type_id, args2)
-                }
-            }
-        }
-        ast::Type::Function(ref args, ref return_type) => {
-            let args2 = args.iter()
-                .map(|a| from_generic_type(type_handler, a))
-                .collect();
-            Type::Function(args2, box from_generic_type(type_handler, &**return_type))
-        }
-        ast::Type::Builtin(ref id) => Type::Builtin(*id),
-        ast::Type::Array(ref typ) => Type::Array(box from_generic_type(type_handler, &**typ)),
-        ast::Type::Trait(ref id, ref args) => {
-            let args2 = args.iter()
-                .map(|a| from_generic_type(type_handler, a))
-                .collect();
-            Type::Data(*id, args2)
-        }
-        ast::Type::Variable(ref id) => Type::Variable(*id),
-        ast::Type::Generic(ref id) => Type::Generic(*id),
     }
 }
 
@@ -215,33 +144,25 @@ impl TypeInfos {
             self.datas.insert(data.name.name, data.constructors.clone());
         }
         for t in module.traits.iter() {
-            let function_types = t.declarations.iter().map(|f| {
-                let typ = from_declaration_with_self(f, t.self_variable);
-                (f.name.id().clone(), typ)
+            let function_types = t.declarations.iter().map(|decl| {
+                (decl.name.id().clone(), decl.typ.clone())
             }).collect();
             self.traits.insert(t.name.id().clone(), function_types);
         }
         for imp in module.impls.iter() {
-            let imp_type = from_constrained_type(imp.constraints.as_slice(), &imp.typ);
             let trait_name = imp.trait_name.id().clone();
             let set = match self.impls.entry(trait_name) {
                 Entry::Occupied(v) => v.into_mut(),
                 Entry::Vacant(v) => v.insert(Vec::new())
             };
-            set.push(ast::Constrained { constraints: imp.constraints.clone(), value: imp_type });
+            set.push(ast::Constrained { constraints: imp.constraints.clone(), value: imp.typ.clone() });
         }
     }
     pub fn extend(&mut self, other: TypeInfos) {
         let TypeInfos { datas, impls, traits } = other;
-        for (id, data) in datas {
-            self.datas.insert(id, data);
-        }
-        for (id, impl_) in impls {
-            self.impls.insert(id, impl_);
-        }
-        for (id, trait_) in traits {
-            self.traits.insert(id, trait_);
-        }
+        self.datas.extend(datas);
+        self.impls.extend(impls);
+        self.traits.extend(traits);
     }
 }
 fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(InternedStr, ast::Constrained<TcType>)], TypeError> {
@@ -351,35 +272,26 @@ impl <'a> Typecheck<'a> {
     pub fn typecheck_module(&mut self, module: &mut ast::Module<TcIdent>) -> Result<(), StringErrors> {
         
         for f in module.globals.iter_mut() {
-            let decl = &mut f.declaration;
-            let constrained_type = from_declaration(decl);
-            decl.name.typ = constrained_type.value.clone();
-            self.module.insert(decl.name.name, constrained_type);
+            f.declaration.name.typ = f.declaration.typ.value.clone();
+            self.module.insert(f.declaration.name.name, f.declaration.typ.clone());
         }
         for t in module.traits.iter_mut() {
-            for func in t.declarations.iter_mut() {
-                let constrained_type = from_declaration_with_self(func, t.self_variable);
-                func.name.typ = constrained_type.value.clone();
-                self.module.insert(func.name.id().clone(), ast::Constrained {
+            for decl in t.declarations.iter_mut() {
+                decl.name.typ = decl.typ.value.clone();
+                self.module.insert(decl.name.id().clone(), ast::Constrained {
                     constraints: vec![ast::Constraint {
                         type_variable: t.self_variable,
                         name: t.name.name,
                     }],//The self type should have the trait itself as a constraint
-                    value: func.name.typ.clone()
+                    value: decl.name.typ.clone()
                 });
             }
         }
         for data in module.datas.iter_mut() {
-            let type_variables = data.constraints.as_slice();
             for ctor in data.constructors.iter_mut() {
                 let mut args = Vec::new();
-                let mut type_handler = |type_id| {
-                    type_variables.iter()
-                        .find(|v| **v == type_id)
-                        .map(|v| Type::Generic(*v))
-                };
                 ctor.arguments.each_type(|t| {
-                    args.push(from_generic_type(&mut type_handler, t));
+                    args.push(t.clone());
                 });
                 let variables = data.constraints.iter()
                     .map(|cs| Type::Generic(*cs))
@@ -396,7 +308,6 @@ impl <'a> Typecheck<'a> {
             self.typecheck_global(f)
         }
         for imp in module.impls.iter_mut() {
-            imp.typ = from_constrained_type(imp.constraints.as_slice(), &imp.typ);
             let x = self.typecheck_impl(imp).map_err(ast::no_loc);
             self.errors.handle(x);
         }
@@ -410,10 +321,10 @@ impl <'a> Typecheck<'a> {
     fn typecheck_impl(&mut self, imp: &mut ast::Impl<TcIdent>) -> Result<(), TypeError> {
         {
             let trait_globals = try!(find_trait(&self.type_infos, imp.trait_name.id()));
-            let type_variables = imp.constraints.as_slice();
+            let constraints = imp.constraints.as_slice();
             for func in imp.globals.iter_mut() {
-                let c_type = from_impl_type(type_variables, &mut func.declaration);
-                func.declaration.name.typ = c_type.value;
+                add_impl_constraints(constraints, &mut func.declaration);
+                func.declaration.name.typ = func.declaration.typ.value.clone();
                 let trait_function_type = try!(trait_globals.iter()
                     .find(|& &(ref name, _)| name == func.declaration.name.id())
                     .map(Ok)
