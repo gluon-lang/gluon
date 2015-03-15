@@ -901,7 +901,7 @@ impl Substitution {
 
     fn clear(&mut self) {
         self.map.clear();
-        self.constraints = HashMap::new();//TODO Check if there is a bug in hashmap when calling clear
+        self.constraints.clear();
         self.variables.clear();
         self.var_id = 0;
     }
