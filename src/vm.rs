@@ -1786,5 +1786,18 @@ g = 123
         let result = run_main(&mut vm, text);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn load_prelude() {
+        use std::fs::File;
+        use std::io::{Cursor, Read};
+        let mut vm = VM::new();
+        let mut file = File::open("prelude.s").unwrap();
+        let mut text = ::std::string::String::new();
+        file.read_to_string(&mut text).unwrap();
+        let mut buffer = Cursor::new(text.as_bytes());
+        load_script(&mut vm, &mut buffer)
+            .unwrap_or_else(|e| panic!("{}", e));
+    }
 }
 
