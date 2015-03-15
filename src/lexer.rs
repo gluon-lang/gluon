@@ -136,9 +136,11 @@ impl <'a, 'b> Lexer<'a, 'b> {
     }
 
     ///Moves the lexer back one token
-    ///TODO check for overflow in the buffer
     pub fn backtrack(&mut self) {
         self.offset += 1;
+        if self.offset > self.tokens.len() {
+            panic!("ICE:{} Backtracked outside the token buffer", self.location());
+        }
     }
 
     ///Peeks at the next character in the input
@@ -187,13 +189,10 @@ impl <'a, 'b> Lexer<'a, 'b> {
     fn scan_digits(&mut self) {
         loop {
             match self.peek_char() {
-                Some(x) => {
-                    if !x.is_digit(10) {
-                        break;
-                    }
+                Some(x) if x.is_digit(10) =>  {
                     self.read_char();
                 }
-                None => break
+                _ => break
             }
         }
     }
@@ -201,13 +200,10 @@ impl <'a, 'b> Lexer<'a, 'b> {
     fn scan_number(&mut self) -> Token {
         self.scan_digits();
         let mut is_float = false;
-        match self.peek_char() {
-            Some('.') => {
-                self.read_char();
-                is_float = true;
-                self.scan_digits();
-            }
-            _ => ()
+        if self.peek_char() == Some('.') {
+            self.read_char();
+            is_float = true;
+            self.scan_digits();
         }
         if is_float {
             TFloat(FromStr::from_str(self.current_str()).unwrap())
@@ -221,13 +217,10 @@ impl <'a, 'b> Lexer<'a, 'b> {
     fn scan_identifier(&mut self) -> Token {
         loop {
             match self.peek_char() {
-                Some(ch) => {
-                    if !ch.is_alphanumeric() && ch != '_' {
-                        break;
-                    }
+                Some(ch) if ch.is_alphanumeric() || ch == '_' => {
                     self.read_char();
                 }
-                None => break
+                _ => break
             }
         }
         match self.current_str() {
@@ -274,13 +267,10 @@ impl <'a, 'b> Lexer<'a, 'b> {
         if is_operator(c) {
             loop {
                 match self.peek_char() {
-                    Some(ch) => {
-                        if !is_operator(ch) {
-                            break;
-                        }
+                    Some(ch) if is_operator(ch) => {
                         self.read_char();
                     }
-                    None => { break; }
+                    _ => break
                 }
             }
             return match self.current_str() {
@@ -319,7 +309,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
                         TChar(x)
                     }
                     else {
-                        TError("Attempted to lex a character literal with multiple character")
+                        TError("Attempted to lex a character literal with multiple characters")
                     }
                 }
                 None => return TError("Unexpected EOF when lexing char literal")
