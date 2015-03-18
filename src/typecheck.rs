@@ -103,6 +103,7 @@ enum TypeError {
     NotAFunction(TcType),
     WrongNumberOfArguments(usize, usize),
     TypeMismatch(TcType, TcType),
+    UnboundVariable,
     UndefinedStruct(InternedStr),
     UndefinedField(InternedStr, InternedStr),
     UndefinedTrait(InternedStr),
@@ -410,24 +411,38 @@ impl <'a> Typecheck<'a> {
         }
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { tc: &'a mut Typecheck<'b> }
+        impl <'a, 'b> ReplaceVisitor<'a, 'b> {
+            fn finish_type(&mut self, location: ast::Location, typ: &mut TcType) {
+                let mut unbound_variable = false;
+                ast::walk_mut_type(typ, &mut |typ| {
+                    self.tc.replace_variable(typ);
+                    if let Type::Variable(_) = *typ {
+                        unbound_variable = true;
+                    }
+                });
+                if unbound_variable {
+                    self.tc.errors.error(ast::Located { location: location, value: TypeError::UnboundVariable });
+                }
+            }
+        }
         impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
             type T = TcIdent;
             fn visit_expr(&mut self, e: &mut ast::LExpr<TcIdent>) {
                 match e.value {
-                    ast::Identifier(ref mut id) => self.tc.set_type(&mut id.typ),
-                    ast::FieldAccess(_, ref mut id) => self.tc.set_type(&mut id.typ),
-                    ast::Array(ref mut array) => self.tc.set_type(&mut array.id.typ),
-                    ast::Lambda(ref mut lambda) => self.tc.set_type(&mut lambda.id.typ),
+                    ast::Identifier(ref mut id) => self.finish_type(e.location, &mut id.typ),
+                    ast::FieldAccess(_, ref mut id) => self.finish_type(e.location, &mut id.typ),
+                    ast::Array(ref mut array) => self.finish_type(e.location, &mut array.id.typ),
+                    ast::Lambda(ref mut lambda) => self.finish_type(e.location, &mut lambda.id.typ),
                     ast::Match(_, ref mut alts) => {
                         for alt in alts.iter_mut() {
                             match alt.pattern {
                                 ast::ConstructorPattern(ref mut id, ref mut args) => {
-                                    self.tc.set_type(&mut id.typ);
+                                    self.finish_type(e.location, &mut id.typ);
                                     for arg in args.iter_mut() {
-                                        self.tc.set_type(&mut arg.typ);
+                                        self.finish_type(e.location, &mut arg.typ);
                                     }
                                 }
-                                ast::IdentifierPattern(ref mut id) => self.tc.set_type(&mut id.typ)
+                                ast::IdentifierPattern(ref mut id) => self.finish_type(e.location, &mut id.typ)
                             }
                         }
                     }
@@ -843,34 +858,31 @@ impl <'a> Typecheck<'a> {
     }
 
     fn set_type(&self, t: &mut TcType) {
-        ast::walk_mut_type(t, &mut |typ| {
-            let replacement = match *typ {
-                Type::Variable(id) => {
-                    self.subs.find(id)
-                        .map(|t| match *t {
-                            Type::Data(ref id, ref args) if find_trait(&self.type_infos, id).is_ok() => {
-                                Type::Trait(id.clone(), args.clone())
-                            }
-                            _ => {
-                                let mut t = t.clone();
-                                self.set_type(&mut t);
-                                t
-                            }
-                        })
-                }
-                Type::Data(ref id, ref mut args) if find_trait(&self.type_infos, id).is_ok() => {
-                    let a = ::std::mem::replace(args, Vec::new());
-                    Some(Type::Trait(*id, a))
-                }
-                _ => None
-            };
-            match replacement {
-                Some(x) => *typ = x,
-                None => ()
-            }
-        });
+        ast::walk_mut_type(t, &mut |typ| self.replace_variable(typ) );
     }
-
+    
+    fn replace_variable(&self, typ: &mut TcType) {
+        let replacement = match *typ {
+            Type::Variable(id) => {
+                self.subs.find(id)
+                    .map(|t| match *t {
+                        Type::Data(ref id, ref args) if find_trait(&self.type_infos, id).is_ok() => {
+                            Type::Trait(id.clone(), args.clone())
+                        }
+                        _ => t.clone()
+                    })
+            }
+            Type::Data(ref id, ref mut args) if find_trait(&self.type_infos, id).is_ok() => {
+                let a = ::std::mem::replace(args, Vec::new());
+                Some(Type::Trait(*id, a))
+            }
+            _ => None
+        };
+        match replacement {
+            Some(x) => *typ = x,
+            None => ()
+        }
+    }
 }
 
 struct Substitution {
@@ -1286,7 +1298,7 @@ r"
 main : () -> Float;
 main = \ -> {
     let xs = [1,2,3,4];
-    transform(xs, \x -> []);
+    transform(xs, \x -> [x]);
     transform(1, \x -> 1.0)
 }
 transform : (a, (a) -> b) -> b;
@@ -1522,6 +1534,21 @@ r#"
 
 global : Int;
 global = { "" }
+
+"#;
+        let mut module = parse(text, |p| p.module());
+        let mut tc = Typecheck::new();
+        tc.typecheck_module(&mut module)
+            .err()
+            .unwrap();
+    }
+    #[test]
+    fn unbound_variable_error() {
+        let text = 
+r#"
+
+test : Int;
+test = { let x = []; 1 }
 
 "#;
         let mut module = parse(text, |p| p.module());
