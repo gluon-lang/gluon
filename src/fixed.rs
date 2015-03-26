@@ -85,9 +85,9 @@ impl <T> FixedVec<T> {
 
 impl <T> Index<usize> for FixedVec<T> {
     type Output = T;
-    fn index(&self, index: &usize) -> &T {
+    fn index(&self, index: usize) -> &T {
         let vec = self.vec.borrow();
-        let result = &*(*vec)[*index];
+        let result = &*(*vec)[index];
         unsafe { forget_lifetime(result) }
     }
 }

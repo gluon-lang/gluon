@@ -356,7 +356,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             let lhs_prec;
             match *self.lexer.current() {
                 TOperator(op) => {
-                    lhs_prec = precedence(op.as_slice());
+                    lhs_prec = precedence(&op);
                     lhs_op = op;
                     if lhs_prec < min_precedence {
                         break
@@ -372,7 +372,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                 let lookahead;
                 match *self.lexer.current() {
                     TOperator(op) => {
-                        lookahead = precedence(op.as_slice());
+                        lookahead = precedence(&op);
                         if lookahead < lhs_prec {
                             break
                         }
@@ -428,7 +428,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
     fn typ_(&mut self, is_argument: bool) -> ParseResult<VMType> {
         let x = match *self.lexer.next() {
             TConstructor(x) => {
-                match str_to_primitive_type(x) {
+                match str_to_primitive_type(&x) {
                     Some(t) => t,
                     None => {
                         let args = if is_argument {
@@ -559,11 +559,11 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         static EXPECTED_LT: &'static [&'static str] = &["<"];
         static EXPECTED_GT: &'static [&'static str] = &[">"];
         match *self.lexer.peek() {
-            TOperator(s) if s.as_slice() == "<" => {
+            TOperator(s) if s == "<" => {
                 self.lexer.next();
                 let result = try!(f(self));
                 match *self.lexer.next() {
-                    TOperator(x) if x.as_slice() == ">" => (),
+                    TOperator(x) if x == ">" => (),
                     x => return Err(self.unexpected_token(EXPECTED_GT, x))
                 }
                 Ok(result)
@@ -574,7 +574,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
 
     fn constraints(&mut self) -> ParseResult<Vec<Constraint>> {
         match *self.lexer.peek() {
-            TOperator(s) if s.as_slice() == "<" => {
+            TOperator(s) if s == "<" => {
                 let vars = try!(self.angle_brackets(|this| this.sep_by(|t| *t == TComma, |this| {
                     let name = expect1!(this, TConstructor(x));
                     let type_variable = expect1!(this, TVariable(x));

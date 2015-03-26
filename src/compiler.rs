@@ -196,7 +196,7 @@ impl CompilerEnv for Module<TcIdent> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
         (0..).zip(self.globals.iter())
             .find(|&(_, f)| f.declaration.name.id() == id)
-            .map(|(i, f)| Global(i, f.declaration.typ.constraints.as_slice(), &f.declaration.name.typ))
+            .map(|(i, f)| Global(i, &f.declaration.typ.constraints, &f.declaration.name.typ))
             .or_else(|| {
                 for d in self.datas.iter() {
                     let x = (0..).zip(d.constructors.iter())
@@ -250,7 +250,7 @@ impl CompilerEnv for Module<TcIdent> {
                 for (i, func) in (0..).zip(imp.globals.iter()) {
                     if func.declaration.name.id() == id {
                         return Some(TypeResult {
-                            constraints: func.declaration.typ.constraints.as_slice(),
+                            constraints: &func.declaration.typ.constraints,
                             typ: func.type_of(),
                             value: offset + i
                         });
@@ -393,7 +393,7 @@ impl <'a> Compiler<'a> {
 
     pub fn compile_global<'b>(&mut self, initializer: &mut FunctionEnv<'b>, index: VMIndex, function: &'b ast::Global<TcIdent>) -> Binding {
         debug!("-- Compiling {}", function.declaration.name.id());
-        initializer.dictionary = function.declaration.typ.constraints.as_slice();
+        initializer.dictionary = &function.declaration.typ.constraints;
         self.compile(&function.expression, initializer);
         initializer.instructions.push(StoreGlobal(index));
         let name = function.declaration.name.name;
@@ -493,7 +493,7 @@ impl <'a> Compiler<'a> {
                 
             }
             Expr::BinOp(ref lhs, ref op, ref rhs) => {
-                if op.as_slice() == "&&" {
+                if op.name == "&&" {
                     self.compile(&**lhs, function);
                     let lhs_end = function.instructions.len();
                     function.instructions.push(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
@@ -502,7 +502,7 @@ impl <'a> Compiler<'a> {
                     self.compile(&**rhs, function);
                     function.instructions[lhs_end + 2] = Jump(function.instructions.len() as VMIndex);//replace jump instruction
                 }
-                else if op.as_slice() == "||" {
+                else if op.name == "||" {
                     self.compile(&**lhs, function);
                     let lhs_end = function.instructions.len();
                     function.instructions.push(CJump(0));
@@ -518,7 +518,7 @@ impl <'a> Compiler<'a> {
                     self.compile(&**rhs, function);
                     let typ = lhs.type_of();
                     let instr = if *typ == INT_TYPE {
-                        match op.as_slice() {
+                        match &op.name[..] {
                             "+" => AddInt,
                             "-" => SubtractInt,
                             "*" => MultiplyInt,
@@ -528,7 +528,7 @@ impl <'a> Compiler<'a> {
                         }
                     }
                     else if *typ == FLOAT_TYPE {
-                        match op.as_slice() {
+                        match &op.name[..] {
                             "+" => AddFloat,
                             "-" => SubtractFloat,
                             "*" => MultiplyFloat,
@@ -570,7 +570,7 @@ impl <'a> Compiler<'a> {
                 }
                 self.compile(&**func, function);
                 let arg_types = match *func.type_of() {
-                    Type::Function(ref args, _) => args.as_slice(),
+                    Type::Function(ref args, _) => &args[..],
                     _ => panic!("Non function type inferred in call")
                 };
                 let is_trait_func = match func.value {
@@ -777,7 +777,7 @@ impl <'a> Compiler<'a> {
         let real_types = find_real_type(function_type, expr_type);
         let mut dict_size = 0;
         for constraint in constraints.iter() {
-            let real_type = real_types[constraint.type_variable];
+            let real_type = real_types[&constraint.type_variable];
             dict_size += self.add_dictionary(constraint, real_type, function);
         }
         function.instructions.push(Construct(0, dict_size));

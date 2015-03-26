@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell, RefMut, Ref};
 use std::fmt;
-use std::intrinsics::get_tydesc;
+use std::intrinsics::type_name;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
@@ -284,7 +284,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
-                Some(Variable::Global(index as VMIndex, g.typ.constraints.as_slice(), &g.typ.value))
+                Some(Variable::Global(index as VMIndex, &g.typ.constraints, &g.typ.value))
             }
             Some(&TraitFn(trait_index, function_index)) => {
                 self.type_infos.traits
@@ -347,7 +347,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                             let global_index = function_offset + trait_offset;
                             let global = &self.globals[global_index as usize];
                             Some(TypeResult {
-                                constraints: global.typ.constraints.as_slice(),
+                                constraints: &global.typ.constraints,
                                 typ: &global.typ.value,
                                 value: global_index
                             })
@@ -379,7 +379,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
-                Some((g.typ.constraints.as_slice(), &g.typ.value))
+                Some((&g.typ.constraints, &g.typ.value))
             }
             Some(&TraitFn(trait_index, function_index)) => {
                 self.type_infos.traits
@@ -387,7 +387,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
                     .and_then(|functions| {
                         if function_index < functions.len() {
                             let f = &functions[function_index].1;
-                            Some((f.constraints.as_slice(), &f.value))
+                            Some((&f.constraints[..], &f.value))
                         }
                         else {
                             None
@@ -398,7 +398,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
                 self.type_infos.datas.values()
                     .flat_map(|ctors| ctors.iter())
                     .find(|ctor| ctor.name.id() == id)
-                    .map(|ctor| ([].as_slice(), &ctor.name.typ))
+                    .map(|ctor| (&[][..], &ctor.name.typ))
             }
         }
     }
@@ -538,13 +538,13 @@ impl <'a, 'b> DerefMut for StackFrame<'a, 'b> {
 
 impl <'a, 'b> Index<VMIndex> for StackFrame<'a, 'b> {
     type Output = Value<'a>;
-    fn index(&self, index: &VMIndex) -> &Value<'a> {
-        &self.stack.values[(self.offset + *index) as usize]
+    fn index(&self, index: VMIndex) -> &Value<'a> {
+        &self.stack.values[(self.offset + index) as usize]
     }
 }
 impl <'a, 'b> IndexMut<VMIndex> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, index: &VMIndex) -> &mut Value<'a> {
-        &mut self.stack.values[(self.offset + *index) as usize]
+    fn index_mut(&mut self, index: VMIndex) -> &mut Value<'a> {
+        &mut self.stack.values[(self.offset + index) as usize]
     }
 }
 
@@ -691,13 +691,7 @@ impl <'a> VM<'a> {
         let id = TypeId::of::<T>();
         self.typeids.get(&id)
             .unwrap_or_else(|| {
-                let desc = unsafe { get_tydesc::<T>() };
-                let name = if !desc.is_null() {
-                    unsafe { &*desc }.name
-                }
-                else {
-                    ""
-                };
+                let name = unsafe { type_name::<T>() };
                 panic!("Expected type {} to be inserted before get_type call", name)
             })
     }
@@ -827,7 +821,7 @@ impl <'a> VM<'a> {
                 Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
             }
             Function_::Bytecode(ref function) => {
-                self.execute(stack, function.instructions.as_slice(), &function)
+                self.execute(stack, &function.instructions, &function)
             }
         }
     }
@@ -896,7 +890,7 @@ impl <'a> VM<'a> {
                 Construct(tag, args) => {
                     let arg_start = (stack.len() - args) as usize;
                     let d = self.new_data(tag, &mut stack.as_mut_slice()[arg_start..]);
-                    for _ in range(0, args) {
+                    for _ in 0..args {
                         stack.pop();
                     } 
                     stack.push(d);
@@ -951,13 +945,13 @@ impl <'a> VM<'a> {
                     }
                 }
                 Pop(n) => {
-                    for _ in range(0, n) {
+                    for _ in 0..n {
                         stack.pop();
                     }
                 }
                 Slide(n) => {
                     let v = stack.pop();
-                    for _ in range(0, n) {
+                    for _ in 0..n {
                         stack.pop();
                     }
                     stack.push(v);
@@ -992,7 +986,7 @@ impl <'a> VM<'a> {
                         let func = function.inner_functions[fi as usize];
                         Closure(self.new_closure_and_collect(stack_after, func, args))
                     };
-                    for _ in range(0, n) {
+                    for _ in 0..n {
                         stack.pop();
                     }
                     stack.push(closure);
@@ -1133,12 +1127,10 @@ fn string_append(vm: &VM) {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     match (&stack[0], &stack[1]) {
         (&String(l), &String(r)) => {
-            let l = l.as_slice();
-            let r = r.as_slice();
             let mut s = ::std::string::String::with_capacity(l.len() + r.len());
-            s.push_str(l);
-            s.push_str(r);
-            stack.push(String(vm.gc.borrow_mut().alloc(s.as_slice())));
+            s.push_str(&l);
+            s.push_str(&r);
+            stack.push(String(vm.gc.borrow_mut().alloc(&s[..])));
         }
         _ => panic!()
     }
@@ -1189,7 +1181,7 @@ pub fn run_buffer_main<'a>(vm: &VM<'a>, buffer: &mut BufRead) -> VMResult<Value<
 }
 
 pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a>> {
-    let func = match vm.globals.find(|g| g.id.as_slice() == name) {
+    let func = match vm.globals.find(|g| &*g.id == name) {
         Some((_, f)) => f,
         None => return Err(format!("Undefined function {}", name))
     };
@@ -1284,7 +1276,7 @@ impl Add for Int {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Data(ref data) => {
-                assert_eq!(&data.fields, [Int(11), Int(5)].as_slice());
+                assert_eq!(&data.fields, [Int(11), Int(5)]);
             }
             _ => panic!()
         }
@@ -1327,7 +1319,7 @@ main = \ -> {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Data(ref data) => {
-                assert_eq!(&data.fields, [Int(1), Int(2), Int(33)].as_slice());
+                assert_eq!(&data.fields, [Int(1), Int(2), Int(33)]);
             }
             _ => panic!()
         }
@@ -1466,7 +1458,7 @@ main = \ -> {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Data(ref data) => {
-                assert_eq!(&data.fields, [Int(0), Int(1)].as_slice());
+                assert_eq!(&data.fields, [Int(0), Int(1)]);
             }
             _ => panic!()
         }
@@ -1538,7 +1530,7 @@ main = \ -> {
             .unwrap_or_else(|err| panic!("{}", err));
         match value {
             Data(ref data) => {
-                assert_eq!(&data.fields, [Int(1), Int(0)].as_slice());
+                assert_eq!(&data.fields, [Int(1), Int(0)]);
             }
             _ => panic!()
         }

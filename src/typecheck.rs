@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::convert::AsRef;
 use std::fmt;
 use scoped_map::ScopedMap;
 use ast;
@@ -29,9 +30,9 @@ impl TcIdent {
     }
 }
 
-impl Str for TcIdent {
-    fn as_slice(&self) -> &str {
-        self.name.as_slice()
+impl AsRef<str> for TcIdent {
+    fn as_ref(&self) -> &str {
+        &self.name
     }
 }
 
@@ -138,7 +139,7 @@ impl TypeInfos {
             .map(|vec| &**vec)
     }
     pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, ast::Constrained<TcType>)]> {
-        self.traits.get(name).map(|v| v.as_slice())
+        self.traits.get(name).map(|v| &v[..])
     }
     pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
         for data in module.datas.iter() {
@@ -238,10 +239,10 @@ impl <'a> Typecheck<'a> {
             let stack = &self.stack;
             let module = &self.module;
             let environment = &self.environment;
-            match stack.find(id).map(|typ| ([].as_slice(), typ)) {
+            match stack.find(id).map(|typ| (&[][..], typ)) {
                 Some(x) => Some(x),
                 None => module.get(id)
-                    .map(|c| (c.constraints.as_slice(), &c.value))
+                    .map(|c| (&c.constraints[..], &c.value))
                     .or_else(|| environment.and_then(|e| e.find_type(id)))
             }
         };
@@ -322,7 +323,7 @@ impl <'a> Typecheck<'a> {
     fn typecheck_impl(&mut self, imp: &mut ast::Impl<TcIdent>) -> Result<(), TypeError> {
         {
             let trait_globals = try!(find_trait(&self.type_infos, imp.trait_name.id()));
-            let constraints = imp.constraints.as_slice();
+            let constraints = &imp.constraints;
             for func in imp.globals.iter_mut() {
                 add_impl_constraints(constraints, &mut func.declaration);
                 func.declaration.name.typ = func.declaration.typ.value.clone();
@@ -500,9 +501,9 @@ impl <'a> Typecheck<'a> {
                         if arg_types.len() != args.len() {
                             return Err(WrongNumberOfArguments(arg_types.len(), args.len()));
                         }
-                        for i in range(0, arg_types.len()) {
-                            let actual = try!(self.typecheck(&mut args[i]));
-                            try!(self.unify(&arg_types[i], actual));
+                        for (arg_type, arg) in arg_types.iter().zip(args.iter_mut()) {
+                            let actual = try!(self.typecheck(arg));
+                            try!(self.unify(arg_type, actual));
                         }
                         Ok(*return_type)
                     }
@@ -529,7 +530,7 @@ impl <'a> Typecheck<'a> {
                 let lhs_type = try!(self.typecheck(&mut**lhs));
                 let rhs_type = try!(self.typecheck(&mut**rhs));
                 try!(self.unify(&lhs_type, rhs_type.clone()));
-                match op.as_slice() {
+                match AsRef::<str>::as_ref(op) {
                     "+" | "-" | "*" => {
                         let b = {
                             let lt = self.subs.real_type(&lhs_type);
@@ -827,7 +828,7 @@ impl <'a> Typecheck<'a> {
         match self.type_infos.impls.get(trait_id) {
             Some(impls) => {
                 for impl_type in impls.iter() {
-                    if self.check_impl(impl_type.constraints.as_slice(), &impl_type.value, typ) {
+                    if self.check_impl(&impl_type.constraints, &impl_type.value, typ) {
                         return true;
                     }
                 }
@@ -1038,7 +1039,7 @@ impl Typed for TcIdent {
         &self.typ
     }
 }
-impl <Id: Typed + Str> Typed for ast::Expr<Id> {
+impl <Id: Typed + AsRef<str>> Typed for ast::Expr<Id> {
     fn type_of(&self) -> &TcType {
         match *self {
             ast::Identifier(ref id) => id.type_of(),
@@ -1058,7 +1059,7 @@ impl <Id: Typed + Str> Typed for ast::Expr<Id> {
                 }
             }
             ast::BinOp(ref lhs, ref op, _) => {
-                match op.as_slice() {
+                match AsRef::<str>::as_ref(op) {
                     "+" | "-" | "*" => lhs.type_of(),
                     "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => &BOOL_TYPE,
                     _ => panic!()

@@ -175,14 +175,14 @@ impl <'a, 'b> Lexer<'a, 'b> {
         result
     }
     fn current_str(&self) -> &str {
-        self.buffer.as_slice()
+        &self.buffer
     }
 
     pub fn intern(&mut self, s: &str) -> InternedStr {
         self.interner.intern(self.gc, s)
     }
     fn intern_current(&mut self) -> InternedStr {
-        self.interner.intern(self.gc, self.buffer.as_slice())
+        self.interner.intern(self.gc, &self.buffer)
     }
 
     ///Scans digits into a string
@@ -237,7 +237,7 @@ impl <'a, 'b> Lexer<'a, 'b> {
             "false" => TFalse,
             _ => {
                 let s = self.intern_current();
-                if s.char_at(0).is_uppercase() {
+                if s.chars().next().unwrap().is_uppercase() {
                     TConstructor(s)
                 }
                 else {

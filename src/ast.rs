@@ -221,8 +221,8 @@ pub static STRING_TYPE: VMType = Type::Builtin(StringType);
 pub static BOOL_TYPE: VMType = Type::Builtin(BoolType);
 pub static UNIT_TYPE: VMType = Type::Builtin(UnitType);
 
-pub fn str_to_primitive_type(x: InternedStr) -> Option<VMType> {
-    let t = match x.as_slice() {
+pub fn str_to_primitive_type(x: &str) -> Option<VMType> {
+    let t = match x {
         "Int" => INT_TYPE.clone(),
         "Float" => FLOAT_TYPE.clone(),
         "String" => STRING_TYPE.clone(),

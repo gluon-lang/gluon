@@ -67,9 +67,9 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
 
 fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, String> {
     let expr_str = tryf!(line);
-    match expr_str.char_at(0) {
+    match expr_str.chars().next().unwrap() {
         ':' => {
-            run_command(vm, expr_str.char_at(1), expr_str[2..].trim())
+            run_command(vm, expr_str.chars().skip(1).next().unwrap(), expr_str[2..].trim())
         }
         _ =>  {
             let mut buffer = io::BufReader::new(expr_str.as_bytes());

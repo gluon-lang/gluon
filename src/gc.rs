@@ -1,4 +1,3 @@
-use std::ptr::PtrExt;
 use std::fmt;
 use std::mem;
 use std::ptr;
@@ -222,13 +221,7 @@ impl Gc {
     pub fn alloc<T: ?Sized, D>(&mut self, def: D) -> GcPtr<T>
         where D: DataDef<Value=T> {
         debug!("ALLOC: {}, size: {}", unsafe {
-            let desc = ::std::intrinsics::get_tydesc::<T>();
-            if desc.is_null() {
-                "<unknown>"
-            }
-            else {
-                (*desc).name
-            }
+            ::std::intrinsics::type_name::<T>()
         }, def.size());
 
         let mut ptr = AllocPtr::new(def.size());

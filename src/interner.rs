@@ -15,6 +15,11 @@ impl PartialEq<InternedStr> for InternedStr {
         self.as_ptr() == other.as_ptr()
     }
 }
+impl <'a> PartialEq<&'a str> for InternedStr {
+    fn eq(&self, other: & &'a str) -> bool {
+        **self == **other
+    }
+}
 
 impl Hash for InternedStr {
     fn hash<H>(&self, hasher: &mut H) where H: Hasher {
@@ -94,20 +99,14 @@ impl Interner {
     }
 }
 
-impl Str for InternedStr {
-    fn as_slice<'a>(&'a self) -> &'a str {
-        &**self
-    }
-}
-
 impl fmt::Debug for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.as_slice())
+        write!(f, "{:?}", &self[..])
     }
 }
 impl fmt::Display for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.as_slice())
+        write!(f, "{}", &self[..])
     }
 }
 
