@@ -6,7 +6,7 @@ use EmbedLang::compiler::{Assembly, Compiler};
 use EmbedLang::vm::{VM, parse_expr, load_script};
 
 macro_rules! tryf {
-    ($e:expr) => (try!(($e).map_err(|e| format!("{:?}", e))))
+    ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 }
 
 fn print(vm: &VM) {

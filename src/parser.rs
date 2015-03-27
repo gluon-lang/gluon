@@ -123,14 +123,28 @@ fn is_lvalue<T>(e: &Expr<T>) -> bool {
 }
 
 type PString = InternedStr;
+
+#[derive(Debug)]
 enum ParseError {
     UnexpectedToken(&'static [&'static str], Token)
 }
 
-impl fmt::Debug for ParseError {
+impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            UnexpectedToken(expected, actual) => write!(f, "Unexpected token {:?}, expected {:?}", actual, expected),
+            UnexpectedToken(expected, actual) => {
+                //Type "one of" if there is more than one expected token
+                let multiple_tokens = if expected.len() == 1 { "" } else { "one of " };
+                try!(write!(f, "Unexpected token {:?}, expected {}", actual, multiple_tokens));
+                for (i, token) in expected.iter().enumerate() {
+                    //Writes the expected tokens in a list like "tok1" "tok1 or tok2" "tok1, tok2 or tok3"
+                    let sep = if i == 0 { "" }
+                              else if i == expected.len() - 1 { " or " }
+                              else { ", " };
+                    try!(write!(f, "{}{}", sep, token));
+                }
+                Ok(())
+            }
         }
     }
 }

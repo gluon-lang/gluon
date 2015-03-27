@@ -1137,14 +1137,14 @@ fn string_append(vm: &VM) {
 }
 
 macro_rules! tryf(
-    ($e:expr) => (try!(($e).map_err(|e| format!("{:?}", e))))
+    ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 );
 
 pub fn parse_expr(buffer: &mut BufRead, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
     let mut parser = Parser::new(&mut *interner, &mut *gc, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
-    parser.expression().map_err(|err| format!("{:?}", err))
+    parser.expression().map_err(|err| format!("{}", err))
 }
 
 pub fn load_script(vm: &VM, buffer: &mut BufRead) -> Result<(), ::std::string::String> {
