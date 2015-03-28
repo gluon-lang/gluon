@@ -1,5 +1,6 @@
 use std::fmt;
 use std::io::BufRead;
+use std::marker::PhantomData;
 use ast::*;
 use gc::Gc;
 use interner::{Interner, InternedStr};
@@ -108,14 +109,14 @@ fn precedence(s : &str) -> i32 {
     }
 }
 
-fn is_statement<T>(e: &Expr<T>) -> bool {
+fn is_statement<T: AstId>(e: &Expr<T>) -> bool {
     match *e {
         IfElse(..) | Match(..) | Block(..) | While(..) => true,
         _ => false
     }
 }
 
-fn is_lvalue<T>(e: &Expr<T>) -> bool {
+fn is_lvalue<T: AstId>(e: &Expr<T>) -> bool {
     match *e {
         Identifier(..) | FieldAccess(..) | ArrayAccess(..) => true,
         _ => false
@@ -154,21 +155,24 @@ pub type ParseResult<T> = Result<T, Located<ParseError>>;
 pub struct Parser<'a, 'b, PString> {
     lexer: Lexer<'a, 'b>,
     type_variables: Vec<InternedStr>,
-    make_id_f: Box<FnMut(InternedStr) -> PString + 'static>
+    _marker: PhantomData<fn (InternedStr) -> PString>
 }
 
-impl <'a, 'b, PString> Parser<'a, 'b, PString> {
-    pub fn new<F>(interner: &'a mut Interner, gc: &'a mut Gc, input: &'b mut BufRead, make_id: F) -> Parser<'a, 'b, PString> 
-        where F: FnMut(InternedStr) -> PString + 'static {
+impl <'a, 'b, PString> Parser<'a, 'b, PString>
+    where PString: AstId {
+    pub fn new(interner: &'a mut Interner, gc: &'a mut Gc, input: &'b mut BufRead) -> Parser<'a, 'b, PString>  {
         Parser {
             lexer: Lexer::new(interner, gc, input),
             type_variables: Vec::new(),
-            make_id_f: box make_id
+            _marker: PhantomData
         }
     }
 
     fn make_id(&mut self, s: InternedStr) -> PString {
-        (self.make_id_f)(s)
+        AstId::from_str(s)
+    }
+    fn make_untyped_id(&mut self, s: InternedStr) -> PString::Untyped {
+        self.make_id(s).to_id()
     }
 
     pub fn module(&mut self) -> ParseResult<Module<PString>> {
@@ -436,10 +440,10 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         }
     }
 
-    fn typ(&mut self) -> ParseResult<VMType> {
+    fn typ(&mut self) -> ParseResult<Type<PString::Untyped>> {
         self.typ_(false)
     }
-    fn typ_(&mut self, is_argument: bool) -> ParseResult<VMType> {
+    fn typ_(&mut self, is_argument: bool) -> ParseResult<Type<PString::Untyped>> {
         let x = match *self.lexer.next() {
             TConstructor(x) => {
                 match str_to_primitive_type(&x) {
@@ -451,7 +455,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                         else {
                             try!(self.type_arguments())
                         };
-                        Type::Data(x, args)
+                        Type::Data(self.make_untyped_id(x), args)
                     }
                 }
             }
@@ -471,12 +475,12 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
                         Type::Function(args, box return_type)
                     }
                     else {
-                        UNIT_TYPE.clone()
+                        Type::Builtin(UnitType)
                     }
                 }
                 else {
                     expect!(self, TCloseParen);
-                    UNIT_TYPE.clone()
+                    Type::Builtin(UnitType)
                 }
             }
             x => {
@@ -488,7 +492,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         Ok(x)
     }
 
-    fn type_arguments(&mut self) -> ParseResult<Vec<VMType>> {
+    fn type_arguments(&mut self) -> ParseResult<Vec<Type<PString::Untyped>>> {
         let mut result = Vec::new();
         loop {
             let v = match self.typ_(true) {
@@ -499,12 +503,12 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         }
     }
     
-    fn field(&mut self) -> ParseResult<Field> {
+    fn field(&mut self) -> ParseResult<Field<PString::Untyped>> {
         debug!("Field");
         let name = expect1!(self, TVariable(x));
         expect!(self, TColon);
         let typ = try!(self.typ());
-        Ok(Field { name: name, typ: typ })
+        Ok(Field { name: self.make_id(name).to_id(), typ: typ })
     }
 
     pub fn data(&mut self) -> ParseResult<Data<PString>> {
@@ -516,7 +520,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let constructors = try!(self.sep_by(
             |t| *t == pipe, |this| this.constructor())
         );
-        Ok(Data { name: self.make_id(name), constraints: constraints, constructors: constructors })
+        Ok(Data { name: self.make_untyped_id(name), constraints: constraints, constructors: constructors })
     }
     pub fn constructor(&mut self) -> ParseResult<Constructor<PString>> {
         let name = expect1!(self, TConstructor(x));
@@ -551,7 +555,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
             expect!(this, TSemicolon);
             Ok(decl)
         })));
-        Ok(Trait { name: self.make_id(name), self_variable: self_variable, declarations: declarations })
+        Ok(Trait { name: self.make_untyped_id(name), self_variable: self_variable, declarations: declarations })
     }
     pub fn impl_(&mut self) -> ParseResult<Impl<PString>> {
         expect!(self, TImpl);
@@ -561,7 +565,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let typ = try!(self.typ());
         let globals = try!(self.braces(|this| this.many(|t| *t == TCloseBrace, |this| this.global() )));
         Ok(Impl {
-            trait_name: self.make_id(trait_name),
+            trait_name: self.make_untyped_id(trait_name),
             constraints: constraints,
             typ: typ,
             globals: globals
@@ -630,7 +634,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString> {
         let constraints = try!(self.constraints());
         let typ = try!(self.typ());
         Ok(GlobalDeclaration {
-            name: self.make_id(name),
+            name: self.make_untyped_id(name),
             typ: Constrained {
                 constraints: constraints,
                 value: typ
@@ -712,7 +716,7 @@ pub mod tests {
     fn id(s: &str) -> PExpr {
         no_loc(Identifier(intern(s)))
     }
-    fn field(s: &str, typ: VMType) -> Field {
+    fn field(s: &str, typ: VMType) -> Field<InternedStr> {
         Field { name: intern(s), typ: typ }
     }
     fn typ(s: &str) -> VMType {
@@ -756,7 +760,7 @@ pub mod tests {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
         let &mut(ref mut interner, ref mut gc) = &mut *interner;
-        let mut parser = Parser::new(interner, gc, &mut buffer, |s| s);
+        let mut parser = Parser::new(interner, gc, &mut buffer);
         let x = f(&mut parser)
             .unwrap_or_else(|err| panic!("{:?}", err));
         x

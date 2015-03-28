@@ -21,6 +21,45 @@ pub use self::Expr::{
     ArrayAccess,
     Lambda};
 
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct TcIdent<Id = InternedStr> {
+    pub typ: Type<Id>,
+    pub name: Id
+}
+impl <Id> TcIdent<Id> {
+    pub fn id(&self) -> &Id {
+        &self.name
+    }
+}
+
+impl AsRef<str> for TcIdent {
+    fn as_ref(&self) -> &str {
+        &self.name
+    }
+}
+
+///Trait representing a type that can by used as in identifier in the AST
+///Used to allow the AST to both have a representation which has typed expressions etc as well
+///as one which only has identifiers (useful for testing)
+pub trait AstId {
+    ///The type used instead of `Self` when the identifier does not need a type
+    type Untyped: Clone + PartialEq + Eq + fmt::Debug;
+    fn from_str(s: InternedStr) -> Self;
+    fn to_id(self) -> Self::Untyped;
+}
+
+impl AstId for InternedStr {
+    type Untyped = InternedStr;
+    fn from_str(s: InternedStr) -> InternedStr { s }
+    fn to_id(self) -> InternedStr { self }
+}
+impl <Id: Clone + PartialEq + Eq + fmt::Debug + AstId> AstId for TcIdent<Id> {
+    type Untyped = Id;
+    fn from_str(s: InternedStr) -> TcIdent<Id> { TcIdent { typ: Type::Builtin(UnitType), name: AstId::from_str(s) } }
+    fn to_id(self) -> Id { self.name }
+}
+
+pub type TcType = Type<InternedStr>;
 
 #[derive(Clone, Debug)]
 pub struct Located<T> {
@@ -84,26 +123,26 @@ pub enum LiteralStruct {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum Pattern<Id> {
+pub enum Pattern<Id: AstId> {
     ConstructorPattern(Id, Vec<Id>),
     IdentifierPattern(Id)
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Alternative<Id> {
+pub struct Alternative<Id: AstId> {
     pub pattern: Pattern<Id>,
     pub expression: LExpr<Id>
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct ArrayStruct<Id> {
+pub struct ArrayStruct<Id: AstId> {
     //Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub expressions: Vec<LExpr<Id>>
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct LambdaStruct<Id> {
+pub struct LambdaStruct<Id: AstId> {
     //Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub free_vars: Vec<Id>,
@@ -114,7 +153,7 @@ pub struct LambdaStruct<Id> {
 pub type LExpr<Id> = Located<Expr<Id>>;
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum Expr<Id> {
+pub enum Expr<Id: AstId> {
     Identifier(Id),
     Literal(LiteralStruct),
     Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
@@ -132,9 +171,9 @@ pub enum Expr<Id> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Field {
-    pub name: InternedStr,
-    pub typ: Type<InternedStr>
+pub struct Field<Id> {
+    pub name: Id,
+    pub typ: Type<Id>
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct Constraint<T = InternedStr> {
@@ -150,25 +189,25 @@ pub struct Constrained<T, I = InternedStr> {
 
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Global<Id> {
+pub struct Global<Id: AstId> {
     pub declaration: GlobalDeclaration<Id>,
     pub expression: LExpr<Id>
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum ConstructorType {
-    Tuple(Vec<Type<InternedStr>>),
-    Record(Vec<Field>)
+pub enum ConstructorType<Id> {
+    Tuple(Vec<Type<Id>>),
+    Record(Vec<Field<Id>>)
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Constructor<Id> {
+pub struct Constructor<Id: AstId> {
     pub name: Id,
-    pub arguments: ConstructorType
+    pub arguments: ConstructorType<Id::Untyped>
 }
 
-impl ConstructorType {
-    pub fn each_type<F>(&self, mut f: F) where F: FnMut(&Type<InternedStr>) {
+impl <Id> ConstructorType<Id> {
+    pub fn each_type<F>(&self, mut f: F) where F: FnMut(&Type<Id>) {
         match *self {
             ConstructorType::Tuple(ref args) => for t in args.iter() { f(t); },
             ConstructorType::Record(ref fields) => for field in fields.iter() { f(&field.typ); }
@@ -183,32 +222,32 @@ impl ConstructorType {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Data<Id> {
-    pub name: Id,
+pub struct Data<Id: AstId> {
+    pub name: Id::Untyped,
     pub constraints: Vec<InternedStr>,
     pub constructors: Vec<Constructor<Id>>
 }
 #[derive(Clone, PartialEq, Debug)]
-pub struct GlobalDeclaration<Id> {
-    pub name: Id,
-    pub typ: Constrained<Type<InternedStr>>,
+pub struct GlobalDeclaration<Id: AstId> {
+    pub name: Id::Untyped,
+    pub typ: Constrained<Type<Id::Untyped>>,
 }
 #[derive(Clone, PartialEq, Debug)]
-pub struct Trait<Id> {
-    pub name: Id,
+pub struct Trait<Id: AstId> {
+    pub name: Id::Untyped,
     pub self_variable: InternedStr,
     pub declarations: Vec<GlobalDeclaration<Id>>
 }
 #[derive(Clone, PartialEq, Debug)]
-pub struct Impl<Id> {
-    pub trait_name: Id,
+pub struct Impl<Id: AstId> {
+    pub trait_name: Id::Untyped,
     pub constraints: Vec<Constraint>,
-    pub typ: Type<InternedStr>,
+    pub typ: Type<Id::Untyped>,
     pub globals: Vec<Global<Id>>
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Module<Id> {
+pub struct Module<Id: AstId> {
     pub datas: Vec<Data<Id>>,
     pub globals: Vec<Global<Id>>,
     pub traits: Vec<Trait<Id>>,
@@ -221,15 +260,15 @@ pub static STRING_TYPE: VMType = Type::Builtin(StringType);
 pub static BOOL_TYPE: VMType = Type::Builtin(BoolType);
 pub static UNIT_TYPE: VMType = Type::Builtin(UnitType);
 
-pub fn str_to_primitive_type(x: &str) -> Option<VMType> {
+pub fn str_to_primitive_type<Id>(x: &str) -> Option<Type<Id>> {
     let t = match x {
-        "Int" => INT_TYPE.clone(),
-        "Float" => FLOAT_TYPE.clone(),
-        "String" => STRING_TYPE.clone(),
-        "Bool" => BOOL_TYPE.clone(),
+        "Int" => IntType,
+        "Float" => FloatType,
+        "String" => StringType,
+        "Bool" => BoolType,
         _ => return None
     };
-    Some(t)
+    Some(Type::Builtin(t))
 }
 pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
     match t {
@@ -289,13 +328,13 @@ impl <I: fmt::Display> fmt::Display for Type<I> {
 
 
 pub trait MutVisitor {
-    type T;
+    type T: AstId;
     fn visit_expr(&mut self, e: &mut LExpr< <Self as MutVisitor>::T>) {
         walk_mut_expr(self, e);
     }
 }
 
-pub fn walk_mut_expr<T, V: ?Sized + MutVisitor<T=T>>(v: &mut V, e: &mut LExpr<T>) {
+pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
     match e.value {
         IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
@@ -356,7 +395,8 @@ pub fn walk_mut_expr<T, V: ?Sized + MutVisitor<T=T>>(v: &mut V, e: &mut LExpr<T>
 
 
 pub fn walk_mut_type<F, I>(typ: &mut Type<I>, f: &mut F)
-    where F: FnMut(&mut Type<I>) {
+    where F: FnMut(&mut Type<I>)
+        , I: AstId {
     f(typ);
     match *typ {
         Type::Data(_, ref mut args) => {

@@ -7,7 +7,7 @@ use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::io::{BufReader, BufRead};
 use ast;
 use parser::Parser;
-use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType, match_types};
+use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, TcIdent, TcType, match_types};
 use ast::{Constrained, Type};
 use compiler::*;
 use compiler::Instruction::*;
@@ -226,6 +226,7 @@ pub enum Function_<'a> {
     Extern(ExternFunction<'a>)
 }
 impl <'a> Typed for Global<'a> {
+    type Id = InternedStr;
     fn type_of(&self) -> &TcType {
         &self.typ.value
     }
@@ -1145,7 +1146,7 @@ macro_rules! tryf(
 pub fn parse_expr(buffer: &mut BufRead, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
-    let mut parser = Parser::new(&mut *interner, &mut *gc, buffer, |s| TcIdent { name: s, typ: UNIT_TYPE.clone() });
+    let mut parser = Parser::new(&mut *interner, &mut *gc, buffer);
     parser.expression().map_err(|err| format!("{}", err))
 }
 
@@ -1155,7 +1156,7 @@ pub fn load_script(vm: &VM, buffer: &mut BufRead) -> Result<(), ::std::string::S
     let mut module = {
         let mut cell = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
-        let mut parser = Parser::new(&mut*cell, &mut *gc, buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
+        let mut parser = Parser::new(&mut*cell, &mut *gc, buffer);
         tryf!(parser.module())
     };
     let (type_infos, functions) = {

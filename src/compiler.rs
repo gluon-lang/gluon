@@ -195,8 +195,8 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
 impl CompilerEnv for Module<TcIdent> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
         (0..).zip(self.globals.iter())
-            .find(|&(_, f)| f.declaration.name.id() == id)
-            .map(|(i, f)| Global(i, &f.declaration.typ.constraints, &f.declaration.name.typ))
+            .find(|&(_, f)| f.declaration.name == *id)
+            .map(|(i, f)| Global(i, &f.declaration.typ.constraints, &f.declaration.typ.value))
             .or_else(|| {
                 for d in self.datas.iter() {
                     let x = (0..).zip(d.constructors.iter())
@@ -211,13 +211,13 @@ impl CompilerEnv for Module<TcIdent> {
             .or_else(|| {
                 self.traits.iter()
                     .flat_map(|trait_| trait_.declarations.iter())
-                    .find(|decl| decl.name.id() == id)
-                    .map(|decl| TraitFunction(&decl.name.typ))
+                    .find(|decl| decl.name == *id)
+                    .map(|decl| TraitFunction(&decl.typ.value))
             })
     }
     fn find_field(&self, data_name: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         self.datas.iter()
-            .find(|d| d.name.id() == data_name)
+            .find(|d| d.name == *data_name)
             .and_then(|d| match &*d.constructors {
                 [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
                     (0..).zip(fields.iter())
@@ -229,7 +229,7 @@ impl CompilerEnv for Module<TcIdent> {
     }
     fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
         self.datas.iter()
-            .find(|e| e.name.id() == enum_)
+            .find(|e| e.name == *enum_)
             .and_then(|e| (0..).zip(e.constructors.iter())
                 .find(|&(_, c)| c.name.id() == ctor_name)
                 .map(|(i, _)| i)
@@ -240,7 +240,7 @@ impl CompilerEnv for Module<TcIdent> {
         self.impls.iter()
             .find(|imp| {
                 offset += imp.globals.len();
-                imp.trait_name.id() == trait_name && match_types(&imp.typ, trait_type)
+                imp.trait_name == *trait_name && match_types(&imp.typ, trait_type)
             })
             .map(|imp| (offset - imp.globals.len()) as VMIndex)
     }
@@ -249,7 +249,7 @@ impl CompilerEnv for Module<TcIdent> {
         for imp in self.impls.iter() {
             if match_types(&imp.typ, typ) {
                 for (i, func) in (0..).zip(imp.globals.iter()) {
-                    if func.declaration.name.id() == id {
+                    if func.declaration.name == *id {
                         return Some(TypeResult {
                             constraints: &func.declaration.typ.constraints,
                             typ: func.type_of(),
@@ -264,9 +264,9 @@ impl CompilerEnv for Module<TcIdent> {
     }
     fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex> {
         self.traits.iter()
-            .find(|trait_| trait_.name.id() == trait_type)
+            .find(|trait_| trait_.name == *trait_type)
             .and_then(|trait_| (0..).zip(trait_.declarations.iter())
-                .find(|&(_, func)| func.name.id() == name)
+                .find(|&(_, func)| func.name == *name)
                 .map(|(i, _)| i)
             )
     }
@@ -373,7 +373,7 @@ impl <'a> Compiler<'a> {
         for imp in module.impls.iter() {
             trait_globals.push(TraitFunctions {
                 index: global_offset + globals.len() as VMIndex,
-                trait_name: imp.trait_name.id().clone(),
+                trait_name: imp.trait_name,
                 impl_type: imp.typ.clone()
             });
             for f in imp.globals.iter() {
@@ -393,11 +393,11 @@ impl <'a> Compiler<'a> {
     }
 
     pub fn compile_global<'b>(&mut self, initializer: &mut FunctionEnv<'b>, index: VMIndex, function: &'b ast::Global<TcIdent>) -> Binding {
-        debug!("-- Compiling {}", function.declaration.name.id());
+        debug!("-- Compiling {}", function.declaration.name);
         initializer.dictionary = &function.declaration.typ.constraints;
         self.compile(&function.expression, initializer);
         initializer.instructions.push(StoreGlobal(index));
-        let name = function.declaration.name.name;
+        let name = function.declaration.name;
         let typ = function.declaration.typ.clone();
         Binding { name: name, typ: typ }
     }

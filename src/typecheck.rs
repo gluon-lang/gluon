@@ -9,7 +9,7 @@ use interner::InternedStr;
 
 use self::TypeError::*;
 
-pub use ast::Type;
+pub use ast::{TcIdent, TcType, Type};
 
 
 pub static INT_TYPE: TcType = Type::Builtin(ast::IntType);
@@ -17,26 +17,6 @@ pub static FLOAT_TYPE: TcType = Type::Builtin(ast::FloatType);
 pub static STRING_TYPE: TcType = Type::Builtin(ast::StringType);
 pub static BOOL_TYPE: TcType = Type::Builtin(ast::BoolType);
 pub static UNIT_TYPE: TcType = Type::Builtin(ast::UnitType);
-
-
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct TcIdent {
-    pub typ: TcType,
-    pub name: InternedStr
-}
-impl TcIdent {
-    pub fn id(&self) -> &InternedStr {
-        &self.name
-    }
-}
-
-impl AsRef<str> for TcIdent {
-    fn as_ref(&self) -> &str {
-        &self.name
-    }
-}
-
-pub type TcType = ast::Type<InternedStr>;
 
 pub fn match_types(l: &TcType, r: &TcType) -> bool {
     fn type_eq<'a>(vars: &mut HashMap<TcType, &'a TcType>, l: &'a TcType, r: &'a TcType) -> bool {
@@ -143,17 +123,16 @@ impl TypeInfos {
     }
     pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
         for data in module.datas.iter() {
-            self.datas.insert(data.name.name, data.constructors.clone());
+            self.datas.insert(data.name, data.constructors.clone());
         }
         for t in module.traits.iter() {
             let function_types = t.declarations.iter().map(|decl| {
-                (decl.name.id().clone(), decl.typ.clone())
+                (decl.name.clone(), decl.typ.clone())
             }).collect();
-            self.traits.insert(t.name.id().clone(), function_types);
+            self.traits.insert(t.name, function_types);
         }
         for imp in module.impls.iter() {
-            let trait_name = imp.trait_name.id().clone();
-            let set = match self.impls.entry(trait_name) {
+            let set = match self.impls.entry(imp.trait_name) {
                 Entry::Occupied(v) => v.into_mut(),
                 Entry::Vacant(v) => v.insert(Vec::new())
             };
@@ -274,18 +253,16 @@ impl <'a> Typecheck<'a> {
     pub fn typecheck_module(&mut self, module: &mut ast::Module<TcIdent>) -> Result<(), StringErrors> {
         
         for f in module.globals.iter_mut() {
-            f.declaration.name.typ = f.declaration.typ.value.clone();
-            self.module.insert(f.declaration.name.name, f.declaration.typ.clone());
+            self.module.insert(f.declaration.name, f.declaration.typ.clone());
         }
         for t in module.traits.iter_mut() {
             for decl in t.declarations.iter_mut() {
-                decl.name.typ = decl.typ.value.clone();
-                self.module.insert(decl.name.id().clone(), ast::Constrained {
+                self.module.insert(decl.name, ast::Constrained {
                     constraints: vec![ast::Constraint {
                         type_variable: t.self_variable,
-                        name: t.name.name,
+                        name: t.name,
                     }],//The self type should have the trait itself as a constraint
-                    value: decl.name.typ.clone()
+                    value: decl.typ.value.clone()
                 });
             }
         }
@@ -298,7 +275,7 @@ impl <'a> Typecheck<'a> {
                 let variables = data.constraints.iter()
                     .map(|cs| Type::Generic(*cs))
                     .collect();
-                ctor.name.typ = Type::Function(args, box Type::Data(data.name.name, variables));
+                ctor.name.typ = Type::Function(args, box Type::Data(data.name, variables));
                 self.module.insert(ctor.name.name, ast::Constrained {
                     constraints: Vec::new(),
                     value: ctor.name.typ.clone()
@@ -322,13 +299,12 @@ impl <'a> Typecheck<'a> {
     }
     fn typecheck_impl(&mut self, imp: &mut ast::Impl<TcIdent>) -> Result<(), TypeError> {
         {
-            let trait_globals = try!(find_trait(&self.type_infos, imp.trait_name.id()));
+            let trait_globals = try!(find_trait(&self.type_infos, &imp.trait_name));
             let constraints = &imp.constraints;
             for func in imp.globals.iter_mut() {
                 add_impl_constraints(constraints, &mut func.declaration);
-                func.declaration.name.typ = func.declaration.typ.value.clone();
                 let trait_function_type = try!(trait_globals.iter()
-                    .find(|& &(ref name, _)| name == func.declaration.name.id())
+                    .find(|& &(name, _)| name == func.declaration.name)
                     .map(Ok)
                     .unwrap_or_else(|| Err(StringError("Function does not exist in trait"))));
                 let tf = self.subs.instantiate(&trait_function_type.1.value);
@@ -343,7 +319,7 @@ impl <'a> Typecheck<'a> {
 
     
     fn typecheck_global(&mut self, global: &mut ast::Global<TcIdent>) {
-        debug!("Typecheck global {} :: {:?}", global.declaration.name.id(), global.declaration.name.typ);
+        debug!("Typecheck global {} :: {:?}", global.declaration.name, global.declaration.typ);
         self.stack.clear();
         self.subs.clear();
 
@@ -351,7 +327,7 @@ impl <'a> Typecheck<'a> {
         let mut variables = HashMap::new();
         ::std::mem::swap(&mut variables, &mut self.subs.variables);
 
-        let (real_type, inferred_type) = match (&global.declaration.name.typ, &mut global.expression) {
+        let (real_type, inferred_type) = match (&global.declaration.typ.value, &mut global.expression) {
             (&Type::Function(ref arg_types, ref return_type), &mut ast::Located { value: ast::Lambda(ref mut lambda), location }) => {
                 for (typ, arg) in arg_types.iter().zip(lambda.arguments.iter()) {
                     let typ = self.subs.instantiate_(typ);
@@ -379,7 +355,7 @@ impl <'a> Typecheck<'a> {
                         return;
                     }
                 };
-                lambda.id.typ = global.declaration.name.typ.clone();
+                lambda.id.typ = global.declaration.typ.value.clone();
                 (real_type, inferred_type)
             }
             (generic_type, expr) => {
@@ -398,7 +374,7 @@ impl <'a> Typecheck<'a> {
         match self.merge(real_type, inferred_type) {
             Ok(_) => self.replace_vars(&variables, &mut global.expression),
             Err(err) => {
-                debug!("End {} ==> {:?}", global.declaration.name.id(), err);
+                debug!("End {} ==> {:?}", global.declaration.name, err);
                 self.errors.error(ast::Located { location: global.expression.location, value: err });
             }
         }
@@ -1032,15 +1008,19 @@ impl Substitution {
 }
 
 pub trait Typed {
-    fn type_of(&self) -> &TcType;
+    type Id;
+    fn type_of(&self) -> &Type<Self::Id>;
 }
-impl Typed for TcIdent {
-    fn type_of(&self) -> &TcType {
+impl <Id> Typed for TcIdent<Id> {
+    type Id = Id;
+    fn type_of(&self) -> &Type<Id> {
         &self.typ
     }
 }
-impl <Id: Typed + AsRef<str>> Typed for ast::Expr<Id> {
-    fn type_of(&self) -> &TcType {
+impl <Id> Typed for ast::Expr<Id>
+    where Id: Typed<Id=InternedStr> + AsRef<str> + ast::AstId<Untyped=InternedStr> {
+    type Id = Id::Id;
+    fn type_of(&self) -> &Type<Id::Untyped> {
         match *self {
             ast::Identifier(ref id) => id.type_of(),
             ast::Literal(ref lit) => {
@@ -1084,13 +1064,15 @@ impl <Id: Typed + AsRef<str>> Typed for ast::Expr<Id> {
     }
 }
 
-impl <T: Typed> Typed for ast::Global<T> {
-    fn type_of(&self) -> &TcType {
-        self.declaration.name.type_of()
+impl <T: Typed + ast::AstId> Typed for ast::Global<T> {
+    type Id = T::Untyped;
+    fn type_of(&self) -> &Type<T::Untyped> {
+        &self.declaration.typ.value
     }
 }
 
 impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
+    type Id = InternedStr;
     fn type_of(&self) -> &TcType {
         match *self {
             Some(ref t) => t.type_of(),
@@ -1102,7 +1084,7 @@ impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Typecheck, Typed, TcIdent, UNIT_TYPE, INT_TYPE, BOOL_TYPE, FLOAT_TYPE, Type};
+    use super::{Typecheck, Typed, TcIdent, INT_TYPE, BOOL_TYPE, FLOAT_TYPE, Type};
     use ast;
     use parser::{Parser, ParseResult};
     use interner::tests::{get_local_interner, intern};
@@ -1114,7 +1096,7 @@ mod tests {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
         let &mut (ref mut interner, ref mut gc) = &mut *interner;
-        let mut parser = Parser::new(interner, gc, &mut buffer, |s| TcIdent { typ: UNIT_TYPE.clone(), name: s });
+        let mut parser = Parser::new(interner, gc, &mut buffer);
         f(&mut parser)
             .unwrap_or_else(|err| panic!("{:?}", err))
     }
