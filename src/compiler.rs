@@ -230,9 +230,10 @@ impl CompilerEnv for Module<TcIdent> {
     fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
         self.datas.iter()
             .find(|e| e.name.id() == enum_)
-            .map(|e| (0..).zip(e.constructors.iter())
+            .and_then(|e| (0..).zip(e.constructors.iter())
                 .find(|&(_, c)| c.name.id() == ctor_name)
-                .map(|(i, _)| i).unwrap())
+                .map(|(i, _)| i)
+            )
     }
     fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
         let mut offset = self.globals.len();
@@ -452,9 +453,8 @@ impl <'a> Compiler<'a> {
                 self.compile(&**pred, function);
                 let jump_index = function.instructions.len();
                 function.instructions.push(CJump(0));
-                match *if_false {
-                    Some(ref if_false) => self.compile(&**if_false, function),
-                    None => ()
+                if let Some(ref if_false) = *if_false {
+                    self.compile(&**if_false, function);
                 }
                 let false_jump_index = function.instructions.len();
                 function.instructions.push(Jump(0));
@@ -553,20 +553,14 @@ impl <'a> Compiler<'a> {
                 }
             }
             Expr::Call(ref func, ref args) => {
-                match func.value {
-                    Expr::Identifier(ref id) => {
-                        match self.find(id.id(), function).unwrap_or_else(|| panic!("Undefined variable {}", id.id())) {
-                            Constructor(tag, num_args) => {
-                                for arg in args.iter() {
-                                    self.compile(arg, function);
-                                }
-                                function.instructions.push(Construct(tag, num_args));
-                                return
-                            }
-                            _ => ()
+                if let Expr::Identifier(ref id) = func.value {
+                    if let Some(Constructor(tag, num_args)) = self.find(id.id(), function) {
+                        for arg in args.iter() {
+                            self.compile(arg, function);
                         }
+                        function.instructions.push(Construct(tag, num_args));
+                        return
                     }
-                    _ => ()
                 }
                 self.compile(&**func, function);
                 let arg_types = match *func.type_of() {
