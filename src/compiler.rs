@@ -827,7 +827,7 @@ impl <'a> Compiler<'a> {
                 let func_index = self.globals.find_object_function(&constraint.name, expr_id.id());
                 match func_index {
                     Some(index) => {
-                        function.instructions.push(PushDictionaryMember(var_index, index as u32));
+                        function.instructions.push(PushDictionaryMember(var_index, index));
                         return
                     }
                     None => ()

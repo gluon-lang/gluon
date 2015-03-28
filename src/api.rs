@@ -369,12 +369,13 @@ id = \x -> {
             test.x *= 2;
             x
         }
+        let test: fn (_) -> _ = test;
         struct Test {
             x: VMInt
         }
         vm.register_type::<Test>("Test")
             .unwrap_or_else(|_| panic!("Could not add type"));
-        define_function(&vm, "test", test as fn (_) -> _)
+        define_function(&vm, "test", test)
             .unwrap_or_else(|err| panic!("{}", err));
         let mut buffer = BufReader::new(s.as_bytes());
         load_script(&mut vm, &mut buffer)
@@ -385,7 +386,8 @@ id = \x -> {
             let mut f: Callable<(*mut Test,), *mut Test> = Get::get_function(&vm, "id")
                 .expect("No function id");
             let result = f.call(&mut test).unwrap();
-            assert!(result == &mut test as *mut Test);
+            let p: *mut _ = &mut test;
+            assert!(result == p);
         }
         let mut f: Callable<(*mut Test,), bool> = Get::get_function(&vm, "test")
             .expect("No function test");
@@ -396,7 +398,8 @@ id = \x -> {
     #[test]
     fn function_object() {
         let vm = VM::new();
-        define_function(&vm, "mul", (box |x:VMInt, y:VMInt| x * y) as Box<Fn(VMInt, VMInt) -> VMInt>)
+        let f: Box<Fn(_, _) -> _> = box |x:VMInt, y:VMInt| x * y;
+        define_function(&vm, "mul", f)
             .unwrap_or_else(|err| panic!("{}", err));
 
         let mut f: Callable<(VMInt, VMInt), VMInt> = Get::get_function(&vm, "mul")

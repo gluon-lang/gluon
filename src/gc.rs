@@ -103,8 +103,8 @@ impl GcHeader {
 
     fn value(&self) -> *mut () {
         unsafe {
-            let bytes = (self as *const GcHeader) as *mut u8;
-            bytes.offset(GcHeader::value_offset() as isize) as *mut ()
+            let ptr: *const GcHeader = self;
+            (ptr as *mut u8).offset(GcHeader::value_offset() as isize) as *mut ()
         }
     }
 

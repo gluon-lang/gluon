@@ -36,10 +36,12 @@ pub struct Userdata_ {
 
 impl Userdata_ {
     pub fn new<T: 'static>(vm: &VM, v: T) -> Userdata_ {
-        Userdata_ { data: vm.gc.borrow_mut().alloc(Move(RefCell::new(box v as Box<Any>))) }
+        let v: Box<Any> = box v;
+        Userdata_ { data: vm.gc.borrow_mut().alloc(Move(RefCell::new(v))) }
     }
     fn ptr(&self) -> *const () {
-        (&*self.data as *const RefCell<Box<Any>>) as *const ()
+        let p: *const _ = &*self.data;
+        p as *const ()
     }
 }
 impl PartialEq for Userdata_ {
@@ -335,7 +337,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
         self.trait_indexes
             .find(|func| func.trait_name == *trait_name && match_types(&func.impl_type, trait_type))
-            .map(|(_, func)| func.index as VMIndex)
+            .map(|(_, func)| func.index)
     }
     fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<VMIndex>> {
         self.names.get(fn_name).and_then(|named| {
