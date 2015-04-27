@@ -58,7 +58,7 @@ unsafe impl <'a> DataDef for &'a str {
     fn initialize(self, ptr: *mut str) {
         let ptr: &mut [u8] = unsafe { mem::transmute::<*mut str, &mut [u8]>(ptr) };
         assert_eq!(self.len(), ptr.len());
-        ::std::slice::bytes::copy_memory(ptr, self.as_bytes());
+        ::std::slice::bytes::copy_memory(self.as_bytes(), ptr);
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut str {
         unsafe {

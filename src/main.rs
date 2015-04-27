@@ -1,10 +1,10 @@
 #[macro_use]
 extern crate log;
 
-extern crate EmbedLang;
+extern crate embed_lang;
 
 #[cfg(not(test))]
-use EmbedLang::vm::{VM, run_main, run_buffer_main};
+use embed_lang::vm::{VM, run_main, run_buffer_main};
 
 #[cfg(not(test))]
 use std::env;

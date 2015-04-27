@@ -1,10 +1,10 @@
 use vm::{VM, VMResult, BytecodeFunction, Value, Userdata_, StackFrame, VMInt};
 use typecheck::{TcType, Typed, Type, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::Call;
-use std::boxed::BoxAny;
-use std::marker::{PhantomData, PhantomFn};
+use std::any::Any;
+use std::marker::PhantomData;
 
-pub trait VMType: PhantomFn<Self> {
+pub trait VMType {
     fn vm_type<'a>(vm: &'a VM) -> &'a TcType;
     fn make_type(vm: &VM) -> TcType {
         <Self as VMType>::vm_type(vm).clone()
@@ -77,12 +77,12 @@ impl <'a> VMValue<'a> for bool {
         }
     }
 }
-impl <T: 'static + BoxAny + Clone> VMType for Box<T> {
+impl <T: Any + VMType> VMType for Box<T> {
     fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
     }
 }
-impl <'a, T: 'static + BoxAny + Clone> VMValue<'a> for Box<T> {
+impl <'a, T: ?Sized + Any + VMType + Clone> VMValue<'a> for Box<T> {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Value::Userdata(Userdata_::new(vm, self)));
     }
@@ -93,12 +93,12 @@ impl <'a, T: 'static + BoxAny + Clone> VMValue<'a> for Box<T> {
         }
     }
 }
-impl <T: 'static> VMType for *mut T {
+impl <T: Any> VMType for *mut T {
     fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
     }
 }
-impl <'a, T: 'static> VMValue<'a> for *mut T {
+impl <'a, T: Any> VMValue<'a> for *mut T {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) {
         stack.push(Value::Userdata(Userdata_::new(vm, self)));
     }
@@ -110,11 +110,11 @@ impl <'a, T: 'static> VMValue<'a> for *mut T {
     }
 }
 
-fn vm_type<'a, T: VMType>(vm: &'a VM) -> &'a TcType {
+fn vm_type<'a, T: ?Sized + VMType>(vm: &'a VM) -> &'a TcType {
     <T as VMType>::vm_type(vm)
 }
 
-fn make_type<T: VMType>(vm: &VM) -> TcType {
+fn make_type<T: ?Sized + VMType>(vm: &VM) -> TcType {
     <T as VMType>::make_type(vm)
 }
 
@@ -172,6 +172,7 @@ struct FunctionRef<'a, Args, R> {
 }
 
 impl <'a, Args, R> Copy for FunctionRef<'a, Args, R> { }
+impl <'a, Args, R> Clone for FunctionRef<'a, Args, R> { fn clone(&self) -> FunctionRef<'a, Args, R> { *self } }
 
 impl <'b, Args, R> VMType for FunctionRef<'b, Args, R> {
     fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
@@ -220,7 +221,7 @@ pub fn get_function<'a, 'b, T: Get<'a, 'b>>(vm: &'a VM<'b>, name: &str) -> Optio
 
 
 pub trait VMFunction<'a> {
-    fn unpack_and_call(vm: &VM<'a>, f: &Self);
+    fn unpack_and_call(&self, vm: &VM<'a>);
 }
 macro_rules! count {
     () => { 0 };
@@ -244,7 +245,7 @@ impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
 
 impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($args),*) -> R {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
-    fn unpack_and_call(vm: &VM<'a>, f: &fn ($($args),*) -> R) {
+    fn unpack_and_call(&self, vm: &VM<'a>) {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0;
@@ -253,14 +254,14 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for fn ($($arg
             i += 1;
             x
         });*;
-        let r = (*f)($($args),*);
+        let r = (*self)($($args),*);
         r.push(vm, &mut stack);
     }
 }
-impl <'a, $($args: VMType,)* R: VMType> VMType for Box<Fn($($args),*) -> R + 'static> {
+impl <'a, 's, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's {
     #[allow(non_snake_case)]
     fn vm_type<'r>(vm: &'r VM) -> &'r TcType {
-        vm.get_type::<Box<Fn($($args),*) -> R>>()
+        vm.get_type::<fn ($($args),*) -> R>()
     }
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
@@ -268,9 +269,9 @@ impl <'a, $($args: VMType,)* R: VMType> VMType for Box<Fn($($args),*) -> R + 'st
         Type::Function(args, box make_type::<R>(vm))
     }
 }
-impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for Box<Fn($($args),*) -> R + 'static> {
+impl <'a, 's, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for Box<Fn($($args),*) -> R + 's> {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
-    fn unpack_and_call(vm: &VM<'a>, f: &Box<Fn($($args),*) -> R>) {
+    fn unpack_and_call(&self, vm: &VM<'a>) {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0;
@@ -279,15 +280,11 @@ impl <'a, $($args : VMValue<'a>,)* R: VMValue<'a>> VMFunction<'a> for Box<Fn($($
             i += 1;
             x
         });*;
-        let r = f($($args),*);
+        let r = (*self)($($args),*);
         r.push(vm, &mut stack);
     }
 }
     )
-}
-
-pub fn unpack_and_call<'a, F: VMFunction<'a>>(vm: &VM<'a>, f: &F) {
-    VMFunction::unpack_and_call(vm, f)
 }
 
 make_vm_function!();
@@ -303,7 +300,7 @@ make_vm_function!(A, B, C, D, E, F, G);
 macro_rules! vm_function {
     ($func: expr) => ({
         fn wrapper<'a, 'b, 'c>(vm: &VM<'a>) {
-            unpack_and_call(vm, $func)
+            $func.unpack_and_call(vm)
         }
         wrapper
     })
@@ -315,7 +312,7 @@ fn define_function<'a, F: VMFunction<'a> + VMType + 'static>(vm: &VM<'a>, name: 
         Type::Function(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
         _ => panic!()
     };
-    vm.extern_function(name, args, ret, box move |vm| unpack_and_call(vm, &f))
+    vm.extern_function(name, args, ret, box move |vm| f.unpack_and_call(vm))
 }
 
 #[cfg(test)]
@@ -394,17 +391,5 @@ id = \x -> {
         let result = f.call(&mut test).unwrap();
         assert!(result);
         assert_eq!(test.x, 123 * 2);
-    }
-    #[test]
-    fn function_object() {
-        let vm = VM::new();
-        let f: Box<Fn(_, _) -> _> = box |x:VMInt, y:VMInt| x * y;
-        define_function(&vm, "mul", f)
-            .unwrap_or_else(|err| panic!("{}", err));
-
-        let mut f: Callable<(VMInt, VMInt), VMInt> = Get::get_function(&vm, "mul")
-            .expect("No function id");
-        let result = f.call2(2, 3).unwrap();
-        assert_eq!(result, 6);
     }
 }

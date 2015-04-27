@@ -1,9 +1,9 @@
 use std::io;
 use std::io::BufRead;
 
-use EmbedLang::typecheck::*;
-use EmbedLang::compiler::{Assembly, Compiler};
-use EmbedLang::vm::{VM, parse_expr, load_script};
+use embed_lang::typecheck::*;
+use embed_lang::compiler::{Assembly, Compiler};
+use embed_lang::vm::{VM, parse_expr, load_script};
 
 macro_rules! tryf {
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))

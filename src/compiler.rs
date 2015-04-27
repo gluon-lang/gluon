@@ -9,7 +9,7 @@ use self::Variable::*;
 pub type VMIndex = u32;
 pub type VMTag = u32;
 
-#[derive(Copy, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Instruction {
     PushInt(isize),
     PushFloat(f64),

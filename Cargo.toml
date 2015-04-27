@@ -1,13 +1,13 @@
 [package]
 
-name = "EmbedLang"
+name = "embed_lang"
 version = "0.0.1"
 authors = ["Markus <marwes91@gmail.com>"]
 
 
 [lib]
 
-name = "EmbedLang"
+name = "embed_lang"
 path = "src/lib.rs"
 
 

@@ -35,7 +35,7 @@ pub struct Userdata_ {
 }
 
 impl Userdata_ {
-    pub fn new<T: 'static>(vm: &VM, v: T) -> Userdata_ {
+    pub fn new<T: Any>(vm: &VM, v: T) -> Userdata_ {
         let v: Box<Any> = box v;
         Userdata_ { data: vm.gc.borrow_mut().alloc(Move(RefCell::new(v))) }
     }
@@ -690,7 +690,7 @@ impl <'a> VM<'a> {
         self.globals.find(|g| n == g.id).map(|tup| tup.1)
     }
 
-    pub fn get_type<T: 'static>(&self) -> &TcType {
+    pub fn get_type<T: Any>(&self) -> &TcType {
         let id = TypeId::of::<T>();
         self.typeids.get(&id)
             .unwrap_or_else(|| {
@@ -733,7 +733,7 @@ impl <'a> VM<'a> {
         Ok(())
     }
 
-    pub fn register_type<T: 'static>(&mut self, name: &str) -> Result<&TcType, ()> {
+    pub fn register_type<T: ?Sized + Any>(&mut self, name: &str) -> Result<&TcType, ()> {
         let n = self.intern(name);
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.datas.contains_key(&n) {
@@ -1001,7 +1001,7 @@ impl <'a> VM<'a> {
                             Closure(closure) => closure.function,
                             _ => panic!()
                         };
-                        Closure(self.new_closure_and_collect(&mut stack, func, [dict].as_mut_slice()))
+                        Closure(self.new_closure_and_collect(&mut stack, func, &mut [dict]))
                     };
                     stack.push(closure);
                 }

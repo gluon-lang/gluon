@@ -74,7 +74,6 @@ impl fmt::Debug for AllocPtr {
     }
 }
 
-#[unsafe_destructor]
 impl Drop for AllocPtr {
     
     fn drop(&mut self) {
@@ -334,7 +333,7 @@ mod tests {
 
     use self::Value::*;
 
-    #[derive(Copy)]
+    #[derive(Copy, Clone)]
     struct Data_ {
         fields: GcPtr<Vec<Value>>
     }
@@ -376,7 +375,7 @@ mod tests {
         }
     }
 
-    #[derive(Copy, PartialEq, Debug)]
+    #[derive(Copy, Clone, PartialEq, Debug)]
     enum Value {
         Int(i32),
         Data(Data_)
