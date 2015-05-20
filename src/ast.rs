@@ -162,7 +162,7 @@ pub enum Expr<Id: AstId> {
     Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
     Block(Vec<LExpr<Id>>),
     BinOp(Box<LExpr<Id>>, Id, Box<LExpr<Id>>),
-    Let(Id, Box<LExpr<Id>>),
+    Let(Id, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
     Assign(Box<LExpr<Id>>, Box<LExpr<Id>>),
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
@@ -353,8 +353,11 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
             v.visit_expr(&mut **lhs);
             v.visit_expr(&mut **rhs);
         }
-        Let(_, ref mut expr) => {
+        Let(_, ref mut expr, ref mut body) => {
             v.visit_expr(&mut **expr);
+            if let Some(ref mut body) = *body {
+                v.visit_expr(&mut **body);
+            }
         }
         Call(ref mut func, ref mut args) => {
             v.visit_expr(&mut **func);

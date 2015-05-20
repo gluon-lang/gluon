@@ -18,3 +18,7 @@ path = "src/main.rs"
 
 [dependencies.log]
 [dependencies.env_logger]
+[dependencies.parser-combinators]
+[dependencies.parser-combinators-language]
+git = "https://github.com/Marwes/parser-combinators-language.git"
+

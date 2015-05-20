@@ -287,7 +287,7 @@ impl Gc {
         {
             let mut maybe_header = &mut first;
             loop {
-                let current: &mut Option<AllocPtr> = unsafe { mem::transmute(&*maybe_header) };
+                let current: &mut Option<AllocPtr> = unsafe { mem::transmute(&mut *maybe_header) };
                 maybe_header = match *maybe_header {
                     Some(ref mut header) => {
                         if !header.marked.get() {

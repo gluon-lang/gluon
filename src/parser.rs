@@ -202,7 +202,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
                 expect!(self, TAssign);
                 let expr = try!(self.expression());
                 expect!(self, TSemicolon);
-                Ok((Let(self.make_id(id), box expr), true))
+                Ok((Let(self.make_id(id), box expr, None), true))
             }
             _ => {
                 match self.expression() {
@@ -694,9 +694,210 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
     }
 }
 
+pub fn parse_module(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LExpr<InternedStr>, Box<::std::error::Error>> {
+    use std::cell::RefCell;
+    use parser_combinators_language::{Env, LanguageDef, Identifier};
+    use parser_combinators::primitives::{Stream, State, Error};
+    use parser_combinators::*;
+
+    struct EnvParser<'a: 'b, 'b, I: 'b, T> {
+        env: &'b ParserEnv<'a, I>,
+        parser: fn (&ParserEnv<'a, I>, State<I>) -> ParseResult<T, I>
+    }
+
+    impl <'a, 'b, I, O> Parser for EnvParser<'a, 'b, I, O>
+        where I: Stream<Item=char> {
+        type Output = O;
+        type Input = I;
+        fn parse_state(&mut self, input: State<I>) -> ParseResult<O, I> {
+            (self.parser)(self.env, input)
+        }
+    }
+
+    struct ParserEnv<'a, I> {
+        data: RefCell<(&'a mut Gc, &'a mut Interner)>,
+        env: Env<'a, I>
+    }
+
+    impl <'a, I> ::std::ops::Deref for ParserEnv<'a, I> {
+        type Target = Env<'a, I>;
+        fn deref(&self) -> &Env<'a, I> {
+            &self.env
+        }
+    }
+
+    impl <'a, I> ParserEnv<'a, I>
+        where I: Stream<Item=char> {
+        fn intern(&self, s: &str) -> InternedStr {
+            let mut r = self.data.borrow_mut();
+            let r = &mut *r;
+            r.1.intern(r.0, s)
+        }
+
+        fn parser<'b, T>(&'b self, parser: fn (&ParserEnv<'a, I>, State<I>) -> ParseResult<T, I>) -> EnvParser<'a, 'b, I, T> {
+            EnvParser { env: self, parser: parser }
+        }
+
+        fn precedence(&self, i: InternedStr) -> i32 {
+            precedence(&i)
+        }
+
+        fn ident<'b>(&'b self) -> EnvParser<'a, 'b, I, InternedStr> {
+            self.parser(ParserEnv::parse_ident)
+        }
+        fn parse_ident(&self, input: State<I>) -> ParseResult<InternedStr, I> {
+            self.env.ident().map(|s| self.intern(&s))
+                .parse_state(input)
+        }
+
+        fn typ<'b>(&'b self) -> EnvParser<'a, 'b, I, Type<InternedStr>> {
+            self.parser(ParserEnv::parse_type)
+        }
+
+        fn parse_type(&self, input: State<I>) -> ParseResult<Type<InternedStr>, I> {
+            self.lex(self.ident().and(many(parser(|input| self.type_arg(input))))
+                .map(|(typ, args)| Type::Data(typ, args))
+                .or(parser(|input| self.type_arg(input))))
+                .parse_state(input)
+        }
+
+        fn type_arg(&self, input: State<I>) -> ParseResult<Type<InternedStr>, I> {
+            let array_type = between(string("["), string("]"), self.typ())
+                .map(|typ| Type::Array(Box::new(typ)));
+
+            array_type
+                .or(between(string("("), string(")"), self.typ()))
+                .or(self.ident().map(|typ| Type::Data(typ, Vec::new())))
+                .parse_state(input)
+        }
+
+        fn type_decl(&self, input: State<I>) -> ParseResult<(InternedStr, Type<InternedStr>), I> {
+            self.reserved("type")
+                .with(self.ident())
+                .skip(self.reserved_op("="))
+                .and(self.typ())
+                .parse_state(input)
+        }
+
+        fn expr<'b>(&'b self) -> EnvParser<'a, 'b, I, LExpr<InternedStr>> {
+            self.parser(ParserEnv::top_expr)
+        }
+
+        fn parse_expr(&self, input: State<I>) -> ParseResult<LExpr<InternedStr>, I> {
+            let position = input.position;
+            debug!("Expr start: {:?}", input.clone().uncons_char().map(|t| t.0));
+            let loc = |expr| located(Location { column: position.column, row: position.line, absolute: 0 }, expr);
+            choice::<&mut [&mut Parser<Input=I, Output=LExpr<InternedStr>>], _>(&mut [
+                &mut parser(|input| self.if_else(input)).map(&loc),
+                &mut self.parser(ParserEnv::let_in).map(&loc),
+                &mut self.parser(ParserEnv::lambda).map(&loc),
+                &mut self.lex(try(self.integer().skip(not_followed_by(string(".")))))
+                    .map(|i| loc(Expr::Literal(LiteralStruct::Integer(i)))),
+                &mut self.lex(self.float())
+                    .map(|f| loc(Expr::Literal(LiteralStruct::Float(f)))),
+                &mut self.ident().map(Expr::Identifier).map(&loc),
+                &mut between(self.lex(string("(")), self.lex(string(")")), self.expr())
+                ])
+                .parse_state(input)
+        }
+
+        fn op(&self, input: State<I>) -> ParseResult<InternedStr, I> {
+            self.env.op().map(|s| self.intern(&s))
+                .parse_state(input)
+        }
+
+        fn top_expr(&self, input: State<I>) -> ParseResult<LExpr<InternedStr>, I> {
+            fn binop<'b, F, T>(f: F) -> Box<FnMut(T, T) -> T + 'b>
+                where F: FnMut(T, T) -> T + 'b {
+                Box::new(f)
+            }
+            let op = parser(|i| self.op(i))
+                .map(|op| binop(move |l: LExpr<InternedStr>, r| {
+                    let loc = l.location.clone();
+                    let expr = Expr::BinOp(Box::new(l), op, Box::new(r));
+                    located(loc, expr) 
+                }));
+
+            chainl1(self.parser(ParserEnv::parse_expr), op)
+                .parse_state(input)
+        }
+
+        fn lambda(&self, input: State<I>) -> ParseResult<Expr<InternedStr>, I> {
+            self.lex(satisfy(|c| c == '\\'))
+                .with(parser(|input| many(self.ident())
+                    .skip(self.lex(string("->")))
+                    .and(self.expr())
+                    .parse_state(input)))
+                .map(|(args, expr)| Expr::Lambda(LambdaStruct {
+                    id: self.intern(""), free_vars: Vec::new(), arguments: args, body: Box::new(expr)
+                }))
+                .parse_state(input)
+        }
+
+        fn if_else(&self, input: State<I>) -> ParseResult<Expr<InternedStr>, I> {
+            self.reserved("if")
+                .with(self.expr())
+                .skip(self.reserved("then"))
+                .and(parser(|input| self.expr()
+                    .skip(self.reserved("else"))
+                    .and(self.expr())
+                    .parse_state(input)))
+                .map(|(b, (t, f))| Expr::IfElse(Box::new(b), Box::new(t), Some(Box::new(f))))
+                .parse_state(input)
+        }
+
+        fn let_in(&self, input: State<I>) -> ParseResult<Expr<InternedStr>, I> {
+            self.reserved("let")
+                .with(self.ident())
+                .skip(self.reserved_op("="))
+                .and(parser(|input| self.expr()
+                    .skip(self.reserved("in"))
+                    .and(self.expr())
+                    .parse_state(input)))
+                .map(|(b, (e1, e2))| Expr::Let(b, Box::new(e1), Some(Box::new(e2))))
+                .parse_state(input)
+        }
+    }
+
+
+    let ops = "+-*/&|";
+    let env = Env::new(LanguageDef {
+        ident: Identifier {
+            start: letter(),
+            rest: alpha_num(),
+            reserved: ["if", "then", "else", "let", "in", "type"].iter().map(|x| (*x).into()).collect()
+        },
+        op: Identifier {
+            start: satisfy(move |c| ops.chars().find(|x| *x == c).is_some()),
+            rest: satisfy(move |c| ops.chars().find(|x| *x == c).is_some()),
+            reserved: ["->", "\\"].iter().map(|x| (*x).into()).collect()
+        },
+        comment_start: "/*",
+        comment_end: "*/",
+        comment_line: "//",
+    });
+
+
+    #[derive(Clone)]
+    struct A<'a>(&'a str);
+    impl <'a> Stream for A<'a> {
+        type Item = char;
+        fn uncons(self) -> Result<(char, A<'a>), ()> {
+            debug!("{:?}", self.0.uncons());
+            self.0.uncons().map(|(c, s)| (c, A(s)))
+        }
+    }
+    let input = A(input);
+    ParserEnv { data: RefCell::new((gc, interner)), env: env }
+        .expr()
+        .parse(input)
+        .map(|t| t.0)
+        .map_err(From::from)
+}
+
 #[cfg(test)]
 pub mod tests {
-    use super::{Parser, ParseResult};
+    use super::{Parser, ParseResult, parse_module};
     use ast::*;
     use std::io::BufReader;
     use interner::*;
@@ -711,7 +912,7 @@ pub mod tests {
         no_loc(Literal(Integer(i)))
     }
     fn let_(s: &str, e: PExpr) -> PExpr {
-        no_loc(Let(intern(s), box e))
+        no_loc(Let(intern(s), box e, None))
     }
     fn id(s: &str) -> PExpr {
         no_loc(Identifier(intern(s)))
@@ -752,6 +953,24 @@ pub mod tests {
 
     fn bool(b: bool) -> PExpr {
         no_loc(Literal(Bool(b)))
+    }
+
+    pub fn parse_new(s: &str) -> LExpr<InternedStr> {
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+        let &mut(ref mut interner, ref mut gc) = &mut *interner;
+        let x = parse_module(gc, interner, s)
+            .unwrap_or_else(|err| panic!("{:?}", err));
+        x
+    }
+
+    #[test]
+    fn expression() {
+        ::env_logger::init().unwrap();
+        let e = parse_new("2 * 3 + 4");
+        assert_eq!(e, binop(binop(int(2), "*", int(3)), "+", int(4)));
+        let e = parse_new(r#"\x y -> x + y"#);
+        assert_eq!(e, lambda("", vec![intern("x"), intern("y")], binop(id("x"), "+", id("y"))));
     }
 
     pub fn parse<F, T>(s: &str, f: F) -> T

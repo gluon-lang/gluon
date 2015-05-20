@@ -543,7 +543,7 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(instr);
                 }
             }
-            Expr::Let(ref id, ref expr) => {
+            Expr::Let(ref id, ref expr, ref body) => {
                 self.compile(&**expr, function);
                 self.new_stack_var(*id.id());
                 //unit expressions do not return a value so we need to add a dummy value

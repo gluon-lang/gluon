@@ -549,10 +549,11 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(alt1_type)
             }
-            ast::Let(ref mut id, ref mut expr) => {
+            ast::Let(ref mut id, ref mut expr, ref mut body) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 self.stack_var(id.name.clone(), typ);
-                Ok(UNIT_TYPE.clone())
+                body.as_mut().map(|body| self.typecheck(&mut **body))
+                    .unwrap_or(Ok(UNIT_TYPE.clone()))
             }
             ast::Assign(ref mut lhs, ref mut rhs) => {
                 let rhs_type = try!(self.typecheck(&mut **rhs));
@@ -903,7 +904,7 @@ impl Substitution {
                 return
             }
         }
-        let this: &mut Substitution = unsafe { ::std::mem::transmute(self) };
+        let this: &mut Substitution = unsafe { let e: *const _ = self; ::std::mem::transmute(e) };
         //Always make sure the mapping is from a higher variable to a lower
         //This way the resulting variables are always equal to any variables in the globals
         //declaration
@@ -942,7 +943,7 @@ impl Substitution {
         //to look for parents
         //Since we never have a cycle in the map we will never hold a &mut
         //to the same place
-        let this: &mut Substitution = unsafe { ::std::mem::transmute(&*self) };
+        let this: &mut Substitution = unsafe { let s: *const _ = self; ::std::mem::transmute(s) };
         this.map.get_mut(&var).map(|typ| {
             match **typ {
                 Type::Variable(parent_var) if parent_var != var => {

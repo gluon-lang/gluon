@@ -5,6 +5,9 @@ extern crate collections;
 extern crate log;
 extern crate env_logger;
 
+extern crate parser_combinators;
+extern crate parser_combinators_language;
+
 pub use interner::InternedStr;
 pub use parser::ParseResult;
 pub use typecheck::TcType;
