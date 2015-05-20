@@ -78,7 +78,7 @@ fn add_impl_constraints(constraints: &[ast::Constraint], decl: &mut ast::GlobalD
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum TypeError {
     UndefinedVariable(InternedStr),
     NotAFunction(TcType),
@@ -166,7 +166,7 @@ pub struct Typecheck<'a> {
     errors: Errors<ast::Located<TypeError>>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Errors<T> {
     errors: Vec<T>
 }
@@ -1089,6 +1089,7 @@ mod tests {
     use ast;
     use parser::{Parser, ParseResult};
     use interner::tests::{get_local_interner, intern};
+    use parser::tests::parse_new;
 
     pub fn parse<F, T>(s: &str, f: F) -> T
         where F: FnOnce(&mut Parser<TcIdent>) -> ParseResult<T> {
@@ -1101,6 +1102,26 @@ mod tests {
         f(&mut parser)
             .unwrap_or_else(|err| panic!("{:?}", err))
     }
+
+    #[test]
+    fn function_type__new() {
+        let text = 
+r"
+\x -> x
+";
+        let mut expr = parse_new(text);
+        let mut tc = Typecheck::new();
+        let result = tc.typecheck_expr(&mut expr);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Type::Function(ref a, ref r) => {
+                assert!(true);
+            }
+            _ => assert!(false)
+        }
+    }
+
+
     #[test]
     fn while_() {
         let text =
