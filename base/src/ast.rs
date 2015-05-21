@@ -30,17 +30,22 @@ pub trait AstId {
     type Untyped: Clone + PartialEq + Eq + fmt::Debug;
     fn from_str(s: InternedStr) -> Self;
     fn to_id(self) -> Self::Untyped;
+    fn set_type(&mut self, typ: Type<Self::Untyped>);
 }
 
 impl AstId for InternedStr {
     type Untyped = InternedStr;
     fn from_str(s: InternedStr) -> InternedStr { s }
     fn to_id(self) -> InternedStr { self }
+    fn set_type(&mut self, _: Type<Self::Untyped>) { }
 }
 impl <Id: Clone + PartialEq + Eq + fmt::Debug + AstId> AstId for TcIdent<Id> {
     type Untyped = Id;
     fn from_str(s: InternedStr) -> TcIdent<Id> { TcIdent { typ: Type::Builtin(UnitType), name: AstId::from_str(s) } }
     fn to_id(self) -> Id { self.name }
+    fn set_type(&mut self, typ: Type<Self::Untyped>) {
+        self.typ = typ;
+    }
 }
 
 pub type TcType = Type<InternedStr>;

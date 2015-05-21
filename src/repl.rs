@@ -2,8 +2,7 @@ use std::io;
 use std::io::BufRead;
 
 use embed_lang::typecheck::*;
-use embed_lang::compiler::{Compiler};
-use embed_lang::vm::{VM, parse_expr, load_script};
+use embed_lang::vm::{VM, run_expr, load_script};
 
 macro_rules! tryf {
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
@@ -72,17 +71,7 @@ fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, String> {
             run_command(vm, expr_str.chars().skip(1).next().unwrap(), expr_str[2..].trim())
         }
         _ =>  {
-            let mut expr = try!(parse_expr(&expr_str, vm));
-            let function = {
-                let empty_string = vm.intern("");
-                let env = vm.env();
-                let mut tc = Typecheck::new();
-                tc.add_environment(&env);
-                tryf!(tc.typecheck_expr(&mut expr));
-                let mut compiler = Compiler::new(&env, empty_string);
-                vm.new_function(compiler.compile_expr(&expr))
-            };
-            let v = try!(vm.call_bytecode(0, &function, None));
+            let v = try!(run_expr(vm, &expr_str));
             println!("{:?}", v);
             Ok(true)
         }

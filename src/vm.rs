@@ -1183,6 +1183,21 @@ pub fn run_main<'a>(vm: &VM<'a>, s: &str) -> VMResult<Value<'a>> {
     let mut buffer = BufReader::new(s.as_bytes());
     run_buffer_main(vm, &mut buffer)
 }
+
+pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::string::String> {
+    let mut expr = try!(parse_expr(&expr_str, vm));
+    let function = {
+        let empty_string = vm.intern("");
+        let env = vm.env();
+        let mut tc = Typecheck::new();
+        tc.add_environment(&env);
+        tryf!(tc.typecheck_expr(&mut expr));
+        let mut compiler = Compiler::new(&env, empty_string);
+        vm.new_function(compiler.compile_expr(&expr))
+    };
+    vm.call_bytecode(0, &function, None)
+}
+
 pub fn run_buffer_main<'a>(vm: &VM<'a>, buffer: &mut BufRead) -> VMResult<Value<'a>> {
     try!(load_script(vm, buffer));
     let v = try!(run_function(vm, "main"));

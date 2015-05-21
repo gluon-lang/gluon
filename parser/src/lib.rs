@@ -224,12 +224,18 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         fn let_in(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
             self.reserved("let")
                 .with(self.ident())
+                .and(optional(self.reserved_op(":").with(self.typ())))
                 .skip(self.reserved_op("="))
                 .and(parser(|input| self.expr()
                     .skip(self.reserved("in"))
                     .and(self.expr())
                     .parse_state(input)))
-                .map(|(b, (e1, e2))| Expr::Let(b, Box::new(e1), Some(Box::new(e2))))
+                .map(|((mut bind, typ), (e1, e2))| {
+                    if let Some(typ) = typ {
+                        bind.set_type(typ);
+                    }
+                    Expr::Let(bind, Box::new(e1), Some(Box::new(e2)))
+                })
                 .parse_state(input)
         }
     }
@@ -381,5 +387,15 @@ pub mod tests {
         let a = let_("f", lambda("", vec![intern("x"), intern("y")], binop(id("x"), "+", id("y")))
                          , call(id("f"), vec![int(1), int(2)]));
         assert_eq!(e, a);
+    }
+
+    #[test]
+    fn let_type_decl() {
+        let _ = ::env_logger::init();
+        let e = parse_new::<TcIdent>("let f: Int = \\x y -> x + y in f 1 2");
+        match e.value {
+            Expr::Let(bind, _, _) => assert_eq!(bind.typ, Type::Data(intern("Int"), vec![])),
+            _ => assert!(false)
+        }
     }
 }

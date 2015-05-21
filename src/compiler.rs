@@ -564,6 +564,9 @@ impl <'a> Compiler<'a> {
                 if *expr.type_of() == UNIT_TYPE {
                     function.instructions.push(PushInt(0));
                 }
+                if let Some(ref body) = *body {
+                    self.compile(&body, function);
+                }
             }
             Expr::Call(ref func, ref args) => {
                 if let Expr::Identifier(ref id) = func.value {
