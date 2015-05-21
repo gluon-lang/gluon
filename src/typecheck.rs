@@ -721,6 +721,10 @@ impl <'a> Typecheck<'a> {
                 debug!("Found trait {:?} ", l);
                 self.has_impl_of_trait(actual, l)
             }
+            (&Type::Trait(ref l, _), _) => {
+                debug!("Found trait {:?} ", l);
+                self.has_impl_of_trait(actual, l)
+            }
             (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
                 l == r
                 && l_args.len() == r_args.len()
