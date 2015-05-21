@@ -5,21 +5,6 @@ pub use lexer::Location;
 pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType};
 pub use self::Pattern::{ConstructorPattern, IdentifierPattern};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
-pub use self::Expr::{
-    Identifier,
-    Literal,
-    Call,
-    IfElse,
-    While,
-    Match,
-    Block,
-    BinOp,
-    Let,
-    Assign,
-    FieldAccess,
-    Array,
-    ArrayAccess,
-    Lambda};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct TcIdent<Id = InternedStr> {
@@ -167,7 +152,8 @@ pub enum Expr<Id: AstId> {
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
     ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
-    Lambda(LambdaStruct<Id>)
+    Lambda(LambdaStruct<Id>),
+    Type(Id::Untyped, Type<Id::Untyped>, Box<LExpr<Id>>)
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -336,7 +322,7 @@ pub trait MutVisitor {
 
 pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
     match e.value {
-        IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
+        Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
             v.visit_expr(&mut **if_true);
             match *if_false {
@@ -344,55 +330,56 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
                 None => ()
             }
         }
-        Block(ref mut exprs) => {
+        Expr::Block(ref mut exprs) => {
             for expr in exprs.iter_mut() {
                 v.visit_expr(expr);
             }
         }
-        BinOp(ref mut lhs, _, ref mut rhs) => {
+        Expr::BinOp(ref mut lhs, _, ref mut rhs) => {
             v.visit_expr(&mut **lhs);
             v.visit_expr(&mut **rhs);
         }
-        Let(_, ref mut expr, ref mut body) => {
+        Expr::Let(_, ref mut expr, ref mut body) => {
             v.visit_expr(&mut **expr);
             if let Some(ref mut body) = *body {
                 v.visit_expr(&mut **body);
             }
         }
-        Call(ref mut func, ref mut args) => {
+        Expr::Call(ref mut func, ref mut args) => {
             v.visit_expr(&mut **func);
             for arg in args.iter_mut() {
                 v.visit_expr(arg);
             }
         }
-        While(ref mut pred, ref mut expr) => {
+        Expr::While(ref mut pred, ref mut expr) => {
             v.visit_expr(&mut **pred);
             v.visit_expr(&mut **expr);
         }
-        Assign(ref mut lhs, ref mut rhs) => {
+        Expr::Assign(ref mut lhs, ref mut rhs) => {
             v.visit_expr(&mut **lhs);
             v.visit_expr(&mut **rhs);
         }
-        FieldAccess(ref mut expr, _) => {
+        Expr::FieldAccess(ref mut expr, _) => {
             v.visit_expr(&mut **expr);
         }
-        Match(ref mut expr, ref mut alts) => {
+        Expr::Match(ref mut expr, ref mut alts) => {
             v.visit_expr(&mut**expr);
             for alt in alts.iter_mut() {
                 v.visit_expr(&mut alt.expression);
             }
         }
-        Array(ref mut a) => {
+        Expr::Array(ref mut a) => {
             for expr in a.expressions.iter_mut() {
                 v.visit_expr(expr);
             }
         }
-        ArrayAccess(ref mut array, ref mut index) => {
+        Expr::ArrayAccess(ref mut array, ref mut index) => {
             v.visit_expr(&mut **array);
             v.visit_expr(&mut **index);
         }
-        Lambda(ref mut lambda) => v.visit_expr(&mut *lambda.body),
-        Literal(..) | Identifier(..) => ()
+        Expr::Lambda(ref mut lambda) => v.visit_expr(&mut *lambda.body),
+        Expr::Type(_, _, ref mut expr) => v.visit_expr(&mut *expr),
+        Expr::Literal(..) | Expr::Identifier(..) => ()
     }
 }
 

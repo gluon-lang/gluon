@@ -725,6 +725,7 @@ impl <'a> Compiler<'a> {
                 let cf = self.compile_lambda(lambda, function);
                 function.inner_functions.push(cf);
             }
+            Expr::Type(_, _, ref expr) => self.compile(&**expr, function),
         }
     }
 

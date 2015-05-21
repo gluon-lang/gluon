@@ -328,7 +328,7 @@ impl <'a> Typecheck<'a> {
         ::std::mem::swap(&mut variables, &mut self.subs.variables);
 
         let (real_type, inferred_type) = match (&global.declaration.typ.value, &mut global.expression) {
-            (&Type::Function(ref arg_types, ref return_type), &mut ast::Located { value: ast::Lambda(ref mut lambda), location }) => {
+            (&Type::Function(ref arg_types, ref return_type), &mut ast::Located { value: ast::Expr::Lambda(ref mut lambda), location }) => {
                 for (typ, arg) in arg_types.iter().zip(lambda.arguments.iter()) {
                     let typ = self.subs.instantiate_(typ);
                     debug!("{} {:?}", arg.name, typ);
@@ -406,11 +406,11 @@ impl <'a> Typecheck<'a> {
             type T = TcIdent;
             fn visit_expr(&mut self, e: &mut ast::LExpr<TcIdent>) {
                 match e.value {
-                    ast::Identifier(ref mut id) => self.finish_type(e.location, &mut id.typ),
-                    ast::FieldAccess(_, ref mut id) => self.finish_type(e.location, &mut id.typ),
-                    ast::Array(ref mut array) => self.finish_type(e.location, &mut array.id.typ),
-                    ast::Lambda(ref mut lambda) => self.finish_type(e.location, &mut lambda.id.typ),
-                    ast::Match(_, ref mut alts) => {
+                    ast::Expr::Identifier(ref mut id) => self.finish_type(e.location, &mut id.typ),
+                    ast::Expr::FieldAccess(_, ref mut id) => self.finish_type(e.location, &mut id.typ),
+                    ast::Expr::Array(ref mut array) => self.finish_type(e.location, &mut array.id.typ),
+                    ast::Expr::Lambda(ref mut lambda) => self.finish_type(e.location, &mut lambda.id.typ),
+                    ast::Expr::Match(_, ref mut alts) => {
                         for alt in alts.iter_mut() {
                             match alt.pattern {
                                 ast::ConstructorPattern(ref mut id, ref mut args) => {
@@ -458,11 +458,11 @@ impl <'a> Typecheck<'a> {
     }
     fn typecheck_(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult {
         match expr.value {
-            ast::Identifier(ref mut id) => {
+            ast::Expr::Identifier(ref mut id) => {
                 id.typ = try!(self.find(id.id()));
                 Ok(id.typ.clone())
             }
-            ast::Literal(ref lit) => {
+            ast::Expr::Literal(ref lit) => {
                 Ok(match *lit {
                     ast::Integer(_) => INT_TYPE.clone(),
                     ast::Float(_) => FLOAT_TYPE.clone(),
@@ -470,7 +470,7 @@ impl <'a> Typecheck<'a> {
                     ast::Bool(_) => BOOL_TYPE.clone()
                 })
             }
-            ast::Call(ref mut func, ref mut args) => {
+            ast::Expr::Call(ref mut func, ref mut args) => {
                 let func_type = try!(self.typecheck(&mut**func));
                 match func_type {
                     Type::Function(arg_types, return_type) => {
@@ -486,7 +486,7 @@ impl <'a> Typecheck<'a> {
                     t => Err(NotAFunction(t))
                 }
             }
-            ast::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
+            ast::Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut**pred));
                 try!(self.unify(&BOOL_TYPE, pred_type));
                 let true_type = try!(self.typecheck(&mut**if_true));
@@ -496,13 +496,13 @@ impl <'a> Typecheck<'a> {
                 };
                 self.unify(&true_type, false_type)
             }
-            ast::While(ref mut pred, ref mut expr) => {
+            ast::Expr::While(ref mut pred, ref mut expr) => {
                 let pred_type = try!(self.typecheck(&mut **pred));
                 try!(self.unify(&BOOL_TYPE, pred_type));
                 self.typecheck(&mut**expr)
                     .map(|_| UNIT_TYPE.clone())
             }
-            ast::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
+            ast::Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = try!(self.typecheck(&mut**lhs));
                 let rhs_type = try!(self.typecheck(&mut**rhs));
                 try!(self.unify(&lhs_type, rhs_type.clone()));
@@ -524,7 +524,7 @@ impl <'a> Typecheck<'a> {
                     _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
-            ast::Block(ref mut exprs) => {
+            ast::Expr::Block(ref mut exprs) => {
                 self.stack.enter_scope();
                 let mut typ = Type::Builtin(ast::UnitType);
                 for expr in exprs.iter_mut() {
@@ -533,7 +533,7 @@ impl <'a> Typecheck<'a> {
                 self.stack.exit_scope();
                 Ok(typ)
             }
-            ast::Match(ref mut expr, ref mut alts) => {
+            ast::Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = try!(self.typecheck(&mut**expr));
                 self.stack.enter_scope();
                 try!(self.typecheck_pattern(&mut alts[0].pattern, typ.clone()));
@@ -549,19 +549,19 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(alt1_type)
             }
-            ast::Let(ref mut id, ref mut expr, ref mut body) => {
+            ast::Expr::Let(ref mut id, ref mut expr, ref mut body) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 self.stack_var(id.name.clone(), typ);
                 body.as_mut().map(|body| self.typecheck(&mut **body))
                     .unwrap_or(Ok(UNIT_TYPE.clone()))
             }
-            ast::Assign(ref mut lhs, ref mut rhs) => {
+            ast::Expr::Assign(ref mut lhs, ref mut rhs) => {
                 let rhs_type = try!(self.typecheck(&mut **rhs));
                 let lhs_type = try!(self.typecheck(&mut **lhs));
                 try!(self.unify(&lhs_type, rhs_type));
                 Ok(UNIT_TYPE.clone())
             }
-            ast::FieldAccess(ref mut expr, ref mut id) => {
+            ast::Expr::FieldAccess(ref mut expr, ref mut id) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 match typ {
                     Type::Data(ref struct_id, _) => {
@@ -588,7 +588,7 @@ impl <'a> Typecheck<'a> {
                     Type::Trait(..) => Err(StringError("Field access on trait object"))
                 }
             }
-            ast::Array(ref mut a) => {
+            ast::Expr::Array(ref mut a) => {
                 let mut expected_type = self.subs.new_var();
                 for expr in a.expressions.iter_mut() {
                     let typ = try!(self.typecheck(expr));
@@ -597,7 +597,7 @@ impl <'a> Typecheck<'a> {
                 a.id.typ = Type::Array(box expected_type);
                 Ok(a.id.typ.clone())
             }
-            ast::ArrayAccess(ref mut array, ref mut index) => {
+            ast::Expr::ArrayAccess(ref mut array, ref mut index) => {
                 let array_type = try!(self.typecheck(&mut **array));
                 let var = self.subs.new_var();
                 let array_type = try!(self.unify(&Type::Array(box var), array_type));
@@ -609,7 +609,7 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&INT_TYPE, index_type));
                 Ok(typ)
             }
-            ast::Lambda(ref mut lambda) => {
+            ast::Expr::Lambda(ref mut lambda) => {
                 self.stack.enter_scope();
                 let mut arg_types = Vec::new();
                 for arg in lambda.arguments.iter_mut() {
@@ -621,6 +621,10 @@ impl <'a> Typecheck<'a> {
                 self.stack.exit_scope();
                 lambda.id.typ = Type::Function(arg_types, box body_type);
                 Ok(lambda.id.typ.clone())
+            }
+            ast::Expr::Type(_, _, ref mut expr) => {
+                self.typecheck(&mut **expr);
+                panic!("Not implemented")
             }
         }
     }
@@ -1023,8 +1027,8 @@ impl <Id> Typed for ast::Expr<Id>
     type Id = Id::Id;
     fn type_of(&self) -> &Type<Id::Untyped> {
         match *self {
-            ast::Identifier(ref id) => id.type_of(),
-            ast::Literal(ref lit) => {
+            ast::Expr::Identifier(ref id) => id.type_of(),
+            ast::Expr::Literal(ref lit) => {
                 match *lit {
                     ast::Integer(_) => &INT_TYPE,
                     ast::Float(_) => &FLOAT_TYPE,
@@ -1032,35 +1036,36 @@ impl <Id> Typed for ast::Expr<Id>
                     ast::Bool(_) => &BOOL_TYPE
                 }
             }
-            ast::IfElse(_, ref arm, _) => arm.type_of(),
-            ast::Block(ref exprs) => {
+            ast::Expr::IfElse(_, ref arm, _) => arm.type_of(),
+            ast::Expr::Block(ref exprs) => {
                 match exprs.last() {
                     Some(last) => last.type_of(),
                     None => &UNIT_TYPE
                 }
             }
-            ast::BinOp(ref lhs, ref op, _) => {
+            ast::Expr::BinOp(ref lhs, ref op, _) => {
                 match AsRef::<str>::as_ref(op) {
                     "+" | "-" | "*" => lhs.type_of(),
                     "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => &BOOL_TYPE,
                     _ => panic!()
                 }
             }
-            ast::Let(..) | ast::While(..) | ast::Assign(..) => &UNIT_TYPE,
-            ast::Call(ref func, _) => {
+            ast::Expr::Let(..) | ast::Expr::While(..) | ast::Expr::Assign(..) => &UNIT_TYPE,
+            ast::Expr::Call(ref func, _) => {
                 match func.type_of() {
                     &Type::Function(_, ref return_type) => &**return_type,
                     x => panic!("{:?}", x)
                 }
             }
-            ast::Match(_, ref alts) => alts[0].expression.type_of(),
-            ast::FieldAccess(_, ref id) => id.type_of(),
-            ast::Array(ref a) => a.id.type_of(),
-            ast::ArrayAccess(ref array, _) => match array.type_of() {
+            ast::Expr::Match(_, ref alts) => alts[0].expression.type_of(),
+            ast::Expr::FieldAccess(_, ref id) => id.type_of(),
+            ast::Expr::Array(ref a) => a.id.type_of(),
+            ast::Expr::ArrayAccess(ref array, _) => match array.type_of() {
                 &Type::Array(ref t) => &**t,
                 t => panic!("Not an array type {:?}", t)
             },
-            ast::Lambda(ref lambda) => lambda.id.type_of()
+            ast::Expr::Lambda(ref lambda) => lambda.id.type_of(),
+            ast::Expr::Type(_, _, ref expr) => expr.type_of()
         }
     }
 }
@@ -1316,9 +1321,9 @@ transform = \x f -> {
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
         match module.globals[0].expression.value {
-            ast::Lambda(ref lambda) => {
+            ast::Expr::Lambda(ref lambda) => {
                 match lambda.body.value {
-                    ast::Block(ref exprs) => {
+                    ast::Expr::Block(ref exprs) => {
                         assert_eq!(exprs[2].value.type_of(), &FLOAT_TYPE);
                     }
                     _ => panic!()
@@ -1361,11 +1366,11 @@ is_positive = \x -> {
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
         match module.globals[0].expression.value {
-            ast::Lambda(ref lambda) => {
+            ast::Expr::Lambda(ref lambda) => {
                 match lambda.body.value {
-                    ast::Block(ref exprs) => {
+                    ast::Expr::Block(ref exprs) => {
                         match exprs[0].value {
-                            ast::IfElse(_, ref if_true, ref if_false) => {
+                            ast::Expr::IfElse(_, ref if_true, ref if_false) => {
                                 assert_eq!(if_true.type_of(), if_false.type_of());
                                 assert_eq!(if_false.type_of(), &Type::Data(intern("Option"), vec![FLOAT_TYPE.clone()]));
                             }
@@ -1446,11 +1451,11 @@ test = \ -> {
         tc.typecheck_module(&mut module)
             .unwrap_or_else(|err| panic!("{:?}", err));
         match module.globals[0].expression.value {
-            ast::Lambda(ref lambda) => {
+            ast::Expr::Lambda(ref lambda) => {
                 match lambda.body.value {
-                    ast::Block(ref exprs) => {
+                    ast::Expr::Block(ref exprs) => {
                         match exprs[0].value {
-                            ast::Call(ref f, ref args) => {
+                            ast::Expr::Call(ref f, ref args) => {
                                 let int_opt = Type::Data(intern("Option"), vec![INT_TYPE.clone()]);
                                 assert_eq!(f.type_of(), &(Type::Function(vec![int_opt.clone(), int_opt.clone()], box BOOL_TYPE.clone())));
                                 assert_eq!(args[0].type_of(), &int_opt);

@@ -111,14 +111,14 @@ fn precedence(s : &str) -> i32 {
 
 fn is_statement<T: AstId>(e: &Expr<T>) -> bool {
     match *e {
-        IfElse(..) | Match(..) | Block(..) | While(..) => true,
+        Expr::IfElse(..) | Expr::Match(..) | Expr::Block(..) | Expr::While(..) => true,
         _ => false
     }
 }
 
 fn is_lvalue<T: AstId>(e: &Expr<T>) -> bool {
     match *e {
-        Identifier(..) | FieldAccess(..) | ArrayAccess(..) => true,
+        Expr::Identifier(..) | Expr::FieldAccess(..) | Expr::ArrayAccess(..) => true,
         _ => false
     }
 }
@@ -202,7 +202,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
                 expect!(self, TAssign);
                 let expr = try!(self.expression());
                 expect!(self, TSemicolon);
-                Ok((Let(self.make_id(id), box expr, None), true))
+                Ok((Expr::Let(self.make_id(id), box expr, None), true))
             }
             _ => {
                 match self.expression() {
@@ -211,7 +211,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
                             self.lexer.next();
                             let rhs = try!(self.expression());
                             expect!(self, TSemicolon);
-                            Ok((Assign(box e, box rhs), true))
+                            Ok((Expr::Assign(box e, box rhs), true))
                         }
                         else if is_statement(&e.value) {
                             Ok((e.value, true))
@@ -243,18 +243,18 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
                 let args = try!(self.parens(|this|
                     this.sep_by(|t| matches!(t, &TComma), |this| this.expression())
                 ));
-                Ok(Call(box e, args))
+                Ok(Expr::Call(box e, args))
             }
             &TDot => {
                 self.lexer.next();
                 let id = expect1!(self, TVariable(x));
-                Ok(FieldAccess(box e, self.make_id(id.clone())))
+                Ok(Expr::FieldAccess(box e, self.make_id(id.clone())))
             }
             &TOpenBracket => {
                 self.lexer.next();
                 let index = box try!(self.expression());
                 expect!(self, TCloseBracket);
-                Ok(ArrayAccess(box e, index))
+                Ok(Expr::ArrayAccess(box e, index))
             }
             _ => Ok(e.value)
         }
@@ -266,10 +266,10 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
     fn sub_expression_2(&mut self) -> ParseResult<Expr<PString>> {
         match *self.lexer.next() {
             TVariable(id) => {
-                Ok(Identifier(self.make_id(id)))
+                Ok(Expr::Identifier(self.make_id(id)))
             }
             TConstructor(id) => {
-                Ok(Identifier(self.make_id(id)))
+                Ok(Expr::Identifier(self.make_id(id)))
             }
             TOpenParen => {
                 let e = try!(self.expression());
@@ -281,16 +281,16 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
                 self.block().map(|e| e.value)
             }
             TInteger(i) => {
-                Ok(Literal(Integer(i)))
+                Ok(Expr::Literal(Integer(i)))
             }
             TFloat(f) => {
-                Ok(Literal(Float(f)))
+                Ok(Expr::Literal(Float(f)))
             }
             TString(s) => {
-                Ok(Literal(String(s)))
+                Ok(Expr::Literal(String(s)))
             }
-            TTrue => Ok(Literal(Bool(true))),
-            TFalse => Ok(Literal(Bool(false))),
+            TTrue => Ok(Expr::Literal(Bool(true))),
+            TFalse => Ok(Expr::Literal(Bool(false))),
             TIf => {
                 let pred = box try!(self.expression());
                 let if_true = box try!(self.block());
@@ -308,25 +308,25 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
                     }
                     _ => None
                 };
-                Ok(IfElse(pred, if_true, if_false))
+                Ok(Expr::IfElse(pred, if_true, if_false))
             }
             TWhile => {
                 let pred = box try!(self.expression());
                 let b = box try!(self.block());
-                Ok(While(pred, b))
+                Ok(Expr::While(pred, b))
             }
             TMatch => {
                 let expr = box try!(self.expression());
                 let alternatives = try!(self.braces(
                     |this| this.many(|t| *t == TCloseBrace, |this| this.alternative())
                 ));
-                Ok(Match(expr, alternatives))
+                Ok(Expr::Match(expr, alternatives))
             }
             TOpenBracket => {
                 let args = try!(self.sep_by(|t| *t == TComma, |this| this.expression()));
                 expect!(self, TCloseBracket);
                 let dummy = self.lexer.intern("[]");
-                Ok(Array(ArrayStruct { id: self.make_id(dummy), expressions: args }))
+                Ok(Expr::Array(ArrayStruct { id: self.make_id(dummy), expressions: args }))
             }
             TLambda => { self.lexer.backtrack(); self.lambda() }
             x => {
@@ -346,7 +346,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
         expect!(self, TRArrow);
         let body = box try!(self.expression());
         let s = self.lexer.intern("");
-        Ok(Lambda(LambdaStruct { id: self.make_id(s), free_vars: Vec::new(), arguments: args, body: body }))
+        Ok(Expr::Lambda(LambdaStruct { id: self.make_id(s), free_vars: Vec::new(), arguments: args, body: body }))
     }
 
     fn block(&mut self) -> ParseResult<LExpr<PString>> {
@@ -363,7 +363,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
             }
         }
         expect!(self, TCloseBrace);
-        Ok(Block(exprs))
+        Ok(Expr::Block(exprs))
     }
 
     fn binary_expression(&mut self, mut lhs: LExpr<PString>, min_precedence : i32) -> ParseResult<LExpr<PString>> {
@@ -404,7 +404,7 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
             }
             lhs = Located {
                 location: location,
-                value: BinOp(box lhs, self.make_id(lhs_op.clone()), box rhs)
+                value: Expr::BinOp(box lhs, self.make_id(lhs_op.clone()), box rhs)
             };
         }
         self.lexer.backtrack();
@@ -750,14 +750,16 @@ pub fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Re
             self.parser(ParserEnv::parse_ident)
         }
         fn parse_ident(&self, input: State<I>) -> ParseResult<Id, I> {
-            self.env.ident().map(|s| self.intern(&s))
+            try(self.env.ident())
+                .map(|s| { debug!("Id: {}", s); self.intern(&s) })
                 .parse_state(input)
         }
         fn ident_u<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Id::Untyped> {
             self.parser(ParserEnv::parse_untyped_ident)
         }
         fn parse_untyped_ident(&self, input: State<I>) -> ParseResult<Id::Untyped, I> {
-            self.env.ident().map(|s| self.intern(&s).to_id())
+            try(self.env.ident())
+                .map(|s| { debug!("Id: {}", s); self.intern(&s).to_id() })
                 .parse_state(input)
         }
 
@@ -766,9 +768,11 @@ pub fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Re
         }
 
         fn parse_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            self.lex(self.ident_u().and(many(parser(|input| self.type_arg(input))))
+            self.ident_u()
+                .and(many(self.parser(ParserEnv::type_arg)))
                 .map(|(typ, args)| Type::Data(typ, args))
-                .or(parser(|input| self.type_arg(input))))
+                .or(self.parser(ParserEnv::type_arg))
+                .map(|typ| { debug!("Parse: {:?}", typ); typ })
                 .parse_state(input)
         }
 
@@ -782,11 +786,15 @@ pub fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Re
                 .parse_state(input)
         }
 
-        fn type_decl(&self, input: State<I>) -> ParseResult<(Id::Untyped, Type<Id::Untyped>), I> {
+        fn type_decl(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+            debug!("type_decl");
             self.reserved("type")
                 .with(self.ident_u())
                 .skip(self.reserved_op("="))
                 .and(self.typ())
+                .skip(self.reserved("in"))
+                .and(self.expr())
+                .map(|((id, typ), expr)| Expr::Type(id, typ, Box::new(expr)))
                 .parse_state(input)
         }
 
@@ -802,6 +810,7 @@ pub fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Re
                 &mut parser(|input| self.if_else(input)).map(&loc),
                 &mut self.parser(ParserEnv::let_in).map(&loc),
                 &mut self.parser(ParserEnv::lambda).map(&loc),
+                &mut self.parser(ParserEnv::type_decl).map(&loc),
                 &mut self.lex(try(self.integer().skip(not_followed_by(string(".")))))
                     .map(|i| loc(Expr::Literal(LiteralStruct::Integer(i)))),
                 &mut self.lex(self.float())
@@ -922,16 +931,16 @@ pub mod tests {
     type PExpr = LExpr<InternedStr>;
     
     fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
-        no_loc(BinOp(box l, intern(s), box r))
+        no_loc(Expr::BinOp(box l, intern(s), box r))
     }
     fn int(i: i64) -> PExpr {
-        no_loc(Literal(Integer(i)))
+        no_loc(Expr::Literal(Integer(i)))
     }
     fn let_(s: &str, e: PExpr) -> PExpr {
-        no_loc(Let(intern(s), box e, None))
+        no_loc(Expr::Let(intern(s), box e, None))
     }
     fn id(s: &str) -> PExpr {
-        no_loc(Identifier(intern(s)))
+        no_loc(Expr::Identifier(intern(s)))
     }
     fn field(s: &str, typ: VMType) -> Field<InternedStr> {
         Field { name: intern(s), typ: typ }
@@ -943,32 +952,35 @@ pub mod tests {
         Type::Generic(intern(s))
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
-        no_loc(Call(box e, args))
+        no_loc(Expr::Call(box e, args))
     }
     fn if_else(p: PExpr, if_true: PExpr, if_false: PExpr) -> PExpr {
-        no_loc(IfElse(box p, box if_true, Some(box if_false)))
+        no_loc(Expr::IfElse(box p, box if_true, Some(box if_false)))
     }
 
     fn while_(p: PExpr, expr: PExpr) -> PExpr {
-        no_loc(While(box p, box expr))
+        no_loc(Expr::While(box p, box expr))
     }
     fn assign(p: PExpr, rhs: PExpr) -> PExpr {
-        no_loc(Assign(box p, box rhs))
+        no_loc(Expr::Assign(box p, box rhs))
     }
     fn block(xs: Vec<PExpr>) -> PExpr {
-        no_loc(Block(xs))
+        no_loc(Expr::Block(xs))
     }
     fn lambda(name: &str, args: Vec<InternedStr>, body: PExpr) -> PExpr {
-        no_loc(Lambda(LambdaStruct {
+        no_loc(Expr::Lambda(LambdaStruct {
             id: intern(name),
             free_vars: Vec::new(),
             arguments: args,
             body: box body 
         }))
     }
+    fn type_decl(name: &str, typ: Type<InternedStr>, body: PExpr) -> PExpr {
+        no_loc(Expr::Type(intern(name), typ, box body))
+    }
 
     fn bool(b: bool) -> PExpr {
-        no_loc(Literal(Bool(b)))
+        no_loc(Expr::Literal(Bool(b)))
     }
 
     pub fn parse_new<Id>(s: &str) -> LExpr<Id>
@@ -988,6 +1000,8 @@ pub mod tests {
         assert_eq!(e, binop(binop(int(2), "*", int(3)), "+", int(4)));
         let e = parse_new(r#"\x y -> x + y"#);
         assert_eq!(e, lambda("", vec![intern("x"), intern("y")], binop(id("x"), "+", id("y"))));
+        let e = parse_new(r#"type Test = Int in 0"#);
+        assert_eq!(e, type_decl("Test", Type::Data(intern("Int"), vec![]), int(0)));
     }
 
     pub fn parse<F, T>(s: &str, f: F) -> T
