@@ -144,6 +144,20 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn parse_expr(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
+            self.parser(ParserEnv::parse_arg)
+                .and(many(self.parser(ParserEnv::parse_arg)))
+                .map(|(f, args): (LExpr<Id>, Vec<_>)| {
+                    if args.len() > 0 {
+                        located(f.location, Expr::Call(Box::new(f), args))
+                    }
+                    else {
+                        f
+                    }
+                })
+                .parse_state(input)
+        }
+
+        fn parse_arg(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
             let position = input.position;
             debug!("Expr start: {:?}", input.clone().uncons_char().map(|t| t.0));
             let loc = |expr| located(Location { column: position.column, row: position.line, absolute: 0 }, expr);
@@ -265,7 +279,6 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
 pub mod tests {
     use super::parse_module;
     use base::ast::*;
-    use std::io::BufReader;
     use base::interner::*;
     
     use std::rc::Rc;
@@ -293,8 +306,8 @@ pub mod tests {
     fn int(i: i64) -> PExpr {
         no_loc(Expr::Literal(Integer(i)))
     }
-    fn let_(s: &str, e: PExpr) -> PExpr {
-        no_loc(Expr::Let(intern(s), box e, None))
+    fn let_(s: &str, e: PExpr, b: PExpr) -> PExpr {
+        no_loc(Expr::Let(intern(s), box e, Some(Box::new(b))))
     }
     fn id(s: &str) -> PExpr {
         no_loc(Expr::Identifier(intern(s)))
@@ -352,12 +365,21 @@ pub mod tests {
 
     #[test]
     fn expression() {
-        ::env_logger::init().unwrap();
+        let _ = ::env_logger::init();
         let e = parse_new("2 * 3 + 4");
         assert_eq!(e, binop(binop(int(2), "*", int(3)), "+", int(4)));
         let e = parse_new(r#"\x y -> x + y"#);
         assert_eq!(e, lambda("", vec![intern("x"), intern("y")], binop(id("x"), "+", id("y"))));
         let e = parse_new(r#"type Test = Int in 0"#);
         assert_eq!(e, type_decl("Test", Type::Data(intern("Int"), vec![]), int(0)));
+    }
+
+    #[test]
+    fn application() {
+        let _ = ::env_logger::init();
+        let e = parse_new("let f = \\x y -> x + y in f 1 2");
+        let a = let_("f", lambda("", vec![intern("x"), intern("y")], binop(id("x"), "+", id("y")))
+                         , call(id("f"), vec![int(1), int(2)]));
+        assert_eq!(e, a);
     }
 }
