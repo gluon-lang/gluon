@@ -1,5 +1,5 @@
 #![crate_type="lib"]
-#![feature(box_syntax, alloc, core, collections, io, convert, slice_patterns)]
+#![feature(box_syntax, core, collections, io, convert, slice_patterns)]
 extern crate collections;
 #[macro_use]
 extern crate log;

@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, Read};
 use std::str::FromStr;
-use std::fmt;
 
 use base::ast::Location;
 use base::gc::Gc;

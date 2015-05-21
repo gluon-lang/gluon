@@ -623,7 +623,7 @@ impl <'a> Typecheck<'a> {
                 Ok(lambda.id.typ.clone())
             }
             ast::Expr::Type(_, _, ref mut expr) => {
-                self.typecheck(&mut **expr);
+                try!(self.typecheck(&mut **expr));
                 panic!("Not implemented")
             }
         }
@@ -1118,7 +1118,7 @@ mod tests {
 
 
     #[test]
-    fn function_type__new() {
+    fn function_type_new() {
         let text = 
 r"
 \x -> x
@@ -1128,7 +1128,7 @@ r"
         let result = tc.typecheck_expr(&mut expr);
         assert!(result.is_ok());
         match result.unwrap() {
-            Type::Function(ref a, ref r) => {
+            Type::Function(_, _) => {
                 assert!(true);
             }
             _ => assert!(false)
