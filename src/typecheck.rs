@@ -275,7 +275,7 @@ impl <'a> Typecheck<'a> {
                 let variables = data.constraints.iter()
                     .map(|cs| Type::Generic(*cs))
                     .collect();
-                ctor.name.typ = Type::Function(args, box Type::Data(data.name, variables));
+                ctor.name.typ = Type::Function(args, box Type::Data(ast::TypeConstructor::Data(data.name), variables));
                 self.module.insert(ctor.name.name, ast::Constrained {
                     constraints: Vec::new(),
                     value: ctor.name.typ.clone()
@@ -335,7 +335,7 @@ impl <'a> Typecheck<'a> {
                     self.stack_var(arg.name.clone(), typ);
                 }
                 for constraint in global.declaration.typ.constraints.iter() {
-                    let c = Type::Data(constraint.name, Vec::new());
+                    let c = Type::Data(ast::TypeConstructor::Data(constraint.name), Vec::new());
                     let var = self.subs.variable_for(constraint.type_variable);
                     match self.subs.constraints.entry(var) {
                         Entry::Vacant(entry) => {
@@ -550,7 +550,10 @@ impl <'a> Typecheck<'a> {
                 Ok(alt1_type)
             }
             ast::Expr::Let(ref mut id, ref mut expr, ref mut body) => {
-                let typ = try!(self.typecheck(&mut **expr));
+                let mut typ = try!(self.typecheck(&mut **expr));
+                if id.typ != UNIT_TYPE {
+                    typ = try!(self.unify(&id.typ, typ));
+                }
                 self.stack_var(id.name.clone(), typ);
                 body.as_mut().map(|body| self.typecheck(&mut **body))
                     .unwrap_or(Ok(UNIT_TYPE.clone()))
@@ -564,7 +567,7 @@ impl <'a> Typecheck<'a> {
             ast::Expr::FieldAccess(ref mut expr, ref mut id) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 match typ {
-                    Type::Data(ref struct_id, _) => {
+                    Type::Data(ast::TypeConstructor::Data(ref struct_id), _) => {
                         let constructors = try!(self.find_type_info(struct_id));
                         let field_type = match constructors {
                             [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
@@ -580,8 +583,10 @@ impl <'a> Typecheck<'a> {
                         };
                         Ok(id.typ.clone())
                     }
+                    Type::Data(ast::TypeConstructor::Builtin(..), _) | Type::Builtin(..) => {
+                        Err(StringError("Field access on builtin type"))
+                    }
                     Type::Function(..) => Err(StringError("Field access on function")),
-                    Type::Builtin(..) => Err(StringError("Field acces on primitive")),
                     Type::Variable(..) => Err(StringError("Field acces on type variable")),
                     Type::Generic(..) => Err(StringError("Field acces on generic")),
                     Type::Array(..) => Err(StringError("Field access on array")),
@@ -631,8 +636,8 @@ impl <'a> Typecheck<'a> {
 
     fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
         let typename = match match_type {
-            Type::Data(id, _) => id,
-            _ => return Err(StringError("Pattern matching only works on enums"))
+            Type::Data(ast::TypeConstructor::Data(id), _) => id,
+            _ => return Err(StringError("Pattern matching only works on data types"))
         };
         match *pattern {
             ast::ConstructorPattern(ref name, ref mut args) => {
@@ -709,7 +714,7 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(&**l, &**r),
-            (&Type::Data(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
+            (&Type::Data(ast::TypeConstructor::Data(ref l), _), _) if find_trait(&self.type_infos, l).is_ok() => {
                 debug!("Found trait {:?} ", l);
                 self.has_impl_of_trait(actual, l)
             }
@@ -752,7 +757,7 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (&Type::Array(ref l), &Type::Array(ref r)) => self.merge_(&**l, &**r),
-            (&Type::Data(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
+            (&Type::Data(ast::TypeConstructor::Data(ref l), _), _) if find_trait(&self.type_infos, l).is_ok() => {
                 self.has_impl_of_trait(actual, l)
             }
             (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
@@ -783,7 +788,7 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (&Type::Array(ref l), &Type::Array(ref r)) => self.merge_(&**l, &**r),
-            (&Type::Data(ref l, _), _) if find_trait(&self.type_infos, l).is_ok() => {
+            (&Type::Data(ast::TypeConstructor::Data(ref l), _), _) if find_trait(&self.type_infos, l).is_ok() => {
                 self.has_impl_of_trait(actual, l)
             }
             (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
@@ -803,7 +808,7 @@ impl <'a> Typecheck<'a> {
         debug!("Check impl {:?} {:?}", typ, trait_id);
         //If the type is the trait it self it passes the check
         match *typ {
-            Type::Data(ref id, _) if id == trait_id => return true,
+            Type::Data(ast::TypeConstructor::Data(ref id), _) if id == trait_id => return true,
             _ => ()
         }
         match self.type_infos.impls.get(trait_id) {
@@ -830,7 +835,7 @@ impl <'a> Typecheck<'a> {
                 trait_types.iter()
                     .all(|trait_type| {
                         match *trait_type {
-                            Type::Data(ref id, _) => self.has_impl_of_trait(typ, id),
+                            Type::Data(ast::TypeConstructor::Data(ref id), _) => self.has_impl_of_trait(typ, id),
                             _ => false
                         }
                     })
@@ -848,13 +853,13 @@ impl <'a> Typecheck<'a> {
             Type::Variable(id) => {
                 self.subs.find(id)
                     .map(|t| match *t {
-                        Type::Data(ref id, ref args) if find_trait(&self.type_infos, id).is_ok() => {
+                        Type::Data(ast::TypeConstructor::Data(ref id), ref args) if find_trait(&self.type_infos, id).is_ok() => {
                             Type::Trait(id.clone(), args.clone())
                         }
                         _ => t.clone()
                     })
             }
-            Type::Data(ref id, ref mut args) if find_trait(&self.type_infos, id).is_ok() => {
+            Type::Data(ast::TypeConstructor::Data(ref id), ref mut args) if find_trait(&self.type_infos, id).is_ok() => {
                 let a = ::std::mem::replace(args, Vec::new());
                 Some(Type::Trait(*id, a))
             }
@@ -970,7 +975,7 @@ impl Substitution {
     fn instantiate_constrained(&mut self, constraints: &[ast::Constraint], typ: &TcType) -> TcType {
         self.variables.clear();
         for constraint in constraints.iter() {
-            let c = Type::Data(constraint.name, Vec::new());
+            let c = Type::Data(ast::TypeConstructor::Data(constraint.name), Vec::new());
             let var = self.variable_for(constraint.type_variable);
             match self.constraints.entry(var) {
                 Entry::Vacant(entry) => {
@@ -1001,7 +1006,7 @@ impl Substitution {
             Type::Array(ref typ) => Type::Array(box self.instantiate_(&**typ)),
             Type::Data(ref id, ref args) => {
                 let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
-                Type::Data(*id, args2)
+                Type::Data(id.clone(), args2)
             }
             Type::Trait(ref id, ref args) => {
                 let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
@@ -1381,7 +1386,7 @@ is_positive = \x -> {
                         match exprs[0].value {
                             ast::Expr::IfElse(_, ref if_true, ref if_false) => {
                                 assert_eq!(if_true.type_of(), if_false.type_of());
-                                assert_eq!(if_false.type_of(), &Type::Data(intern("Option"), vec![FLOAT_TYPE.clone()]));
+                                assert_eq!(if_false.type_of(), &Type::Data(ast::TypeConstructor::Data(intern("Option")), vec![FLOAT_TYPE.clone()]));
                             }
                             _ => panic!()
                         }
@@ -1465,7 +1470,7 @@ test = \ -> {
                     ast::Expr::Block(ref exprs) => {
                         match exprs[0].value {
                             ast::Expr::Call(ref f, ref args) => {
-                                let int_opt = Type::Data(intern("Option"), vec![INT_TYPE.clone()]);
+                                let int_opt = Type::Data(ast::TypeConstructor::Data(intern("Option")), vec![INT_TYPE.clone()]);
                                 assert_eq!(f.type_of(), &(Type::Function(vec![int_opt.clone(), int_opt.clone()], box BOOL_TYPE.clone())));
                                 assert_eq!(args[0].type_of(), &int_opt);
                                 assert_eq!(args[1].type_of(), &int_opt);

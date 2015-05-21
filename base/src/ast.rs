@@ -110,8 +110,23 @@ pub enum BuiltinType {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum TypeConstructor<Id> {
+    Data(Id),
+    Builtin(BuiltinType)
+}
+
+impl <I: fmt::Display> fmt::Display for TypeConstructor<I> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            TypeConstructor::Data(ref d) => d.fmt(f),
+            TypeConstructor::Builtin(b) => b.fmt(f)
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id> {
-    Data(Id, Vec<Type<Id>>),
+    Data(TypeConstructor<Id>, Vec<Type<Id>>),
     Trait(Id, Vec<Type<Id>>),
     Variable(u32),
     Generic(InternedStr),
@@ -269,7 +284,7 @@ pub static STRING_TYPE: VMType = Type::Builtin(StringType);
 pub static BOOL_TYPE: VMType = Type::Builtin(BoolType);
 pub static UNIT_TYPE: VMType = Type::Builtin(UnitType);
 
-pub fn str_to_primitive_type<Id>(x: &str) -> Option<Type<Id>> {
+pub fn str_to_primitive_type(x: &str) -> Option<BuiltinType> {
     let t = match x {
         "Int" => IntType,
         "Float" => FloatType,
@@ -277,7 +292,7 @@ pub fn str_to_primitive_type<Id>(x: &str) -> Option<Type<Id>> {
         "Bool" => BoolType,
         _ => return None
     };
-    Some(Type::Builtin(t))
+    Some(t)
 }
 pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
     match t {
@@ -297,8 +312,8 @@ impl fmt::Display for BuiltinType {
 
 impl <I: fmt::Display> fmt::Display for Type<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_type<I>(f: &mut fmt::Formatter, t: &I, args: &[Type<I>]) -> fmt::Result
-            where I: fmt::Display {
+        fn fmt_type<I, T>(f: &mut fmt::Formatter, t: &T, args: &[Type<I>]) -> fmt::Result
+            where I: fmt::Display, T: fmt::Display {
             try!(write!(f, "{}", t));
             match args {
                 [ref first, rest..] => {

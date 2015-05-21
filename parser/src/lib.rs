@@ -104,26 +104,59 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .parse_state(input)
         }
 
+        fn ident_type<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, TypeConstructor<Id::Untyped>> {
+            self.parser(ParserEnv::parse_ident_type)
+        }
+        fn parse_ident_type(&self, input: State<I>) -> ParseResult<TypeConstructor<Id::Untyped>, I> {
+            try(self.env.ident())
+                .map(|s| {
+                    debug!("Id: {}", s);
+                    match str_to_primitive_type(&s) {
+                        Some(prim) => TypeConstructor::Builtin(prim),
+                        None => TypeConstructor::Data(self.intern(&s).to_id())
+                    }
+                })
+                .parse_state(input)
+        }
+
         fn typ<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Type<Id::Untyped>> {
             self.parser(ParserEnv::parse_type)
         }
 
         fn parse_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            self.ident_u()
+            self.ident_type()
                 .and(many(self.parser(ParserEnv::type_arg)))
-                .map(|(typ, args)| Type::Data(typ, args))
+                .map(|(typ, args): (_, Vec<_>)| {
+                    if args.len() == 0 {
+                        if let TypeConstructor::Builtin(b) = typ {
+                            return Type::Builtin(b);
+                        }
+                    }
+                    Type::Data(typ, args)
+                })
                 .or(self.parser(ParserEnv::type_arg))
-                .map(|typ| { debug!("Parse: {:?}", typ); typ })
+                .and(optional(self.reserved_op("->").with(self.typ())))
+                .map(|(arg, ret)| {
+                    debug!("Parse: {:?} -> {:?}", arg, ret);
+                    match ret {
+                        Some(ret) => Type::Function(vec![arg], Box::new(ret)),
+                        None => arg
+                    }
+                })
                 .parse_state(input)
         }
 
         fn type_arg(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            let array_type = between(string("["), string("]"), self.typ())
+            let array_type = self.brackets(self.typ())
                 .map(|typ| Type::Array(Box::new(typ)));
 
             array_type
-                .or(between(string("("), string(")"), self.typ()))
-                .or(self.ident_u().map(|typ| Type::Data(typ, Vec::new())))
+                .or(self.parens(optional(self.typ()))
+                   .map(|typ| match typ {
+                        Some(typ) => typ,
+                        None => Type::Builtin(BuiltinType::UnitType)
+                }))
+                .or(self.ident_type().map(|typ| Type::Data(typ, Vec::new())))
                 .parse_state(input)
         }
 
@@ -171,7 +204,12 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 &mut self.lex(self.float())
                     .map(|f| loc(Expr::Literal(LiteralStruct::Float(f)))),
                 &mut self.ident().map(Expr::Identifier).map(&loc),
-                &mut between(self.lex(string("(")), self.lex(string(")")), self.expr())
+                &mut self.parens(optional(self.expr()).map(|expr| {
+                    match expr {
+                        Some(expr) => expr,
+                        None => loc(Expr::Block(vec![]))
+                    }
+                }))
                 ])
                 .parse_state(input)
         }
@@ -322,7 +360,10 @@ pub mod tests {
         Field { name: intern(s), typ: typ }
     }
     fn typ(s: &str) -> VMType {
-        Type::Data(intern(s), Vec::new())
+        match str_to_primitive_type(s) {
+            Some(b) => Type::Builtin(b),
+            None => Type::Data(TypeConstructor::Data(intern(s)), Vec::new())
+        }
     }
     fn generic(s: &str) -> VMType {
         Type::Generic(intern(s))
@@ -377,7 +418,7 @@ pub mod tests {
         let e = parse_new(r#"\x y -> x + y"#);
         assert_eq!(e, lambda("", vec![intern("x"), intern("y")], binop(id("x"), "+", id("y"))));
         let e = parse_new(r#"type Test = Int in 0"#);
-        assert_eq!(e, type_decl("Test", Type::Data(intern("Int"), vec![]), int(0)));
+        assert_eq!(e, type_decl("Test", typ("Int"), int(0)));
     }
 
     #[test]

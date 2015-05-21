@@ -340,12 +340,18 @@ impl <'a> Compiler<'a> {
             .or_else(||  self.globals.find_var(id))
     }
 
-    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
-        self.globals.find_field(struct_, field)
+    fn find_field(&self, struct_: &ast::TypeConstructor<InternedStr>, field: &InternedStr) -> Option<VMIndex> {
+        match *struct_ {
+            ast::TypeConstructor::Data(ref struct_) => self.globals.find_field(struct_, field),
+            _ => None
+        }
     }
 
-    fn find_tag(&self, enum_: &InternedStr, constructor: &InternedStr) -> Option<VMTag> {
-        self.globals.find_tag(enum_, constructor)
+    fn find_tag(&self, enum_: &ast::TypeConstructor<InternedStr>, constructor: &InternedStr) -> Option<VMTag> {
+        match *enum_ {
+            ast::TypeConstructor::Data(ref enum_) => self.globals.find_tag(enum_, constructor),
+            _ => None
+        }
     }
 
     fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {

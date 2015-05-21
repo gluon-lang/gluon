@@ -741,7 +741,7 @@ impl <'a> VM<'a> {
         }
         else {
             let id = TypeId::of::<T>();
-            let typ = Type::Data(n, Vec::new());
+            let typ = Type::Data(ast::TypeConstructor::Data(n), Vec::new());
             try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
             let t = self.typeids.get(&id).unwrap();
             let ctor = ast::Constructor {
@@ -1214,7 +1214,7 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 
 #[cfg(test)]
 mod tests {
-    use super::{VM, run_main, run_function, load_script};
+    use super::{VM, run_main, run_expr, run_function, load_script};
     use super::Value::{Data, Int, String};
     use base::ast::INT_TYPE;
     use std::io::BufReader;
@@ -1307,24 +1307,15 @@ impl Add for Int {
     }
     #[test]
     fn pass_function_value() {
+        let _ = ::env_logger::init();
         let text = 
 r"
-main : () -> Int;
-main = \ -> {
-    test(lazy)
-}
-lazy : () -> Int;
-lazy = \ -> {
-    42
-}
-
-test : (() -> Int) -> Int;
-test = \f -> {
-    f() + 10
-}
+let lazy: () -> Int = \ -> 42 in
+let test: (() -> Int) -> Int = \f -> f () + 10
+in test lazy
 ";
         let mut vm = VM::new();
-        let value = run_main(&mut vm, text)
+        let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(52));
     }

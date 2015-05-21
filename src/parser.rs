@@ -446,17 +446,21 @@ impl <'a, 'b, PString> Parser<'a, 'b, PString>
     fn typ_(&mut self, is_argument: bool) -> ParseResult<Type<PString::Untyped>> {
         let x = match *self.lexer.next() {
             TConstructor(x) => {
-                match str_to_primitive_type(&x) {
-                    Some(t) => t,
-                    None => {
-                        let args = if is_argument {
-                            Vec::new()
-                        }
-                        else {
-                            try!(self.type_arguments())
-                        };
-                        Type::Data(self.make_untyped_id(x), args)
+                let ctor = match str_to_primitive_type(&x) {
+                    Some(t) => TypeConstructor::Builtin(t),
+                    None => TypeConstructor::Data(self.make_untyped_id(x))
+                };
+                let args = if is_argument {
+                    Vec::new()
+                }
+                else {
+                    try!(self.type_arguments())
+                };
+                match ctor {
+                    TypeConstructor::Builtin(b) if args.len() == 0 => {
+                        Type::Builtin(b)
                     }
+                    _ => Type::Data(ctor, args)
                 }
             }
             TVariable(name) => Type::Generic(name),
@@ -720,7 +724,10 @@ pub mod tests {
         Field { name: intern(s), typ: typ }
     }
     fn typ(s: &str) -> VMType {
-        Type::Data(intern(s), Vec::new())
+        match str_to_primitive_type(s) {
+            Some(b) => Type::Builtin(b),
+            None => Type::Data(TypeConstructor::Data(intern(s)), Vec::new())
+        }
     }
     fn generic(s: &str) -> VMType {
         Type::Generic(intern(s))
@@ -774,7 +781,7 @@ pub mod tests {
         let e = parse_new(r#"\x y -> x + y"#);
         assert_eq!(e, lambda("", vec![intern("x"), intern("y")], binop(id("x"), "+", id("y"))));
         let e = parse_new(r#"type Test = Int in 0"#);
-        assert_eq!(e, type_decl("Test", Type::Data(intern("Int"), vec![]), int(0)));
+        assert_eq!(e, type_decl("Test", typ("Int"), int(0)));
     }
 
     pub fn parse<F, T>(s: &str, f: F) -> T
