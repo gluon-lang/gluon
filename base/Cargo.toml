@@ -1,0 +1,8 @@
+[package]
+name = "base"
+version = "0.1.0"
+authors = ["Markus <marwes91@gmail.com>"]
+
+
+[dependencies.log]
+[dependencies.env_logger]
