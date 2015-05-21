@@ -105,8 +105,16 @@ pub struct BytecodeFunction {
 }
 
 impl BytecodeFunction {
-    pub fn new() -> BytecodeFunction {
+    pub fn empty() -> BytecodeFunction {
         BytecodeFunction { instructions: Vec::new(), inner_functions: Vec::new(), strings: Vec::new() }
+    }
+
+    pub fn new(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
+        let CompiledFunction { instructions, inner_functions, strings, .. } = f;
+        let fs = inner_functions.into_iter()
+            .map(|inner| BytecodeFunction::new(gc, inner))
+            .collect();
+        gc.alloc(Move(BytecodeFunction { instructions: instructions, inner_functions: fs, strings: strings }))
     }
 }
 
@@ -625,6 +633,10 @@ impl <'a> VM<'a> {
             .pop()
     }
 
+    pub fn new_function(&self, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
+        BytecodeFunction::new(&mut self.gc.borrow_mut(), f)
+    }
+
     pub fn new_functions(&self, Assembly { initializer, anonymous_functions, trait_functions: indexes, globals }: Assembly) {
         let mut names = self.names.borrow_mut();
         for trait_index in indexes.into_iter() {
@@ -660,17 +672,10 @@ impl <'a> VM<'a> {
             let global = Global { id: name, typ: typ, value: Cell::new(Bottom) };//TODO Initialize value now?
             self.globals.push(global);
         }
-        let mut function = BytecodeFunction::new();
+        let mut function = BytecodeFunction::empty();
         for f in anonymous_functions {
             debug!("Function {} at {}", f.id, function.inner_functions.len());
-            fn create_function(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
-                let CompiledFunction { instructions, inner_functions, strings, .. } = f;
-                let fs = inner_functions.into_iter()
-                    .map(|inner| create_function(gc, inner))
-                    .collect();
-                gc.alloc(Move(BytecodeFunction { instructions: instructions, inner_functions: fs, strings: strings }))
-            }
-            function.inner_functions.push(create_function(&mut self.gc.borrow_mut(), f));
+            function.inner_functions.push(BytecodeFunction::new(&mut self.gc.borrow_mut(), f));
         }
         debug!("Run initializer");
         let stack = self.stack.borrow_mut();
@@ -701,7 +706,7 @@ impl <'a> VM<'a> {
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> VMResult<Value<'a>> {
         let stack = self.stack.borrow_mut();
         let frame = StackFrame::new_scope(stack, 0, None, |frame| {
-            self.execute(frame, instructions, &BytecodeFunction::new())
+            self.execute(frame, instructions, &BytecodeFunction::empty())
         });
         frame.map(|mut frame| {
             if frame.len() > 0 {
@@ -795,19 +800,23 @@ impl <'a> VM<'a> {
 
     pub fn call_function(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>>  {
         debug!("Call function {:?}", global);
-        let stack = match global.value.get() {
+        match global.value.get() {
             Function(ptr) => {
                 let stack = StackFrame::new(self.stack.borrow_mut(), args, None);
-                self.execute_function(stack, &ptr)
+                let stack = self.execute_function(stack, &ptr);
+                stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
             }
-            Closure(closure) => {
-                let stack = StackFrame::new(self.stack.borrow_mut(), args, Some(closure));
-                self.execute(stack, &closure.function.instructions, &closure.function)
-            }
-            x => return Err(format!("Tried to call a non function object: '{:?}'", x))
-        };
+            Closure(closure) => self.call_bytecode(args, &closure.function, Some(closure)),
+            x => Err(format!("Tried to call a non function object: '{:?}'", x))
+        }
+    }
+
+    pub fn call_bytecode(&self, args: VMIndex, bytecode: &BytecodeFunction, closure: Option<GcPtr<ClosureData<'a>>>) -> VMResult<Value<'a>> {
+        let stack = StackFrame::new(self.stack.borrow_mut(), args, closure);
+        let stack = self.execute(stack, &bytecode.instructions, &bytecode);
         stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
     }
+
     fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &Function_<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         match *function {
             Function_::Extern(ref func) => {
@@ -1148,9 +1157,11 @@ pub fn parse_expr(input: &str, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::
 pub fn load_script(vm: &VM, buffer: &mut BufRead) -> Result<(), ::std::string::String> {
     use parser::Parser;
 
+    let empty_string;
     let mut module = {
         let mut cell = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
+        empty_string = cell.intern(&mut gc, "");
         let mut parser = Parser::new(&mut*cell, &mut *gc, buffer);
         tryf!(parser.module())
     };
@@ -1160,7 +1171,7 @@ pub fn load_script(vm: &VM, buffer: &mut BufRead) -> Result<(), ::std::string::S
         tc.add_environment(&env);
         tryf!(tc.typecheck_module(&mut module));
         let env = (vm.env(), &module);
-        let mut compiler = Compiler::new(&env);
+        let mut compiler = Compiler::new(&env, empty_string);
         (tc.type_infos, compiler.compile_module(&module))
     };
     vm.type_infos.borrow_mut().extend(type_infos);

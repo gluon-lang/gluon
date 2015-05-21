@@ -305,15 +305,17 @@ pub struct Compiler<'a> {
     stack: Vec<InternedStr>,
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<VMIndex>,
+    empty_string: InternedStr
 }
 
 impl <'a> Compiler<'a> {
 
-    pub fn new(globals: &'a CompilerEnv) -> Compiler<'a> {
+    pub fn new(globals: &'a CompilerEnv, empty_string: InternedStr) -> Compiler<'a> {
         Compiler {
             globals: globals,
             stack: Vec::new(),
             closure_limits: Vec::new(),
+            empty_string: empty_string
         }
     }
 
@@ -411,11 +413,22 @@ impl <'a> Compiler<'a> {
         }
     }
 
-    pub fn compile_expr(&mut self, expr: &CExpr) -> (Vec<Instruction>, Vec<CompiledFunction>) {
+    ///Compiles an expression to a zero argument function which can be directly fed to the
+    ///interpreter
+    pub fn compile_expr(&mut self, expr: &CExpr) -> CompiledFunction {
         let mut env = FunctionEnv::new();
         self.compile(expr, &mut env);
-        let FunctionEnv { instructions, inner_functions, .. } = env;
-        (instructions, inner_functions)
+        let FunctionEnv { instructions, inner_functions, strings, .. } = env;
+        CompiledFunction {
+            id: self.empty_string,
+            typ: Constrained {
+                constraints: Vec::new(),
+                value: Type::Function(vec![], Box::new(expr.type_of().clone()))
+            },
+            instructions: instructions,
+            inner_functions: inner_functions,
+            strings: strings
+        }
     }
 
     fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv) {
