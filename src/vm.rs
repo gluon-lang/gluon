@@ -1359,18 +1359,12 @@ main = \ -> {
     fn lambda() {
         let text = 
 r"
-main : () -> Int;
-main = \ -> {
-    let y = 100;
-    let f = \x -> {
-        y = y + x;
-        y + 1
-    };
-    f(22)
-}
+let y = 100 in
+let f = \x -> y + x + 1
+in f(22)
 ";
         let mut vm = VM::new();
-        let value = run_main(&mut vm, text)
+        let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(123));
     }
@@ -1678,18 +1672,15 @@ main = \ -> { let d = Data(123); d.x }
     fn and_operator() {
         let text = 
 r#"
-main : () -> Int;
-main = \ -> {
-    let x = 0;
-    if false && { x = 100; true } {
-    }
-    else if 0 < x || false {
-        x = 200;
-    }
-    x
+let x = 0
+in  if False && (x == 0)
+    then 200
+    else if 0 < x || False
+    then 100
+    else x
 }"#;
         let mut vm = VM::new();
-        let value = run_main(&mut vm, text)
+        let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(0));
     }

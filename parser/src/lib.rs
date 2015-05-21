@@ -203,6 +203,10 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                     .map(|i| loc(Expr::Literal(LiteralStruct::Integer(i)))),
                 &mut self.lex(self.float())
                     .map(|f| loc(Expr::Literal(LiteralStruct::Float(f)))),
+                &mut self.reserved("True")
+                    .map(|_| loc(Expr::Literal(LiteralStruct::Bool(true)))),
+                &mut self.reserved("False")
+                    .map(|_| loc(Expr::Literal(LiteralStruct::Bool(false)))),
                 &mut self.ident().map(Expr::Identifier).map(&loc),
                 &mut self.parens(optional(self.expr()).map(|expr| {
                     match expr {
@@ -279,7 +283,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
     }
 
 
-    let ops = "+-*/&|";
+    let ops = "+-*/&|=<>";
     let env = Env::new(LanguageDef {
         ident: Identifier {
             start: letter(),
