@@ -1310,7 +1310,7 @@ impl Add for Int {
         let _ = ::env_logger::init();
         let text = 
 r"
-let lazy: () -> Int = \ -> 42 in
+let lazy: () -> Int = \x -> 42 in
 let test: (() -> Int) -> Int = \f -> f () + 10
 in test lazy
 ";

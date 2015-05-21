@@ -472,6 +472,9 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Call(ref mut func, ref mut args) => {
                 let func_type = try!(self.typecheck(&mut**func));
+                let a = (0..args.len()).map(|_| self.subs.new_var()).collect();
+                let f = Type::Function(a, Box::new(self.subs.new_var()));
+                let func_type = try!(self.unify(&f, func_type));
                 match func_type {
                     Type::Function(arg_types, return_type) => {
                         if arg_types.len() != args.len() {
