@@ -5,14 +5,14 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::io::{BufReader, BufRead};
-use ast;
+use base::ast;
+use base::ast::{Constrained, Type};
 use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, TcIdent, TcType, match_types};
-use ast::{Constrained, Type};
 use compiler::*;
 use compiler::Instruction::*;
-use interner::{Interner, InternedStr};
-use gc::{Gc, GcPtr, Traverseable, DataDef, Move};
+use base::interner::{Interner, InternedStr};
+use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move};
 use fixed::*;
 
 use self::Named::*;
@@ -48,10 +48,6 @@ impl PartialEq for Userdata_ {
     fn eq(&self, o: &Userdata_) -> bool {
         self.ptr() == o.ptr()
     }
-}
-
-impl Traverseable for RefCell<Box<Any>> {
-    fn traverse(&self, _: &mut Gc) { }
 }
 
 pub struct ClosureData<'a> {
@@ -1195,7 +1191,7 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 mod tests {
     use super::{VM, run_main, run_function, load_script};
     use super::Value::{Data, Int, String};
-    use ast::INT_TYPE;
+    use base::ast::INT_TYPE;
     use std::io::BufReader;
     ///Test that the stack is adjusted correctly after executing expressions as statements
     #[test]

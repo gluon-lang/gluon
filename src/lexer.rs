@@ -3,8 +3,9 @@ use std::io::{BufRead, Read};
 use std::str::FromStr;
 use std::fmt;
 
-use gc::Gc;
-use interner::{Interner, InternedStr};
+use base::ast::Location;
+use base::gc::Gc;
+use base::interner::{Interner, InternedStr};
 
 use self::Token::*;
 
@@ -44,25 +45,6 @@ pub enum Token {
     TLambda,
     TEOF,
     TError(&'static str)
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Location {
-    pub column : i32,
-    pub row : i32,
-    pub absolute : i32
-}
-
-impl Location {
-    pub fn eof() -> Location {
-        Location { column: -1, row: -1, absolute: -1 }
-    }
-}
-
-impl fmt::Display for Location {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Line {}, Row {}", self.row, self.column)
-    }
 }
 
 ///Returns whether the character is a haskell operator
@@ -337,8 +319,8 @@ impl <'a, 'b> Lexer<'a, 'b> {
 mod tests {
     use lexer;
     use lexer::Token::*;
-    use gc::Gc;
-    use interner::Interner;
+    use base::gc::Gc;
+    use base::interner::Interner;
     use std::io::BufReader;
 
     #[test]

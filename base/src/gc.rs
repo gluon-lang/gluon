@@ -4,7 +4,8 @@ use std::ptr;
 use std::hash::{Hash, Hasher};
 use std::rt::heap::{allocate, deallocate};
 use std::ops::{Deref, DerefMut};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::any::Any;
 
 
 #[derive(Debug)]
@@ -157,6 +158,10 @@ impl <T: ?Sized + Hash> Hash for GcPtr<T> {
 ///which in turn contains GcPtr
 pub trait Traverseable {
     fn traverse(&self, func: &mut Gc);
+}
+
+impl Traverseable for RefCell<Box<Any>> {
+    fn traverse(&self, _: &mut Gc) { }
 }
 
 impl <'a, T> Traverseable for &'a T

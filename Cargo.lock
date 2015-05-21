@@ -2,10 +2,18 @@
 name = "embed_lang"
 version = "0.0.1"
 dependencies = [
+ "base 0.1.0",
  "env_logger 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser-combinators 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser-combinators-language 0.1.0 (git+https://github.com/Marwes/parser-combinators-language.git)",
+ "parser 0.1.0",
+]
+
+[[package]]
+name = "base"
+version = "0.1.0"
+dependencies = [
+ "env_logger 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -31,6 +39,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "parser"
+version = "0.1.0"
+dependencies = [
+ "base 0.1.0",
+ "env_logger 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parser-combinators 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parser-combinators-language 0.1.0",
+]
+
+[[package]]
 name = "parser-combinators"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -38,7 +57,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "parser-combinators-language"
 version = "0.1.0"
-source = "git+https://github.com/Marwes/parser-combinators-language.git#8a99a1a7d29276976d4af9b6a004a453b70e0f0f"
 dependencies = [
  "parser-combinators 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

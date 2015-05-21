@@ -3,13 +3,13 @@ use std::collections::hash_map::Entry;
 use std::convert::AsRef;
 use std::fmt;
 use scoped_map::ScopedMap;
-use ast;
-use ast::MutVisitor;
-use interner::InternedStr;
+use base::ast;
+use base::ast::MutVisitor;
+use base::interner::InternedStr;
 
 use self::TypeError::*;
 
-pub use ast::{TcIdent, TcType, Type};
+pub use base::ast::{TcIdent, TcType, Type};
 
 
 pub static INT_TYPE: TcType = Type::Builtin(ast::IntType);
@@ -1091,10 +1091,9 @@ impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
 #[cfg(test)]
 mod tests {
     use super::{Typecheck, Typed, TcIdent, INT_TYPE, BOOL_TYPE, FLOAT_TYPE, Type};
-    use ast;
+    use base::ast;
     use parser::{Parser, ParseResult};
-    use interner::tests::{get_local_interner, intern};
-    use parser::tests::parse_new;
+    use super::super::tests::{get_local_interner, intern};
 
     pub fn parse<F, T>(s: &str, f: F) -> T
         where F: FnOnce(&mut Parser<TcIdent>) -> ParseResult<T> {
@@ -1107,6 +1106,16 @@ mod tests {
         f(&mut parser)
             .unwrap_or_else(|err| panic!("{:?}", err))
     }
+
+    pub fn parse_new(s: &str) -> ast::LExpr<TcIdent> {
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+        let &mut(ref mut interner, ref mut gc) = &mut *interner;
+        let x = ::parser_new::parse_tc(gc, interner, s)
+            .unwrap_or_else(|err| panic!("{:?}", err));
+        x
+    }
+
 
     #[test]
     fn function_type__new() {

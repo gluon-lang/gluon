@@ -3,9 +3,6 @@ name = "parser"
 version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
 
-[lib]
-name = "parser"
-crate-type = ["staticlib"]
 
 [dependencies.log]
 [dependencies.env_logger]

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use interner::*;
-use ast;
-use ast::{Module, LExpr, Expr, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
+use base::interner::*;
+use base::ast;
+use base::ast::{Module, LExpr, Expr, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
 use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
