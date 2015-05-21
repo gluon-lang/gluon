@@ -7,7 +7,6 @@ use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::io::{BufReader, BufRead};
 use base::ast;
 use base::ast::{Constrained, Type};
-use parser::Parser;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, TcIdent, TcType, match_types};
 use compiler::*;
 use compiler::Instruction::*;
@@ -1139,11 +1138,11 @@ macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 );
 
-pub fn parse_expr(buffer: &mut BufRead, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
+pub fn parse_expr(input: &str, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
-        let mut gc = vm.gc.borrow_mut();
-    let mut parser = Parser::new(&mut *interner, &mut *gc, buffer);
-    parser.expression().map_err(|err| format!("{}", err))
+    let mut gc = vm.gc.borrow_mut();
+    ::parser_new::parse_tc(&mut gc, &mut interner, input)
+        .map_err(|err| format!("{}", err))
 }
 
 pub fn load_script(vm: &VM, buffer: &mut BufRead) -> Result<(), ::std::string::String> {

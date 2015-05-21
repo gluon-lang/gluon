@@ -72,8 +72,7 @@ fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, String> {
             run_command(vm, expr_str.chars().skip(1).next().unwrap(), expr_str[2..].trim())
         }
         _ =>  {
-            let mut buffer = io::BufReader::new(expr_str.as_bytes());
-            let mut expr = try!(parse_expr(&mut buffer, vm));
+            let mut expr = try!(parse_expr(&expr_str, vm));
             let (instructions, lambdas) = {
                 let env = vm.env();
                 let mut tc = Typecheck::new();

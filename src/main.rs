@@ -22,7 +22,6 @@ fn main() {
             Ok(value) => value,
             Err(err) => {
                 println!("{}", err);
-                env::set_exit_status(1);
                 return
             }
         };
