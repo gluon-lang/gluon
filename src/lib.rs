@@ -9,15 +9,12 @@ extern crate base;
 extern crate parser as parser_new;
 
 pub use base::interner::InternedStr;
-pub use parser::ParseResult;
 pub use typecheck::TcType;
 pub use compiler::{CompiledFunction, Instruction};
 
 pub use base::{ast, gc, interner};
 
 mod scoped_map;
-mod lexer;
-mod parser;
 pub mod typecheck;
 pub mod compiler;
 pub mod vm;

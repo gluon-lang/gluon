@@ -80,10 +80,11 @@ fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, String> {
 
 fn load_file(vm: &VM, filename: &str) -> Result<(), String> {
     use std::fs::File;
-    use std::io::BufReader;
+    use std::io::Read;
     use std::path::Path;
-    let file = tryf!(File::open(&Path::new(filename)));
-    let mut buffer = BufReader::new(file);
-    load_script(vm, &mut buffer)
+    let mut file = tryf!(File::open(&Path::new(filename)));
+    let mut buffer = String::new();
+    tryf!(file.read_to_string(&mut buffer));
+    load_script(vm, &buffer)
 }
 
