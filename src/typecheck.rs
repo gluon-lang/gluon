@@ -18,66 +18,6 @@ pub static STRING_TYPE: TcType = Type::Builtin(ast::StringType);
 pub static BOOL_TYPE: TcType = Type::Builtin(ast::BoolType);
 pub static UNIT_TYPE: TcType = Type::Builtin(ast::UnitType);
 
-pub fn match_types(l: &TcType, r: &TcType) -> bool {
-    fn type_eq<'a>(vars: &mut HashMap<TcType, &'a TcType>, l: &'a TcType, r: &'a TcType) -> bool {
-        match (l, r) {
-            (&Type::Variable(_), _) => var_eq(vars, l.clone(), r),
-            (&Type::Generic(_), _) => var_eq(vars, l.clone(), r),
-            (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
-                if l_args.len() == r_args.len() {
-                    l_args.iter()
-                        .zip(r_args.iter())
-                        .all(|(l, r)| type_eq(vars, l, r))
-                        && type_eq(vars, &**l_ret, &**r_ret)
-                }
-                else {
-                    false
-                }
-            }
-            (&Type::Array(ref l), &Type::Array(ref r)) => type_eq(vars, &**l, &**r),
-            (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
-                l == r
-                && l_args.len() == r_args.len()
-                && l_args.iter().zip(r_args.iter()).all(|(l, r)| type_eq(vars, l, r))
-            }
-            (&Type::Trait(ref l, ref l_args), &Type::Trait(ref r, ref r_args)) => {
-                l == r
-                && l_args.len() == r_args.len()
-                && l_args.iter().zip(r_args.iter()).all(|(l, r)| type_eq(vars, l, r))
-            }
-            (&Type::Builtin(ref l), &Type::Builtin(ref r)) => l == r,
-            _ => false
-        }
-    }
-
-    fn var_eq<'a>(mapping: &mut HashMap<TcType, &'a TcType>, l: TcType, r: &'a TcType) -> bool {
-        match mapping.get(&l) {
-            Some(x) => return *x == r,
-            None => ()
-        }
-        mapping.insert(l, r);
-        true
-    }
-
-    let mut vars = HashMap::new();
-    type_eq(&mut vars, l, r)
-}
-
-
-fn add_impl_constraints(constraints: &[ast::Constraint], decl: &mut ast::GlobalDeclaration<TcIdent>) {
-    //Add all constraints from the impl declaration to the globals declaration
-    for constraint in constraints.iter() {
-        let exists = {
-            decl.typ.constraints.iter()
-                .find(|func_constraint| *func_constraint == constraint)
-                .is_some()
-        };
-        if !exists {
-            decl.typ.constraints.push(constraint.clone());
-        }
-    }
-}
-
 #[derive(Debug, PartialEq)]
 enum TypeError {
     UndefinedVariable(InternedStr),
@@ -102,54 +42,22 @@ pub type TcResult = Result<TcType, TypeError>;
 
 pub struct TypeInfos {
     pub datas: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
-    pub impls: HashMap<InternedStr, Vec<ast::Constrained<TcType>>>,
-    pub traits: HashMap<InternedStr, Vec<(InternedStr, ast::Constrained<TcType>)>>
 }
 
 impl TypeInfos {
     pub fn new() -> TypeInfos {
         TypeInfos {
             datas: HashMap::new(),
-            traits: HashMap::new(),
-            impls: HashMap::new()
         }
     }
     pub fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]> {
         self.datas.get(id)
             .map(|vec| &**vec)
     }
-    pub fn find_trait(&self, name: &InternedStr) -> Option<&[(InternedStr, ast::Constrained<TcType>)]> {
-        self.traits.get(name).map(|v| &v[..])
-    }
-    pub fn add_module(&mut self, module: &ast::Module<TcIdent>) {
-        for data in module.datas.iter() {
-            self.datas.insert(data.name, data.constructors.clone());
-        }
-        for t in module.traits.iter() {
-            let function_types = t.declarations.iter().map(|decl| {
-                (decl.name.clone(), decl.typ.clone())
-            }).collect();
-            self.traits.insert(t.name, function_types);
-        }
-        for imp in module.impls.iter() {
-            let set = match self.impls.entry(imp.trait_name) {
-                Entry::Occupied(v) => v.into_mut(),
-                Entry::Vacant(v) => v.insert(Vec::new())
-            };
-            set.push(ast::Constrained { constraints: imp.constraints.clone(), value: imp.typ.clone() });
-        }
-    }
     pub fn extend(&mut self, other: TypeInfos) {
-        let TypeInfos { datas, impls, traits } = other;
+        let TypeInfos { datas } = other;
         self.datas.extend(datas);
-        self.impls.extend(impls);
-        self.traits.extend(traits);
     }
-}
-fn find_trait<'a>(this: &'a TypeInfos, name: &InternedStr) -> Result<&'a [(InternedStr, ast::Constrained<TcType>)], TypeError> {
-    this.find_trait(name)
-        .map(Ok)
-        .unwrap_or_else(|| Err(UndefinedTrait(name.clone())))
 }
 
 pub trait TypeEnv {
@@ -250,136 +158,6 @@ impl <'a> Typecheck<'a> {
         self.environment = Some(env);
     }
 
-    pub fn typecheck_module(&mut self, module: &mut ast::Module<TcIdent>) -> Result<(), StringErrors> {
-        
-        for f in module.globals.iter_mut() {
-            self.module.insert(f.declaration.name, f.declaration.typ.clone());
-        }
-        for t in module.traits.iter_mut() {
-            for decl in t.declarations.iter_mut() {
-                self.module.insert(decl.name, ast::Constrained {
-                    constraints: vec![ast::Constraint {
-                        type_variable: t.self_variable,
-                        name: t.name,
-                    }],//The self type should have the trait itself as a constraint
-                    value: decl.typ.value.clone()
-                });
-            }
-        }
-        for data in module.datas.iter_mut() {
-            for ctor in data.constructors.iter_mut() {
-                let mut args = Vec::new();
-                ctor.arguments.each_type(|t| {
-                    args.push(t.clone());
-                });
-                let variables = data.constraints.iter()
-                    .map(|cs| Type::Generic(*cs))
-                    .collect();
-                ctor.name.typ = Type::Function(args, box Type::Data(ast::TypeConstructor::Data(data.name), variables));
-                self.module.insert(ctor.name.name, ast::Constrained {
-                    constraints: Vec::new(),
-                    value: ctor.name.typ.clone()
-                });
-            }
-        }
-        self.type_infos.add_module(module);
-        for f in module.globals.iter_mut() {
-            self.typecheck_global(f)
-        }
-        for imp in module.impls.iter_mut() {
-            let x = self.typecheck_impl(imp).map_err(ast::no_loc);
-            self.errors.handle(x);
-        }
-        if self.errors.has_errors() {
-            Err(::std::mem::replace(&mut self.errors, Errors::new()))
-        }
-        else {
-            Ok(())
-        }
-    }
-    fn typecheck_impl(&mut self, imp: &mut ast::Impl<TcIdent>) -> Result<(), TypeError> {
-        {
-            let trait_globals = try!(find_trait(&self.type_infos, &imp.trait_name));
-            let constraints = &imp.constraints;
-            for func in imp.globals.iter_mut() {
-                add_impl_constraints(constraints, &mut func.declaration);
-                let trait_function_type = try!(trait_globals.iter()
-                    .find(|& &(name, _)| name == func.declaration.name)
-                    .map(Ok)
-                    .unwrap_or_else(|| Err(StringError("Function does not exist in trait"))));
-                let tf = self.subs.instantiate(&trait_function_type.1.value);
-                try!(self.unify(&tf, func.type_of().clone()));
-            }
-        }
-        for f in imp.globals.iter_mut() {
-            self.typecheck_global(f);
-        }
-        Ok(())
-    }
-
-    
-    fn typecheck_global(&mut self, global: &mut ast::Global<TcIdent>) {
-        debug!("Typecheck global {} :: {:?}", global.declaration.name, global.declaration.typ);
-        self.stack.clear();
-        self.subs.clear();
-
-        //Cache the generic -> variable mapping for the type of this function
-        let mut variables = HashMap::new();
-        ::std::mem::swap(&mut variables, &mut self.subs.variables);
-
-        let (real_type, inferred_type) = match (&global.declaration.typ.value, &mut global.expression) {
-            (&Type::Function(ref arg_types, ref return_type), &mut ast::Located { value: ast::Expr::Lambda(ref mut lambda), location }) => {
-                for (typ, arg) in arg_types.iter().zip(lambda.arguments.iter()) {
-                    let typ = self.subs.instantiate_(typ);
-                    debug!("{} {:?}", arg.name, typ);
-                    self.stack_var(arg.name.clone(), typ);
-                }
-                for constraint in global.declaration.typ.constraints.iter() {
-                    let c = Type::Data(ast::TypeConstructor::Data(constraint.name), Vec::new());
-                    let var = self.subs.variable_for(constraint.type_variable);
-                    match self.subs.constraints.entry(var) {
-                        Entry::Vacant(entry) => {
-                            entry.insert(vec![c]);
-                        }
-                        Entry::Occupied(mut entry) => {
-                            entry.get_mut().push(c);
-                        }
-                    }
-                }
-                let real_type = self.subs.instantiate_(&**return_type);
-                ::std::mem::swap(&mut variables, &mut self.subs.variables);
-                let inferred_type = match self.typecheck(&mut *lambda.body) {
-                    Ok(typ) => typ,
-                    Err(err) => {
-                        self.errors.error(ast::Located { location: location, value: err });
-                        return;
-                    }
-                };
-                lambda.id.typ = global.declaration.typ.value.clone();
-                (real_type, inferred_type)
-            }
-            (generic_type, expr) => {
-                let real_type = self.subs.instantiate_(generic_type);
-                ::std::mem::swap(&mut variables, &mut self.subs.variables);
-                let inferred_type = match self.typecheck(expr) {
-                    Ok(typ) => typ,
-                    Err(err) => {
-                        self.errors.error(ast::Located { location: expr.location, value: err });
-                        return;
-                    }
-                };
-                (real_type, inferred_type)
-            }
-        };
-        match self.merge(real_type, inferred_type) {
-            Ok(_) => self.replace_vars(&variables, &mut global.expression),
-            Err(err) => {
-                debug!("End {} ==> {:?}", global.declaration.name, err);
-                self.errors.error(ast::Located { location: global.expression.location, value: err });
-            }
-        }
-    }
-
     fn replace_vars(&mut self, variables: &HashMap<InternedStr, u32>, expr: &mut ast::LExpr<TcIdent>) {
         //Insert all type variables in the type declaration so that they get replaced by their
         //corresponding generic variable
@@ -433,6 +211,9 @@ impl <'a> Typecheck<'a> {
     }
 
     pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, StringErrors> {
+        self.subs.clear();
+        self.stack.clear();
+
         let typ = match self.typecheck(expr) {
             Ok(typ) => typ,
             Err(err) => {
@@ -589,7 +370,6 @@ impl <'a> Typecheck<'a> {
                     Type::Variable(..) => Err(StringError("Field acces on type variable")),
                     Type::Generic(..) => Err(StringError("Field acces on generic")),
                     Type::Array(..) => Err(StringError("Field access on array")),
-                    Type::Trait(..) => Err(StringError("Field access on trait object"))
                 }
             }
             ast::Expr::Array(ref mut a) => {
@@ -699,22 +479,12 @@ impl <'a> Typecheck<'a> {
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
             (&Type::Variable(ref l), _) => {
-                if self.check_constraints(*l, actual) {
-                    self.union(*l, actual);
-                    true
-                }
-                else {
-                    false
-                }
+                self.union(*l, actual);
+                true
             }
             (_, &Type::Variable(ref r)) => {
-                if self.check_constraints(*r, expected) {
-                    self.union(*r, expected);
-                    true
-                }
-                else {
-                    false
-                }
+                self.union(*r, expected);
+                true
             }
             (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
@@ -725,14 +495,6 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(&**l, &**r),
-            (&Type::Data(ast::TypeConstructor::Data(ref l), _), _) if find_trait(&self.type_infos, l).is_ok() => {
-                debug!("Found trait {:?} ", l);
-                self.has_impl_of_trait(actual, l)
-            }
-            (&Type::Trait(ref l, _), _) => {
-                debug!("Found trait {:?} ", l);
-                self.has_impl_of_trait(actual, l)
-            }
             (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
                 l == r
                 && l_args.len() == r_args.len()
@@ -772,90 +534,12 @@ impl <'a> Typecheck<'a> {
                 }
             }
             (&Type::Array(ref l), &Type::Array(ref r)) => self.merge_(&**l, &**r),
-            (&Type::Data(ast::TypeConstructor::Data(ref l), _), _) if find_trait(&self.type_infos, l).is_ok() => {
-                self.has_impl_of_trait(actual, l)
-            }
             (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
                 l == r
                 && l_args.len() == r_args.len()
                 && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.merge_(l, r))
             }
             _ => expected == actual
-        }
-    }
-    fn check_impl(&self, constraints: &[ast::Constraint], expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.real_type(expected);
-        let actual = self.real_type(actual);
-        debug!("Check impl {:?} {:?}", expected, actual);
-        match (expected, actual) {
-            (_, &Type::Variable(_)) => {
-                true
-            }
-            (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
-                if l_args.len() == r_args.len() {
-                    l_args.iter()
-                        .zip(r_args.iter())
-                        .all(|(l, r)| self.check_impl(constraints, l, r))
-                        && self.check_impl(constraints, &**l_ret, &**r_ret)
-                }
-                else {
-                    false
-                }
-            }
-            (&Type::Array(ref l), &Type::Array(ref r)) => self.merge_(&**l, &**r),
-            (&Type::Data(ast::TypeConstructor::Data(ref l), _), _) if find_trait(&self.type_infos, l).is_ok() => {
-                self.has_impl_of_trait(actual, l)
-            }
-            (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
-                l == r
-                && l_args.len() == r_args.len()
-                && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.check_impl(constraints, l, r))
-            }
-            (&Type::Generic(id), _) => {
-                constraints.iter()
-                    .find(|constraint| constraint.type_variable == id && self.has_impl_of_trait(actual, &constraint.name))
-                    .is_some()
-            }
-            _ => expected == actual
-        }
-    }
-    fn has_impl_of_trait(&self, typ: &TcType, trait_id: &InternedStr) -> bool {
-        debug!("Check impl {:?} {:?}", typ, trait_id);
-        //If the type is the trait it self it passes the check
-        match *typ {
-            Type::Data(ast::TypeConstructor::Data(ref id), _) if id == trait_id => return true,
-            _ => ()
-        }
-        match self.type_infos.impls.get(trait_id) {
-            Some(impls) => {
-                for impl_type in impls.iter() {
-                    if self.check_impl(&impl_type.constraints, &impl_type.value, typ) {
-                        return true;
-                    }
-                }
-                false
-            }
-            _ => true
-        }
-    }
-
-    fn check_constraints(&self, variable: u32, typ: &TcType) -> bool {
-        debug!("Constraint check {:?} {:?} ==> {:?}", variable, self.subs.constraints.get(&variable), typ);
-        match *typ {
-            Type::Variable(_) => return true,
-            _ => ()
-        }
-        match self.subs.constraints.get(&variable) {
-            Some(trait_types) => {
-                trait_types.iter()
-                    .all(|trait_type| {
-                        match *trait_type {
-                            Type::Data(ast::TypeConstructor::Data(ref id), _) => self.has_impl_of_trait(typ, id),
-                            _ => false
-                        }
-                    })
-            }
-            None => true
         }
     }
 
@@ -867,16 +551,7 @@ impl <'a> Typecheck<'a> {
         let replacement = match *typ {
             Type::Variable(id) => {
                 self.find_type_for_var(id)
-                    .map(|t| match *t {
-                        Type::Data(ast::TypeConstructor::Data(ref id), ref args) if find_trait(&self.type_infos, id).is_ok() => {
-                            Type::Trait(id.clone(), args.clone())
-                        }
-                        _ => t.clone()
-                    })
-            }
-            Type::Data(ast::TypeConstructor::Data(ref id), ref mut args) if find_trait(&self.type_infos, id).is_ok() => {
-                let a = ::std::mem::replace(args, Vec::new());
-                Some(Type::Trait(*id, a))
+                    .map(|t| t.clone())
             }
             _ => None
         };
@@ -1029,10 +704,6 @@ impl Substitution {
                 let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
                 Type::Data(id.clone(), args2)
             }
-            Type::Trait(ref id, ref args) => {
-                let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
-                Type::Trait(*id, args2)
-            }
             ref x => x.clone()
         }
     }
@@ -1094,13 +765,6 @@ impl <Id> Typed for ast::Expr<Id>
             ast::Expr::Type(_, _, ref expr) => expr.type_of(),
             ast::Expr::Record(ref id, _) => id.type_of()
         }
-    }
-}
-
-impl <T: Typed + ast::AstId> Typed for ast::Global<T> {
-    type Id = T::Untyped;
-    fn type_of(&self) -> &Type<T::Untyped> {
-        &self.declaration.typ.value
     }
 }
 

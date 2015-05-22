@@ -127,7 +127,6 @@ impl <I: fmt::Display> fmt::Display for TypeConstructor<I> {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id> {
     Data(TypeConstructor<Id>, Vec<Type<Id>>),
-    Trait(Id, Vec<Type<Id>>),
     Variable(u32),
     Generic(InternedStr),
     Function(Vec<Type<Id>>, Box<Type<Id>>),
@@ -213,13 +212,6 @@ pub struct Constrained<T, I = InternedStr> {
     pub value: T
 }
 
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct Global<Id: AstId> {
-    pub declaration: GlobalDeclaration<Id>,
-    pub expression: LExpr<Id>
-}
-
 #[derive(Clone, PartialEq, Debug)]
 pub enum ConstructorType<Id> {
     Tuple(Vec<Type<Id>>),
@@ -245,39 +237,6 @@ impl <Id> ConstructorType<Id> {
             ConstructorType::Record(ref fields) => fields.len()
         }
     }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct Data<Id: AstId> {
-    pub name: Id::Untyped,
-    pub constraints: Vec<InternedStr>,
-    pub constructors: Vec<Constructor<Id>>
-}
-#[derive(Clone, PartialEq, Debug)]
-pub struct GlobalDeclaration<Id: AstId> {
-    pub name: Id::Untyped,
-    pub typ: Constrained<Type<Id::Untyped>>,
-}
-#[derive(Clone, PartialEq, Debug)]
-pub struct Trait<Id: AstId> {
-    pub name: Id::Untyped,
-    pub self_variable: InternedStr,
-    pub declarations: Vec<GlobalDeclaration<Id>>
-}
-#[derive(Clone, PartialEq, Debug)]
-pub struct Impl<Id: AstId> {
-    pub trait_name: Id::Untyped,
-    pub constraints: Vec<Constraint>,
-    pub typ: Type<Id::Untyped>,
-    pub globals: Vec<Global<Id>>
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct Module<Id: AstId> {
-    pub datas: Vec<Data<Id>>,
-    pub globals: Vec<Global<Id>>,
-    pub traits: Vec<Trait<Id>>,
-    pub impls: Vec<Impl<Id>>
 }
 
 pub static INT_TYPE: VMType = Type::Builtin(IntType);
@@ -332,10 +291,6 @@ impl <I: fmt::Display> fmt::Display for Type<I> {
         }
         match *self {
             Type::Data(ref t, ref args) => fmt_type(f, t, &args),
-            Type::Trait(ref t, ref args) => {
-                try!(write!(f, "$"));
-                fmt_type(f, t, &args)
-            }
             Type::Variable(ref x) => x.fmt(f),
             Type::Generic(x) => write!(f, "#{}", x),
             Type::Function(ref args, ref return_type) => {
@@ -442,11 +397,6 @@ pub fn walk_mut_type<F, I>(typ: &mut Type<I>, f: &mut F)
     f(typ);
     match *typ {
         Type::Data(_, ref mut args) => {
-            for a in args {
-                walk_mut_type(a, f);
-            }
-        }
-        Type::Trait(_, ref mut args) => {
             for a in args {
                 walk_mut_type(a, f);
             }

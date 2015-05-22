@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use base::ast;
 use base::ast::{Constrained, Type};
-use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, TcIdent, TcType, match_types};
+use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, TcIdent, TcType};
 use compiler::*;
 use compiler::Instruction::*;
 use base::interner::{Interner, InternedStr};
@@ -257,13 +257,11 @@ impl <'a> fmt::Debug for Function_<'a> {
 }
 
 enum Named {
-    GlobalFn(usize),
-    TraitFn(InternedStr, usize),
+    GlobalFn(usize)
 }
 
 pub struct VM<'a> {
     globals: FixedVec<Global<'a>>,
-    trait_indexes: FixedVec<TraitFunctions>,
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
     interner: RefCell<Interner>,
@@ -279,7 +277,6 @@ pub type VMResult<T> = Result<T, VMError>;
 
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
-    trait_indexes: &'b FixedVec<TraitFunctions>,
     globals: &'b FixedVec<Global<'a>>,
     names: Ref<'b, HashMap<InternedStr, Named>>
 }
@@ -289,19 +286,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
-                Some(Variable::Global(index as VMIndex, &g.typ.constraints, &g.typ.value))
-            }
-            Some(&TraitFn(trait_index, function_index)) => {
-                self.type_infos.traits
-                    .get(&trait_index)
-                    .and_then(|functions| {
-                        if function_index < functions.len() {
-                            Some(Variable::TraitFunction(&functions[function_index].1.value))
-                        }
-                        else {
-                            None
-                        }
-                    })
+                Some(Variable::Global(index as VMIndex, &g.typ.value))
             }
             _ => {
                 self.type_infos.datas.values()
@@ -337,43 +322,6 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             None => None
         }
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
-        self.trait_indexes
-            .find(|func| func.trait_name == *trait_name && match_types(&func.impl_type, trait_type))
-            .map(|(_, func)| func.index)
-    }
-    fn find_trait_function(&self, typ: &TcType, fn_name: &InternedStr) -> Option<TypeResult<VMIndex>> {
-        self.names.get(fn_name).and_then(|named| {
-            match *named {
-                TraitFn(ref trait_name, _) => {
-                    match (self.find_object_function(trait_name, fn_name), self.find_trait_offset(trait_name, typ)) {
-                        (Some(function_offset), Some(trait_offset)) => {
-                            debug!("{} {} {}", function_offset, trait_offset, self.globals.len());
-                            let global_index = function_offset + trait_offset;
-                            let global = &self.globals[global_index as usize];
-                            Some(TypeResult {
-                                constraints: &global.typ.constraints,
-                                typ: &global.typ.value,
-                                value: global_index
-                            })
-                        }
-                        _ => None
-                    }
-                }
-                _ =>  None
-            }
-        })
-    }
-    fn find_object_function(&self, trait_name: &InternedStr, fn_name: &InternedStr) -> Option<VMIndex> {
-        self.type_infos.traits
-            .get(trait_name)
-            .and_then(|trait_info| 
-                trait_info.iter()
-                    .enumerate()
-                    .find(|&(_, tup)| tup.0 == *fn_name)
-                    .map(|(i, _)| i as VMIndex)
-            )
-    }
     fn next_global_index(&self) -> VMIndex {
         self.globals.len() as VMIndex
     }
@@ -385,19 +333,6 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
                 Some((&g.typ.constraints, &g.typ.value))
-            }
-            Some(&TraitFn(trait_index, function_index)) => {
-                self.type_infos.traits
-                    .get(&trait_index)
-                    .and_then(|functions| {
-                        if function_index < functions.len() {
-                            let f = &functions[function_index].1;
-                            Some((&f.constraints[..], &f.value))
-                        }
-                        else {
-                            None
-                        }
-                    })
             }
             _ => {
                 self.type_infos.datas.values()
@@ -608,7 +543,6 @@ impl <'a> VM<'a> {
     pub fn new() -> VM<'a> {
         let vm = VM {
             globals: FixedVec::new(),
-            trait_indexes: FixedVec::new(),
             type_infos: RefCell::new(TypeInfos::new()),
             typeids: FixedMap::new(),
             interner: RefCell::new(Interner::new()),
@@ -636,34 +570,11 @@ impl <'a> VM<'a> {
         BytecodeFunction::new(&mut self.gc.borrow_mut(), f)
     }
 
-    pub fn new_functions(&self, Assembly { initializer, anonymous_functions, trait_functions: indexes, globals }: Assembly) {
+    pub fn new_functions(&self, Assembly { initializer, anonymous_functions, globals }: Assembly) {
         let mut names = self.names.borrow_mut();
-        for trait_index in indexes.into_iter() {
-            //First index of this impl's functions
-            let start_index = trait_index.index as usize - self.globals.len();
-            let id = globals[start_index].name;
-            let is_registered = match names.get(&id) {
-                Some(&TraitFn(..)) => true,
-                None => false,
-                _ => panic!()
-            };
-            if !is_registered {
-                match self.type_infos.borrow().traits.get(&trait_index.trait_name) {
-                    Some(trait_fns) => {
-                        for (i, &(trait_fn, _)) in trait_fns.iter().enumerate() {
-                            debug!("Register trait fn '{}'", trait_fn);
-                            names.insert(trait_fn, TraitFn(trait_index.trait_name, i));
-                        }
-                    }
-                    None => panic!()
-                }
-            }
-            self.trait_indexes.push(trait_index);
-        }
         for Binding { name, typ } in globals {
             match names.get(&name) {
                 Some(&GlobalFn(..)) => panic!("ICE: Global '{}' already exists", name),
-                Some(&TraitFn(..)) => (),
                 None => {
                     names.insert(name, GlobalFn(self.globals.len()));
                 }
@@ -759,7 +670,6 @@ impl <'a> VM<'a> {
     pub fn env<'b>(&'b self) -> VMEnv<'a, 'b> {
         VMEnv {
             type_infos: self.type_infos.borrow(),
-            trait_indexes: &self.trait_indexes,
             globals: &self.globals,
             names: self.names.borrow()
         }
@@ -1016,48 +926,6 @@ impl <'a> VM<'a> {
                     let v = stack.pop();
                     stack.set_upvar(i, v);
                 }
-                ConstructTraitObject(i) => {
-                    let mut v = stack.pop();
-                    let v = ::std::slice::mut_ref_slice(&mut v);
-                    let object = TraitObject(self.new_data_and_collect(stack.stack.values.as_mut_slice(), i, v));
-                    stack.push(object);
-                }
-                PushTraitFunction(i) => {
-                    let func = match stack.top() {
-                        &TraitObject(ref object) => {
-                            debug!("PushTraitFunction {:?}", self.globals[(object.tag + i) as usize]);
-                            get_global!(self, (object.tag + i) as usize)
-                        }
-                        _ => return Err(format!("Op PushTraitFunction called on object other than a TraitObject"))
-                    };
-                    stack.push(func);
-                }
-                Unpack => {
-                    match stack.pop() {
-                        TraitObject(ref obj) => stack.push(obj.fields[0].get().clone()),
-                        _ => return Err(format!("Op Unpack called on object other than a TraitObject"))
-                    }
-                }
-                PushDictionaryMember(trait_index, function_offset) => {
-                    let func = match stack.get_upvar(0).clone()  {
-                        Data(dict) => {
-                            match dict.fields[trait_index as usize].get() {
-                                Int(i) => get_global!(self, i as usize + function_offset as usize),
-                                x => panic!("PushDictionaryMember {:?}", x)
-                            }
-                        }
-                        ref x => panic!("PushDictionaryMember {:?}", x)
-                    };
-                    stack.push(func);
-                }
-                PushDictionary(index) => {
-                    let dict = stack.get_upvar(0).clone();
-                    let dict = match dict {
-                        Data(data) => data.fields[index as usize].get(),
-                        _ => panic!()
-                    };
-                    stack.push(dict);
-                }
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
@@ -1211,6 +1079,7 @@ in test lazy
     }
     #[test]
     fn lambda() {
+        let _ = ::env_logger::init();
         let text = 
 r"
 let y = 100 in

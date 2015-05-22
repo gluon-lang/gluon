@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use base::interner::*;
 use base::ast;
-use base::ast::{Module, LExpr, Expr, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
+use base::ast::{LExpr, Expr, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
 use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
@@ -36,13 +36,6 @@ pub enum Instruction {
     PushUpVar(VMIndex),
     StoreUpVar(VMIndex),
 
-    ConstructTraitObject(VMIndex),
-    PushTraitFunction(VMIndex),
-    Unpack,
-
-    PushDictionaryMember(VMIndex, VMIndex),
-    PushDictionary(VMIndex),
-
     GetIndex,
     SetIndex,
 
@@ -63,9 +56,8 @@ pub type CExpr = LExpr<TcIdent>;
 
 pub enum Variable<'a> {
     Stack(VMIndex),
-    Global(VMIndex, &'a [Constraint], &'a TcType),
+    Global(VMIndex, &'a TcType),
     Constructor(VMTag, VMIndex),
-    TraitFunction(&'a TcType),
     UpVar(VMIndex)
 }
 
@@ -73,7 +65,6 @@ pub struct Assembly {
     pub initializer: Vec<Instruction>,
     pub globals: Vec<Binding>,
     pub anonymous_functions: Vec<CompiledFunction>,
-    pub trait_functions: Vec<TraitFunctions>
 }
 
 #[derive(Debug)]
@@ -89,14 +80,6 @@ pub struct CompiledFunction {
     pub instructions: Vec<Instruction>,
     pub inner_functions: Vec<CompiledFunction>,
     pub strings: Vec<InternedStr>
-}
-
-#[derive(PartialEq, Clone)]
-pub struct TraitFunctions {
-    //The where the first function of the implemented trait is at
-    pub index: VMIndex,
-    pub trait_name: InternedStr,
-    pub impl_type: TcType
 }
 
 pub struct FunctionEnv<'a> {
@@ -139,9 +122,6 @@ pub trait CompilerEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
     fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<VMIndex>;
     fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<VMTag>;
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex>;
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>>;
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex>;
     fn next_global_index(&self) -> VMIndex;
 }
 
@@ -150,7 +130,7 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         let &(ref outer, ref inner) = self;
         inner.find_var(s)
             .map(|var| match var {
-                Global(i, x, y) => Global(i + outer.next_global_index(), x, y),
+                Global(i, y) => Global(i + outer.next_global_index(), y),
                 var => var
             })
             .or_else(|| outer.find_var(s))
@@ -166,112 +146,9 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         inner.find_tag(struct_, field)
             .or_else(|| outer.find_tag(struct_, field))
     }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
-        let &(ref outer, ref inner) = self;
-        inner.find_trait_offset(trait_name, trait_type)
-            .map(|index| index + outer.next_global_index())
-            .or_else(|| outer.find_trait_offset(trait_name, trait_type))
-    }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {
-        let &(ref outer, ref inner) = self;
-        inner.find_trait_function(typ, id)
-            .map(|mut result| {
-                result.value += outer.next_global_index();
-                result
-            })
-            .or_else(|| outer.find_trait_function(typ, id))
-    }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex> {
-        let &(ref outer, ref inner) = self;
-        inner.find_object_function(trait_type, name)
-            .or_else(|| outer.find_object_function(trait_type, name))
-    }
     fn next_global_index(&self) -> VMIndex {
         let &(ref outer, ref inner) = self;
         outer.next_global_index() + inner.next_global_index()
-    }
-}
-
-impl CompilerEnv for Module<TcIdent> {
-    fn find_var(&self, id: &InternedStr) -> Option<Variable> {
-        (0..).zip(self.globals.iter())
-            .find(|&(_, f)| f.declaration.name == *id)
-            .map(|(i, f)| Global(i, &f.declaration.typ.constraints, &f.declaration.typ.value))
-            .or_else(|| {
-                for d in self.datas.iter() {
-                    let x = (0..).zip(d.constructors.iter())
-                        .find(|&(_, ctor)| ctor.name.id() == id)
-                        .map(|(i, ctor)| Constructor(i, ctor.arguments.len() as VMIndex));
-                    if x.is_some() {
-                        return x
-                    }
-                }
-                None
-            })
-            .or_else(|| {
-                self.traits.iter()
-                    .flat_map(|trait_| trait_.declarations.iter())
-                    .find(|decl| decl.name == *id)
-                    .map(|decl| TraitFunction(&decl.typ.value))
-            })
-    }
-    fn find_field(&self, data_name: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
-        self.datas.iter()
-            .find(|d| d.name == *data_name)
-            .and_then(|d| match &*d.constructors {
-                [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
-                    (0..).zip(fields.iter())
-                        .find(|&(_, f)| f.name == *field)
-                        .map(|(i, _)| i)
-                }
-                _ => None
-            })
-    }
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
-        self.datas.iter()
-            .find(|e| e.name == *enum_)
-            .and_then(|e| (0..).zip(e.constructors.iter())
-                .find(|&(_, c)| c.name.id() == ctor_name)
-                .map(|(i, _)| i)
-            )
-    }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
-        let mut offset = self.globals.len();
-        self.impls.iter()
-            .find(|imp| {
-                offset += imp.globals.len();
-                imp.trait_name == *trait_name && match_types(&imp.typ, trait_type)
-            })
-            .map(|imp| (offset - imp.globals.len()) as VMIndex)
-    }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {
-        let mut offset = self.globals.len() as VMIndex;
-        for imp in self.impls.iter() {
-            if match_types(&imp.typ, typ) {
-                for (i, func) in (0..).zip(imp.globals.iter()) {
-                    if func.declaration.name == *id {
-                        return Some(TypeResult {
-                            constraints: &func.declaration.typ.constraints,
-                            typ: func.type_of(),
-                            value: offset + i
-                        });
-                    }
-                }
-            }
-            offset += imp.globals.len() as VMIndex;
-        }
-        None
-    }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex> {
-        self.traits.iter()
-            .find(|trait_| trait_.name == *trait_type)
-            .and_then(|trait_| (0..).zip(trait_.declarations.iter())
-                .find(|&(_, func)| func.name == *name)
-                .map(|(i, _)| i)
-            )
-    }
-    fn next_global_index(&self) -> VMIndex {
-        self.globals.len() as VMIndex + self.impls.iter().fold(0, |y, i| i.globals.len() as VMIndex + y)
     }
 }
 
@@ -285,15 +162,6 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
 
     fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
         (*self).find_tag(enum_, ctor_name)
-    }
-    fn find_trait_offset(&self, trait_name: &InternedStr, trait_type: &TcType) -> Option<VMIndex> {
-        (*self).find_trait_offset(trait_name, trait_type)
-    }
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {
-        (*self).find_trait_function(typ, id)
-    }
-    fn find_object_function(&self, trait_type: &InternedStr, name: &InternedStr) -> Option<VMIndex> {
-        (*self).find_object_function(trait_type, name)
     }
     fn next_global_index(&self) -> VMIndex {
         (*self).next_global_index()
@@ -354,10 +222,6 @@ impl <'a> Compiler<'a> {
         }
     }
 
-    fn find_trait_function(&self, typ: &TcType, id: &InternedStr) -> Option<TypeResult<VMIndex>> {
-        self.globals.find_trait_function(typ, id)
-    }
-
     fn new_stack_var(&mut self, s: InternedStr) {
         if self.stack.iter().find(|i| **i == s).is_some() {
             panic!("Variable shadowing is not allowed")
@@ -367,56 +231,6 @@ impl <'a> Compiler<'a> {
 
     fn stack_size(&self) -> VMIndex {
         self.stack.len() as VMIndex
-    }
-
-    pub fn compile_module(&mut self, module: &Module<TcIdent>) -> Assembly {
-        let mut initializer = FunctionEnv::new();
-        let mut globals = Vec::new();
-        let global_offset = self.globals.next_global_index() - module.next_global_index();
-        for global in module.globals.iter() {
-            let index = global_offset + globals.len() as VMIndex;
-            globals.push(self.compile_global(&mut initializer, index, global));
-        }
-        let mut trait_globals = Vec::new();
-        for imp in module.impls.iter() {
-            trait_globals.push(TraitFunctions {
-                index: global_offset + globals.len() as VMIndex,
-                trait_name: imp.trait_name,
-                impl_type: imp.typ.clone()
-            });
-            for f in imp.globals.iter() {
-                let index = global_offset + globals.len() as VMIndex;
-                globals.push(self.compile_global(&mut initializer, index, f));
-            }
-        }
-
-        let FunctionEnv { instructions, inner_functions, .. } = initializer;
-        debug!("Done compiling module");
-        Assembly {
-            initializer: instructions,
-            anonymous_functions: inner_functions,
-            globals: globals,
-            trait_functions: trait_globals
-        }
-    }
-
-    pub fn compile_global<'b>(&mut self, initializer: &mut FunctionEnv<'b>, index: VMIndex, function: &'b ast::Global<TcIdent>) -> Binding {
-        debug!("-- Compiling {}", function.declaration.name);
-        initializer.dictionary = &function.declaration.typ.constraints;
-        self.compile(&function.expression, initializer);
-        initializer.instructions.push(StoreGlobal(index));
-        let name = function.declaration.name;
-        let typ = function.declaration.typ.clone();
-        Binding { name: name, typ: typ }
-    }
-    pub fn compile_function(&mut self, f: &mut FunctionEnv, lambda: &ast::LambdaStruct<TcIdent>) {
-        for arg in lambda.arguments.iter() {
-            self.new_stack_var(*arg.id());
-        }
-        self.compile(&lambda.body, f);
-        for _ in 0..lambda.arguments.len() {
-            self.stack.pop();
-        }
     }
 
     ///Compiles an expression to a zero argument function which can be directly fed to the
@@ -454,17 +268,9 @@ impl <'a> Compiler<'a> {
                 match self.find(id.id(), function).unwrap_or_else(|| panic!("Undefined variable {}", id.id())) {
                     Stack(index) => function.instructions.push(Push(index)),
                     UpVar(index) => function.instructions.push(PushUpVar(index)),
-                    Global(index, constraints, typ) => {
-                        if constraints.len() != 0 {
-                            debug!("Compile dictionary for {}", id.id());
-                            self.compile_dictionary(constraints, typ, expr.type_of(), function);
-                            function.instructions.push(InstantiateConstrained(index));
-                        }
-                        else {
-                            function.instructions.push(PushGlobal(index));
-                        }
+                    Global(index, typ) => {
+                        function.instructions.push(PushGlobal(index));
                     }
-                    TraitFunction(typ) => self.compile_trait_function(typ, id, function),
                     Constructor(..) => panic!("Constructor {:?} is not fully applied", id)
                 }
             }
@@ -589,32 +395,8 @@ impl <'a> Compiler<'a> {
                     Type::Function(ref args, _) => &args[..],
                     _ => panic!("Non function type inferred in call")
                 };
-                let is_trait_func = match func.value {
-                    Expr::Identifier(ref func_id) => {
-                        self.find(func_id.id(), function).map(|x| {
-                            match x {
-                                TraitFunction(_) => true,
-                                _ => false
-                            }
-                        })
-                    }
-                    _ => None
-                }.unwrap_or(false);
                 for (arg, real_arg_type) in args.iter().zip(arg_types.iter()) {
                     self.compile(arg, function);
-                    match (arg.type_of(), real_arg_type, is_trait_func) {
-                        (&Type::Trait(..), &Type::Trait(..), true) => {
-                            //Call through a trait object
-                            //Need to unpack the trait object for this argument
-                            function.instructions.push(Unpack);
-                        }
-                        (actual, &Type::Trait(ref id, _), _) => {
-                            let offset = self.globals.find_trait_offset(id, actual)
-                                .expect("Missing trait");
-                            function.instructions.push(ConstructTraitObject(offset));
-                        }
-                        _ => ()
-                    }
                 }
                 function.instructions.push(Call(args.len() as VMIndex));
             }
@@ -643,7 +425,6 @@ impl <'a> Compiler<'a> {
                             UpVar(i) => function.instructions.push(StoreUpVar(i)),
                             Global(..) => panic!("Assignment to global {:?}", id),
                             Constructor(..) => panic!("Assignment to constructor {:?}", id),
-                            TraitFunction(..) => panic!("Assignment to trait function {:?}", id),
                         }
                     }
                     Expr::FieldAccess(ref expr, ref field) => {
@@ -790,92 +571,6 @@ impl <'a> Compiler<'a> {
             strings: strings
         }
     }
-
-    fn compile_dictionary(&self
-                        , constraints: &[Constraint]
-                        , function_type: &TcType
-                        , expr_type: &TcType
-                        , function: &mut FunctionEnv) {
-        debug!("Find type for dictionary {:?} <=> {:?}", function_type, expr_type);
-        let real_types = find_real_type(function_type, expr_type);
-        let mut dict_size = 0;
-        for constraint in constraints.iter() {
-            let real_type = real_types[&constraint.type_variable];
-            dict_size += self.add_dictionary(constraint, real_type, function);
-        }
-        function.instructions.push(Construct(0, dict_size));
-    }
-
-    fn add_dictionary(&self, constraint: &Constraint, real_type: &TcType, function: &mut FunctionEnv) -> VMIndex {
-        match real_type {
-            &Type::Generic(var) => {
-                debug!("In dict");
-                //Load dictionary from stack
-                let i = (0..).zip(function.dictionary.iter())
-                    .find(|&(_, constraint)| constraint.type_variable == var)
-                    .map(|(i, _)| i)
-                    .expect("ICE: Expected type variable from enclosing function");
-                function.instructions.push(PushDictionary(i));
-            }
-            real_type => {
-                debug!("Found {:?} for {:?}", real_type, constraint);
-                let impl_index = self.globals.find_trait_offset(&constraint.name, real_type)
-                    .unwrap_or_else(|| panic!("ICE"));
-                function.instructions.push(PushInt(impl_index as isize));
-            }
-        }
-        1
-    }
-
-    fn compile_trait_function(&self, trait_func_type: &TcType, expr_id: &TcIdent, function: &mut FunctionEnv) {
-        debug!("Find real {:?} <=> {:?}", trait_func_type, expr_id.typ);
-        let types = find_real_type(trait_func_type, &expr_id.typ);
-        //Traits can only take a single type parameter so there should only be 1 real type
-        assert!(types.len() == 1);
-        let typ = types.into_iter().map(|tup| tup.1)
-            .next()
-            .unwrap();
-        match typ {
-            //The real type is a trait object so load it from the object
-            &Type::Trait(ref trait_name, _) => {//TODO parameterized traits
-                let index = self.globals.find_object_function(trait_name, expr_id.id())
-                    .expect("Trait object function does not exist");
-                function.instructions.push(PushTraitFunction(index));
-            }
-            //The real function lies in the callers dictionary
-            &Type::Generic(var) => {
-                let (var_index, constraint) = (0..).zip(function.dictionary.iter())
-                    .find(|&(_, constraint)| constraint.type_variable == var)
-                    .expect("ICE: Expected variable in dictionary");
-                let func_index = self.globals.find_object_function(&constraint.name, expr_id.id());
-                match func_index {
-                    Some(index) => {
-                        function.instructions.push(PushDictionaryMember(var_index, index));
-                        return
-                    }
-                    None => ()
-                }
-                panic!("ICE: {:?}   {:?}\n{:?}   {:?}", trait_func_type, expr_id, function.dictionary, typ)
-            }
-            //Call of a function from a trait where the type implementing the trait is known
-            t0 => {
-                debug!("Find trait function {:?} {:?}", typ, expr_id.id());
-                match self.find_trait_function(t0, expr_id.id()) {
-                    Some(result) => {//Found a match
-                        if result.constraints.len() != 0 {
-                            self.compile_dictionary(result.constraints, result.typ, &expr_id.typ, function);
-                            function.instructions.push(InstantiateConstrained(result.value));
-                        }
-                        else {
-                            debug!("PUSH {:?}", result);
-                            function.instructions.push(PushGlobal(result.value));
-                        }
-                    }
-                    None => panic!("ICE: {:?}   {:?}\n{:?}   {:?}", trait_func_type, expr_id, function.dictionary, typ)
-                }
-            }
-        }
-    }
 }
 
 fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> HashMap<InternedStr, &'a TcType> {
@@ -899,11 +594,6 @@ fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mu
         }
         (&Type::Array(ref l), &Type::Array(ref r)) => find_real_type_(&**l, &**r, out),
         (&Type::Data(_, ref l_args), &Type::Data(_, ref r_args)) => {
-            for (l, r) in l_args.iter().zip(r_args.iter()) {
-                find_real_type_(l, r, out);
-            }
-        }
-        (&Type::Trait(_, ref l_args), &Type::Trait(_, ref r_args)) => {
             for (l, r) in l_args.iter().zip(r_args.iter()) {
                 find_real_type_(l, r, out);
             }
