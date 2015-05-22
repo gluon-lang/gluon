@@ -748,6 +748,12 @@ impl <'a> Compiler<'a> {
                 function.inner_functions.push(cf);
             }
             Expr::Type(_, _, ref expr) => self.compile(&**expr, function),
+            Expr::Record(_, ref fields) => {
+                for field in fields {
+                    self.compile(&field.1, function);
+                }
+                function.instructions.push(Construct(0, fields.len() as u32));
+            }
         }
     }
 

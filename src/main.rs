@@ -5,10 +5,11 @@ extern crate env_logger;
 extern crate embed_lang;
 
 #[cfg(not(test))]
-use embed_lang::vm::{VM, run_main, run_buffer_main};
-
+use embed_lang::vm::{VM, run_expr};
 #[cfg(not(test))]
 use std::env;
+#[cfg(not(test))]
+use std::io::Read;
 
 mod repl;
 
@@ -20,7 +21,10 @@ fn main() {
     if args.len() == 1 {
         let vm = VM::new();
         let buffer = ::std::io::stdin();
-        let value = match run_buffer_main(&vm, &mut buffer.lock()) {
+        let mut expr = String::new();
+        buffer.lock().read_to_string(&mut expr)
+            .unwrap();
+        let value = match run_expr(&vm, &expr) {
             Ok(value) => value,
             Err(err) => {
                 println!("{}", err);
@@ -31,9 +35,5 @@ fn main() {
     }
     else if args[1] == "-i" {
         repl::run();
-    }
-    else if args.len() == 2 {
-        let vm = VM::new();
-        println!("{:?}", run_main(&vm, &args[1]));
     }
 }

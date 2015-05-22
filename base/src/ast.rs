@@ -132,7 +132,8 @@ pub enum Type<Id> {
     Generic(InternedStr),
     Function(Vec<Type<Id>>, Box<Type<Id>>),
     Builtin(BuiltinType),
-    Array(Box<Type<Id>>)
+    Array(Box<Type<Id>>),
+    Record(Vec<Field<Id>>)
 }
 
 pub type VMType = Type<InternedStr>;
@@ -190,11 +191,12 @@ pub enum Expr<Id: AstId> {
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
     ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
+    Record(Id, Vec<(Id::Untyped, LExpr<Id>)>),
     Lambda(LambdaStruct<Id>),
     Type(Id::Untyped, Type<Id::Untyped>, Box<LExpr<Id>>)
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Hash, Eq, PartialEq, Debug)]
 pub struct Field<Id> {
     pub name: Id,
     pub typ: Type<Id>
@@ -345,7 +347,14 @@ impl <I: fmt::Display> fmt::Display for Type<I> {
                 Ok(())
             }
             Type::Builtin(ref t) => t.fmt(f),
-            Type::Array(ref t) => write!(f, "[{}]", t)
+            Type::Array(ref t) => write!(f, "[{}]", t),
+            Type::Record(ref fields) => {
+                try!(write!(f, "{{ "));
+                for field in fields {
+                    try!(write!(f, " {}: {},", field.name, field.typ));
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -414,6 +423,11 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
         Expr::ArrayAccess(ref mut array, ref mut index) => {
             v.visit_expr(&mut **array);
             v.visit_expr(&mut **index);
+        }
+        Expr::Record(_, ref mut fields) => {
+            for field in fields {
+                v.visit_expr(&mut field.1);
+            }
         }
         Expr::Lambda(ref mut lambda) => v.visit_expr(&mut *lambda.body),
         Expr::Type(_, _, ref mut expr) => v.visit_expr(&mut *expr),

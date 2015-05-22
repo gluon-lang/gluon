@@ -1,4 +1,4 @@
-#![feature(box_syntax, slice_patterns)]
+#![feature(box_syntax)]
 #[macro_use]
 extern crate log;
 extern crate env_logger;
@@ -146,11 +146,23 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .parse_state(input)
         }
 
+        fn record_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
+            self.braces(sep_by(parser(|input| {
+                    let ((name, typ), input) = try!(self.ident_u()
+                        .skip(self.lex(string(":")))
+                        .and(self.typ())
+                        .parse_state(input));
+                    Ok((Field { name: name, typ: typ }, input))
+                }), self.lex(char(','))))
+                .map(Type::Record)
+                .parse_state(input)
+        }
+
         fn type_arg(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
             let array_type = self.brackets(self.typ())
                 .map(|typ| Type::Array(Box::new(typ)));
-
             array_type
+                .or(self.parser(ParserEnv::record_type))
                 .or(self.parens(optional(self.typ()))
                    .map(|typ| match typ {
                         Some(typ) => typ,
@@ -208,6 +220,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 &mut self.reserved("False")
                     .map(|_| loc(Expr::Literal(LiteralStruct::Bool(false)))),
                 &mut self.ident().map(Expr::Identifier).map(&loc),
+                &mut self.parser(ParserEnv::record).map(&loc),
                 &mut self.parens(optional(self.expr()).map(|expr| {
                     match expr {
                         Some(expr) => expr,
@@ -224,16 +237,12 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn top_expr(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
-            fn binop<'b, F, T>(f: F) -> Box<FnMut(T, T) -> T + 'b>
-                where F: FnMut(T, T) -> T + 'b {
-                Box::new(f)
-            }
             let op = parser(|i| self.op(i))
-                .map(|op| binop(move |l: LExpr<Id>, r| {
+                .map(|op| move |l: LExpr<Id>, r| {
                     let loc = l.location.clone();
                     let expr = Expr::BinOp(Box::new(l), op.clone(), Box::new(r));
                     located(loc, expr) 
-                }));
+                });
 
             chainl1(self.parser(ParserEnv::parse_expr), op)
                 .parse_state(input)
@@ -278,6 +287,14 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                     }
                     Expr::Let(bind, Box::new(e1), Some(Box::new(e2)))
                 })
+                .parse_state(input)
+        }
+        fn record(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+            let field = self.ident_u()
+                        .skip(self.lex(string(":")))
+                        .and(self.expr());
+            self.braces(sep_by(field, self.lex(char(','))))
+                .map(|fields| Expr::Record(self.intern(""), fields))
                 .parse_state(input)
         }
     }
@@ -439,8 +456,17 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new::<TcIdent>("let f: Int = \\x y -> x + y in f 1 2");
         match e.value {
-            Expr::Let(bind, _, _) => assert_eq!(bind.typ, Type::Data(intern("Int"), vec![])),
+            Expr::Let(bind, _, _) => assert_eq!(bind.typ, typ("Int")),
             _ => assert!(false)
         }
+    }
+
+    #[test]
+    fn type_decl_record() {
+        let _ = ::env_logger::init();
+        let e = parse_new("type Test = { x: Int, y: {} } in 1");
+        let record = Type::Record(vec![Field { name: intern("x"), typ: typ("Int") }
+                                    ,  Field { name: intern("y"), typ: Type::Record(vec![]) }]);
+        assert_eq!(e, type_decl("Test", record, int(1)));
     }
 }

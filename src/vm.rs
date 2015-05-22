@@ -1193,7 +1193,7 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 #[cfg(test)]
 mod tests {
     use super::{VM, run_expr};
-    use super::Value::{Int};
+    use super::Value::{Float, Int};
 
     #[test]
     fn pass_function_value() {
@@ -1221,6 +1221,19 @@ in f(22)
         let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(123));
+    }
+
+    #[test]
+    fn record() {
+        let text = 
+r"
+{ x: 0, y: 1.0, z: {} }
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        let unit = vm.new_data(0, &mut []);
+        assert_eq!(value, vm.new_data(0, &mut [Int(0), Float(1.0), unit]));
     }
 }
 

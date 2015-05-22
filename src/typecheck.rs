@@ -86,7 +86,7 @@ enum TypeError {
     TypeMismatch(TcType, TcType),
     UnboundVariable,
     UndefinedStruct(InternedStr),
-    UndefinedField(InternedStr, InternedStr),
+    UndefinedField(TcType, InternedStr),
     UndefinedTrait(InternedStr),
     IndexError(TcType),
     StringError(&'static str)
@@ -423,6 +423,7 @@ impl <'a> Typecheck<'a> {
                             }
                         }
                     }
+                    ast::Expr::Record(ref mut id, _) => self.finish_type(e.location, &mut id.typ),
                     _ => ()
                 }
                 ast::walk_mut_expr(self, e);
@@ -570,22 +571,17 @@ impl <'a> Typecheck<'a> {
             ast::Expr::FieldAccess(ref mut expr, ref mut id) => {
                 let typ = try!(self.typecheck(&mut **expr));
                 match typ {
-                    Type::Data(ast::TypeConstructor::Data(ref struct_id), _) => {
-                        let constructors = try!(self.find_type_info(struct_id));
-                        let field_type = match constructors {
-                            [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
-                                fields.iter()
-                                    .find(|field| field.name == *id.id())
-                                    .map(|field| field.typ.clone())
-                            }
-                            _ => return Err(StringError("Field access on enum type"))
-                        };
+                    Type::Record(ref fields) => {
+                        let field_type = fields.iter()
+                            .find(|field| field.name == *id.id())
+                            .map(|field| field.typ.clone());
                         id.typ = match field_type {
                             Some(typ) => typ,
-                            None => return Err(UndefinedField(struct_id.clone(), id.name.clone()))
+                            None => return Err(UndefinedField(typ.clone(), id.name.clone()))
                         };
                         Ok(id.typ.clone())
                     }
+                    Type::Data(ast::TypeConstructor::Data(_), _) => Err(StringError("Field access on data")),
                     Type::Data(ast::TypeConstructor::Builtin(..), _) | Type::Builtin(..) => {
                         Err(StringError("Field access on builtin type"))
                     }
@@ -634,6 +630,17 @@ impl <'a> Typecheck<'a> {
                 self.stack_var(id, typ.clone());
                 let expr_type = try!(self.typecheck(&mut **expr));
                 Ok(expr_type)
+            }
+            ast::Expr::Record(ref mut id, ref mut fields) => {
+                let typ = try!(fields.iter_mut()
+                    .map(|field| Ok(ast::Field {
+                        name: field.0,
+                        typ: try!(self.typecheck(&mut field.1))
+                    }))
+                    .collect::<Result<_, _>>()
+                    .map(Type::Record));
+                id.typ = typ.clone();
+                Ok(typ)
             }
         }
     }
@@ -1078,7 +1085,8 @@ impl <Id> Typed for ast::Expr<Id>
                 t => panic!("Not an array type {:?}", t)
             },
             ast::Expr::Lambda(ref lambda) => lambda.id.type_of(),
-            ast::Expr::Type(_, _, ref expr) => expr.type_of()
+            ast::Expr::Type(_, _, ref expr) => expr.type_of(),
+            ast::Expr::Record(ref id, _) => id.type_of()
         }
     }
 }
@@ -1145,11 +1153,11 @@ r"
     fn type_decl() {
         let text = 
 r"
-type Test = { x: Int } in Test { x: 0 }
+type Test = { x: Int } in { x: 0 }
 ";
         let mut expr = parse_new(text);
         let mut tc = Typecheck::new();
         let result = tc.typecheck_expr(&mut expr);
-        assert_eq!(result, Ok(typ("Test")));
+        assert_eq!(result, Ok(Type::Record(vec![ast::Field { name: intern("x"), typ: typ("Int")}])));
     }
 }
