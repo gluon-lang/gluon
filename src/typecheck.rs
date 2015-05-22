@@ -513,7 +513,7 @@ impl <'a> Typecheck<'a> {
                 match AsRef::<str>::as_ref(op) {
                     "+" | "-" | "*" => {
                         let b = {
-                            let lt = self.subs.real_type(&lhs_type);
+                            let lt = self.real_type(&lhs_type);
                             *lt == INT_TYPE || *lt == FLOAT_TYPE
                         };
                         if b {
@@ -694,13 +694,13 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.subs.real_type(expected);
-        let actual = self.subs.real_type(actual);
+        let expected = self.real_type(expected);
+        let actual = self.real_type(actual);
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
             (&Type::Variable(ref l), _) => {
                 if self.check_constraints(*l, actual) {
-                    self.subs.union(*l, actual);
+                    self.union(*l, actual);
                     true
                 }
                 else {
@@ -709,7 +709,7 @@ impl <'a> Typecheck<'a> {
             }
             (_, &Type::Variable(ref r)) => {
                 if self.check_constraints(*r, expected) {
-                    self.subs.union(*r, expected);
+                    self.union(*r, expected);
                     true
                 }
                 else {
@@ -752,12 +752,12 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn merge_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.subs.real_type(expected);
-        let actual = self.subs.real_type(actual);
+        let expected = self.real_type(expected);
+        let actual = self.real_type(actual);
         debug!("Merge {:?} {:?}", expected, actual);
         match (expected, actual) {
             (_, &Type::Variable(ref r)) => {
-                self.subs.union(*r, expected);
+                self.union(*r, expected);
                 true
             }
             (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
@@ -784,8 +784,8 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn check_impl(&self, constraints: &[ast::Constraint], expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.subs.real_type(expected);
-        let actual = self.subs.real_type(actual);
+        let expected = self.real_type(expected);
+        let actual = self.real_type(actual);
         debug!("Check impl {:?} {:?}", expected, actual);
         match (expected, actual) {
             (_, &Type::Variable(_)) => {
@@ -866,7 +866,7 @@ impl <'a> Typecheck<'a> {
     fn replace_variable(&self, typ: &mut TcType) {
         let replacement = match *typ {
             Type::Variable(id) => {
-                self.subs.find(id)
+                self.find_type_for_var(id)
                     .map(|t| match *t {
                         Type::Data(ast::TypeConstructor::Data(ref id), ref args) if find_trait(&self.type_infos, id).is_ok() => {
                             Type::Trait(id.clone(), args.clone())
@@ -883,6 +883,59 @@ impl <'a> Typecheck<'a> {
         match replacement {
             Some(x) => *typ = x,
             None => ()
+        }
+    }
+
+    fn real_type<'r>(&'r self, typ: &'r TcType) -> &'r TcType {
+        match *typ {
+            Type::Variable(var) => match self.find_type_for_var(var) {
+                Some(t) => t,
+                None => typ
+            },
+            _ => typ
+        }
+    }
+
+    fn find_type_for_var(&self, var: u32) -> Option<&TcType> {
+        //Use unsafe so that we can hold a reference into the map and continue
+        //to look for parents
+        //Since we never have a cycle in the map we will never hold a &mut
+        //to the same place
+        let this: &mut Substitution = unsafe {
+            let s: *const Substitution = &self.subs;
+            ::std::mem::transmute(s)
+        };
+        this.map.get_mut(&var).map(|typ| {
+            match **typ {
+                Type::Variable(parent_var) if parent_var != var => {
+                    match self.find_type_for_var(parent_var) {
+                        Some(other) => { **typ = other.clone(); }
+                        None => ()
+                    }
+                    &**typ
+                }
+                _ => &**typ
+            }
+        })
+    }
+    fn union(&self, id: u32, typ: &TcType) {
+        {
+            let id_type = self.find_type_for_var(id);
+            let other_type = self.real_type(typ);
+            if id_type.map(|x| x == other_type).unwrap_or(&Type::Variable(id) == other_type) {
+                return
+            }
+        }
+        let this: &mut Substitution = unsafe {
+            let e: *const Substitution = &self.subs;
+            ::std::mem::transmute(e)
+        };
+        //Always make sure the mapping is from a higher variable to a lower
+        //This way the resulting variables are always equal to any variables in the globals
+        //declaration
+        match *typ {
+            Type::Variable(other_id) if id < other_id => this.assign_union(other_id, Type::Variable(id)),
+            _ => this.assign_union(id, typ.clone())
         }
     }
 }
@@ -920,23 +973,6 @@ impl Substitution {
         self.var_id = 0;
     }
 
-    fn union(&self, id: u32, typ: &TcType) {
-        {
-            let id_type = self.find(id);
-            let other_type = self.real_type(typ);
-            if id_type.map(|x| x == other_type).unwrap_or(&Type::Variable(id) == other_type) {
-                return
-            }
-        }
-        let this: &mut Substitution = unsafe { let e: *const _ = self; ::std::mem::transmute(e) };
-        //Always make sure the mapping is from a higher variable to a lower
-        //This way the resulting variables are always equal to any variables in the globals
-        //declaration
-        match *typ {
-            Type::Variable(other_id) if id < other_id => this.assign_union(other_id, Type::Variable(id)),
-            _ => this.assign_union(id, typ.clone())
-        }
-    }
     fn assign_union(&mut self, id: u32, typ: TcType) {
         match self.constraints.remove(&id) {
             Some(constraints) => {
@@ -950,36 +986,6 @@ impl Substitution {
             None => ()
         }
         self.map.insert(id, box typ);
-    }
-
-    fn real_type<'a>(&'a self, typ: &'a TcType) -> &'a TcType {
-        match *typ {
-            Type::Variable(var) => match self.find(var) {
-                Some(t) => t,
-                None => typ
-            },
-            _ => typ
-        }
-    }
-
-    fn find(&self, var: u32) -> Option<&TcType> {
-        //Use unsafe so that we can hold a reference into the map and continue
-        //to look for parents
-        //Since we never have a cycle in the map we will never hold a &mut
-        //to the same place
-        let this: &mut Substitution = unsafe { let s: *const _ = self; ::std::mem::transmute(s) };
-        this.map.get_mut(&var).map(|typ| {
-            match **typ {
-                Type::Variable(parent_var) if parent_var != var => {
-                    match self.find(parent_var) {
-                        Some(other) => { **typ = other.clone(); }
-                        None => ()
-                    }
-                    &**typ
-                }
-                _ => &**typ
-            }
-        })
     }
 
     fn new_var(&mut self) -> TcType {
