@@ -167,6 +167,29 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
         (*self).next_global_index()
     }
 }
+impl CompilerEnv for TypeInfos {
+    fn find_var(&self, s: &InternedStr) -> Option<Variable> {
+        None
+    }
+    fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
+        self.id_to_type.get(struct_)
+            .and_then(|typ| {
+                match *typ {
+                    Type::Record(ref fields) => fields.iter()
+                        .position(|f| f.name == *field)
+                        .map(|i| i as VMIndex),
+                    _ => None
+                }
+            })
+    }
+
+    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
+        None
+    }
+    fn next_global_index(&self) -> VMIndex {
+        0
+    }
+}
 
 pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
@@ -192,7 +215,8 @@ impl <'a> Compiler<'a> {
             .find(|&(_, var)| var == id)
             .map(|(index, _)| {
                 if self.closure_limits.len() != 0 {
-                    let closure_stack_start = *self.closure_limits.last().unwrap();
+                    let closure_stack_start = *self.closure_limits.last()
+                            .expect("find: closure_limits");
                     if index < closure_stack_start {
                         let i = env.upvar(*id);
                         UpVar(i)
@@ -433,7 +457,7 @@ impl <'a> Compiler<'a> {
                         let field_index = match *expr.type_of() {
                             Type::Data(ref id, _) => {
                                 self.find_field(id, field.id())
-                                    .unwrap()
+                                    .expect("ICE: Undefined field in field assign")
                             }
                             _ => panic!()
                         };
@@ -453,7 +477,7 @@ impl <'a> Compiler<'a> {
                 let field_index = match *expr.type_of() {
                     Type::Data(ref id, _) => {
                         self.find_field(id, field.id())
-                            .unwrap()
+                            .expect("ICE: Undefined field in field access")
                     }
                     _ => panic!()
                 };
@@ -547,14 +571,14 @@ impl <'a> Compiler<'a> {
         f.dictionary = parent.dictionary.clone();
         self.compile(&*lambda.body, &mut f);
 
-        let previous_len = self.closure_limits.pop().unwrap();
+        let previous_len = self.closure_limits.pop().expect("closure_limits: pop");
         while previous_len < self.stack_size() {
             self.stack.pop();
         }
         //Insert all free variables into the above globals free variables
         //if they arent in that lambdas scope
         for var in f.free_vars.iter() {
-            match self.find(var, parent).unwrap() {
+            match self.find(var, parent).expect("free_vars: find") {
                 Stack(index) => parent.instructions.push(Push(index)),
                 UpVar(index) => parent.instructions.push(PushUpVar(index)),
                 _ => panic!("Free variables can only be on the stack or another upvar")

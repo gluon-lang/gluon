@@ -297,10 +297,11 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         }
     }
     fn find_field(&self, data_name: &InternedStr, field_name: &InternedStr) -> Option<VMIndex> {
-        self.type_infos.datas.get(data_name)
-            .and_then(|ctors| {
-                match &ctors[..] {
-                    [ast::Constructor { arguments: ast::ConstructorType::Record(ref fields), .. }] => {
+        self.type_infos.id_to_type.get(data_name)
+            .and_then(|typ| {
+                debug!("a aaa {:?}", typ);
+                match *typ {
+                    ast::Type::Record(ref fields) => {
                         fields.iter()
                             .enumerate()
                             .find(|&(_, f)| f.name == *field_name)
@@ -408,7 +409,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 
     pub fn top(&mut self) -> &Value<'a> {
-        self.stack.values.last().unwrap()
+        self.stack.values.last().expect("StackFrame: top")
     }
 
     pub fn pop(&mut self) -> Value<'a> {
@@ -1044,6 +1045,7 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::str
         let mut tc = Typecheck::new();
         tc.add_environment(&env);
         tryf!(tc.typecheck_expr(&mut expr));
+        let env = (vm.env(), &tc.type_infos);
         let mut compiler = Compiler::new(&env, empty_string);
         vm.new_function(compiler.compile_expr(&expr))
     };
@@ -1103,6 +1105,21 @@ r"
             .unwrap_or_else(|err| panic!("{}", err));
         let unit = vm.new_data(0, &mut []);
         assert_eq!(value, vm.new_data(0, &mut [Int(0), Float(1.0), unit]));
+    }
+
+    #[test]
+    fn record_add() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type T = { x: Int, y: Int } in
+let add = \l r -> { x: l.x + r.x, y: l.y + r.y } in
+add { x: 0, y: 1 } { x: 1, y: 1 }
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, vm.new_data(0, &mut [Int(1), Int(2)]));
     }
 }
 
