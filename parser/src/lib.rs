@@ -25,7 +25,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
     where Id: AstId + Clone {
     use std::cell::RefCell;
     use parser_combinators_language::{Env, LanguageDef, Identifier};
-    use parser_combinators::primitives::{Stream, State};
+    use parser_combinators::primitives::{Consumed, Stream, State};
     use parser_combinators::*;
 
     struct EnvParser<'a: 'b, 'b, I: 'b, Id: 'b, T> {
@@ -104,16 +104,23 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .parse_state(input)
         }
 
-        fn ident_type<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, TypeConstructor<Id::Untyped>> {
+        fn ident_type<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Type<Id::Untyped>> {
             self.parser(ParserEnv::parse_ident_type)
         }
-        fn parse_ident_type(&self, input: State<I>) -> ParseResult<TypeConstructor<Id::Untyped>, I> {
+        fn parse_ident_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
             try(self.env.ident())
                 .map(|s| {
                     debug!("Id: {}", s);
-                    match str_to_primitive_type(&s) {
-                        Some(prim) => TypeConstructor::Builtin(prim),
-                        None => TypeConstructor::Data(self.intern(&s).to_id())
+                    if s.chars().next()
+                        .map(|c| c.is_lowercase())
+                        .unwrap_or(false) {
+                        Type::Generic(self.intern(&s).to_id())
+                    }
+                    else {
+                        match str_to_primitive_type(&s) {
+                            Some(prim) => Type::Builtin(prim),
+                            None => Type::Data(TypeConstructor::Data(self.intern(&s).to_id()), Vec::new())
+                        }
                     }
                 })
                 .parse_state(input)
@@ -124,16 +131,9 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn parse_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            self.ident_type()
-                .and(many(self.parser(ParserEnv::type_arg)))
-                .map(|(typ, args): (_, Vec<_>)| {
-                    if args.len() == 0 {
-                        if let TypeConstructor::Builtin(b) = typ {
-                            return Type::Builtin(b);
-                        }
-                    }
-                    Type::Data(typ, args)
-                })
+            chainl1(self.parser(ParserEnv::type_arg), parser(|input| {
+                    Ok((|l, r| Type::App(Box::new(l), Box::new(r)), Consumed::Empty(input)))
+                }))
                 .or(self.parser(ParserEnv::type_arg))
                 .and(optional(self.reserved_op("->").with(self.typ())))
                 .map(|(arg, ret)| {
@@ -168,7 +168,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                         Some(typ) => typ,
                         None => Type::Builtin(BuiltinType::UnitType)
                 }))
-                .or(self.ident_type().map(|typ| Type::Data(typ, Vec::new())))
+                .or(self.ident_type())
                 .parse_state(input)
         }
 

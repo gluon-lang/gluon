@@ -370,6 +370,7 @@ impl <'a> Typecheck<'a> {
                     Type::Variable(..) => Err(StringError("Field acces on type variable")),
                     Type::Generic(..) => Err(StringError("Field acces on generic")),
                     Type::Array(..) => Err(StringError("Field access on array")),
+                    Type::App(..) => Err(StringError("Field access on type application")),
                 }
             }
             ast::Expr::Array(ref mut a) => {
@@ -499,6 +500,11 @@ impl <'a> Typecheck<'a> {
                 l == r
                 && l_args.len() == r_args.len()
                 && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.unify_(l, r))
+            }
+            (&Type::Record(ref l_args), &Type::Record(ref r_args)) => {
+                l_args.len() == r_args.len()
+                && l_args.iter().zip(r_args.iter())
+                    .all(|(l, r)| l.name == r.name && self.unify_(&l.typ, &r.typ))
             }
             _ => expected == actual
         }
@@ -704,6 +710,18 @@ impl Substitution {
                 let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
                 Type::Data(id.clone(), args2)
             }
+            Type::Record(ref fields) => {
+                Type::Record(fields.iter()
+                    .map(|field| ast::Field {
+                            name: field.name,
+                            typ: self.instantiate_(&field.typ)
+                        }
+                    )
+                    .collect())
+            }
+            Type::App(ref f, ref r) => {
+                Type::App(Box::new(self.instantiate_(f)), Box::new(self.instantiate(r)))
+            }
             ref x => x.clone()
         }
     }
@@ -829,5 +847,17 @@ type Test = { x: Int } in { x: 0 }
         let mut tc = Typecheck::new();
         let result = tc.typecheck_expr(&mut expr);
         assert_eq!(result, Ok(Type::Record(vec![ast::Field { name: intern("x"), typ: typ("Int")}])));
+    }
+
+    #[test]
+    fn record_type() {
+        let text = 
+r"
+let f: { y: a } -> Int = \x -> 1 in f { y: 123 }
+";
+        let mut expr = parse_new(text);
+        let mut tc = Typecheck::new();
+        let result = tc.typecheck_expr(&mut expr);
+        assert_eq!(result, Ok(typ("Int")));
     }
 }

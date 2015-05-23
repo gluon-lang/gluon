@@ -126,9 +126,10 @@ impl <I: fmt::Display> fmt::Display for TypeConstructor<I> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id> {
+    App(Box<Type<Id>>, Box<Type<Id>>),
     Data(TypeConstructor<Id>, Vec<Type<Id>>),
     Variable(u32),
-    Generic(InternedStr),
+    Generic(Id),
     Function(Vec<Type<Id>>, Box<Type<Id>>),
     Builtin(BuiltinType),
     Array(Box<Type<Id>>),
@@ -290,9 +291,10 @@ impl <I: fmt::Display> fmt::Display for Type<I> {
             Ok(())
         }
         match *self {
+            Type::App(ref a, ref r) => write!(f, "({} {})", a, r),
             Type::Data(ref t, ref args) => fmt_type(f, t, &args),
             Type::Variable(ref x) => x.fmt(f),
-            Type::Generic(x) => write!(f, "#{}", x),
+            Type::Generic(ref x) => write!(f, "#{}", x),
             Type::Function(ref args, ref return_type) => {
                 try!(write!(f, "("));
                 for arg in args {
