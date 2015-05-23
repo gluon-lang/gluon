@@ -206,7 +206,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             let position = input.position;
             debug!("Expr start: {:?}", input.clone().uncons_char().map(|t| t.0));
             let loc = |expr| located(Location { column: position.column, row: position.line, absolute: 0 }, expr);
-            choice::<&mut [&mut Parser<Input=I, Output=LExpr<Id>>], _>(&mut [
+            choice::<[&mut Parser<Input=I, Output=LExpr<Id>>; 11], _>([
                 &mut parser(|input| self.if_else(input)).map(&loc),
                 &mut self.parser(ParserEnv::let_in).map(&loc),
                 &mut self.parser(ParserEnv::lambda).map(&loc),
@@ -228,6 +228,12 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                     }
                 }))
                 ])
+                .and(many(self.lex(char('.')).with(self.ident())))
+                .map(|(expr, fields): (_, Vec<_>)| {
+                    fields.into_iter().fold(expr, |expr, field|
+                        loc(Expr::FieldAccess(Box::new(expr), field))
+                    )
+                })
                 .parse_state(input)
         }
 
@@ -308,8 +314,8 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             reserved: ["if", "then", "else", "let", "in", "type"].iter().map(|x| (*x).into()).collect()
         },
         op: Identifier {
-            start: satisfy(move |c| ops.chars().find(|x| *x == c).is_some()),
-            rest: satisfy(move |c| ops.chars().find(|x| *x == c).is_some()),
+            start: satisfy(move |c| ops.chars().any(|x| x == c)),
+            rest: satisfy(move |c| ops.chars().any(|x| x == c)),
             reserved: ["->", "\\"].iter().map(|x| (*x).into()).collect()
         },
         comment_start: "/*",
@@ -420,6 +426,12 @@ pub mod tests {
     fn bool(b: bool) -> PExpr {
         no_loc(Expr::Literal(Bool(b)))
     }
+    fn record(fields: Vec<(InternedStr, PExpr)>) -> PExpr {
+        no_loc(Expr::Record(intern(""), fields))
+    }
+    fn field_access(expr: PExpr, field: &str) -> PExpr {
+        no_loc(Expr::FieldAccess(Box::new(expr), intern(field)))
+    }
 
     pub fn parse_new<Id>(s: &str) -> LExpr<Id>
         where Id: AstId + Clone {
@@ -468,5 +480,11 @@ pub mod tests {
         let record = Type::Record(vec![Field { name: intern("x"), typ: typ("Int") }
                                     ,  Field { name: intern("y"), typ: Type::Record(vec![]) }]);
         assert_eq!(e, type_decl("Test", record, int(1)));
+    }
+    #[test]
+    fn field_access_test() {
+        let _ = ::env_logger::init();
+        let e = parse_new("{ x: 1 }.x");
+        assert_eq!(e, field_access(record(vec![(intern("x"), int(1))]), "x"));
     }
 }

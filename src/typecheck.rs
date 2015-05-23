@@ -42,21 +42,41 @@ pub type TcResult = Result<TcType, TypeError>;
 
 pub struct TypeInfos {
     pub datas: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
+    pub id_to_type: HashMap<InternedStr, TcType>,
+    pub type_to_id: HashMap<TcType, TcType>
 }
 
 impl TypeInfos {
     pub fn new() -> TypeInfos {
         TypeInfos {
             datas: HashMap::new(),
+            id_to_type: HashMap::new(),
+            type_to_id: HashMap::new()
         }
     }
     pub fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]> {
         self.datas.get(id)
             .map(|vec| &**vec)
     }
+
+    pub fn find_record(&self, field: &InternedStr) -> Option<&TcType> {
+        self.id_to_type.iter()
+            .find(|&(_, typ)| {
+                match *typ {
+                    Type::Record(ref fields) => fields.iter().any(|f| f.name == *field),
+                    _ => false
+                }
+            })
+            .map(|t| t.1)
+    }
+    pub fn find_id(&self, typ: &TcType) -> Option<&TcType> {
+        self.type_to_id.get(typ)
+    }
     pub fn extend(&mut self, other: TypeInfos) {
-        let TypeInfos { datas } = other;
+        let TypeInfos { datas, id_to_type, type_to_id } = other;
         self.datas.extend(datas);
+        self.id_to_type.extend(id_to_type);
+        self.type_to_id.extend(type_to_id);
     }
 }
 
@@ -141,6 +161,12 @@ impl <'a> Typecheck<'a> {
             }
             None => Err(UndefinedVariable(id.clone()))
         }
+    }
+
+    fn find_record(&self, field: &InternedStr) -> Result<&TcType, TypeError> {
+        self.type_infos.find_record(field)
+            .map(|s| Ok(s))
+            .unwrap_or_else(|| Err(UndefinedStruct(field.clone())))
     }
 
     fn find_type_info(&self, id: &InternedStr) -> Result<&[ast::Constructor<TcIdent>], TypeError> {
@@ -349,26 +375,36 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&lhs_type, rhs_type));
                 Ok(UNIT_TYPE.clone())
             }
-            ast::Expr::FieldAccess(ref mut expr, ref mut id) => {
-                let typ = try!(self.typecheck(&mut **expr));
-                match typ {
+            ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
+                let mut typ = try!(self.typecheck(&mut **expr));
+                if let Type::Variable(var) = typ {
+                    let record_type = try!(self.find_record(&field_access.name));
+                    typ = try!(self.unify(record_type, typ));
+                }
+                let record = match typ {
+                    Type::Data(ast::TypeConstructor::Data(id), _) => {
+                        self.type_infos.id_to_type.get(&id).unwrap_or(&typ)
+                    }
+                    _ => &typ
+                };
+                match *record {
                     Type::Record(ref fields) => {
                         let field_type = fields.iter()
-                            .find(|field| field.name == *id.id())
+                            .find(|field| field.name == *field_access.id())
                             .map(|field| field.typ.clone());
-                        id.typ = match field_type {
+                        field_access.typ = match field_type {
                             Some(typ) => typ,
-                            None => return Err(UndefinedField(typ.clone(), id.name.clone()))
+                            None => return Err(UndefinedField(typ.clone(), field_access.name.clone()))
                         };
-                        Ok(id.typ.clone())
+                        Ok(field_access.typ.clone())
                     }
                     Type::Data(ast::TypeConstructor::Data(_), _) => Err(StringError("Field access on data")),
                     Type::Data(ast::TypeConstructor::Builtin(..), _) | Type::Builtin(..) => {
                         Err(StringError("Field access on builtin type"))
                     }
                     Type::Function(..) => Err(StringError("Field access on function")),
-                    Type::Variable(..) => Err(StringError("Field acces on type variable")),
                     Type::Generic(..) => Err(StringError("Field acces on generic")),
+                    Type::Variable(..) => Err(StringError("Field access on variable")),
                     Type::Array(..) => Err(StringError("Field access on array")),
                     Type::App(..) => Err(StringError("Field access on type application")),
                 }
@@ -409,6 +445,9 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Type(id, ref mut typ, ref mut expr) => {
                 self.stack_var(id, typ.clone());
+                self.type_infos.id_to_type.insert(id, typ.clone());
+                let new_type = Type::Data(ast::TypeConstructor::Data(id), Vec::new());
+                self.type_infos.type_to_id.insert(typ.clone(), new_type);
                 let expr_type = try!(self.typecheck(&mut **expr));
                 Ok(expr_type)
             }
@@ -420,6 +459,9 @@ impl <'a> Typecheck<'a> {
                     }))
                     .collect::<Result<_, _>>()
                     .map(Type::Record));
+                let type_name = self.type_infos.type_to_id.get(&typ)
+                        .map(|t| t.clone());
+                let typ = type_name.unwrap_or(typ);
                 id.typ = typ.clone();
                 Ok(typ)
             }
@@ -568,13 +610,14 @@ impl <'a> Typecheck<'a> {
     }
 
     fn real_type<'r>(&'r self, typ: &'r TcType) -> &'r TcType {
-        match *typ {
+        let typ = match *typ {
             Type::Variable(var) => match self.find_type_for_var(var) {
                 Some(t) => t,
                 None => typ
             },
             _ => typ
-        }
+        };
+        self.type_infos.find_id(typ).unwrap_or(typ)
     }
 
     fn find_type_for_var(&self, var: u32) -> Option<&TcType> {
@@ -846,18 +889,19 @@ type Test = { x: Int } in { x: 0 }
         let mut expr = parse_new(text);
         let mut tc = Typecheck::new();
         let result = tc.typecheck_expr(&mut expr);
-        assert_eq!(result, Ok(Type::Record(vec![ast::Field { name: intern("x"), typ: typ("Int")}])));
+        assert_eq!(result, Ok(typ("Test")));
     }
 
     #[test]
     fn record_type() {
         let text = 
 r"
-let f: { y: a } -> Int = \x -> 1 in f { y: 123 }
+type T = { y: Int } in
+let f: T -> Int = \x -> x.y in { y: f { y: 123 } }
 ";
         let mut expr = parse_new(text);
         let mut tc = Typecheck::new();
         let result = tc.typecheck_expr(&mut expr);
-        assert_eq!(result, Ok(typ("Int")));
+        assert_eq!(result, Ok(typ("T")));
     }
 }
