@@ -213,7 +213,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 &mut self.parser(ParserEnv::type_decl).map(&loc),
                 &mut self.lex(try(self.integer().skip(not_followed_by(string(".")))))
                     .map(|i| loc(Expr::Literal(LiteralStruct::Integer(i)))),
-                &mut self.lex(self.float())
+                &mut self.lex(try(self.float()))
                     .map(|f| loc(Expr::Literal(LiteralStruct::Float(f)))),
                 &mut self.reserved("True")
                     .map(|_| loc(Expr::Literal(LiteralStruct::Bool(true)))),

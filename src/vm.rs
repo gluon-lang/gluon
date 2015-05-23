@@ -1063,7 +1063,7 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 #[cfg(test)]
 mod tests {
     use super::{VM, run_expr};
-    use super::Value::{Float, Int};
+    use super::Value::{Data, Closure, Float, Int};
 
     #[test]
     fn pass_function_value() {
@@ -1120,6 +1120,34 @@ add { x: 0, y: 1 } { x: 1, y: 1 }
         let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, vm.new_data(0, &mut [Int(1), Int(2)]));
+    }
+    #[test]
+    fn script() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type T = { x: Int, y: Int } in
+let add = \l r -> { x: l.x + r.x, y: l.y + r.y } in
+let sub = \l r -> { x: l.x - r.x, y: l.y - r.y } in
+{ add: add, sub: sub }
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        match value {
+            Data(ref d) => {
+                assert_eq!(d.fields.len(), 2);
+                match d.fields[0].get() {
+                    Closure(_) => (),
+                    _ => assert!(false)
+                }
+                match d.fields[1].get() {
+                    Closure(_) => (),
+                    _ => assert!(false)
+                }
+            }
+            _ => assert!(false)
+        }
     }
 }
 
