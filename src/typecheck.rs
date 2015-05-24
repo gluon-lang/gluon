@@ -27,7 +27,6 @@ enum TypeError {
     UnboundVariable,
     UndefinedStruct(InternedStr),
     UndefinedField(TcType, InternedStr),
-    UndefinedTrait(InternedStr),
     IndexError(TcType),
     StringError(&'static str)
 }
@@ -240,7 +239,7 @@ impl <'a> Typecheck<'a> {
         self.subs.clear();
         self.stack.clear();
 
-        let typ = match self.typecheck(expr) {
+        let mut typ = match self.typecheck(expr) {
             Ok(typ) => typ,
             Err(err) => {
                 self.errors.error(ast::Located { location: expr.location, value: err });
@@ -252,6 +251,9 @@ impl <'a> Typecheck<'a> {
         }
         else {
             self.replace_vars(&HashMap::new(), expr);
+            ast::walk_mut_type(&mut typ, &mut |typ| {
+                self.replace_variable(typ);
+            });
             Ok(typ)
         }
     }
@@ -664,6 +666,7 @@ impl <'a> Typecheck<'a> {
     }
 }
 
+#[derive(Debug)]
 struct Substitution {
     map: HashMap<u32, Box<TcType>>,
     constraints: HashMap<u32, Vec<TcType>>,
@@ -842,7 +845,7 @@ impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Typecheck, Typed, TcIdent, INT_TYPE, BOOL_TYPE, FLOAT_TYPE, Type, TcType};
+    use super::*;
     use base::ast;
     use super::super::tests::{get_local_interner, intern};
 
@@ -878,6 +881,19 @@ r"
             }
             _ => assert!(false)
         }
+    }
+
+    #[test]
+    fn function_2_args() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+\x y -> 1 + x + y
+";
+        let mut expr = parse_new(text);
+        let mut tc = Typecheck::new();
+        let result = tc.typecheck_expr(&mut expr);
+        assert_eq!(result, Ok(Type::Function(vec![typ("Int"), typ("Int")], Box::new(typ("Int")))));
     }
 
     #[test]

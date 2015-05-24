@@ -297,8 +297,10 @@ impl <I: fmt::Display> fmt::Display for Type<I> {
             Type::Generic(ref x) => write!(f, "#{}", x),
             Type::Function(ref args, ref return_type) => {
                 try!(write!(f, "("));
+                let mut delim = "";
                 for arg in args {
-                    try!(write!(f, "{}", arg));
+                    try!(write!(f, "{}{}", delim, arg));
+                    delim = ", ";
                 }
                 try!(write!(f, ") -> {}", return_type));
                 Ok(())

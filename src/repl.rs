@@ -82,9 +82,11 @@ fn load_file(vm: &VM, filename: &str) -> Result<(), String> {
     use std::fs::File;
     use std::io::Read;
     use std::path::Path;
-    let mut file = tryf!(File::open(&Path::new(filename)));
+    let path = Path::new(filename);
+    let mut file = tryf!(File::open(path));
     let mut buffer = String::new();
     tryf!(file.read_to_string(&mut buffer));
-    load_script(vm, &buffer)
+    let name = path.file_stem().and_then(|f| f.to_str()).expect("filename");
+    load_script(vm, name, &buffer)
 }
 

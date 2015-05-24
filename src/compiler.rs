@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use base::interner::*;
 use base::ast;
 use base::ast::{LExpr, Expr, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
@@ -419,7 +418,7 @@ impl <'a> Compiler<'a> {
                     Type::Function(ref args, _) => &args[..],
                     _ => panic!("Non function type inferred in call")
                 };
-                for (arg, real_arg_type) in args.iter().zip(arg_types.iter()) {
+                for arg in args.iter() {
                     self.compile(arg, function);
                 }
                 function.instructions.push(Call(args.len() as VMIndex));
@@ -477,10 +476,14 @@ impl <'a> Compiler<'a> {
                 let field_index = match *expr.type_of() {
                     Type::Data(ref id, _) => {
                         self.find_field(id, field.id())
-                            .expect("ICE: Undefined field in field access")
                     }
-                    _ => panic!()
-                };
+                    Type::Record(ref fields) => {
+                        fields.iter()
+                            .position(|f| f.name == f.name)
+                            .map(|i| i as VMIndex)
+                    }
+                    ref typ => panic!("ICE: FieldAccess on {}", typ)
+                }.expect("ICE: Undefined field in field access");
                 function.instructions.push(GetField(field_index));
             }
             Expr::Match(ref expr, ref alts) => {
@@ -597,31 +600,3 @@ impl <'a> Compiler<'a> {
     }
 }
 
-fn find_real_type<'a>(trait_func_type: &TcType, real_type: &'a TcType) -> HashMap<InternedStr, &'a TcType> {
-    let mut result = HashMap::new();
-    find_real_type_(trait_func_type, real_type, &mut result);
-    result
-}
-fn find_real_type_<'a>(trait_func_type: &TcType, real_type: &'a TcType, out: &mut HashMap<InternedStr, &'a TcType>) {
-    match (trait_func_type, real_type) {
-        (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
-            for (l, r) in l_args.iter().zip(r_args.iter()) {
-                find_real_type_(l, r, out);
-            }
-            find_real_type_(&**l_ret, &**r_ret, out)
-        }
-        (&Type::Variable(_), _) => {
-            panic!()
-        }
-        (&Type::Generic(i), real_type) => {
-            out.insert(i, real_type);
-        }
-        (&Type::Array(ref l), &Type::Array(ref r)) => find_real_type_(&**l, &**r, out),
-        (&Type::Data(_, ref l_args), &Type::Data(_, ref r_args)) => {
-            for (l, r) in l_args.iter().zip(r_args.iter()) {
-                find_real_type_(l, r, out);
-            }
-        }
-        _ => ()
-    }
-}

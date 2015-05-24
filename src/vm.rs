@@ -5,7 +5,7 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use base::ast;
-use base::ast::{Constrained, Type};
+use base::ast::Type;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, TcIdent, TcType};
 use compiler::*;
 use compiler::Instruction::*;
@@ -212,7 +212,7 @@ pub type ExternFunction<'a> = Box<Fn(&VM<'a>) + 'static>;
 #[derive(Debug)]
 pub struct Global<'a> {
     pub id: InternedStr,
-    pub typ: Constrained<TcType>,
+    pub typ: TcType,
     pub value: Cell<Value<'a>>
 }
 
@@ -230,7 +230,7 @@ pub enum Function_<'a> {
 impl <'a> Typed for Global<'a> {
     type Id = InternedStr;
     fn type_of(&self) -> &TcType {
-        &self.typ.value
+        &self.typ
     }
 }
 impl <'a> PartialEq for Function_<'a> {
@@ -286,7 +286,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
-                Some(Variable::Global(index as VMIndex, &g.typ.value))
+                Some(Variable::Global(index as VMIndex, &g.typ))
             }
             _ => {
                 self.type_infos.datas.values()
@@ -333,7 +333,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
-                Some((&g.typ.constraints, &g.typ.value))
+                Some((&[], &g.typ))
             }
             _ => {
                 self.type_infos.datas.values()
@@ -571,31 +571,6 @@ impl <'a> VM<'a> {
         BytecodeFunction::new(&mut self.gc.borrow_mut(), f)
     }
 
-    pub fn new_functions(&self, Assembly { initializer, anonymous_functions, globals }: Assembly) {
-        let mut names = self.names.borrow_mut();
-        for Binding { name, typ } in globals {
-            match names.get(&name) {
-                Some(&GlobalFn(..)) => panic!("ICE: Global '{}' already exists", name),
-                None => {
-                    names.insert(name, GlobalFn(self.globals.len()));
-                }
-            }
-            let global = Global { id: name, typ: typ, value: Cell::new(Bottom) };//TODO Initialize value now?
-            self.globals.push(global);
-        }
-        let mut function = BytecodeFunction::empty();
-        for f in anonymous_functions {
-            debug!("Function {} at {}", f.id, function.inner_functions.len());
-            function.inner_functions.push(BytecodeFunction::new(&mut self.gc.borrow_mut(), f));
-        }
-        debug!("Run initializer");
-        let stack = self.stack.borrow_mut();
-        StackFrame::new_scope(stack, 0, None, |frame| {
-            self.execute(frame, &initializer, &function)
-        }).unwrap();
-        debug!("Done initializer");
-    }
-
     pub fn get_global(&self, name: &str) -> Option<&Global<'a>> {
         let n = self.intern(name);
         self.globals.find(|g| n == g.id).map(|tup| tup.1)
@@ -636,7 +611,7 @@ impl <'a> VM<'a> {
         }
         let global = Global {
             id: id,
-            typ: Constrained { constraints: Vec::new(), value: Type::Function(args, box return_type) },
+            typ: Type::Function(args, box return_type),
             value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(Function_::Extern(f)))))
         };
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
@@ -1015,19 +990,28 @@ macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 );
 
-pub fn load_script(vm: &VM, input: &str) -> Result<(), ::std::string::String> {
+pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string::String> {
     let empty_string = vm.intern("");
     let mut expr = tryf!(parse_expr(input, vm));
-    let (_type_infos, _functions) = {
+    let (type_infos, function, typ) = {
         let env = vm.env();
         let mut tc = Typecheck::new();
         tc.add_environment(&env);
-        tryf!(tc.typecheck_expr(&mut expr));
-        let env = vm.env();
-        let mut compiler = Compiler::new(&env, empty_string);
-        (tc.type_infos, compiler.compile_expr(&expr))
+        let typ = tryf!(tc.typecheck_expr(&mut expr));
+        let function = {
+            let env = (&env, &tc.type_infos);
+            let mut compiler = Compiler::new(&env, empty_string);
+            compiler.compile_expr(&expr)
+        };
+        (tc.type_infos, function, typ)
     };
-    panic!("Not implemented");
+    let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
+    let value = try!(vm.call_bytecode(0, &function, None));
+    let id = vm.intern(name);
+    vm.names.borrow_mut().insert(id, GlobalFn(vm.globals.len()));
+    vm.globals.push(Global { id: id, typ: typ, value: Cell::new(value) });
+    vm.type_infos.borrow_mut().extend(type_infos);
+    Ok(())
 }
 
 pub fn parse_expr(input: &str, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
@@ -1045,7 +1029,7 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::str
         let mut tc = Typecheck::new();
         tc.add_environment(&env);
         tryf!(tc.typecheck_expr(&mut expr));
-        let env = (vm.env(), &tc.type_infos);
+        let env = (&env, &tc.type_infos);
         let mut compiler = Compiler::new(&env, empty_string);
         vm.new_function(compiler.compile_expr(&expr))
     };
@@ -1062,8 +1046,8 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 
 #[cfg(test)]
 mod tests {
-    use super::{VM, run_expr};
-    use super::Value::{Data, Closure, Float, Int};
+    use super::{VM, load_script, run_expr};
+    use super::Value::{Float, Int};
 
     #[test]
     fn pass_function_value() {
@@ -1132,22 +1116,12 @@ let sub = \l r -> { x: l.x - r.x, y: l.y - r.y } in
 { add: add, sub: sub }
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
+        load_script(&mut vm, "Vec", text)
             .unwrap_or_else(|err| panic!("{}", err));
-        match value {
-            Data(ref d) => {
-                assert_eq!(d.fields.len(), 2);
-                match d.fields[0].get() {
-                    Closure(_) => (),
-                    _ => assert!(false)
-                }
-                match d.fields[1].get() {
-                    Closure(_) => (),
-                    _ => assert!(false)
-                }
-            }
-            _ => assert!(false)
-        }
+
+        let value = run_expr(&mut vm, "Vec.add { x: 10, y: 5 } { x: 1, y: 2 }")
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, vm.new_data(0, &mut [Int(11), Int(7)]));
     }
 }
 
