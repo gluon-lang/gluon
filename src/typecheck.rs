@@ -108,12 +108,6 @@ impl <T> Errors<T> {
     fn error(&mut self, t: T) {
         self.errors.push(t);
     }
-    fn handle<U>(&mut self, err: Result<U, T>) {
-        match err {
-            Ok(_) => (),
-            Err(e) => self.error(e)
-        }
-    }
 }
 
 impl <T: fmt::Display> fmt::Display for Errors<T> {
@@ -379,7 +373,7 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
-                if let Type::Variable(var) = typ {
+                if let Type::Variable(_) = typ {
                     let record_type = try!(self.find_record(&field_access.name));
                     typ = try!(self.unify(record_type, typ));
                 }

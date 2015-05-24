@@ -167,7 +167,7 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     }
 }
 impl CompilerEnv for TypeInfos {
-    fn find_var(&self, s: &InternedStr) -> Option<Variable> {
+    fn find_var(&self, _s: &InternedStr) -> Option<Variable> {
         None
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
@@ -182,7 +182,7 @@ impl CompilerEnv for TypeInfos {
             })
     }
 
-    fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
+    fn find_tag(&self, _enum_: &InternedStr, _ctor_name: &InternedStr) -> Option<VMTag> {
         None
     }
     fn next_global_index(&self) -> VMIndex {
@@ -291,7 +291,7 @@ impl <'a> Compiler<'a> {
                 match self.find(id.id(), function).unwrap_or_else(|| panic!("Undefined variable {}", id.id())) {
                     Stack(index) => function.instructions.push(Push(index)),
                     UpVar(index) => function.instructions.push(PushUpVar(index)),
-                    Global(index, typ) => {
+                    Global(index, _) => {
                         function.instructions.push(PushGlobal(index));
                     }
                     Constructor(..) => panic!("Constructor {:?} is not fully applied", id)
@@ -414,10 +414,6 @@ impl <'a> Compiler<'a> {
                     }
                 }
                 self.compile(&**func, function);
-                let arg_types = match *func.type_of() {
-                    Type::Function(ref args, _) => &args[..],
-                    _ => panic!("Non function type inferred in call")
-                };
                 for arg in args.iter() {
                     self.compile(arg, function);
                 }
