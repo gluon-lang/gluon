@@ -99,8 +99,8 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             self.parser(ParserEnv::parse_untyped_ident)
         }
         fn parse_untyped_ident(&self, input: State<I>) -> ParseResult<Id::Untyped, I> {
-            try(self.env.ident())
-                .map(|s| { debug!("Id: {}", s); self.intern(&s).to_id() })
+            self.ident()
+                .map(AstId::to_id)
                 .parse_state(input)
         }
 
@@ -238,7 +238,18 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn op(&self, input: State<I>) -> ParseResult<Id, I> {
-            self.env.op().map(|s| self.intern(&s))
+            optional(char('#').with(many(letter())))
+                .and(self.env.op())
+                .map(|(builtin, op): (Option<String>, String)| {
+                    match builtin {
+                        Some(mut builtin) => {
+                            builtin.insert(0, '#');
+                            builtin.extend(op.chars());
+                            self.intern(&builtin)
+                        }
+                        None => self.intern(&op)
+                    }
+                })
                 .parse_state(input)
         }
 
@@ -486,5 +497,11 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new("{ x: 1 }.x");
         assert_eq!(e, field_access(record(vec![(intern("x"), int(1))]), "x"));
+    }
+    #[test]
+    fn builtin_op() {
+        let _ = ::env_logger::init();
+        let e = parse_new("x #Int+ 1");
+        assert_eq!(e, binop(id("x"), "#Int+", int(1)));
     }
 }

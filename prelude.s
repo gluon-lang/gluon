@@ -1,14 +1,13 @@
 
 data Option a = Some(a) | None()
 
-trait Eq a {
-    eq : (a, a) -> Bool;
-}
+type Eq a = {
+    eq : a -> a -> Bool
+} in
 
-impl Eq for Int {
-    eq : (Int, Int) -> Bool;
+let eq_Int = {
     eq = \l r -> {
-        l == r
+        l #Int== r
     }
 }
 
