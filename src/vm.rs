@@ -346,6 +346,9 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]> {
         self.type_infos.find_type_info(id)
     }
+    fn find_type_name(&self, typ: &TcType) -> Option<&TcType> {
+        self.type_infos.find_id(typ)
+    }
 }
 
 pub struct Stack<'a> {

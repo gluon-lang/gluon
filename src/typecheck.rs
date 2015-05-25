@@ -82,6 +82,7 @@ impl TypeInfos {
 pub trait TypeEnv {
     fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraint], &TcType)>;
     fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]>;
+    fn find_type_name(&self, typ: &TcType) -> Option<&TcType>;
 }
 
 pub struct Typecheck<'a> {
@@ -639,7 +640,9 @@ impl <'a> Typecheck<'a> {
             },
             _ => typ
         };
-        self.type_infos.find_id(typ).unwrap_or(typ)
+        self.type_infos.find_id(typ)
+            .or_else(|| self.environment.and_then(|e| e.find_type_name(typ)))
+            .unwrap_or(typ)
     }
 
     fn find_type_for_var(&self, var: u32) -> Option<&TcType> {
