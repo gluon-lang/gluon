@@ -212,6 +212,7 @@ impl <'a> Typecheck<'a> {
                     ast::Expr::FieldAccess(_, ref mut id) => self.finish_type(e.location, &mut id.typ),
                     ast::Expr::Array(ref mut array) => self.finish_type(e.location, &mut array.id.typ),
                     ast::Expr::Lambda(ref mut lambda) => self.finish_type(e.location, &mut lambda.id.typ),
+                    ast::Expr::BinOp(_, ref mut id, _) => self.finish_type(e.location, &mut id.typ),
                     ast::Expr::Match(_, ref mut alts) => {
                         for alt in alts.iter_mut() {
                             match alt.pattern {
@@ -250,16 +251,13 @@ impl <'a> Typecheck<'a> {
         }
         else {
             let mut generic = String::from_str("a");
-            debug!("Return {} ... {}", typ, expr.type_of());
             ast::walk_mut_type(&mut typ, &mut |typ| {
-                debug!("{}", typ);
                 match *typ {
                     Type::Variable(id) => {
                         if let None = self.find_type_for_var(id) {
                             let gen = Type::Generic(self.interner.intern(self.gc, &generic));
                             let c = generic.pop().unwrap();
                             generic.push((c as u8 + 1) as char);
-                            debug!("aaaa {} ....... {}", id, gen);
                             self.subs.map.insert(id, Box::new(gen));
                         }
                     }
@@ -267,7 +265,6 @@ impl <'a> Typecheck<'a> {
                 };
                 self.replace_variable(typ);
             });
-            debug!("Return {} ... {}", typ, expr.type_of());
             self.replace_vars(&HashMap::new(), expr);
             Ok(typ)
         }
@@ -331,23 +328,47 @@ impl <'a> Typecheck<'a> {
             ast::Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = try!(self.typecheck(&mut**lhs));
                 let rhs_type = try!(self.typecheck(&mut**rhs));
-                try!(self.unify(&lhs_type, rhs_type.clone()));
-                match AsRef::<str>::as_ref(op) {
-                    "+" | "-" | "*" => {
-                        let b = {
-                            let lt = self.real_type(&lhs_type);
-                            *lt == INT_TYPE || *lt == FLOAT_TYPE
-                        };
-                        if b {
-                            Ok(lhs_type)
+                if op.name.starts_with("#") {
+                    let arg_type = try!(self.unify(&lhs_type, rhs_type));
+                    let offset;
+                    let typ = if op.name[1..].starts_with("Int") {
+                        offset = "Int".len();
+                        op.typ = fn_type(vec![INT_TYPE.clone(), INT_TYPE.clone()], INT_TYPE.clone());
+                        try!(self.unify(&INT_TYPE, arg_type))
+                    }
+                    else if op.name[1..].starts_with("Float") {
+                        offset = "Float".len();
+                        op.typ = fn_type(vec![FLOAT_TYPE.clone(), FLOAT_TYPE.clone()], FLOAT_TYPE.clone());
+                        try!(self.unify(&FLOAT_TYPE, arg_type))
+                    }
+                    else {
+                        panic!("ICE: Unknown primitive type")
+                    };
+                    match &op.name[1+offset..] {
+                        "+" | "-" | "*" => Ok(typ),
+                        "==" => Ok(BOOL_TYPE.clone()),
+                        _ => Err(UndefinedVariable(op.name.clone()))
+                    }
+                }
+                else {
+                    match &op.name[..] {
+                        "&&" | "||" => {
+                            try!(self.unify(&lhs_type, rhs_type.clone()));
+                            self.unify(&BOOL_TYPE, lhs_type)
                         }
-                        else {
-                            return Err(StringError("Expected numbers in binop"))
+                        _ => {
+                            op.typ = try!(self.find(op.id()));
+                            let func_type = fn_type(vec![lhs_type, rhs_type], self.subs.new_var());
+                            match try!(self.unify(&op.typ, func_type)) {
+                                Type::Function(_, return_type) => 
+                                    match *return_type {
+                                        Type::Function(_, return_type) => Ok(*return_type),
+                                        _ => panic!("ICE: unify binop")
+                                    },
+                                _ => panic!("ICE: unify binop")
+                            }
                         }
                     }
-                    "&&" | "||" => self.unify(&BOOL_TYPE, lhs_type),
-                    "=="| "!=" | "<" | ">" | "<=" | ">=" => Ok(BOOL_TYPE.clone()),
-                    _ => Err(UndefinedVariable(op.name.clone()))
                 }
             }
             ast::Expr::Block(ref mut exprs) => {
@@ -379,15 +400,18 @@ impl <'a> Typecheck<'a> {
                 let id_type = self.subs.instantiate(&id.typ);
                 //Store the current generic -> variable mapping so that we can reverse it later
                 let variables = self.subs.variables.clone();
-                debug!("{:?}", variables);
+                debug!("--- {:?} {}", variables, id.typ);
                 let mut typ = try!(self.typecheck(&mut **expr));
                 if id.typ != UNIT_TYPE {
-                    typ = try!(self.unify(&id_type, typ));
-                    self.replace_vars(&variables, &mut **expr);
-                    ast::walk_mut_type(&mut typ, &mut |typ| {
-                        self.replace_variable(typ);
-                    });
+                    //Merge the type declaration and the actual type
+                    typ = try!(self.merge(id_type, typ));
                 }
+                self.replace_vars(&variables, &mut **expr);
+                ast::walk_mut_type(&mut typ, &mut |typ| {
+                    self.replace_variable(typ);
+                });
+                id.typ = typ.clone();
+                debug!("let {} : {}", id.name, typ);
                 self.stack_var(id.name.clone(), typ);
                 body.as_mut().map(|body| self.typecheck(&mut **body))
                     .unwrap_or(Ok(UNIT_TYPE.clone()))
@@ -835,6 +859,14 @@ impl <Id> Typed for ast::Expr<Id>
                 }
             }
             ast::Expr::BinOp(ref lhs, ref op, _) => {
+                match *op.type_of() {
+                    Type::Function(_, ref return_type) => 
+                        match **return_type {
+                            Type::Function(_, ref return_type) => return return_type,
+                            _ => ()
+                        },
+                    _ => ()
+                }
                 match AsRef::<str>::as_ref(op) {
                     "+" | "-" | "*" => lhs.type_of(),
                     "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => &BOOL_TYPE,
@@ -935,7 +967,7 @@ r"
         let _ = ::env_logger::init();
         let text = 
 r"
-\x y -> 1 + x + y
+\x y -> 1 #Int+ x #Int+ y
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(fn_type(vec![typ("Int"), typ("Int")], typ("Int"))));
@@ -979,5 +1011,26 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
             }
             _ => assert!(false)
         }
+    }
+    #[test]
+    fn primitive_error() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+1 #Int== 2.2
+";
+        let result = typecheck(text);
+        assert!(result.is_err());
+    }
+    #[test]
+    fn binop_as_function() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let (+) = \x y -> x #Int+ y
+in 1 + 2
+";
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ("Int")));
     }
 }

@@ -1068,7 +1068,7 @@ mod tests {
         let text = 
 r"
 let lazy: () -> Int = \x -> 42 in
-let test: (() -> Int) -> Int = \f -> f () + 10
+let test: (() -> Int) -> Int = \f -> f () #Int+ 10
 in test lazy
 ";
         let mut vm = VM::new();
@@ -1082,7 +1082,7 @@ in test lazy
         let text = 
 r"
 let y = 100 in
-let f = \x -> y + x + 1
+let f = \x -> y #Int+ x #Int+ 1
 in f(22)
 ";
         let mut vm = VM::new();
@@ -1110,7 +1110,7 @@ r"
         let text = 
 r"
 type T = { x: Int, y: Int } in
-let add = \l r -> { x: l.x + r.x, y: l.y + r.y } in
+let add = \l r -> { x: l.x #Int+ r.x, y: l.y #Int+ r.y } in
 add { x: 0, y: 1 } { x: 1, y: 1 }
 ";
         let mut vm = VM::new();
@@ -1124,8 +1124,8 @@ add { x: 0, y: 1 } { x: 1, y: 1 }
         let text = 
 r"
 type T = { x: Int, y: Int } in
-let add = \l r -> { x: l.x + r.x, y: l.y + r.y } in
-let sub = \l r -> { x: l.x - r.x, y: l.y - r.y } in
+let add = \l r -> { x: l.x #Int+ r.x, y: l.y #Int- r.y } in
+let sub = \l r -> { x: l.x #Int- r.x, y: l.y #Int- r.y } in
 { add: add, sub: sub }
 ";
         let mut vm = VM::new();
