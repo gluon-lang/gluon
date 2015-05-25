@@ -92,6 +92,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
         fn parse_ident(&self, input: State<I>) -> ParseResult<Id, I> {
             try(self.env.ident())
+                .or(try(self.parens(self.env.op())))
                 .map(|s| { debug!("Id: {}", s); self.intern(&s) })
                 .parse_state(input)
         }
@@ -492,16 +493,27 @@ pub mod tests {
                                     ,  Field { name: intern("y"), typ: Type::Record(vec![]) }]);
         assert_eq!(e, type_decl("Test", record, int(1)));
     }
+
     #[test]
     fn field_access_test() {
         let _ = ::env_logger::init();
         let e = parse_new("{ x: 1 }.x");
         assert_eq!(e, field_access(record(vec![(intern("x"), int(1))]), "x"));
     }
+
     #[test]
     fn builtin_op() {
         let _ = ::env_logger::init();
         let e = parse_new("x #Int+ 1");
         assert_eq!(e, binop(id("x"), "#Int+", int(1)));
+    }
+
+    #[test]
+    fn op_identifier() {
+        let _ = ::env_logger::init();
+        let e = parse_new("let (==) = \\x y -> x #Int== y in (==) 1 2");
+        assert_eq!(e, let_(
+                "==", lambda("", vec![intern("x"), intern("y")], binop(id("x"), "#Int==", id("y")))
+                , call(id("=="), vec![int(1), int(2)])));
     }
 }
