@@ -995,15 +995,20 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string
     let mut expr = tryf!(parse_expr(input, vm));
     let (type_infos, function, typ) = {
         let env = vm.env();
-        let mut tc = Typecheck::new();
-        tc.add_environment(&env);
-        let typ = tryf!(tc.typecheck_expr(&mut expr));
+        let (typ, type_infos) = {
+            let mut interner = vm.interner.borrow_mut();
+            let mut gc = vm.gc.borrow_mut();
+            let mut tc = Typecheck::new(&mut interner, &mut gc);
+            tc.add_environment(&env);
+            let typ = tryf!(tc.typecheck_expr(&mut expr));
+            (typ, tc.type_infos)
+        };
         let function = {
-            let env = (&env, &tc.type_infos);
+            let env = (&env, &type_infos);
             let mut compiler = Compiler::new(&env, empty_string);
             compiler.compile_expr(&expr)
         };
-        (tc.type_infos, function, typ)
+        (type_infos, function, typ)
     };
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let value = try!(vm.call_bytecode(0, &function, None));
@@ -1026,10 +1031,15 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::str
     let function = {
         let empty_string = vm.intern("");
         let env = vm.env();
-        let mut tc = Typecheck::new();
-        tc.add_environment(&env);
-        tryf!(tc.typecheck_expr(&mut expr));
-        let env = (&env, &tc.type_infos);
+        let (typ, type_infos) = {
+            let mut interner = vm.interner.borrow_mut();
+            let mut gc = vm.gc.borrow_mut();
+            let mut tc = Typecheck::new(&mut interner, &mut gc);
+            tc.add_environment(&env);
+            let typ = tryf!(tc.typecheck_expr(&mut expr));
+            (typ, tc.type_infos)
+        };
+        let env = (&env, &type_infos);
         let mut compiler = Compiler::new(&env, empty_string);
         vm.new_function(compiler.compile_expr(&expr))
     };

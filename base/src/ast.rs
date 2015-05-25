@@ -414,6 +414,11 @@ pub fn walk_mut_type<F, I>(typ: &mut Type<I>, f: &mut F)
             }
             walk_mut_type(&mut **ret, f);
         }
+        Type::Record(ref mut fields) => {
+            for field in fields {
+                walk_mut_type(&mut field.typ, f);
+            }
+        }
         _ => ()
     }
 }

@@ -5,7 +5,8 @@ use std::fmt;
 use scoped_map::ScopedMap;
 use base::ast;
 use base::ast::MutVisitor;
-use base::interner::InternedStr;
+use base::interner::{Interner, InternedStr};
+use base::gc::Gc;
 
 use self::TypeError::*;
 
@@ -22,7 +23,6 @@ pub static UNIT_TYPE: TcType = Type::Builtin(ast::UnitType);
 enum TypeError {
     UndefinedVariable(InternedStr),
     NotAFunction(TcType),
-    WrongNumberOfArguments(usize, usize),
     TypeMismatch(TcType, TcType),
     UnboundVariable,
     UndefinedStruct(InternedStr),
@@ -86,6 +86,8 @@ pub trait TypeEnv {
 
 pub struct Typecheck<'a> {
     environment: Option<&'a (TypeEnv + 'a)>,
+    interner: &'a mut Interner,
+    gc: &'a mut Gc,
     pub type_infos: TypeInfos,
     module: HashMap<InternedStr, ast::Constrained<TcType>>,
     stack: ScopedMap<InternedStr, TcType>,
@@ -123,9 +125,11 @@ pub type StringErrors = Errors<ast::Located<TypeError>>;
 
 impl <'a> Typecheck<'a> {
     
-    pub fn new() -> Typecheck<'a> {
+    pub fn new(interner: &'a mut Interner, gc: &'a mut Gc) -> Typecheck<'a> {
         Typecheck {
             environment: None,
+            interner: interner,
+            gc: gc,
             module: HashMap::new(),
             type_infos: TypeInfos::new(),
             stack: ScopedMap::new(),
@@ -244,10 +248,26 @@ impl <'a> Typecheck<'a> {
             Err(::std::mem::replace(&mut self.errors, Errors::new()))
         }
         else {
-            self.replace_vars(&HashMap::new(), expr);
+            let mut generic = String::from_str("a");
+            debug!("Return {} ... {}", typ, expr.type_of());
             ast::walk_mut_type(&mut typ, &mut |typ| {
+                debug!("{}", typ);
+                match *typ {
+                    Type::Variable(id) => {
+                        if let None = self.find_type_for_var(id) {
+                            let gen = Type::Generic(self.interner.intern(self.gc, &generic));
+                            let c = generic.pop().unwrap();
+                            generic.push((c as u8 + 1) as char);
+                            debug!("aaaa {} ....... {}", id, gen);
+                            self.subs.map.insert(id, Box::new(gen));
+                        }
+                    }
+                    _ => ()
+                };
                 self.replace_variable(typ);
             });
+            debug!("Return {} ... {}", typ, expr.type_of());
+            self.replace_vars(&HashMap::new(), expr);
             Ok(typ)
         }
     }
@@ -275,23 +295,21 @@ impl <'a> Typecheck<'a> {
                 })
             }
             ast::Expr::Call(ref mut func, ref mut args) => {
-                let func_type = try!(self.typecheck(&mut**func));
-                let a = (0..args.len()).map(|_| self.subs.new_var()).collect();
-                let f = Type::Function(a, Box::new(self.subs.new_var()));
-                let func_type = try!(self.unify(&f, func_type));
-                match func_type {
-                    Type::Function(arg_types, return_type) => {
-                        if arg_types.len() != args.len() {
-                            return Err(WrongNumberOfArguments(arg_types.len(), args.len()));
-                        }
-                        for (arg_type, arg) in arg_types.iter().zip(args.iter_mut()) {
+                let mut func_type = try!(self.typecheck(&mut**func));
+                for arg in args.iter_mut() {
+                    let f = Type::Function(vec![self.subs.new_var()], Box::new(self.subs.new_var()));
+                    func_type = try!(self.unify(&f, func_type));
+                    match func_type {
+                        Type::Function(arg_type, ret) => {
+                            assert!(arg_type.len() == 1);
                             let actual = try!(self.typecheck(arg));
-                            try!(self.unify(arg_type, actual));
+                            try!(self.unify(&arg_type[0], actual));
+                            func_type = *ret;
                         }
-                        Ok(*return_type)
+                        t => return Err(NotAFunction(t))
                     }
-                    t => Err(NotAFunction(t))
                 }
+                Ok(func_type)
             }
             ast::Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut**pred));
@@ -357,9 +375,17 @@ impl <'a> Typecheck<'a> {
                 Ok(alt1_type)
             }
             ast::Expr::Let(ref mut id, ref mut expr, ref mut body) => {
+                let id_type = self.subs.instantiate(&id.typ);
+                //Store the current generic -> variable mapping so that we can reverse it later
+                let variables = self.subs.variables.clone();
+                debug!("{:?}", variables);
                 let mut typ = try!(self.typecheck(&mut **expr));
                 if id.typ != UNIT_TYPE {
-                    typ = try!(self.unify(&id.typ, typ));
+                    typ = try!(self.unify(&id_type, typ));
+                    self.replace_vars(&variables, &mut **expr);
+                    ast::walk_mut_type(&mut typ, &mut |typ| {
+                        self.replace_variable(typ);
+                    });
                 }
                 self.stack_var(id.name.clone(), typ);
                 body.as_mut().map(|body| self.typecheck(&mut **body))
@@ -436,7 +462,7 @@ impl <'a> Typecheck<'a> {
                 }
                 let body_type = try!(self.typecheck(&mut *lambda.body));
                 self.stack.exit_scope();
-                lambda.id.typ = Type::Function(arg_types, box body_type);
+                lambda.id.typ = fn_type(arg_types, body_type);
                 Ok(lambda.id.typ.clone())
             }
             ast::Expr::Type(id, ref mut typ, ref mut expr) => {
@@ -767,6 +793,13 @@ impl Substitution {
     }
 }
 
+fn fn_type<I>(args: I, return_type: TcType) -> TcType
+    where I: IntoIterator<Item=TcType>
+        , I::IntoIter: DoubleEndedIterator {
+    args.into_iter().rev()
+        .fold(return_type, |body, arg| Type::Function(vec![arg], box body))
+}
+
 pub trait Typed {
     type Id;
     fn type_of(&self) -> &Type<Self::Id>;
@@ -840,12 +873,16 @@ impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::fn_type;
     use base::ast;
     use super::super::tests::{get_local_interner, intern};
 
     fn typ(s: &str) -> TcType {
+        assert!(s.len() != 0);
+        let is_var = s.chars().next().unwrap().is_lowercase();
         match ast::str_to_primitive_type(s) {
             Some(b) => Type::Builtin(b),
+            None if is_var => Type::Generic(intern(s)),
             None => Type::Data(ast::TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
@@ -859,15 +896,28 @@ mod tests {
         x
     }
 
+    pub fn typecheck(text: &str) -> Result<TcType, StringErrors> {
+        let (_, t) = typecheck_expr(text);
+        t
+    }
+
+    pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, StringErrors>) {
+        let mut expr = parse_new(text);
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+        let &mut(ref mut interner, ref mut gc) = &mut *interner;
+        let mut tc = Typecheck::new(interner, gc);
+        let result = tc.typecheck_expr(&mut expr);
+        (expr, result)
+    }
+
     #[test]
     fn function_type_new() {
         let text = 
 r"
 \x -> x
 ";
-        let mut expr = parse_new(text);
-        let mut tc = Typecheck::new();
-        let result = tc.typecheck_expr(&mut expr);
+        let result = typecheck(text);
         assert!(result.is_ok());
         match result.unwrap() {
             Type::Function(_, _) => {
@@ -884,34 +934,47 @@ r"
 r"
 \x y -> 1 + x + y
 ";
-        let mut expr = parse_new(text);
-        let mut tc = Typecheck::new();
-        let result = tc.typecheck_expr(&mut expr);
-        assert_eq!(result, Ok(Type::Function(vec![typ("Int"), typ("Int")], Box::new(typ("Int")))));
+        let result = typecheck(text);
+        assert_eq!(result, Ok(fn_type(vec![typ("Int"), typ("Int")], typ("Int"))));
     }
 
     #[test]
     fn type_decl() {
+        let _ = ::env_logger::init();
         let text = 
 r"
 type Test = { x: Int } in { x: 0 }
 ";
-        let mut expr = parse_new(text);
-        let mut tc = Typecheck::new();
-        let result = tc.typecheck_expr(&mut expr);
+        let result = typecheck(text);
         assert_eq!(result, Ok(typ("Test")));
     }
 
     #[test]
     fn record_type() {
+        let _ = ::env_logger::init();
         let text = 
 r"
 type T = { y: Int } in
 let f: T -> Int = \x -> x.y in { y: f { y: 123 } }
 ";
-        let mut expr = parse_new(text);
-        let mut tc = Typecheck::new();
-        let result = tc.typecheck_expr(&mut expr);
+        let result = typecheck(text);
         assert_eq!(result, Ok(typ("T")));
+    }
+
+    #[test]
+    fn let_binding_type() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let f: a -> b -> a = \x y -> x in f 1.0 ()
+";
+        let (expr, result) = typecheck_expr(text);
+        assert_eq!(result, Ok(typ("Float")));
+        match expr.value {
+            ast::Expr::Let(_, ref expr, _) => {
+                assert_eq!(*expr.type_of(), fn_type(vec![typ("a"), typ("b")], typ("a")));
+            }
+            _ => assert!(false)
+        }
     }
 }
