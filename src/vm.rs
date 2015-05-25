@@ -1124,7 +1124,7 @@ add { x: 0, y: 1 } { x: 1, y: 1 }
         let text = 
 r"
 type T = { x: Int, y: Int } in
-let add = \l r -> { x: l.x #Int+ r.x, y: l.y #Int- r.y } in
+let add = \l r -> { x: l.x #Int+ r.x, y: l.y #Int+ r.y } in
 let sub = \l r -> { x: l.x #Int- r.x, y: l.y #Int- r.y } in
 { add: add, sub: sub }
 ";

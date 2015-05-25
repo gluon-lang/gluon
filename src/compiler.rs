@@ -367,22 +367,22 @@ impl <'a> Compiler<'a> {
                     let typ = lhs.type_of();
                     let instr = if *typ == INT_TYPE {
                         match &op.name[..] {
-                            "+" => AddInt,
-                            "-" => SubtractInt,
-                            "*" => MultiplyInt,
-                            "<" => IntLT,
-                            "==" => IntEQ,
-                            _ => panic!()
+                            "#Int+" => AddInt,
+                            "#Int-" => SubtractInt,
+                            "#Int*" => MultiplyInt,
+                            "#Int<" => IntLT,
+                            "#Int==" => IntEQ,
+                            _ => panic!("ICE: Unexpected Int operator {}", op.name)
                         }
                     }
                     else if *typ == FLOAT_TYPE {
                         match &op.name[..] {
-                            "+" => AddFloat,
-                            "-" => SubtractFloat,
-                            "*" => MultiplyFloat,
-                            "<" => FloatLT,
-                            "==" => FloatEQ,
-                            _ => panic!()
+                            "#Float+" => AddFloat,
+                            "#Float-" => SubtractFloat,
+                            "#Float*" => MultiplyFloat,
+                            "#Float<" => FloatLT,
+                            "#Float==" => FloatEQ,
+                            _ => panic!("ICE: Unexpected Float operator {}", op.name)
                         }
                     }
                     else {
