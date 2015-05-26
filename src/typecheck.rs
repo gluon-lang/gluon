@@ -333,12 +333,12 @@ impl <'a> Typecheck<'a> {
                     let offset;
                     let typ = if op.name[1..].starts_with("Int") {
                         offset = "Int".len();
-                        op.typ = fn_type(vec![INT_TYPE.clone(), INT_TYPE.clone()], INT_TYPE.clone());
+                        op.typ = ast::fn_type(vec![INT_TYPE.clone(), INT_TYPE.clone()], INT_TYPE.clone());
                         try!(self.unify(&INT_TYPE, arg_type))
                     }
                     else if op.name[1..].starts_with("Float") {
                         offset = "Float".len();
-                        op.typ = fn_type(vec![FLOAT_TYPE.clone(), FLOAT_TYPE.clone()], FLOAT_TYPE.clone());
+                        op.typ = ast::fn_type(vec![FLOAT_TYPE.clone(), FLOAT_TYPE.clone()], FLOAT_TYPE.clone());
                         try!(self.unify(&FLOAT_TYPE, arg_type))
                     }
                     else {
@@ -358,7 +358,7 @@ impl <'a> Typecheck<'a> {
                         }
                         _ => {
                             op.typ = try!(self.find(op.id()));
-                            let func_type = fn_type(vec![lhs_type, rhs_type], self.subs.new_var());
+                            let func_type = ast::fn_type(vec![lhs_type, rhs_type], self.subs.new_var());
                             match try!(self.unify(&op.typ, func_type)) {
                                 Type::Function(_, return_type) => 
                                     match *return_type {
@@ -454,6 +454,7 @@ impl <'a> Typecheck<'a> {
                     Type::Variable(..) => Err(StringError("Field access on variable")),
                     Type::Array(..) => Err(StringError("Field access on array")),
                     Type::App(..) => Err(StringError("Field access on type application")),
+                    Type::Variants(..) => Err(StringError("Field access on variant")),
                 }
             }
             ast::Expr::Array(ref mut a) => {
@@ -487,14 +488,18 @@ impl <'a> Typecheck<'a> {
                 }
                 let body_type = try!(self.typecheck(&mut *lambda.body));
                 self.stack.exit_scope();
-                lambda.id.typ = fn_type(arg_types, body_type);
+                lambda.id.typ = ast::fn_type(arg_types, body_type);
                 Ok(lambda.id.typ.clone())
             }
-            ast::Expr::Type(id, ref mut typ, ref mut expr) => {
-                self.stack_var(id, typ.clone());
-                self.type_infos.id_to_type.insert(id, typ.clone());
-                let new_type = Type::Data(ast::TypeConstructor::Data(id), Vec::new());
-                self.type_infos.type_to_id.insert(typ.clone(), new_type);
+            ast::Expr::Type(ref id_type, ref mut typ, ref mut expr) => {
+                match *id_type {
+                    Type::Data(ast::TypeConstructor::Data(id), _) => {
+                        self.stack_var(id, typ.clone());
+                        self.type_infos.id_to_type.insert(id, typ.clone());
+                    }
+                    _ => panic!("ICE: Unexpected lhs of type binding {}", id_type)
+                }
+                self.type_infos.type_to_id.insert(typ.clone(), id_type.clone());
                 let expr_type = try!(self.typecheck(&mut **expr));
                 Ok(expr_type)
             }
@@ -820,13 +825,6 @@ impl Substitution {
     }
 }
 
-fn fn_type<I>(args: I, return_type: TcType) -> TcType
-    where I: IntoIterator<Item=TcType>
-        , I::IntoIter: DoubleEndedIterator {
-    args.into_iter().rev()
-        .fold(return_type, |body, arg| Type::Function(vec![arg], box body))
-}
-
 pub trait Typed {
     type Id;
     fn type_of(&self) -> &Type<Self::Id>;
@@ -908,7 +906,6 @@ impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::fn_type;
     use base::ast;
     use super::super::tests::{get_local_interner, intern};
 
@@ -970,7 +967,7 @@ r"
 \x y -> 1 #Int+ x #Int+ y
 ";
         let result = typecheck(text);
-        assert_eq!(result, Ok(fn_type(vec![typ("Int"), typ("Int")], typ("Int"))));
+        assert_eq!(result, Ok(ast::fn_type(vec![typ("Int"), typ("Int")], typ("Int"))));
     }
 
     #[test]
@@ -1007,7 +1004,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
         assert_eq!(result, Ok(typ("Float")));
         match expr.value {
             ast::Expr::Let(_, ref expr, _) => {
-                assert_eq!(*expr.type_of(), fn_type(vec![typ("a"), typ("b")], typ("a")));
+                assert_eq!(*expr.type_of(), ast::fn_type(vec![typ("a"), typ("b")], typ("a")));
             }
             _ => assert!(false)
         }

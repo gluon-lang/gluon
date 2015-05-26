@@ -131,11 +131,26 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             self.parser(ParserEnv::parse_type)
         }
 
+        fn parse_adt(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
+            many1(parser(|input|
+                self.lex(char('|'))
+                    .with(self.ident_u())
+                    .and(many(self.parser(ParserEnv::type_arg)))
+                    .map(|(id, args)| (id, args))
+                    .parse_state(input))
+               )
+                .map(Type::Variants)
+                .parse_state(input)
+        }
+
         fn parse_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            chainl1(self.parser(ParserEnv::type_arg), parser(|input| {
+            parser(|input|
+                chainl1(self.parser(ParserEnv::type_arg), parser(|input| {
                     Ok((|l, r| Type::App(Box::new(l), Box::new(r)), Consumed::Empty(input)))
                 }))
-                .or(self.parser(ParserEnv::type_arg))
+                    .or(self.parser(ParserEnv::parse_adt))
+                    .parse_state(input)
+                )
                 .and(optional(self.reserved_op("->").with(self.typ())))
                 .map(|(arg, ret)| {
                     debug!("Parse: {:?} -> {:?}", arg, ret);
@@ -177,11 +192,19 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             debug!("type_decl");
             self.reserved("type")
                 .with(self.ident_u())
-                .skip(self.reserved_op("="))
-                .and(self.typ())
-                .skip(self.reserved("in"))
-                .and(self.expr())
-                .map(|((id, typ), expr)| Expr::Type(id, typ, Box::new(expr)))
+                .and(many(self.ident_u()))//TODO only variables allowed
+                .map(|(name, args): (_, Vec<_>)| {
+                    let args = args.into_iter().map(Type::Generic).collect();
+                    Type::Data(TypeConstructor::Data(name), args)
+                })
+                .and(parser(|input|
+                    self.reserved_op("=")
+                        .with(self.typ())
+                        .skip(self.reserved("in"))
+                        .and(self.expr())
+                        .parse_state(input))
+                )
+                .map(|(id, (typ, expr))| Expr::Type(id, typ, Box::new(expr)))
                 .parse_state(input)
         }
 
@@ -399,8 +422,11 @@ pub mod tests {
         Field { name: intern(s), typ: typ }
     }
     fn typ(s: &str) -> VMType {
+        assert!(s.len() != 0);
+        let is_var = s.chars().next().unwrap().is_lowercase();
         match str_to_primitive_type(s) {
             Some(b) => Type::Builtin(b),
+            None if is_var => Type::Generic(intern(s)),
             None => Type::Data(TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
@@ -431,8 +457,8 @@ pub mod tests {
             body: box body 
         }))
     }
-    fn type_decl(name: &str, typ: Type<InternedStr>, body: PExpr) -> PExpr {
-        no_loc(Expr::Type(intern(name), typ, box body))
+    fn type_decl(name: Type<InternedStr>, typ: Type<InternedStr>, body: PExpr) -> PExpr {
+        no_loc(Expr::Type(name, typ, box body))
     }
 
     fn bool(b: bool) -> PExpr {
@@ -463,7 +489,7 @@ pub mod tests {
         let e = parse_new(r#"\x y -> x + y"#);
         assert_eq!(e, lambda("", vec![intern("x"), intern("y")], binop(id("x"), "+", id("y"))));
         let e = parse_new(r#"type Test = Int in 0"#);
-        assert_eq!(e, type_decl("Test", typ("Int"), int(0)));
+        assert_eq!(e, type_decl(typ("Test"), typ("Int"), int(0)));
     }
 
     #[test]
@@ -491,7 +517,7 @@ pub mod tests {
         let e = parse_new("type Test = { x: Int, y: {} } in 1");
         let record = Type::Record(vec![Field { name: intern("x"), typ: typ("Int") }
                                     ,  Field { name: intern("y"), typ: Type::Record(vec![]) }]);
-        assert_eq!(e, type_decl("Test", record, int(1)));
+        assert_eq!(e, type_decl(typ("Test"), record, int(1)));
     }
 
     #[test]
@@ -515,5 +541,13 @@ pub mod tests {
         assert_eq!(e, let_(
                 "==", lambda("", vec![intern("x"), intern("y")], binop(id("x"), "#Int==", id("y")))
                 , call(id("=="), vec![int(1), int(2)])));
+    }
+    #[test]
+    fn variant_type() {
+        let _ = ::env_logger::init();
+        let e = parse_new("type Option a = | None | Some a in Some 1");
+        assert_eq!(e, type_decl(Type::Data(TypeConstructor::Data(intern("Option")), vec![typ("a")])
+                , Type::Variants(vec![(intern("None"), Vec::new()), (intern("Some"), vec![typ("a")])])
+                , call(id("Some"), vec![int(1)])));
     }
 }

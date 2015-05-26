@@ -128,6 +128,7 @@ impl <I: fmt::Display> fmt::Display for TypeConstructor<I> {
 pub enum Type<Id> {
     App(Box<Type<Id>>, Box<Type<Id>>),
     Data(TypeConstructor<Id>, Vec<Type<Id>>),
+    Variants(Vec<(Id, Vec<Type<Id>>)>),
     Variable(u32),
     Generic(Id),
     Function(Vec<Type<Id>>, Box<Type<Id>>),
@@ -193,7 +194,7 @@ pub enum Expr<Id: AstId> {
     ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
     Record(Id, Vec<(Id::Untyped, LExpr<Id>)>),
     Lambda(LambdaStruct<Id>),
-    Type(Id::Untyped, Type<Id::Untyped>, Box<LExpr<Id>>)
+    Type(Type<Id::Untyped>, Type<Id::Untyped>, Box<LExpr<Id>>)
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
@@ -266,6 +267,14 @@ pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
     }
 }
 
+pub fn fn_type<I>(args: I, return_type: TcType) -> TcType
+    where I: IntoIterator<Item=TcType>
+        , I::IntoIter: DoubleEndedIterator {
+    args.into_iter().rev()
+        .fold(return_type, |body, arg| Type::Function(vec![arg], Box::new(body)))
+}
+
+
 impl fmt::Display for BuiltinType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         primitive_type_to_str(*self).fmt(f)
@@ -293,6 +302,13 @@ impl <I: fmt::Display> fmt::Display for Type<I> {
         match *self {
             Type::App(ref a, ref r) => write!(f, "({} {})", a, r),
             Type::Data(ref t, ref args) => fmt_type(f, t, &args),
+            Type::Variants(ref variants) => {
+                for variant in variants {
+                    try!(write!(f, "| "));
+                    try!(fmt_type(f, &variant.0, &variant.1));
+                }
+                Ok(())
+            }
             Type::Variable(ref x) => x.fmt(f),
             Type::Generic(ref x) => write!(f, "#{}", x),
             Type::Function(ref args, ref return_type) => {
