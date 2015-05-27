@@ -131,12 +131,14 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             self.parser(ParserEnv::parse_type)
         }
 
-        fn parse_adt(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
+        fn parse_adt(&self, return_type: &Type<Id::Untyped>, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
             many1(parser(|input|
                 self.lex(char('|'))
                     .with(self.ident_u())
                     .and(many(self.parser(ParserEnv::type_arg)))
-                    .map(|(id, args)| (id, args))
+                    .map(|(id, args): (_, Vec<_>)| {
+                        (id, fn_type(args, return_type.clone()))
+                    })
                     .parse_state(input))
                )
                 .map(Type::Variants)
@@ -148,7 +150,6 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 chainl1(self.parser(ParserEnv::type_arg), parser(|input| {
                     Ok((|l, r| Type::App(Box::new(l), Box::new(r)), Consumed::Empty(input)))
                 }))
-                    .or(self.parser(ParserEnv::parse_adt))
                     .parse_state(input)
                 )
                 .and(optional(self.reserved_op("->").with(self.typ())))
@@ -197,13 +198,15 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                     let args = args.into_iter().map(Type::Generic).collect();
                     Type::Data(TypeConstructor::Data(name), args)
                 })
-                .and(parser(|input|
-                    self.reserved_op("=")
-                        .with(self.typ())
+                .then(|return_type| parser(move |input| {
+                    let (rhs_type, input) = try!(self.reserved_op("=")
+                        .with(self.typ()
+                            .or(parser(|input| self.parse_adt(&return_type, input))))
                         .skip(self.reserved("in"))
                         .and(self.expr())
-                        .parse_state(input))
-                )
+                        .parse_state(input));
+                    Ok(((return_type.clone(), rhs_type), input))
+                }))
                 .map(|(id, (typ, expr))| Expr::Type(id, typ, Box::new(expr)))
                 .parse_state(input)
         }
@@ -546,8 +549,11 @@ pub mod tests {
     fn variant_type() {
         let _ = ::env_logger::init();
         let e = parse_new("type Option a = | None | Some a in Some 1");
-        assert_eq!(e, type_decl(Type::Data(TypeConstructor::Data(intern("Option")), vec![typ("a")])
-                , Type::Variants(vec![(intern("None"), Vec::new()), (intern("Some"), vec![typ("a")])])
+        let option = Type::Data(TypeConstructor::Data(intern("Option")), vec![typ("a")]);
+        let none = fn_type(vec![], option.clone());
+        let some = fn_type(vec![typ("a")], option.clone());
+        assert_eq!(e, type_decl(option
+                , Type::Variants(vec![(intern("None"), none), (intern("Some"), some)])
                 , call(id("Some"), vec![int(1)])));
     }
 }

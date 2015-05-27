@@ -57,6 +57,17 @@ impl TypeInfos {
         self.datas.get(id)
             .map(|vec| &**vec)
     }
+    pub fn find_adt(&self, id: &InternedStr) -> Option<&TcType> {
+        self.id_to_type.iter()
+            .filter_map(|(_, typ)| {
+                match *typ {
+                    Type::Variants(ref variants) => variants.iter().find(|v| v.0 == *id),
+                    _ => None
+                }
+            })
+            .next()
+            .map(|x| &x.1)
+    }
 
     pub fn find_record(&self, field: &InternedStr) -> Option<&TcType> {
         self.id_to_type.iter()
@@ -140,20 +151,22 @@ impl <'a> Typecheck<'a> {
     }
 
     fn find(&mut self, id: &InternedStr) -> TcResult {
-        let t: Option<(&[ast::Constraint], &TcType)> = {
+        let t: Option<&TcType> = {
             let stack = &self.stack;
             let module = &self.module;
             let environment = &self.environment;
-            match stack.find(id).map(|typ| (&[][..], typ)) {
+            let type_infos = &self.type_infos;
+            match stack.find(id) {
                 Some(x) => Some(x),
                 None => module.get(id)
-                    .map(|c| (&c.constraints[..], &c.value))
-                    .or_else(|| environment.and_then(|e| e.find_type(id)))
+                    .map(|c| &c.value)
+                    .or_else(|| type_infos.find_adt(id))
+                    .or_else(|| environment.and_then(|e| e.find_type(id).map(|x| x.1)))
             }
         };
         match t {
-            Some((constraints, typ)) => {
-                let x = self.subs.instantiate_constrained(constraints, typ);
+            Some(typ) => {
+                let x = self.subs.instantiate_constrained(&[], typ);
                 debug!("Find {} : {:?}", id, x);
                 Ok(x)
             }
@@ -918,6 +931,15 @@ mod tests {
             None => Type::Data(ast::TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
+    fn typ_a(s: &str, args: Vec<TcType>) -> TcType {
+        assert!(s.len() != 0);
+        let is_var = s.chars().next().unwrap().is_lowercase();
+        match ast::str_to_primitive_type(s) {
+            Some(b) => Type::Builtin(b),
+            None if is_var => Type::Generic(intern(s)),
+            None => Type::Data(ast::TypeConstructor::Data(intern(s)), args)
+        }
+    }
 
     pub fn parse_new(s: &str) -> ast::LExpr<TcIdent> {
         let interner = get_local_interner();
@@ -1029,5 +1051,16 @@ in 1 + 2
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("Int")));
+    }
+    #[test]
+    fn adt() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type Option a = | None | Some a
+in Some 1
+";
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ_a("Option", vec![typ("Int")])));
     }
 }

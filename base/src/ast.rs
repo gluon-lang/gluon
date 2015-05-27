@@ -128,7 +128,7 @@ impl <I: fmt::Display> fmt::Display for TypeConstructor<I> {
 pub enum Type<Id> {
     App(Box<Type<Id>>, Box<Type<Id>>),
     Data(TypeConstructor<Id>, Vec<Type<Id>>),
-    Variants(Vec<(Id, Vec<Type<Id>>)>),
+    Variants(Vec<(Id, Type<Id>)>),
     Variable(u32),
     Generic(Id),
     Function(Vec<Type<Id>>, Box<Type<Id>>),
@@ -267,8 +267,8 @@ pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
     }
 }
 
-pub fn fn_type<I>(args: I, return_type: TcType) -> TcType
-    where I: IntoIterator<Item=TcType>
+pub fn fn_type<I, Id>(args: I, return_type: Type<Id>) -> Type<Id>
+    where I: IntoIterator<Item=Type<Id>>
         , I::IntoIter: DoubleEndedIterator {
     args.into_iter().rev()
         .fold(return_type, |body, arg| Type::Function(vec![arg], Box::new(body)))
@@ -304,8 +304,7 @@ impl <I: fmt::Display> fmt::Display for Type<I> {
             Type::Data(ref t, ref args) => fmt_type(f, t, &args),
             Type::Variants(ref variants) => {
                 for variant in variants {
-                    try!(write!(f, "| "));
-                    try!(fmt_type(f, &variant.0, &variant.1));
+                    try!(write!(f, "| {} {}", variant.0, variant.1));
                 }
                 Ok(())
             }

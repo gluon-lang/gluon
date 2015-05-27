@@ -288,12 +288,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
                 let g = &self.globals[index];
                 Some(Variable::Global(index as VMIndex, &g.typ))
             }
-            _ => {
-                self.type_infos.datas.values()
-                    .flat_map(|ctors| ctors.iter().enumerate())
-                    .find(|ctor| ctor.1.name.id() == id)
-                    .map(|(i, ctor)| Variable::Constructor(i as VMTag, ctor.arguments.len() as VMIndex))
-            }
+            _ => self.type_infos.find_var(id)
         }
     }
     fn find_field(&self, data_name: &InternedStr, field_name: &InternedStr) -> Option<VMIndex> {
@@ -1135,6 +1130,19 @@ let sub = \l r -> { x: l.x #Int- r.x, y: l.y #Int- r.y } in
         let value = run_expr(&mut vm, "Vec.add { x: 10, y: 5 } { x: 1, y: 2 }")
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, vm.new_data(0, &mut [Int(11), Int(7)]));
+    }
+    #[test]
+    fn adt() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type Option a = | None | Some a
+in Some 1
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, vm.new_data(1, &mut [Int(1)]));
     }
 }
 

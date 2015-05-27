@@ -167,8 +167,27 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     }
 }
 impl CompilerEnv for TypeInfos {
-    fn find_var(&self, _s: &InternedStr) -> Option<Variable> {
-        None
+    fn find_var(&self, id: &InternedStr) -> Option<Variable> {
+        fn count_function_args(typ: &TcType) -> VMIndex {
+            match *typ {
+                Type::Function(_, ref rest) => 1 + count_function_args(rest),
+                _ => 0
+            }
+        }
+
+        self.id_to_type.iter()
+            .filter_map(|(_, typ)| {
+                match *typ {
+                    Type::Variants(ref variants) => variants.iter()
+                                                        .enumerate()
+                                                        .find(|&(_, v)| v.0 == *id),
+                    _ => None
+                }
+            })
+            .next()
+            .map(|(tag, &(_, ref typ))| {
+                Variable::Constructor(tag as VMTag, count_function_args(&typ))
+            })
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         self.id_to_type.get(struct_)
