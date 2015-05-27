@@ -293,6 +293,15 @@ impl <'a> Compiler<'a> {
         }
     }
 
+    fn load_identifier(&self, id: &InternedStr, function: &mut FunctionEnv) {
+        match self.find(id, function).unwrap_or_else(|| panic!("Undefined variable {}", id)) {
+            Stack(index) => function.instructions.push(Push(index)),
+            UpVar(index) => function.instructions.push(PushUpVar(index)),
+            Global(index, _) => function.instructions.push(PushGlobal(index)),
+            Constructor(..) => panic!("Constructor {:?} is not fully applied", id)
+        }
+    }
+
     fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv) {
         match expr.value {
             Expr::Literal(ref lit) => {
@@ -306,16 +315,7 @@ impl <'a> Compiler<'a> {
                     }
                 }
             }
-            Expr::Identifier(ref id) => {
-                match self.find(id.id(), function).unwrap_or_else(|| panic!("Undefined variable {}", id.id())) {
-                    Stack(index) => function.instructions.push(Push(index)),
-                    UpVar(index) => function.instructions.push(PushUpVar(index)),
-                    Global(index, _) => {
-                        function.instructions.push(PushGlobal(index));
-                    }
-                    Constructor(..) => panic!("Constructor {:?} is not fully applied", id)
-                }
-            }
+            Expr::Identifier(ref id) => self.load_identifier(id.id(), function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 self.compile(&**pred, function);
                 let jump_index = function.instructions.len();
@@ -381,32 +381,24 @@ impl <'a> Compiler<'a> {
                     function.instructions[end - 2] = Jump(end as VMIndex);
                 }
                 else {
+                    let instr = match &op.name[..] {
+                        "#Int+" => AddInt,
+                        "#Int-" => SubtractInt,
+                        "#Int*" => MultiplyInt,
+                        "#Int<" => IntLT,
+                        "#Int==" => IntEQ,
+                        "#Float+" => AddFloat,
+                        "#Float-" => SubtractFloat,
+                        "#Float*" => MultiplyFloat,
+                        "#Float<" => FloatLT,
+                        "#Float==" => FloatEQ,
+                        _ => {
+                            self.load_identifier(op.id(), function);
+                            Call(2)
+                        }
+                    };
                     self.compile(&**lhs, function);
                     self.compile(&**rhs, function);
-                    let typ = lhs.type_of();
-                    let instr = if *typ == INT_TYPE {
-                        match &op.name[..] {
-                            "#Int+" => AddInt,
-                            "#Int-" => SubtractInt,
-                            "#Int*" => MultiplyInt,
-                            "#Int<" => IntLT,
-                            "#Int==" => IntEQ,
-                            _ => panic!("ICE: Unexpected Int operator {}", op.name)
-                        }
-                    }
-                    else if *typ == FLOAT_TYPE {
-                        match &op.name[..] {
-                            "#Float+" => AddFloat,
-                            "#Float-" => SubtractFloat,
-                            "#Float*" => MultiplyFloat,
-                            "#Float<" => FloatLT,
-                            "#Float==" => FloatEQ,
-                            _ => panic!("ICE: Unexpected Float operator {}", op.name)
-                        }
-                    }
-                    else {
-                        panic!("Unexpected type {:?} in expression {}", typ, op.id())
-                    };
                     function.instructions.push(instr);
                 }
             }

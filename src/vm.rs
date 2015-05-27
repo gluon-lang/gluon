@@ -1085,6 +1085,18 @@ in f(22)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(123));
     }
+    #[test]
+    fn add_operator() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let (+) = \x y -> x #Int+ y in 1 + 2 + 3
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(6));
+    }
 
     #[test]
     fn record() {
