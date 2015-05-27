@@ -347,8 +347,8 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
     let ops = "+-*/&|=<>";
     let env = Env::new(LanguageDef {
         ident: Identifier {
-            start: letter(),
-            rest: alpha_num(),
+            start: letter().or(char('_')),
+            rest: alpha_num().or(char('_')),
             reserved: ["if", "then", "else", "let", "in", "type"].iter().map(|x| (*x).into()).collect()
         },
         op: Identifier {
