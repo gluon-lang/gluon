@@ -91,9 +91,14 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             self.parser(ParserEnv::parse_ident)
         }
         fn parse_ident(&self, input: State<I>) -> ParseResult<Id, I> {
+            self.parser(ParserEnv::parse_ident2)
+                .map(|x| x.0)
+                .parse_state(input)
+        }
+        fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, bool), I> {
             try(self.env.ident())
                 .or(try(self.parens(self.env.op())))
-                .map(|s| { debug!("Id: {}", s); self.intern(&s) })
+                .map(|s| { debug!("Id: {}", s); (self.intern(&s), s.chars().next().unwrap().is_uppercase()) })
                 .parse_state(input)
         }
         fn ident_u<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Id::Untyped> {
@@ -233,9 +238,10 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             let position = input.position;
             debug!("Expr start: {:?}", input.clone().uncons_char().map(|t| t.0));
             let loc = |expr| located(Location { column: position.column, row: position.line, absolute: 0 }, expr);
-            choice::<[&mut Parser<Input=I, Output=LExpr<Id>>; 11], _>([
+            choice::<[&mut Parser<Input=I, Output=LExpr<Id>>; 12], _>([
                 &mut parser(|input| self.if_else(input)).map(&loc),
                 &mut self.parser(ParserEnv::let_in).map(&loc),
+                &mut self.parser(ParserEnv::case_of).map(&loc),
                 &mut self.parser(ParserEnv::lambda).map(&loc),
                 &mut self.parser(ParserEnv::type_decl).map(&loc),
                 &mut self.lex(try(self.integer().skip(not_followed_by(string(".")))))
@@ -266,7 +272,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
 
         fn op(&self, input: State<I>) -> ParseResult<Id, I> {
             optional(char('#').with(many(letter())))
-                .and(self.env.op())
+                .and(try(self.env.op()))
                 .map(|(builtin, op): (Option<String>, String)| {
                     match builtin {
                         Some(mut builtin) => {
@@ -301,6 +307,40 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .map(|(args, expr)| Expr::Lambda(LambdaStruct {
                     id: self.intern(""), free_vars: Vec::new(), arguments: args, body: Box::new(expr)
                 }))
+                .parse_state(input)
+        }
+
+        fn case_of(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+            self.reserved("case")
+                .with(self.expr())
+                .skip(self.reserved("of"))
+                .and(many1(
+                        self.reserved_op("|")
+                        .with(self.pattern())
+                        .skip(self.reserved_op("->"))
+                        .and(self.expr())
+                        .map(|(p, e)| Alternative { pattern: p, expression: e })
+                ))
+                .map(|(e, alts)| Expr::Match(Box::new(e), alts))
+                .parse_state(input)
+        }
+
+        fn pattern<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Pattern<Id>> {
+            self.parser(ParserEnv::parse_pattern)
+        }
+
+        fn parse_pattern(&self, input: State<I>) -> ParseResult<Pattern<Id>, I> {
+            self.parser(ParserEnv::parse_ident2)
+                .then(|(id, is_ctor)| parser(move |input| 
+                    if is_ctor {
+                        many(self.ident())
+                            .parse_state(input)
+                            .map(|(args, input)| (ConstructorPattern(id.clone(), args), input))
+                    }
+                    else {
+                        Ok((IdentifierPattern(id.clone()), Consumed::Empty(input)))
+                    }
+                ))
                 .parse_state(input)
         }
 
@@ -349,12 +389,12 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         ident: Identifier {
             start: letter().or(char('_')),
             rest: alpha_num().or(char('_')),
-            reserved: ["if", "then", "else", "let", "in", "type"].iter().map(|x| (*x).into()).collect()
+            reserved: ["if", "then", "else", "let", "in", "type", "case", "of"].iter().map(|x| (*x).into()).collect()
         },
         op: Identifier {
             start: satisfy(move |c| ops.chars().any(|x| x == c)),
             rest: satisfy(move |c| ops.chars().any(|x| x == c)),
-            reserved: ["->", "\\"].iter().map(|x| (*x).into()).collect()
+            reserved: ["->", "\\", "|"].iter().map(|x| (*x).into()).collect()
         },
         comment_start: "/*",
         comment_end: "*/",
@@ -451,6 +491,11 @@ pub mod tests {
     }
     fn block(xs: Vec<PExpr>) -> PExpr {
         no_loc(Expr::Block(xs))
+    }
+    fn case(e: PExpr, alts: Vec<(Pattern<InternedStr>, PExpr)>) -> PExpr {
+        no_loc(Expr::Match(box e, alts.into_iter()
+                                    .map(|(p, e)| Alternative { pattern: p, expression: e })
+                                    .collect()))
     }
     fn lambda(name: &str, args: Vec<InternedStr>, body: PExpr) -> PExpr {
         no_loc(Expr::Lambda(LambdaStruct {
@@ -555,5 +600,14 @@ pub mod tests {
         assert_eq!(e, type_decl(option
                 , Type::Variants(vec![(intern("None"), none), (intern("Some"), some)])
                 , call(id("Some"), vec![int(1)])));
+    }
+    #[test]
+    fn case_expr() {
+        let _ = ::env_logger::init();
+        let e = parse_new("case None of | Some x -> x | None -> 0");
+        assert_eq!(e, case(id("None"), vec![
+                            (ConstructorPattern(intern("Some"), vec![intern("x")]), id("x"))
+                        ,   (ConstructorPattern(intern("None"), vec![]), int(0))
+                        ]));
     }
 }
