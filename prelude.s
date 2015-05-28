@@ -24,22 +24,8 @@ let eq_Option = \eq_a -> {
                     | None -> True
 } in
 
-let any p xs =
-    let (+) l r = l #Int+ r in
-    let any_ i = if i >= array_length xs
-                 then False
-                 else if p xs[i]
-                 then True
-                 else any_ (i + 1)
-                 
-    in any_ 0
-in
 
-let array_Eq = \a_eq -> {
-    (==) = \l r -> any (\(l, r) -> a_eq l r) $ zip l r
-} in
-
-type Ordering = LT | EQ | GT
+type Ordering = | LT | EQ | GT
 in
 
 type Ord a = {
@@ -47,17 +33,12 @@ type Ord a = {
 } in
 
 let ord_Int = {
-    compare = \l r -> {
-        if l #Int< r {
-            LT
-        }
-        else if l #Int== r {
-            EQ
-        }
-        else {
-            GT
-        }
-    }
+    compare = \l r ->
+        if l #Int< r
+        then LT
+        else if l #Int== r
+        then EQ
+        else GT
 } in
 
 let ord_Float = {
@@ -70,21 +51,15 @@ let ord_Float = {
 } in
 let ord_Option = \compare_a -> {
     compare = \l r ->
-        match l {
-            Some(l_val) => {
-                match r {
-                    Some(r_val) => { compare(l_val, r_val) }
-                    None() => { LT() }
-                }
-            }
-            None() => {
-                match r {
-                    Some(r_val) => { GT() }
-                    None() => { EQ() }
-                }
-            }
-        }
-    }
+        case l of
+            | Some l_val ->
+                case r of
+                    | Some r_val -> compare l_val r_val
+                    | None -> LT
+            | None -> 
+                case r of
+                    | Some r_val -> GT
+                    | None -> EQ
 } in
 type Num a = {
     (+) : a -> a -> a,
@@ -104,5 +79,5 @@ let num_Float: Num Float = {
     (-) = \l r -> l #Float- r,
     negate = \x -> 0.0 #Float- x
 } in
-{ ord_Option, ord_Float, ord_Int, eq_Option, eq_Float, eq_Int, num_Int, num_Float }
+{ ord_Option = ord_Option, ord_Float = ord_Float, ord_Int = ord_Int, eq_Option = eq_Option, eq_Float = eq_Float, eq_Int = eq_Int, num_Int = num_Int, num_Float = num_Float }
 

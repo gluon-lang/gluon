@@ -1102,7 +1102,7 @@ let (+) = \x y -> x #Int+ y in 1 + 2 + 3
     fn record() {
         let text = 
 r"
-{ x: 0, y: 1.0, z: {} }
+{ x = 0, y = 1.0, z = {} }
 ";
         let mut vm = VM::new();
         let value = run_expr(&mut vm, text)
@@ -1117,8 +1117,8 @@ r"
         let text = 
 r"
 type T = { x: Int, y: Int } in
-let add = \l r -> { x: l.x #Int+ r.x, y: l.y #Int+ r.y } in
-add { x: 0, y: 1 } { x: 1, y: 1 }
+let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
+add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
         let mut vm = VM::new();
         let value = run_expr(&mut vm, text)
@@ -1131,15 +1131,15 @@ add { x: 0, y: 1 } { x: 1, y: 1 }
         let text = 
 r"
 type T = { x: Int, y: Int } in
-let add = \l r -> { x: l.x #Int+ r.x, y: l.y #Int+ r.y } in
-let sub = \l r -> { x: l.x #Int- r.x, y: l.y #Int- r.y } in
-{ add: add, sub: sub }
+let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
+let sub = \l r -> { x = l.x #Int- r.x, y = l.y #Int- r.y } in
+{ add = add, sub = sub }
 ";
         let mut vm = VM::new();
         load_script(&mut vm, "Vec", text)
             .unwrap_or_else(|err| panic!("{}", err));
 
-        let value = run_expr(&mut vm, "Vec.add { x: 10, y: 5 } { x: 1, y: 2 }")
+        let value = run_expr(&mut vm, "Vec.add { x = 10, y = 5 } { x = 1, y = 2 }")
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, vm.new_data(0, &mut [Int(11), Int(7)]));
     }

@@ -997,7 +997,7 @@ r"
         let _ = ::env_logger::init();
         let text = 
 r"
-type Test = { x: Int } in { x: 0 }
+type Test = { x: Int } in { x = 0 }
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("Test")));
@@ -1009,7 +1009,7 @@ type Test = { x: Int } in { x: 0 }
         let text = 
 r"
 type T = { y: Int } in
-let f: T -> Int = \x -> x.y in { y: f { y: 123 } }
+let f: T -> Int = \x -> x.y in { y = f { y = 123 } }
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("T")));

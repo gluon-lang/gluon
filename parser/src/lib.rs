@@ -375,7 +375,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
         fn record(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
             let field = self.ident_u()
-                        .skip(self.lex(string(":")))
+                        .skip(self.lex(string("=")))
                         .and(self.expr());
             self.braces(sep_by(field, self.lex(char(','))))
                 .map(|fields| Expr::Record(self.intern(""), fields))
@@ -571,7 +571,7 @@ pub mod tests {
     #[test]
     fn field_access_test() {
         let _ = ::env_logger::init();
-        let e = parse_new("{ x: 1 }.x");
+        let e = parse_new("{ x = 1 }.x");
         assert_eq!(e, field_access(record(vec![(intern("x"), int(1))]), "x"));
     }
 
