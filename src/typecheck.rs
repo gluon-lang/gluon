@@ -25,7 +25,7 @@ enum TypeError {
     NotAFunction(TcType),
     TypeMismatch(TcType, TcType),
     UnboundVariable,
-    UndefinedStruct(InternedStr),
+    UndefinedType(InternedStr),
     UndefinedField(TcType, InternedStr),
     IndexError(TcType),
     PatternError(TcType),
@@ -34,7 +34,15 @@ enum TypeError {
 
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", *self)
+        use self::TypeError::*;
+        match *self {
+            UndefinedVariable(name) => write!(f, "Undefined variable `{}`", name),
+            NotAFunction(ref typ) => write!(f, "`{}` is not a function", typ),
+            TypeMismatch(ref l, ref r) => write!(f, "Expected: {}\nFound: {} does not unify", l, r),
+            UndefinedType(name) => write!(f, "Type `{}` is not defined", name),
+            StringError(name) => write!(f, "{}", name),
+            _ => write!(f, "{:?}", self)
+        }
     }
 }
 
@@ -178,14 +186,14 @@ impl <'a> Typecheck<'a> {
     fn find_record(&self, field: &InternedStr) -> Result<&TcType, TypeError> {
         self.type_infos.find_record(field)
             .map(|s| Ok(s))
-            .unwrap_or_else(|| Err(UndefinedStruct(field.clone())))
+            .unwrap_or_else(|| Err(UndefinedType(field.clone())))
     }
 
     fn find_type_info(&self, id: &InternedStr) -> Result<&[ast::Constructor<TcIdent>], TypeError> {
         self.type_infos.find_type_info(id)
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
             .map(|s| Ok(s))
-            .unwrap_or_else(|| Err(UndefinedStruct(id.clone())))
+            .unwrap_or_else(|| Err(UndefinedType(id.clone())))
     }
     
     fn stack_var(&mut self, id: InternedStr, typ: TcType) {

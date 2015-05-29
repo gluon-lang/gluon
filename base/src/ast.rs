@@ -65,7 +65,7 @@ impl Location {
 
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Line {}, Row {}", self.row, self.column)
+        write!(f, "Line: {}, Column: {}", self.row, self.column)
     }
 }
 
