@@ -88,8 +88,12 @@ impl TypeInfos {
             })
             .map(|t| t.1)
     }
-    pub fn find_id(&self, typ: &TcType) -> Option<&TcType> {
-        self.type_to_id.get(typ)
+    pub fn find_id(&self, typ: &TcType) -> Option<TcType> {
+        self.type_to_id.iter()
+            .filter_map(|(real_type, id_type)| {
+                find_real_type(id_type, real_type, typ)
+            })
+            .next()
     }
     pub fn extend(&mut self, other: TypeInfos) {
         let TypeInfos { datas, id_to_type, type_to_id } = other;
@@ -99,10 +103,58 @@ impl TypeInfos {
     }
 }
 
+
+fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcType) -> Option<TcType> {
+    let mut result = HashMap::new();
+    debug!("Start real_type");
+    if find_real_type_(id_rhs_type, real_type, &mut result) {
+        let mut typ = id_type.clone();
+        ast::walk_mut_type(&mut typ, &mut |typ| {
+            *typ = match *typ {
+                Type::Generic(ref id) => result[id].clone(),
+                _ => return
+            };
+        });
+        debug!("Real type return {}", typ);
+        Some(typ)
+    }
+    else {
+        None
+    }
+}
+fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut HashMap<InternedStr, &'a TcType>) -> bool {
+    debug!("real_type {} ---- {}", id_rhs_type, real_type);
+    match (id_rhs_type, real_type) {
+        (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
+            l_args.iter().zip(r_args.iter())
+                .all(|(l, r)| find_real_type_(l, r, out))
+                && find_real_type_(&**l_ret, &**r_ret, out)
+        }
+        (&Type::Variable(_), _) => {
+            panic!()
+        }
+        (&Type::Generic(i), real_type) => {
+            out.insert(i, real_type);
+            true
+        }
+        (&Type::Array(ref l), &Type::Array(ref r)) => find_real_type_(&**l, &**r, out),
+        (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
+            l == r && l_args.iter().zip(r_args.iter()).all(|(l, r)| find_real_type_(l, r, out))
+        }
+        (&Type::Record(ref l_args), &Type::Record(ref r_args)) => {
+            l_args.iter().zip(r_args.iter()).all(|(l, r)| l.name == r.name && find_real_type_(&l.typ, &r.typ, out))
+        }
+        (&Type::App(ref l_1, ref r_1), &Type::App(ref l_2, ref r_2)) => {
+            find_real_type_(l_1, l_2, out) && find_real_type_(r_1, r_2, out)
+        }
+        (l, r) => l == r
+    }
+}
+
 pub trait TypeEnv {
     fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraint], &TcType)>;
     fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]>;
-    fn find_type_name(&self, typ: &TcType) -> Option<&TcType>;
+    fn find_type_name(&self, typ: &TcType) -> Option<TcType>;
 }
 
 pub struct Typecheck<'a> {
@@ -586,8 +638,8 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.real_type(expected);
-        let actual = self.real_type(actual);
+        let ref expected = self.real_type(expected);
+        let ref actual = self.real_type(actual);
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
             (&Type::Variable(ref l), _) => {
@@ -631,8 +683,8 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn merge_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.real_type(expected);
-        let actual = self.real_type(actual);
+        let ref expected = self.real_type(expected);
+        let ref actual = self.real_type(actual);
         debug!("Merge {:?} {:?}", expected, actual);
         match (expected, actual) {
             (_, &Type::Variable(ref r)) => {
@@ -656,7 +708,42 @@ impl <'a> Typecheck<'a> {
                 && l_args.len() == r_args.len()
                 && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.merge_(l, r))
             }
+            (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
+                self.merge_app_r(l, l_args, actual)
+            }
+            (&Type::App(_, _), &Type::Data(ref r, ref r_args), ) => {
+                self.merge_app_l(expected, r, r_args)
+            }
             _ => expected == actual
+        }
+    }
+
+    fn merge_app_r(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType) -> bool {
+        match *r {
+            Type::App(ref r, ref r_arg) => {
+                match l_args.last() {
+                    Some(last) => {
+                        self.merge_(last, r_arg) && self.merge_app_r(l, &l_args[0..l_args.len()-1], r)
+                    }
+                    None => false
+                }
+            }
+            Type::Data(ref r, _) => l_args.len() == 0 && l == r,
+            _ => false
+        }
+    }
+    fn merge_app_l(&self, l: &TcType, r: &ast::TypeConstructor<InternedStr>, r_args: &[TcType]) -> bool {
+        match *l {
+            Type::App(ref l, ref l_arg) => {
+                match r_args.last() {
+                    Some(last) => {
+                        self.merge_(l_arg, last) && self.merge_app_l(l, r, &r_args[0..r_args.len()-1])
+                    }
+                    None => false
+                }
+            }
+            Type::Data(ref l, _) => r_args.len() == 0 && l == r,
+            _ => false
         }
     }
 
@@ -678,7 +765,7 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn real_type<'r>(&'r self, typ: &'r TcType) -> &'r TcType {
+    fn real_type(&self, typ: &TcType) -> TcType {
         let typ = match *typ {
             Type::Variable(var) => match self.find_type_for_var(var) {
                 Some(t) => t,
@@ -688,7 +775,7 @@ impl <'a> Typecheck<'a> {
         };
         self.type_infos.find_id(typ)
             .or_else(|| self.environment.and_then(|e| e.find_type_name(typ)))
-            .unwrap_or(typ)
+            .unwrap_or_else(|| typ.clone())
     }
 
     fn find_type_for_var(&self, var: u32) -> Option<&TcType> {
@@ -717,7 +804,7 @@ impl <'a> Typecheck<'a> {
         {
             let id_type = self.find_type_for_var(id);
             let other_type = self.real_type(typ);
-            if id_type.map(|x| x == other_type).unwrap_or(&Type::Variable(id) == other_type) {
+            if id_type.map(|x| *x == other_type).unwrap_or(Type::Variable(id) == other_type) {
                 return
             }
         }
@@ -1079,5 +1166,22 @@ in case Some 1 of
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("Int")));
+    }
+    #[test]
+    fn real_type() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type Eq a = {
+    (==) : a -> a -> Bool
+} in
+
+let eq_Int: Eq Int = {
+    (==) = \l r -> l #Int== r
+}
+in eq_Int
+";
+        let result = typecheck(text);
+        assert_eq!(result, Ok(Type::App(Box::new(typ("Eq")), Box::new(typ("Int")))));
     }
 }
