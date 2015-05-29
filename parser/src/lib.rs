@@ -314,12 +314,14 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             self.reserved("case")
                 .with(self.expr())
                 .skip(self.reserved("of"))
-                .and(many1(
+                .and(parser(|input| many1(
                         self.reserved_op("|")
                         .with(self.pattern())
                         .skip(self.reserved_op("->"))
                         .and(self.expr())
                         .map(|(p, e)| Alternative { pattern: p, expression: e })
+                        )
+                        .parse_state(input)
                 ))
                 .map(|(e, alts)| Expr::Match(Box::new(e), alts))
                 .parse_state(input)
