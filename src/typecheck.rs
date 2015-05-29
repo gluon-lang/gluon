@@ -28,6 +28,7 @@ enum TypeError {
     UndefinedStruct(InternedStr),
     UndefinedField(TcType, InternedStr),
     IndexError(TcType),
+    PatternError(TcType),
     StringError(&'static str)
 }
 
@@ -359,7 +360,7 @@ impl <'a> Typecheck<'a> {
                     };
                     match &op.name[1+offset..] {
                         "+" | "-" | "*" => Ok(typ),
-                        "==" => Ok(BOOL_TYPE.clone()),
+                        "==" | "<" => Ok(BOOL_TYPE.clone()),
                         _ => Err(UndefinedVariable(op.name.clone()))
                     }
                 }
@@ -534,37 +535,32 @@ impl <'a> Typecheck<'a> {
     }
 
     fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
-        let typename = match match_type {
-            Type::Data(ast::TypeConstructor::Data(id), _) => id,
-            _ => return Err(StringError("Pattern matching only works on data types"))
-        };
         match *pattern {
-            ast::ConstructorPattern(ref name, ref mut args) => {
+            ast::ConstructorPattern(ref id, ref mut args) => {
                 //Find the enum constructor and return the types for its arguments
-                let ctor_type = {
-                    let constructors = try!(self.find_type_info(&typename));
-                    match constructors.iter().find(|ctor| ctor.name.id() == name.id()) {
-                        Some(ctor) => ctor.name.typ.clone(),
-                        None => return Err(StringError("Undefined constructor"))
-                    }
-                };
-                let ctor_type = self.subs.instantiate(&ctor_type);
-                let (argument_types, return_type) = match ctor_type {
-                    Type::Function(argument_types, return_type) => {
-                        (argument_types, *return_type)
-                    }
-                    _ => return Err(StringError("Enum constructor must be a function type"))
-                };
+                let ctor_type = try!(self.find(&id.name));
+                let return_type = try!(self.typecheck_pattern_rec(args, ctor_type));
                 try!(self.unify(&match_type, return_type));
-                for (arg, typ) in args.iter().zip(argument_types.into_iter()) {
-                    self.stack_var(arg.id().clone(), typ);
-                }
                 Ok(())
             }
             ast::IdentifierPattern(ref id) => {
                 self.stack_var(id.id().clone(), match_type);
                 Ok(())
             }
+        }
+    }
+
+    fn typecheck_pattern_rec(&mut self, args: &mut [TcIdent], typ: TcType) -> Result<TcType, TypeError> {
+        if args.len() == 0 {
+            return Ok(typ)
+        }
+        match typ {
+            Type::Function(mut argument_types, return_type) => {
+                assert!(argument_types.len() == 1);
+                self.stack_var(args[0].id().clone(), argument_types.pop().unwrap());
+                self.typecheck_pattern_rec(&mut args[1..], *return_type)
+            }
+            _ => Err(PatternError(typ))
         }
     }
 
@@ -1062,5 +1058,18 @@ in Some 1
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ_a("Option", vec![typ("Int")])));
+    }
+    #[test]
+    fn case_constructor() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type Option a = | None | Some a
+in case Some 1 of
+    | Some x -> x
+    | None -> 2
+";
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ("Int")));
     }
 }

@@ -11,7 +11,7 @@ let eq_Int = {
 let eq_Float = {
     (==) = \l r -> l #Float== r
 } in
-let eq_Option = \eq_a -> {
+let eq_Option: (a -> a -> Bool) -> Eq (Option a) = \eq_a -> {
     (==) = \l r ->
         case l of
             | Some l_val ->
