@@ -201,8 +201,17 @@ impl CompilerEnv for TypeInfos {
             })
     }
 
-    fn find_tag(&self, _enum_: &InternedStr, _ctor_name: &InternedStr) -> Option<VMTag> {
-        None
+    fn find_tag(&self, type_id: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
+        self.id_to_type.get(type_id)
+            .and_then(|typ| {
+                match *typ {
+                    Type::Variants(ref variants) => variants.iter()
+                                                        .enumerate()
+                                                        .find(|&(_, v)| v.0 == *ctor_name)
+                                                        .map(|t| t.0 as VMTag),
+                    _ => None
+                }
+            })
     }
     fn next_global_index(&self) -> VMIndex {
         0
@@ -298,6 +307,7 @@ impl <'a> Compiler<'a> {
             Stack(index) => function.instructions.push(Push(index)),
             UpVar(index) => function.instructions.push(PushUpVar(index)),
             Global(index, _) => function.instructions.push(PushGlobal(index)),
+            Constructor(tag, 0) => function.instructions.push(Construct(tag, 0)),
             Constructor(..) => panic!("Constructor {:?} is not fully applied", id)
         }
     }

@@ -308,14 +308,14 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     }
 
     fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
-        match self.type_infos.datas.get(data_name) {
-            Some(ctors) => {
+        match self.type_infos.id_to_type.get(data_name) {
+            Some(&Type::Variants(ref ctors)) => {
                 ctors.iter()
                     .enumerate()
-                    .find(|&(_, c)| c.name.id() == ctor_name)
+                    .find(|&(_, c)| c.0 == *ctor_name)
                     .map(|(i, _)| i as VMIndex)
             }
-            None => None
+            _ => None
         }
     }
     fn next_global_index(&self) -> VMIndex {
@@ -331,14 +331,17 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
                 Some((&[], &g.typ))
             }
             _ => {
-                self.type_infos.datas.values()
-                    .flat_map(|ctors| ctors.iter())
-                    .find(|ctor| ctor.name.id() == id)
-                    .map(|ctor| (&[][..], &ctor.name.typ))
+                self.type_infos.id_to_type.values()
+                    .filter_map(|typ| match *typ {
+                        Type::Variants(ref ctors) => ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1),
+                        _ => None
+                    })
+                    .next()
+                    .map(|ctor| (&[][..], ctor))
             }
         }
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<&TcType> {
         self.type_infos.find_type_info(id)
     }
     fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
@@ -620,7 +623,7 @@ impl <'a> VM<'a> {
     pub fn register_type<T: ?Sized + Any>(&mut self, name: &str) -> Result<&TcType, ()> {
         let n = self.intern(name);
         let mut type_infos = self.type_infos.borrow_mut();
-        if type_infos.datas.contains_key(&n) {
+        if type_infos.id_to_type.contains_key(&n) {
             Err(())
         }
         else {
@@ -632,8 +635,8 @@ impl <'a> VM<'a> {
                 name: TcIdent { name: n, typ: typ },
                 arguments: ast::ConstructorType::Record(Vec::new())
             };
-            type_infos.datas.insert(n, vec![ctor]);
-            Ok(t)
+            //type_infos.id_to_type.insert(n, vec![ctor]);
+            panic!("Unimplemented")
         }
     }
 
@@ -1100,6 +1103,7 @@ let (+) = \x y -> x #Int+ y in 1 + 2 + 3
 
     #[test]
     fn record() {
+        let _ = ::env_logger::init();
         let text = 
 r"
 { x = 0, y = 1.0, z = {} }
@@ -1112,7 +1116,7 @@ r"
     }
 
     #[test]
-    fn record_add() {
+    fn add_record() {
         let _ = ::env_logger::init();
         let text = 
 r"

@@ -38,23 +38,8 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
         }
         't' => {
             match vm.env().find_type_info(&vm.intern(args)) {
-                Some(constructors) => {
-                    println!("data {} {{", args);
-                    for ctor in constructors.iter()  {
-                        print!("    {}(", ctor.name.id());
-                        let mut first = true;
-                        ctor.arguments.each_type(|arg| {
-                            if first {
-                                first = false;
-                                print!("{:?}", arg);
-                            }
-                            else {
-                                print!(", {:?}", arg);
-                            }
-                        });
-                        println!("),");
-                    }
-                    println!("}}");
+                Some(typ) => {
+                    println!("type {} = {}", args, typ);
                 }
                 None => println!("{} is not a type", args)
             }

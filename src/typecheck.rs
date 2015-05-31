@@ -49,7 +49,6 @@ impl fmt::Display for TypeError {
 pub type TcResult = Result<TcType, TypeError>;
 
 pub struct TypeInfos {
-    pub datas: HashMap<InternedStr, Vec<ast::Constructor<TcIdent>>>,
     pub id_to_type: HashMap<InternedStr, TcType>,
     pub type_to_id: HashMap<TcType, TcType>
 }
@@ -57,14 +56,12 @@ pub struct TypeInfos {
 impl TypeInfos {
     pub fn new() -> TypeInfos {
         TypeInfos {
-            datas: HashMap::new(),
             id_to_type: HashMap::new(),
             type_to_id: HashMap::new()
         }
     }
-    pub fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]> {
-        self.datas.get(id)
-            .map(|vec| &**vec)
+    pub fn find_type_info(&self, id: &InternedStr) -> Option<&TcType> {
+        self.id_to_type.get(id)
     }
     pub fn find_adt(&self, id: &InternedStr) -> Option<&TcType> {
         self.id_to_type.iter()
@@ -78,15 +75,18 @@ impl TypeInfos {
             .map(|x| &x.1)
     }
 
-    pub fn find_record(&self, field: &InternedStr) -> Option<&TcType> {
+    pub fn find_record<I>(&self, fields: I) -> Option<(&TcType, &TcType)>
+        where I: Iterator<Item=InternedStr> + Clone {
         self.id_to_type.iter()
             .find(|&(_, typ)| {
                 match *typ {
-                    Type::Record(ref fields) => fields.iter().any(|f| f.name == *field),
+                    Type::Record(ref record_fields) => {
+                        fields.clone().all(|name| record_fields.iter().any(|f| f.name == name))
+                    }
                     _ => false
                 }
             })
-            .map(|t| t.1)
+            .and_then(|t| self.type_to_id.get(&t.1).map(|id_type| (id_type, t.1)))
     }
     pub fn find_id(&self, typ: &TcType) -> Option<TcType> {
         self.type_to_id.iter()
@@ -96,8 +96,7 @@ impl TypeInfos {
             .next()
     }
     pub fn extend(&mut self, other: TypeInfos) {
-        let TypeInfos { datas, id_to_type, type_to_id } = other;
-        self.datas.extend(datas);
+        let TypeInfos { id_to_type, type_to_id } = other;
         self.id_to_type.extend(id_to_type);
         self.type_to_id.extend(type_to_id);
     }
@@ -106,7 +105,6 @@ impl TypeInfos {
 
 fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcType) -> Option<TcType> {
     let mut result = HashMap::new();
-    debug!("Start real_type");
     if find_real_type_(id_rhs_type, real_type, &mut result) {
         let mut typ = id_type.clone();
         ast::walk_mut_type(&mut typ, &mut |typ| {
@@ -115,7 +113,6 @@ fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcT
                 _ => return
             };
         });
-        debug!("Real type return {}", typ);
         Some(typ)
     }
     else {
@@ -123,7 +120,6 @@ fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcT
     }
 }
 fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut HashMap<InternedStr, &'a TcType>) -> bool {
-    debug!("real_type {} ---- {}", id_rhs_type, real_type);
     match (id_rhs_type, real_type) {
         (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
             l_args.iter().zip(r_args.iter())
@@ -153,7 +149,7 @@ fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut Ha
 
 pub trait TypeEnv {
     fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraint], &TcType)>;
-    fn find_type_info(&self, id: &InternedStr) -> Option<&[ast::Constructor<TcIdent>]>;
+    fn find_type_info(&self, id: &InternedStr) -> Option<&TcType>;
     fn find_type_name(&self, typ: &TcType) -> Option<TcType>;
 }
 
@@ -235,13 +231,14 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn find_record(&self, field: &InternedStr) -> Result<&TcType, TypeError> {
-        self.type_infos.find_record(field)
+    fn find_record<I>(&self, mut fields: I) -> Result<(&TcType, &TcType), TypeError>
+        where I: Iterator<Item=InternedStr> + Clone {
+        self.type_infos.find_record(fields.clone())
             .map(|s| Ok(s))
-            .unwrap_or_else(|| Err(UndefinedType(field.clone())))
+            .unwrap_or_else(|| Err(StringError("Expected fields")))
     }
 
-    fn find_type_info(&self, id: &InternedStr) -> Result<&[ast::Constructor<TcIdent>], TypeError> {
+    fn find_type_info(&self, id: &InternedStr) -> Result<&TcType, TypeError> {
         self.type_infos.find_type_info(id)
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
             .map(|s| Ok(s))
@@ -273,9 +270,11 @@ impl <'a> Typecheck<'a> {
                         unbound_variable = true;
                     }
                 });
+                /*FIXME
                 if unbound_variable {
                     self.tc.errors.error(ast::Located { location: location, value: TypeError::UnboundVariable });
                 }
+                */
             }
         }
         impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
@@ -499,8 +498,10 @@ impl <'a> Typecheck<'a> {
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
                 if let Type::Variable(_) = typ {
-                    let record_type = try!(self.find_record(&field_access.name));
-                    typ = try!(self.unify(record_type, typ));
+                    let (record_type, _) = try!(self.find_record([field_access.name].iter().cloned())
+                                              .map(|t| (t.0.clone(), t.1.clone())));
+                    let record_type = self.subs.instantiate(&record_type);
+                    typ = try!(self.unify(&record_type, typ));
                 }
                 let record = match typ {
                     Type::Data(ast::TypeConstructor::Data(id), _) => {
@@ -578,18 +579,24 @@ impl <'a> Typecheck<'a> {
                 Ok(expr_type)
             }
             ast::Expr::Record(ref mut id, ref mut fields) => {
-                let typ = try!(fields.iter_mut()
+                let fields = try!(fields.iter_mut()
                     .map(|field| Ok(ast::Field {
                         name: field.0,
                         typ: try!(self.typecheck(&mut field.1))
                     }))
-                    .collect::<Result<_, _>>()
-                    .map(Type::Record));
-                let type_name = self.type_infos.type_to_id.get(&typ)
-                        .map(|t| t.clone());
-                let typ = type_name.unwrap_or(typ);
-                id.typ = typ.clone();
-                Ok(typ)
+                    .collect::<Result<Vec<_>, _>>());
+                fn select(field: &ast::Field<InternedStr>) -> InternedStr { field.name }
+                let select: fn (_) -> _ = select;
+                let (id_type, record_type) = match self.find_record(fields.iter().map(select))
+                                                  .map(|t| (t.0.clone(), t.1.clone())) {
+                    Ok(x) => x,
+                    Err(_) => return Ok(Type::Record(fields))
+                };
+                let id_type = self.subs.instantiate(&id_type);
+                let record_type = self.subs.instantiate_(&record_type);
+                let typ = try!(self.unify(&Type::Record(fields), record_type));
+                id.typ = id_type.clone();
+                Ok(id_type.clone())
             }
         }
     }
@@ -638,8 +645,15 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let ref expected = self.real_type(expected);
-        let ref actual = self.real_type(actual);
+        let x = self.unify_2(expected, actual);
+        if !x {
+            debug!("Failed unify:\n{} <=> {}", self.real_type(expected), self.real_type(actual));
+        }
+        x
+    }
+    fn unify_2(&self, expected: &TcType, actual: &TcType) -> bool {
+        let expected = self.real_type(expected);
+        let actual = self.real_type(actual);
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
             (&Type::Variable(ref l), _) => {
@@ -669,6 +683,12 @@ impl <'a> Typecheck<'a> {
                 && l_args.iter().zip(r_args.iter())
                     .all(|(l, r)| l.name == r.name && self.unify_(&l.typ, &r.typ))
             }
+            (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
+                self.merge_app(l, l_args, actual, &|last, r_arg| self.unify_(last, r_arg))
+            }
+            (&Type::App(_, _), &Type::Data(ref r, ref r_args), ) => {
+                self.merge_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last))
+            }
             _ => expected == actual
         }
     }
@@ -683,8 +703,8 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn merge_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let ref expected = self.real_type(expected);
-        let ref actual = self.real_type(actual);
+        let expected = self.real_type(expected);
+        let actual = self.real_type(actual);
         debug!("Merge {:?} {:?}", expected, actual);
         match (expected, actual) {
             (_, &Type::Variable(ref r)) => {
@@ -709,40 +729,27 @@ impl <'a> Typecheck<'a> {
                 && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.merge_(l, r))
             }
             (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
-                self.merge_app_r(l, l_args, actual)
+                self.merge_app(l, l_args, actual, &|last, r_arg| self.merge_(last, r_arg))
             }
             (&Type::App(_, _), &Type::Data(ref r, ref r_args), ) => {
-                self.merge_app_l(expected, r, r_args)
+                self.merge_app(r, r_args, expected, &|last, l_arg| self.merge_(l_arg, last))
             }
             _ => expected == actual
         }
     }
 
-    fn merge_app_r(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType) -> bool {
+    fn merge_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> bool
+            where F: Fn(&TcType, &TcType) -> bool {
         match *r {
             Type::App(ref r, ref r_arg) => {
                 match l_args.last() {
                     Some(last) => {
-                        self.merge_(last, r_arg) && self.merge_app_r(l, &l_args[0..l_args.len()-1], r)
+                        f(last, r_arg) && self.merge_app(l, &l_args[0..l_args.len()-1], r, f)
                     }
                     None => false
                 }
             }
             Type::Data(ref r, _) => l_args.len() == 0 && l == r,
-            _ => false
-        }
-    }
-    fn merge_app_l(&self, l: &TcType, r: &ast::TypeConstructor<InternedStr>, r_args: &[TcType]) -> bool {
-        match *l {
-            Type::App(ref l, ref l_arg) => {
-                match r_args.last() {
-                    Some(last) => {
-                        self.merge_(l_arg, last) && self.merge_app_l(l, r, &r_args[0..r_args.len()-1])
-                    }
-                    None => false
-                }
-            }
-            Type::Data(ref l, _) => r_args.len() == 0 && l == r,
             _ => false
         }
     }
@@ -765,17 +772,14 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn real_type(&self, typ: &TcType) -> TcType {
-        let typ = match *typ {
+    fn real_type<'r>(&'r self, typ: &'r TcType) -> &'r TcType {
+        match *typ {
             Type::Variable(var) => match self.find_type_for_var(var) {
                 Some(t) => t,
                 None => typ
             },
             _ => typ
-        };
-        self.type_infos.find_id(typ)
-            .or_else(|| self.environment.and_then(|e| e.find_type_name(typ)))
-            .unwrap_or_else(|| typ.clone())
+        }
     }
 
     fn find_type_for_var(&self, var: u32) -> Option<&TcType> {
@@ -804,7 +808,7 @@ impl <'a> Typecheck<'a> {
         {
             let id_type = self.find_type_for_var(id);
             let other_type = self.real_type(typ);
-            if id_type.map(|x| *x == other_type).unwrap_or(Type::Variable(id) == other_type) {
+            if id_type.map(|x| x == other_type).unwrap_or(Type::Variable(id) == *other_type) {
                 return
             }
         }

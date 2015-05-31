@@ -1,4 +1,3 @@
-
 type Option a = | None | Some a in
 
 type Eq a = {
@@ -54,7 +53,7 @@ let ord_Option = \compare_a -> {
         case l of
             | Some l_val ->
                 case r of
-                    | Some r_val -> compare l_val r_val
+                    | Some r_val -> compare_a l_val r_val
                     | None -> LT
             | None -> 
                 case r of
@@ -69,14 +68,14 @@ type Num a = {
 } in
 let num_Int: Num Int = {
     (+) = \l r -> l #Int+ r,
-    (*) = \l r -> l #Int* r,
     (-) = \l r -> l #Int- r,
+    (*) = \l r -> l #Int* r,
     negate = \x -> 0 #Int- x
 } in
 let num_Float: Num Float = {
     (+) = \l r -> l #Float+ r,
-    (*) = \l r -> l #Float* r,
     (-) = \l r -> l #Float- r,
+    (*) = \l r -> l #Float* r,
     negate = \x -> 0.0 #Float- x
 } in
 { ord_Option = ord_Option, ord_Float = ord_Float, ord_Int = ord_Int, eq_Option = eq_Option, eq_Float = eq_Float, eq_Int = eq_Int, num_Int = num_Int, num_Float = num_Float }
