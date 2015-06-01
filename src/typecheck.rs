@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::convert::AsRef;
 use std::fmt;
+use std::cell::UnsafeCell;
 use scoped_map::ScopedMap;
 use base::ast;
 use base::ast::MutVisitor;
@@ -257,7 +258,7 @@ impl <'a> Typecheck<'a> {
         //Insert all type variables in the type declaration so that they get replaced by their
         //corresponding generic variable
         for (generic_id, var_id) in variables {
-            self.subs.map.insert(*var_id, box Type::Generic(*generic_id));
+            unsafe { self.subs.insert(*var_id, Type::Generic(*generic_id)); }
         }
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { tc: &'a mut Typecheck<'b> }
@@ -331,7 +332,7 @@ impl <'a> Typecheck<'a> {
                             let gen = Type::Generic(self.interner.intern(self.gc, &generic));
                             let c = generic.pop().unwrap();
                             generic.push((c as u8 + 1) as char);
-                            self.subs.map.insert(id, Box::new(gen));
+                            unsafe { self.subs.insert(id, gen) }
                         }
                     }
                     _ => ()
@@ -787,11 +788,8 @@ impl <'a> Typecheck<'a> {
         //to look for parents
         //Since we never have a cycle in the map we will never hold a &mut
         //to the same place
-        let this: &mut Substitution = unsafe {
-            let s: *const Substitution = &self.subs;
-            ::std::mem::transmute(s)
-        };
-        this.map.get_mut(&var).map(|typ| {
+        let map = unsafe { &mut *self.subs.map.get() };
+        map.get_mut(&var).map(|typ| {
             match **typ {
                 Type::Variable(parent_var) if parent_var != var => {
                     match self.find_type_for_var(parent_var) {
@@ -812,31 +810,36 @@ impl <'a> Typecheck<'a> {
                 return
             }
         }
-        let this: &mut Substitution = unsafe {
-            let e: *const Substitution = &self.subs;
-            ::std::mem::transmute(e)
-        };
+        let map: &mut _ = unsafe { &mut *self.subs.map.get() };
         //Always make sure the mapping is from a higher variable to a lower
         //This way the resulting variables are always equal to any variables in the globals
         //declaration
         match *typ {
-            Type::Variable(other_id) if id < other_id => this.assign_union(other_id, Type::Variable(id)),
-            _ => this.assign_union(id, typ.clone())
-        }
+            Type::Variable(other_id) if id < other_id => map.insert(other_id, box Type::Variable(id)),
+            _ => map.insert(id, box typ.clone())
+        };
     }
 }
 
-#[derive(Debug)]
 struct Substitution {
-    map: HashMap<u32, Box<TcType>>,
+    map: UnsafeCell<HashMap<u32, Box<TcType>>>,
     constraints: HashMap<u32, Vec<TcType>>,
     variables: HashMap<InternedStr, u32>,
     var_id: u32
 }
+
+impl fmt::Debug for Substitution {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let map: &_ = unsafe { &*self.map.get() };
+        write!(f, "Substitution {{ map: {:?}, constraints: {:?}, variables: {:?}, var_id: {:?} }}",
+               map, self.constraints, self.variables, self.var_id)
+    }
+}
+
 impl Substitution {
     fn new() -> Substitution {
         Substitution {
-            map: HashMap::new(),
+            map: UnsafeCell::new(HashMap::new()),
             constraints: HashMap::new(),
             variables: HashMap::new(),
             var_id: 0
@@ -854,25 +857,14 @@ impl Substitution {
     }
 
     fn clear(&mut self) {
-        self.map.clear();
+        unsafe { (*self.map.get()).clear(); }
         self.constraints.clear();
         self.variables.clear();
         self.var_id = 0;
     }
 
-    fn assign_union(&mut self, id: u32, typ: TcType) {
-        match self.constraints.remove(&id) {
-            Some(constraints) => {
-                match typ {
-                    Type::Variable(other_id) => {
-                        self.constraints.insert(other_id, constraints);
-                    }
-                    _ => ()
-                }
-            }
-            None => ()
-        }
-        self.map.insert(id, box typ);
+    unsafe fn insert(&mut self, var: u32, t: TcType) {
+        unsafe { (*self.map.get()).insert(var, Box::new(t)); }
     }
 
     fn new_var(&mut self) -> TcType {
