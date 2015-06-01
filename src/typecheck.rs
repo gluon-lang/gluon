@@ -505,11 +505,14 @@ impl <'a> Typecheck<'a> {
                 }
                 let record = match typ {
                     Type::Data(ast::TypeConstructor::Data(id), _) => {
-                        self.type_infos.id_to_type.get(&id).unwrap_or(&typ)
+                        self.find_type_info(&id)
+                            .map(|t| t.clone())
+                            .unwrap_or_else(|_| typ.clone())
                     }
-                    _ => &typ
+                    _ => typ.clone()
                 };
-                match *record {
+                let record = self.subs.instantiate(&record);
+                match record {
                     Type::Record(ref fields) => {
                         let field_type = fields.iter()
                             .find(|field| field.name == *field_access.id())

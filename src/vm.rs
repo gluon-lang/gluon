@@ -256,6 +256,7 @@ impl <'a> fmt::Debug for Function_<'a> {
     }
 }
 
+#[derive(Debug)]
 enum Named {
     GlobalFn(usize)
 }
