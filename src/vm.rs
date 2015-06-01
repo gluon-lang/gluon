@@ -347,6 +347,9 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
         self.type_infos.find_id(typ)
     }
+    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+        self.type_infos.find_record(fields)
+    }
 }
 
 pub struct Stack<'a> {

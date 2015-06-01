@@ -13,7 +13,6 @@ use self::TypeError::*;
 
 pub use base::ast::{TcIdent, TcType, Type};
 
-
 pub static INT_TYPE: TcType = Type::Builtin(ast::IntType);
 pub static FLOAT_TYPE: TcType = Type::Builtin(ast::FloatType);
 pub static STRING_TYPE: TcType = Type::Builtin(ast::StringType);
@@ -76,13 +75,12 @@ impl TypeInfos {
             .map(|x| &x.1)
     }
 
-    pub fn find_record<I>(&self, fields: I) -> Option<(&TcType, &TcType)>
-        where I: Iterator<Item=InternedStr> + Clone {
+    pub fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
         self.id_to_type.iter()
             .find(|&(_, typ)| {
                 match *typ {
                     Type::Record(ref record_fields) => {
-                        fields.clone().all(|name| record_fields.iter().any(|f| f.name == name))
+                        fields.iter().all(|&name| record_fields.iter().any(|f| f.name == name))
                     }
                     _ => false
                 }
@@ -152,6 +150,7 @@ pub trait TypeEnv {
     fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraint], &TcType)>;
     fn find_type_info(&self, id: &InternedStr) -> Option<&TcType>;
     fn find_type_name(&self, typ: &TcType) -> Option<TcType>;
+    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)>;
 }
 
 pub struct Typecheck<'a> {
@@ -232,9 +231,9 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn find_record<I>(&self, mut fields: I) -> Result<(&TcType, &TcType), TypeError>
-        where I: Iterator<Item=InternedStr> + Clone {
-        self.type_infos.find_record(fields.clone())
+    fn find_record(&self, fields: &[InternedStr]) -> Result<(&TcType, &TcType), TypeError> {
+        self.type_infos.find_record(fields)
+            .or_else(|| self.environment.and_then(|e| e.find_record(fields)))
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(StringError("Expected fields")))
     }
@@ -499,7 +498,7 @@ impl <'a> Typecheck<'a> {
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
                 if let Type::Variable(_) = typ {
-                    let (record_type, _) = try!(self.find_record([field_access.name].iter().cloned())
+                    let (record_type, _) = try!(self.find_record(&[field_access.name])
                                               .map(|t| (t.0.clone(), t.1.clone())));
                     let record_type = self.subs.instantiate(&record_type);
                     typ = try!(self.unify(&record_type, typ));
@@ -586,9 +585,7 @@ impl <'a> Typecheck<'a> {
                         typ: try!(self.typecheck(&mut field.1))
                     }))
                     .collect::<Result<Vec<_>, _>>());
-                fn select(field: &ast::Field<InternedStr>) -> InternedStr { field.name }
-                let select: fn (_) -> _ = select;
-                let (id_type, record_type) = match self.find_record(fields.iter().map(select))
+                let (id_type, record_type) = match self.find_record(&fields.iter().map(|f| f.name).collect::<Vec<_>>())
                                                   .map(|t| (t.0.clone(), t.1.clone())) {
                     Ok(x) => x,
                     Err(_) => return Ok(Type::Record(fields))
