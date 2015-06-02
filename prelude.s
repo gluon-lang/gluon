@@ -23,7 +23,6 @@ let eq_Option: (a -> a -> Bool) -> Eq (Option a) = \eq_a -> {
                     | None -> True
 } in
 
-
 type Ordering = | LT | EQ | GT
 in
 

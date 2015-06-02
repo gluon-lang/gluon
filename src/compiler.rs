@@ -490,13 +490,14 @@ impl <'a> Compiler<'a> {
             }
             Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function);
+                debug!("{:?} {:?}", expr, field);
                 let field_index = match *expr.type_of() {
                     Type::Data(ref id, _) => {
                         self.find_field(id, field.id())
                     }
                     Type::Record(ref fields) => {
                         fields.iter()
-                            .position(|f| f.name == f.name)
+                            .position(|f| f.name == field.name)
                             .map(|i| i as VMIndex)
                     }
                     ref typ => panic!("ICE: FieldAccess on {}", typ)
