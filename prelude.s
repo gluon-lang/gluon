@@ -10,12 +10,12 @@ let eq_Int = {
 let eq_Float = {
     (==) = \l r -> l #Float== r
 } in
-let eq_Option: (a -> a -> Bool) -> Eq (Option a) = \eq_a -> {
+let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
     (==) = \l r ->
         case l of
             | Some l_val ->
                 case r of
-                    | Some r_val -> eq_a l_val r_val
+                    | Some r_val -> eq_a.(==) l_val r_val
                     | None -> False
             | None -> 
                 case r of
@@ -47,12 +47,12 @@ let ord_Float = {
         then EQ
         else GT
 } in
-let ord_Option = \compare_a -> {
+let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
     compare = \l r ->
         case l of
             | Some l_val ->
                 case r of
-                    | Some r_val -> compare_a l_val r_val
+                    | Some r_val -> compare_a.compare l_val r_val
                     | None -> LT
             | None -> 
                 case r of

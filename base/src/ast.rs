@@ -281,6 +281,15 @@ pub fn fn_type<I, Id>(args: I, return_type: Type<Id>) -> Type<Id>
         .fold(return_type, |body, arg| Type::Function(vec![arg], Box::new(body)))
 }
 
+impl TcType {
+    ///Returns the inner most application of a type application
+    pub fn inner_app(&self) -> &TcType {
+        match *self {
+            Type::App(ref a, _) => a.inner_app(),
+            _ => self
+        }
+    }
+}
 
 impl fmt::Display for BuiltinType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

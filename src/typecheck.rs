@@ -509,6 +509,16 @@ impl <'a> Typecheck<'a> {
                             .map(|t| t.clone())
                             .unwrap_or_else(|_| typ.clone())
                     }
+                    Type::App(ref f, _) => {
+                        match **f {
+                            Type::Data(ast::TypeConstructor::Data(id), _) => {
+                                self.find_type_info(&id)
+                                    .map(|t| t.clone())
+                                    .unwrap_or_else(|_| typ.clone())
+                            }
+                            _ => typ.clone()
+                        }
+                    }
                     _ => typ.clone()
                 };
                 let record = self.subs.instantiate(&record);
