@@ -460,10 +460,18 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Let(ref mut bind, ref mut body) => {
                 let id_type = self.subs.instantiate(&bind.name.typ);
+                self.stack.enter_scope();
                 //Store the current generic -> variable mapping so that we can reverse it later
                 let variables = self.subs.variables.clone();
-                debug!("--- {:?} {}", variables, bind.name.typ);
-                let mut typ = try!(self.typecheck(&mut bind.expression));
+                //Functions which are declared as `let f x = ...` are allowed to be self recursive
+                let mut typ = if bind.arguments.len() != 0 {
+                    let fn_type = self.subs.new_var();
+                    self.stack_var(bind.name.name.clone(), fn_type);
+                    try!(self.typecheck_lambda(&mut bind.arguments, &mut bind.expression))
+                }
+                else {
+                    try!(self.typecheck(&mut bind.expression))
+                };
                 if bind.name.typ != UNIT_TYPE {
                     //Merge the type declaration and the actual type
                     typ = try!(self.merge(id_type, typ));
@@ -474,8 +482,12 @@ impl <'a> Typecheck<'a> {
                 });
                 bind.name.typ = typ.clone();
                 debug!("let {} : {}", bind.name.name, typ);
-                self.stack_var(bind.name.name.clone(), typ);
-                self.typecheck(body)
+                if bind.arguments.len() == 0 {
+                    self.stack_var(bind.name.name.clone(), typ);
+                }
+                let result = self.typecheck(body);
+                self.stack.exit_scope();
+                result
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
@@ -549,17 +561,9 @@ impl <'a> Typecheck<'a> {
                 Ok(typ)
             }
             ast::Expr::Lambda(ref mut lambda) => {
-                self.stack.enter_scope();
-                let mut arg_types = Vec::new();
-                for arg in lambda.arguments.iter_mut() {
-                    arg.typ = self.subs.new_var();
-                    arg_types.push(arg.typ.clone());
-                    self.stack_var(arg.name.clone(), arg.typ.clone());
-                }
-                let body_type = try!(self.typecheck(&mut *lambda.body));
-                self.stack.exit_scope();
-                lambda.id.typ = ast::fn_type(arg_types, body_type);
-                Ok(lambda.id.typ.clone())
+                let typ = try!(self.typecheck_lambda(&mut lambda.arguments, &mut lambda.body));
+                lambda.id.typ = typ.clone();
+                Ok(typ)
             }
             ast::Expr::Type(ref id_type, ref mut typ, ref mut expr) => {
                 match *id_type {
@@ -592,6 +596,19 @@ impl <'a> Typecheck<'a> {
                 Ok(id_type.clone())
             }
         }
+    }
+
+    fn typecheck_lambda(&mut self, arguments: &mut [TcIdent], body: &mut ast::LExpr<TcIdent>) -> Result<TcType, TypeError> {
+        self.stack.enter_scope();
+        let mut arg_types = Vec::new();
+        for arg in arguments {
+            arg.typ = self.subs.new_var();
+            arg_types.push(arg.typ.clone());
+            self.stack_var(arg.name.clone(), arg.typ.clone());
+        }
+        let body_type = try!(self.typecheck(body));
+        self.stack.exit_scope();
+        Ok(ast::fn_type(arg_types, body_type))
     }
 
     fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
@@ -1107,6 +1124,16 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
             }
             _ => assert!(false)
         }
+    }
+    #[test]
+    fn let_binding_recursive() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let fac x = if x #Int== 0 then 1 else x #Int* fac (x #Int- 1) in fac
+";
+        let (_, result) = typecheck_expr(text);
+        assert_eq!(result, Ok(ast::fn_type(vec![typ("Int")], typ("Int"))));
     }
     #[test]
     fn primitive_error() {

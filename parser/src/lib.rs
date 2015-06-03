@@ -361,7 +361,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         fn let_in(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
             self.reserved("let")
                 .with(self.ident())
-                .and(many(self.ident_u()))
+                .and(many(self.ident()))
                 .and(optional(self.reserved_op(":").with(self.typ())))
                 .and(parser(|input| self.reserved_op("=")
                     .with(self.expr())

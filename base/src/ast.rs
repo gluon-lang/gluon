@@ -198,7 +198,7 @@ pub enum Expr<Id: AstId> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Binding<Id: AstId> {
     pub name: Id,
-    pub arguments: Vec<Id::Untyped>,
+    pub arguments: Vec<Id>,
     pub expression: Box<LExpr<Id>>
 }
 
