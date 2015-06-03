@@ -339,36 +339,6 @@ impl <'a> Compiler<'a> {
                 self.compile(&**if_true, function);
                 function.instructions[false_jump_index] = Jump(function.instructions.len() as VMIndex);
             }
-            Expr::Block(ref exprs) => {
-                let begin_stack_size = self.stack_size();
-                if exprs.len() != 0 {
-                    for expr in exprs[..exprs.len() - 1].iter() {
-                        self.compile(expr, function);
-                        //Since this line is executed as a statement we need to remove
-                        //the value from the stack if it exists
-                        if *expr.type_of() != UNIT_TYPE {
-                            function.instructions.push(Pop(1));
-                        }
-                    }
-                    let last = exprs.last().unwrap();
-                    self.compile(last, function);
-                }
-                //If the stack has changed size during the block we need to adjust
-                //it back to its initial size
-                let diff_size = self.stack_size() - begin_stack_size;
-                for _ in 0..diff_size {
-                    self.stack.pop();
-                }
-                if diff_size != 0 {
-                    if *expr.type_of() == UNIT_TYPE {
-                        function.instructions.push(Pop(diff_size));
-                    }
-                    else {
-                        function.instructions.push(Slide(diff_size));
-                    }
-                }
-                
-            }
             Expr::BinOp(ref lhs, ref op, ref rhs) => {
                 if op.name == "&&" {
                     self.compile(&**lhs, function);
@@ -420,9 +390,7 @@ impl <'a> Compiler<'a> {
                 if *bind.expression.type_of() == UNIT_TYPE {
                     function.instructions.push(PushInt(0));
                 }
-                if let Some(ref body) = *body {
-                    self.compile(&body, function);
-                }
+                self.compile(&body, function);
             }
             Expr::Call(ref func, ref args) => {
                 if let Expr::Identifier(ref id) = func.value {
@@ -439,54 +407,6 @@ impl <'a> Compiler<'a> {
                     self.compile(arg, function);
                 }
                 function.instructions.push(Call(args.len() as VMIndex));
-            }
-            Expr::While(ref pred, ref expr) => {
-                //jump #test
-                //#start:
-                //[compile(expr)]
-                //#test:
-                //[compile(pred)]
-                //cjump #start
-                let pre_jump_index = function.instructions.len();
-                function.instructions.push(Jump(0));
-                self.compile(&**expr, function);
-                function.instructions[pre_jump_index] = Jump(function.instructions.len() as VMIndex);
-                self.compile(&**pred, function);
-                function.instructions.push(CJump(pre_jump_index as VMIndex + 1));
-            }
-            Expr::Assign(ref lhs, ref rhs) => {
-                match ***lhs {
-                    Expr::Identifier(ref id) => {
-                        self.compile(&**rhs, function);
-                        let var = self.find(id.id(), function)
-                            .unwrap_or_else(|| panic!("Undefined variable {:?}", id));
-                        match var {
-                            Stack(i) => function.instructions.push(Store(i)),
-                            UpVar(i) => function.instructions.push(StoreUpVar(i)),
-                            Global(..) => panic!("Assignment to global {:?}", id),
-                            Constructor(..) => panic!("Assignment to constructor {:?}", id),
-                        }
-                    }
-                    Expr::FieldAccess(ref expr, ref field) => {
-                        self.compile(&**expr, function);
-                        self.compile(&**rhs, function);
-                        let field_index = match *expr.type_of() {
-                            Type::Data(ref id, _) => {
-                                self.find_field(id, field.id())
-                                    .expect("ICE: Undefined field in field assign")
-                            }
-                            _ => panic!()
-                        };
-                        function.instructions.push(SetField(field_index));
-                    }
-                    Expr::ArrayAccess(ref expr, ref index) => {
-                        self.compile(&**expr, function);
-                        self.compile(&**index, function);
-                        self.compile(&**rhs, function);
-                        function.instructions.push(SetIndex);
-                    }
-                    _ => panic!("Assignment to {:?}", lhs)
-                }
             }
             Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function);
@@ -579,6 +499,12 @@ impl <'a> Compiler<'a> {
                     self.compile(&field.1, function);
                 }
                 function.instructions.push(Construct(0, fields.len() as u32));
+            }
+            Expr::Tuple(ref exprs) => {
+                for expr in exprs {
+                    self.compile(expr, function);
+                }
+                function.instructions.push(Construct(0, exprs.len() as u32));
             }
         }
     }

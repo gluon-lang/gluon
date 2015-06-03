@@ -183,17 +183,15 @@ pub enum Expr<Id: AstId> {
     Literal(LiteralStruct),
     Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
     IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
-    While(Box<LExpr<Id>>, Box<LExpr<Id>>),
     Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
-    Block(Vec<LExpr<Id>>),
     BinOp(Box<LExpr<Id>>, Id, Box<LExpr<Id>>),
-    Let(Binding<Id>, Option<Box<LExpr<Id>>>),
-    Assign(Box<LExpr<Id>>, Box<LExpr<Id>>),
+    Let(Binding<Id>, Box<LExpr<Id>>),
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
     ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
     Record(Id, Vec<(Id::Untyped, LExpr<Id>)>),
     Lambda(LambdaStruct<Id>),
+    Tuple(Vec<LExpr<Id>>),
     Type(Type<Id::Untyped>, Type<Id::Untyped>, Box<LExpr<Id>>)
 }
 
@@ -367,34 +365,19 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
                 None => ()
             }
         }
-        Expr::Block(ref mut exprs) => {
-            for expr in exprs.iter_mut() {
-                v.visit_expr(expr);
-            }
-        }
         Expr::BinOp(ref mut lhs, _, ref mut rhs) => {
             v.visit_expr(&mut **lhs);
             v.visit_expr(&mut **rhs);
         }
         Expr::Let(ref mut bind, ref mut body) => {
             v.visit_expr(&mut bind.expression);
-            if let Some(ref mut body) = *body {
-                v.visit_expr(&mut **body);
-            }
+            v.visit_expr(&mut **body);
         }
         Expr::Call(ref mut func, ref mut args) => {
             v.visit_expr(&mut **func);
             for arg in args.iter_mut() {
                 v.visit_expr(arg);
             }
-        }
-        Expr::While(ref mut pred, ref mut expr) => {
-            v.visit_expr(&mut **pred);
-            v.visit_expr(&mut **expr);
-        }
-        Expr::Assign(ref mut lhs, ref mut rhs) => {
-            v.visit_expr(&mut **lhs);
-            v.visit_expr(&mut **rhs);
         }
         Expr::FieldAccess(ref mut expr, _) => {
             v.visit_expr(&mut **expr);
@@ -417,6 +400,11 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
         Expr::Record(_, ref mut fields) => {
             for field in fields {
                 v.visit_expr(&mut field.1);
+            }
+        }
+        Expr::Tuple(ref mut exprs) => {
+            for expr in exprs {
+                v.visit_expr(expr);
             }
         }
         Expr::Lambda(ref mut lambda) => v.visit_expr(&mut *lambda.body),

@@ -392,12 +392,6 @@ impl <'a> Typecheck<'a> {
                 };
                 self.unify(&true_type, false_type)
             }
-            ast::Expr::While(ref mut pred, ref mut expr) => {
-                let pred_type = try!(self.typecheck(&mut **pred));
-                try!(self.unify(&BOOL_TYPE, pred_type));
-                self.typecheck(&mut**expr)
-                    .map(|_| UNIT_TYPE.clone())
-            }
             ast::Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = try!(self.typecheck(&mut**lhs));
                 let rhs_type = try!(self.typecheck(&mut**rhs));
@@ -444,14 +438,9 @@ impl <'a> Typecheck<'a> {
                     }
                 }
             }
-            ast::Expr::Block(ref mut exprs) => {
-                self.stack.enter_scope();
-                let mut typ = Type::Builtin(ast::UnitType);
-                for expr in exprs.iter_mut() {
-                    typ = try!(self.typecheck(expr));
-                }
-                self.stack.exit_scope();
-                Ok(typ)
+            ast::Expr::Tuple(ref mut exprs) => {
+                assert!(exprs.len() == 0);
+                Ok(UNIT_TYPE.clone())
             }
             ast::Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = try!(self.typecheck(&mut**expr));
@@ -486,14 +475,7 @@ impl <'a> Typecheck<'a> {
                 bind.name.typ = typ.clone();
                 debug!("let {} : {}", bind.name.name, typ);
                 self.stack_var(bind.name.name.clone(), typ);
-                body.as_mut().map(|body| self.typecheck(&mut **body))
-                    .unwrap_or(Ok(UNIT_TYPE.clone()))
-            }
-            ast::Expr::Assign(ref mut lhs, ref mut rhs) => {
-                let rhs_type = try!(self.typecheck(&mut **rhs));
-                let lhs_type = try!(self.typecheck(&mut **lhs));
-                try!(self.unify(&lhs_type, rhs_type));
-                Ok(UNIT_TYPE.clone())
+                self.typecheck(body)
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
@@ -960,11 +942,9 @@ impl <Id> Typed for ast::Expr<Id>
                 }
             }
             ast::Expr::IfElse(_, ref arm, _) => arm.type_of(),
-            ast::Expr::Block(ref exprs) => {
-                match exprs.last() {
-                    Some(last) => last.type_of(),
-                    None => &UNIT_TYPE
-                }
+            ast::Expr::Tuple(ref exprs) => {
+                assert!(exprs.len() == 0);
+                &UNIT_TYPE
             }
             ast::Expr::BinOp(ref lhs, ref op, _) => {
                 match *op.type_of() {
@@ -981,7 +961,7 @@ impl <Id> Typed for ast::Expr<Id>
                     _ => panic!()
                 }
             }
-            ast::Expr::Let(..) | ast::Expr::While(..) | ast::Expr::Assign(..) => &UNIT_TYPE,
+            ast::Expr::Let(..) => &UNIT_TYPE,
             ast::Expr::Call(ref func, _) => {
                 match func.type_of() {
                     &Type::Function(_, ref return_type) => &**return_type,

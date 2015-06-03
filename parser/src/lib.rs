@@ -257,7 +257,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 &mut self.parens(optional(self.expr()).map(|expr| {
                     match expr {
                         Some(expr) => expr,
-                        None => loc(Expr::Block(vec![]))
+                        None => loc(Expr::Tuple(vec![]))
                     }
                 }))
                 ])
@@ -372,7 +372,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                     if let Some(typ) = typ {
                         name.set_type(typ);
                     }
-                    Expr::Let(Binding { name: name, arguments: arguments, expression: Box::new(e1) }, Some(Box::new(e2)))
+                    Expr::Let(Binding { name: name, arguments: arguments, expression: Box::new(e1) }, Box::new(e2))
                 })
                 .parse_state(input)
         }
@@ -462,7 +462,7 @@ pub mod tests {
         let_a(s, &[], e, b)
     }
     fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
-        no_loc(Expr::Let(Binding { name: intern(s), arguments: args.iter().map(|i| intern(i)).collect(), expression: box e }, Some(Box::new(b))))
+        no_loc(Expr::Let(Binding { name: intern(s), arguments: args.iter().map(|i| intern(i)).collect(), expression: box e }, Box::new(b)))
     }
     fn id(s: &str) -> PExpr {
         no_loc(Expr::Identifier(intern(s)))
@@ -487,16 +487,6 @@ pub mod tests {
     }
     fn if_else(p: PExpr, if_true: PExpr, if_false: PExpr) -> PExpr {
         no_loc(Expr::IfElse(box p, box if_true, Some(box if_false)))
-    }
-
-    fn while_(p: PExpr, expr: PExpr) -> PExpr {
-        no_loc(Expr::While(box p, box expr))
-    }
-    fn assign(p: PExpr, rhs: PExpr) -> PExpr {
-        no_loc(Expr::Assign(box p, box rhs))
-    }
-    fn block(xs: Vec<PExpr>) -> PExpr {
-        no_loc(Expr::Block(xs))
     }
     fn case(e: PExpr, alts: Vec<(Pattern<InternedStr>, PExpr)>) -> PExpr {
         no_loc(Expr::Match(box e, alts.into_iter()
