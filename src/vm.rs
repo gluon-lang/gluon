@@ -888,6 +888,26 @@ impl <'a> VM<'a> {
                     }
                     stack.push(closure);
                 }
+                NewClosure(fi, n) => {
+                    let closure = {
+                        //Use dummy variables until it is filled
+                        let mut args = [Int(0); 128];
+                        let func = function.inner_functions[fi as usize];
+                        Closure(self.new_closure_and_collect(&mut stack.stack.values[..], func, &mut args[..n as usize]))
+                    };
+                    stack.push(closure);
+                }
+                CloseClosure(n) => {
+                    let i = stack.len() - n;
+                    match stack[i] {
+                        Closure(closure) => {
+                            for var in closure.upvars.iter().rev() {
+                                var.set(stack.pop());
+                            }
+                        }
+                        x => panic!("Expected closure, got {:?}", x)
+                    }
+                }
                 InstantiateConstrained(gi) => {
                     let closure = {
                         let dict = stack.pop();
@@ -1163,6 +1183,21 @@ in Some 1
         let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, vm.new_data(1, &mut [Int(1)]));
+    }
+    #[test]
+    fn recursive_function() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let fib x = if x #Int< 3
+            then 1
+            else fib (x #Int- 1) #Int+ fib (x #Int- 2)
+in fib 7
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(13));
     }
 }
 

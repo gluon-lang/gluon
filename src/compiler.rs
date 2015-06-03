@@ -31,6 +31,10 @@ pub enum Instruction {
     //Creates a closure with 'n' upvariables
     //Pops the 'n' values on top of the stack and creates a closure
     MakeClosure(VMIndex, VMIndex),
+    //Creates a closure but does not fill its environment
+    NewClosure(VMIndex, VMIndex),
+    //Fills the previously allocated closure with `n` upvariables
+    CloseClosure(VMIndex),
     InstantiateConstrained(VMIndex),
     PushUpVar(VMIndex),
     StoreUpVar(VMIndex),
@@ -383,8 +387,18 @@ impl <'a> Compiler<'a> {
                 }
             }
             Expr::Let(ref bind, ref body) => {
-                self.compile(&bind.expression, function);
-                self.new_stack_var(*bind.name.id());
+                if bind.arguments.len() != 0 {
+                    self.new_stack_var(*bind.name.id());
+                    let (function_index, vars, cf) = self.compile_lambda(&bind.name, &bind.arguments, &bind.expression, function);
+                    let i = function.instructions.len() - vars as usize;
+                    function.instructions.insert(i, NewClosure(function_index, vars));
+                    function.instructions.push(CloseClosure(vars));
+                    function.inner_functions.push(cf);
+                }
+                else {
+                    self.compile(&bind.expression, function);
+                    self.new_stack_var(*bind.name.id());
+                }
                 //unit expressions do not return a value so we need to add a dummy value
                 //To make the stack correct
                 if *bind.expression.type_of() == UNIT_TYPE {
@@ -490,7 +504,8 @@ impl <'a> Compiler<'a> {
                 function.instructions.push(GetIndex);
             }
             Expr::Lambda(ref lambda) => {
-                let cf = self.compile_lambda(lambda, function);
+                let (function_index, vars, cf) = self.compile_lambda(&lambda.id, &lambda.arguments, &lambda.body, function);
+                function.instructions.push(MakeClosure(function_index, vars));
                 function.inner_functions.push(cf);
             }
             Expr::Type(_, _, ref expr) => self.compile(&**expr, function),
@@ -509,14 +524,14 @@ impl <'a> Compiler<'a> {
         }
     }
 
-    fn compile_lambda(&mut self, lambda: &LambdaStruct<TcIdent>, parent: &mut FunctionEnv) -> CompiledFunction {
+    fn compile_lambda(&mut self, id: &TcIdent, arguments: &[TcIdent], body: &LExpr<TcIdent>, parent: &mut FunctionEnv) -> (VMIndex, VMIndex, CompiledFunction) {
         self.closure_limits.push(self.stack.len() as VMIndex);
-        for arg in lambda.arguments.iter() {
+        for arg in arguments {
             self.new_stack_var(*arg.id());
         }
         let mut f = FunctionEnv::new();
         f.dictionary = parent.dictionary.clone();
-        self.compile(&*lambda.body, &mut f);
+        self.compile(body, &mut f);
 
         let previous_len = self.closure_limits.pop().expect("closure_limits: pop");
         while previous_len < self.stack_size() {
@@ -532,15 +547,15 @@ impl <'a> Compiler<'a> {
             }
         }
         let function_index = parent.inner_functions.len() as VMIndex;
-        parent.instructions.push(MakeClosure(function_index, f.free_vars.len() as VMIndex));
+        let free_vars = f.free_vars.len() as VMIndex;
         let FunctionEnv { instructions, inner_functions, strings, .. } = f;
-        CompiledFunction {
-            id: lambda.id.id().clone(),
-            typ: Constrained { constraints: Vec::new(), value: lambda.id.typ.clone() },
+        (function_index, free_vars, CompiledFunction {
+            id: id.id().clone(),
+            typ: Constrained { constraints: Vec::new(), value: id.typ.clone() },
             instructions: instructions,
             inner_functions: inner_functions,
             strings: strings
-        }
+        })
     }
 }
 
