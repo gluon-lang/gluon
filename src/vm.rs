@@ -898,7 +898,7 @@ impl <'a> VM<'a> {
                     stack.push(closure);
                 }
                 CloseClosure(n) => {
-                    let i = stack.len() - n;
+                    let i = stack.len() - n - 1;
                     match stack[i] {
                         Closure(closure) => {
                             for var in closure.upvars.iter().rev() {
@@ -1198,6 +1198,20 @@ in fib 7
         let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(13));
+    }
+    #[test]
+    fn no_capture_self_function() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let x = 2 in
+let f y = x
+in f 4
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(2));
     }
 }
 
