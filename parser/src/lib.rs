@@ -361,17 +361,18 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         fn let_in(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
             self.reserved("let")
                 .with(self.ident())
+                .and(many(self.ident_u()))
                 .and(optional(self.reserved_op(":").with(self.typ())))
-                .skip(self.reserved_op("="))
-                .and(parser(|input| self.expr()
+                .and(parser(|input| self.reserved_op("=")
+                    .with(self.expr())
                     .skip(self.reserved("in"))
                     .and(self.expr())
                     .parse_state(input)))
-                .map(|((mut bind, typ), (e1, e2))| {
+                .map(|(((mut name, arguments), typ), (e1, e2))| {
                     if let Some(typ) = typ {
-                        bind.set_type(typ);
+                        name.set_type(typ);
                     }
-                    Expr::Let(bind, Box::new(e1), Some(Box::new(e2)))
+                    Expr::Let(Binding { name: name, arguments: arguments, expression: Box::new(e1) }, Some(Box::new(e2)))
                 })
                 .parse_state(input)
         }
@@ -458,7 +459,10 @@ pub mod tests {
         no_loc(Expr::Literal(Integer(i)))
     }
     fn let_(s: &str, e: PExpr, b: PExpr) -> PExpr {
-        no_loc(Expr::Let(intern(s), box e, Some(Box::new(b))))
+        let_a(s, &[], e, b)
+    }
+    fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
+        no_loc(Expr::Let(Binding { name: intern(s), arguments: args.iter().map(|i| intern(i)).collect(), expression: box e }, Some(Box::new(b))))
     }
     fn id(s: &str) -> PExpr {
         no_loc(Expr::Identifier(intern(s)))
@@ -556,9 +560,15 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new::<TcIdent>("let f: Int = \\x y -> x + y in f 1 2");
         match e.value {
-            Expr::Let(bind, _, _) => assert_eq!(bind.typ, typ("Int")),
+            Expr::Let(bind, _) => assert_eq!(bind.name.typ, typ("Int")),
             _ => assert!(false)
         }
+    }
+    #[test]
+    fn let_args() {
+        let _ = ::env_logger::init();
+        let e = parse_new("let f x y = y in f 2");
+        assert_eq!(e, let_a("f", &["x", "y"], id("y"), call(id("f"), vec![int(2)])));
     }
 
     #[test]

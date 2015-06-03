@@ -187,7 +187,7 @@ pub enum Expr<Id: AstId> {
     Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
     Block(Vec<LExpr<Id>>),
     BinOp(Box<LExpr<Id>>, Id, Box<LExpr<Id>>),
-    Let(Id, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
+    Let(Binding<Id>, Option<Box<LExpr<Id>>>),
     Assign(Box<LExpr<Id>>, Box<LExpr<Id>>),
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
@@ -195,6 +195,13 @@ pub enum Expr<Id: AstId> {
     Record(Id, Vec<(Id::Untyped, LExpr<Id>)>),
     Lambda(LambdaStruct<Id>),
     Type(Type<Id::Untyped>, Type<Id::Untyped>, Box<LExpr<Id>>)
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct Binding<Id: AstId> {
+    pub name: Id,
+    pub arguments: Vec<Id::Untyped>,
+    pub expression: Box<LExpr<Id>>
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
@@ -360,8 +367,8 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
             v.visit_expr(&mut **lhs);
             v.visit_expr(&mut **rhs);
         }
-        Expr::Let(_, ref mut expr, ref mut body) => {
-            v.visit_expr(&mut **expr);
+        Expr::Let(ref mut bind, ref mut body) => {
+            v.visit_expr(&mut bind.expression);
             if let Some(ref mut body) = *body {
                 v.visit_expr(&mut **body);
             }

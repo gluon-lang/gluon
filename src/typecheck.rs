@@ -469,23 +469,23 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(alt1_type)
             }
-            ast::Expr::Let(ref mut id, ref mut expr, ref mut body) => {
-                let id_type = self.subs.instantiate(&id.typ);
+            ast::Expr::Let(ref mut bind, ref mut body) => {
+                let id_type = self.subs.instantiate(&bind.name.typ);
                 //Store the current generic -> variable mapping so that we can reverse it later
                 let variables = self.subs.variables.clone();
-                debug!("--- {:?} {}", variables, id.typ);
-                let mut typ = try!(self.typecheck(&mut **expr));
-                if id.typ != UNIT_TYPE {
+                debug!("--- {:?} {}", variables, bind.name.typ);
+                let mut typ = try!(self.typecheck(&mut bind.expression));
+                if bind.name.typ != UNIT_TYPE {
                     //Merge the type declaration and the actual type
                     typ = try!(self.merge(id_type, typ));
                 }
-                self.replace_vars(&variables, &mut **expr);
+                self.replace_vars(&variables, &mut bind.expression);
                 ast::walk_mut_type(&mut typ, &mut |typ| {
                     self.replace_variable(typ);
                 });
-                id.typ = typ.clone();
-                debug!("let {} : {}", id.name, typ);
-                self.stack_var(id.name.clone(), typ);
+                bind.name.typ = typ.clone();
+                debug!("let {} : {}", bind.name.name, typ);
+                self.stack_var(bind.name.name.clone(), typ);
                 body.as_mut().map(|body| self.typecheck(&mut **body))
                     .unwrap_or(Ok(UNIT_TYPE.clone()))
             }
@@ -1112,8 +1112,8 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
         let (expr, result) = typecheck_expr(text);
         assert_eq!(result, Ok(typ("Float")));
         match expr.value {
-            ast::Expr::Let(_, ref expr, _) => {
-                assert_eq!(*expr.type_of(), ast::fn_type(vec![typ("a"), typ("b")], typ("a")));
+            ast::Expr::Let(ref bind, _) => {
+                assert_eq!(*bind.expression.type_of(), ast::fn_type(vec![typ("a"), typ("b")], typ("a")));
             }
             _ => assert!(false)
         }

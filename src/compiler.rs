@@ -412,12 +412,12 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(instr);
                 }
             }
-            Expr::Let(ref id, ref expr, ref body) => {
-                self.compile(&**expr, function);
-                self.new_stack_var(*id.id());
+            Expr::Let(ref bind, ref body) => {
+                self.compile(&bind.expression, function);
+                self.new_stack_var(*bind.name.id());
                 //unit expressions do not return a value so we need to add a dummy value
                 //To make the stack correct
-                if *expr.type_of() == UNIT_TYPE {
+                if *bind.expression.type_of() == UNIT_TYPE {
                     function.instructions.push(PushInt(0));
                 }
                 if let Some(ref body) = *body {
