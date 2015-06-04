@@ -1,9 +1,12 @@
 #![crate_type="lib"]
 #![feature(box_syntax, core, collections, slice_patterns)]
+#![cfg_attr(test, feature(test))]
 extern crate collections;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+#[cfg(test)]
+extern crate test;
 
 extern crate base;
 extern crate parser as parser_new;

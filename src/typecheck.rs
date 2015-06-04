@@ -655,13 +655,6 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let x = self.unify_2(expected, actual);
-        if !x {
-            debug!("Failed unify:\n{} <=> {}", self.real_type(expected), self.real_type(actual));
-        }
-        x
-    }
-    fn unify_2(&self, expected: &TcType, actual: &TcType) -> bool {
         let expected = self.real_type(expected);
         let actual = self.real_type(actual);
         debug!("{:?} <=> {:?}", expected, actual);
@@ -1196,5 +1189,31 @@ in eq_Int
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(Type::App(Box::new(typ("Eq")), Box::new(typ("Int")))));
+    }
+
+
+    #[bench]
+    fn prelude(b: &mut ::test::Bencher) {
+        use std::fs::File;
+        use std::io::Read;
+        //Only parse once since it takes much more time when running in debug mode
+        thread_local! { static prelude: ::std::cell::RefCell<Option<ast::LExpr<TcIdent>>> = ::std::cell::RefCell::new(None) }
+        let expr = prelude.with(|expr| {
+            let mut expr = expr.borrow_mut();
+            if let None = *expr {
+                let _ = ::env_logger::init();
+                let mut text = String::new();
+                File::open("prelude.s").unwrap().read_to_string(&mut text).unwrap();
+                *expr = Some(parse_new(&text))
+            }
+            expr.as_ref().unwrap().clone()
+        });
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+        let &mut(ref mut interner, ref mut gc) = &mut *interner;
+        b.iter(|| {
+            let mut tc = Typecheck::new(interner, gc);
+            ::test::black_box(tc.typecheck_expr(&mut expr.clone()))
+        })
     }
 }
