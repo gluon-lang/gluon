@@ -285,7 +285,7 @@ impl <'a> Compiler<'a> {
     }
 
     fn stack_size(&self) -> VMIndex {
-        self.stack.len() as VMIndex
+        self.stack.len() as VMIndex - self.closure_limits.last().map(|&x| x).unwrap_or(0)
     }
 
     ///Compiles an expression to a zero argument function which can be directly fed to the
@@ -386,25 +386,44 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(instr);
                 }
             }
-            Expr::Let(ref bind, ref body) => {
-                if bind.arguments.len() != 0 {
-                    self.new_stack_var(*bind.name.id());
-                    let (function_index, vars, cf) = self.compile_lambda(&bind.name, &bind.arguments, &bind.expression, function);
-                    let i = function.instructions.len() - vars as usize;
-                    function.instructions.insert(i, NewClosure(function_index, vars));
-                    function.instructions.push(CloseClosure(vars));
-                    function.inner_functions.push(cf);
+            Expr::Let(ref bindings, ref body) => {
+                let stack_start = self.stack_size();
+                //Index where the instruction to create the first closure should be at
+                let first_index = function.instructions.len();
+                let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
+                if is_recursive {
+                    for bind in bindings.iter() {
+                        self.new_stack_var(*bind.name.id());
+                        //Add the NewClosure instruction before hand
+                        //it will be fixed later
+                        function.instructions.push(NewClosure(0, 0));
+                    }
                 }
-                else {
-                    self.compile(&bind.expression, function);
-                    self.new_stack_var(*bind.name.id());
+                for (i, bind) in bindings.iter().enumerate() {
+
+                    if is_recursive {
+                        function.instructions.push(Push(stack_start + i as VMIndex));
+                        let (function_index, vars, cf) = self.compile_lambda(&bind.name, &bind.arguments, &bind.expression, function);
+                        let offset = first_index + i;
+                        function.instructions[offset] = NewClosure(function_index, vars);
+                        function.instructions.push(CloseClosure(vars));
+                        function.inner_functions.push(cf);
+                    }
+                    else {
+                        self.compile(&bind.expression, function);
+                        self.new_stack_var(*bind.name.id());
+                    }
+                    //unit expressions do not return a value so we need to add a dummy value
+                    //To make the stack correct
+                    if *bind.expression.type_of() == UNIT_TYPE {
+                        function.instructions.push(PushInt(0));
+                    }
                 }
-                //unit expressions do not return a value so we need to add a dummy value
-                //To make the stack correct
-                if *bind.expression.type_of() == UNIT_TYPE {
-                    function.instructions.push(PushInt(0));
-                }
+                debug!("{:?}", function.instructions);
                 self.compile(&body, function);
+                for _ in 0..bindings.len() {
+                    self.stack.pop();
+                }
             }
             Expr::Call(ref func, ref args) => {
                 if let Expr::Identifier(ref id) = func.value {
@@ -533,8 +552,8 @@ impl <'a> Compiler<'a> {
         f.dictionary = parent.dictionary.clone();
         self.compile(body, &mut f);
 
-        let previous_len = self.closure_limits.pop().expect("closure_limits: pop");
-        while previous_len < self.stack_size() {
+        self.closure_limits.pop().expect("closure_limits: pop");
+        for _ in 0..arguments.len() {
             self.stack.pop();
         }
         //Insert all free variables into the above globals free variables

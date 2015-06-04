@@ -458,32 +458,39 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(alt1_type)
             }
-            ast::Expr::Let(ref mut bind, ref mut body) => {
-                let id_type = self.subs.instantiate(&bind.name.typ);
+            ast::Expr::Let(ref mut bindings, ref mut body) => {
                 self.stack.enter_scope();
-                //Store the current generic -> variable mapping so that we can reverse it later
-                let variables = self.subs.variables.clone();
-                //Functions which are declared as `let f x = ...` are allowed to be self recursive
-                let mut typ = if bind.arguments.len() != 0 {
-                    let fn_type = self.subs.new_var();
-                    self.stack_var(bind.name.name.clone(), fn_type);
-                    try!(self.typecheck_lambda(&mut bind.arguments, &mut bind.expression))
+                let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
+                if is_recursive {
+                    for bind in bindings.iter_mut() {
+                        let fn_type = self.subs.new_var();
+                        self.stack_var(bind.name.name.clone(), fn_type);
+                    }
                 }
-                else {
-                    try!(self.typecheck(&mut bind.expression))
-                };
-                if bind.name.typ != UNIT_TYPE {
-                    //Merge the type declaration and the actual type
-                    typ = try!(self.merge(id_type, typ));
-                }
-                self.replace_vars(&variables, &mut bind.expression);
-                ast::walk_mut_type(&mut typ, &mut |typ| {
-                    self.replace_variable(typ);
-                });
-                bind.name.typ = typ.clone();
-                debug!("let {} : {}", bind.name.name, typ);
-                if bind.arguments.len() == 0 {
-                    self.stack_var(bind.name.name.clone(), typ);
+                for bind in bindings {
+                    let id_type = self.subs.instantiate(&bind.name.typ);
+                    //Store the current generic -> variable mapping so that we can reverse it later
+                    let variables = self.subs.variables.clone();
+                    //Functions which are declared as `let f x = ...` are allowed to be self recursive
+                    let mut typ = if bind.arguments.len() != 0 {
+                        try!(self.typecheck_lambda(&mut bind.arguments, &mut bind.expression))
+                    }
+                    else {
+                        try!(self.typecheck(&mut bind.expression))
+                    };
+                    if bind.name.typ != UNIT_TYPE {
+                        //Merge the type declaration and the actual type
+                        typ = try!(self.merge(id_type, typ));
+                    }
+                    self.replace_vars(&variables, &mut bind.expression);
+                    ast::walk_mut_type(&mut typ, &mut |typ| {
+                        self.replace_variable(typ);
+                    });
+                    bind.name.typ = typ.clone();
+                    debug!("let {} : {}", bind.name.name, typ);
+                    if !is_recursive {
+                        self.stack_var(bind.name.name.clone(), typ);
+                    }
                 }
                 let result = self.typecheck(body);
                 self.stack.exit_scope();
@@ -1112,8 +1119,8 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
         let (expr, result) = typecheck_expr(text);
         assert_eq!(result, Ok(typ("Float")));
         match expr.value {
-            ast::Expr::Let(ref bind, _) => {
-                assert_eq!(*bind.expression.type_of(), ast::fn_type(vec![typ("a"), typ("b")], typ("a")));
+            ast::Expr::Let(ref bindings, _) => {
+                assert_eq!(*bindings[0].expression.type_of(), ast::fn_type(vec![typ("a"), typ("b")], typ("a")));
             }
             _ => assert!(false)
         }
@@ -1127,6 +1134,20 @@ let fac x = if x #Int== 0 then 1 else x #Int* fac (x #Int- 1) in fac
 ";
         let (_, result) = typecheck_expr(text);
         assert_eq!(result, Ok(ast::fn_type(vec![typ("Int")], typ("Int"))));
+    }
+    #[test]
+    fn let_binding_mutually_recursive() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let f x = if x #Int< 0
+          then x
+          else g x
+and g x = f (x #Int- 1)
+in g 5
+";
+        let (_, result) = typecheck_expr(text);
+        assert_eq!(result, Ok(typ("Int")));
     }
     #[test]
     fn primitive_error() {

@@ -185,7 +185,7 @@ pub enum Expr<Id: AstId> {
     IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
     Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
     BinOp(Box<LExpr<Id>>, Id, Box<LExpr<Id>>),
-    Let(Binding<Id>, Box<LExpr<Id>>),
+    Let(Vec<Binding<Id>>, Box<LExpr<Id>>),
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
     ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
@@ -199,7 +199,7 @@ pub enum Expr<Id: AstId> {
 pub struct Binding<Id: AstId> {
     pub name: Id,
     pub arguments: Vec<Id>,
-    pub expression: Box<LExpr<Id>>
+    pub expression: LExpr<Id>
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
@@ -369,8 +369,10 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
             v.visit_expr(&mut **lhs);
             v.visit_expr(&mut **rhs);
         }
-        Expr::Let(ref mut bind, ref mut body) => {
-            v.visit_expr(&mut bind.expression);
+        Expr::Let(ref mut bindings, ref mut body) => {
+            for bind in bindings {
+                v.visit_expr(&mut bind.expression);
+            }
             v.visit_expr(&mut **body);
         }
         Expr::Call(ref mut func, ref mut args) => {

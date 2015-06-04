@@ -33,6 +33,13 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         parser: fn (&ParserEnv<'a, I, Id>, State<I>) -> ParseResult<T, I>
     }
 
+    impl <'a, 'b, I, Id, T> Clone for EnvParser<'a, 'b, I, Id, T> {
+        fn clone(&self) -> EnvParser<'a, 'b, I, Id, T> {
+            EnvParser { env: self.env, parser: self.parser }
+        }
+    }
+    impl <'a, 'b, I, Id, T> Copy for EnvParser<'a, 'b, I, Id, T> { }
+
     impl <'a, 'b, Id, I, O> Parser for EnvParser<'a, 'b, I, Id, O>
         where I: Stream<Item=char>
             , Id: AstId + Clone {
@@ -361,23 +368,34 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn let_in(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+            let bind = self.parser(ParserEnv::binding);
             self.reserved("let")
-                .with(self.ident())
-                .and(many(self.ident()))
-                .and(optional(self.reserved_op(":").with(self.typ())))
-                .and(parser(|input| self.reserved_op("=")
-                    .with(self.expr())
-                    .skip(self.reserved("in"))
-                    .and(self.expr())
-                    .parse_state(input)))
-                .map(|(((mut name, arguments), typ), (e1, e2))| {
-                    if let Some(typ) = typ {
-                        name.set_type(typ);
-                    }
-                    Expr::Let(Binding { name: name, arguments: arguments, expression: Box::new(e1) }, Box::new(e2))
+                .with(bind.and(many(self.reserved("and").with(bind))))
+                .skip(self.reserved("in"))
+                .and(self.expr())
+                .map(|((b, bindings), expr)| {
+                    let mut bindings: Vec<_> = bindings;
+                    bindings.insert(0, b);
+                    Expr::Let(bindings, Box::new(expr))
                 })
                 .parse_state(input)
         }
+
+        fn binding(&self, input: State<I>) -> ParseResult<Binding<Id>, I> {
+            self.ident()
+                .and(many(self.ident()))
+                .and(optional(self.reserved_op(":").with(self.typ())))
+                .skip(self.reserved_op("="))
+                .and(self.expr())
+                .map(|(((mut name, arguments), typ), e)| {
+                    if let Some(typ) = typ {
+                        name.set_type(typ);
+                    }
+                    Binding { name: name, arguments: arguments, expression: e }
+                })
+                .parse_state(input)
+        }
+
         fn record(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
             let field = self.ident_u()
                         .skip(self.lex(string("=")))
@@ -394,7 +412,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         ident: Identifier {
             start: letter().or(char('_')),
             rest: alpha_num().or(char('_')),
-            reserved: ["if", "then", "else", "let", "in", "type", "case", "of"].iter().map(|x| (*x).into()).collect()
+            reserved: ["if", "then", "else", "let", "and", "in", "type", "case", "of"].iter().map(|x| (*x).into()).collect()
         },
         op: Identifier {
             start: satisfy(move |c| ops.chars().any(|x| x == c)),
@@ -464,7 +482,7 @@ pub mod tests {
         let_a(s, &[], e, b)
     }
     fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
-        no_loc(Expr::Let(Binding { name: intern(s), arguments: args.iter().map(|i| intern(i)).collect(), expression: box e }, Box::new(b)))
+        no_loc(Expr::Let(vec![Binding { name: intern(s), arguments: args.iter().map(|i| intern(i)).collect(), expression: e }], Box::new(b)))
     }
     fn id(s: &str) -> PExpr {
         no_loc(Expr::Identifier(intern(s)))
@@ -555,7 +573,7 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new::<TcIdent>("let f: Int = \\x y -> x + y in f 1 2");
         match e.value {
-            Expr::Let(bind, _) => assert_eq!(bind.name.typ, typ("Int")),
+            Expr::Let(bind, _) => assert_eq!(bind[0].name.typ, typ("Int")),
             _ => assert!(false)
         }
     }

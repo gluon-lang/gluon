@@ -904,6 +904,7 @@ impl <'a> VM<'a> {
                             for var in closure.upvars.iter().rev() {
                                 var.set(stack.pop());
                             }
+                            stack.pop();//Remove the closure
                         }
                         x => panic!("Expected closure, got {:?}", x)
                     }
@@ -1198,6 +1199,22 @@ in fib 7
         let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(13));
+    }
+    #[test]
+    fn mutually_recursive_function() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let f x = if x #Int< 0
+          then x
+          else g x
+and g x = f (x #Int- 1)
+in g 3
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(-1));
     }
     #[test]
     fn no_capture_self_function() {
