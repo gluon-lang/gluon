@@ -238,7 +238,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             let position = input.position;
             debug!("Expr start: {:?}", input.clone().uncons_char().map(|t| t.0));
             let loc = |expr| located(Location { column: position.column, row: position.line, absolute: 0 }, expr);
-            choice::<[&mut Parser<Input=I, Output=LExpr<Id>>; 12], _>([
+            choice::<[&mut Parser<Input=I, Output=LExpr<Id>>; 13], _>([
                 &mut parser(|input| self.if_else(input)).map(&loc),
                 &mut self.parser(ParserEnv::let_in).map(&loc),
                 &mut self.parser(ParserEnv::case_of).map(&loc),
@@ -259,7 +259,9 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                         Some(expr) => expr,
                         None => loc(Expr::Tuple(vec![]))
                     }
-                }))
+                })),
+                &mut self.brackets(sep_by(self.expr(), self.lex(char(','))))
+                    .map(|exprs| loc(Expr::Array(ArrayStruct { id: self.intern(""), expressions: exprs })))
                 ])
                 .and(many(self.lex(char('.')).with(self.ident())))
                 .map(|(expr, fields): (_, Vec<_>)| {
@@ -514,6 +516,9 @@ pub mod tests {
     fn field_access(expr: PExpr, field: &str) -> PExpr {
         no_loc(Expr::FieldAccess(Box::new(expr), intern(field)))
     }
+    fn array(fields: Vec<PExpr>) -> PExpr {
+        no_loc(Expr::Array(ArrayStruct { id: intern(""), expressions: fields }))
+    }
 
     pub fn parse_new<Id>(s: &str) -> LExpr<Id>
         where Id: AstId + Clone {
@@ -611,5 +616,11 @@ pub mod tests {
                             (ConstructorPattern(intern("Some"), vec![intern("x")]), id("x"))
                         ,   (ConstructorPattern(intern("None"), vec![]), int(0))
                         ]));
+    }
+    #[test]
+    fn array_expr() {
+        let _ = ::env_logger::init();
+        let e = parse_new("[1, a]");
+        assert_eq!(e, array(vec![int(1), id("a")]));
     }
 }
