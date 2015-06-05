@@ -483,7 +483,7 @@ impl <'a> Typecheck<'a> {
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter_mut() {
-                        if bind.name.typ == UNIT_TYPE {
+                        if bind.name.typ == Type::Variable(0) {
                             bind.name.typ = self.subs.new_var();
                         }
                         self.stack_var(bind.name.name.clone(), bind.name.typ.clone());
@@ -502,7 +502,7 @@ impl <'a> Typecheck<'a> {
                     debug!("let {} : {}", bind.name.name, typ);
                     if !is_recursive {
                         //Merge the type declaration and the actual type
-                        if bind.name.typ != UNIT_TYPE {
+                        if bind.name.typ != Type::Variable(0) {
                             typ = try!(self.unify(&bind.name.typ, typ));
                         }
                         bind.name.typ = typ.clone();
@@ -881,7 +881,7 @@ impl Substitution {
             map: UnsafeCell::new(HashMap::new()),
             constraints: HashMap::new(),
             variables: HashMap::new(),
-            var_id: 0
+            var_id: 1
         }
     }
 
@@ -899,7 +899,7 @@ impl Substitution {
         unsafe { (*self.map.get()).clear(); }
         self.constraints.clear();
         self.variables.clear();
-        self.var_id = 0;
+        self.var_id = 1;
     }
 
     unsafe fn insert(&mut self, var: u32, t: TcType) {

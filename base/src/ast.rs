@@ -41,7 +41,7 @@ impl AstId for InternedStr {
 }
 impl <Id: Clone + PartialEq + Eq + fmt::Debug + AstId> AstId for TcIdent<Id> {
     type Untyped = Id;
-    fn from_str(s: InternedStr) -> TcIdent<Id> { TcIdent { typ: Type::Builtin(UnitType), name: AstId::from_str(s) } }
+    fn from_str(s: InternedStr) -> TcIdent<Id> { TcIdent { typ: Type::Variable(0), name: AstId::from_str(s) } }
     fn to_id(self) -> Id { self.name }
     fn set_type(&mut self, typ: Type<Self::Untyped>) {
         self.typ = typ;
