@@ -253,59 +253,78 @@ impl <'a> Typecheck<'a> {
         self.environment = Some(env);
     }
 
-    fn replace_vars(&mut self, variables: &HashMap<InternedStr, u32>, expr: &mut ast::LExpr<TcIdent>) {
+    fn replace_vars(&mut self, level: u32, variables: &HashMap<InternedStr, u32>, expr: &mut ast::LExpr<TcIdent>) {
         //Insert all type variables in the type declaration so that they get replaced by their
         //corresponding generic variable
         for (generic_id, var_id) in variables {
             unsafe { self.subs.insert(*var_id, Type::Generic(*generic_id)); }
         }
         //Replace all type variables with their inferred types
-        struct ReplaceVisitor<'a, 'b:'a> { tc: &'a mut Typecheck<'b> }
+        struct ReplaceVisitor<'a, 'b:'a> { level: u32, tc: &'a mut Typecheck<'b> }
         impl <'a, 'b> ReplaceVisitor<'a, 'b> {
-            fn finish_type(&mut self, location: ast::Location, typ: &mut TcType) {
-                let mut unbound_variable = false;
+            fn finish_type(&mut self, typ: &mut TcType) {
                 ast::walk_mut_type(typ, &mut |typ| {
                     self.tc.replace_variable(typ);
-                    if let Type::Variable(_) = *typ {
-                        unbound_variable = true;
+                    match *typ {
+                        Type::Variable(var) if var >= self.level => {
+                            let mut generic = format!("a_{}", var);
+                            *typ = Type::Generic(self.tc.interner.intern(self.tc.gc, &generic));
+                        }
+                        _ => ()
                     }
                 });
-                /*FIXME
-                if unbound_variable {
-                    self.tc.errors.error(ast::Located { location: location, value: TypeError::UnboundVariable });
-                }
-                */
             }
         }
         impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
             type T = TcIdent;
             fn visit_expr(&mut self, e: &mut ast::LExpr<TcIdent>) {
                 match e.value {
-                    ast::Expr::Identifier(ref mut id) => self.finish_type(e.location, &mut id.typ),
-                    ast::Expr::FieldAccess(_, ref mut id) => self.finish_type(e.location, &mut id.typ),
-                    ast::Expr::Array(ref mut array) => self.finish_type(e.location, &mut array.id.typ),
-                    ast::Expr::Lambda(ref mut lambda) => self.finish_type(e.location, &mut lambda.id.typ),
-                    ast::Expr::BinOp(_, ref mut id, _) => self.finish_type(e.location, &mut id.typ),
+                    ast::Expr::Identifier(ref mut id) => self.finish_type(&mut id.typ),
+                    ast::Expr::FieldAccess(_, ref mut id) => self.finish_type(&mut id.typ),
+                    ast::Expr::Array(ref mut array) => self.finish_type(&mut array.id.typ),
+                    ast::Expr::Lambda(ref mut lambda) => self.finish_type(&mut lambda.id.typ),
+                    ast::Expr::BinOp(_, ref mut id, _) => self.finish_type(&mut id.typ),
                     ast::Expr::Match(_, ref mut alts) => {
                         for alt in alts.iter_mut() {
                             match alt.pattern {
                                 ast::ConstructorPattern(ref mut id, ref mut args) => {
-                                    self.finish_type(e.location, &mut id.typ);
+                                    self.finish_type(&mut id.typ);
                                     for arg in args.iter_mut() {
-                                        self.finish_type(e.location, &mut arg.typ);
+                                        self.finish_type(&mut arg.typ);
                                     }
                                 }
-                                ast::IdentifierPattern(ref mut id) => self.finish_type(e.location, &mut id.typ)
+                                ast::IdentifierPattern(ref mut id) => self.finish_type(&mut id.typ)
                             }
                         }
                     }
-                    ast::Expr::Record(ref mut id, _) => self.finish_type(e.location, &mut id.typ),
+                    ast::Expr::Let(ref mut bindings, _) => {
+                        for bind in bindings {
+                            self.finish_type(&mut bind.name.typ);
+                        }
+                    }
+                    ast::Expr::Record(ref mut id, _) => self.finish_type(&mut id.typ),
                     _ => ()
                 }
                 ast::walk_mut_expr(self, e);
             }
         }
-        ReplaceVisitor { tc: self }.visit_expr(expr);
+        let mut stack = ::std::mem::replace(&mut self.stack, ScopedMap::new());
+        for (_, vec) in stack.iter_mut() {
+            for typ in vec {
+                ast::walk_mut_type(typ, &mut |typ| {
+                    self.replace_variable(typ);
+                    match *typ {
+                        Type::Variable(var) if var >= level => {
+                            let mut generic = format!("a_{}", var);
+                            *typ = Type::Generic(self.interner.intern(self.gc, &generic));
+                        }
+                        _ => ()
+                    }
+                });
+            }
+        }
+        ::std::mem::swap(&mut self.stack, &mut stack);
+        ReplaceVisitor { level: level, tc: self }.visit_expr(expr);
     }
 
     pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, StringErrors> {
@@ -338,7 +357,7 @@ impl <'a> Typecheck<'a> {
                 };
                 self.replace_variable(typ);
             });
-            self.replace_vars(&HashMap::new(), expr);
+            self.replace_vars(0, &HashMap::new(), expr);
             Ok(typ)
         }
     }
@@ -460,17 +479,19 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Let(ref mut bindings, ref mut body) => {
                 self.stack.enter_scope();
+                let level = self.subs.var_id;
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter_mut() {
-                        let fn_type = self.subs.new_var();
-                        self.stack_var(bind.name.name.clone(), fn_type);
+                        if bind.name.typ == UNIT_TYPE {
+                            bind.name.typ = self.subs.new_var();
+                        }
+                        self.stack_var(bind.name.name.clone(), bind.name.typ.clone());
                     }
                 }
-                for bind in bindings {
-                    let id_type = self.subs.instantiate(&bind.name.typ);
+                let mut types = Vec::new();
+                for bind in bindings.iter_mut() {
                     //Store the current generic -> variable mapping so that we can reverse it later
-                    let variables = self.subs.variables.clone();
                     //Functions which are declared as `let f x = ...` are allowed to be self recursive
                     let mut typ = if bind.arguments.len() != 0 {
                         try!(self.typecheck_lambda(&mut bind.arguments, &mut bind.expression))
@@ -478,20 +499,29 @@ impl <'a> Typecheck<'a> {
                     else {
                         try!(self.typecheck(&mut bind.expression))
                     };
-                    if bind.name.typ != UNIT_TYPE {
-                        //Merge the type declaration and the actual type
-                        typ = try!(self.merge(id_type, typ));
-                    }
-                    self.replace_vars(&variables, &mut bind.expression);
-                    ast::walk_mut_type(&mut typ, &mut |typ| {
-                        self.replace_variable(typ);
-                    });
-                    bind.name.typ = typ.clone();
                     debug!("let {} : {}", bind.name.name, typ);
                     if !is_recursive {
+                        //Merge the type declaration and the actual type
+                        if bind.name.typ != UNIT_TYPE {
+                            typ = try!(self.unify(&bind.name.typ, typ));
+                        }
+                        bind.name.typ = typ.clone();
+                        self.replace_vars(level, &HashMap::new(), &mut bind.expression);
                         self.stack_var(bind.name.name.clone(), typ);
                     }
+                    else {
+                        types.push(typ);
+                    }
                 }
+                if is_recursive {
+                    for (mut typ, bind) in types.into_iter().zip(bindings) {
+                        //Merge the type declaration and the actual type
+                        typ = try!(self.unify(&bind.name.typ, typ));
+                        bind.name.typ = typ;
+                        self.replace_vars(level, &HashMap::new(), &mut bind.expression);
+                    }
+                }
+                debug!("Typecheck `in`");
                 let result = self.typecheck(body);
                 self.stack.exit_scope();
                 result
@@ -1009,6 +1039,14 @@ impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
     }
 }
 
+impl <T> Typed for ast::Binding<T>
+    where T: Typed<Id=InternedStr> + ast::AstId<Untyped=InternedStr> {
+    type Id = T::Untyped;
+    fn type_of(&self) -> &TcType {
+        self.name.type_of()
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1149,6 +1187,37 @@ in g 5
         let (_, result) = typecheck_expr(text);
         assert_eq!(result, Ok(typ("Int")));
     }
+
+macro_rules! assert_m {
+    ($i: expr, $p: pat => $e: expr) => {
+        match $i {
+            $p => $e,
+            _ => assert!(false)
+        }
+    }
+}
+
+    #[test]
+    fn let_binding_general_mutually_recursive() {
+        let _ = ::env_logger::init();
+        let text =
+r"
+let test x = (1 #Int+ 2) #Int+ test2 x
+and test2 x = 2 #Int+ test x
+in test2 1";
+        let (expr, result) = typecheck_expr(text);
+        assert_eq!(result, Ok(typ("Int")));
+        assert_m!(expr.value, ast::Expr::Let(ref binds, _) => {
+            assert_eq!(binds.len(), 2);
+            assert_m!(*binds[0].type_of(), ast::Type::Function(ref args, _) => {
+                assert_m!(args[0], ast::Type::Generic(_) => ())
+            });
+            assert_m!(*binds[1].type_of(), ast::Type::Function(ref args, _) => {
+                assert_m!(args[0], ast::Type::Generic(_) => ())
+            });
+        });
+    }
+
     #[test]
     fn primitive_error() {
         let _ = ::env_logger::init();
@@ -1209,7 +1278,7 @@ let eq_Int: Eq Int = {
 in eq_Int
 ";
         let result = typecheck(text);
-        assert_eq!(result, Ok(Type::App(Box::new(typ("Eq")), Box::new(typ("Int")))));
+        assert_eq!(result, Ok(typ_a("Eq", vec![typ("Int")])));
     }
 
 
