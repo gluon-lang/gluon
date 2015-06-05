@@ -127,7 +127,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                     if s.chars().next()
                         .map(|c| c.is_lowercase())
                         .unwrap_or(false) {
-                        Type::Generic(self.intern(&s).to_id())
+                        Type::Generic(Generic { kind: Kind::Variable(0), id: self.intern(&s).to_id() })
                     }
                     else {
                         match str_to_primitive_type(&s) {
@@ -207,7 +207,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .with(self.ident_u())
                 .and(many(self.ident_u()))//TODO only variables allowed
                 .map(|(name, args): (_, Vec<_>)| {
-                    let args = args.into_iter().map(Type::Generic).collect();
+                    let args = args.into_iter().map(|id| Type::Generic(Generic { kind: Kind::Variable(0), id: id })).collect();
                     Type::Data(TypeConstructor::Data(name), args)
                 })
                 .then(|return_type| parser(move |input| {

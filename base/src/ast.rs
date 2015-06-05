@@ -41,7 +41,9 @@ impl AstId for InternedStr {
 }
 impl <Id: Clone + PartialEq + Eq + fmt::Debug + AstId> AstId for TcIdent<Id> {
     type Untyped = Id;
-    fn from_str(s: InternedStr) -> TcIdent<Id> { TcIdent { typ: Type::Variable(0), name: AstId::from_str(s) } }
+    fn from_str(s: InternedStr) -> TcIdent<Id> {
+        TcIdent { typ: Type::Variable(TypeVariable { kind: Kind::Variable(0), id: 0 }), name: AstId::from_str(s) }
+    }
     fn to_id(self) -> Id { self.name }
     fn set_type(&mut self, typ: Type<Self::Untyped>) {
         self.typ = typ;
@@ -125,16 +127,56 @@ impl <I: fmt::Display> fmt::Display for TypeConstructor<I> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Kind {
+    Variable(u32),
+    Star,
+    Function(Box<Kind>, Box<Kind>)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TypeVariable {
+    pub kind: Kind,
+    pub id: u32
+}
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Generic<Id> {
+    pub kind: Kind,
+    pub id: Id
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id> {
     App(Box<Type<Id>>, Box<Type<Id>>),
     Data(TypeConstructor<Id>, Vec<Type<Id>>),
     Variants(Vec<(Id, Type<Id>)>),
-    Variable(u32),
-    Generic(Id),
+    Variable(TypeVariable),
+    Generic(Generic<Id>),
     Function(Vec<Type<Id>>, Box<Type<Id>>),
     Builtin(BuiltinType),
     Array(Box<Type<Id>>),
     Record(Vec<Field<Id>>)
+}
+
+impl <Id> Type<Id> {
+    pub fn is_uninitialized(&self) -> bool {
+        match *self {
+            Type::Variable(ref id) if id.id == 0 => true,
+            _ => false
+        }
+    }
+    pub fn kind(&self) -> &Kind {
+        use self::Type::*;
+        static STAR: Kind = Kind::Star;
+        match *self {
+            App(ref arg, _) => match *arg.kind() {
+                Kind::Function(_, ref ret) => &**ret,
+                _ => panic!("Expected function kind")
+            },
+            Variable(ref var) => &var.kind,
+            Generic(ref gen) => &gen.kind,
+            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) | Record(_) => &STAR,
+        }
+    }
 }
 
 pub type VMType = Type<InternedStr>;
@@ -286,6 +328,28 @@ impl TcType {
             Type::App(ref a, _) => a.inner_app(),
             _ => self
         }
+    }
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Kind::Variable(i) => i.fmt(f),
+            Kind::Star => '*'.fmt(f),
+            Kind::Function(ref arg, ref ret) => write!(f, "({} -> {})", arg, ret)
+        }
+    }
+}
+
+impl fmt::Display for TypeVariable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.id.fmt(f)
+    }
+}
+
+impl <Id: fmt::Display> fmt::Display for Generic<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.id.fmt(f)
     }
 }
 

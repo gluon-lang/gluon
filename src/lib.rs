@@ -18,6 +18,7 @@ pub use compiler::{CompiledFunction, Instruction};
 pub use base::{ast, gc, interner};
 
 mod scoped_map;
+mod kindcheck;
 pub mod typecheck;
 pub mod compiler;
 pub mod vm;

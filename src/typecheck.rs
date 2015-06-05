@@ -108,7 +108,7 @@ fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcT
         let mut typ = id_type.clone();
         ast::walk_mut_type(&mut typ, &mut |typ| {
             *typ = match *typ {
-                Type::Generic(ref id) => result[id].clone(),
+                Type::Generic(ref id) => result[&id.id].clone(),
                 _ => return
             };
         });
@@ -128,8 +128,8 @@ fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut Ha
         (&Type::Variable(_), _) => {
             panic!()
         }
-        (&Type::Generic(i), real_type) => {
-            out.insert(i, real_type);
+        (&Type::Generic(ref i), real_type) => {
+            out.insert(i.id, real_type);
             true
         }
         (&Type::Array(ref l), &Type::Array(ref r)) => find_real_type_(&**l, &**r, out),
@@ -223,7 +223,7 @@ impl <'a> Typecheck<'a> {
         };
         match t {
             Some(typ) => {
-                let x = self.subs.instantiate_constrained(&[], typ);
+                let x = self.subs.instantiate(typ);
                 debug!("Find {} : {:?}", id, x);
                 Ok(x)
             }
@@ -257,7 +257,7 @@ impl <'a> Typecheck<'a> {
         //Insert all type variables in the type declaration so that they get replaced by their
         //corresponding generic variable
         for (generic_id, var_id) in variables {
-            unsafe { self.subs.insert(*var_id, Type::Generic(*generic_id)); }
+            unsafe { self.subs.insert(*var_id, Type::Generic(ast::Generic { kind: ast::Kind::Star, id: *generic_id })); }
         }
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { level: u32, tc: &'a mut Typecheck<'b> }
@@ -265,13 +265,14 @@ impl <'a> Typecheck<'a> {
             fn finish_type(&mut self, typ: &mut TcType) {
                 ast::walk_mut_type(typ, &mut |typ| {
                     self.tc.replace_variable(typ);
-                    match *typ {
-                        Type::Variable(var) if var >= self.level => {
+                    *typ = match *typ {
+                        Type::Variable(ref var) if var.id >= self.level => {
                             let mut generic = format!("a_{}", var);
-                            *typ = Type::Generic(self.tc.interner.intern(self.tc.gc, &generic));
+                            let id = self.tc.interner.intern(self.tc.gc, &generic);
+                            Type::Generic(ast::Generic { kind: var.kind.clone(), id: id })
                         }
-                        _ => ()
-                    }
+                        _ => return
+                    };
                 });
             }
         }
@@ -313,13 +314,13 @@ impl <'a> Typecheck<'a> {
             for typ in vec {
                 ast::walk_mut_type(typ, &mut |typ| {
                     self.replace_variable(typ);
-                    match *typ {
-                        Type::Variable(var) if var >= level => {
+                    *typ = match *typ {
+                        Type::Variable(ref var) if var.id >= level => {
                             let mut generic = format!("a_{}", var);
-                            *typ = Type::Generic(self.interner.intern(self.gc, &generic));
+                            Type::Generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) })
                         }
-                        _ => ()
-                    }
+                        _ => return
+                    };
                 });
             }
         }
@@ -345,12 +346,12 @@ impl <'a> Typecheck<'a> {
             let mut generic = String::from_str("a");
             ast::walk_mut_type(&mut typ, &mut |typ| {
                 match *typ {
-                    Type::Variable(id) => {
-                        if let None = self.find_type_for_var(id) {
-                            let gen = Type::Generic(self.interner.intern(self.gc, &generic));
+                    Type::Variable(ref var) => {
+                        if let None = self.find_type_for_var(var.id) {
+                            let gen = Type::Generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) });
                             let c = generic.pop().unwrap();
                             generic.push((c as u8 + 1) as char);
-                            unsafe { self.subs.insert(id, gen) }
+                            unsafe { self.subs.insert(var.id, gen) }
                         }
                     }
                     _ => ()
@@ -483,7 +484,7 @@ impl <'a> Typecheck<'a> {
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter_mut() {
-                        if bind.name.typ == Type::Variable(0) {
+                        if bind.name.typ.is_uninitialized() {
                             bind.name.typ = self.subs.new_var();
                         }
                         self.stack_var(bind.name.name.clone(), bind.name.typ.clone());
@@ -502,7 +503,7 @@ impl <'a> Typecheck<'a> {
                     debug!("let {} : {}", bind.name.name, typ);
                     if !is_recursive {
                         //Merge the type declaration and the actual type
-                        if bind.name.typ != Type::Variable(0) {
+                        if !bind.name.typ.is_uninitialized() {
                             typ = try!(self.unify(&bind.name.typ, typ));
                         }
                         bind.name.typ = typ.clone();
@@ -697,11 +698,11 @@ impl <'a> Typecheck<'a> {
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
             (&Type::Variable(ref l), _) => {
-                self.union(*l, actual);
+                self.union(l, actual);
                 true
             }
             (_, &Type::Variable(ref r)) => {
-                self.union(*r, expected);
+                self.union(r, expected);
                 true
             }
             (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
@@ -748,7 +749,7 @@ impl <'a> Typecheck<'a> {
         debug!("Merge {:?} {:?}", expected, actual);
         match (expected, actual) {
             (_, &Type::Variable(ref r)) => {
-                self.union(*r, expected);
+                self.union(r, expected);
                 true
             }
             (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
@@ -800,8 +801,8 @@ impl <'a> Typecheck<'a> {
     
     fn replace_variable(&self, typ: &mut TcType) {
         let replacement = match *typ {
-            Type::Variable(id) => {
-                self.find_type_for_var(id)
+            Type::Variable(ref id) => {
+                self.find_type_for_var(id.id)
                     .map(|t| t.clone())
             }
             _ => None
@@ -814,7 +815,7 @@ impl <'a> Typecheck<'a> {
 
     fn real_type<'r>(&'r self, typ: &'r TcType) -> &'r TcType {
         match *typ {
-            Type::Variable(var) => match self.find_type_for_var(var) {
+            Type::Variable(ref var) => match self.find_type_for_var(var.id) {
                 Some(t) => t,
                 None => typ
             },
@@ -829,23 +830,26 @@ impl <'a> Typecheck<'a> {
         //to the same place
         let map = unsafe { &mut *self.subs.map.get() };
         map.get_mut(&var).map(|typ| {
-            match **typ {
-                Type::Variable(parent_var) if parent_var != var => {
-                    match self.find_type_for_var(parent_var) {
-                        Some(other) => { **typ = other.clone(); }
-                        None => ()
+            let new_type = match **typ {
+                Type::Variable(ref parent_var) if parent_var.id != var => {
+                    match self.find_type_for_var(parent_var.id) {
+                        Some(other) => Some(other.clone()),
+                        None => None
                     }
-                    &**typ
                 }
-                _ => &**typ
+                _ => None
+            };
+            if let Some(new_type) = new_type {
+                **typ = new_type;
             }
+            &**typ
         })
     }
-    fn union(&self, id: u32, typ: &TcType) {
+    fn union(&self, id: &ast::TypeVariable, typ: &TcType) {
         {
-            let id_type = self.find_type_for_var(id);
+            let id_type = self.find_type_for_var(id.id);
             let other_type = self.real_type(typ);
-            if id_type.map(|x| x == other_type).unwrap_or(Type::Variable(id) == *other_type) {
+            if id_type.map(|x| x == other_type).unwrap_or(Type::Variable(id.clone()) == *other_type) {
                 return
             }
         }
@@ -854,8 +858,8 @@ impl <'a> Typecheck<'a> {
         //This way the resulting variables are always equal to any variables in the globals
         //declaration
         match *typ {
-            Type::Variable(other_id) if id < other_id => map.insert(other_id, box Type::Variable(id)),
-            _ => map.insert(id, box typ.clone())
+            Type::Variable(ref other_id) if id.id < other_id.id => map.insert(other_id.id, box Type::Variable(id.clone())),
+            _ => map.insert(id.id, box typ.clone())
         };
     }
 }
@@ -863,7 +867,7 @@ impl <'a> Typecheck<'a> {
 struct Substitution {
     map: UnsafeCell<HashMap<u32, Box<TcType>>>,
     constraints: HashMap<u32, Vec<TcType>>,
-    variables: HashMap<InternedStr, u32>,
+    variables: HashMap<InternedStr, ast::TypeVariable>,
     var_id: u32
 }
 
@@ -885,13 +889,13 @@ impl Substitution {
         }
     }
 
-    fn variable_for(&mut self, id: InternedStr) -> u32 {
-        match self.variables.entry(id) {
+    fn variable_for(&mut self, generic: &ast::Generic<InternedStr>) -> ast::TypeVariable {
+        match self.variables.entry(generic.id) {
             Entry::Vacant(entry) => {
                 self.var_id += 1;
-                *entry.insert(self.var_id)
+                entry.insert(ast::TypeVariable { kind: generic.kind.clone(), id: self.var_id }).clone()
             }
-            Entry::Occupied(entry) => *entry.get()
+            Entry::Occupied(entry) => entry.get().clone()
         }
     }
 
@@ -903,37 +907,25 @@ impl Substitution {
     }
 
     unsafe fn insert(&mut self, var: u32, t: TcType) {
-        unsafe { (*self.map.get()).insert(var, Box::new(t)); }
+        (*self.map.get()).insert(var, Box::new(t));
     }
 
     fn new_var(&mut self) -> TcType {
         self.var_id += 1;
-        Type::Variable(self.var_id)
+        Type::Variable(ast::TypeVariable { kind: ast::Kind::Star, id: self.var_id })
+    }
+    fn new_var_kind(&mut self) -> TcType {
+        self.var_id += 1;
+        Type::Variable(ast::TypeVariable { kind: ast::Kind::Variable(self.var_id), id: self.var_id })
     }
 
-    fn instantiate_constrained(&mut self, constraints: &[ast::Constraint], typ: &TcType) -> TcType {
-        self.variables.clear();
-        for constraint in constraints.iter() {
-            let c = Type::Data(ast::TypeConstructor::Data(constraint.name), Vec::new());
-            let var = self.variable_for(constraint.type_variable);
-            match self.constraints.entry(var) {
-                Entry::Vacant(entry) => {
-                    entry.insert(vec![c]);
-                }
-                Entry::Occupied(entry) => {
-                    entry.into_mut().push(c);
-                }
-            }
-        }
-        self.instantiate_(typ)
-    }
     fn instantiate(&mut self, typ: &TcType) -> TcType {
         self.variables.clear();
         self.instantiate_(typ)
     }
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
         match *typ {
-            Type::Generic(x) => {
+            Type::Generic(ref x) => {
                 let var = self.variable_for(x);
                 debug!("Bind generic {} -> {}", x, var);
                 Type::Variable(var)
@@ -957,7 +949,7 @@ impl Substitution {
                     .collect())
             }
             Type::App(ref f, ref r) => {
-                Type::App(Box::new(self.instantiate_(f)), Box::new(self.instantiate(r)))
+                Type::App(Box::new(self.instantiate_(f)), Box::new(self.instantiate_(r)))
             }
             ref x => x.clone()
         }
@@ -1059,7 +1051,7 @@ mod tests {
         let is_var = s.chars().next().unwrap().is_lowercase();
         match ast::str_to_primitive_type(s) {
             Some(b) => Type::Builtin(b),
-            None if is_var => Type::Generic(intern(s)),
+            None if is_var => Type::Generic(ast::Generic { kind: ast::Kind::Star, id: intern(s) }),
             None => Type::Data(ast::TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
@@ -1068,7 +1060,7 @@ mod tests {
         let is_var = s.chars().next().unwrap().is_lowercase();
         match ast::str_to_primitive_type(s) {
             Some(b) => Type::Builtin(b),
-            None if is_var => Type::Generic(intern(s)),
+            None if is_var => Type::Generic(ast::Generic { kind: ast::Kind::Star, id: intern(s) }),
             None => Type::Data(ast::TypeConstructor::Data(intern(s)), args)
         }
     }

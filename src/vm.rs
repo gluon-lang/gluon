@@ -556,7 +556,7 @@ impl <'a> VM<'a> {
             gc: RefCell::new(Gc::new()),
             stack: RefCell::new(Stack::new())
         };
-        let a = Type::Generic(vm.intern("a"));
+        let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: vm.intern("a") });
         let array_a = Type::Array(box a.clone());
         let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
         let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
