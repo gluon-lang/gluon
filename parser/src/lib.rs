@@ -160,7 +160,14 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         fn parse_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
             parser(|input|
                 chainl1(self.parser(ParserEnv::type_arg), parser(|input| {
-                    Ok((|l, r| Type::App(Box::new(l), Box::new(r)), Consumed::Empty(input)))
+                    let f = |l, r| match l {
+                        Type::Data(ctor, mut args) => {
+                            args.push(r);
+                            Type::Data(ctor, args)
+                        }
+                        _ => Type::App(Box::new(l), Box::new(r))
+                    };
+                    Ok((f, Consumed::Empty(input)))
                 }))
                     .parse_state(input)
                 )

@@ -483,27 +483,43 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
 pub fn walk_mut_type<F, I>(typ: &mut Type<I>, f: &mut F)
     where F: FnMut(&mut Type<I>)
         , I: AstId {
+    walk_mut_type2(typ, f, &mut |_| ())
+}
+pub fn walk_mut_type2<F, G, I>(typ: &mut Type<I>, f: &mut F, g: &mut G)
+    where F: FnMut(&mut Type<I>)
+        , G: FnMut(&mut Type<I>)
+        , I: AstId {
     f(typ);
     match *typ {
         Type::Data(_, ref mut args) => {
             for a in args {
-                walk_mut_type(a, f);
+                walk_mut_type2(a, f, g);
             }
         }
         Type::Array(ref mut inner) => {
-            walk_mut_type(&mut **inner, f);
+            walk_mut_type2(&mut **inner, f, g);
         }
         Type::Function(ref mut args, ref mut ret) => {
             for a in args {
-                walk_mut_type(a, f);
+                walk_mut_type2(a, f, g);
             }
-            walk_mut_type(&mut **ret, f);
+            walk_mut_type2(&mut **ret, f, g);
         }
         Type::Record(ref mut fields) => {
             for field in fields {
-                walk_mut_type(&mut field.typ, f);
+                walk_mut_type2(&mut field.typ, f, g);
             }
         }
-        _ => ()
+        Type::App(ref mut l, ref mut r) => {
+            walk_mut_type2(l, f, g);
+            walk_mut_type2(r, f, g);
+        }
+        Type::Variants(ref mut variants) => {
+            for variant in variants {
+                walk_mut_type2(&mut variant.1, f, g);
+            }
+        }
+        Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => ()
     }
+    g(typ);
 }
