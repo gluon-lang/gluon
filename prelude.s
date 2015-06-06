@@ -77,5 +77,36 @@ let num_Float: Num Float = {
     (*) = \l r -> l #Float* r,
     negate = \x -> 0.0 #Float- x
 } in
-{ ord_Option = ord_Option, ord_Float = ord_Float, ord_Int = ord_Int, eq_Option = eq_Option, eq_Float = eq_Float, eq_Int = eq_Int, num_Int = num_Int, num_Float = num_Float }
+type Functor f = {
+    map : (a -> b) -> f a -> f b
+} in
+let functor_Option: Functor Option = {
+    map = \f x -> case x of
+                    | Some y -> Some (f y)
+                    | None -> None
+} in
+type Applicative f = {
+    (<*>) : f (a -> b) -> f a -> f b,
+    pure : a -> f a
+} in
+let applicative_Option: Applicative Option = {
+    (<*>) = \f x -> case f of
+                        | Some g ->
+                            case x of
+                                | Some y -> Some (g y)
+                                | None -> None
+                        | None -> None,
+    pure = \x -> Some x
+} in
+type Monad m = {
+    (>>=) : m a -> (a -> m b) -> m b,
+    return : a -> m a
+} in
+let monad_Option: Monad Option = {
+    (>>=) = \m f -> case m of
+                        | Some x -> f x
+                        | None -> None,
+    return = \x -> Some x
+} in
+{ ord_Option = ord_Option, ord_Float = ord_Float, ord_Int = ord_Int, eq_Option = eq_Option, eq_Float = eq_Float, eq_Int = eq_Int, num_Int = num_Int, num_Float = num_Float, functor_Option = functor_Option }
 

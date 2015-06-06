@@ -9,6 +9,7 @@ use base::ast::MutVisitor;
 use base::interner::{Interner, InternedStr};
 use base::gc::Gc;
 use kindcheck;
+use substitution::{Substitution, Substitutable};
 
 use self::TypeError::*;
 
@@ -55,6 +56,18 @@ impl fmt::Display for TypeError {
 }
 
 pub type TcResult = Result<TcType, TypeError>;
+
+impl Substitutable for TcType {
+    fn new(id: u32) -> TcType {
+        Type::Variable(ast::TypeVariable { kind: Kind::Star, id: id })
+    }
+    fn get_var(&self) -> Option<u32> {
+        match *self {
+            Type::Variable(ref var) => Some(var.id),
+            _ => None
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct TypeInfos {
@@ -169,7 +182,7 @@ pub struct Typecheck<'a> {
     pub type_infos: TypeInfos,
     module: HashMap<InternedStr, ast::Constrained<TcType>>,
     stack: ScopedMap<InternedStr, TcType>,
-    subs: Substitution,
+    subs: Substitution<TcType>,
     errors: Errors<ast::Located<TypeError>>
 }
 
@@ -385,7 +398,7 @@ impl <'a> Typecheck<'a> {
                 self.replace_variable(typ);
                 match *typ {
                     Type::Variable(ref var) => {
-                        if let None = self.find_type_for_var(var.id) {
+                        if let None = self.subs.find_type_for_var(var.id) {
                             let gen = Type::Generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) });
                             let c = generic.pop().unwrap();
                             generic.push((c as u8 + 1) as char);
@@ -757,8 +770,8 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.real_type(expected);
-        let actual = self.real_type(actual);
+        let expected = self.subs.real(expected);
+        let actual = self.subs.real(actual);
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
             (&Type::Variable(ref l), _) => {
@@ -808,8 +821,8 @@ impl <'a> Typecheck<'a> {
         }
     }
     fn merge_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.real_type(expected);
-        let actual = self.real_type(actual);
+        let expected = self.subs.real(expected);
+        let actual = self.subs.real(actual);
         debug!("Merge {} {}", expected, actual);
         match (expected, actual) {
             (_, &Type::Variable(ref r)) => {
@@ -845,7 +858,7 @@ impl <'a> Typecheck<'a> {
 
     fn merge_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> bool
             where F: Fn(&TcType, &TcType) -> bool {
-        let r = self.real_type(r);
+        let r = self.subs.real(r);
         match *r {
             Type::App(ref r, ref r_arg) => {
                 match l_args.last() {
@@ -874,7 +887,7 @@ impl <'a> Typecheck<'a> {
     fn replace_variable(&self, typ: &mut TcType) {
         let replacement = match *typ {
             Type::Variable(ref id) => {
-                self.find_type_for_var(id.id)
+                self.subs.find_type_for_var(id.id)
                     .map(|t| t.clone())
             }
             _ => None
@@ -885,42 +898,10 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn real_type<'r>(&'r self, typ: &'r TcType) -> &'r TcType {
-        match *typ {
-            Type::Variable(ref var) => match self.find_type_for_var(var.id) {
-                Some(t) => t,
-                None => typ
-            },
-            _ => typ
-        }
-    }
-
-    fn find_type_for_var(&self, var: u32) -> Option<&TcType> {
-        //Use unsafe so that we can hold a reference into the map and continue
-        //to look for parents
-        //Since we never have a cycle in the map we will never hold a &mut
-        //to the same place
-        let map = unsafe { &mut *self.subs.map.get() };
-        map.get_mut(&var).map(|typ| {
-            let new_type = match **typ {
-                Type::Variable(ref parent_var) if parent_var.id != var => {
-                    match self.find_type_for_var(parent_var.id) {
-                        Some(other) => Some(other.clone()),
-                        None => None
-                    }
-                }
-                _ => None
-            };
-            if let Some(new_type) = new_type {
-                **typ = new_type;
-            }
-            &**typ
-        })
-    }
     fn union(&self, id: &ast::TypeVariable, typ: &TcType) {
         {
-            let id_type = self.find_type_for_var(id.id);
-            let other_type = self.real_type(typ);
+            let id_type = self.subs.find_type_for_var(id.id);
+            let other_type = self.subs.real(typ);
             if id_type.map(|x| x == other_type).unwrap_or(Type::Variable(id.clone()) == *other_type) {
                 return
             }
@@ -936,56 +917,16 @@ impl <'a> Typecheck<'a> {
     }
 }
 
-struct Substitution {
-    map: UnsafeCell<HashMap<u32, Box<TcType>>>,
-    constraints: HashMap<u32, Vec<TcType>>,
-    variables: HashMap<InternedStr, ast::TypeVariable>,
-    var_id: u32
-}
+impl Substitution<TcType> {
 
-impl fmt::Debug for Substitution {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let map: &_ = unsafe { &*self.map.get() };
-        write!(f, "Substitution {{ map: {:?}, constraints: {:?}, variables: {:?}, var_id: {:?} }}",
-               map, self.constraints, self.variables, self.var_id)
-    }
-}
-
-impl Substitution {
-    fn new() -> Substitution {
-        Substitution {
-            map: UnsafeCell::new(HashMap::new()),
-            constraints: HashMap::new(),
-            variables: HashMap::new(),
-            var_id: 1
+    fn variable_for2(&mut self, generic: &ast::Generic<InternedStr>) -> TcType {
+        let mut var = self.variable_for(generic.id);
+        if let Type::Variable(ref mut var) = var {
+            var.kind = generic.kind.clone()
         }
+        var
     }
 
-    fn variable_for(&mut self, generic: &ast::Generic<InternedStr>) -> ast::TypeVariable {
-        match self.variables.entry(generic.id) {
-            Entry::Vacant(entry) => {
-                self.var_id += 1;
-                entry.insert(ast::TypeVariable { kind: generic.kind.clone(), id: self.var_id }).clone()
-            }
-            Entry::Occupied(entry) => entry.get().clone()
-        }
-    }
-
-    fn clear(&mut self) {
-        unsafe { (*self.map.get()).clear(); }
-        self.constraints.clear();
-        self.variables.clear();
-        self.var_id = 1;
-    }
-
-    unsafe fn insert(&mut self, var: u32, t: TcType) {
-        (*self.map.get()).insert(var, Box::new(t));
-    }
-
-    fn new_var(&mut self) -> TcType {
-        self.var_id += 1;
-        Type::Variable(ast::TypeVariable { kind: ast::Kind::Star, id: self.var_id })
-    }
     fn new_kind(&mut self) -> ast::Kind {
         self.var_id += 1;
         ast::Kind::Variable(self.var_id)
@@ -998,9 +939,9 @@ impl Substitution {
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
         match *typ {
             Type::Generic(ref x) => {
-                let var = self.variable_for(x);
+                let var = self.variable_for2(x);
                 debug!("Bind generic {} -> {}", x, var);
-                Type::Variable(var)
+                var
             }
             Type::Function(ref args, ref return_type) => {
                 let args2 = args.iter().map(|a| self.instantiate_(a)).collect();

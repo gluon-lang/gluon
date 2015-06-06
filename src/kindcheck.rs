@@ -1,21 +1,28 @@
 use base::ast::{Type, TcType, Kind};
 use base::ast;
 use base::interner::InternedStr;
-use typecheck::TypeEnv;
-use std::cell::UnsafeCell;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
-use std::fmt;
+use substitution::{Substitution, Substitutable};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
     KindMismatch(Kind, Kind),
-    UndefinedVariable(InternedStr),
     StringError(&'static str)
 }
 use self::Error::*;
 
 type Result<T> = ::std::result::Result<T, Error>;
+
+impl Substitutable for Kind {
+    fn new(x: u32) -> Kind {
+        Kind::Variable(x)
+    }
+    fn get_var(&self) -> Option<u32> {
+        match *self {
+            Kind::Variable(var) => Some(var),
+            _ => None
+        }
+    }
+}
 
 pub struct KindCheck<'a> {
     variables: &'a mut [TcType],
@@ -204,107 +211,11 @@ impl <'a> KindCheck<'a> {
     }
 }
 
-
-struct Substitution<T> {
-    map: UnsafeCell<HashMap<u32, Box<T>>>,
-    variables: HashMap<InternedStr, Kind>,
-    var_id: u32
-}
-
-trait Substitutable: Clone {
-    fn get_var(&self) -> Option<u32>;
-}
-
-impl Substitutable for Kind {
-    fn get_var(&self) -> Option<u32> {
-        match *self {
-            Kind::Variable(var) => Some(var),
-            _ => None
-        }
-    }
-}
-
-impl <T: fmt::Debug> fmt::Debug for Substitution<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let map: &_ = unsafe { &*self.map.get() };
-        write!(f, "Substitution {{ map: {:?}, variables: {:?}, var_id: {:?} }}",
-               map, self.variables, self.var_id)
-    }
-}
-
-impl <T: Substitutable> Substitution<T> {
-    fn new() -> Substitution<T> {
-        Substitution {
-            map: UnsafeCell::new(HashMap::new()),
-            variables: HashMap::new(),
-            var_id: 1
-        }
-    }
-
-    fn variable_for(&mut self, id: InternedStr) -> Kind {
-        match self.variables.entry(id) {
-            Entry::Vacant(entry) => {
-                self.var_id += 1;
-                entry.insert(Kind::Variable(self.var_id)).clone()
-            }
-            Entry::Occupied(entry) => entry.get().clone()
-        }
-    }
-
-    fn clear(&mut self) {
-        unsafe { (*self.map.get()).clear(); }
-        self.variables.clear();
-        self.var_id = 1;
-    }
-
-    unsafe fn insert(&mut self, var: u32, t: T) {
-        (*self.map.get()).insert(var, Box::new(t));
-    }
-
-    fn real<'r>(&'r self, typ: &'r T) -> &'r T {
-        match typ.get_var() {
-            Some(var) => match self.find_type_for_var(var) {
-                Some(t) => t,
-                None => typ
-            },
-            _ => typ
-        }
-    }
-
-    fn find_type_for_var(&self, var: u32) -> Option<&T> {
-        //Use unsafe so that we can hold a reference into the map and continue
-        //to look for parents
-        //Since we never have a cycle in the map we will never hold a &mut
-        //to the same place
-        let map = unsafe { &mut *self.map.get() };
-        map.get_mut(&var).map(|typ| {
-            let new_type = match typ.get_var() {
-                Some(parent_var) if parent_var != var => {
-                    match self.find_type_for_var(parent_var) {
-                        Some(other) => Some(other.clone()),
-                        None => None
-                    }
-                }
-                _ => None
-            };
-            if let Some(new_type) = new_type {
-                **typ = new_type;
-            }
-            &**typ
-        })
-    }
-
-    fn new_var(&mut self) -> TcType {
-        self.var_id += 1;
-        Type::Variable(ast::TypeVariable { kind: ast::Kind::Star, id: self.var_id })
-    }
-    fn new_kind(&mut self) -> ast::Kind {
-        self.var_id += 1;
-        ast::Kind::Variable(self.var_id)
-    }
-}
-
 impl Substitution<Kind> {
+    fn new_kind(&mut self) -> ast::Kind {
+        self.new_var()
+    }
+
     fn set_kind(&mut self, kind: &mut Kind) {
         walk_mut_kind(kind, &mut |kind| {
             *kind = match *kind {
