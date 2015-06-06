@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::convert::AsRef;
 use std::fmt;
-use std::cell::UnsafeCell;
 use scoped_map::ScopedMap;
 use base::ast;
 use base::ast::MutVisitor;
@@ -26,7 +24,6 @@ enum TypeError {
     UndefinedVariable(InternedStr),
     NotAFunction(TcType),
     TypeMismatch(TcType, TcType),
-    UnboundVariable,
     UndefinedType(InternedStr),
     UndefinedField(TcType, InternedStr),
     IndexError(TcType),
@@ -235,7 +232,7 @@ impl <'a> TypeEnv for Typecheck<'a> {
         self.type_infos.find_type_info(id)
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
     }
-    fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
+    fn find_type_name(&self, _typ: &TcType) -> Option<TcType> {
         None
     }
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
@@ -317,7 +314,7 @@ impl <'a> Typecheck<'a> {
                     self.tc.replace_variable(typ);
                     *typ = match *typ {
                         Type::Variable(ref var) if var.id >= self.level => {
-                            let mut generic = format!("a_{}", var);
+                            let generic = format!("a_{}", var);
                             let id = self.tc.interner.intern(self.tc.gc, &generic);
                             Type::Generic(ast::Generic { kind: var.kind.clone(), id: id })
                         }
@@ -366,7 +363,7 @@ impl <'a> Typecheck<'a> {
                     self.replace_variable(typ);
                     *typ = match *typ {
                         Type::Variable(ref var) if var.id >= level => {
-                            let mut generic = format!("a_{}", var);
+                            let generic = format!("a_{}", var);
                             Type::Generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) })
                         }
                         _ => return
@@ -696,7 +693,7 @@ impl <'a> Typecheck<'a> {
                 };
                 let id_type = self.subs.instantiate(&id_type);
                 let record_type = self.subs.instantiate_(&record_type);
-                let typ = try!(self.unify(&Type::Record(fields), record_type));
+                try!(self.unify(&Type::Record(fields), record_type));
                 id.typ = id_type.clone();
                 Ok(id_type.clone())
             }
@@ -802,68 +799,23 @@ impl <'a> Typecheck<'a> {
                     .all(|(l, r)| l.name == r.name && self.unify_(&l.typ, &r.typ))
             }
             (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
-                self.merge_app(l, l_args, actual, &|last, r_arg| self.unify_(last, r_arg))
+                self.unify_app(l, l_args, actual, &|last, r_arg| self.unify_(last, r_arg))
             }
             (&Type::App(_, _), &Type::Data(ref r, ref r_args), ) => {
-                self.merge_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last))
-            }
-            _ => expected == actual
-        }
-    }
-    fn merge(&self, mut expected: TcType, mut actual: TcType) -> TcResult {
-        if self.merge_(&expected, &actual) {
-            Ok(expected)
-        }
-        else {
-            self.set_type(&mut expected);
-            self.set_type(&mut actual);
-            Err(TypeMismatch(expected, actual))
-        }
-    }
-    fn merge_(&self, expected: &TcType, actual: &TcType) -> bool {
-        let expected = self.subs.real(expected);
-        let actual = self.subs.real(actual);
-        debug!("Merge {} {}", expected, actual);
-        match (expected, actual) {
-            (_, &Type::Variable(ref r)) => {
-                self.union(r, expected);
-                true
-            }
-            (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
-                if l_args.len() == r_args.len() {
-                    l_args.iter()
-                        .zip(r_args.iter())
-                        .all(|(l, r)| self.merge_(l, r))
-                        && self.merge_(&**l_ret, &**r_ret)
-                }
-                else {
-                    false
-                }
-            }
-            (&Type::Array(ref l), &Type::Array(ref r)) => self.merge_(&**l, &**r),
-            (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
-                l == r
-                && l_args.len() == r_args.len()
-                && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.merge_(l, r))
-            }
-            (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
-                self.merge_app(l, l_args, actual, &|last, r_arg| self.merge_(last, r_arg))
-            }
-            (&Type::App(_, _), &Type::Data(ref r, ref r_args), ) => {
-                self.merge_app(r, r_args, expected, &|last, l_arg| self.merge_(l_arg, last))
+                self.unify_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last))
             }
             _ => expected == actual
         }
     }
 
-    fn merge_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> bool
+    fn unify_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> bool
             where F: Fn(&TcType, &TcType) -> bool {
         let r = self.subs.real(r);
         match *r {
             Type::App(ref r, ref r_arg) => {
                 match l_args.last() {
                     Some(last) => {
-                        f(last, r_arg) && self.merge_app(l, &l_args[0..l_args.len()-1], r, f)
+                        f(last, r_arg) && self.unify_app(l, &l_args[0..l_args.len()-1], r, f)
                     }
                     None => false
                 }
@@ -1330,8 +1282,8 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
         use std::fs::File;
         use std::io::Read;
         //Only parse once since it takes much more time when running in debug mode
-        thread_local! { static prelude: ::std::cell::RefCell<Option<ast::LExpr<TcIdent>>> = ::std::cell::RefCell::new(None) }
-        let expr = prelude.with(|expr| {
+        thread_local! { static PRELUDE: ::std::cell::RefCell<Option<ast::LExpr<TcIdent>>> = ::std::cell::RefCell::new(None) }
+        let expr = PRELUDE.with(|expr| {
             let mut expr = expr.borrow_mut();
             if let None = *expr {
                 let _ = ::env_logger::init();

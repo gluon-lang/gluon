@@ -1,4 +1,4 @@
-use vm::{VM, VMResult, BytecodeFunction, Value, Userdata_, StackFrame, VMInt};
+use vm::{VM, BytecodeFunction, Value, Userdata_, StackFrame, VMInt};
 use typecheck::{TcType, Typed, Type, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::Call;
 use std::any::Any;
@@ -306,15 +306,3 @@ macro_rules! vm_function {
     })
 }
 
-
-fn define_function<'a, F: VMFunction<'a> + VMType + 'static>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()> {
-    let (args, ret) = match make_type::<F>(vm) {
-        Type::Function(ref args, ref return_type) => (args.clone(), (**return_type).clone()),
-        _ => panic!()
-    };
-    vm.extern_function(name, args, ret, box move |vm| f.unpack_and_call(vm))
-}
-
-#[cfg(test)]
-mod tests {
-}

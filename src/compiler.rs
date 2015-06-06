@@ -1,6 +1,6 @@
 use base::interner::*;
 use base::ast;
-use base::ast::{LExpr, Expr, LambdaStruct, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
+use base::ast::{LExpr, Expr, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
 use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;

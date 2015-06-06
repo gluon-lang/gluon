@@ -98,7 +98,7 @@ impl <'a> KindCheck<'a> {
                 gen.kind = try!(self.find(gen.id));
                 Ok(gen.kind.clone())
             }
-            Type::Variable(ref mut var) => {
+            Type::Variable(_) => {
                 panic!("kindcheck called on variable")
             }
             Type::Builtin(_) => Ok(Kind::Star),

@@ -12,6 +12,7 @@ fn print(vm: &VM) {
     println!("{:?}", vm.pop());
 }
 
+#[allow(dead_code)]
 pub fn run() {
     let vm = VM::new();
     vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), Box::new(print))

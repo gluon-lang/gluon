@@ -435,10 +435,6 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         &self.stack.values[self.offset as usize..]
     }
 
-    fn as_mut_slice(&mut self) -> &mut [Value<'a>] {
-        &mut self.stack.values[self.offset as usize..]
-    }
-
     fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
             , args: VMIndex
             , upvars: Option<GcPtr<ClosureData<'a>>>
@@ -635,12 +631,10 @@ impl <'a> VM<'a> {
             let typ = Type::Data(ast::TypeConstructor::Data(n), Vec::new());
             try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
             let t = self.typeids.get(&id).unwrap();
-            let ctor = ast::Constructor {
-                name: TcIdent { name: n, typ: typ },
-                arguments: ast::ConstructorType::Record(Vec::new())
-            };
-            //type_infos.id_to_type.insert(n, vec![ctor]);
-            panic!("Unimplemented")
+            let ctor = Type::Variants(vec![(n, typ)]);
+            type_infos.id_to_type.insert(n, ctor.clone());
+            type_infos.type_to_id.insert(ctor, Type::Data(ast::TypeConstructor::Data(n), vec![]));
+            Ok(t)
         }
     }
 
@@ -663,6 +657,7 @@ impl <'a> VM<'a> {
         })
     }
 
+    #[allow(dead_code)]
     fn new_data(&self, tag: VMTag, fields: &mut [Value<'a>]) -> Value<'a> {
         Data(self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields }))
     }
@@ -785,12 +780,16 @@ impl <'a> VM<'a> {
                     }
                 }
                 Construct(tag, args) => {
-                    let arg_start = (stack.len() - args) as usize;
-                    let d = self.new_data(tag, &mut stack.as_mut_slice()[arg_start..]);
+                    let d = {
+                        let whole_stack = &mut stack.stack.values[..];
+                        let arg_start = whole_stack.len() - args as usize;
+                        let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
+                        self.new_data_and_collect(pre_stack, tag, fields)
+                    };
                     for _ in 0..args {
                         stack.pop();
                     } 
-                    stack.push(d);
+                    stack.push(Data(d));
                 }
                 GetField(i) => {
                     match stack.pop() {
@@ -1057,13 +1056,13 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::str
     let function = {
         let empty_string = vm.intern("");
         let env = vm.env();
-        let (typ, type_infos) = {
+        let type_infos = {
             let mut interner = vm.interner.borrow_mut();
             let mut gc = vm.gc.borrow_mut();
             let mut tc = Typecheck::new(&mut interner, &mut gc);
             tc.add_environment(&env);
-            let typ = tryf!(tc.typecheck_expr(&mut expr));
-            (typ, tc.type_infos)
+            tryf!(tc.typecheck_expr(&mut expr));
+            tc.type_infos
         };
         let env = (&env, &type_infos);
         let mut compiler = Compiler::new(&env, empty_string);
