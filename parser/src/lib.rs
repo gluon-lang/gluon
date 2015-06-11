@@ -502,12 +502,12 @@ pub mod tests {
         let is_var = s.chars().next().unwrap().is_lowercase();
         match str_to_primitive_type(s) {
             Some(b) => Type::Builtin(b),
-            None if is_var => Type::Generic(intern(s)),
+            None if is_var => generic(s),
             None => Type::Data(TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
     fn generic(s: &str) -> VMType {
-        Type::Generic(intern(s))
+        Type::Generic(Generic { kind: Kind::Variable(0), id: intern(s) })
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
         no_loc(Expr::Call(box e, args))
