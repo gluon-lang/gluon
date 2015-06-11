@@ -231,7 +231,7 @@ pub enum Expr<Id: AstId> {
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
     ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
-    Record(Id, Vec<(Id::Untyped, LExpr<Id>)>),
+    Record(Id, Vec<(Id::Untyped, Option<LExpr<Id>>)>),
     Lambda(LambdaStruct<Id>),
     Tuple(Vec<LExpr<Id>>),
     Type(Type<Id::Untyped>, Type<Id::Untyped>, Box<LExpr<Id>>)
@@ -465,7 +465,9 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
         }
         Expr::Record(_, ref mut fields) => {
             for field in fields {
-                v.visit_expr(&mut field.1);
+                if let Some(ref mut expr) = field.1 {
+                    v.visit_expr(expr);
+                }
             }
         }
         Expr::Tuple(ref mut exprs) => {

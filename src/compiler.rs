@@ -532,7 +532,10 @@ impl <'a> Compiler<'a> {
             Expr::Type(_, _, ref expr) => self.compile(&**expr, function),
             Expr::Record(_, ref fields) => {
                 for field in fields {
-                    self.compile(&field.1, function);
+                    match field.1 {
+                        Some(ref field_expr) => self.compile(field_expr, function),
+                        None => self.load_identifier(&field.0, function)
+                    }
                 }
                 function.instructions.push(Construct(0, fields.len() as u32));
             }

@@ -681,10 +681,12 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Record(ref mut id, ref mut fields) => {
                 let fields = try!(fields.iter_mut()
-                    .map(|field| Ok(ast::Field {
-                        name: field.0,
-                        typ: try!(self.typecheck(&mut field.1))
-                    }))
+                    .map(|field| {
+                        match field.1 {
+                            Some(ref mut expr) => self.typecheck(expr),
+                            None => self.find(&field.0)
+                        }.map(|typ| ast::Field { name: field.0, typ: typ })
+                    })
                     .collect::<Result<Vec<_>, TypeError>>());
                 let (id_type, record_type) = match self.find_record(&fields.iter().map(|f| f.name).collect::<Vec<_>>())
                                                   .map(|t| (t.0.clone(), t.1.clone())) {
@@ -1276,6 +1278,15 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
         assert_eq!(result, Ok(typ_a("Option", vec![typ("Int")])));
     }
 
+    #[test]
+    fn prelude_test() {
+        use std::fs::File;
+        use std::io::Read;
+        let mut text = String::new();
+        File::open("prelude.s").unwrap().read_to_string(&mut text).unwrap();
+        let result = typecheck(&text);
+        assert_eq!(result.map(|_| ()), Ok(()));
+    }
 
     #[bench]
     fn prelude(b: &mut ::test::Bencher) {

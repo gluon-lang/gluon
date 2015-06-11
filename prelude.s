@@ -119,5 +119,5 @@ let monad_Option: Monad Option = {
                         | None -> None,
     return = \x -> Some x
 } in
-{ ord_Option = ord_Option, ord_Float = ord_Float, ord_Int = ord_Int, eq_List = eq_List, eq_Option = eq_Option, eq_Float = eq_Float, eq_Int = eq_Int, num_Int = num_Int, num_Float = num_Float, functor_Option = functor_Option }
+{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, num_Int, num_Float, functor_Option }
 

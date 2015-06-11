@@ -405,8 +405,8 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
 
         fn record(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
             let field = self.ident_u()
-                        .skip(self.lex(string("=")))
-                        .and(self.expr());
+                        .and(optional(self.lex(string("="))
+                                .with(self.expr())));
             self.braces(sep_by(field, self.lex(char(','))))
                 .map(|fields| Expr::Record(self.intern(""), fields))
                 .parse_state(input)
@@ -535,7 +535,7 @@ pub mod tests {
     fn bool(b: bool) -> PExpr {
         no_loc(Expr::Literal(Bool(b)))
     }
-    fn record(fields: Vec<(InternedStr, PExpr)>) -> PExpr {
+    fn record(fields: Vec<(InternedStr, Option<PExpr>)>) -> PExpr {
         no_loc(Expr::Record(intern(""), fields))
     }
     fn field_access(expr: PExpr, field: &str) -> PExpr {
@@ -604,7 +604,7 @@ pub mod tests {
     fn field_access_test() {
         let _ = ::env_logger::init();
         let e = parse_new("{ x = 1 }.x");
-        assert_eq!(e, field_access(record(vec![(intern("x"), int(1))]), "x"));
+        assert_eq!(e, field_access(record(vec![(intern("x"), Some(int(1)))]), "x"));
     }
 
     #[test]
