@@ -3,6 +3,7 @@ use std::fmt;
 use std::intrinsics::type_name;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use base::ast;
 use base::ast::Type;
@@ -21,6 +22,7 @@ use vm::Value::{
     String,
     Data,
     Function,
+    PartialApplication,
     Closure,
     TraitObject,
     Userdata,
@@ -98,6 +100,7 @@ unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
 }
 
 pub struct BytecodeFunction {
+    args: VMIndex,
     instructions: Vec<Instruction>,
     inner_functions: Vec<GcPtr<BytecodeFunction>>,
     strings: Vec<InternedStr>
@@ -105,15 +108,15 @@ pub struct BytecodeFunction {
 
 impl BytecodeFunction {
     pub fn empty() -> BytecodeFunction {
-        BytecodeFunction { instructions: Vec::new(), inner_functions: Vec::new(), strings: Vec::new() }
+        BytecodeFunction { args: 0, instructions: Vec::new(), inner_functions: Vec::new(), strings: Vec::new() }
     }
 
     pub fn new(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
-        let CompiledFunction { instructions, inner_functions, strings, .. } = f;
+        let CompiledFunction { args, instructions, inner_functions, strings, .. } = f;
         let fs = inner_functions.into_iter()
             .map(|inner| BytecodeFunction::new(gc, inner))
             .collect();
-        gc.alloc(Move(BytecodeFunction { instructions: instructions, inner_functions: fs, strings: strings }))
+        gc.alloc(Move(BytecodeFunction { args: args, instructions: instructions, inner_functions: fs, strings: strings }))
     }
 }
 
@@ -150,9 +153,59 @@ pub enum Value<'a> {
     Data(GcPtr<DataStruct<'a>>),
     Function(GcPtr<Function_<'a>>),
     Closure(GcPtr<ClosureData<'a>>),
+    PartialApplication(GcPtr<PartialApplicationData<'a>>),
     TraitObject(GcPtr<DataStruct<'a>>),
     Userdata(Userdata_),
     Bottom//Special value used to mark that a global was used before it was initialized
+}
+
+pub struct PartialApplicationData<'a> {
+    function: GcPtr<ClosureData<'a>>,
+    arguments: [Cell<Value<'a>>]
+}
+
+impl <'a> PartialEq for PartialApplicationData<'a> {
+    fn eq(&self, _: &PartialApplicationData<'a>) -> bool {
+        false
+    }
+}
+
+impl <'a> Traverseable for PartialApplicationData<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.function.traverse(gc);
+        self.arguments.traverse(gc);
+    }
+}
+
+struct PartialApplicationDataDef<'a: 'b, 'b>(GcPtr<ClosureData<'a>>, &'b [Value<'a>]);
+impl <'a, 'b> Traverseable for PartialApplicationDataDef<'a, 'b> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.0.traverse(gc);
+        self.1.traverse(gc);
+    }
+}
+unsafe impl <'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
+    type Value = PartialApplicationData<'a>;
+    fn size(&self) -> usize {
+        use std::mem::size_of;
+        size_of::<GcPtr<ClosureData<'a>>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
+    }
+    fn initialize(self, result: *mut PartialApplicationData<'a>) {
+        let result = unsafe { &mut *result };
+        result.function = self.0;
+        for (field, value) in result.arguments.iter().zip(self.1.iter()) {
+            unsafe {
+                ::std::ptr::write(field.as_unsafe_cell().get(), value.clone());
+            }
+        }
+    }
+    fn make_ptr(&self, ptr: *mut ()) -> *mut PartialApplicationData<'a> {
+        unsafe {
+            use std::raw::Slice;
+            let x = Slice { data: &*ptr, len: self.1.len() };
+            ::std::mem::transmute(x)
+        }
+    }
 }
 
 impl <'a> PartialEq<Value<'a>> for Cell<Value<'a>> {
@@ -190,7 +243,9 @@ impl <'a> fmt::Debug for Value<'a> {
                 write!(f, "{{{:?} {:?}}}", data.tag, &data.fields)
             }
             Function(ref func) => write!(f, "{:?}", **func),
-            Closure(ref closure) => write!(f, "<Closure {:?}>", &closure.upvars),
+            Closure(ref closure) => write!(f, "<Closure {:?} {:?}>",
+                                           { let p: *const _ = &*closure.function; p }, &closure.upvars),
+            PartialApplication(ref app) => write!(f, "<App {:?}>", &app.arguments),
             TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, &object.fields),
             Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
             Bottom => write!(f, "Bottom")
@@ -421,6 +476,21 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.pop()
     }
 
+    fn insert_slice(&mut self, index: VMIndex, values: &[Cell<Value<'a>>]) {
+        self.stack.values.reserve(values.len());
+        unsafe {
+            let old_len = self.len();
+            for i in (index..old_len).rev() {
+                *self.get_unchecked_mut(i as usize + values.len()) = self[i];
+            }
+            for (i, val) in (index..).zip(values) {
+                *self.get_unchecked_mut(i as usize) = val.get();
+            }
+            let new_len = self.stack.values.len() + values.len();
+            self.stack.values.set_len(new_len);
+        }
+    }
+
     fn set_upvar(&self, index: VMIndex, v: Value<'a>) {
         let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
         upvars.upvars[index as usize].set(v)
@@ -487,6 +557,17 @@ impl <'a, 'b> Index<VMIndex> for StackFrame<'a, 'b> {
 impl <'a, 'b> IndexMut<VMIndex> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, index: VMIndex) -> &mut Value<'a> {
         &mut self.stack.values[(self.offset + index) as usize]
+    }
+}
+impl <'a, 'b> Index<::std::ops::RangeFull> for StackFrame<'a, 'b> {
+    type Output = [Value<'a>];
+    fn index(&self, _: ::std::ops::RangeFull) -> &[Value<'a>] {
+        &self.stack.values[self.offset as usize..]
+    }
+}
+impl <'a, 'b> IndexMut<::std::ops::RangeFull> for StackFrame<'a, 'b> {
+    fn index_mut(&mut self, _: ::std::ops::RangeFull) -> &mut [Value<'a>] {
+        &mut self.stack.values[self.offset as usize..]
     }
 }
 
@@ -718,6 +799,134 @@ impl <'a> VM<'a> {
         }
     }
 
+    fn do_call<'b>(&'b self, mut stack: StackFrame<'a, 'b>, args: VMIndex) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+        let function_index = stack.len() - 1 - args;
+        debug!("Do call {:?} {:?}", stack[function_index], &(*stack)[(function_index + 1) as usize..]);
+        match stack[function_index].clone() {
+            Function(ref f) => {
+                stack = try!(stack.scope(args, None, |new_stack| {
+                    self.execute_function(new_stack, f)
+                }));
+                if stack.len() > function_index + args {
+                    //Value was returned
+                    let result = stack.pop();
+                    debug!("Return {:?}", result);
+                    while stack.len() > function_index {
+                        stack.pop();
+                    }
+                    stack.push(result);
+                }
+                else {
+                    while stack.len() > function_index {
+                        stack.pop();
+                    }
+                }
+            }
+            Closure(ref closure) => {
+                match args.cmp(&closure.function.args) {
+                    Ordering::Equal => {
+                        stack = try!(stack.scope(args, Some(*closure), |new_stack| {
+                            self.execute(new_stack, &closure.function.instructions, &closure.function)
+                        }));
+                        if stack.len() > function_index + args {
+                            //Value was returned
+                            let result = stack.pop();
+                            debug!("Return {:?}", result);
+                            while stack.len() > function_index {
+                                stack.pop();
+                            }
+                            stack.push(result);
+                        }
+                        else {
+                            while stack.len() > function_index {
+                                stack.pop();
+                            }
+                        }
+                    }
+                    Ordering::Less => {
+                        let app = {
+                            let whole_stack = &mut stack.stack.values[..];
+                            let arg_start = whole_stack.len() - args as usize;
+                            let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
+                            self.alloc(pre_stack, PartialApplicationDataDef(closure.clone(), &*fields))
+                        };
+                        for _ in 0..(args+1) {
+                            stack.pop();
+                        }
+                        stack.push(PartialApplication(app));
+                    }
+                    Ordering::Greater => {
+                        let excess_args = args - closure.function.args;
+                        let d = {
+                            let whole_stack = &mut stack.stack.values[..];
+                            let arg_start = whole_stack.len() - excess_args as usize;
+                            let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
+                            self.new_data_and_collect(pre_stack, 0, fields)
+                        };
+                        for _ in 0..excess_args {
+                            stack.pop();
+                        }
+                        //Insert the excess args before the actual closure so it does not get
+                        //collected
+                        let offset = stack.len() - closure.function.args - 1;
+                        stack.insert_slice(offset, &[Cell::new(Data(d))]);
+                        stack = try!(stack.scope(closure.function.args, Some(*closure), |new_stack| {
+                            self.execute(new_stack, &closure.function.instructions, &closure.function)
+                        }));
+                        let result = stack.pop();
+                        for _ in 0..(closure.function.args + 1) {
+                            stack.pop();
+                        }
+                        let _x = stack.pop();//Pop the excess_args
+                        debug_assert!(_x == Data(d));
+                        stack.push(result);
+                        for value in &d.fields {
+                            stack.push(value.get());
+                        }
+                        stack = try!(self.do_call(stack, d.fields.len() as VMIndex));
+                    }
+                }
+            }
+            PartialApplication(app) => {
+                let closure = app.function;
+                let total_args = app.arguments.len() as VMIndex + args;
+                let offset = stack.len() - args;
+                stack.insert_slice(offset, &app.arguments);
+                match closure.function.args.cmp(&total_args) {
+                    Ordering::Equal => {
+                        stack = try!(stack.scope(closure.function.args, Some(closure), |new_stack| {
+                            self.execute(new_stack, &closure.function.instructions, &closure.function)
+                        }));
+                        let result = stack.pop();
+                        for _ in 0..(total_args + 1) {
+                            stack.pop();
+                        }
+                        stack.push(result);
+                    }
+                    Ordering::Greater => {
+                        let app = {
+                            let whole_stack = &mut stack.stack.values[..];
+                            let arg_start = whole_stack.len() - total_args as usize;
+                            let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
+                            self.alloc(pre_stack, PartialApplicationDataDef(closure.clone(), &*fields))
+                        };
+                        for _ in 0..(total_args+1) {
+                            stack.pop();
+                        }
+                        stack.push(PartialApplication(app));
+                    }
+                    Ordering::Less => {
+                        //Should never happen as creating a partial application with more arguments
+                        //than a function needs should not happen
+                        panic!("Unimplemented")
+                    }
+                }
+            }
+            x => return Err(format!("Cannot call {:?}", x))
+        }
+        Ok(stack)
+    }
+
     pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction], function: &BytecodeFunction) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         debug!("Enter frame with {:?}", stack.as_slice());
         let mut index = 0;
@@ -746,39 +955,7 @@ impl <'a> VM<'a> {
                     let v = stack.pop();
                     self.globals[i as usize].value.set(v);
                 }
-                Call(args) => {
-                    let function_index = stack.len() - 1 - args;
-                    {
-                        let f = stack[function_index].clone();
-                        match f {
-                            Function(ref f) => {
-                                stack = try!(stack.scope(args, None, |new_stack| {
-                                    self.execute_function(new_stack, f)
-                                }));
-                            }
-                            Closure(ref closure) => {
-                                stack = try!(stack.scope(args, Some(*closure), |new_stack| {
-                                    self.execute(new_stack, &closure.function.instructions, &closure.function)
-                                }));
-                            }
-                            x => return Err(format!("Cannot call {:?}", x))
-                        }
-                    }
-                    if stack.len() > function_index + args {
-                        //Value was returned
-                        let result = stack.pop();
-                        debug!("Return {:?}", result);
-                        while stack.len() > function_index {
-                            stack.pop();
-                        }
-                        stack.push(result);
-                    }
-                    else {
-                        while stack.len() > function_index {
-                            stack.pop();
-                        }
-                    }
-                }
+                Call(args) => { stack = try!(self.do_call(stack, args)); }
                 Construct(tag, args) => {
                     let d = {
                         let whole_stack = &mut stack.stack.values[..];
@@ -1228,6 +1405,83 @@ in f 4
         let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(2));
+    }
+    #[test]
+    fn insert_stack_slice() {
+        use std::cell::Cell;
+        let _ = ::env_logger::init();
+        let vm = VM::new();
+        let _: Result<_, ()> = super::StackFrame::new_scope(vm.stack.borrow_mut(), 0, None, |mut stack| {
+            stack.push(Int(0));
+            stack.insert_slice(0, &[Cell::new(Int(2)), Cell::new(Int(1))]);
+            assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
+            stack.scope(2, None, |mut stack| {
+                stack.insert_slice(1, &[Cell::new(Int(10))]);
+                assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
+                stack.insert_slice(1, &[]);
+                assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
+                stack.insert_slice(2, &[Cell::new(Int(4)), Cell::new(Int(5)), Cell::new(Int(6))]);
+                assert_eq!(&stack[..], [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
+                Ok(stack)
+            })
+        });
+    }
+    #[test]
+    fn partial_application() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let f x y = x #Int+ y in
+let g = f 10
+in g 2 #Int+ g 3
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(25));
+    }
+    #[test]
+    fn partial_application2() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let f x y z = x #Int+ y #Int+ z in
+let g = f 10 in
+let h = g 20
+in h 2 #Int+ g 10 3
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(55));
+    }
+    #[test]
+    fn to_many_application() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let f x = \y -> x #Int+ y in
+let g = f 20
+in f 10 2 #Int+ g 3
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(35));
+    }
+    #[test]
+    fn to_many_application2() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let f x = \y z -> x #Int+ y #Int+ z in
+let g = f 20 5
+in f 10 2 1 #Int+ g 2
+";
+        let mut vm = VM::new();
+        let value = run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value, Int(40));
     }
 }
 

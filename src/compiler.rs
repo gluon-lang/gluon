@@ -78,6 +78,7 @@ pub struct Binding {
 
 #[derive(Debug)]
 pub struct CompiledFunction {
+    pub args: VMIndex,
     pub id: InternedStr,
     pub typ: Constrained<TcType>,
     pub instructions: Vec<Instruction>,
@@ -295,6 +296,7 @@ impl <'a> Compiler<'a> {
         self.compile(expr, &mut env);
         let FunctionEnv { instructions, inner_functions, strings, .. } = env;
         CompiledFunction {
+            args: 0,
             id: self.empty_string,
             typ: Constrained {
                 constraints: Vec::new(),
@@ -569,6 +571,7 @@ impl <'a> Compiler<'a> {
         let free_vars = f.free_vars.len() as VMIndex;
         let FunctionEnv { instructions, inner_functions, strings, .. } = f;
         (function_index, free_vars, CompiledFunction {
+            args: arguments.len() as VMIndex,
             id: id.id().clone(),
             typ: Constrained { constraints: Vec::new(), value: id.typ.clone() },
             instructions: instructions,

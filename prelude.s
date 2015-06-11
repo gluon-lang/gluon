@@ -1,4 +1,5 @@
 type Option a = | None | Some a in
+type List a = | Nil | Cons a (List a) in
 
 type Eq a = {
     (==) : a -> a -> Bool
@@ -21,6 +22,16 @@ let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
                 case r of
                     | Some _ -> False
                     | None -> True
+} in
+let eq_List: Eq a -> Eq (List a) = \d -> {
+    (==) = let f l r = case l of
+                | Nil -> case r of
+                    | Nil -> True
+                    | Cons x y -> False
+                | Cons x xs -> case r of
+                    | Nil -> False
+                    | Cons y ys -> d.(==) x y && f xs ys
+            in f
 } in
 
 type Ordering = | LT | EQ | GT
@@ -108,5 +119,5 @@ let monad_Option: Monad Option = {
                         | None -> None,
     return = \x -> Some x
 } in
-{ ord_Option = ord_Option, ord_Float = ord_Float, ord_Int = ord_Int, eq_Option = eq_Option, eq_Float = eq_Float, eq_Int = eq_Int, num_Int = num_Int, num_Float = num_Float, functor_Option = functor_Option }
+{ ord_Option = ord_Option, ord_Float = ord_Float, ord_Int = ord_Int, eq_List = eq_List, eq_Option = eq_Option, eq_Float = eq_Float, eq_Int = eq_Int, num_Int = num_Int, num_Float = num_Float, functor_Option = functor_Option }
 
