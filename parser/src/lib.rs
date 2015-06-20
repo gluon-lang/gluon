@@ -28,17 +28,20 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
     use parser_combinators::primitives::{Consumed, Stream, State};
     use parser_combinators::*;
 
-    struct EnvParser<'a: 'b, 'b, I: 'b, Id: 'b, T> {
+    struct EnvParser<'a: 'b, 'b, I: 'b, Id: 'b, T>
+        where I: Stream<Item=char> {
         env: &'b ParserEnv<'a, I, Id>,
         parser: fn (&ParserEnv<'a, I, Id>, State<I>) -> ParseResult<T, I>
     }
 
-    impl <'a, 'b, I, Id, T> Clone for EnvParser<'a, 'b, I, Id, T> {
+    impl <'a, 'b, I, Id, T> Clone for EnvParser<'a, 'b, I, Id, T>
+        where I: Stream<Item=char> {
         fn clone(&self) -> EnvParser<'a, 'b, I, Id, T> {
             EnvParser { env: self.env, parser: self.parser }
         }
     }
-    impl <'a, 'b, I, Id, T> Copy for EnvParser<'a, 'b, I, Id, T> { }
+    impl <'a, 'b, I, Id, T> Copy for EnvParser<'a, 'b, I, Id, T>
+        where I: Stream<Item=char> { }
 
     impl <'a, 'b, Id, I, O> Parser for EnvParser<'a, 'b, I, Id, O>
         where I: Stream<Item=char>
@@ -50,13 +53,15 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
     }
 
-    struct ParserEnv<'a, I, Id> {
+    struct ParserEnv<'a, I, Id>
+        where I: Stream<Item=char> {
         data: RefCell<(&'a mut Gc, &'a mut Interner)>,
         env: Env<'a, I>,
         _marker: PhantomData<fn (InternedStr) -> Id>
     }
 
-    impl <'a, I, Id> ::std::ops::Deref for ParserEnv<'a, I, Id> {
+    impl <'a, I, Id> ::std::ops::Deref for ParserEnv<'a, I, Id>
+        where I: Stream<Item=char> {
         type Target = Env<'a, I>;
         fn deref(&self) -> &Env<'a, I> {
             &self.env
@@ -144,22 +149,15 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn parse_adt(&self, return_type: &Type<Id::Untyped>, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            many1(parser(|input|
-                self.lex(char('|'))
-                    .with(self.ident_u())
-                    .and(many(self.parser(ParserEnv::type_arg)))
-                    .map(|(id, args): (_, Vec<_>)| {
-                        (id, fn_type(args, return_type.clone()))
-                    })
-                    .parse_state(input))
-               )
+            let variant = (self.lex(char('|')), self.ident_u(), many(self.parser(ParserEnv::type_arg)))
+                    .map(|(_, id, args): (_, _, Vec<_>)| (id, fn_type(args, return_type.clone())));
+            many1(variant)
                 .map(Type::Variants)
                 .parse_state(input)
         }
 
         fn parse_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            parser(|input|
-                chainl1(self.parser(ParserEnv::type_arg), parser(|input| {
+            let f = parser(|input| {
                     let f = |l, r| match l {
                         Type::Data(ctor, mut args) => {
                             args.push(r);
@@ -168,10 +166,8 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                         _ => Type::App(Box::new(l), Box::new(r))
                     };
                     Ok((f, Consumed::Empty(input)))
-                }))
-                    .parse_state(input)
-                )
-                .and(optional(self.reserved_op("->").with(self.typ())))
+            });
+            (chainl1(self.parser(ParserEnv::type_arg), f), optional(self.reserved_op("->").with(self.typ())))
                 .map(|(arg, ret)| {
                     debug!("Parse: {:?} -> {:?}", arg, ret);
                     match ret {
@@ -183,13 +179,9 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn record_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            self.braces(sep_by(parser(|input| {
-                    let ((name, typ), input) = try!(self.ident_u()
-                        .skip(self.lex(string(":")))
-                        .and(self.typ())
-                        .parse_state(input));
-                    Ok((Field { name: name, typ: typ }, input))
-                }), self.lex(char(','))))
+            let field = (self.ident_u(), self.lex(string(":")), self.typ())
+                .map(|(name, _, typ)| Field { name: name, typ: typ });
+            self.braces(sep_by(field, self.lex(char(','))))
                 .map(Type::Record)
                 .parse_state(input)
         }
@@ -210,10 +202,8 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
 
         fn type_decl(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
             debug!("type_decl");
-            self.reserved("type")
-                .with(self.ident_u())
-                .and(many(self.ident_u()))//TODO only variables allowed
-                .map(|(name, args): (_, Vec<_>)| {
+            (self.reserved("type"), self.ident_u(), many(self.ident_u()))//TODO only variables allowed
+                .map(|(_, name, args): (_, _, Vec<_>)| {
                     let args = args.into_iter().map(|id| Type::Generic(Generic { kind: Kind::Variable(0), id: id })).collect();
                     Type::Data(TypeConstructor::Data(name), args)
                 })
@@ -235,8 +225,8 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn parse_expr(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
-            self.parser(ParserEnv::parse_arg)
-                .and(many(self.parser(ParserEnv::parse_arg)))
+            let arg_expr = self.parser(ParserEnv::parse_arg);
+            (arg_expr, many(arg_expr))
                 .map(|(f, args): (LExpr<Id>, Vec<_>)| {
                     if args.len() > 0 {
                         located(f.location, Expr::Call(Box::new(f), args))
@@ -250,7 +240,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
 
         fn parse_arg(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
             let position = input.position;
-            debug!("Expr start: {:?}", input.clone().uncons_char().map(|t| t.0));
+            debug!("Expr start: {:?}", input.clone().uncons().map(|t| t.0));
             let loc = |expr| located(Location { column: position.column, row: position.line, absolute: 0 }, expr);
             choice::<[&mut Parser<Input=I, Output=LExpr<Id>>; 13], _>([
                 &mut parser(|input| self.if_else(input)).map(&loc),
@@ -287,8 +277,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn op(&self, input: State<I>) -> ParseResult<Id, I> {
-            optional(char('#').with(many(letter())))
-                .and(try(self.env.op()))
+            (optional(char('#').with(many(letter()))), try(self.env.op()))
                 .map(|(builtin, op): (Option<String>, String)| {
                     match builtin {
                         Some(mut builtin) => {
@@ -315,31 +304,18 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn lambda(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-            self.lex(satisfy(|c| c == '\\'))
-                .with(parser(|input| many(self.ident())
-                    .skip(self.lex(string("->")))
-                    .and(self.expr())
-                    .parse_state(input)))
-                .map(|(args, expr)| Expr::Lambda(LambdaStruct {
+            (self.lex(satisfy(|c| c == '\\')), many(self.ident()), self.lex(string("->")), self.expr())
+                .map(|(_, args, _, expr)| Expr::Lambda(LambdaStruct {
                     id: self.intern(""), free_vars: Vec::new(), arguments: args, body: Box::new(expr)
                 }))
                 .parse_state(input)
         }
 
         fn case_of(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-            self.reserved("case")
-                .with(self.expr())
-                .skip(self.reserved("of"))
-                .and(parser(|input| many1(
-                        self.reserved_op("|")
-                        .with(self.pattern())
-                        .skip(self.reserved_op("->"))
-                        .and(self.expr())
-                        .map(|(p, e)| Alternative { pattern: p, expression: e })
-                        )
-                        .parse_state(input)
-                ))
-                .map(|(e, alts)| Expr::Match(Box::new(e), alts))
+            let alt = (self.reserved_op("|"), self.pattern(), self.reserved_op("->"), self.expr())
+                .map(|(_, p, _, e)| Alternative { pattern: p, expression: e });
+            (self.reserved("case"), self.expr(), self.reserved("of"), many1(alt))
+                .map(|(_, e, _, alts)| Expr::Match(Box::new(e), alts))
                 .parse_state(input)
         }
 
@@ -363,24 +339,15 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn if_else(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-            self.reserved("if")
-                .with(self.expr())
-                .skip(self.reserved("then"))
-                .and(parser(|input| self.expr()
-                    .skip(self.reserved("else"))
-                    .and(self.expr())
-                    .parse_state(input)))
-                .map(|(b, (t, f))| Expr::IfElse(Box::new(b), Box::new(t), Some(Box::new(f))))
+            (self.reserved("if"), self.expr(), self.reserved("then"), self.expr(), self.reserved("else"), self.expr())
+                .map(|(_, b, _, t, _, f)| Expr::IfElse(Box::new(b), Box::new(t), Some(Box::new(f))))
                 .parse_state(input)
         }
 
         fn let_in(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
             let bind = self.parser(ParserEnv::binding);
-            self.reserved("let")
-                .with(bind.and(many(self.reserved("and").with(bind))))
-                .skip(self.reserved("in"))
-                .and(self.expr())
-                .map(|((b, bindings), expr)| {
+            (self.reserved("let"), bind.and(many(self.reserved("and").with(bind))), self.reserved("in"), self.expr())
+                .map(|(_, (b, bindings), _, expr)| {
                     let mut bindings: Vec<_> = bindings;
                     bindings.insert(0, b);
                     Expr::Let(bindings, Box::new(expr))
@@ -389,12 +356,9 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
 
         fn binding(&self, input: State<I>) -> ParseResult<Binding<Id>, I> {
-            self.ident()
-                .and(many(self.ident()))
-                .and(optional(self.reserved_op(":").with(self.typ())))
-                .skip(self.reserved_op("="))
-                .and(self.expr())
-                .map(|(((mut name, arguments), typ), e)| {
+            let type_sig = self.reserved_op(":").with(self.typ());
+            (self.ident(), many(self.ident()), optional(type_sig), self.reserved_op("="), self.expr())
+                .map(|(mut name, arguments, typ, _, e)| {
                     if let Some(typ) = typ {
                         name.set_type(typ);
                     }

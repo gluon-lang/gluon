@@ -320,6 +320,15 @@ pub fn fn_type<I, Id>(args: I, return_type: Type<Id>) -> Type<Id>
     args.into_iter().rev()
         .fold(return_type, |body, arg| Type::Function(vec![arg], Box::new(body)))
 }
+pub fn type_con(s: InternedStr, args: Vec<TcType>) -> TcType {
+    assert!(s.len() != 0);
+    let is_var = s.chars().next().unwrap().is_lowercase();
+    match str_to_primitive_type(&s) {
+        Some(b) => Type::Builtin(b),
+        None if is_var => Type::Generic(Generic { kind: Kind::Star, id: s }),
+        None => Type::Data(TypeConstructor::Data(s), args)
+    }
+}
 
 impl TcType {
     ///Returns the inner most application of a type application
