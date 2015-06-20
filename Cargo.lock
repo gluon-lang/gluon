@@ -22,7 +22,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex 0.1.30 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex 0.1.33 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -45,24 +45,32 @@ dependencies = [
  "base 0.1.0",
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser-combinators 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser-combinators-language 0.1.1",
+ "parser-combinators 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parser-combinators-language 0.2.0",
 ]
 
 [[package]]
 name = "parser-combinators"
-version = "0.4.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "parser-combinators-language"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
- "parser-combinators 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parser-combinators 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "regex"
-version = "0.1.30"
+version = "0.1.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "regex-syntax 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "regex-syntax"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 

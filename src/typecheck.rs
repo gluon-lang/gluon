@@ -390,7 +390,7 @@ impl <'a> Typecheck<'a> {
             Err(::std::mem::replace(&mut self.errors, Errors::new()))
         }
         else {
-            let mut generic = String::from_str("a");
+            let mut generic = String::from("a");
             ast::walk_mut_type2(&mut typ, &mut |typ| {
                 self.replace_variable(typ);
                 match *typ {

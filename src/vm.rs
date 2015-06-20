@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use base::ast;
 use base::ast::Type;
-use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, TcIdent, TcType};
+use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType};
 use compiler::*;
 use compiler::Instruction::*;
 use base::interner::{Interner, InternedStr};
@@ -151,7 +151,7 @@ pub enum Value<'a> {
     Float(f64),
     String(GcPtr<str>),
     Data(GcPtr<DataStruct<'a>>),
-    Function(GcPtr<Function_<'a>>),
+    Function(GcPtr<ExternFunction<'a>>),
     Closure(GcPtr<ClosureData<'a>>),
     PartialApplication(GcPtr<PartialApplicationData<'a>>),
     TraitObject(GcPtr<DataStruct<'a>>),
@@ -159,8 +159,38 @@ pub enum Value<'a> {
     Bottom//Special value used to mark that a global was used before it was initialized
 }
 
+#[derive(Copy, Clone)]
+enum Callable<'a> {
+    Closure(GcPtr<ClosureData<'a>>),
+    Extern(GcPtr<ExternFunction<'a>>)
+}
+
+impl <'a> Callable<'a> {
+    fn args(&self) -> VMIndex {
+        match *self {
+            Callable::Closure(ref closure) => closure.function.args,
+            Callable::Extern(ref ext) => ext.args
+        }
+    }
+}
+
+impl <'a> PartialEq for Callable<'a> {
+    fn eq(&self, _: &Callable<'a>) -> bool {
+        false
+    }
+}
+
+impl <'a> Traverseable for Callable<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        match *self {
+            Callable::Closure(ref closure) => closure.traverse(gc),
+            Callable::Extern(_) => ()
+        }
+    }
+}
+
 pub struct PartialApplicationData<'a> {
-    function: GcPtr<ClosureData<'a>>,
+    function: Callable<'a>,
     arguments: [Cell<Value<'a>>]
 }
 
@@ -177,7 +207,7 @@ impl <'a> Traverseable for PartialApplicationData<'a> {
     }
 }
 
-struct PartialApplicationDataDef<'a: 'b, 'b>(GcPtr<ClosureData<'a>>, &'b [Value<'a>]);
+struct PartialApplicationDataDef<'a: 'b, 'b>(Callable<'a>, &'b [Value<'a>]);
 impl <'a, 'b> Traverseable for PartialApplicationDataDef<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
@@ -242,7 +272,7 @@ impl <'a> fmt::Debug for Value<'a> {
             Data(ref data) => {
                 write!(f, "{{{:?} {:?}}}", data.tag, &data.fields)
             }
-            Function(ref func) => write!(f, "{:?}", **func),
+            Function(ref func) => write!(f, "{:?}", &**func),
             Closure(ref closure) => write!(f, "<Closure {:?} {:?}>",
                                            { let p: *const _ = &*closure.function; p }, &closure.upvars),
             PartialApplication(ref app) => write!(f, "<App {:?}>", &app.arguments),
@@ -262,7 +292,25 @@ macro_rules! get_global {
     )
 }
 
-pub type ExternFunction<'a> = Box<Fn(&VM<'a>) + 'static>;
+pub struct ExternFunction<'a> {
+    args: VMIndex,
+    function: Box<Fn(&VM<'a>) + 'static>
+}
+
+impl <'a> PartialEq for ExternFunction<'a> {
+    fn eq(&self, _: &ExternFunction<'a>) -> bool { false }
+}
+
+impl <'a> fmt::Debug for ExternFunction<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let p: *const () = unsafe { ::std::mem::transmute_copy(& &*self.function) };
+        write!(f, "{:?}", p)
+    }
+}
+
+impl <'a> Traverseable for ExternFunction<'a> {
+    fn traverse(&self, _: &mut Gc) { }
+}
 
 #[derive(Debug)]
 pub struct Global<'a> {
@@ -278,36 +326,10 @@ impl <'a> Traverseable for Global<'a> {
     }
 }
 
-pub enum Function_<'a> {
-    Bytecode(BytecodeFunction),
-    Extern(ExternFunction<'a>)
-}
 impl <'a> Typed for Global<'a> {
     type Id = InternedStr;
     fn type_of(&self) -> &TcType {
         &self.typ
-    }
-}
-impl <'a> PartialEq for Function_<'a> {
-    fn eq(&self, _other: &Function_<'a>) -> bool {
-        false//TODO?
-    }
-}
-
-impl <'a> Traverseable for Function_<'a> {
-    fn traverse(&self, gc: &mut Gc) {
-        match *self { 
-            Function_::Bytecode(ref f) => f.traverse(gc),
-            Function_::Extern(_) => ()
-        }
-    }
-}
-impl <'a> fmt::Debug for Function_<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self { 
-            Function_::Bytecode(_) => write!(f, "<Bytecode>"),
-            Function_::Extern(_) => write!(f, "<extern>")
-        }
     }
 }
 
@@ -635,8 +657,10 @@ impl <'a> VM<'a> {
         };
         let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: vm.intern("a") });
         let array_a = Type::Array(box a.clone());
+        let io_unit = ast::type_con(vm.intern("IO"), vec![UNIT_TYPE.clone()]);
         let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
         let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
+        let _ = vm.extern_function("print_int", vec![INT_TYPE.clone()], io_unit, box print_int);
         vm
     }
 
@@ -686,15 +710,20 @@ impl <'a> VM<'a> {
         })
     }
 
-    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: ExternFunction<'a>) -> Result<(), ::std::string::String> {
+    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: Box<Fn(&VM<'a>) + 'static>) -> Result<(), ::std::string::String> {
         let id = self.intern(name);
         if self.names.borrow().contains_key(&id) {
             return Err(format!("{} is already defined", name))
         }
+        let num_args = args.len() as VMIndex;
         let global = Global {
             id: id,
             typ: Type::Function(args, box return_type),
-            value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(Function_::Extern(f)))))
+            value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(
+                ExternFunction {
+                    args: num_args,
+                    function: f
+                }))))
         };
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(global);
@@ -783,30 +812,39 @@ impl <'a> VM<'a> {
         stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
     }
 
-    fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &Function_<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    fn execute_callable<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &Callable<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         match *function {
-            Function_::Extern(ref func) => {
-                //Make sure that the stack is not borrowed during the external function call
-                //Necessary since we do not know what will happen during the function call
-                let StackFrame { stack, offset, upvars } = stack;
-                drop(stack);
-                func(self);
-                Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
+            Callable::Closure(ref closure) => {
+                stack.scope(closure.function.args, Some(*closure), |new_stack| {
+                    self.execute(new_stack, &closure.function.instructions, &closure.function)
+                })
             }
-            Function_::Bytecode(ref function) => {
-                self.execute(stack, &function.instructions, &function)
-            }
+            Callable::Extern(ref ext) => self.execute_function(stack, ext)
         }
     }
 
-    fn do_call<'b>(&'b self, mut stack: StackFrame<'a, 'b>, args: VMIndex) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+        //Make sure that the stack is not borrowed during the external function call
+        //Necessary since we do not know what will happen during the function call
+        let StackFrame { stack, offset, upvars } = stack;
+        drop(stack);
+        (function.function)(self);
+        Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
+    }
+
+    fn call_function_with_upvars<'b, F, G>(&'b self
+                                    , mut stack: StackFrame<'a, 'b>
+                                    , args: VMIndex
+                                    , required_args: VMIndex
+                                    , call: F
+                                    , partial: G) -> Result<StackFrame<'a, 'b>, ::std::string::String>
+        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, ::std::string::String>
+            , G: FnOnce(&mut [Value<'a>], &mut [Value<'a>]) -> Value<'a> {
         let function_index = stack.len() - 1 - args;
-        debug!("Do call {:?} {:?}", stack[function_index], &(*stack)[(function_index + 1) as usize..]);
-        match stack[function_index].clone() {
-            Function(ref f) => {
-                stack = try!(stack.scope(args, None, |new_stack| {
-                    self.execute_function(new_stack, f)
-                }));
+        debug!("cmp {} {}", args, required_args);
+        match args.cmp(&required_args) {
+            Ordering::Equal => {
+                stack = try!(call(stack));
                 if stack.len() > function_index + args {
                     //Value was returned
                     let result = stack.pop();
@@ -822,81 +860,83 @@ impl <'a> VM<'a> {
                     }
                 }
             }
-            Closure(ref closure) => {
-                match args.cmp(&closure.function.args) {
-                    Ordering::Equal => {
-                        stack = try!(stack.scope(args, Some(*closure), |new_stack| {
-                            self.execute(new_stack, &closure.function.instructions, &closure.function)
-                        }));
-                        if stack.len() > function_index + args {
-                            //Value was returned
-                            let result = stack.pop();
-                            debug!("Return {:?}", result);
-                            while stack.len() > function_index {
-                                stack.pop();
-                            }
-                            stack.push(result);
-                        }
-                        else {
-                            while stack.len() > function_index {
-                                stack.pop();
-                            }
-                        }
-                    }
-                    Ordering::Less => {
-                        let app = {
-                            let whole_stack = &mut stack.stack.values[..];
-                            let arg_start = whole_stack.len() - args as usize;
-                            let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
-                            self.alloc(pre_stack, PartialApplicationDataDef(closure.clone(), &*fields))
-                        };
-                        for _ in 0..(args+1) {
-                            stack.pop();
-                        }
-                        stack.push(PartialApplication(app));
-                    }
-                    Ordering::Greater => {
-                        let excess_args = args - closure.function.args;
-                        let d = {
-                            let whole_stack = &mut stack.stack.values[..];
-                            let arg_start = whole_stack.len() - excess_args as usize;
-                            let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
-                            self.new_data_and_collect(pre_stack, 0, fields)
-                        };
-                        for _ in 0..excess_args {
-                            stack.pop();
-                        }
-                        //Insert the excess args before the actual closure so it does not get
-                        //collected
-                        let offset = stack.len() - closure.function.args - 1;
-                        stack.insert_slice(offset, &[Cell::new(Data(d))]);
-                        stack = try!(stack.scope(closure.function.args, Some(*closure), |new_stack| {
-                            self.execute(new_stack, &closure.function.instructions, &closure.function)
-                        }));
-                        let result = stack.pop();
-                        for _ in 0..(closure.function.args + 1) {
-                            stack.pop();
-                        }
-                        let _x = stack.pop();//Pop the excess_args
-                        debug_assert!(_x == Data(d));
-                        stack.push(result);
-                        for value in &d.fields {
-                            stack.push(value.get());
-                        }
-                        stack = try!(self.do_call(stack, d.fields.len() as VMIndex));
-                    }
+            Ordering::Less => {
+                let app = {
+                    let whole_stack = &mut stack.stack.values[..];
+                    let arg_start = whole_stack.len() - args as usize;
+                    let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
+                    partial(pre_stack, fields)
+                };
+                for _ in 0..(args+1) {
+                    stack.pop();
                 }
+                stack.push(app);
+            }
+            Ordering::Greater => {
+                let excess_args = args - required_args;
+                let d = {
+                    let whole_stack = &mut stack.stack.values[..];
+                    let arg_start = whole_stack.len() - excess_args as usize;
+                    let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
+                    self.new_data_and_collect(pre_stack, 0, fields)
+                };
+                for _ in 0..excess_args {
+                    stack.pop();
+                }
+                //Insert the excess args before the actual closure so it does not get
+                //collected
+                let offset = stack.len() - required_args - 1;
+                stack.insert_slice(offset, &[Cell::new(Data(d))]);
+                debug!("xxxxxx {:?}", &(*stack)[..]);
+                stack = try!(call(stack));
+                let result = stack.pop();
+                for _ in 0..(required_args + 1) {
+                    stack.pop();
+                }
+                let _x = stack.pop();//Pop the excess_args
+                debug_assert!(_x == Data(d));
+                stack.push(result);
+                for value in &d.fields {
+                    stack.push(value.get());
+                }
+                stack = try!(self.do_call(stack, d.fields.len() as VMIndex));
+            }
+        }
+        Ok(stack)
+    }
+
+    fn do_call<'b>(&'b self, mut stack: StackFrame<'a, 'b>, args: VMIndex) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+        let function_index = stack.len() - 1 - args;
+        debug!("Do call {:?} {:?}", stack[function_index], &(*stack)[(function_index + 1) as usize..]);
+        match stack[function_index].clone() {
+            Function(ref f) => {
+                stack = try!(self.call_function_with_upvars(stack, args, f.args, |stack| {
+                    stack.scope(f.args, None, |new_stack| {
+                        self.execute_function(new_stack, f)
+                    })
+                    }, |pre_stack, fields| {
+                        let def = PartialApplicationDataDef(Callable::Extern(f.clone()), fields);
+                        PartialApplication(self.alloc(pre_stack, def))
+                    }));
+            }
+            Closure(ref closure) => {
+                stack = try!(self.call_function_with_upvars(stack, args, closure.function.args, |stack| {
+                    stack.scope(closure.function.args, Some(*closure), |new_stack| {
+                        self.execute(new_stack, &closure.function.instructions, &closure.function)
+                    })
+                    }, |pre_stack, fields| {
+                        let def = PartialApplicationDataDef(Callable::Closure(closure.clone()), fields);
+                        PartialApplication(self.alloc(pre_stack, def))
+                    }));
             }
             PartialApplication(app) => {
                 let closure = app.function;
                 let total_args = app.arguments.len() as VMIndex + args;
                 let offset = stack.len() - args;
                 stack.insert_slice(offset, &app.arguments);
-                match closure.function.args.cmp(&total_args) {
+                match closure.args().cmp(&total_args) {
                     Ordering::Equal => {
-                        stack = try!(stack.scope(closure.function.args, Some(closure), |new_stack| {
-                            self.execute(new_stack, &closure.function.instructions, &closure.function)
-                        }));
+                        stack = try!(self.execute_callable(stack, &app.function));
                         let result = stack.pop();
                         for _ in 0..(total_args + 1) {
                             stack.pop();
@@ -1187,6 +1227,15 @@ fn string_append(vm: &VM) {
         _ => panic!()
     }
 }
+fn print_int(vm: &VM) {
+    let stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    match stack[0] {
+        Int(i) => {
+            print!("{}", i);
+        }
+        x => panic!("print_int called on: {:?}", x)
+    }
+}
 
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
@@ -1456,7 +1505,7 @@ in h 2 #Int+ g 10 3
         assert_eq!(value, Int(55));
     }
     #[test]
-    fn to_many_application() {
+    fn to_many_args_application() {
         let _ = ::env_logger::init();
         let text = 
 r"
@@ -1470,7 +1519,7 @@ in f 10 2 #Int+ g 3
         assert_eq!(value, Int(35));
     }
     #[test]
-    fn to_many_application2() {
+    fn to_many_args_partial_application_twice() {
         let _ = ::env_logger::init();
         let text = 
 r"
@@ -1482,6 +1531,17 @@ in f 10 2 1 #Int+ g 2
         let value = run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
         assert_eq!(value, Int(40));
+    }
+    #[test]
+    fn print_int() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+print_int 123
+";
+        let mut vm = VM::new();
+        run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
     }
 }
 

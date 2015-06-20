@@ -1,5 +1,5 @@
 #![crate_type="lib"]
-#![feature(box_syntax, core, collections, slice_patterns)]
+#![feature(as_unsafe_cell, box_syntax, collections, core_intrinsics, raw, slice_patterns)]
 #![cfg_attr(test, feature(test))]
 extern crate collections;
 #[macro_use]
