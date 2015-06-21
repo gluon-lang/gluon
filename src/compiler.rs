@@ -1,6 +1,6 @@
 use base::interner::*;
 use base::ast;
-use base::ast::{LExpr, Expr, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constraint, Constrained};
+use base::ast::{LExpr, Expr, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constrained};
 use typecheck::*;
 use self::Instruction::*;
 use self::Variable::*;
@@ -64,18 +64,6 @@ pub enum Variable<'a> {
     UpVar(VMIndex)
 }
 
-pub struct Assembly {
-    pub initializer: Vec<Instruction>,
-    pub globals: Vec<Binding>,
-    pub anonymous_functions: Vec<CompiledFunction>,
-}
-
-#[derive(Debug)]
-pub struct Binding {
-    pub name: InternedStr,
-    pub typ: Constrained<TcType>,
-}
-
 #[derive(Debug)]
 pub struct CompiledFunction {
     pub args: VMIndex,
@@ -86,20 +74,18 @@ pub struct CompiledFunction {
     pub strings: Vec<InternedStr>
 }
 
-pub struct FunctionEnv<'a> {
+pub struct FunctionEnv {
     pub instructions: Vec<Instruction>,
     pub free_vars: Vec<InternedStr>,
-    pub dictionary: &'a [Constraint],//Typevariable -> Trait
     pub inner_functions: Vec<CompiledFunction>,
     pub strings: Vec<InternedStr>
 }
 
-impl <'a> FunctionEnv<'a> {
-    pub fn new() -> FunctionEnv<'a> {
+impl FunctionEnv {
+    pub fn new() -> FunctionEnv {
         FunctionEnv {
             instructions: Vec::new(),
             free_vars: Vec::new(),
-            dictionary: &[],
             inner_functions: Vec::new(),
             strings: Vec::new()
         }
@@ -113,13 +99,6 @@ impl <'a> FunctionEnv<'a> {
             }
         }
     }
-}
-
-#[derive(Debug)]
-pub struct TypeResult<'a, T> {
-    pub constraints: &'a [Constraint],
-    pub typ: &'a TcType,
-    pub value: T
 }
 
 pub trait CompilerEnv {
@@ -554,7 +533,6 @@ impl <'a> Compiler<'a> {
             self.new_stack_var(*arg.id());
         }
         let mut f = FunctionEnv::new();
-        f.dictionary = parent.dictionary.clone();
         self.compile(body, &mut f);
 
         self.closure_limits.pop().expect("closure_limits: pop");
