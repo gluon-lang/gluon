@@ -1,6 +1,15 @@
 type Option a = | None | Some a in
 type List a = | Nil | Cons a (List a) in
 
+let (++) xs ys = case xs of
+    | Cons x zs -> Cons x (zs ++ ys)
+    | Nil -> ys
+in
+let concatMap f xs: (a -> List b) -> List a -> List b = case xs of
+    | Cons x ys -> f x ++ concatMap f ys
+    | Nil -> Nil
+in
+
 type Eq a = {
     (==) : a -> a -> Bool
 } in
@@ -119,5 +128,9 @@ let monad_Option: Monad Option = {
                         | None -> None,
     return = \x -> Some x
 } in
-{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, num_Int, num_Float, functor_Option }
+let monad_List: Monad List = {
+    (>>=) = \m f -> concatMap f m,
+    return = \x -> Cons x Nil
+} in
+{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, num_Int, num_Float, functor_Option, monad_Option, monad_List }
 

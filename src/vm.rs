@@ -100,6 +100,7 @@ unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
 }
 
 pub struct BytecodeFunction {
+    name: Option<InternedStr>,
     args: VMIndex,
     instructions: Vec<Instruction>,
     inner_functions: Vec<GcPtr<BytecodeFunction>>,
@@ -108,15 +109,21 @@ pub struct BytecodeFunction {
 
 impl BytecodeFunction {
     pub fn empty() -> BytecodeFunction {
-        BytecodeFunction { args: 0, instructions: Vec::new(), inner_functions: Vec::new(), strings: Vec::new() }
+        BytecodeFunction { name: None, args: 0, instructions: Vec::new(), inner_functions: Vec::new(), strings: Vec::new() }
     }
 
     pub fn new(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
-        let CompiledFunction { args, instructions, inner_functions, strings, .. } = f;
+        let CompiledFunction { id, args, instructions, inner_functions, strings, .. } = f;
         let fs = inner_functions.into_iter()
             .map(|inner| BytecodeFunction::new(gc, inner))
             .collect();
-        gc.alloc(Move(BytecodeFunction { args: args, instructions: instructions, inner_functions: fs, strings: strings }))
+        gc.alloc(Move(BytecodeFunction {
+            name: Some(id),
+            args: args,
+            instructions: instructions,
+            inner_functions: fs,
+            strings: strings
+        }))
     }
 }
 
@@ -258,25 +265,55 @@ impl <'a> Traverseable for Value<'a> {
             Closure(ref data) => data.traverse(gc),
             TraitObject(ref data) => data.traverse(gc),
             Userdata(ref data) => data.data.traverse(gc),
-            _ => ()
+            PartialApplication(ref data) => data.traverse(gc),
+            Int(_) | Float(_) | Bottom => ()
         }
     }
 }
 
 impl <'a> fmt::Debug for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        struct OneLevel<'a: 'b, 'b>(&'b [Cell<Value<'a>>]);
+        impl <'a, 'b> fmt::Debug for OneLevel<'a, 'b> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                if self.0.len() == 0 { return Ok(()) }
+                try!(write!(f, "("));
+                for a in self.0 {
+                    try!(match a.get() {
+                        Int(i) => write!(f, "{:?}", i),
+                        Float(x) => write!(f, "{:?}f", x),
+                        String(x) => write!(f, "\"{:?}\"", &*x),
+                        Data(ref data) => write!(f, "{{{:?} ??}}", data.tag),
+                        Function(ref func) => write!(f, "{:?}", &**func),
+                        Closure(ref closure) => write!(f, "<Closure {:?} ??>",
+                                                       { let p: *const _ = &*closure.function; p }),
+                        PartialApplication(_) => write!(f, "<App ??>"),
+                        TraitObject(ref object) => write!(f, "<{:?} ??>", object.tag),
+                        Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
+                        Bottom => write!(f, "Bottom")
+                    });
+                }
+                write!(f, ")")
+            }
+        }
         match *self {
             Int(i) => write!(f, "{:?}", i),
             Float(x) => write!(f, "{:?}f", x),
             String(x) => write!(f, "\"{:?}\"", &*x),
             Data(ref data) => {
-                write!(f, "{{{:?} {:?}}}", data.tag, &data.fields)
+                write!(f, "{{{:?} {:?}}}", data.tag, OneLevel(&data.fields))
             }
             Function(ref func) => write!(f, "{:?}", &**func),
-            Closure(ref closure) => write!(f, "<Closure {:?} {:?}>",
-                                           { let p: *const _ = &*closure.function; p }, &closure.upvars),
-            PartialApplication(ref app) => write!(f, "<App {:?}>", &app.arguments),
-            TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, &object.fields),
+            Closure(ref closure) => {
+                let p: *const _ = &*closure.function;
+                let name = match closure.function.name {
+                    Some(ref name) => &name[..],
+                    None => ""
+                };
+                write!(f, "<{:?} {:?} {:?}>", name, p, OneLevel(&closure.upvars))
+            }
+            PartialApplication(ref app) => write!(f, "<App {:?}>", OneLevel(&app.arguments)),
+            TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, OneLevel(&object.fields)),
             Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
             Bottom => write!(f, "Bottom")
         }
@@ -774,8 +811,11 @@ impl <'a> VM<'a> {
     fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> GcPtr<DataStruct<'a>> {
        self.alloc(stack, Def { tag: tag, elems: fields })
     }
-    fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &mut [Value<'a>]) -> GcPtr<ClosureData<'a>> {
-        self.alloc(stack, ClosureDataDef(func, &*fields))
+    fn new_closure(&self, func: GcPtr<BytecodeFunction>, fields: &[Value<'a>]) -> Value<'a> {
+        Closure(self.gc.borrow_mut().alloc(ClosureDataDef(func, fields)))
+    }
+    fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &[Value<'a>]) -> GcPtr<ClosureData<'a>> {
+        self.alloc(stack, ClosureDataDef(func, fields))
     }
 
     fn with_roots<F, R>(&self, stack: &mut [Value<'a>], f: F) -> R
@@ -1262,7 +1302,9 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string
         (type_infos, function, typ)
     };
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
+    vm.push(vm.new_closure(function, &[]));
     let value = try!(vm.call_bytecode(0, &function, None));
+    vm.pop();
     let id = vm.intern(name);
     vm.names.borrow_mut().insert(id, GlobalFn(vm.globals.len()));
     vm.globals.push(Global { id: id, typ: typ, value: Cell::new(value) });

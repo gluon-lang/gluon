@@ -396,16 +396,6 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
     });
 
 
-    #[derive(Clone)]
-    struct A<'a>(&'a str);
-    impl <'a> Stream for A<'a> {
-        type Item = char;
-        fn uncons(self) -> Result<(char, A<'a>), ()> {
-            debug!("{:?}", self.0.uncons());
-            self.0.uncons().map(|(c, s)| (c, A(s)))
-        }
-    }
-    let input = A(input);
     let env = ParserEnv {
         data: RefCell::new((gc, interner)),
         env: env,
