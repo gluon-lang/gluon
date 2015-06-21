@@ -22,7 +22,7 @@ pub fn parse_str(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LE
 }
 
 fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LExpr<Id>, Box<::std::error::Error>>
-    where Id: AstId + Clone {
+    where Id: AstId<Untyped=InternedStr> + Clone {
     use std::cell::RefCell;
     use parser_combinators_language::{Env, LanguageDef, Identifier};
     use parser_combinators::primitives::{Consumed, Stream, State};
@@ -45,7 +45,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
 
     impl <'a, 'b, Id, I, O> Parser for EnvParser<'a, 'b, I, Id, O>
         where I: Stream<Item=char>
-            , Id: AstId + Clone {
+            , Id: AstId<Untyped=InternedStr> + Clone {
         type Output = O;
         type Input = I;
         fn parse_state(&mut self, input: State<I>) -> ParseResult<O, I> {
@@ -70,7 +70,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
 
     impl <'a, I, Id> ParserEnv<'a, I, Id>
         where I: Stream<Item=char>
-            , Id: AstId + Clone {
+            , Id: AstId<Untyped=InternedStr> + Clone {
         fn intern(&self, s: &str) -> Id {
             let mut r = self.data.borrow_mut();
             let r = &mut *r;
@@ -242,7 +242,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             let position = input.position;
             debug!("Expr start: {:?}", input.clone().uncons().map(|t| t.0));
             let loc = |expr| located(Location { column: position.column, row: position.line, absolute: 0 }, expr);
-            choice::<[&mut Parser<Input=I, Output=LExpr<Id>>; 13], _>([
+            choice::<[&mut Parser<Input=I, Output=LExpr<Id>>; 14], _>([
                 &mut parser(|input| self.if_else(input)).map(&loc),
                 &mut self.parser(ParserEnv::let_in).map(&loc),
                 &mut self.parser(ParserEnv::case_of).map(&loc),
@@ -264,6 +264,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                         None => loc(Expr::Tuple(vec![]))
                     }
                 })),
+                &mut self.string_literal().map(|s| loc(Expr::Literal(LiteralStruct::String(self.intern(&s).to_id())))),
                 &mut self.brackets(sep_by(self.expr(), self.lex(char(','))))
                     .map(|exprs| loc(Expr::Array(ArrayStruct { id: self.intern(""), expressions: exprs })))
                 ])
@@ -500,7 +501,7 @@ pub mod tests {
     }
 
     pub fn parse_new<Id>(s: &str) -> LExpr<Id>
-        where Id: AstId + Clone {
+        where Id: AstId<Untyped=InternedStr> + Clone {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
         let &mut(ref mut interner, ref mut gc) = &mut *interner;

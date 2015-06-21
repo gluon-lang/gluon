@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use base::ast;
 use base::ast::Type;
-use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, UNIT_TYPE, TcIdent, TcType};
+use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, FLOAT_TYPE, UNIT_TYPE, TcIdent, TcType};
 use compiler::*;
 use compiler::Instruction::*;
 use base::interner::{Interner, InternedStr};
@@ -282,7 +282,7 @@ impl <'a> fmt::Debug for Value<'a> {
                     try!(match a.get() {
                         Int(i) => write!(f, "{:?}", i),
                         Float(x) => write!(f, "{:?}f", x),
-                        String(x) => write!(f, "\"{:?}\"", &*x),
+                        String(x) => write!(f, "\"{}\"", &*x),
                         Data(ref data) => write!(f, "{{{:?} ??}}", data.tag),
                         Function(ref func) => write!(f, "{:?}", &**func),
                         Closure(ref closure) => write!(f, "<Closure {:?} ??>",
@@ -698,6 +698,8 @@ impl <'a> VM<'a> {
         let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
         let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
         let _ = vm.extern_function("print_int", vec![INT_TYPE.clone()], io_unit, box print_int);
+        let _ = vm.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
+        let _ = vm.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
         vm
     }
 
@@ -755,7 +757,7 @@ impl <'a> VM<'a> {
         let num_args = args.len() as VMIndex;
         let global = Global {
             id: id,
-            typ: Type::Function(args, box return_type),
+            typ: ast::fn_type(args, return_type),
             value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(
                 ExternFunction {
                     args: num_args,
@@ -1277,6 +1279,16 @@ fn print_int(vm: &VM) {
     }
 }
 
+fn show_prim(vm: &VM) {
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let s = match stack[0] {
+        Int(i) => format!("{}", i),
+        Float(f) => format!("{}", f),
+        x => panic!("print_int called on: {:?}", x)
+    };
+    stack.push(String(vm.gc.borrow_mut().alloc(&s[..])));
+}
+
 macro_rules! tryf(
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 );
@@ -1336,7 +1348,10 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::str
         let mut compiler = Compiler::new(&env, empty_string);
         vm.new_function(compiler.compile_expr(&expr))
     };
-    vm.call_bytecode(0, &function, None)
+    vm.push(vm.new_closure(function, &[]));
+    let value = try!(vm.call_bytecode(0, &function, None));
+    vm.pop();
+    Ok(value)
 }
 
 pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a>> {
@@ -1583,6 +1598,17 @@ print_int 123
 ";
         let mut vm = VM::new();
         run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+    }
+    #[test]
+    fn test_prelude() {
+        use std::fs::File;
+        use std::io::Read;
+        let _ = ::env_logger::init();
+        let mut text = String::new();
+        File::open("prelude.s").unwrap().read_to_string(&mut text).unwrap();
+        let mut vm = VM::new();
+        run_expr(&mut vm, &text)
             .unwrap_or_else(|err| panic!("{}", err));
     }
 }

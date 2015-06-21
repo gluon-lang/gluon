@@ -1278,16 +1278,6 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
         assert_eq!(result, Ok(typ_a("Option", vec![typ("Int")])));
     }
 
-    #[test]
-    fn prelude_test() {
-        use std::fs::File;
-        use std::io::Read;
-        let mut text = String::new();
-        File::open("prelude.s").unwrap().read_to_string(&mut text).unwrap();
-        let result = typecheck(&text);
-        assert_eq!(result.map(|_| ()), Ok(()));
-    }
-
     #[bench]
     fn prelude(b: &mut ::test::Bencher) {
         use std::fs::File;

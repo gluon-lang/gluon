@@ -132,5 +132,27 @@ let monad_List: Monad List = {
     (>>=) = \m f -> concatMap f m,
     return = \x -> Cons x Nil
 } in
-{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, num_Int, num_Float, functor_Option, monad_Option, monad_List }
+type Show a = {
+    show : a -> String
+} in
+let show_Int: Show Int = {
+    show = show_Int_prim
+} in
+let show_Float: Show Float = {
+    show = show_Float_prim
+} in
+let show_String: Show String = {
+    show = \x -> x
+} in
+let show_List: Show a -> Show (List a) = \d ->
+    let show xs =
+        let show2 ys = case ys of
+            | Cons y ys2 -> case ys2 of
+                | Cons z zs -> string_append (d.show y) (string_append ", " (show2 ys2))
+                | Nil -> string_append (d.show y) "]"
+            | Nil -> "]"
+        in string_append "[" (show2 xs)
+    in { show }
+in
+{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, num_Int, num_Float, functor_Option, monad_Option, monad_List, show_List }
 
