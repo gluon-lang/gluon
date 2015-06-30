@@ -985,7 +985,7 @@ impl <Id> Typed for ast::Expr<Id>
                     _ => panic!()
                 }
             }
-            ast::Expr::Let(..) => &UNIT_TYPE,
+            ast::Expr::Let(_, ref expr) => expr.type_of(),
             ast::Expr::Call(ref func, _) => {
                 match func.type_of() {
                     &Type::Function(_, ref return_type) => &**return_type,

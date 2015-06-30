@@ -2,7 +2,7 @@ use std::io;
 use std::io::BufRead;
 
 use embed_lang::typecheck::*;
-use embed_lang::vm::{VM, run_expr, load_script};
+use embed_lang::vm::{VM, typecheck_expr, run_expr, load_script};
 
 macro_rules! tryf {
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
@@ -38,6 +38,11 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
             Ok(true)
         }
         't' => {
+            let (expr, _) = try!(typecheck_expr(vm, args));
+            println!("{}", expr.type_of());
+            Ok(true)
+        }
+        'i' => {
             match vm.env().find_type_info(&vm.intern(args)) {
                 Some(typ) => {
                     println!("type {} = {}", args, typ);

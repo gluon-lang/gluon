@@ -1330,21 +1330,22 @@ pub fn parse_expr(input: &str, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::
     ::parser_new::parse_tc(&mut gc, &mut interner, input)
         .map_err(|err| format!("{}", err))
 }
+pub fn typecheck_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<(ast::LExpr<TcIdent>, TypeInfos), ::std::string::String> {
+    let mut expr = try!(parse_expr(&expr_str, vm));
+    let env = vm.env();
+    let mut interner = vm.interner.borrow_mut();
+    let mut gc = vm.gc.borrow_mut();
+    let mut tc = Typecheck::new(&mut interner, &mut gc);
+    tc.add_environment(&env);
+    tryf!(tc.typecheck_expr(&mut expr));
+    Ok((expr, tc.type_infos))
+}
 
 pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::string::String> {
-    let mut expr = try!(parse_expr(&expr_str, vm));
     let function = {
+        let (expr, type_infos) = try!(typecheck_expr(vm, expr_str));
+        let env = (vm.env(), &type_infos);
         let empty_string = vm.intern("");
-        let env = vm.env();
-        let type_infos = {
-            let mut interner = vm.interner.borrow_mut();
-            let mut gc = vm.gc.borrow_mut();
-            let mut tc = Typecheck::new(&mut interner, &mut gc);
-            tc.add_environment(&env);
-            tryf!(tc.typecheck_expr(&mut expr));
-            tc.type_infos
-        };
-        let env = (&env, &type_infos);
         let mut compiler = Compiler::new(&env, empty_string);
         vm.new_function(compiler.compile_expr(&expr))
     };
@@ -1607,6 +1608,17 @@ print_int 123
         let _ = ::env_logger::init();
         let mut text = String::new();
         File::open("prelude.s").unwrap().read_to_string(&mut text).unwrap();
+        let mut vm = VM::new();
+        run_expr(&mut vm, &text)
+            .unwrap_or_else(|err| panic!("{}", err));
+    }
+    #[test]
+    fn test_map() {
+        use std::fs::File;
+        use std::io::Read;
+        let _ = ::env_logger::init();
+        let mut text = String::new();
+        File::open("map.hs").unwrap().read_to_string(&mut text).unwrap();
         let mut vm = VM::new();
         run_expr(&mut vm, &text)
             .unwrap_or_else(|err| panic!("{}", err));
