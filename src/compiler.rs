@@ -425,7 +425,9 @@ impl <'a> Compiler<'a> {
             Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function);
                 debug!("{:?} {:?}", expr, field);
-                let field_index = match *expr.type_of().inner_app() {
+                let typ = expr.type_of().inner_app();
+                debug!("FieldAccess {}", typ);
+                let field_index = match *typ {
                     Type::Data(ref id, _) => {
                         self.find_field(id, field.id())
                     }

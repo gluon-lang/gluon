@@ -285,7 +285,7 @@ impl <'a> fmt::Debug for Value<'a> {
                         String(x) => write!(f, "\"{}\"", &*x),
                         Data(ref data) => write!(f, "{{{:?} ??}}", data.tag),
                         Function(ref func) => write!(f, "{:?}", &**func),
-                        Closure(ref closure) => write!(f, "<Closure {:?} ??>",
+                        Closure(ref closure) => write!(f, "<{} {:?} ??>", closure.function.name.as_ref().map(|s| &s[..]).unwrap_or("anon:"),
                                                        { let p: *const _ = &*closure.function; p }),
                         PartialApplication(_) => write!(f, "<App ??>"),
                         TraitObject(ref object) => write!(f, "<{:?} ??>", object.tag),
@@ -1137,7 +1137,6 @@ impl <'a> VM<'a> {
                     let closure = {
                         let i = stack.stack.len() - n;
                         let (stack_after, args) = stack.stack.values.split_at_mut(i as usize);
-                        args.reverse();
                         let func = function.inner_functions[fi as usize];
                         Closure(self.new_closure_and_collect(stack_after, func, args))
                     };
