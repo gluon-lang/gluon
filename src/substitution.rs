@@ -6,6 +6,7 @@ use base::interner::InternedStr;
 
 pub struct Substitution<T> {
     pub map: UnsafeCell<HashMap<u32, Box<T>>>,
+    levels: UnsafeCell<HashMap<u32, u32>>,
     pub variables: HashMap<InternedStr, T>,
     pub var_id: u32
 }
@@ -27,6 +28,7 @@ impl <T: Substitutable> Substitution<T> {
     pub fn new() -> Substitution<T> {
         Substitution {
             map: UnsafeCell::new(HashMap::new()),
+            levels: UnsafeCell::new(HashMap::new()),
             variables: HashMap::new(),
             var_id: 1
         }
@@ -90,4 +92,23 @@ impl <T: Substitutable> Substitution<T> {
         }
     }
 
+    pub fn update_level(&self, var: u32, other: u32) {
+        let map = unsafe { &mut *self.levels.get() };
+        let level = self.get_level(var);
+        match map.get_mut(&other) {
+            Some(t) => {
+                *t = ::std::cmp::min(*t, level);
+                return
+            }
+            None => ()
+        }
+        map.insert(other, ::std::cmp::min(other, level));
+    }
+    pub fn get_level(&self, mut var: u32) -> u32 {
+        if let Some(v) = self.find_type_for_var(var) {
+            var = v.get_var().unwrap_or(var);
+        }
+        let map = unsafe { &mut *self.levels.get() };
+        map.get(&var).cloned().unwrap_or(var)
+    }
 }

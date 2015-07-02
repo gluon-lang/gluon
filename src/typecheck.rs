@@ -56,7 +56,7 @@ pub type TcResult = Result<TcType, TypeError>;
 
 impl Substitutable for TcType {
     fn new(id: u32) -> TcType {
-        Type::Variable(ast::TypeVariable { kind: Kind::Star, id: id })
+        Type::Variable(ast::TypeVariable::new(id))
     }
     fn get_var(&self) -> Option<u32> {
         match *self {
@@ -313,7 +313,7 @@ impl <'a> Typecheck<'a> {
                 ast::walk_mut_type2(typ, &mut |typ| {
                     self.tc.replace_variable(typ);
                     *typ = match *typ {
-                        Type::Variable(ref var) if var.id >= self.level => {
+                        Type::Variable(ref var) if self.tc.subs.get_level(var.id) > self.level => {
                             let generic = format!("a_{}", var);
                             let id = self.tc.interner.intern(self.tc.gc, &generic);
                             Type::Generic(ast::Generic { kind: var.kind.clone(), id: id })
@@ -362,7 +362,7 @@ impl <'a> Typecheck<'a> {
                 ast::walk_mut_type2(typ, &mut |typ| {
                     self.replace_variable(typ);
                     *typ = match *typ {
-                        Type::Variable(ref var) if var.id >= level => {
+                        Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
                             let generic = format!("a_{}", var);
                             Type::Generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) })
                         }
@@ -403,7 +403,8 @@ impl <'a> Typecheck<'a> {
                         }
                     }
                     _ => ()
-                };
+                }
+                self.replace_variable(typ);
             }, &mut unroll_app);
             self.replace_vars(0, &HashMap::new(), expr);
             Ok(typ)
@@ -691,7 +692,10 @@ impl <'a> Typecheck<'a> {
                 let (id_type, record_type) = match self.find_record(&fields.iter().map(|f| f.name).collect::<Vec<_>>())
                                                   .map(|t| (t.0.clone(), t.1.clone())) {
                     Ok(x) => x,
-                    Err(_) => return Ok(Type::Record(fields))
+                    Err(_) => {
+                        id.typ = Type::Record(fields);
+                        return Ok(id.typ.clone());
+                    }
                 };
                 let id_type = self.subs.instantiate(&id_type);
                 let record_type = self.subs.instantiate_(&record_type);
@@ -773,13 +777,12 @@ impl <'a> Typecheck<'a> {
         let actual = self.subs.real(actual);
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
+            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => true,
             (&Type::Variable(ref l), _) => {
-                self.union(l, actual);
-                true
+                self.union(l, actual)
             }
             (_, &Type::Variable(ref r)) => {
-                self.union(r, expected);
-                true
+                self.union(r, expected)
             }
             (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
@@ -824,11 +827,25 @@ impl <'a> Typecheck<'a> {
             }
             Type::Data(ref r, _) => l_args.len() == 0 && l == r,
             Type::Variable(ref r) => {
-                self.union(r, &Type::Data(l.clone(), Vec::new()));
-                true
+                self.union(r, &Type::Data(l.clone(), Vec::new()))
             }
             _ => false
         }
+    }
+
+    fn occurs(&self, var: &ast::TypeVariable, typ: &TcType) -> bool {
+        let mut occurs = false;
+        ast::walk_type(typ, &mut |typ| {
+            if occurs { return }
+            if let Type::Variable(ref other) = *typ {
+                if var == other {
+                    occurs = true;
+                    return
+                }
+                self.subs.update_level(var.id, other.id);
+            }
+        });
+        occurs
     }
 
     fn set_type(&self, t: &mut TcType) {
@@ -852,12 +869,13 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn union(&self, id: &ast::TypeVariable, typ: &TcType) {
+    fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> bool {
+        if self.occurs(id, typ) { return false }
         {
             let id_type = self.subs.find_type_for_var(id.id);
             let other_type = self.subs.real(typ);
             if id_type.map(|x| x == other_type).unwrap_or(Type::Variable(id.clone()) == *other_type) {
-                return
+                return true
             }
         }
         let map: &mut _ = unsafe { &mut *self.subs.map.get() };
@@ -865,9 +883,15 @@ impl <'a> Typecheck<'a> {
         //This way the resulting variables are always equal to any variables in the globals
         //declaration
         match *typ {
-            Type::Variable(ref other_id) if id.id < other_id.id => map.insert(other_id.id, box Type::Variable(id.clone())),
-            _ => map.insert(id.id, box typ.clone())
+            Type::Variable(ref other_id) if self.subs.get_level(id.id) < self.subs.get_level(other_id.id) => {
+                map.insert(other_id.id, box Type::Variable(id.clone()));
+                self.subs.update_level(id.id, other_id.id);
+            }
+            _ => {
+                map.insert(id.id, box typ.clone());
+            }
         };
+        true
     }
 }
 
@@ -929,7 +953,7 @@ fn unroll_app(typ: &mut TcType) {
             match &mut **l {
                 &mut Type::Data(ref mut l, ref mut args) => {
                     let l = ::std::mem::replace(l, ast::TypeConstructor::Builtin(ast::BuiltinType::StringType));
-                    let r = ::std::mem::replace(&mut **r, Type::Variable(ast::TypeVariable { kind: Kind::Star, id: 0 }));
+                    let r = ::std::mem::replace(&mut **r, Type::Variable(ast::TypeVariable::new(0)));
                     let mut args = ::std::mem::replace(args, Vec::new());
                     args.push(r);
                     Type::Data(l, args)
@@ -1276,6 +1300,36 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ_a("Option", vec![typ("Int")])));
+    }
+
+    #[test]
+    fn module() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type SortedList a = | Cons a (SortedList a)
+                    | Nil
+in \(<) ->
+    let empty = Nil
+    in let insert x xs = case xs of
+        | Nil -> Cons x Nil
+        | Cons y ys -> if x < y
+                       then Cons x xs
+                       else Cons y (insert x ys)
+in { empty, insert }
+";
+        let result = typecheck(text);
+        let a = || typ("a");
+        let list = |s| typ_a("SortedList", vec![typ(s)]);
+        let cmp = ast::fn_type(vec![a(), a()], typ("Bool"));
+        let insert = ast::fn_type(vec![a(), list("a")], list("a"));
+        let record = Type::Record(vec![
+            ast::Field { name: intern("empty"), typ: list("b") },
+            ast::Field {
+                name: intern("insert"),
+                typ: insert
+            }]);
+        assert_eq!(result, Ok(ast::fn_type(vec![cmp], record)));
     }
 
     #[bench]

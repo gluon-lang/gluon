@@ -205,7 +205,7 @@ impl <'a> KindCheck<'a> {
         //This way the resulting variables are always equal to any variables in the globals
         //declaration
         match *typ {
-            Kind::Variable(other_id) if id < other_id => map.insert(other_id, box Kind::Variable(id.clone())),
+            Kind::Variable(other_id) if id < other_id => map.insert(other_id, box Kind::Variable(id)),
             _ => map.insert(id, box typ.clone())
         };
     }

@@ -42,7 +42,7 @@ impl AstId for InternedStr {
 impl <Id: Clone + PartialEq + Eq + fmt::Debug + AstId> AstId for TcIdent<Id> {
     type Untyped = Id;
     fn from_str(s: InternedStr) -> TcIdent<Id> {
-        TcIdent { typ: Type::Variable(TypeVariable { kind: Kind::Variable(0), id: 0 }), name: AstId::from_str(s) }
+        TcIdent { typ: Type::Variable(TypeVariable::with_kind(Kind::Variable(0), 0)), name: AstId::from_str(s) }
     }
     fn to_id(self) -> Id { self.name }
     fn set_type(&mut self, typ: Type<Self::Untyped>) {
@@ -330,13 +330,51 @@ pub fn type_con(s: InternedStr, args: Vec<TcType>) -> TcType {
     }
 }
 
-impl TcType {
+impl <Id> Type<Id> {
     ///Returns the inner most application of a type application
-    pub fn inner_app(&self) -> &TcType {
+    pub fn inner_app(&self) -> &Type<Id> {
         match *self {
             Type::App(ref a, _) => a.inner_app(),
             _ => self
         }
+    }
+    pub fn level(&self) -> u32 {
+        use std::cmp::min;
+        match *self {
+            Type::App(ref l , ref r) => min(l.level(), r.level()),
+            Type::Data(_, ref types) =>
+                types.iter()
+                    .map(Type::level)
+                    .min()
+                    .unwrap_or(u32::max_value()),
+            Type::Variants(ref types) =>
+                types.iter()
+                    .map(|v| v.1.level())
+                    .min()
+                    .unwrap_or(u32::max_value()),
+            Type::Variable(ref var) => var.id,
+            Type::Function(ref args, ref r) =>
+                min(args.iter()
+                    .map(Type::level)
+                    .min()
+                    .unwrap_or(u32::max_value()), r.level()),
+            Type::Array(ref e) => e.level(),
+            Type::Record(ref types) => 
+                types.iter()
+                    .map(|v| v.typ.level())
+                    .min()
+                    .unwrap_or(u32::max_value()),
+            Type::Builtin(_) | Type::Generic(_) => u32::max_value(),
+        }
+    }
+}
+
+impl TypeVariable {
+    pub fn new(var: u32) -> TypeVariable {
+        TypeVariable::with_kind(Kind::Star, var)
+    }
+    pub fn with_kind(kind: Kind, var: u32) -> TypeVariable {
+        TypeVariable { kind: kind, id: var  }
     }
 }
 
@@ -490,16 +528,49 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
     }
 }
 
+pub fn walk_type<F, I>(typ: &Type<I>, f: &mut F)
+    where F: FnMut(&Type<I>) {
+    f(typ);
+    match *typ {
+        Type::Data(_, ref args) => {
+            for a in args {
+                walk_type(a, f);
+            }
+        }
+        Type::Array(ref inner) => {
+            walk_type(& **inner, f);
+        }
+        Type::Function(ref args, ref ret) => {
+            for a in args {
+                walk_type(a, f);
+            }
+            walk_type(& **ret, f);
+        }
+        Type::Record(ref fields) => {
+            for field in fields {
+                walk_type(& field.typ, f);
+            }
+        }
+        Type::App(ref l, ref r) => {
+            walk_type(l, f);
+            walk_type(r, f);
+        }
+        Type::Variants(ref variants) => {
+            for variant in variants {
+                walk_type(& variant.1, f);
+            }
+        }
+        Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => ()
+    }
+}
 
 pub fn walk_mut_type<F, I>(typ: &mut Type<I>, f: &mut F)
-    where F: FnMut(&mut Type<I>)
-        , I: AstId {
+    where F: FnMut(&mut Type<I>) {
     walk_mut_type2(typ, f, &mut |_| ())
 }
 pub fn walk_mut_type2<F, G, I>(typ: &mut Type<I>, f: &mut F, g: &mut G)
     where F: FnMut(&mut Type<I>)
-        , G: FnMut(&mut Type<I>)
-        , I: AstId {
+        , G: FnMut(&mut Type<I>) {
     f(typ);
     match *typ {
         Type::Data(_, ref mut args) => {
