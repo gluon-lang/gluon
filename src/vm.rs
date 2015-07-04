@@ -1648,7 +1648,7 @@ case A of
         use std::io::Read;
         let _ = ::env_logger::init();
         let mut text = String::new();
-        File::open("prelude.s").unwrap().read_to_string(&mut text).unwrap();
+        File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
         let mut vm = VM::new();
         run_expr(&mut vm, &text)
             .unwrap_or_else(|err| panic!("{}", err));
@@ -1659,7 +1659,7 @@ case A of
         use std::io::Read;
         let _ = ::env_logger::init();
         let mut text = String::new();
-        File::open("map.hs").unwrap().read_to_string(&mut text).unwrap();
+        File::open("std/map.hs").unwrap().read_to_string(&mut text).unwrap();
         let mut vm = VM::new();
         run_expr(&mut vm, &text)
             .unwrap_or_else(|err| panic!("{}", err));
