@@ -1,4 +1,5 @@
 use base::interner::*;
+use base::gc::Gc;
 use base::ast;
 use base::ast::{LExpr, Expr, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constrained};
 use typecheck::*;
@@ -90,6 +91,18 @@ impl FunctionEnv {
             strings: Vec::new()
         }
     }
+
+    fn emit_string(&mut self, s: InternedStr) {
+        let index = match self.strings.iter().position(|t| *t == s) {
+            Some(i) => i,
+            None => {
+                self.strings.push(s);
+                self.strings.len() - 1 
+            }
+        };
+        self.instructions.push(PushString(index as VMIndex));
+    }
+
     fn upvar(&mut self, s: InternedStr) -> VMIndex {
         match (0..).zip(self.free_vars.iter()).find(|t| *t.1 == s).map(|t| t.0) {
             Some(index) => index,
@@ -207,18 +220,24 @@ pub struct Compiler<'a> {
     stack: Vec<InternedStr>,
     //Stack which holds indexes for where each closure starts its stack variables
     closure_limits: Vec<VMIndex>,
-    empty_string: InternedStr
+    interner: &'a mut Interner,
+    gc: &'a mut Gc
 }
 
 impl <'a> Compiler<'a> {
 
-    pub fn new(globals: &'a CompilerEnv, empty_string: InternedStr) -> Compiler<'a> {
+    pub fn new(globals: &'a CompilerEnv, interner: &'a mut Interner, gc: &'a mut Gc) -> Compiler<'a> {
         Compiler {
             globals: globals,
             stack: Vec::new(),
             closure_limits: Vec::new(),
-            empty_string: empty_string
+            interner: interner,
+            gc: gc
         }
+    }
+
+    fn intern(&mut self, s: &str) -> InternedStr {
+        self.interner.intern(self.gc, s)
     }
 
     fn find(&self, id: &InternedStr, env: &mut FunctionEnv) -> Option<Variable> {
@@ -276,7 +295,7 @@ impl <'a> Compiler<'a> {
         let FunctionEnv { instructions, inner_functions, strings, .. } = env;
         CompiledFunction {
             args: 0,
-            id: self.empty_string,
+            id: self.intern(""),
             typ: Constrained {
                 constraints: Vec::new(),
                 value: Type::Function(vec![], Box::new(expr.type_of().clone()))
@@ -287,8 +306,8 @@ impl <'a> Compiler<'a> {
         }
     }
 
-    fn load_identifier(&self, id: &InternedStr, function: &mut FunctionEnv) {
-        match self.find(id, function).unwrap_or_else(|| panic!("Undefined variable {}", id)) {
+    fn load_identifier(&self, id: InternedStr, function: &mut FunctionEnv) {
+        match self.find(&id, function).unwrap_or_else(|| panic!("Undefined variable {}", id)) {
             Stack(index) => function.instructions.push(Push(index)),
             UpVar(index) => function.instructions.push(PushUpVar(index)),
             Global(index, _) => function.instructions.push(PushGlobal(index)),
@@ -304,13 +323,10 @@ impl <'a> Compiler<'a> {
                     Integer(i) => function.instructions.push(PushInt(i as isize)),
                     Float(f) => function.instructions.push(PushFloat(f)),
                     Bool(b) => function.instructions.push(PushInt(if b { 1 } else { 0 })),
-                    String(s) => {
-                        function.instructions.push(PushString(function.strings.len() as VMIndex));
-                        function.strings.push(s);
-                    }
+                    String(s) => function.emit_string(s)
                 }
             }
-            Expr::Identifier(ref id) => self.load_identifier(id.id(), function),
+            Expr::Identifier(ref id) => self.load_identifier(*id.id(), function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 self.compile(&**pred, function);
                 let jump_index = function.instructions.len();
@@ -358,7 +374,7 @@ impl <'a> Compiler<'a> {
                         "#Float<" => FloatLT,
                         "#Float==" => FloatEQ,
                         _ => {
-                            self.load_identifier(op.id(), function);
+                            self.load_identifier(*op.id(), function);
                             Call(2)
                         }
                     };
@@ -400,7 +416,6 @@ impl <'a> Compiler<'a> {
                         function.instructions.push(PushInt(0));
                     }
                 }
-                debug!("{:?}", function.instructions);
                 self.compile(&body, function);
                 for _ in 0..bindings.len() {
                     self.stack.pop();
@@ -448,6 +463,7 @@ impl <'a> Compiler<'a> {
                     &Type::Data(ref id, _) => id,
                     _ => panic!()
                 };
+                let mut catch_all = false;
                 for alt in alts.iter() {
                     match alt.pattern {
                         ConstructorPattern(ref id, _) => {
@@ -458,10 +474,18 @@ impl <'a> Compiler<'a> {
                             function.instructions.push(CJump(0));
                         }
                         _ => {
+                            catch_all = true;
                             start_jumps.push(function.instructions.len());
                             function.instructions.push(Jump(0));
                         }
                     }
+                }
+                //Create a catch all to prevent us from running into undefined behaviour
+                if !catch_all {
+                    let error_fn = self.intern("#error");
+                    self.load_identifier(error_fn, function);
+                    function.emit_string(self.intern("Non-exhaustive pattern"));
+                    function.instructions.push(Call(1));
                 }
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     match alt.pattern {
@@ -515,7 +539,7 @@ impl <'a> Compiler<'a> {
                 for field in fields {
                     match field.1 {
                         Some(ref field_expr) => self.compile(field_expr, function),
-                        None => self.load_identifier(&field.0, function)
+                        None => self.load_identifier(field.0, function)
                     }
                 }
                 function.instructions.push(Construct(0, fields.len() as u32));

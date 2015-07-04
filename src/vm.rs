@@ -329,9 +329,14 @@ macro_rules! get_global {
     )
 }
 
+pub enum Status {
+    Ok,
+    Error
+}
+
 pub struct ExternFunction<'a> {
     args: VMIndex,
-    function: Box<Fn(&VM<'a>) + 'static>
+    function: Box<Fn(&VM<'a>) -> Status + 'static>
 }
 
 impl <'a> PartialEq for ExternFunction<'a> {
@@ -700,6 +705,7 @@ impl <'a> VM<'a> {
         let _ = vm.extern_function("print_int", vec![INT_TYPE.clone()], io_unit, box print_int);
         let _ = vm.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
         let _ = vm.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
+        let _ = vm.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box error_prim);
         vm
     }
 
@@ -749,7 +755,7 @@ impl <'a> VM<'a> {
         })
     }
 
-    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: Box<Fn(&VM<'a>) + 'static>) -> Result<(), ::std::string::String> {
+    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: Box<Fn(&VM<'a>) -> Status + 'static>) -> Result<(), ::std::string::String> {
         let id = self.intern(name);
         if self.names.borrow().contains_key(&id) {
             return Err(format!("{} is already defined", name))
@@ -870,8 +876,17 @@ impl <'a> VM<'a> {
         //Necessary since we do not know what will happen during the function call
         let StackFrame { stack, offset, upvars } = stack;
         drop(stack);
-        (function.function)(self);
-        Ok(StackFrame::new(self.stack.borrow_mut(), offset, upvars))
+        let status = (function.function)(self);
+        let mut stack = StackFrame::new(self.stack.borrow_mut(), offset, upvars);
+        match status {
+            Status::Ok => Ok(stack),
+            Status::Error => {
+                match stack.pop() {
+                    String(s) => Err(::std::string::String::from(&s[..])),
+                    _ => Err(::std::string::String::from("Unexpected panic in VM"))
+                }
+            }
+        }
     }
 
     fn call_function_with_upvars<'b, F, G>(&'b self
@@ -1247,7 +1262,7 @@ fn binop_float<F>(stack: &mut StackFrame, f: F)
     })
 }
 
-fn array_length(vm: &VM) {
+fn array_length(vm: &VM) -> Status {
     match vm.pop() {
         Data(values) => {
             let i = values.fields.len();
@@ -1255,8 +1270,9 @@ fn array_length(vm: &VM) {
         }
         x => panic!("{:?}", x)
     }
+    Status::Ok
 }
-fn string_append(vm: &VM) {
+fn string_append(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     match (&stack[0], &stack[1]) {
         (&String(l), &String(r)) => {
@@ -1267,8 +1283,9 @@ fn string_append(vm: &VM) {
         }
         _ => panic!()
     }
+    Status::Ok
 }
-fn print_int(vm: &VM) {
+fn print_int(vm: &VM) -> Status {
     let stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
     match stack[0] {
         Int(i) => {
@@ -1276,9 +1293,10 @@ fn print_int(vm: &VM) {
         }
         x => panic!("print_int called on: {:?}", x)
     }
+    Status::Ok
 }
 
-fn show_prim(vm: &VM) {
+fn show_prim(vm: &VM) -> Status  {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
     let s = match stack[0] {
         Int(i) => format!("{}", i),
@@ -1286,6 +1304,13 @@ fn show_prim(vm: &VM) {
         x => panic!("print_int called on: {:?}", x)
     };
     stack.push(String(vm.gc.borrow_mut().alloc(&s[..])));
+    Status::Ok
+}
+
+fn error_prim(_: &VM) -> Status {
+    //We expect a string as an argument to this function but we only return Status::Error
+    //and let the caller take care of printing the message
+    Status::Error
 }
 
 macro_rules! tryf(
@@ -1293,7 +1318,6 @@ macro_rules! tryf(
 );
 
 pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string::String> {
-    let empty_string = vm.intern("");
     let mut expr = tryf!(parse_expr(input, vm));
     let (type_infos, function, typ) = {
         let env = vm.env();
@@ -1307,7 +1331,9 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string
         };
         let function = {
             let env = (&env, &type_infos);
-            let mut compiler = Compiler::new(&env, empty_string);
+            let mut interner = vm.interner.borrow_mut();
+            let mut gc = vm.gc.borrow_mut();
+            let mut compiler = Compiler::new(&env, &mut interner, &mut gc);
             compiler.compile_expr(&expr)
         };
         (type_infos, function, typ)
@@ -1344,10 +1370,12 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::str
     let function = {
         let (expr, type_infos) = try!(typecheck_expr(vm, expr_str));
         let env = (vm.env(), &type_infos);
-        let empty_string = vm.intern("");
-        let mut compiler = Compiler::new(&env, empty_string);
-        vm.new_function(compiler.compile_expr(&expr))
+        let mut interner = vm.interner.borrow_mut();
+        let mut gc = vm.gc.borrow_mut();
+        let mut compiler = Compiler::new(&env, &mut interner, &mut gc);
+        compiler.compile_expr(&expr)
     };
+    let function = vm.new_function(function);
     vm.push(vm.new_closure(function, &[]));
     let value = try!(vm.call_bytecode(0, &function, None));
     vm.pop();
@@ -1599,6 +1627,20 @@ print_int 123
         let mut vm = VM::new();
         run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));
+    }
+
+    #[test]
+    fn non_exhaustive_pattern() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type AB = | A | B in
+case A of
+    | B -> True
+";
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert!(result.is_err());
     }
     #[test]
     fn test_prelude() {

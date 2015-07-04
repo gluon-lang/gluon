@@ -2,14 +2,15 @@ use std::io;
 use std::io::BufRead;
 
 use embed_lang::typecheck::*;
-use embed_lang::vm::{VM, typecheck_expr, run_expr, load_script};
+use embed_lang::vm::{VM, Status, typecheck_expr, run_expr, load_script};
 
 macro_rules! tryf {
     ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
 }
 
-fn print(vm: &VM) {
+fn print(vm: &VM) -> Status {
     println!("{:?}", vm.pop());
+    Status::Ok
 }
 
 #[allow(dead_code)]
