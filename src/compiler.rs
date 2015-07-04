@@ -1,8 +1,8 @@
 use base::interner::*;
 use base::gc::Gc;
 use base::ast;
-use base::ast::{LExpr, Expr, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern, Constrained};
-use typecheck::*;
+use base::ast::{LExpr, Expr, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern};
+use typecheck::{TcIdent, TcType, Type, Typed, TypeInfos, UNIT_TYPE};
 use self::Instruction::*;
 use self::Variable::*;
 
@@ -69,7 +69,7 @@ pub enum Variable<'a> {
 pub struct CompiledFunction {
     pub args: VMIndex,
     pub id: InternedStr,
-    pub typ: Constrained<TcType>,
+    pub typ: TcType,
     pub instructions: Vec<Instruction>,
     pub inner_functions: Vec<CompiledFunction>,
     pub strings: Vec<InternedStr>
@@ -296,10 +296,7 @@ impl <'a> Compiler<'a> {
         CompiledFunction {
             args: 0,
             id: self.intern(""),
-            typ: Constrained {
-                constraints: Vec::new(),
-                value: Type::Function(vec![], Box::new(expr.type_of().clone()))
-            },
+            typ: Type::Function(vec![], Box::new(expr.type_of().clone())),
             instructions: instructions,
             inner_functions: inner_functions,
             strings: strings
@@ -580,7 +577,7 @@ impl <'a> Compiler<'a> {
         (function_index, free_vars, CompiledFunction {
             args: arguments.len() as VMIndex,
             id: id.id().clone(),
-            typ: Constrained { constraints: Vec::new(), value: id.typ.clone() },
+            typ: id.typ.clone(),
             instructions: instructions,
             inner_functions: inner_functions,
             strings: strings

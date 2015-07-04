@@ -9,7 +9,7 @@ extern crate env_logger;
 extern crate test;
 
 extern crate base;
-extern crate parser as parser_new;
+extern crate parser;
 
 pub use base::interner::InternedStr;
 pub use typecheck::TcType;

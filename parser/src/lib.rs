@@ -6,46 +6,50 @@ extern crate base;
 extern crate parser_combinators;
 extern crate parser_combinators_language;
 
-
 pub use base::{ast, interner, gc};
 
-use std::marker::PhantomData;
 use ast::*;
 use gc::Gc;
 use interner::{Interner, InternedStr};
 
-pub fn parse_tc(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LExpr<TcIdent>, Box<::std::error::Error>> {
-    parse_module(gc, interner, input)
+pub fn parse_tc(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LExpr<TcIdent<InternedStr>>, Box<::std::error::Error>> {
+    interner.with_env(gc, |env| {
+        parse_module(|s| AstId::from_str(env, s), input)
+    })
 }
 pub fn parse_str(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LExpr<InternedStr>, Box<::std::error::Error>> {
-    parse_module(gc, interner, input)
+    interner.with_env(gc, |env| {
+        parse_module(|s| env.intern(s), input)
+    })
 }
 
-fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LExpr<Id>, Box<::std::error::Error>>
-    where Id: AstId<Untyped=InternedStr> + Clone {
+fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error::Error>>
+    where Id: AstId + Clone
+        , F: FnMut(&str) -> Id {
     use std::cell::RefCell;
     use parser_combinators_language::{Env, LanguageDef, Identifier};
     use parser_combinators::primitives::{Consumed, Stream, State};
     use parser_combinators::*;
 
-    struct EnvParser<'a: 'b, 'b, I: 'b, Id: 'b, T>
+    struct EnvParser<'a: 'b, 'b, I: 'b, F: 'b, T>
         where I: Stream<Item=char> {
-        env: &'b ParserEnv<'a, I, Id>,
-        parser: fn (&ParserEnv<'a, I, Id>, State<I>) -> ParseResult<T, I>
+        env: &'b ParserEnv<'a, I, F>,
+        parser: fn (&ParserEnv<'a, I, F>, State<I>) -> ParseResult<T, I>
     }
 
-    impl <'a, 'b, I, Id, T> Clone for EnvParser<'a, 'b, I, Id, T>
+    impl <'a, 'b, I, F, T> Clone for EnvParser<'a, 'b, I, F, T>
         where I: Stream<Item=char> {
-        fn clone(&self) -> EnvParser<'a, 'b, I, Id, T> {
+        fn clone(&self) -> EnvParser<'a, 'b, I, F, T> {
             EnvParser { env: self.env, parser: self.parser }
         }
     }
-    impl <'a, 'b, I, Id, T> Copy for EnvParser<'a, 'b, I, Id, T>
+    impl <'a, 'b, I, F, T> Copy for EnvParser<'a, 'b, I, F, T>
         where I: Stream<Item=char> { }
 
-    impl <'a, 'b, Id, I, O> Parser for EnvParser<'a, 'b, I, Id, O>
+    impl <'a, 'b, F, Id, I, O> Parser for EnvParser<'a, 'b, I, F, O>
         where I: Stream<Item=char>
-            , Id: AstId<Untyped=InternedStr> + Clone {
+            , F: FnMut(&str) -> Id
+            , Id: AstId + Clone {
         type Output = O;
         type Input = I;
         fn parse_state(&mut self, input: State<I>) -> ParseResult<O, I> {
@@ -53,14 +57,13 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
     }
 
-    struct ParserEnv<'a, I, Id>
+    struct ParserEnv<'a, I, F>
         where I: Stream<Item=char> {
-        data: RefCell<(&'a mut Gc, &'a mut Interner)>,
         env: Env<'a, I>,
-        _marker: PhantomData<fn (InternedStr) -> Id>
+        f: RefCell<F>
     }
 
-    impl <'a, I, Id> ::std::ops::Deref for ParserEnv<'a, I, Id>
+    impl <'a, I, F> ::std::ops::Deref for ParserEnv<'a, I, F>
         where I: Stream<Item=char> {
         type Target = Env<'a, I>;
         fn deref(&self) -> &Env<'a, I> {
@@ -68,21 +71,20 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
         }
     }
 
-    impl <'a, I, Id> ParserEnv<'a, I, Id>
+    impl <'a, I, Id, F> ParserEnv<'a, I, F>
         where I: Stream<Item=char>
-            , Id: AstId<Untyped=InternedStr> + Clone {
+            , F: FnMut(&str) -> Id
+            , Id: AstId + Clone {
         fn intern(&self, s: &str) -> Id {
-            let mut r = self.data.borrow_mut();
-            let r = &mut *r;
-            Id::from_str(r.1.intern(r.0, s))
+            (&mut *self.f.borrow_mut())(s)
         }
 
-        fn parser<'b, T>(&'b self, parser: fn (&ParserEnv<'a, I, Id>, State<I>) -> ParseResult<T, I>) -> EnvParser<'a, 'b, I, Id, T> {
+        fn parser<'b, T>(&'b self, parser: fn (&ParserEnv<'a, I, F>, State<I>) -> ParseResult<T, I>) -> EnvParser<'a, 'b, I, F, T> {
             EnvParser { env: self, parser: parser }
         }
 
-        fn precedence(&self, i: InternedStr) -> i32 {
-            match &i[..] {
+        fn precedence(&self, i: &str) -> i32 {
+            match i {
                 "&&" | "||" => 0,
                 "+" => 1,
                 "-" => 1,
@@ -99,7 +101,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
             }
         }
 
-        fn ident<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Id> {
+        fn ident<'b>(&'b self) -> EnvParser<'a, 'b, I, F, Id> {
             self.parser(ParserEnv::parse_ident)
         }
         fn parse_ident(&self, input: State<I>) -> ParseResult<Id, I> {
@@ -113,7 +115,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .map(|s| { debug!("Id: {}", s); (self.intern(&s), s.chars().next().unwrap().is_uppercase()) })
                 .parse_state(input)
         }
-        fn ident_u<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Id::Untyped> {
+        fn ident_u<'b>(&'b self) -> EnvParser<'a, 'b, I, F, Id::Untyped> {
             self.parser(ParserEnv::parse_untyped_ident)
         }
         fn parse_untyped_ident(&self, input: State<I>) -> ParseResult<Id::Untyped, I> {
@@ -122,7 +124,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .parse_state(input)
         }
 
-        fn ident_type<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Type<Id::Untyped>> {
+        fn ident_type<'b>(&'b self) -> EnvParser<'a, 'b, I, F, Type<Id::Untyped>> {
             self.parser(ParserEnv::parse_ident_type)
         }
         fn parse_ident_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
@@ -144,7 +146,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .parse_state(input)
         }
 
-        fn typ<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Type<Id::Untyped>> {
+        fn typ<'b>(&'b self) -> EnvParser<'a, 'b, I, F, Type<Id::Untyped>> {
             self.parser(ParserEnv::parse_type)
         }
 
@@ -220,7 +222,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .parse_state(input)
         }
 
-        fn expr<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, LExpr<Id>> {
+        fn expr<'b>(&'b self) -> EnvParser<'a, 'b, I, F, LExpr<Id>> {
             self.parser(ParserEnv::top_expr)
         }
 
@@ -320,7 +322,7 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
                 .parse_state(input)
         }
 
-        fn pattern<'b>(&'b self) -> EnvParser<'a, 'b, I, Id, Pattern<Id>> {
+        fn pattern<'b>(&'b self) -> EnvParser<'a, 'b, I, F, Pattern<Id>> {
             self.parser(ParserEnv::parse_pattern)
         }
 
@@ -398,9 +400,8 @@ fn parse_module<Id>(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result
 
 
     let env = ParserEnv {
-        data: RefCell::new((gc, interner)),
         env: env,
-        _marker: PhantomData
+        f: RefCell::new(f),
     };
     env.white_space()
         .with(env.expr())

@@ -11,7 +11,11 @@ use substitution::{Substitution, Substitutable};
 
 use self::TypeError::*;
 
-pub use base::ast::{TcIdent, TcType, Type, Kind};
+pub use base::ast::{Type, Kind};
+
+pub type TcIdent = ::ast::TcIdent<InternedStr>;
+
+pub type TcType = Type<InternedStr>;
 
 pub static INT_TYPE: TcType = Type::Builtin(ast::IntType);
 pub static FLOAT_TYPE: TcType = Type::Builtin(ast::FloatType);
@@ -166,7 +170,7 @@ fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut Ha
 }
 
 pub trait TypeEnv {
-    fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraint], &TcType)>;
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType>;
     fn find_type_info(&self, id: &InternedStr) -> Option<&TcType>;
     fn find_type_name(&self, typ: &TcType) -> Option<TcType>;
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)>;
@@ -177,7 +181,7 @@ pub struct Typecheck<'a> {
     interner: &'a mut Interner,
     gc: &'a mut Gc,
     pub type_infos: TypeInfos,
-    module: HashMap<InternedStr, ast::Constrained<TcType>>,
+    module: HashMap<InternedStr, TcType>,
     stack: ScopedMap<InternedStr, TcType>,
     subs: Substitution<TcType>,
     errors: Errors<ast::Located<TypeError>>
@@ -212,21 +216,17 @@ impl <T: fmt::Display> fmt::Display for Errors<T> {
 pub type StringErrors = Errors<ast::Located<TypeError>>;
 
 impl <'a> TypeEnv for Typecheck<'a> {
-    fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraint], &TcType)> {
-        let t: Option<&TcType> = {
-            let stack = &self.stack;
-            let module = &self.module;
-            let environment = &self.environment;
-            let type_infos = &self.type_infos;
-            match stack.find(id) {
-                Some(x) => Some(x),
-                None => module.get(id)
-                    .map(|c| &c.value)
-                    .or_else(|| type_infos.find_adt(id))
-                    .or_else(|| environment.and_then(|e| e.find_type(id).map(|x| x.1)))
-            }
-        };
-        t.map(|t| (&[][..], t))
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+        let stack = &self.stack;
+        let module = &self.module;
+        let environment = &self.environment;
+        let type_infos = &self.type_infos;
+        match stack.find(id) {
+            Some(x) => Some(x),
+            None => module.get(id)
+                .or_else(|| type_infos.find_adt(id))
+                .or_else(|| environment.and_then(|e| e.find_type(id)))
+        }
     }
     fn find_type_info(&self, id: &InternedStr) -> Option<&TcType> {
         self.type_infos.find_type_info(id)
@@ -265,9 +265,8 @@ impl <'a> Typecheck<'a> {
             match stack.find(id) {
                 Some(x) => Some(x),
                 None => module.get(id)
-                    .map(|c| &c.value)
                     .or_else(|| type_infos.find_adt(id))
-                    .or_else(|| environment.and_then(|e| e.find_type(id).map(|x| x.1)))
+                    .or_else(|| environment.and_then(|e| e.find_type(id)))
             }
         };
         match t {
@@ -969,7 +968,7 @@ pub trait Typed {
     type Id;
     fn type_of(&self) -> &Type<Self::Id>;
 }
-impl <Id> Typed for TcIdent<Id> {
+impl <Id> Typed for ast::TcIdent<Id> {
     type Id = Id;
     fn type_of(&self) -> &Type<Id> {
         &self.typ
@@ -1030,7 +1029,7 @@ impl <Id> Typed for ast::Expr<Id>
     }
 }
 
-impl Typed for Option<Box<ast::Located<ast::Expr<TcIdent>>>> {
+impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<InternedStr>>>>> {
     type Id = InternedStr;
     fn type_of(&self) -> &TcType {
         match *self {
@@ -1078,7 +1077,7 @@ mod tests {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
         let &mut(ref mut interner, ref mut gc) = &mut *interner;
-        let x = ::parser_new::parse_tc(gc, interner, s)
+        let x = ::parser::parse_tc(gc, interner, s)
             .unwrap_or_else(|err| panic!("{:?}", err));
         x
     }

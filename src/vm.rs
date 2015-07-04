@@ -444,11 +444,11 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
 }
 
 impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
-    fn find_type(&self, id: &InternedStr) -> Option<(&[ast::Constraint], &TcType)> {
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
-                Some((&[], &g.typ))
+                Some(&g.typ)
             }
             _ => {
                 self.type_infos.id_to_type.values()
@@ -457,7 +457,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
                         _ => None
                     })
                     .next()
-                    .map(|ctor| (&[][..], ctor))
+                    .map(|ctor| ctor)
             }
         }
     }
@@ -1352,7 +1352,7 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string
 pub fn parse_expr(input: &str, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
     let mut interner = vm.interner.borrow_mut();
     let mut gc = vm.gc.borrow_mut();
-    ::parser_new::parse_tc(&mut gc, &mut interner, input)
+    ::parser::parse_tc(&mut gc, &mut interner, input)
         .map_err(|err| format!("{}", err))
 }
 pub fn typecheck_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<(ast::LExpr<TcIdent>, TypeInfos), ::std::string::String> {

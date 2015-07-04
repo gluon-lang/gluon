@@ -1,4 +1,5 @@
-use base::ast::{Type, TcType, Kind};
+use base::ast::{Type, Kind};
+use typecheck::TcType;
 use base::ast;
 use base::interner::InternedStr;
 use substitution::{Substitution, Substitutable};

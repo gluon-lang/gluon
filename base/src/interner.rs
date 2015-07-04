@@ -3,6 +3,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Deref;
+use ast::{AstId, Type};
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
 
@@ -32,6 +33,12 @@ unsafe impl Sync for InternedStr { }
 impl Deref for InternedStr {
     type Target = str;
     fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for InternedStr {
+    fn as_ref(&self) -> &str {
         &self.0
     }
 }
@@ -97,6 +104,11 @@ impl Interner {
         self.indexes.insert(key, gc_str);
         gc_str
     }
+
+    pub fn with_env<F, R>(&mut self, gc: &mut Gc, f: F) -> R
+        where F: FnOnce(&mut InternerEnv) -> R {
+        f(&mut InternerEnv(self, gc))
+    }
 }
 
 impl fmt::Debug for InternedStr {
@@ -108,6 +120,26 @@ impl fmt::Display for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", &self[..])
     }
+}
+
+pub struct InternerEnv(*mut Interner, *mut Gc);
+
+impl InternerEnv {
+    pub fn intern(&mut self, s: &str) -> InternedStr {
+        //We ensure that this is safe by only allowing access to an InternerEnv
+        //through the Gc::with_env method
+        unsafe { (*self.0).intern(&mut *self.1, s) }
+    }
+}
+
+impl AstId for InternedStr {
+    type Env = InternerEnv;
+    type Untyped = InternedStr;
+    fn from_str(env: &mut Self::Env, s: &str) -> InternedStr {
+        env.intern(s)
+    }
+    fn to_id(self) -> InternedStr { self }
+    fn set_type(&mut self, _: Type<Self::Untyped>) { }
 }
 
 #[cfg(test)]

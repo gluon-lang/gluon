@@ -1,12 +1,23 @@
 use std::ops::Deref;
 use std::fmt;
-use interner::{InternedStr};
 pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType};
 pub use self::Pattern::{ConstructorPattern, IdentifierPattern};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
 
+///Trait representing a type that can by used as in identifier in the AST
+///Used to allow the AST to both have a representation which has typed expressions etc as well
+///as one which only has identifiers (useful for testing)
+pub trait AstId {
+    type Env = ();
+    ///The type used instead of `Self` when the identifier does not need a type
+    type Untyped: Clone + PartialEq + Eq + fmt::Debug;
+    fn from_str(env: &mut Self::Env, s: &str) -> Self;
+    fn to_id(self) -> Self::Untyped;
+    fn set_type(&mut self, typ: Type<Self::Untyped>);
+}
+
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct TcIdent<Id = InternedStr> {
+pub struct TcIdent<Id> {
     pub typ: Type<Id>,
     pub name: Id
 }
@@ -16,41 +27,28 @@ impl <Id> TcIdent<Id> {
     }
 }
 
-impl AsRef<str> for TcIdent {
+impl <Id> AsRef<str> for TcIdent<Id>
+    where Id: AsRef<str> {
     fn as_ref(&self) -> &str {
-        &self.name
+        self.name.as_ref()
     }
 }
 
-///Trait representing a type that can by used as in identifier in the AST
-///Used to allow the AST to both have a representation which has typed expressions etc as well
-///as one which only has identifiers (useful for testing)
-pub trait AstId {
-    ///The type used instead of `Self` when the identifier does not need a type
-    type Untyped: Clone + PartialEq + Eq + fmt::Debug;
-    fn from_str(s: InternedStr) -> Self;
-    fn to_id(self) -> Self::Untyped;
-    fn set_type(&mut self, typ: Type<Self::Untyped>);
-}
-
-impl AstId for InternedStr {
-    type Untyped = InternedStr;
-    fn from_str(s: InternedStr) -> InternedStr { s }
-    fn to_id(self) -> InternedStr { self }
-    fn set_type(&mut self, _: Type<Self::Untyped>) { }
-}
-impl <Id: Clone + PartialEq + Eq + fmt::Debug + AstId> AstId for TcIdent<Id> {
+impl <Id> AstId for TcIdent<Id>
+    where Id: Clone + PartialEq + Eq + fmt::Debug + AstId {
+    type Env = Id::Env;
     type Untyped = Id;
-    fn from_str(s: InternedStr) -> TcIdent<Id> {
-        TcIdent { typ: Type::Variable(TypeVariable::with_kind(Kind::Variable(0), 0)), name: AstId::from_str(s) }
+    fn from_str(env: &mut Id::Env, s: &str) -> TcIdent<Id> {
+        TcIdent {
+            typ: Type::Variable(TypeVariable::with_kind(Kind::Variable(0), 0)),
+            name: AstId::from_str(env, s)
+        }
     }
     fn to_id(self) -> Id { self.name }
     fn set_type(&mut self, typ: Type<Self::Untyped>) {
         self.typ = typ;
     }
 }
-
-pub type TcType = Type<InternedStr>;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Location {
@@ -179,13 +177,11 @@ impl <Id> Type<Id> {
     }
 }
 
-pub type VMType = Type<InternedStr>;
-
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum LiteralStruct {
+pub enum LiteralStruct<Id> {
     Integer(i64),
     Float(f64),
-    String(InternedStr),
+    String(Id),
     Bool(bool)
 }
 
@@ -222,7 +218,7 @@ pub type LExpr<Id> = Located<Expr<Id>>;
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
     Identifier(Id),
-    Literal(LiteralStruct),
+    Literal(LiteralStruct<Id::Untyped>),
     Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
     IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
     Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
@@ -248,17 +244,6 @@ pub struct Binding<Id: AstId> {
 pub struct Field<Id> {
     pub name: Id,
     pub typ: Type<Id>
-}
-#[derive(Clone, PartialEq, Debug)]
-pub struct Constraint<T = InternedStr> {
-    pub name: InternedStr,
-    pub type_variable: T,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct Constrained<T, I = InternedStr> {
-    pub constraints: Vec<Constraint<I>>,
-    pub value: T
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -288,12 +273,6 @@ impl <Id> ConstructorType<Id> {
     }
 }
 
-pub static INT_TYPE: VMType = Type::Builtin(IntType);
-pub static FLOAT_TYPE: VMType = Type::Builtin(FloatType);
-pub static STRING_TYPE: VMType = Type::Builtin(StringType);
-pub static BOOL_TYPE: VMType = Type::Builtin(BoolType);
-pub static UNIT_TYPE: VMType = Type::Builtin(UnitType);
-
 pub fn str_to_primitive_type(x: &str) -> Option<BuiltinType> {
     let t = match x {
         "Int" => IntType,
@@ -320,7 +299,8 @@ pub fn fn_type<I, Id>(args: I, return_type: Type<Id>) -> Type<Id>
     args.into_iter().rev()
         .fold(return_type, |body, arg| Type::Function(vec![arg], Box::new(body)))
 }
-pub fn type_con(s: InternedStr, args: Vec<TcType>) -> TcType {
+pub fn type_con<I>(s: I, args: Vec<Type<I>>) -> Type<I>
+    where I: Deref<Target=str> {
     assert!(s.len() != 0);
     let is_var = s.chars().next().unwrap().is_lowercase();
     match str_to_primitive_type(&s) {
