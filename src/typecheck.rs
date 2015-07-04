@@ -11,7 +11,7 @@ use substitution::{Substitution, Substitutable};
 
 use self::TypeError::*;
 
-pub use base::ast::{Type, Kind};
+pub use base::ast::{TypeVariable, Type, Kind};
 
 pub type TcIdent = ::ast::TcIdent<InternedStr>;
 
@@ -30,6 +30,7 @@ enum TypeError {
     TypeMismatch(TcType, TcType),
     UndefinedType(InternedStr),
     UndefinedField(TcType, InternedStr),
+    Occurs(TypeVariable, TcType),
     IndexError(TcType),
     PatternError(TcType),
     KindError(kindcheck::Error),
@@ -51,6 +52,7 @@ impl fmt::Display for TypeError {
             TypeMismatch(ref l, ref r) => write!(f, "Expected: {}\nFound: {} does not unify", l, r),
             UndefinedType(name) => write!(f, "Type `{}` is not defined", name),
             StringError(name) => write!(f, "{}", name),
+            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`", var, typ),
             _ => write!(f, "{:?}", self)
         }
     }
@@ -760,47 +762,61 @@ impl <'a> Typecheck<'a> {
 
     fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult {
         debug!("Unify {:?} <=> {:?}", expected, actual);
-        if self.unify_(expected, &actual) {
-            self.set_type(&mut actual);
-            Ok(actual)
-        }
-        else {
-            let mut expected = expected.clone();
-            self.set_type(&mut expected);
-            self.set_type(&mut actual);
-            Err(TypeMismatch(expected, actual))
+        match self.unify_(expected, &actual) {
+            Ok(()) => {
+                self.set_type(&mut actual);
+                Ok(actual)
+            }
+            //TODO should use these inner type mismatches in errors
+            Err(TypeError::TypeMismatch(_, _)) => {
+                let mut expected = expected.clone();
+                self.set_type(&mut expected);
+                self.set_type(&mut actual);
+                Err(TypeMismatch(expected, actual))
+            }
+            Err(err) => Err(err),
         }
     }
-    fn unify_(&self, expected: &TcType, actual: &TcType) -> bool {
+    fn unify_(&self, expected: &TcType, actual: &TcType) -> Result<(), TypeError> {
         let expected = self.subs.real(expected);
         let actual = self.subs.real(actual);
         debug!("{:?} <=> {:?}", expected, actual);
         match (expected, actual) {
-            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => true,
-            (&Type::Variable(ref l), _) => {
-                self.union(l, actual)
-            }
-            (_, &Type::Variable(ref r)) => {
-                self.union(r, expected)
-            }
+            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(()),
+            (&Type::Variable(ref l), _) => self.union(l, actual),
+            (_, &Type::Variable(ref r)) => self.union(r, expected),
             (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
-                    l_args.iter().zip(r_args.iter()).all(|(l, r)| self.unify_(l, r)) && self.unify_(&**l_ret, &**r_ret)
+                    for (l, r) in l_args.iter().zip(r_args.iter()) {
+                        try!(self.unify_(l, r));
+                    }
+                    self.unify_(&**l_ret, &**r_ret)
                 }
                 else {
-                    false
+                    Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
                 }
             }
             (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(&**l, &**r),
-            (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
-                l == r
-                && l_args.len() == r_args.len()
-                && l_args.iter().zip(r_args.iter()).all(|(l, r)| self.unify_(l, r))
+            (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args))
+                if l == r && l_args.len() == r_args.len() => {
+
+                for (l, r) in l_args.iter().zip(r_args.iter()) {
+                    try!(self.unify_(l, r));
+                }
+                Ok(())
             }
-            (&Type::Record(ref l_args), &Type::Record(ref r_args)) => {
-                l_args.len() == r_args.len()
-                && l_args.iter().zip(r_args.iter())
-                    .all(|(l, r)| l.name == r.name && self.unify_(&l.typ, &r.typ))
+            (&Type::Record(ref l_args), &Type::Record(ref r_args))
+                if l_args.len() == r_args.len() => {
+
+                for (l, r) in l_args.iter().zip(r_args.iter()) {
+                    if l.name != r.name {
+                        return Err(TypeError::TypeMismatch(l.typ.clone(), r.typ.clone()))
+                    }
+                    else {
+                        try!(self.unify_(&l.typ, &r.typ));
+                    }
+                }
+                Ok(())
             }
             (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
                 self.unify_app(l, l_args, actual, &|last, r_arg| self.unify_(last, r_arg))
@@ -808,27 +824,43 @@ impl <'a> Typecheck<'a> {
             (&Type::App(_, _), &Type::Data(ref r, ref r_args), ) => {
                 self.unify_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last))
             }
-            _ => expected == actual
+            _ => {
+                if expected == actual {
+                    Ok(())
+                }
+                else {
+                    Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
+                }
+            }
         }
     }
 
-    fn unify_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> bool
-            where F: Fn(&TcType, &TcType) -> bool {
+    fn unify_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> Result<(), TypeError>
+            where F: Fn(&TcType, &TcType) -> Result<(), TypeError> {
         let r = self.subs.real(r);
         match *r {
             Type::App(ref r, ref r_arg) => {
                 match l_args.last() {
                     Some(last) => {
-                        f(last, r_arg) && self.unify_app(l, &l_args[0..l_args.len()-1], r, f)
+                        f(last, r_arg)
+                            .and_then(|_| 
+                                self.unify_app(l, &l_args[0..l_args.len()-1], r, f)
+                            )
                     }
-                    None => false
+                    None => {
+                        let l = Type::Data(l.clone(), l_args.iter().cloned().collect());
+                        Err(TypeError::TypeMismatch(l, (**r).clone()))
+                    }
                 }
             }
-            Type::Data(ref r, _) => l_args.len() == 0 && l == r,
+            Type::Data(ref r, _) if l_args.len() == 0 && l == r => Ok(()),
             Type::Variable(ref r) => {
                 self.union(r, &Type::Data(l.clone(), Vec::new()))
             }
-            _ => false
+            _ => {
+                let l = Type::Data(l.clone(), l_args.iter().cloned().collect());
+                Err(TypeError::TypeMismatch(l, r.clone()))
+            }
         }
     }
 
@@ -868,13 +900,15 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> bool {
-        if self.occurs(id, typ) { return false }
+    fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> Result<(), TypeError> {
+        if self.occurs(id, typ) {
+            return Err(TypeError::Occurs(id.clone(), typ.clone()))
+        }
         {
             let id_type = self.subs.find_type_for_var(id.id);
             let other_type = self.subs.real(typ);
             if id_type.map(|x| x == other_type).unwrap_or(Type::Variable(id.clone()) == *other_type) {
-                return true
+                return Ok(())
             }
         }
         let map: &mut _ = unsafe { &mut *self.subs.map.get() };
@@ -890,7 +924,7 @@ impl <'a> Typecheck<'a> {
                 map.insert(id.id, box typ.clone());
             }
         };
-        true
+        Ok(())
     }
 }
 
@@ -1342,7 +1376,7 @@ in { empty, insert }
             if let None = *expr {
                 let _ = ::env_logger::init();
                 let mut text = String::new();
-                File::open("prelude.s").unwrap().read_to_string(&mut text).unwrap();
+                File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
                 *expr = Some(parse_new(&text))
             }
             expr.as_ref().unwrap().clone()
