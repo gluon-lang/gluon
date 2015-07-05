@@ -164,7 +164,7 @@ impl Traverseable for RefCell<Box<Any>> {
     fn traverse(&self, _: &mut Gc) { }
 }
 
-impl <'a, T> Traverseable for &'a T
+impl <'a, T: ?Sized> Traverseable for &'a T
     where T: Traverseable {
     fn traverse(&self, gc: &mut Gc) { (**self).traverse(gc); }
 }

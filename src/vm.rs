@@ -5,6 +5,8 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
+use std::fs::File;
+use std::io::Read;
 use base::ast;
 use base::ast::Type;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, FLOAT_TYPE, UNIT_TYPE, TcIdent, TcType};
@@ -697,15 +699,19 @@ impl <'a> VM<'a> {
             gc: RefCell::new(Gc::new()),
             stack: RefCell::new(Stack::new())
         };
-        let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: vm.intern("a") });
-        let array_a = Type::Array(box a.clone());
-        let io_unit = ast::type_con(vm.intern("IO"), vec![UNIT_TYPE.clone()]);
-        let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
-        let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
-        let _ = vm.extern_function("print_int", vec![INT_TYPE.clone()], io_unit, box print_int);
-        let _ = vm.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
-        let _ = vm.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
-        let _ = vm.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box error_prim);
+        {
+            let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: vm.intern("a") });
+            let array_a = Type::Array(box a.clone());
+            let io = |t| ast::type_con(vm.intern("IO"), vec![t]);
+            let io_unit = io(UNIT_TYPE.clone());
+            let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
+            let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
+            let _ = vm.extern_function("print_int", vec![INT_TYPE.clone()], io_unit, box print_int);
+            let _ = vm.extern_function("read_file", vec![STRING_TYPE.clone()], io(STRING_TYPE.clone()), box read_file);
+            let _ = vm.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
+            let _ = vm.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
+            let _ = vm.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box error_prim);
+        }
         vm
     }
 
@@ -1294,6 +1300,28 @@ fn print_int(vm: &VM) -> Status {
         x => panic!("print_int called on: {:?}", x)
     }
     Status::Ok
+}
+
+fn read_file(vm: &VM) -> Status {
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    match stack.pop() {
+        String(s) => {
+            let mut buffer = ::std::string::String::new();
+            let status = match File::open(&s[..]).and_then(|mut file| file.read_to_string(&mut buffer)) {
+                Ok(_) => Status::Ok,
+                Err(err) => {
+                    use std::fmt::Write;
+                    buffer.clear();
+                    let _ = write!(&mut buffer, "{}", err);
+                    Status::Error
+                }
+            };
+            let s = vm.alloc(&mut stack.stack.values, &buffer[..]);
+            stack.push(String(s));
+            status
+        }
+        x => panic!("print_int called on: {:?}", x)
+    }
 }
 
 fn show_prim(vm: &VM) -> Status  {
