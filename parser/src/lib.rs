@@ -24,10 +24,10 @@ pub fn parse_str(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LE
 }
 
 fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error::Error>>
-    where Id: AstId + Clone
+    where Id: AstId + AsRef<str> + Clone
         , F: FnMut(&str) -> Id {
     use std::cell::RefCell;
-    use parser_combinators_language::{Env, LanguageDef, Identifier};
+    use parser_combinators_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
     use parser_combinators::primitives::{Consumed, Stream, State};
     use parser_combinators::*;
 
@@ -59,14 +59,14 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
 
     struct ParserEnv<'a, I, F>
         where I: Stream<Item=char> {
-        env: Env<'a, I>,
+        env: LanguageEnv<'a, I>,
         f: RefCell<F>
     }
 
     impl <'a, I, F> ::std::ops::Deref for ParserEnv<'a, I, F>
         where I: Stream<Item=char> {
-        type Target = Env<'a, I>;
-        fn deref(&self) -> &Env<'a, I> {
+        type Target = LanguageEnv<'a, I>;
+        fn deref(&self) -> &LanguageEnv<'a, I> {
             &self.env
         }
     }
@@ -74,7 +74,7 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
     impl <'a, I, Id, F> ParserEnv<'a, I, F>
         where I: Stream<Item=char>
             , F: FnMut(&str) -> Id
-            , Id: AstId + Clone {
+            , Id: AstId + AsRef<str> + Clone {
         fn intern(&self, s: &str) -> Id {
             (&mut *self.f.borrow_mut())(s)
         }
@@ -83,21 +83,30 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
             EnvParser { env: self, parser: parser }
         }
 
-        fn precedence(&self, i: &str) -> i32 {
-            match i {
-                "&&" | "||" => 0,
-                "+" => 1,
-                "-" => 1,
-                "*" => 3,
-                "/" => 3,
-                "%" => 3,
-                "==" => 1,
-                "/=" => 1,
-                "<" => 1,
-                ">" => 1,
-                "<=" => 1,
-                ">=" => 1,
+        fn precedence(&self, s: &str) -> i32 {
+            match s {
+                "*" | "/" | "%" => 7,
+                "+" | "-" => 6,
+                ":" | "++" => 5,
+                "&&" => 3,
+                "||" => 2,
+                "$" => 0,
+                "==" | "/=" | "<" | ">" | "<=" | ">=" => 4,
+                //Primitive operators starts with # and has the op at the end
+                _ if s.starts_with("#") => {
+                    let op = s[1..].trim_left_matches(|c: char| c.is_alphanumeric());
+                    self.precedence(op)
+                }
                 _ => 9
+            }
+        }
+
+        fn fixity(&self, i: &str) -> Fixity {
+            match i {
+                "*" | "/" | "%" | "+" | "-" |
+                "==" | "/=" | "<" | ">" | "<=" | ">=" => Fixity::Left,
+                ":" | "++" | "&&" | "||" | "$" => Fixity::Right,
+                _ => Fixity::Left
             }
         }
 
@@ -110,7 +119,7 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
                 .parse_state(input)
         }
         fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, bool), I> {
-            try(self.env.ident())
+            try(self.env.identifier())
                 .or(try(self.parens(self.env.op())))
                 .map(|s| { debug!("Id: {}", s); (self.intern(&s), s.chars().next().unwrap().is_uppercase()) })
                 .parse_state(input)
@@ -128,7 +137,7 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
             self.parser(ParserEnv::parse_ident_type)
         }
         fn parse_ident_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
-            try(self.env.ident())
+            try(self.env.identifier())
                 .map(|s| {
                     debug!("Id: {}", s);
                     if s.chars().next()
@@ -279,7 +288,11 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
                 .parse_state(input)
         }
 
-        fn op(&self, input: State<I>) -> ParseResult<Id, I> {
+        fn op<'b>(&'b self) -> EnvParser<'a, 'b, I, F, Id> {
+            self.parser(ParserEnv::parse_op)
+        }
+
+        fn parse_op(&self, input: State<I>) -> ParseResult<Id, I> {
             (optional(char('#').with(many(letter()))), try(self.env.op()))
                 .map(|(builtin, op): (Option<String>, String)| {
                     match builtin {
@@ -295,14 +308,19 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
         }
 
         fn top_expr(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
-            let op = parser(|i| self.op(i))
-                .map(|op| move |l: LExpr<Id>, r| {
-                    let loc = l.location.clone();
-                    let expr = Expr::BinOp(Box::new(l), op.clone(), Box::new(r));
-                    located(loc, expr) 
+            let term = self.parser(ParserEnv::parse_expr);
+            let op = self.op()
+                .map(|op| {
+                    let assoc = Assoc {
+                        precedence: self.precedence(op.as_ref()),
+                        fixity: self.fixity(op.as_ref())
+                    };
+                    (op, assoc)
                 });
-
-            chainl1(self.parser(ParserEnv::parse_expr), op)
+            expression_parser(term, op, |l, op, r| {
+                    let loc = l.location.clone();
+                    located(loc, Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
+                })
                 .parse_state(input)
         }
 
@@ -382,7 +400,7 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
 
 
     let ops = "+-*/&|=<>";
-    let env = Env::new(LanguageDef {
+    let env = LanguageEnv::new(LanguageDef {
         ident: Identifier {
             start: letter().or(char('_')),
             rest: alpha_num().or(char('_')),
@@ -397,6 +415,7 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
         comment_end: "*/",
         comment_line: "//",
     });
+
 
 
     let env = ParserEnv {
@@ -450,10 +469,10 @@ pub mod tests {
     fn id(s: &str) -> PExpr {
         no_loc(Expr::Identifier(intern(s)))
     }
-    fn field(s: &str, typ: VMType) -> Field<InternedStr> {
+    fn field(s: &str, typ: Type<InternedStr>) -> Field<InternedStr> {
         Field { name: intern(s), typ: typ }
     }
-    fn typ(s: &str) -> VMType {
+    fn typ(s: &str) -> Type<InternedStr> {
         assert!(s.len() != 0);
         let is_var = s.chars().next().unwrap().is_lowercase();
         match str_to_primitive_type(s) {
@@ -462,7 +481,7 @@ pub mod tests {
             None => Type::Data(TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
-    fn generic(s: &str) -> VMType {
+    fn generic(s: &str) -> Type<InternedStr> {
         Type::Generic(Generic { kind: Kind::Variable(0), id: intern(s) })
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
@@ -501,12 +520,14 @@ pub mod tests {
         no_loc(Expr::Array(ArrayStruct { id: intern(""), expressions: fields }))
     }
 
-    pub fn parse_new<Id>(s: &str) -> LExpr<Id>
-        where Id: AstId<Untyped=InternedStr> + Clone {
+    pub fn parse_new<Id>(input: &str) -> LExpr<Id>
+        where Id: AstId<Env=InternerEnv, Untyped=InternedStr> + AsRef<str> + Clone {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
         let &mut(ref mut interner, ref mut gc) = &mut *interner;
-        let x = parse_module(gc, interner, s)
+        let x = interner.with_env(gc, |env| {
+                parse_module(|s| AstId::from_str(env, s), input)
+            })
             .unwrap_or_else(|err| panic!("{:?}", err));
         x
     }
@@ -534,7 +555,7 @@ pub mod tests {
     #[test]
     fn let_type_decl() {
         let _ = ::env_logger::init();
-        let e = parse_new::<TcIdent>("let f: Int = \\x y -> x + y in f 1 2");
+        let e = parse_new::<TcIdent<InternedStr>>("let f: Int = \\x y -> x + y in f 1 2");
         match e.value {
             Expr::Let(bind, _) => assert_eq!(bind[0].name.typ, typ("Int")),
             _ => assert!(false)
@@ -603,5 +624,11 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new("[1, a]");
         assert_eq!(e, array(vec![int(1), id("a")]));
+    }
+    #[test]
+    fn operator_expr() {
+        let _ = ::env_logger::init();
+        let e = parse_new("test + 1 * 23 #Int- test");
+        assert_eq!(e, binop(binop(id("test"), "+", binop(int(1), "*", int(23))), "#Int-", id("test")));
     }
 }
