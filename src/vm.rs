@@ -1658,9 +1658,12 @@ case A of
         use std::fs::File;
         use std::io::Read;
         let _ = ::env_logger::init();
-        let mut text = String::new();
-        File::open("std/map.hs").unwrap().read_to_string(&mut text).unwrap();
         let mut vm = VM::new();
+        let mut text = String::new();
+        File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        load_script(&mut vm, "prelude", &text).unwrap();
+        text.clear();
+        File::open("std/map.hs").unwrap().read_to_string(&mut text).unwrap();
         run_expr(&mut vm, &text)
             .unwrap_or_else(|err| panic!("{}", err));
     }
