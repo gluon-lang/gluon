@@ -907,14 +907,14 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn call_function_with_upvars<'b, F, G>(&'b self
+    fn call_function_with_upvars<'b, F>(&'b self
                                     , mut stack: StackFrame<'a, 'b>
                                     , args: VMIndex
                                     , required_args: VMIndex
+                                    , callable: Callable<'a>
                                     , call: F
-                                    , partial: G) -> Result<StackFrame<'a, 'b>, ::std::string::String>
-        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, ::std::string::String>
-            , G: FnOnce(&mut [Value<'a>], &mut [Value<'a>]) -> Value<'a> {
+                                    ) -> Result<StackFrame<'a, 'b>, ::std::string::String>
+        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         let function_index = stack.len() - 1 - args;
         debug!("cmp {} {}", args, required_args);
         match args.cmp(&required_args) {
@@ -941,7 +941,8 @@ impl <'a> VM<'a> {
                     let whole_stack = &mut stack.stack.values[..];
                     let arg_start = whole_stack.len() - args as usize;
                     let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
-                    partial(pre_stack, fields)
+                    let def = PartialApplicationDataDef(callable, fields);
+                    PartialApplication(self.alloc(pre_stack, def))
                 };
                 for _ in 0..(args+1) {
                     stack.pop();
@@ -986,24 +987,23 @@ impl <'a> VM<'a> {
         debug!("Do call {:?} {:?}", stack[function_index], &(*stack)[(function_index + 1) as usize..]);
         match stack[function_index].clone() {
             Function(ref f) => {
-                stack = try!(self.call_function_with_upvars(stack, args, f.args, |stack| {
-                    stack.scope(f.args, None, |new_stack| {
-                        self.execute_function(new_stack, f)
-                    })
-                    }, |pre_stack, fields| {
-                        let def = PartialApplicationDataDef(Callable::Extern(f.clone()), fields);
-                        PartialApplication(self.alloc(pre_stack, def))
-                    }));
+                let callable = Callable::Extern(f.clone());
+                let func = |mut stack: StackFrame<'a, 'b>| {
+                    stack = stack.enter_scope(f.args, None);
+                    stack = try!(self.execute_function(stack, f));
+                    Ok(stack.exit_scope())
+                };
+                stack = try!(self.call_function_with_upvars(stack, args, f.args, callable, func));
             }
             Closure(ref closure) => {
-                stack = try!(self.call_function_with_upvars(stack, args, closure.function.args, |stack| {
-                    stack.scope(closure.function.args, Some(*closure), |new_stack| {
-                        self.execute(new_stack, &closure.function.instructions, &closure.function)
-                    })
-                    }, |pre_stack, fields| {
-                        let def = PartialApplicationDataDef(Callable::Closure(closure.clone()), fields);
-                        PartialApplication(self.alloc(pre_stack, def))
-                    }));
+                let callable = Callable::Closure(closure.clone());
+                let func = |mut stack: StackFrame<'a, 'b>| {
+                    stack = stack.enter_scope(closure.function.args, Some(*closure));
+                    let instructions = &closure.function.instructions;
+                    stack = try!(self.execute(stack, &instructions, &closure.function));
+                    Ok(stack.exit_scope())
+                };
+                stack = try!(self.call_function_with_upvars(stack, args, closure.function.args, callable, func));
             }
             PartialApplication(app) => {
                 let closure = app.function;
