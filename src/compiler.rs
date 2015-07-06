@@ -19,6 +19,7 @@ pub enum Instruction {
     Store(VMIndex),
     StoreGlobal(VMIndex),
     Call(VMIndex),
+    TailCall(VMIndex),
     Construct(VMIndex, VMIndex),
     GetField(VMIndex),
     SetField(VMIndex),
@@ -90,6 +91,16 @@ impl FunctionEnv {
             inner_functions: Vec::new(),
             strings: Vec::new()
         }
+    }
+
+    fn emit_call(&mut self, args: VMIndex, tail_position: bool) {
+        let i = if tail_position {
+            TailCall(args)
+        }
+        else {
+            Call(args)
+        };
+        self.instructions.push(i);
     }
 
     fn emit_string(&mut self, s: InternedStr) {
@@ -291,7 +302,7 @@ impl <'a> Compiler<'a> {
     ///interpreter
     pub fn compile_expr(&mut self, expr: &CExpr) -> CompiledFunction {
         let mut env = FunctionEnv::new();
-        self.compile(expr, &mut env);
+        self.compile(expr, &mut env, true);
         let FunctionEnv { instructions, inner_functions, strings, .. } = env;
         CompiledFunction {
             args: 0,
@@ -313,7 +324,7 @@ impl <'a> Compiler<'a> {
         }
     }
 
-    fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv) {
+    fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnv, tail_position: bool) {
         match expr.value {
             Expr::Literal(ref lit) => {
                 match *lit {
@@ -325,33 +336,33 @@ impl <'a> Compiler<'a> {
             }
             Expr::Identifier(ref id) => self.load_identifier(*id.id(), function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                self.compile(&**pred, function);
+                self.compile(&**pred, function, false);
                 let jump_index = function.instructions.len();
                 function.instructions.push(CJump(0));
                 if let Some(ref if_false) = *if_false {
-                    self.compile(&**if_false, function);
+                    self.compile(&**if_false, function, tail_position);
                 }
                 let false_jump_index = function.instructions.len();
                 function.instructions.push(Jump(0));
                 function.instructions[jump_index] = CJump(function.instructions.len() as VMIndex);
-                self.compile(&**if_true, function);
+                self.compile(&**if_true, function, tail_position);
                 function.instructions[false_jump_index] = Jump(function.instructions.len() as VMIndex);
             }
             Expr::BinOp(ref lhs, ref op, ref rhs) => {
                 if op.name == "&&" {
-                    self.compile(&**lhs, function);
+                    self.compile(&**lhs, function, false);
                     let lhs_end = function.instructions.len();
                     function.instructions.push(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
                     function.instructions.push(PushInt(0));
                     function.instructions.push(Jump(0));//lhs false, jump to after rhs
-                    self.compile(&**rhs, function);
+                    self.compile(&**rhs, function, tail_position);
                     function.instructions[lhs_end + 2] = Jump(function.instructions.len() as VMIndex);//replace jump instruction
                 }
                 else if op.name == "||" {
-                    self.compile(&**lhs, function);
+                    self.compile(&**lhs, function, false);
                     let lhs_end = function.instructions.len();
                     function.instructions.push(CJump(0));
-                    self.compile(&**rhs, function);
+                    self.compile(&**rhs, function, tail_position);
                     function.instructions.push(Jump(0));
                     function.instructions[lhs_end] = CJump(function.instructions.len() as VMIndex);
                     function.instructions.push(PushInt(1));
@@ -375,8 +386,8 @@ impl <'a> Compiler<'a> {
                             Call(2)
                         }
                     };
-                    self.compile(&**lhs, function);
-                    self.compile(&**rhs, function);
+                    self.compile(&**lhs, function, false);
+                    self.compile(&**rhs, function, false);
                     function.instructions.push(instr);
                 }
             }
@@ -404,7 +415,7 @@ impl <'a> Compiler<'a> {
                         function.inner_functions.push(cf);
                     }
                     else {
-                        self.compile(&bind.expression, function);
+                        self.compile(&bind.expression, function, false);
                         self.new_stack_var(*bind.name.id());
                     }
                     //unit expressions do not return a value so we need to add a dummy value
@@ -413,7 +424,7 @@ impl <'a> Compiler<'a> {
                         function.instructions.push(PushInt(0));
                     }
                 }
-                self.compile(&body, function);
+                self.compile(&body, function, tail_position);
                 for _ in 0..bindings.len() {
                     self.stack.pop();
                 }
@@ -422,20 +433,20 @@ impl <'a> Compiler<'a> {
                 if let Expr::Identifier(ref id) = func.value {
                     if let Some(Constructor(tag, num_args)) = self.find(id.id(), function) {
                         for arg in args.iter() {
-                            self.compile(arg, function);
+                            self.compile(arg, function, false);
                         }
                         function.instructions.push(Construct(tag, num_args));
                         return
                     }
                 }
-                self.compile(&**func, function);
+                self.compile(&**func, function, false);
                 for arg in args.iter() {
-                    self.compile(arg, function);
+                    self.compile(arg, function, false);
                 }
-                function.instructions.push(Call(args.len() as VMIndex));
+                function.emit_call(args.len() as VMIndex, tail_position);
             }
             Expr::FieldAccess(ref expr, ref field) => {
-                self.compile(&**expr, function);
+                self.compile(&**expr, function, tail_position);
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.type_of().inner_app();
                 debug!("FieldAccess {}", typ);
@@ -453,7 +464,7 @@ impl <'a> Compiler<'a> {
                 function.instructions.push(GetField(field_index));
             }
             Expr::Match(ref expr, ref alts) => {
-                self.compile(&**expr, function);
+                self.compile(&**expr, function, false);
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
                 let typename = match expr.type_of() {
@@ -498,7 +509,7 @@ impl <'a> Compiler<'a> {
                             self.new_stack_var(id.id().clone());
                         }
                     }
-                    self.compile(&alt.expression, function);
+                    self.compile(&alt.expression, function, tail_position);
                     end_jumps.push(function.instructions.len());
                     function.instructions.push(Jump(0));
 
@@ -517,13 +528,13 @@ impl <'a> Compiler<'a> {
             }
             Expr::Array(ref a) => {
                 for expr in a.expressions.iter() {
-                    self.compile(expr, function);
+                    self.compile(expr, function, false);
                 }
                 function.instructions.push(Construct(0, a.expressions.len() as VMIndex));
             }
             Expr::ArrayAccess(ref array, ref index) => {
-                self.compile(&**array, function);
-                self.compile(&**index, function);
+                self.compile(&**array, function, false);
+                self.compile(&**index, function, tail_position);
                 function.instructions.push(GetIndex);
             }
             Expr::Lambda(ref lambda) => {
@@ -531,11 +542,11 @@ impl <'a> Compiler<'a> {
                 function.instructions.push(MakeClosure(function_index, vars));
                 function.inner_functions.push(cf);
             }
-            Expr::Type(_, _, ref expr) => self.compile(&**expr, function),
+            Expr::Type(_, _, ref expr) => self.compile(&**expr, function, tail_position),
             Expr::Record(_, ref fields) => {
                 for field in fields {
                     match field.1 {
-                        Some(ref field_expr) => self.compile(field_expr, function),
+                        Some(ref field_expr) => self.compile(field_expr, function, false),
                         None => self.load_identifier(field.0, function)
                     }
                 }
@@ -543,7 +554,7 @@ impl <'a> Compiler<'a> {
             }
             Expr::Tuple(ref exprs) => {
                 for expr in exprs {
-                    self.compile(expr, function);
+                    self.compile(expr, function, false);
                 }
                 function.instructions.push(Construct(0, exprs.len() as u32));
             }
@@ -556,7 +567,7 @@ impl <'a> Compiler<'a> {
             self.new_stack_var(*arg.id());
         }
         let mut f = FunctionEnv::new();
-        self.compile(body, &mut f);
+        self.compile(body, &mut f, true);
 
         self.closure_limits.pop().expect("closure_limits: pop");
         for _ in 0..arguments.len() {

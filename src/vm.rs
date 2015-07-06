@@ -1059,6 +1059,7 @@ impl <'a> VM<'a> {
                     self.globals[i as usize].value.set(v);
                 }
                 Call(args) => { stack = try!(self.do_call(stack, args)); }
+                TailCall(args) => { stack = try!(self.do_call(stack, args)); }
                 Construct(tag, args) => {
                     let d = {
                         let whole_stack = &mut stack.stack.values[..];
@@ -1670,6 +1671,22 @@ case A of
         let result = run_expr(&mut vm, text);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn tail_call() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let call x = if x #Int== 0
+             then x
+             else call (x #Int- 1)
+in call 2000
+";
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert_eq!(result, Ok(Int(0)));
+    }
+
     #[test]
     fn test_prelude() {
         use std::fs::File;
