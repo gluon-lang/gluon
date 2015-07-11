@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell, RefMut, Ref};
+use std::error::Error as StdError;
 use std::fmt;
 use std::intrinsics::type_name;
 use std::any::{Any, TypeId};
@@ -327,7 +328,7 @@ impl <'a> fmt::Debug for Value<'a> {
 macro_rules! get_global {
     ($vm: ident, $i: expr) => (
         match $vm.globals[$i].value.get() {
-            Bottom => return Err(format!("Global '{}' was used before it was initialized", $vm.globals[$i].id)),
+            Bottom => return Err(Error::Message(format!("Global '{}' was used before it was initialized", $vm.globals[$i].id))),
             x => x
         }
     )
@@ -396,8 +397,26 @@ pub struct VM<'a> {
     pub stack: RefCell<Stack<'a>>
 }
 
-pub type VMError = ::std::string::String;
-pub type VMResult<T> = Result<T, VMError>;
+pub type VMResult<T> = Result<T, Error>;
+
+#[derive(Debug)]
+pub enum Error {
+    Message(::std::string::String)
+}
+
+impl StdError for Error {
+    fn description(&self) -> &str {
+        "VM error"
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::Message(ref msg) => msg.fmt(f)
+        }
+    }
+}
 
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
@@ -811,10 +830,10 @@ impl <'a> VM<'a> {
         })
     }
 
-    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: Box<Fn(&VM<'a>) -> Status + 'static>) -> Result<(), ::std::string::String> {
+    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: Box<Fn(&VM<'a>) -> Status + 'static>) -> Result<(), Error> {
         let id = self.intern(name);
         if self.names.borrow().contains_key(&id) {
-            return Err(format!("{} is already defined", name))
+            return Err(Error::Message(format!("{} is already defined", name)))
         }
         let num_args = args.len() as VMIndex;
         let global = Global {
@@ -906,7 +925,7 @@ impl <'a> VM<'a> {
                 stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
             }
             Closure(closure) => self.call_bytecode(args, closure),
-            x => Err(format!("Tried to call a non function object: '{:?}'", x))
+            x => Err(Error::Message(format!("Tried to call a non function object: '{:?}'", x)))
         }
     }
 
@@ -919,14 +938,14 @@ impl <'a> VM<'a> {
     }
 
     fn execute_callable<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &Callable<'a>)
-            -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), ::std::string::String> {
+            -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), Error> {
         match *function {
             Callable::Closure(closure) => Ok((Some(closure), stack)),
             Callable::Extern(ref ext) => self.execute_function(stack, ext).map(|s| (None, s))
         }
     }
 
-    fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, Error> {
         //Make sure that the stack is not borrowed during the external function call
         //Necessary since we do not know what will happen during the function call
         let StackFrame { stack, frame } = stack;
@@ -938,8 +957,8 @@ impl <'a> VM<'a> {
             Status::Ok => Ok(stack),
             Status::Error => {
                 match stack.pop() {
-                    String(s) => Err(::std::string::String::from(&s[..])),
-                    _ => Err(::std::string::String::from("Unexpected panic in VM"))
+                    String(s) => Err(Error::Message(s.to_string())),
+                    _ => Err(Error::Message("Unexpected panic in VM".to_string()))
                 }
             }
         }
@@ -950,7 +969,7 @@ impl <'a> VM<'a> {
                                     , args: VMIndex
                                     , required_args: VMIndex
                                     , callable: Callable<'a>
-                                    ) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), ::std::string::String> {
+                                    ) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), Error> {
         debug!("cmp {} {}", args, required_args);
         match args.cmp(&required_args) {
             Ordering::Equal => self.execute_callable(stack, &callable),
@@ -990,7 +1009,7 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn do_call<'b>(&'b self, mut stack: StackFrame<'a, 'b>, args: VMIndex) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), ::std::string::String> {
+    fn do_call<'b>(&'b self, mut stack: StackFrame<'a, 'b>, args: VMIndex) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), Error> {
         let function_index = stack.len() - 1 - args;
         debug!("Do call {:?} {:?}", stack[function_index], &(*stack)[(function_index + 1) as usize..]);
         match stack[function_index].clone() {
@@ -1031,11 +1050,11 @@ impl <'a> VM<'a> {
                     }
                 }
             }
-            x => return Err(format!("Cannot call {:?}", x))
+            x => return Err(Error::Message(format!("Cannot call {:?}", x)))
         }
     }
 
-    pub fn execute<'b>(&'b self, stack: StackFrame<'a, 'b>, instructions: &[Instruction], function: &BytecodeFunction) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    pub fn execute<'b>(&'b self, stack: StackFrame<'a, 'b>, instructions: &[Instruction], function: &BytecodeFunction) -> Result<StackFrame<'a, 'b>, Error> {
         let (mut cont, mut stack) = try!(self.execute_(stack, 0, instructions, function));
         debug!("IS {:?}", stack.stack.frames);
         loop {
@@ -1100,7 +1119,7 @@ impl <'a> VM<'a> {
                         mut index: usize,
                         instructions: &[Instruction],
                         function: &BytecodeFunction
-                       ) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), ::std::string::String> {
+                       ) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), Error> {
         debug!("Enter frame with {:?}", stack.as_slice());
         while let Some(&instr) = instructions.get(index) {
             debug!("{:?}: {:?}", index, instr);
@@ -1158,7 +1177,7 @@ impl <'a> VM<'a> {
                             let v = data.fields[i as usize].get();
                             stack.push(v);
                         }
-                        x => return Err(format!("GetField on {:?}", x))
+                        x => return Err(Error::Message(format!("GetField on {:?}", x)))
                     }
                 }
                 SetField(i) => {
@@ -1168,13 +1187,13 @@ impl <'a> VM<'a> {
                         Data(data) => {
                             data.fields[i as usize].set(value);
                         }
-                        _ => return Err("Op SetField called on non data type".to_string())
+                        _ => return Err(Error::Message("Op SetField called on non data type".to_string()))
                     }
                 }
                 TestTag(tag) => {
                     let x = match *stack.top() {
                         Data(ref data) => if data.tag == tag { 1 } else { 0 },
-                        _ => return Err("Op TestTag called on non data type".to_string())
+                        _ => return Err(Error::Message("Op TestTag called on non data type".to_string()))
                     };
                     stack.push(Int(x));
                 }
@@ -1185,7 +1204,7 @@ impl <'a> VM<'a> {
                                 stack.push(field.clone());
                             }
                         }
-                        _ => return Err("Op Split called on non data type".to_string())
+                        _ => return Err(Error::Message("Op Split called on non data type".to_string()))
                     }
                 }
                 Jump(i) => {
@@ -1221,7 +1240,7 @@ impl <'a> VM<'a> {
                             let v = array.fields[index as usize].get();
                             stack.push(v);
                         }
-                        (x, y) => return Err(format!("Op GetIndex called on invalid types {:?} {:?}", x, y))
+                        (x, y) => return Err(Error::Message(format!("Op GetIndex called on invalid types {:?} {:?}", x, y)))
                     }
                 }
                 SetIndex => {
@@ -1232,7 +1251,7 @@ impl <'a> VM<'a> {
                         (Data(array), Int(index)) => {
                             array.fields[index as usize].set(value);
                         }
-                        (x, y) => return Err(format!("Op SetIndex called on invalid types {:?} {:?}", x, y))
+                        (x, y) => return Err(Error::Message(format!("Op SetIndex called on invalid types {:?} {:?}", x, y)))
                     }
                 }
                 MakeClosure(fi, n) => {
@@ -1423,12 +1442,8 @@ fn error_prim(_: &VM) -> Status {
     Status::Error
 }
 
-macro_rules! tryf(
-    ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
-);
-
-pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string::String> {
-    let mut expr = tryf!(parse_expr(input, vm));
+pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>> {
+    let mut expr = try!(parse_expr(input, vm));
     let (type_infos, function, typ) = {
         let env = vm.env();
         let (typ, type_infos) = {
@@ -1436,7 +1451,7 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string
             let mut gc = vm.gc.borrow_mut();
             let mut tc = Typecheck::new(&mut interner, &mut gc);
             tc.add_environment(&env);
-            let typ = tryf!(tc.typecheck_expr(&mut expr));
+            let typ = try!(tc.typecheck_expr(&mut expr));
             (typ, tc.type_infos)
         };
         let function = {
@@ -1458,24 +1473,23 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string
     Ok(())
 }
 
-pub fn parse_expr(input: &str, vm: &VM) -> Result<::ast::LExpr<TcIdent>, ::std::string::String> {
+pub fn parse_expr(input: &str, vm: &VM) -> Result<::ast::LExpr<TcIdent>, Box<StdError>> {
     let mut interner = vm.interner.borrow_mut();
     let mut gc = vm.gc.borrow_mut();
-    ::parser::parse_tc(&mut gc, &mut interner, input)
-        .map_err(|err| format!("{}", err))
+    Ok(try!(::parser::parse_tc(&mut gc, &mut interner, input)))
 }
-pub fn typecheck_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<(ast::LExpr<TcIdent>, TypeInfos), ::std::string::String> {
+pub fn typecheck_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<(ast::LExpr<TcIdent>, TypeInfos), Box<StdError>> {
     let mut expr = try!(parse_expr(&expr_str, vm));
     let env = vm.env();
     let mut interner = vm.interner.borrow_mut();
     let mut gc = vm.gc.borrow_mut();
     let mut tc = Typecheck::new(&mut interner, &mut gc);
     tc.add_environment(&env);
-    tryf!(tc.typecheck_expr(&mut expr));
+    try!(tc.typecheck_expr(&mut expr));
     Ok((expr, tc.type_infos))
 }
 
-pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::string::String> {
+pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Box<StdError>> {
     let function = {
         let (expr, type_infos) = try!(typecheck_expr(vm, expr_str));
         let env = (vm.env(), &type_infos);
@@ -1493,7 +1507,7 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::str
 pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a>> {
     let func = match vm.globals.find(|g| &*g.id == name) {
         Some((_, f)) => f,
-        None => return Err(format!("Undefined function {}", name))
+        None => return Err(Error::Message(format!("Undefined function {}", name)))
     };
     vm.run_function(func)
 }

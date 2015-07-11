@@ -1,4 +1,4 @@
-use vm::{VM, BytecodeFunction, Value, Userdata_, StackFrame, VMInt};
+use vm::{VM, BytecodeFunction, Value, Userdata_, StackFrame, VMInt, Error};
 use typecheck::{TcType, Typed, Type, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE};
 use compiler::Instruction::Call;
 use std::any::Any;
@@ -190,19 +190,19 @@ impl <'a, Args, R> VMValue<'a> for FunctionRef<'a, Args, R> {
 }
 
 impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
-    pub fn call(&mut self, a: A) -> Result<R, String> {
+    pub fn call(&mut self, a: A) -> Result<R, Error> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
         a.push(self.vm, &mut stack);
         stack = try!(self.vm.execute(stack, &[Call(1)], &BytecodeFunction::empty()));
         match VMValue::from_value(stack.pop()) {
             Some(x) => Ok(x),
-            None => Err("Wrong type".to_string())
+            None => Err(Error::Message("Wrong type".to_string()))
         }
     }
 }
 impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A, B), R> {
-    pub fn call2(&mut self, a: A, b: B) -> Result<R, String> {
+    pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
         a.push(self.vm, &mut stack);
@@ -210,7 +210,7 @@ impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (
         stack = try!(self.vm.execute(stack, &[Call(2)], &BytecodeFunction::empty()));
         match VMValue::from_value(stack.pop()) {
             Some(x) => Ok(x),
-            None => Err("Wrong type".to_string())
+            None => Err(Error::Message("Wrong type".to_string()))
         }
     }
 }

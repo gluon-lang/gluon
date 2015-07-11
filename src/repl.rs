@@ -1,12 +1,9 @@
+use std::error::Error as StdError;
 use std::io;
 use std::io::BufRead;
 
 use embed_lang::typecheck::*;
-use embed_lang::vm::{VM, Status, typecheck_expr, run_expr, load_script};
-
-macro_rules! tryf {
-    ($e:expr) => (try!(($e).map_err(|e| format!("{}", e))))
-}
+use embed_lang::vm::{VM, Error, Status, typecheck_expr, run_expr, load_script};
 
 fn print(vm: &VM) -> Status {
     println!("{:?}", vm.pop());
@@ -31,7 +28,7 @@ pub fn run() {
     }
 }
 
-fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
+fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, Box<StdError>> {
     match command {
         'q' => Ok(false),
         'l' => {
@@ -52,12 +49,12 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, String> {
             }
             Ok(true)
         }
-        _ => Err("Invalid command ".to_string() + &*command.to_string())
+        _ => Err(Error::Message("Invalid command ".to_string() + &*command.to_string()).into())
     }
 }
 
-fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, String> {
-    let expr_str = tryf!(line);
+fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, Box<StdError>> {
+    let expr_str = try!(line);
     match expr_str.chars().next().unwrap() {
         ':' => {
             run_command(vm, expr_str.chars().skip(1).next().unwrap(), expr_str[2..].trim())
@@ -70,14 +67,14 @@ fn run_line(vm: &VM, line: io::Result<String>) -> Result<bool, String> {
     }
 }
 
-fn load_file(vm: &VM, filename: &str) -> Result<(), String> {
+fn load_file(vm: &VM, filename: &str) -> Result<(), Box<StdError>> {
     use std::fs::File;
     use std::io::Read;
     use std::path::Path;
     let path = Path::new(filename);
-    let mut file = tryf!(File::open(path));
+    let mut file = try!(File::open(path));
     let mut buffer = String::new();
-    tryf!(file.read_to_string(&mut buffer));
+    try!(file.read_to_string(&mut buffer));
     let name = path.file_stem().and_then(|f| f.to_str()).expect("filename");
     load_script(vm, name, &buffer)
 }

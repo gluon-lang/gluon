@@ -1,5 +1,7 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::convert::AsRef;
+use std::error::Error as StdError;
 use std::fmt;
 use scoped_map::ScopedMap;
 use base::ast;
@@ -212,6 +214,12 @@ impl <T: fmt::Display> fmt::Display for Errors<T> {
             try!(write!(f, "{}\n", error));
         }
         Ok(())
+    }
+}
+
+impl <T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
+    fn description(&self) -> &str {
+        "Errors"
     }
 }
 
