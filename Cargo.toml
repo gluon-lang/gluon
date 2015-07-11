@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies.log]
 [dependencies.env_logger]
+[dependencies.clap]
 [dependencies.base]
 path = "base"
 [dependencies.parser]
