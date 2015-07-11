@@ -569,6 +569,21 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         }
     }
 
+    fn remove_range(&mut self, from: VMIndex, to: VMIndex) {
+        let len = to - from;
+        let mid = from + ::std::cmp::min(self.len() - to, len);
+        for i in from..mid {
+            self[i] = self[i + len];
+        }
+        for i in mid..(self.len() - len) {
+            self[i] = self[i + len];
+        }
+        unsafe {
+            let current_len = self.stack.values.len();
+            self.stack.values.set_len(current_len - len as usize);
+        }
+    }
+
     fn set_upvar(&self, index: VMIndex, v: Value<'a>) {
         let upvars = self.frame.upvars.as_ref().expect("Attempted to access upvar in non closure function");
         upvars.upvars[index as usize].set(v)
@@ -597,7 +612,9 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     fn enter_scope(mut self
             , args: VMIndex
             , new_upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
-        *self.stack.frames.last_mut().expect("Frame") = self.frame;
+        if let Some(frame) = self.stack.frames.last_mut() {
+            *frame = self.frame;
+        }
         StackFrame::frame(self.stack, args, new_upvars)
     }
 
@@ -1028,6 +1045,11 @@ impl <'a> VM<'a> {
                     (closure, 0)
                 }
                 None => {
+                    //Tail calls into extern functions at the top level will drop the last
+                    //stackframe so just return immedietly
+                    if stack.stack.frames.len() == 0 {
+                        return Ok(stack)
+                    }
                     let result = stack.pop();
                     debug!("Return {:?}", result);
                     let len = stack.len();
@@ -1113,11 +1135,10 @@ impl <'a> VM<'a> {
                     }
                 }
                 TailCall(args) => {
-                    stack.frame.instruction_index = index + 1;
-                    match self.do_call(stack, args) {
-                        Ok((None, new_stack)) => stack = new_stack,
-                        result => return result
-                    }
+                    stack = stack.exit_scope();
+                    let end = stack.len() - args - 1;
+                    stack.remove_range(0, end);
+                    return self.do_call(stack, args);
                 }
                 Construct(tag, args) => {
                     let d = {
@@ -1352,10 +1373,11 @@ fn string_append(vm: &VM) -> Status {
     Status::Ok
 }
 fn print_int(vm: &VM) -> Status {
-    let stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
     match stack[0] {
         Int(i) => {
             print!("{}", i);
+            stack[0] = Int(0);
         }
         x => panic!("print_int called on: {:?}", x)
     }
