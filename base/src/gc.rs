@@ -1,6 +1,7 @@
 use std::fmt;
 use std::mem;
 use std::ptr;
+use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::rt::heap::{allocate, deallocate};
 use std::ops::{Deref, DerefMut};
@@ -146,10 +147,27 @@ impl <T: ?Sized + PartialEq> PartialEq for GcPtr<T> {
     fn eq(&self, other: &GcPtr<T>) -> bool { **self == **other }
 }
 
+impl <T: ?Sized + Ord> Ord for GcPtr<T> {
+    fn cmp(&self, other: &GcPtr<T>) -> Ordering { (**self).cmp(&**other) }
+}
+impl <T: ?Sized + PartialOrd> PartialOrd for GcPtr<T> {
+    fn partial_cmp(&self, other: &GcPtr<T>) -> Option<Ordering> { (**self).partial_cmp(&**other) }
+}
+
 impl <T: ?Sized + Hash> Hash for GcPtr<T> {
     fn hash<H>(&self, state: &mut H)
         where H: Hasher {
         (**self).hash(state)
+    }
+}
+impl <T: ?Sized + fmt::Debug> fmt::Debug for GcPtr<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "GcPtr({:?})", &**self)
+    }
+}
+impl <T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
     }
 }
 

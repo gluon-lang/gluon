@@ -31,7 +31,7 @@ use vm::Value::{
     Bottom
 };
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Userdata_ {
     pub data: GcPtr<RefCell<Box<Any>>>
 }
@@ -52,6 +52,7 @@ impl PartialEq for Userdata_ {
     }
 }
 
+#[derive(Debug)]
 pub struct ClosureData<'a> {
     function: GcPtr<BytecodeFunction>,
     upvars: [Cell<Value<'a>>]
@@ -101,6 +102,7 @@ unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
     }
 }
 
+#[derive(Debug)]
 pub struct BytecodeFunction {
     name: Option<InternedStr>,
     args: VMIndex,
@@ -168,7 +170,7 @@ pub enum Value<'a> {
     Bottom//Special value used to mark that a global was used before it was initialized
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum Callable<'a> {
     Closure(GcPtr<ClosureData<'a>>),
     Extern(GcPtr<ExternFunction<'a>>)
@@ -474,9 +476,18 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct Frame<'a> {
+    offset: VMIndex,
+    instruction_index: usize,
+    upvars: Option<GcPtr<ClosureData<'a>>>,
+    excess: bool
+}
+
+#[derive(Debug)]
 pub struct Stack<'a> {
     values: Vec<Value<'a>>,
-    frames: Vec<(VMIndex, Option<GcPtr<ClosureData<'a>>>)>
+    frames: Vec<Frame<'a>>
 }
 
 impl <'a> Stack<'a> {
@@ -511,23 +522,24 @@ impl <'a> Stack<'a> {
 
 pub struct StackFrame<'a: 'b, 'b> {
     stack: RefMut<'b, Stack<'a>>,
-    offset: VMIndex,
-    upvars: Option<GcPtr<ClosureData<'a>>>
+    frame: Frame<'a>
 }
 impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     pub fn new(v: RefMut<'b, Stack<'a>>, args: VMIndex, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
-        StackFrame { stack: v, offset: offset, upvars: upvars }
+        StackFrame {
+            stack: v,
+            frame: Frame { offset: offset, upvars: upvars, instruction_index: 0, excess: false }
+        }
     }
 
     pub fn new_empty(vm: &'b VM<'a>) -> StackFrame<'a, 'b> {
         let stack = vm.stack.borrow_mut();
-        let offset = stack.len();
-        StackFrame { stack: stack, offset: offset, upvars: None }
+        StackFrame::new(stack, 0, None)
     }
 
     pub fn len(&self) -> VMIndex {
-        self.stack.len() - self.offset
+        self.stack.len() - self.frame.offset
     }
 
     pub fn push(&mut self, v: Value<'a>) {
@@ -558,17 +570,17 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 
     fn set_upvar(&self, index: VMIndex, v: Value<'a>) {
-        let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
+        let upvars = self.frame.upvars.as_ref().expect("Attempted to access upvar in non closure function");
         upvars.upvars[index as usize].set(v)
     }
 
     fn get_upvar(&self, index: VMIndex) -> Value<'a> {
-        let upvars = self.upvars.as_ref().expect("Attempted to access upvar in non closure function");
+        let upvars = self.frame.upvars.as_ref().expect("Attempted to access upvar in non closure function");
         upvars.upvars[index as usize].get()
     }
 
     fn as_slice(&self) -> &[Value<'a>] {
-        &self.stack.values[self.offset as usize..]
+        &self.stack.values[self.frame.offset as usize..]
     }
 
     fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
@@ -582,16 +594,21 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         Ok(stack)
     }
 
-    fn enter_scope(self
+    fn enter_scope(mut self
             , args: VMIndex
             , new_upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
+        *self.stack.frames.last_mut().expect("Frame") = self.frame;
         StackFrame::frame(self.stack, args, new_upvars)
     }
 
     fn exit_scope(mut self) -> StackFrame<'a, 'b> {
         self.stack.frames.pop().expect("Expected frame");
-        let (offset, upvars) = *self.stack.frames.last().expect("Expected self frame");
-        StackFrame { stack: self.stack, offset: offset, upvars: upvars }
+        let frame = self.stack.frames.last().cloned()
+            .unwrap_or(Frame { offset: 0, upvars: None, instruction_index: 0, excess: false });
+        StackFrame {
+            stack: self.stack,
+            frame: frame
+        }
     }
 
     fn scope<E, F>(self
@@ -599,53 +616,57 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
             , upvars: Option<GcPtr<ClosureData<'a>>>
             , f: F) -> Result<StackFrame<'a, 'b>, E>
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
-        let mut stack = self.enter_scope(args, upvars);;
+        let mut stack = self.enter_scope(args, upvars);
         stack = try!(f(stack));
         stack = stack.exit_scope();
         Ok(stack)
     }
 
-    fn frame(mut stack: RefMut<'b, Stack<'a>>, args: VMIndex, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
+    fn frame(mut stack: RefMut<'b, Stack<'a>>,
+             args: VMIndex,
+             upvars: Option<GcPtr<ClosureData<'a>>>
+            ) -> StackFrame<'a, 'b> {
         assert!(stack.len() >= args);
         let offset = stack.len() - args;
-        stack.frames.push((offset, upvars));
-        StackFrame { stack: stack, offset: offset, upvars: upvars }
+        let frame = Frame { offset: offset, instruction_index: 0, upvars: upvars, excess: false };
+        stack.frames.push(frame);
+        StackFrame { stack: stack, frame: frame }
     }
 }
 
 impl <'a, 'b> Deref for StackFrame<'a, 'b> {
     type Target = [Value<'a>];
     fn deref(&self) -> &[Value<'a>] {
-        &self.stack.values[self.offset as usize..]
+        &self.stack.values[self.frame.offset as usize..]
     }
 }
 
 impl <'a, 'b> DerefMut for StackFrame<'a, 'b> {
     fn deref_mut(&mut self) -> &mut [Value<'a>] {
-        &mut self.stack.values[self.offset as usize..]
+        &mut self.stack.values[self.frame.offset as usize..]
     }
 }
 
 impl <'a, 'b> Index<VMIndex> for StackFrame<'a, 'b> {
     type Output = Value<'a>;
     fn index(&self, index: VMIndex) -> &Value<'a> {
-        &self.stack.values[(self.offset + index) as usize]
+        &self.stack.values[(self.frame.offset + index) as usize]
     }
 }
 impl <'a, 'b> IndexMut<VMIndex> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, index: VMIndex) -> &mut Value<'a> {
-        &mut self.stack.values[(self.offset + index) as usize]
+        &mut self.stack.values[(self.frame.offset + index) as usize]
     }
 }
 impl <'a, 'b> Index<::std::ops::RangeFull> for StackFrame<'a, 'b> {
     type Output = [Value<'a>];
     fn index(&self, _: ::std::ops::RangeFull) -> &[Value<'a>] {
-        &self.stack.values[self.offset as usize..]
+        &self.stack.values[self.frame.offset as usize..]
     }
 }
 impl <'a, 'b> IndexMut<::std::ops::RangeFull> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, _: ::std::ops::RangeFull) -> &mut [Value<'a>] {
-        &mut self.stack.values[self.offset as usize..]
+        &mut self.stack.values[self.frame.offset as usize..]
     }
 }
 
@@ -837,8 +858,8 @@ impl <'a> VM<'a> {
     fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> GcPtr<DataStruct<'a>> {
        self.alloc(stack, Def { tag: tag, elems: fields })
     }
-    fn new_closure(&self, func: GcPtr<BytecodeFunction>, fields: &[Value<'a>]) -> Value<'a> {
-        Closure(self.gc.borrow_mut().alloc(ClosureDataDef(func, fields)))
+    fn new_closure(&self, func: GcPtr<BytecodeFunction>, fields: &[Value<'a>]) -> GcPtr<ClosureData<'a>> {
+        self.gc.borrow_mut().alloc(ClosureDataDef(func, fields))
     }
     fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &[Value<'a>]) -> GcPtr<ClosureData<'a>> {
         self.alloc(stack, ClosureDataDef(func, fields))
@@ -867,35 +888,35 @@ impl <'a> VM<'a> {
                 let stack = self.execute_function(stack, &ptr);
                 stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
             }
-            Closure(closure) => self.call_bytecode(args, &closure.function, Some(closure)),
+            Closure(closure) => self.call_bytecode(args, closure),
             x => Err(format!("Tried to call a non function object: '{:?}'", x))
         }
     }
 
-    pub fn call_bytecode(&self, args: VMIndex, bytecode: &BytecodeFunction, closure: Option<GcPtr<ClosureData<'a>>>) -> VMResult<Value<'a>> {
-        let stack = StackFrame::frame(self.stack.borrow_mut(), args, closure);
-        let stack = self.execute(stack, &bytecode.instructions, &bytecode);
-        stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
+    pub fn call_bytecode(&self, args: VMIndex, closure: GcPtr<ClosureData<'a>>) -> VMResult<Value<'a>> {
+        self.push(Closure(closure));
+        let mut stack = StackFrame::frame(self.stack.borrow_mut(), args, Some(closure));
+        stack = try!(self.execute(stack, &closure.function.instructions, &closure.function));
+        let x = if stack.len() > 0 { stack.pop() } else { Int(0) };
+        Ok(x)
     }
 
-    fn execute_callable<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &Callable<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    fn execute_callable<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &Callable<'a>)
+            -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), ::std::string::String> {
         match *function {
-            Callable::Closure(ref closure) => {
-                stack.scope(closure.function.args, Some(*closure), |new_stack| {
-                    self.execute(new_stack, &closure.function.instructions, &closure.function)
-                })
-            }
-            Callable::Extern(ref ext) => self.execute_function(stack, ext)
+            Callable::Closure(closure) => Ok((Some(closure), stack)),
+            Callable::Extern(ref ext) => self.execute_function(stack, ext).map(|s| (None, s))
         }
     }
 
     fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
         //Make sure that the stack is not borrowed during the external function call
         //Necessary since we do not know what will happen during the function call
-        let StackFrame { stack, offset, upvars } = stack;
+        let StackFrame { stack, frame } = stack;
         drop(stack);
         let status = (function.function)(self);
-        let mut stack = StackFrame::frame(self.stack.borrow_mut(), offset, upvars);
+        let mut stack = StackFrame { stack: self.stack.borrow_mut(), frame: frame };
+        stack.frame = frame;
         match status {
             Status::Ok => Ok(stack),
             Status::Error => {
@@ -907,35 +928,15 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn call_function_with_upvars<'b, F>(&'b self
+    fn call_function_with_upvars<'b>(&'b self
                                     , mut stack: StackFrame<'a, 'b>
                                     , args: VMIndex
                                     , required_args: VMIndex
                                     , callable: Callable<'a>
-                                    , call: F
-                                    ) -> Result<StackFrame<'a, 'b>, ::std::string::String>
-        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
-        let function_index = stack.len() - 1 - args;
+                                    ) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), ::std::string::String> {
         debug!("cmp {} {}", args, required_args);
         match args.cmp(&required_args) {
-            Ordering::Equal => {
-                stack = try!(call(stack));
-                if stack.len() > function_index + args {
-                    //Value was returned
-                    let result = stack.pop();
-                    debug!("Return {:?}", result);
-                    while stack.len() > function_index {
-                        stack.pop();
-                    }
-                    stack.push(result);
-                }
-                else {
-                    while stack.len() > function_index {
-                        stack.pop();
-                    }
-                }
-                Ok(stack)
-            }
+            Ordering::Equal => self.execute_callable(stack, &callable),
             Ordering::Less => {
                 let app = {
                     let whole_stack = &mut stack.stack.values[..];
@@ -948,7 +949,7 @@ impl <'a> VM<'a> {
                     stack.pop();
                 }
                 stack.push(app);
-                Ok(stack)
+                Ok((None, stack))
             }
             Ordering::Greater => {
                 let excess_args = args - required_args;
@@ -966,44 +967,23 @@ impl <'a> VM<'a> {
                 let offset = stack.len() - required_args - 1;
                 stack.insert_slice(offset, &[Cell::new(Data(d))]);
                 debug!("xxxxxx {:?}", &(*stack)[..]);
-                stack = try!(call(stack));
-                let result = stack.pop();
-                for _ in 0..(required_args + 1) {
-                    stack.pop();
-                }
-                let _x = stack.pop();//Pop the excess_args
-                debug_assert!(_x == Data(d));
-                stack.push(result);
-                for value in &d.fields {
-                    stack.push(value.get());
-                }
-                self.do_call(stack, d.fields.len() as VMIndex)
+                stack.frame.excess = true;
+                self.execute_callable(stack, &callable)
             }
         }
     }
 
-    fn do_call<'b>(&'b self, mut stack: StackFrame<'a, 'b>, args: VMIndex) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    fn do_call<'b>(&'b self, mut stack: StackFrame<'a, 'b>, args: VMIndex) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), ::std::string::String> {
         let function_index = stack.len() - 1 - args;
         debug!("Do call {:?} {:?}", stack[function_index], &(*stack)[(function_index + 1) as usize..]);
         match stack[function_index].clone() {
             Function(ref f) => {
                 let callable = Callable::Extern(f.clone());
-                let func = |mut stack: StackFrame<'a, 'b>| {
-                    stack = stack.enter_scope(f.args, None);
-                    stack = try!(self.execute_function(stack, f));
-                    Ok(stack.exit_scope())
-                };
-                stack = try!(self.call_function_with_upvars(stack, args, f.args, callable, func));
+                self.call_function_with_upvars(stack, args, f.args, callable)
             }
             Closure(ref closure) => {
                 let callable = Callable::Closure(closure.clone());
-                let func = |mut stack: StackFrame<'a, 'b>| {
-                    stack = stack.enter_scope(closure.function.args, Some(*closure));
-                    let instructions = &closure.function.instructions;
-                    stack = try!(self.execute(stack, &instructions, &closure.function));
-                    Ok(stack.exit_scope())
-                };
-                stack = try!(self.call_function_with_upvars(stack, args, closure.function.args, callable, func));
+                self.call_function_with_upvars(stack, args, closure.function.args, callable)
             }
             PartialApplication(app) => {
                 let closure = app.function;
@@ -1012,12 +992,7 @@ impl <'a> VM<'a> {
                 stack.insert_slice(offset, &app.arguments);
                 match closure.args().cmp(&total_args) {
                     Ordering::Equal => {
-                        stack = try!(self.execute_callable(stack, &app.function));
-                        let result = stack.pop();
-                        for _ in 0..(total_args + 1) {
-                            stack.pop();
-                        }
-                        stack.push(result);
+                        self.execute_callable(stack, &app.function)
                     }
                     Ordering::Greater => {
                         let app = {
@@ -1030,6 +1005,7 @@ impl <'a> VM<'a> {
                             stack.pop();
                         }
                         stack.push(PartialApplication(app));
+                        Ok((None, stack))
                     }
                     Ordering::Less => {
                         //Should never happen as creating a partial application with more arguments
@@ -1040,12 +1016,70 @@ impl <'a> VM<'a> {
             }
             x => return Err(format!("Cannot call {:?}", x))
         }
-        Ok(stack)
     }
 
-    pub fn execute<'b>(&'b self, mut stack: StackFrame<'a, 'b>, instructions: &[Instruction], function: &BytecodeFunction) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+    pub fn execute<'b>(&'b self, stack: StackFrame<'a, 'b>, instructions: &[Instruction], function: &BytecodeFunction) -> Result<StackFrame<'a, 'b>, ::std::string::String> {
+        let (mut cont, mut stack) = try!(self.execute_(stack, 0, instructions, function));
+        debug!("IS {:?}", stack.stack.frames);
+        loop {
+            let (closure, i) = match cont {
+                Some(closure) => {
+                    stack = stack.enter_scope(closure.function.args, Some(closure));
+                    (closure, 0)
+                }
+                None => {
+                    let result = stack.pop();
+                    debug!("Return {:?}", result);
+                    let len = stack.len();
+                    stack = stack.exit_scope();
+                    for _ in 0..(len + 1) {
+                        stack.pop();
+                    }
+                    if stack.frame.excess {
+                        //The stack will not have excess arguments after they are added
+                        stack.frame.excess = false;
+                        match stack.pop() {
+                            Data(excess) => {
+                                debug!("Push excess args {:?}", &excess.fields);
+                                stack.push(result);
+                                for value in &excess.fields {
+                                    stack.push(value.get());
+                                }
+                                let (new_cont, new_stack) = try!(self.do_call(stack, excess.fields.len() as VMIndex));
+                                stack = new_stack;
+                                if let Some(_) = new_cont {
+                                    cont = new_cont;
+                                    continue
+                                }
+                            }
+                            x => panic!("Expected excess arguments found {:?}", x)
+                        }
+                    }
+                    else {
+                        stack.push(result);
+                    }
+                    cont = stack.frame.upvars;
+                    match cont {
+                        Some(closure) => (closure, stack.frame.instruction_index),
+                        None => break
+                    }
+                }
+            };
+            debug!("Continue with {:?}\nAt: {}", closure.function.name, i);
+            let (new_cont, new_stack) = try!(self.execute_(stack, i, &closure.function.instructions, &closure.function));
+            debug!("Result {:?} {:?}", new_cont, &new_stack[..]);
+            stack = new_stack;
+            cont = new_cont;
+        }
+        Ok(stack)
+    }
+    pub fn execute_<'b>(&'b self,
+                        mut stack: StackFrame<'a, 'b>,
+                        mut index: usize,
+                        instructions: &[Instruction],
+                        function: &BytecodeFunction
+                       ) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), ::std::string::String> {
         debug!("Enter frame with {:?}", stack.as_slice());
-        let mut index = 0;
         while let Some(&instr) = instructions.get(index) {
             debug!("{:?}: {:?}", index, instr);
             match instr {
@@ -1071,8 +1105,20 @@ impl <'a> VM<'a> {
                     let v = stack.pop();
                     self.globals[i as usize].value.set(v);
                 }
-                Call(args) => { stack = try!(self.do_call(stack, args)); }
-                TailCall(args) => { stack = try!(self.do_call(stack, args)); }
+                Call(args) => {
+                    stack.frame.instruction_index = index + 1;
+                    match self.do_call(stack, args) {
+                        Ok((None, new_stack)) => stack = new_stack,
+                        result => return result
+                    }
+                }
+                TailCall(args) => {
+                    stack.frame.instruction_index = index + 1;
+                    match self.do_call(stack, args) {
+                        Ok((None, new_stack)) => stack = new_stack,
+                        result => return result
+                    }
+                }
                 Construct(tag, args) => {
                     let d = {
                         let whole_stack = &mut stack.stack.values[..];
@@ -1250,7 +1296,7 @@ impl <'a> VM<'a> {
         else {
             debug!("--> ()");
         }
-        Ok(stack)
+        Ok((None, stack))
     }
 }
 
@@ -1381,9 +1427,8 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), ::std::string
         (type_infos, function, typ)
     };
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
-    vm.push(vm.new_closure(function, &[]));
-    let value = try!(vm.call_bytecode(0, &function, None));
-    vm.pop();
+    let closure = vm.new_closure(function, &[]);
+    let value = try!(vm.call_bytecode(0, closure));
     let id = vm.intern(name);
     vm.names.borrow_mut().insert(id, GlobalFn(vm.globals.len()));
     vm.globals.push(Global { id: id, typ: typ, value: Cell::new(value) });
@@ -1418,9 +1463,8 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, ::std::str
         compiler.compile_expr(&expr)
     };
     let function = vm.new_function(function);
-    vm.push(vm.new_closure(function, &[]));
-    let value = try!(vm.call_bytecode(0, &function, None));
-    vm.pop();
+    let closure = vm.new_closure(function, &[]);
+    let value = try!(vm.call_bytecode(0, closure));
     Ok(value)
 }
 
@@ -1683,21 +1727,6 @@ case A of
         let mut vm = VM::new();
         let result = run_expr(&mut vm, text);
         assert!(result.is_err());
-    }
-
-    //FIXME #[test]
-    fn tail_call() {
-        let _ = ::env_logger::init();
-        let text = 
-r"
-let call x = if x #Int== 0
-             then x
-             else call (x #Int- 1)
-in call 2000
-";
-        let mut vm = VM::new();
-        let result = run_expr(&mut vm, text);
-        assert_eq!(result, Ok(Int(0)));
     }
 
     #[test]
