@@ -1,13 +1,10 @@
-use std::cell::{Cell, RefCell, RefMut, Ref};
+use std::cell::{Cell, RefCell, Ref};
 use std::error::Error as StdError;
 use std::fmt;
 use std::intrinsics::type_name;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::cmp::Ordering;
-use std::ops::{Deref, DerefMut, Index, IndexMut};
-use std::fs::File;
-use std::io::Read;
 use base::ast;
 use base::ast::Type;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, FLOAT_TYPE, UNIT_TYPE, TcIdent, TcType};
@@ -31,6 +28,12 @@ use vm::Value::{
     Userdata,
     Bottom
 };
+
+
+pub use self::stack::{Stack, StackFrame};
+
+mod stack;
+mod primitives;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Userdata_ {
@@ -495,217 +498,6 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Frame<'a> {
-    offset: VMIndex,
-    instruction_index: usize,
-    upvars: Option<GcPtr<ClosureData<'a>>>,
-    excess: bool
-}
-
-#[derive(Debug)]
-pub struct Stack<'a> {
-    values: Vec<Value<'a>>,
-    frames: Vec<Frame<'a>>
-}
-
-impl <'a> Stack<'a> {
-
-    fn new() -> Stack<'a> {
-        Stack { values: Vec::new(), frames: Vec::new() }
-    }
-
-    pub fn get(&self, index: usize) -> Value<'a> {
-        self.values[index].clone()
-    }
-
-    pub fn pop(&mut self) -> Value<'a> {
-        self.values
-            .pop()
-            .expect("pop on empty stack")
-    }
-
-    pub fn set(&mut self, index: usize, v: Value<'a>) {
-        self.values[index] = v;
-    }
-
-    pub fn push(&mut self, v: Value<'a>) {
-        self.values.push(v)
-    }
-
-    pub fn len(&self) -> VMIndex {
-        self.values.len() as VMIndex
-    }
-
-}
-
-pub struct StackFrame<'a: 'b, 'b> {
-    stack: RefMut<'b, Stack<'a>>,
-    frame: Frame<'a>
-}
-impl <'a: 'b, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: RefMut<'b, Stack<'a>>, args: VMIndex, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
-        let offset = v.len() - args;
-        StackFrame {
-            stack: v,
-            frame: Frame { offset: offset, upvars: upvars, instruction_index: 0, excess: false }
-        }
-    }
-
-    pub fn new_empty(vm: &'b VM<'a>) -> StackFrame<'a, 'b> {
-        let stack = vm.stack.borrow_mut();
-        StackFrame::new(stack, 0, None)
-    }
-
-    pub fn len(&self) -> VMIndex {
-        self.stack.len() - self.frame.offset
-    }
-
-    pub fn push(&mut self, v: Value<'a>) {
-        self.stack.values.push(v);
-    }
-
-    pub fn top(&mut self) -> &Value<'a> {
-        self.stack.values.last().expect("StackFrame: top")
-    }
-
-    pub fn pop(&mut self) -> Value<'a> {
-        self.stack.pop()
-    }
-
-    fn insert_slice(&mut self, index: VMIndex, values: &[Cell<Value<'a>>]) {
-        self.stack.values.reserve(values.len());
-        unsafe {
-            let old_len = self.len();
-            for i in (index..old_len).rev() {
-                *self.get_unchecked_mut(i as usize + values.len()) = self[i];
-            }
-            for (i, val) in (index..).zip(values) {
-                *self.get_unchecked_mut(i as usize) = val.get();
-            }
-            let new_len = self.stack.values.len() + values.len();
-            self.stack.values.set_len(new_len);
-        }
-    }
-
-    fn remove_range(&mut self, from: VMIndex, to: VMIndex) {
-        let len = to - from;
-        let mid = from + ::std::cmp::min(self.len() - to, len);
-        for i in from..mid {
-            self[i] = self[i + len];
-        }
-        for i in mid..(self.len() - len) {
-            self[i] = self[i + len];
-        }
-        unsafe {
-            let current_len = self.stack.values.len();
-            self.stack.values.set_len(current_len - len as usize);
-        }
-    }
-
-    fn set_upvar(&self, index: VMIndex, v: Value<'a>) {
-        let upvars = self.frame.upvars.as_ref().expect("Attempted to access upvar in non closure function");
-        upvars.upvars[index as usize].set(v)
-    }
-
-    fn get_upvar(&self, index: VMIndex) -> Value<'a> {
-        let upvars = self.frame.upvars.as_ref().expect("Attempted to access upvar in non closure function");
-        upvars.upvars[index as usize].get()
-    }
-
-    fn as_slice(&self) -> &[Value<'a>] {
-        &self.stack.values[self.frame.offset as usize..]
-    }
-
-    fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
-            , args: VMIndex
-            , upvars: Option<GcPtr<ClosureData<'a>>>
-            , f: F) -> Result<StackFrame<'a, 'b>, E> 
-        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
-        let stack = StackFrame::frame(stack, args, upvars);
-        let mut stack = try!(f(stack));
-        stack.stack.frames.pop();
-        Ok(stack)
-    }
-
-    fn enter_scope(mut self
-            , args: VMIndex
-            , new_upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
-        if let Some(frame) = self.stack.frames.last_mut() {
-            *frame = self.frame;
-        }
-        StackFrame::frame(self.stack, args, new_upvars)
-    }
-
-    fn exit_scope(mut self) -> StackFrame<'a, 'b> {
-        self.stack.frames.pop().expect("Expected frame");
-        let frame = self.stack.frames.last().cloned()
-            .unwrap_or(Frame { offset: 0, upvars: None, instruction_index: 0, excess: false });
-        StackFrame {
-            stack: self.stack,
-            frame: frame
-        }
-    }
-
-    fn scope<E, F>(self
-            , args: VMIndex
-            , upvars: Option<GcPtr<ClosureData<'a>>>
-            , f: F) -> Result<StackFrame<'a, 'b>, E>
-        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
-        let mut stack = self.enter_scope(args, upvars);
-        stack = try!(f(stack));
-        stack = stack.exit_scope();
-        Ok(stack)
-    }
-
-    fn frame(mut stack: RefMut<'b, Stack<'a>>,
-             args: VMIndex,
-             upvars: Option<GcPtr<ClosureData<'a>>>
-            ) -> StackFrame<'a, 'b> {
-        assert!(stack.len() >= args);
-        let offset = stack.len() - args;
-        let frame = Frame { offset: offset, instruction_index: 0, upvars: upvars, excess: false };
-        stack.frames.push(frame);
-        StackFrame { stack: stack, frame: frame }
-    }
-}
-
-impl <'a, 'b> Deref for StackFrame<'a, 'b> {
-    type Target = [Value<'a>];
-    fn deref(&self) -> &[Value<'a>] {
-        &self.stack.values[self.frame.offset as usize..]
-    }
-}
-
-impl <'a, 'b> DerefMut for StackFrame<'a, 'b> {
-    fn deref_mut(&mut self) -> &mut [Value<'a>] {
-        &mut self.stack.values[self.frame.offset as usize..]
-    }
-}
-
-impl <'a, 'b> Index<VMIndex> for StackFrame<'a, 'b> {
-    type Output = Value<'a>;
-    fn index(&self, index: VMIndex) -> &Value<'a> {
-        &self.stack.values[(self.frame.offset + index) as usize]
-    }
-}
-impl <'a, 'b> IndexMut<VMIndex> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, index: VMIndex) -> &mut Value<'a> {
-        &mut self.stack.values[(self.frame.offset + index) as usize]
-    }
-}
-impl <'a, 'b> Index<::std::ops::RangeFull> for StackFrame<'a, 'b> {
-    type Output = [Value<'a>];
-    fn index(&self, _: ::std::ops::RangeFull) -> &[Value<'a>] {
-        &self.stack.values[self.frame.offset as usize..]
-    }
-}
-impl <'a, 'b> IndexMut<::std::ops::RangeFull> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, _: ::std::ops::RangeFull) -> &mut [Value<'a>] {
-        &mut self.stack.values[self.frame.offset as usize..]
-    }
-}
-
 struct Def<'a:'b, 'b> {
     tag: VMTag,
     elems: &'b mut [Value<'a>]
@@ -768,20 +560,23 @@ impl <'a> VM<'a> {
             gc: RefCell::new(Gc::new()),
             stack: RefCell::new(Stack::new())
         };
-        {
-            let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: vm.intern("a") });
-            let array_a = Type::Array(box a.clone());
-            let io = |t| ast::type_con(vm.intern("IO"), vec![t]);
-            let io_unit = io(UNIT_TYPE.clone());
-            let _ = vm.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box array_length);
-            let _ = vm.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box string_append);
-            let _ = vm.extern_function("print_int", vec![INT_TYPE.clone()], io_unit, box print_int);
-            let _ = vm.extern_function("read_file", vec![STRING_TYPE.clone()], io(STRING_TYPE.clone()), box read_file);
-            let _ = vm.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
-            let _ = vm.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box show_prim);
-            let _ = vm.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box error_prim);
-        }
+        vm.add_primitives();
         vm
+    }
+
+    fn add_primitives(&self) {
+        use self::primitives as prim;
+        let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("a") });
+        let array_a = Type::Array(box a.clone());
+        let io = |t| ast::type_con(self.intern("IO"), vec![t]);
+        let io_unit = io(UNIT_TYPE.clone());
+        let _ = self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length);
+        let _ = self.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box prim::string_append);
+        let _ = self.extern_function("print_int", vec![INT_TYPE.clone()], io_unit, box prim::print_int);
+        let _ = self.extern_function("read_file", vec![STRING_TYPE.clone()], io(STRING_TYPE.clone()), box prim::read_file);
+        let _ = self.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
+        let _ = self.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
+        let _ = self.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box prim::error);
     }
 
     pub fn push(&self, v: Value<'a>) {
@@ -1120,7 +915,7 @@ impl <'a> VM<'a> {
                         instructions: &[Instruction],
                         function: &BytecodeFunction
                        ) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), Error> {
-        debug!("Enter frame with {:?}", stack.as_slice());
+        debug!("Enter frame with {:?}", &stack[..]);
         while let Some(&instr) = instructions.get(index) {
             debug!("{:?}: {:?}", index, instr);
             match instr {
@@ -1366,80 +1161,6 @@ fn binop_float<F>(stack: &mut StackFrame, f: F)
             (l, r) => panic!("{:?} `floatOp` {:?}", l, r)
         }
     })
-}
-
-fn array_length(vm: &VM) -> Status {
-    match vm.pop() {
-        Data(values) => {
-            let i = values.fields.len();
-            vm.push(Int(i as VMInt));
-        }
-        x => panic!("{:?}", x)
-    }
-    Status::Ok
-}
-fn string_append(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
-    match (&stack[0], &stack[1]) {
-        (&String(l), &String(r)) => {
-            let mut s = ::std::string::String::with_capacity(l.len() + r.len());
-            s.push_str(&l);
-            s.push_str(&r);
-            stack.push(String(vm.gc.borrow_mut().alloc(&s[..])));
-        }
-        _ => panic!()
-    }
-    Status::Ok
-}
-fn print_int(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
-    match stack[0] {
-        Int(i) => {
-            print!("{}", i);
-            stack[0] = Int(0);
-        }
-        x => panic!("print_int called on: {:?}", x)
-    }
-    Status::Ok
-}
-
-fn read_file(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
-    match stack.pop() {
-        String(s) => {
-            let mut buffer = ::std::string::String::new();
-            let status = match File::open(&s[..]).and_then(|mut file| file.read_to_string(&mut buffer)) {
-                Ok(_) => Status::Ok,
-                Err(err) => {
-                    use std::fmt::Write;
-                    buffer.clear();
-                    let _ = write!(&mut buffer, "{}", err);
-                    Status::Error
-                }
-            };
-            let s = vm.alloc(&mut stack.stack.values, &buffer[..]);
-            stack.push(String(s));
-            status
-        }
-        x => panic!("print_int called on: {:?}", x)
-    }
-}
-
-fn show_prim(vm: &VM) -> Status  {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
-    let s = match stack[0] {
-        Int(i) => format!("{}", i),
-        Float(f) => format!("{}", f),
-        x => panic!("print_int called on: {:?}", x)
-    };
-    stack.push(String(vm.gc.borrow_mut().alloc(&s[..])));
-    Status::Ok
-}
-
-fn error_prim(_: &VM) -> Status {
-    //We expect a string as an argument to this function but we only return Status::Error
-    //and let the caller take care of printing the message
-    Status::Error
 }
 
 pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>> {
