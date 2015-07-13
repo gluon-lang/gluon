@@ -27,6 +27,19 @@ pub fn string_append(vm: &VM) -> Status {
     }
     Status::Ok
 }
+pub fn string_eq(vm: &VM) -> Status {
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
+    match (&stack[0], &stack[1]) {
+        (&Value::String(l), &Value::String(r)) => {
+            let b = if l == r { 1 } else { 0 };
+            stack.pop();
+            stack.pop();
+            stack.push(Value::Int(b));
+        }
+        _ => panic!()
+    }
+    Status::Ok
+}
 pub fn print_int(vm: &VM) -> Status {
     let stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     match stack[0] {
@@ -84,6 +97,7 @@ pub fn print(vm: &VM) -> Status  {
     match stack.pop() {
         Value::String(s) => {
             println!("{}", s);
+            stack.push(Value::Int(0));
             Status::Ok
         }
         x => panic!("print called on: {:?}", x)

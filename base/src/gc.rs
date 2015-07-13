@@ -286,6 +286,7 @@ impl Gc {
     
     fn collect2<R: ?Sized, D>(&mut self, roots: &mut R, def: &mut D)
         where R: Traverseable, D: Traverseable {
+        debug!("Start collect");
         roots.traverse(self);
         def.traverse(self);
         self.sweep();

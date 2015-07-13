@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::cmp::Ordering;
 use base::ast;
 use base::ast::Type;
-use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, STRING_TYPE, INT_TYPE, FLOAT_TYPE, UNIT_TYPE, TcIdent, TcType};
+use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, BOOL_TYPE, STRING_TYPE, INT_TYPE, FLOAT_TYPE, UNIT_TYPE, TcIdent, TcType};
 use compiler::*;
 use compiler::Instruction::*;
 use base::interner::{Interner, InternedStr};
@@ -82,6 +82,7 @@ impl <'a, 'b> Traverseable for ClosureDataDef<'a, 'b> {
         self.1.traverse(gc);
     }
 }
+
 unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
     type Value = ClosureData<'a>;
     fn size(&self) -> usize {
@@ -98,11 +99,12 @@ unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
         }
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut ClosureData<'a> {
-        unsafe {
+        let x = unsafe {
             use std::raw::Slice;
             let x = Slice { data: &*ptr, len: self.1.len() };
             ::std::mem::transmute(x)
-        }
+        };
+        x
     }
 }
 
@@ -204,6 +206,7 @@ impl <'a> Traverseable for Callable<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct PartialApplicationData<'a> {
     function: Callable<'a>,
     arguments: [Cell<Value<'a>>]
@@ -233,7 +236,7 @@ unsafe impl <'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
     type Value = PartialApplicationData<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<GcPtr<ClosureData<'a>>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
+        size_of::<Callable<'a>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
     }
     fn initialize(self, result: *mut PartialApplicationData<'a>) {
         let result = unsafe { &mut *result };
@@ -281,68 +284,55 @@ impl <'a> Traverseable for Value<'a> {
 
 impl <'a> fmt::Debug for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        struct OneLevel<'a: 'b, 'b>(&'b [Cell<Value<'a>>]);
-        impl <'a, 'b> fmt::Debug for OneLevel<'a, 'b> {
+        struct Level<'a: 'b, 'b>(i32, &'b Value<'a>);
+        struct LevelSlice<'a: 'b, 'b>(i32, &'b [Cell<Value<'a>>]);
+        impl <'a, 'b> fmt::Debug for LevelSlice<'a, 'b> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                if self.0.len() == 0 { return Ok(()) }
-                try!(write!(f, "("));
-                for a in self.0 {
-                    try!(match a.get() {
-                        Int(i) => write!(f, "{:?}", i),
-                        Float(x) => write!(f, "{:?}f", x),
-                        String(x) => write!(f, "\"{}\"", &*x),
-                        Data(ref data) => write!(f, "{{{:?} ??}}", data.tag),
-                        Function(ref func) => write!(f, "{:?}", &**func),
-                        Closure(ref closure) => write!(f, "<{} {:?} ??>", closure.function.name.as_ref().map(|s| &s[..]).unwrap_or("anon:"),
-                                                       { let p: *const _ = &*closure.function; p }),
-                        PartialApplication(ref app) => {
-                            let name = match app.function {
-                                Callable::Closure(ref closure) => {
-                                    closure.function.name.as_ref().map(|n| &n[..])
-                                        .unwrap_or("")
-                                }
-                                Callable::Extern(_) => "extern",
-                            };
-                            write!(f, "<App {} ??>", name)
-                        }
-                        TraitObject(ref object) => write!(f, "<{:?} ??>", object.tag),
-                        Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
-                        Bottom => write!(f, "Bottom")
-                    });
+                let level = self.0;
+                if level <= 0 { return Ok(()) }
+                for v in self.1 {
+                    try!(write!(f, "{:?}", Level(level - 1, &v.get())));
                 }
-                write!(f, ")")
+                Ok(())
             }
         }
-        match *self {
-            Int(i) => write!(f, "{:?}", i),
-            Float(x) => write!(f, "{:?}f", x),
-            String(x) => write!(f, "\"{:?}\"", &*x),
-            Data(ref data) => {
-                write!(f, "{{{:?} {:?}}}", data.tag, OneLevel(&data.fields))
-            }
-            Function(ref func) => write!(f, "{:?}", &**func),
-            Closure(ref closure) => {
-                let p: *const _ = &*closure.function;
-                let name = match closure.function.name {
-                    Some(ref name) => &name[..],
-                    None => ""
-                };
-                write!(f, "<{:?} {:?} {:?}>", name, p, OneLevel(&closure.upvars))
-            }
-            PartialApplication(ref app) => {
-                let name = match app.function {
-                    Callable::Closure(ref closure) => {
-                        closure.function.name.as_ref().map(|n| &n[..])
-                            .unwrap_or("")
+        impl <'a, 'b> fmt::Debug for Level<'a, 'b> {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let level = self.0;
+                if level <= 0 { return Ok(()) }
+                match *self.1 {
+                    Int(i) => write!(f, "{:?}", i),
+                    Float(x) => write!(f, "{:?}f", x),
+                    String(x) => write!(f, "\"{:?}\"", &*x),
+                    Data(ref data) => {
+                        write!(f, "{{{:?} {:?}}}", data.tag, LevelSlice(level - 1, &data.fields))
                     }
-                    Callable::Extern(_) => "extern",
-                };
-                write!(f, "<App {:?} {:?}>", name, OneLevel(&app.arguments))
+                    Function(ref func) => write!(f, "{:?}", &**func),
+                    Closure(ref closure) => {
+                        let p: *const _ = &*closure.function;
+                        let name = match closure.function.name {
+                            Some(ref name) => &name[..],
+                            None => ""
+                        };
+                        write!(f, "<{:?} {:?} {:?}>", name, p, LevelSlice(level - 1, &closure.upvars))
+                    }
+                    PartialApplication(ref app) => {
+                        let name = match app.function {
+                            Callable::Closure(ref closure) => {
+                                closure.function.name.as_ref().map(|n| &n[..])
+                                    .unwrap_or("")
+                            }
+                            Callable::Extern(_) => "extern",
+                        };
+                        write!(f, "<App {:?} {:?}>", name, LevelSlice(level - 1, &app.arguments))
+                    }
+                    TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, LevelSlice(level - 1, &object.fields)),
+                    Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
+                    Bottom => write!(f, "Bottom")
+                }
             }
-            TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, OneLevel(&object.fields)),
-            Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
-            Bottom => write!(f, "Bottom")
         }
+        write!(f, "{:?}", Level(3, self))
     }
 }
 
@@ -458,7 +448,6 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     fn find_field(&self, data_name: &InternedStr, field_name: &InternedStr) -> Option<VMIndex> {
         self.type_infos.id_to_type.get(data_name)
             .and_then(|typ| {
-                debug!("a aaa {:?}", typ);
                 match *typ {
                     ast::Type::Record(ref fields) => {
                         fields.iter()
@@ -591,6 +580,7 @@ impl <'a> VM<'a> {
         let io_unit = io(UNIT_TYPE.clone());
         let _ = self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length);
         let _ = self.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box prim::string_append);
+        let _ = self.extern_function("string_eq", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], BOOL_TYPE.clone(), box prim::string_eq);
         let _ = self.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
         let _ = self.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
         let _ = self.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box prim::error);
@@ -615,7 +605,7 @@ impl <'a> VM<'a> {
         
         // io_bind m f (): IO a -> (a -> IO b) -> IO b
         //     = f (m ())
-        let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), Slide(1), PushInt(0), TailCall(2)];
+        let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), PushInt(0), TailCall(2)];
         let f = ast::fn_type(vec![a.clone()], io(b.clone()));
         let io_bind_type = ast::fn_type(vec![io(a.clone()), f], io(b.clone()));
         self.add_bytecode("io_bind", io_bind_type, 3, io_bind);
@@ -799,9 +789,7 @@ impl <'a> VM<'a> {
                 self.push(value);
                 self.push(Int(0));
                 let mut stack = StackFrame::frame(self.stack.borrow_mut(), 2, None);
-                debug!("What {:?}", &stack[..]);
                 stack = try!(self.execute(stack, &[TailCall(1)], &BytecodeFunction::empty()));
-                    debug!("What {:?}", stack);
                 return Ok(if stack.len() > 0 { stack.pop() } else { Int(0) })
             }
         }
@@ -812,7 +800,6 @@ impl <'a> VM<'a> {
         self.push(Closure(closure));
         let mut stack = StackFrame::frame(self.stack.borrow_mut(), args, Some(closure));
         stack = try!(self.execute(stack, &closure.function.instructions, &closure.function));
-        debug!("What2 {:?}", stack);
         let x = if stack.len() > 0 { stack.pop() } else { Int(0) };
         Ok(x)
     }
@@ -829,10 +816,17 @@ impl <'a> VM<'a> {
     fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, Error> {
         //Make sure that the stack is not borrowed during the external function call
         //Necessary since we do not know what will happen during the function call
+        assert!(stack.len() > function.args + 1);
+        let function_index = stack.len() - function.args - 1;
         let StackFrame { stack, frame } = stack;
         drop(stack);
         let status = (function.function)(self);
         let mut stack = StackFrame { stack: self.stack.borrow_mut(), frame: frame };
+        let result = stack.pop();
+        while stack.len() > function_index {
+            stack.pop();
+        }
+        stack.push(result);
         match status {
             Status::Ok => Ok(stack),
             Status::Error => {
@@ -910,11 +904,12 @@ impl <'a> VM<'a> {
                 let total_args = app.arguments.len() as VMIndex + args;
                 let offset = stack.len() - args;
                 stack.insert_slice(offset, &app.arguments);
-                match closure.args().cmp(&total_args) {
+                let required_args = closure.args();
+                match total_args.cmp(&required_args) {
                     Ordering::Equal => {
                         self.execute_callable(stack, &app.function)
                     }
-                    Ordering::Greater => {
+                    Ordering::Less => {
                         let app = {
                             let whole_stack = &mut stack.stack.values[..];
                             let arg_start = whole_stack.len() - total_args as usize;
@@ -927,10 +922,27 @@ impl <'a> VM<'a> {
                         stack.push(PartialApplication(app));
                         Ok((None, stack))
                     }
-                    Ordering::Less => {
-                        //Should never happen as creating a partial application with more arguments
-                        //than a function needs should not happen
-                        panic!("Unimplemented")
+                    Ordering::Greater => {
+                        let excess_args = total_args - required_args;
+                        let d = {
+                            let whole_stack = &mut stack.stack.values[..];
+                            let arg_start = whole_stack.len() - excess_args as usize;
+                            let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
+                            self.new_data_and_collect(pre_stack, 0, fields)
+                        };
+                        for _ in 0..excess_args {
+                            stack.pop();
+                        }
+                        //Insert the excess args before the actual closure so it does not get
+                        //collected
+                        let offset = stack.len() - required_args - 1;
+                        stack.insert_slice(offset, &[Cell::new(Data(d))]);
+                        debug!("xxxxxx {:?}\n{:?}", &(*stack)[..], stack.stack.frames);
+                        self.execute_callable(stack, &app.function)
+                            .map(|mut tup| {
+                                tup.1.frame.excess = true;
+                                tup
+                            })
                     }
                 }
             }
@@ -940,7 +952,6 @@ impl <'a> VM<'a> {
 
     pub fn execute<'b>(&'b self, stack: StackFrame<'a, 'b>, instructions: &[Instruction], function: &BytecodeFunction) -> Result<StackFrame<'a, 'b>, Error> {
         let (mut cont, mut stack) = try!(self.execute_(stack, 0, instructions, function));
-        debug!("IS {:?}", stack.stack.frames);
         loop {
             let (closure, i) = match cont {
                 Some(closure) => {
@@ -957,7 +968,6 @@ impl <'a> VM<'a> {
                     let len = stack.len();
                     let excess = stack.frame.excess;
                     stack = stack.exit_scope();
-                    debug!("aaaaaaaaaaaaaaa\n{} {}  {:?}", stack.stack.values.len(), len, stack);
                     for _ in 0..(len + 1) {
                         stack.pop();
                     }
@@ -1004,7 +1014,6 @@ impl <'a> VM<'a> {
                         function: &BytecodeFunction
                        ) -> Result<(Option<GcPtr<ClosureData<'a>>>, StackFrame<'a, 'b>), Error> {
         debug!(">>>\nEnter frame {:?}: {:?}\n{:?}", function.name, &stack[..], stack.frame);
-        debug!("fffffffffffff {:?}", stack.stack.frames);
         while let Some(&instr) = instructions.get(index) {
             debug!("{:?}: {:?}", index, instr);
             match instr {
@@ -1038,7 +1047,6 @@ impl <'a> VM<'a> {
                     }
                 }
                 TailCall(mut args) => {
-                    debug!("{:?}", &stack.stack.values[..]);
                     if stack.frame.excess {
                         let i = stack.stack.values.len() - stack.len() as usize - 2;
                         match stack.stack.values[i] {
@@ -1124,6 +1132,7 @@ impl <'a> VM<'a> {
                     }
                 }
                 Slide(n) => {
+                    debug!("{:?}", &stack[..]);
                     let v = stack.pop();
                     for _ in 0..n {
                         stack.pop();

@@ -42,6 +42,9 @@ let eq_List: Eq a -> Eq (List a) = \d -> {
                     | Cons y ys -> d.(==) x y && f xs ys
             in f
 } in
+let eq_String: Eq String = {
+    (==) = string_eq
+} in
 
 type Ordering = | LT | EQ | GT
 in
@@ -158,5 +161,5 @@ let show_List: Show a -> Show (List a) = \d ->
         in string_append "[" (show2 xs)
     in { show }
 in
-{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, num_Int, num_Float, functor_Option, monad_Option, monad_List, monad_IO, show_List }
+{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, eq_String, num_Int, num_Float, functor_Option, monad_Option, monad_List, monad_IO, show_List }
 
