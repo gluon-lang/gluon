@@ -781,6 +781,7 @@ impl <'a> Typecheck<'a> {
                 let mut expected = expected.clone();
                 self.set_type(&mut expected);
                 self.set_type(&mut actual);
+                debug!("Mismatch {:?} <---> {:?}", expected, actual);
                 Err(TypeMismatch(expected, actual))
             }
             Err(err) => Err(err),
@@ -830,8 +831,12 @@ impl <'a> Typecheck<'a> {
             (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
                 self.unify_app(l, l_args, actual, &|last, r_arg| self.unify_(last, r_arg))
             }
-            (&Type::App(_, _), &Type::Data(ref r, ref r_args), ) => {
+            (&Type::App(_, _), &Type::Data(ref r, ref r_args)) => {
                 self.unify_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last))
+            }
+            (&Type::App(ref l1, ref l2), &Type::App(ref r1, ref r2)) => {
+                self.unify_(l1, r1)
+                    .and_then(|()| self.unify_(l2, r2))
             }
             _ => {
                 if expected == actual {
@@ -867,6 +872,7 @@ impl <'a> Typecheck<'a> {
                 self.union(r, &Type::Data(l.clone(), Vec::new()))
             }
             _ => {
+                debug!("aaaaaaaaaaa{:?} {:?}", l, r);
                 let l = Type::Data(l.clone(), l_args.iter().cloned().collect());
                 Err(TypeError::TypeMismatch(l, r.clone()))
             }
@@ -1342,6 +1348,31 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ_a("Option", vec![typ("Int")])));
+    }
+
+    #[test]
+    fn app_app_unify() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type Monad m = {
+    (>>=): m a -> (a -> m b) -> m b,
+    return: a -> m a
+} in
+type Test a = | T a
+in
+let monad_Test: Monad Test = {
+    (>>=) = \ta f -> case ta of
+                    | T a -> f a,
+    return = \x -> T x
+} in
+let (>>=) = monad_Test.(>>=)
+in
+let test: Test () = T 1 >>= \x -> monad_Test.return ()
+in test
+";
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ_a("Test", vec![UNIT_TYPE.clone()])));
     }
 
     #[test]
