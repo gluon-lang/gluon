@@ -48,6 +48,7 @@ impl <'a> Stack<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct StackFrame<'a: 'b, 'b> {
     pub stack: RefMut<'b, Stack<'a>>,
     pub frame: Frame<'a>
@@ -138,6 +139,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
             , new_upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
+            debug!("Store {:?}", frame);
         }
         StackFrame::frame(self.stack, args, new_upvars)
     }
@@ -146,6 +148,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.frames.pop().expect("Expected frame");
         let frame = self.stack.frames.last().cloned()
             .unwrap_or(Frame { offset: 0, upvars: None, instruction_index: 0, excess: false });
+        debug!("Restore {:?}", frame);
         StackFrame {
             stack: self.stack,
             frame: frame

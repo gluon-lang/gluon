@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, stdin};
 
 use vm::{VM, VMInt, Status, Value};
 use vm::stack::StackFrame;
@@ -28,11 +28,11 @@ pub fn string_append(vm: &VM) -> Status {
     Status::Ok
 }
 pub fn print_int(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     match stack[0] {
         Value::Int(i) => {
             print!("{}", i);
-            stack[0] = Value::Int(0);
+            //Realword returned as it is on top
         }
         x => panic!("print_int called on: {:?}", x)
     }
@@ -40,7 +40,8 @@ pub fn print_int(vm: &VM) -> Status {
 }
 
 pub fn read_file(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
+    stack.pop();//Pop "realworld"
     match stack.pop() {
         Value::String(s) => {
             let mut buffer = String::new();
@@ -57,7 +58,35 @@ pub fn read_file(vm: &VM) -> Status {
             stack.push(Value::String(s));
             status
         }
-        x => panic!("print_int called on: {:?}", x)
+        x => panic!("read_file called on: {:?}", x)
+    }
+}
+
+pub fn read_line(vm: &VM) -> Status  {
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let mut buffer = String::new();
+    let status = match stdin().read_line(&mut buffer) {
+        Ok(_) => Status::Ok,
+        Err(err) => {
+            use std::fmt::Write;
+            buffer.clear();
+            let _ = write!(&mut buffer, "{}", err);
+            Status::Error
+        }
+    };
+    stack[0] = Value::String(vm.gc.borrow_mut().alloc(&buffer[..]));
+    status
+}
+
+pub fn print(vm: &VM) -> Status  {
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
+    stack.pop();//Pop "realworld"
+    match stack.pop() {
+        Value::String(s) => {
+            println!("{}", s);
+            Status::Ok
+        }
+        x => panic!("print called on: {:?}", x)
     }
 }
 

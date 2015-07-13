@@ -40,7 +40,9 @@ fn main() {
     let _ = ::env_logger::init();
     let matches = App::new("embed_lang")
         .about("Executes embed_lang programs")
-        .arg(Arg::with_name("INPUT"))
+        .arg(Arg::with_name("INPUT")
+            .multiple(true)
+        )
         .arg(Arg::with_name("REPL")
              .short("i")
              .long("interactive")

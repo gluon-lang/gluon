@@ -55,6 +55,7 @@ impl fmt::Display for TypeError {
             UndefinedType(name) => write!(f, "Type `{}` is not defined", name),
             StringError(name) => write!(f, "{}", name),
             Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`", var, typ),
+            UndefinedField(ref typ, ref field) => write!(f, "Type `{}` does not have the field `{}`", typ, field),
             _ => write!(f, "{:?}", self)
         }
     }

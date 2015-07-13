@@ -132,6 +132,10 @@ let monad_List: Monad List = {
     (>>=) = \m f -> concatMap f m,
     return = \x -> Cons x Nil
 } in
+let monad_IO: Monad IO = {
+    (>>=) = io_bind,
+    return = io_return
+} in
 type Show a = {
     show : a -> String
 } in
@@ -154,5 +158,5 @@ let show_List: Show a -> Show (List a) = \d ->
         in string_append "[" (show2 xs)
     in { show }
 in
-{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, num_Int, num_Float, functor_Option, monad_Option, monad_List, show_List }
+{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, num_Int, num_Float, functor_Option, monad_Option, monad_List, monad_IO, show_List }
 
