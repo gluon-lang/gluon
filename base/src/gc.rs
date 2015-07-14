@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::rt::heap::{allocate, deallocate};
 use std::ops::{Deref, DerefMut};
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::any::Any;
 
 
@@ -178,13 +178,18 @@ pub trait Traverseable {
     fn traverse(&self, func: &mut Gc);
 }
 
-impl Traverseable for RefCell<Box<Any>> {
-    fn traverse(&self, _: &mut Gc) { }
+impl <T: ?Sized> Traverseable for Box<T>
+    where T: Traverseable {
+    fn traverse(&self, gc: &mut Gc) { (**self).traverse(gc) }
 }
 
 impl <'a, T: ?Sized> Traverseable for &'a T
     where T: Traverseable {
     fn traverse(&self, gc: &mut Gc) { (**self).traverse(gc); }
+}
+
+impl Traverseable for Any {
+    fn traverse(&self, _: &mut Gc) { }
 }
 
 impl Traverseable for () {

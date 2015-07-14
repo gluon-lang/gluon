@@ -13,6 +13,7 @@ use compiler::Instruction::*;
 use base::interner::{Interner, InternedStr};
 use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move};
 use fixed::*;
+use self::api::define_function;
 
 use self::Named::*;
 
@@ -32,18 +33,20 @@ use vm::Value::{
 
 pub use self::stack::{Stack, StackFrame};
 
+#[macro_use]
+pub mod api;
 mod stack;
 mod primitives;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Userdata_ {
-    pub data: GcPtr<RefCell<Box<Any>>>
+    pub data: GcPtr<Box<Any>>
 }
 
 impl Userdata_ {
     pub fn new<T: Any>(vm: &VM, v: T) -> Userdata_ {
         let v: Box<Any> = box v;
-        Userdata_ { data: vm.gc.borrow_mut().alloc(Move(RefCell::new(v))) }
+        Userdata_ { data: vm.gc.borrow_mut().alloc(Move(v)) }
     }
     fn ptr(&self) -> *const () {
         let p: *const _ = &*self.data;
@@ -573,23 +576,23 @@ impl <'a> VM<'a> {
 
     fn add_primitives(&self) {
         use self::primitives as prim;
+        fn f1<A, R>(f: fn (A) -> R) -> fn (A) -> R {
+            f
+        }
         let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("a") });
         let b = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("b") });
         let array_a = Type::Array(box a.clone());
         let io = |t| ast::type_con(self.intern("IO"), vec![t]);
-        let io_unit = io(UNIT_TYPE.clone());
         let _ = self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length);
         let _ = self.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box prim::string_append);
         let _ = self.extern_function("string_eq", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], BOOL_TYPE.clone(), box prim::string_eq);
         let _ = self.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
         let _ = self.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
         let _ = self.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box prim::error);
+        let _ = self.extern_function("error", vec![STRING_TYPE.clone()], a.clone(), box prim::error);
 
         //IO functions
-        let _ = self.extern_function_io("print_int",
-                                     2,
-                                     ast::fn_type(vec![INT_TYPE.clone()], io_unit),
-                                     box prim::print_int);
+        let _ = define_function(self, "print_int", f1(prim::print_int));
         let _ = self.extern_function_io("read_file",
                                         2,
                                         ast::fn_type(vec![STRING_TYPE.clone()], io(STRING_TYPE.clone())),
@@ -816,7 +819,7 @@ impl <'a> VM<'a> {
     fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, Error> {
         //Make sure that the stack is not borrowed during the external function call
         //Necessary since we do not know what will happen during the function call
-        assert!(stack.len() > function.args + 1);
+        assert!(stack.len() >= function.args + 1);
         let function_index = stack.len() - function.args - 1;
         let StackFrame { stack, frame } = stack;
         drop(stack);
@@ -1580,6 +1583,18 @@ in f 10 2 1 #Int+ g 2
 r"
 print_int 123
 ";
+        let mut vm = VM::new();
+        run_expr(&mut vm, text)
+            .unwrap_or_else(|err| panic!("{}", err));
+    }
+    #[test]
+    fn no_io_eval() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+let x = io_bind (print_int 1) (\x -> error "NOOOOOOOO")
+in { x }
+"#;
         let mut vm = VM::new();
         run_expr(&mut vm, text)
             .unwrap_or_else(|err| panic!("{}", err));

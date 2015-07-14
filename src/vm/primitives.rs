@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{Read, stdin};
 
+use vm::api::IO;
 use vm::{VM, VMInt, Status, Value};
 use vm::stack::StackFrame;
 
@@ -40,16 +41,9 @@ pub fn string_eq(vm: &VM) -> Status {
     }
     Status::Ok
 }
-pub fn print_int(vm: &VM) -> Status {
-    let stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
-    match stack[0] {
-        Value::Int(i) => {
-            print!("{}", i);
-            //Realword returned as it is on top
-        }
-        x => panic!("print_int called on: {:?}", x)
-    }
-    Status::Ok
+pub fn print_int(i: VMInt) -> IO<()> {
+    print!("{}", i);
+    IO(())
 }
 
 pub fn read_file(vm: &VM) -> Status {

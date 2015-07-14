@@ -22,10 +22,9 @@ mod substitution;
 mod kindcheck;
 pub mod typecheck;
 pub mod compiler;
+#[macro_use]
 pub mod vm;
 mod fixed;
-#[macro_use]
-pub mod api;
 
 
 #[cfg(test)]
