@@ -1,5 +1,5 @@
 use base::ast;
-use vm::{VM, VMResult, Status, BytecodeFunction, Value, Userdata_, StackFrame, VMInt, Error};
+use vm::{VM, VMResult, Status, BytecodeFunction, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
 use typecheck::{TcType, Typed, Type, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE, STRING_TYPE};
 use compiler::Instruction::Call;
 use compiler::VMIndex;
@@ -21,11 +21,11 @@ pub trait VMType {
 pub trait Pushable<'a> : VMType {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status;
 }
-pub trait Getable<'a> {
-    fn from_value(vm: &VM<'a>, value: Value<'a>) -> Option<Self>;
+pub trait Getable<'a, 'vm> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Self>;
 }
-pub trait VMValue<'a> : Pushable<'a> + Getable<'a> { }
-impl <'a, T> VMValue<'a> for T where T: Pushable<'a> + Getable<'a> { }
+pub trait VMValue<'a, 'vm> : Pushable<'a> + Getable<'a, 'vm> { }
+impl <'a, 'vm, T> VMValue<'a, 'vm> for T where T: Pushable<'a> + Getable<'a, 'vm> { }
 
 impl VMType for () {
     fn vm_type<'a>(_: &VM) -> &'a TcType {
@@ -37,8 +37,8 @@ impl <'a> Pushable<'a> for () {
         Status::Ok
     }
 }
-impl <'a> Getable<'a> for () {
-    fn from_value(_: &VM<'a>, _: Value) -> Option<()> {
+impl <'a, 'vm> Getable<'a, 'vm> for () {
+    fn from_value(_: &'vm VM<'a>, _: Value) -> Option<()> {
         Some(())
     }
 }
@@ -54,8 +54,8 @@ impl <'a> Pushable<'a> for VMInt {
         Status::Ok
     }
 }
-impl <'a> Getable<'a> for VMInt {
-    fn from_value(_: &VM<'a>, value: Value<'a>) -> Option<VMInt> {
+impl <'a, 'vm> Getable<'a, 'vm> for VMInt {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<VMInt> {
         match value {
             Value::Int(i) => Some(i),
             _ => None
@@ -73,8 +73,8 @@ impl <'a> Pushable<'a> for f64 {
         Status::Ok
     }
 }
-impl <'a> Getable<'a> for f64 {
-    fn from_value(_: &VM<'a>, value: Value<'a>) -> Option<f64> {
+impl <'a, 'vm> Getable<'a, 'vm> for f64 {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<f64> {
         match value {
             Value::Float(f) => Some(f),
             _ => None
@@ -92,8 +92,8 @@ impl <'a> Pushable<'a> for bool {
         Status::Ok
     }
 }
-impl <'a> Getable<'a> for bool {
-    fn from_value(_: &VM<'a>, value: Value<'a>) -> Option<bool> {
+impl <'a, 'vm> Getable<'a, 'vm> for bool {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<bool> {
         match value {
             Value::Int(1) => Some(true),
             Value::Int(0) => Some(false),
@@ -101,7 +101,17 @@ impl <'a> Getable<'a> for bool {
         }
     }
 }
+impl VMType for str {
+    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
+        &STRING_TYPE
+    }
+}
 impl <'s> VMType for &'s str {
+    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
+        &STRING_TYPE
+    }
+}
+impl VMType for String {
     fn vm_type<'a>(_: &'a VM) -> &'a TcType {
         &STRING_TYPE
     }
@@ -113,14 +123,22 @@ impl <'a, 's> Pushable<'a> for &'s str {
         Status::Ok
     }
 }
-impl <'a> Getable<'a> for String {
-    fn from_value(_: &VM<'a>, value: Value<'a>) -> Option<String> {
+impl <'a,'vm> Getable<'a, 'vm> for String {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<String> {
         match value {
             Value::String(i) => Some(String::from(&i[..])),
             _ => None
         }
     }
 }
+impl <'a> Pushable<'a> for String {
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        let s = vm.alloc(&mut stack.stack.values, &self[..]);
+        stack.push(Value::String(s));
+        Status::Ok
+    }
+}
+
 impl <T: Any> VMType for Box<T> {
     fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
         vm.get_type::<T>()
@@ -144,8 +162,8 @@ impl <'a, T: Any> Pushable<'a> for *mut T {
         Status::Ok
     }
 }
-impl <'a, T: Any> Getable<'a> for *mut T {
-    fn from_value(_: &VM<'a>, value: Value<'a>) -> Option<*mut T> {
+impl <'a, 'vm, T: Any> Getable<'a, 'vm> for *mut T {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<*mut T> {
         match value {
             Value::Userdata(v) => v.data.downcast_ref::<*mut T>().map(|x| *x),
             _ => None
@@ -189,6 +207,33 @@ impl <'a, T: Pushable<'a> + Any> Pushable<'a> for IO<T> {
     }
 }
 
+impl <'r, T: Any> VMType for Root<'r, T> {
+    fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
+        vm.get_type::<T>()
+    }
+}
+impl <'a, 'vm, T: Any> Getable<'a, 'vm> for Root<'vm, T> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Root<'vm, T>> {
+        match value {
+            Value::Userdata(v) => vm.root(v.data),
+            _ => None
+        }
+    }
+}
+
+impl <'r> VMType for RootStr<'r> {
+    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
+        &STRING_TYPE
+    }
+}
+impl <'a, 'vm> Getable<'a, 'vm> for RootStr<'vm> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<RootStr<'vm>> {
+        match value {
+            Value::String(v) => Some(vm.root_string(v)),
+            _ => None
+        }
+    }
+}
 
 fn vm_type<'a, T: ?Sized + VMType>(vm: &'a VM) -> &'a TcType {
     <T as VMType>::vm_type(vm)
@@ -224,13 +269,13 @@ impl <'a> Iterator for ArgIterator<'a> {
 
 macro_rules! make_get {
     ($($args:ident),*) => (
-impl <'a, 'b, $($args : VMValue<'b>,)* R: VMValue<'b>> Get<'a, 'b> for Callable<'a, 'b, ($($args,)*), R> {
+impl <'a, 'b, $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a>> Get<'a, 'b> for Callable<'a, 'b, ($($args,)*), R> {
     fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Callable<'a, 'b, ($($args,)*), R>> {
         let value = match vm.get_global(name) {
             Some(global) => {
                 let mut arg_iter = arg_iter(global.type_of());
                 let ok = $({
-                    arg_iter.next().unwrap() == vm_type::<$args>(vm)
+                    arg_iter.next().expect("Arg iter") == vm_type::<$args>(vm)
                     } &&)* true;
                 if arg_iter.next().is_none() && ok && arg_iter.typ == vm_type::<R>(vm) {
                     Some(FunctionRef { value: global.value.get(), _marker: PhantomData })
@@ -282,13 +327,13 @@ impl <'a, Args, R> Pushable<'a> for FunctionRef<'a, Args, R> {
         Status::Ok
     }
 }
-impl <'a, Args, R> Getable<'a> for FunctionRef<'a, Args, R> {
-    fn from_value(_: &VM<'a>, value: Value<'a>) -> Option<FunctionRef<'a, Args, R>> {
+impl <'a, 'vm, Args, R> Getable<'a, 'vm> for FunctionRef<'a, Args, R> {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<FunctionRef<'a, Args, R>> {
         Some(FunctionRef { value: value, _marker: PhantomData })//TODO not type safe
     }
 }
 
-impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
+impl <'a, 'b, A: Pushable<'b>, R: Getable<'b, 'a>> Callable<'a, 'b, (A,), R> {
     pub fn call(&mut self, a: A) -> Result<R, Error> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
@@ -300,7 +345,7 @@ impl <'a, 'b, A: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A,), R> {
         }
     }
 }
-impl <'a, 'b, A: VMValue<'b>, B: VMValue<'b>, R: VMValue<'b>> Callable<'a, 'b, (A, B), R> {
+impl <'a, 'b, A: Pushable<'b>, B: Pushable<'b>, R: Getable<'b, 'a>> Callable<'a, 'b, (A, B), R> {
     pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
@@ -319,8 +364,8 @@ pub fn get_function<'a, 'b, T: Get<'a, 'b>>(vm: &'a VM<'b>, name: &str) -> Optio
 }
 
 
-pub trait VMFunction<'a> {
-    fn unpack_and_call(&self, vm: &VM<'a>) -> Status;
+pub trait VMFunction<'a, 'vm> {
+    fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status;
 }
 macro_rules! count {
     () => { 0 };
@@ -338,18 +383,18 @@ impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        Type::Function(args, box make_type::<R>(vm))
+        ast::fn_type(args, make_type::<R>(vm))
     }
 }
 
-impl <'a, $($args : VMValue<'a>,)* R: Pushable<'a>> VMFunction<'a> for fn ($($args),*) -> R {
+impl <'a, 'vm, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for fn ($($args),*) -> R {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
-    fn unpack_and_call(&self, vm: &VM<'a>) -> Status {
+    fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0;
         $(let $args = {
-            let x = $args::from_value(vm, stack[i].clone()).unwrap();
+            let x = $args::from_value(vm, stack[i].clone()).expect(stringify!($args));
             i += 1;
             x
         });*;
@@ -368,14 +413,14 @@ impl <'a, 's, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's 
         Type::Function(args, box make_type::<R>(vm))
     }
 }
-impl <'a, 's, $($args : VMValue<'a>,)* R: Pushable<'a>> VMFunction<'a> for Box<Fn($($args),*) -> R + 's> {
+impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Box<Fn($($args),*) -> R + 's> {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
-    fn unpack_and_call(&self, vm: &VM<'a>) -> Status {
+    fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         let n_args = count!($($args),*);
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0;
         $(let $args = {
-            let x = $args::from_value(vm, stack[i].clone()).unwrap();
+            let x = $args::from_value(vm, stack[i].clone()).expect(stringify!($args));
             i += 1;
             x
         });*;
@@ -406,29 +451,38 @@ macro_rules! vm_function {
 }
 
 
-pub fn define_function<'a, F>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()>
-where F: VMFunction<'a> + VMType + 'static {
+pub fn define_function<'a, 'vm, F>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()>
+where F: VMFunction<'a, 'vm> + VMType + 'static {
     let typ = make_type::<F>(vm);
-    let args = match typ {
-        Type::Function(ref args, ref return_type) => {
-            let io_arg = match **return_type {
-                ast::Type::Data(ast::TypeConstructor::Data(name), _) if name == "IO" => 1,
-                _ => 0
-            };
-            io_arg + args.len() as VMIndex
-        }
-        _ => panic!()
+    let args = {
+        let mut iter = arg_iter(&typ);
+        let args = iter.by_ref().count() as VMIndex;
+        args + (match *iter.typ {
+            ast::Type::Data(ast::TypeConstructor::Data(name), _) if name == "IO" => 1,
+            _ => 0
+        })
     };
-    vm.extern_function_io(name, args, typ, box move |vm| f.unpack_and_call(vm))
+    let f = box move |vm: &'vm VM<'a>| {
+        f.unpack_and_call(vm)
+    };
+    unsafe {
+        //The VM guarantess that it only ever calls this function with itself which should
+        //make sure that ignoring the lifetime is safe
+        let extern_fn = ::std::mem::transmute
+                ::<Box<Fn(&'vm VM<'a>) -> Status + 'static>,
+                   Box<Fn(&VM<'a>) -> Status + 'static>>(f);
+        vm.extern_function_io(name, args, typ, extern_fn)
+    }
 }
 #[cfg(test)]
 mod tests {
     use super::{Get, Callable, define_function};
 
-    use vm::{VM, VMInt, load_script};
+    use vm::{VM, VMInt, Value, Root, RootStr, load_script, run_expr};
 
     #[test]
     fn call_function() {
+        let _ = ::env_logger::init();
         let add10 =
 r"
 let add10 : Int -> Int = \x -> x #Int+ 10 in add10
@@ -455,6 +509,7 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
 
     #[test]
     fn pass_userdata() {
+        let _ = ::env_logger::init();
         let s =
 r"
 let id : Test -> Test = \x -> x in id
@@ -490,5 +545,50 @@ let id : Test -> Test = \x -> x in id
         let result = f.call(&mut test).unwrap();
         assert!(result);
         assert_eq!(test.x, 123 * 2);
+    }
+    #[test]
+    fn root_data() {
+        let _ = ::env_logger::init();
+
+        struct Test(VMInt);
+        let expr =
+r#"
+\x -> test x 1
+"#;
+        let mut vm = VM::new();
+        fn test(r: Root<Test>, i: VMInt) -> VMInt {
+            r.0 + i
+        }
+        vm.register_type::<Test>("Test")
+            .unwrap_or_else(|_| panic!("Could not add type"));
+        define_function(&vm, "test", { let test: fn (_, _) -> _ = test; test }).unwrap();
+        load_script(&vm, "script_fn", expr)
+            .unwrap_or_else(|err| panic!("{}", err));
+        let mut script_fn: Callable<(Box<Test>,), VMInt> = Get::get_function(&vm, "script_fn")
+            .expect("No function script_fn");
+        let result = script_fn.call(Box::new(Test(123)))
+            .unwrap();
+        assert_eq!(result, 124);
+    }
+    #[test]
+    fn root_string() {
+        let _ = ::env_logger::init();
+        let expr =
+r#"
+test "hello"
+"#;
+        let mut vm = VM::new();
+        fn test(s: RootStr) -> String {
+            let mut result = String::from(&s[..]);
+            result.push_str(" world");
+            result
+        }
+        define_function(&vm, "test", { let test: fn (_) -> _ = test; test }).unwrap();
+        let result = run_expr(&mut vm, expr)
+            .unwrap_or_else(|err| panic!("{}", err));
+        match result {
+            Value::String(s) => assert_eq!(&s[..], "hello world"),
+            x => panic!("Expected string {:?}", x)
+        }
     }
 }

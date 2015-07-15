@@ -171,6 +171,19 @@ impl <T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
     }
 }
 
+impl <T: Traverseable + 'static> GcPtr<T> {
+    pub fn as_traverseable(self) -> GcPtr<Traverseable> {
+        GcPtr { ptr: self.ptr as *const Traverseable }
+    }
+}
+impl GcPtr<str> {
+    pub fn as_traverseable_string(self) -> GcPtr<Traverseable> {
+        //As there is nothing to traverse in a str we can safely cast it to *const u8 and use
+        //u8's Traverseable impl
+        GcPtr { ptr: self.as_ptr() as *const Traverseable }
+    }
+}
+
 ///Trait which must be implemented on all root types which contain GcPtr
 ///The type implementing Traverseable must call traverse on each of its fields
 ///which in turn contains GcPtr

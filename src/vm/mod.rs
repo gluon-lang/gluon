@@ -5,6 +5,7 @@ use std::intrinsics::type_name;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::cmp::Ordering;
+use std::ops::Deref;
 use base::ast;
 use base::ast::Type;
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, BOOL_TYPE, STRING_TYPE, INT_TYPE, FLOAT_TYPE, UNIT_TYPE, TcIdent, TcType};
@@ -348,6 +349,33 @@ macro_rules! get_global {
     )
 }
 
+pub struct Root<'a, T: ?Sized + 'a> {
+    roots: &'a RefCell<Vec<GcPtr<Traverseable + 'static>>>,
+    ptr: *const T
+}
+
+impl <'a, T: ?Sized> Drop for Root<'a, T> {
+    fn drop(&mut self) {
+        self.roots.borrow_mut().pop();//TODO not safe if the root changes order of being dropped with another root
+    }
+}
+
+impl <'a, T: ?Sized> Deref for Root<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        unsafe { &*self.ptr }
+    }
+}
+
+pub struct RootStr<'a>(Root<'a, str>);
+
+impl <'a> Deref for RootStr<'a> {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
 pub enum Status {
     Ok,
     Error
@@ -406,6 +434,7 @@ pub struct VM<'a> {
     interner: RefCell<Interner>,
     names: RefCell<HashMap<InternedStr, Named>>,
     gc: RefCell<Gc>,
+    roots: RefCell<Vec<GcPtr<Traverseable>>>,
     //Since the vm will be retrieved often and the borrowing from a RefCell does not work
     //it needs to be in a unsafe cell
     pub stack: RefCell<Stack<'a>>
@@ -545,7 +574,8 @@ impl <'a, 'b> Traverseable for Def<'a, 'b> {
 struct Roots<'a: 'b, 'b> {
     globals: &'b FixedVec<Global<'a>>,
     stack: &'b mut [Value<'a>],
-    interner: &'b mut Interner
+    interner: &'b mut Interner,
+    roots: Ref<'b, Vec<GcPtr<Traverseable>>>
 }
 impl <'a, 'b> Traverseable for Roots<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
@@ -555,6 +585,7 @@ impl <'a, 'b> Traverseable for Roots<'a, 'b> {
         self.stack.traverse(gc);
         //Also need to check the interned string table
         self.interner.traverse(gc);
+        self.roots.traverse(gc);
     }
 }
 
@@ -568,7 +599,8 @@ impl <'a> VM<'a> {
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: RefCell::new(Gc::new()),
-            stack: RefCell::new(Stack::new())
+            stack: RefCell::new(Stack::new()),
+            roots: RefCell::new(Vec::new())
         };
         vm.add_primitives();
         vm
@@ -742,6 +774,21 @@ impl <'a> VM<'a> {
         })
     }
 
+    pub fn root<T: Any>(&self, v: GcPtr<Box<Any>>) -> Option<Root<T>> {
+        match v.downcast_ref::<T>().or_else(|| v.downcast_ref::<Box<T>>().map(|p| &**p)) {
+            Some(ptr) => {
+                self.roots.borrow_mut().push(v.as_traverseable());
+                Some(Root { roots: &self.roots, ptr: ptr })
+            }
+            None => None
+        }
+    }
+
+    pub fn root_string(&self, ptr: GcPtr<str>) -> RootStr {
+        self.roots.borrow_mut().push(ptr.as_traverseable_string());
+        RootStr(Root { roots: &self.roots, ptr: &*ptr })
+    }
+
     #[allow(dead_code)]
     fn new_data(&self, tag: VMTag, fields: &mut [Value<'a>]) -> Value<'a> {
         Data(self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields }))
@@ -759,7 +806,12 @@ impl <'a> VM<'a> {
     fn with_roots<F, R>(&self, stack: &mut [Value<'a>], f: F) -> R
         where F: for<'b> FnOnce(&mut Gc, Roots<'a, 'b>) -> R {
         let mut interner = self.interner.borrow_mut();
-        let roots = Roots { globals: &self.globals, stack: stack, interner: &mut *interner };
+        let roots = Roots {
+            globals: &self.globals,
+            stack: stack,
+            interner: &mut *interner,
+            roots: self.roots.borrow()
+        };
         let mut gc = self.gc.borrow_mut();
         f(&mut gc, roots)
     }
