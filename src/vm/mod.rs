@@ -611,6 +611,9 @@ impl <'a> VM<'a> {
         fn f1<A, R>(f: fn (A) -> R) -> fn (A) -> R {
             f
         }
+        fn f3<A, B, C, R>(f: fn (A, B, C) -> R) -> fn (A, B, C) -> R {
+            f
+        }
         let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("a") });
         let b = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("b") });
         let array_a = Type::Array(box a.clone());
@@ -618,6 +621,7 @@ impl <'a> VM<'a> {
         let _ = self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length);
         let _ = self.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box prim::string_append);
         let _ = self.extern_function("string_eq", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], BOOL_TYPE.clone(), box prim::string_eq);
+        let _ = define_function(self, "string_slice", f3(prim::string_slice));
         let _ = self.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
         let _ = self.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
         let _ = self.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box prim::error);
@@ -637,6 +641,10 @@ impl <'a> VM<'a> {
                                         2,
                                         ast::fn_type(vec![STRING_TYPE.clone()], io(UNIT_TYPE.clone())),
                                         box prim::print);
+        let _ = self.extern_function_io("run_expr",
+                                        2,
+                                        ast::fn_type(vec![STRING_TYPE.clone()], io(STRING_TYPE.clone())),
+                                     box prim::run_expr);
         
         // io_bind m f (): IO a -> (a -> IO b) -> IO b
         //     = f (m ())

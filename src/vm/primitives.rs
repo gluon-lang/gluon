@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{Read, stdin};
 
 use vm::api::IO;
-use vm::{VM, VMInt, Status, Value};
+use vm::{VM, VMInt, Status, Value, RootStr};
 use vm::stack::StackFrame;
 
 pub fn array_length(vm: &VM) -> Status {
@@ -40,6 +40,9 @@ pub fn string_eq(vm: &VM) -> Status {
         _ => panic!()
     }
     Status::Ok
+}
+pub fn string_slice(s: RootStr, start: VMInt, end: VMInt) -> String {
+    String::from(&s[start as usize..end as usize])
 }
 pub fn print_int(i: VMInt) -> IO<()> {
     print!("{}", i);
@@ -113,4 +116,31 @@ pub fn error(_: &VM) -> Status {
     //We expect a string as an argument to this function but we only return Status::Error
     //and let the caller take care of printing the message
     Status::Error
+}
+
+pub fn run_expr(vm: &VM) -> Status {
+    let mut stack = StackFrame::frame(vm.stack.borrow_mut(), 2, None);
+    let s = stack[0];
+    match s {
+        Value::String(s) => {
+            drop(stack);
+            let run_result = ::vm::run_expr(vm, &s);
+            stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
+            match run_result {
+                Ok(value) => {
+                    let fmt = format!("{:?}", value);
+                    let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
+                    stack.push(Value::String(result));
+                    Status::Ok
+                }
+                Err(err) => {
+                    let fmt = format!("{:?}", err);
+                    let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
+                    stack.push(Value::String(result));
+                    Status::Ok
+                }
+            }
+        }
+        x => panic!("Expected string got {:?}", x)
+    }
 }
