@@ -347,6 +347,13 @@ impl <Id> Type<Id> {
             Type::Builtin(_) | Type::Generic(_) => u32::max_value(),
         }
     }
+
+    pub fn return_type(&self) -> &Type<Id> {
+        match *self {
+            Type::Function(_, ref return_type) => return_type.return_type(),
+            _ => self
+        }
+    }
 }
 
 impl TypeVariable {

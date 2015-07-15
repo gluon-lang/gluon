@@ -5,7 +5,7 @@ use gc::GcPtr;
 use vm::{ClosureData, Value, VM};
 use compiler::VMIndex;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Frame<'a> {
     pub offset: VMIndex,
     pub instruction_index: usize,
@@ -139,7 +139,6 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
             , new_upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
-            debug!("Store {:?}", frame);
         }
         StackFrame::frame(self.stack, args, new_upvars)
     }
@@ -148,7 +147,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.frames.pop().expect("Expected frame");
         let frame = self.stack.frames.last().cloned()
             .unwrap_or(Frame { offset: 0, upvars: None, instruction_index: 0, excess: false });
-        debug!("Restore {:?}", frame);
+        debug!("Restore {} {:?}", self.stack.frames.len(), frame);
         StackFrame {
             stack: self.stack,
             frame: frame
@@ -174,6 +173,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         let offset = stack.len() - args;
         let frame = Frame { offset: offset, instruction_index: 0, upvars: upvars, excess: false };
         stack.frames.push(frame);
+        debug!("Store {} {:?}", stack.frames.len(), frame);
         StackFrame { stack: stack, frame: frame }
     }
 }
@@ -244,5 +244,33 @@ impl <'a, 'b> Index<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
 impl <'a, 'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, range: RangeFrom<VMIndex>) -> &mut [Value<'a>] {
         &mut self.stack.values[(range.start + self.frame.offset) as usize..]
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vm::Value::*;
+    use std::cell::RefCell;
+    #[test]
+    fn remove_range() {
+        let stack = RefCell::new(Stack::new());
+        let mut stack = stack.borrow_mut();
+        stack.push(Int(0));
+        stack.push(Int(1));
+        let mut frame = StackFrame::frame(stack, 2, None);
+        frame.push(Int(2));
+        frame.push(Int(3));
+        frame = frame.enter_scope(1, None);
+        frame.push(Int(4));
+        frame.push(Int(5));
+        frame.push(Int(6));
+        frame = frame.exit_scope();
+        frame.remove_range(2, 5);
+        assert_eq!(frame.stack.values, vec![Int(0), Int(1), Int(5), Int(6)]);
+        frame = frame.exit_scope();
+        frame.remove_range(1, 3);
+        assert_eq!(frame.stack.values, vec![Int(0), Int(6)]);
     }
 }

@@ -550,6 +550,9 @@ impl <'a> Typecheck<'a> {
                             try!(self.kindcheck(&mut bind.name.typ, &mut []));
                         }
                         self.stack_var(bind.name.name.clone(), bind.name.typ.clone());
+                        if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
+                            lambda.id.name = bind.name.name;
+                        }
                     }
                 }
                 let mut types = Vec::new();
@@ -664,6 +667,8 @@ impl <'a> Typecheck<'a> {
                 Ok(typ)
             }
             ast::Expr::Lambda(ref mut lambda) => {
+                let loc = format!("lambda:{}", expr.location);
+                lambda.id.name = self.interner.intern(self.gc, &loc);
                 let typ = try!(self.typecheck_lambda(&mut lambda.arguments, &mut lambda.body));
                 lambda.id.typ = typ.clone();
                 Ok(typ)

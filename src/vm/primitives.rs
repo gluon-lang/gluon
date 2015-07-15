@@ -15,6 +15,9 @@ pub fn array_length(vm: &VM) -> Status {
     }
     Status::Ok
 }
+pub fn string_length(s: RootStr) -> VMInt {
+    s.len() as VMInt
+}
 pub fn string_append(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     match (&stack[0], &stack[1]) {
@@ -131,16 +134,42 @@ pub fn run_expr(vm: &VM) -> Status {
                     let fmt = format!("{:?}", value);
                     let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
                     stack.push(Value::String(result));
-                    Status::Ok
                 }
                 Err(err) => {
-                    let fmt = format!("{:?}", err);
+                    let fmt = format!("{}", err);
                     let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
                     stack.push(Value::String(result));
-                    Status::Ok
                 }
             }
+            stack.exit_scope();
+            Status::Ok
         }
         x => panic!("Expected string got {:?}", x)
+    }
+}
+
+pub fn load_script(vm: &VM) -> Status {
+    let mut stack = StackFrame::frame(vm.stack.borrow_mut(), 3, None);
+    match (stack[0], stack[1]) {
+        (Value::String(name), Value::String(expr)) => {
+            drop(stack);
+            let run_result = ::vm::load_script(vm, &name, &expr);
+            stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+            match run_result {
+                Ok(()) => {
+                    let fmt = format!("Loaded {}", name);
+                    let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
+                    stack.push(Value::String(result));
+                }
+                Err(err) => {
+                    let fmt = format!("{}", err);
+                    let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
+                    stack.push(Value::String(result));
+                }
+            }
+            stack.exit_scope();
+            Status::Ok
+        }
+        x => panic!("Expected 2 strings got {:?}", x)
     }
 }
