@@ -2,7 +2,8 @@ use std::fs::File;
 use std::io::{Read, stdin};
 
 use vm::api::IO;
-use vm::{VM, VMInt, Status, Value, RootStr};
+use vm::{VM, BytecodeFunction, VMInt, Status, Value, RootStr};
+use compiler::Instruction::Call;
 use vm::stack::StackFrame;
 
 pub fn array_length(vm: &VM) -> Status {
@@ -46,6 +47,15 @@ pub fn string_eq(vm: &VM) -> Status {
 }
 pub fn string_slice(s: RootStr, start: VMInt, end: VMInt) -> String {
     String::from(&s[start as usize..end as usize])
+}
+pub fn string_find(haystack: RootStr, needle: RootStr) -> Option<VMInt> {
+    haystack.find(&needle[..]).map(|i| i as VMInt)
+}
+pub fn string_rfind(haystack: RootStr, needle: RootStr) -> Option<VMInt> {
+    haystack.rfind(&needle[..]).map(|i| i as VMInt)
+}
+pub fn string_trim(s: RootStr) -> String {
+    String::from(s.trim())
 }
 pub fn print_int(i: VMInt) -> IO<()> {
     print!("{}", i);
@@ -119,6 +129,43 @@ pub fn error(_: &VM) -> Status {
     //We expect a string as an argument to this function but we only return Status::Error
     //and let the caller take care of printing the message
     Status::Error
+}
+
+/// IO a -> (String -> IO a) -> IO a
+pub fn catch_io(vm: &VM) -> Status {
+    let mut stack = StackFrame::frame(vm.stack.borrow_mut(), 3, None);
+    let frame_level = stack.stack.frames.len();
+    let action = stack[0];
+    stack.push(action);
+    stack.push(Value::Int(0));
+    match vm.execute(stack, &[Call(1)], &BytecodeFunction::empty()) {
+        Ok(new_stack) => {
+            new_stack.exit_scope();
+            Status::Ok
+        }
+        Err(err) => {
+            stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+            while stack.stack.frames.len() > frame_level {
+                stack = stack.exit_scope();
+            }
+            let callback = stack[1];
+            stack.push(callback);
+            let fmt = format!("{}", err);
+            let result = Value::String(vm.alloc(&mut stack.stack.values, &fmt[..]));
+            stack.push(result);
+            stack.push(Value::Int(0));
+            match vm.execute(stack, &[Call(2)], &BytecodeFunction::empty()) {
+                Ok(stack) => { stack.exit_scope(); Status::Ok }
+                Err(err) => {
+                    stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+                    let fmt = format!("{}", err);
+                    let result = Value::String(vm.alloc(&mut stack.stack.values, &fmt[..]));
+                    stack.push(result);
+                    Status::Error
+                }
+            }
+        }
+    }
 }
 
 pub fn run_expr(vm: &VM) -> Status {

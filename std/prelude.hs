@@ -1,4 +1,5 @@
 type Option a = | None | Some a in
+type Result t e = | Ok t | Err e in
 type List a = | Nil | Cons a (List a) in
 
 let (++) xs ys = case xs of

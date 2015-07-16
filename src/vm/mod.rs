@@ -540,7 +540,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
 
 struct Def<'a:'b, 'b> {
     tag: VMTag,
-    elems: &'b mut [Value<'a>]
+    elems: &'b [Value<'a>]
 }
 unsafe impl <'a, 'b> DataDef for Def<'a, 'b> {
     type Value = DataStruct<'a>;
@@ -612,6 +612,9 @@ impl <'a> VM<'a> {
         fn f1<A, R>(f: fn (A) -> R) -> fn (A) -> R {
             f
         }
+        fn f2<A, B, R>(f: fn (A, B) -> R) -> fn (A, B) -> R {
+            f
+        }
         fn f3<A, B, C, R>(f: fn (A, B, C) -> R) -> fn (A, B, C) -> R {
             f
         }
@@ -621,6 +624,9 @@ impl <'a> VM<'a> {
         let io = |t| ast::type_con(self.intern("IO"), vec![t]);
         let _ = self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length);
         let _ = define_function(self, "string_length", f1(prim::string_length));
+        let _ = define_function(self, "string_find", f2(prim::string_find));
+        let _ = define_function(self, "string_rfind", f2(prim::string_rfind));
+        let _ = define_function(self, "string_trim", f1(prim::string_trim));
         let _ = self.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box prim::string_append);
         let _ = self.extern_function("string_eq", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], BOOL_TYPE.clone(), box prim::string_eq);
         let _ = define_function(self, "string_slice", f3(prim::string_slice));
@@ -631,6 +637,11 @@ impl <'a> VM<'a> {
 
         //IO functions
         let _ = define_function(self, "print_int", f1(prim::print_int));
+        let catch_fn = ast::fn_type(vec![STRING_TYPE.clone()], io(a.clone()));
+        let _ = self.extern_function_io("catch_IO",
+                                        3,
+                                        ast::fn_type(vec![io(a.clone()), catch_fn], io(a.clone())),
+                                        box prim::catch_io);
         let _ = self.extern_function_io("read_file",
                                         2,
                                         ast::fn_type(vec![STRING_TYPE.clone()], io(STRING_TYPE.clone())),
@@ -804,8 +815,7 @@ impl <'a> VM<'a> {
         RootStr(Root { roots: &self.roots, ptr: &*ptr })
     }
 
-    #[allow(dead_code)]
-    fn new_data(&self, tag: VMTag, fields: &mut [Value<'a>]) -> Value<'a> {
+    pub fn new_data(&self, tag: VMTag, fields: &[Value<'a>]) -> Value<'a> {
         Data(self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields }))
     }
     fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> GcPtr<DataStruct<'a>> {

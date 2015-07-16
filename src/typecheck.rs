@@ -1063,12 +1063,7 @@ impl <Id> Typed for ast::Expr<Id>
                 }
             }
             ast::Expr::Let(_, ref expr) => expr.type_of(),
-            ast::Expr::Call(ref func, _) => {
-                match func.type_of() {
-                    &Type::Function(_, ref return_type) => &**return_type,
-                    x => panic!("{:?}", x)
-                }
-            }
+            ast::Expr::Call(ref func, _) => func.type_of().return_type(),
             ast::Expr::Match(_, ref alts) => alts[0].expression.type_of(),
             ast::Expr::FieldAccess(_, ref id) => id.type_of(),
             ast::Expr::Array(ref a) => a.id.type_of(),

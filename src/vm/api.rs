@@ -170,6 +170,47 @@ impl <'a, 'vm, T: Any> Getable<'a, 'vm> for *mut T {
         }
     }
 }
+impl <T: VMType + Any> VMType for Option<T> {
+    fn vm_type<'b>(vm: &'b VM) -> &'b TcType {
+        vm.get_type::<Option<T>>()
+    }
+    fn make_type(vm: &VM) -> TcType {
+        ast::type_con(vm.intern("Option"), vec![T::make_type(vm)])
+    }
+}
+impl <'a, T: Pushable<'a> + Any> Pushable<'a> for Option<T> {
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        match self {
+            Some(value) => {
+                let len = stack.len();
+                value.push(vm, stack);
+                let value = vm.new_data(1, &[stack.pop()]);
+                assert!(stack.len() == len);
+                stack.push(value);
+            }
+            None => {
+                let value = vm.new_data(0, &[]);
+                stack.push(value);
+            }
+        }
+        Status::Ok
+    }
+}
+impl <'a, 'vm, T: Getable<'a, 'vm>> Getable<'a, 'vm> for Option<T> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Option<T>> {
+        match value {
+            Value::Data(data) => {
+                if data.tag == 0 {
+                    Some(None)
+                }
+                else {
+                    T::from_value(vm, data.fields[1].get()).map(Some)
+                }
+            }
+            _ => None
+        }
+    }
+}
 
 impl <T: VMType, E> VMType for Result<T, E> {
     fn vm_type<'b>(vm: &'b VM) -> &'b TcType {
