@@ -77,7 +77,7 @@ dependencies = [
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parser-combinators 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser-combinators-language 0.4.0",
+ "parser-combinators-language 0.4.0 (git+https://github.com/Marwes/parser-combinators-language)",
 ]
 
 [[package]]
@@ -88,6 +88,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "parser-combinators-language"
 version = "0.4.0"
+source = "git+https://github.com/Marwes/parser-combinators-language#37545eb02280b4192486ab5319aa418a66cae0f0"
 dependencies = [
  "parser-combinators 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
