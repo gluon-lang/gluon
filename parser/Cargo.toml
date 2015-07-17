@@ -6,8 +6,7 @@ authors = ["Markus <marwes91@gmail.com>"]
 
 [dependencies.log]
 [dependencies.env_logger]
-[dependencies.parser-combinators]
-[dependencies.parser-combinators-language]
-git = "https://github.com/Marwes/parser-combinators-language"
+[dependencies.combine]
+[dependencies.combine-language]
 [dependencies.base]
 path = "../base"

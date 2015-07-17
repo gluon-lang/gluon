@@ -40,6 +40,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "combine"
+version = "1.0.0-beta"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "combine-language"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "combine 1.0.0-beta (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -74,23 +87,10 @@ name = "parser"
 version = "0.1.0"
 dependencies = [
  "base 0.1.0",
+ "combine 1.0.0-beta (registry+https://github.com/rust-lang/crates.io-index)",
+ "combine-language 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser-combinators 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser-combinators-language 0.4.0 (git+https://github.com/Marwes/parser-combinators-language)",
-]
-
-[[package]]
-name = "parser-combinators"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "parser-combinators-language"
-version = "0.4.0"
-source = "git+https://github.com/Marwes/parser-combinators-language#37545eb02280b4192486ab5319aa418a66cae0f0"
-dependencies = [
- "parser-combinators 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

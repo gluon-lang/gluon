@@ -3,8 +3,8 @@
 extern crate log;
 extern crate env_logger;
 extern crate base;
-extern crate parser_combinators;
-extern crate parser_combinators_language;
+extern crate combine;
+extern crate combine_language;
 
 pub use base::{ast, interner, gc};
 
@@ -27,9 +27,9 @@ fn parse_module<F, Id>(f: F, input: &str) -> Result<LExpr<Id>, Box<::std::error:
     where Id: AstId + AsRef<str> + Clone
         , F: FnMut(&str) -> Id {
     use std::cell::RefCell;
-    use parser_combinators_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
-    use parser_combinators::primitives::{Consumed, Stream, State};
-    use parser_combinators::*;
+    use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
+    use combine::primitives::{Consumed, Stream};
+    use combine::*;
 
     struct EnvParser<'a: 'b, 'b, I: 'b, F: 'b, T>
         where I: Stream<Item=char> {
