@@ -7,7 +7,7 @@ use ast::{AstId, Type};
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
 
-
+/// Interned strings which allow for fast equality checks and hashing
 #[derive(Copy, Clone, Eq)]
 pub struct InternedStr(GcPtr<str>);
 
