@@ -1645,6 +1645,20 @@ case A of
     }
 
     #[test]
+    fn record_pattern() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+case { x = 1, y = "abc" } of
+    | { x, y = z } -> x #Int+ string_length z
+"#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text)
+            .unwrap();
+        assert_eq!(result, Int(4));
+    }
+
+    #[test]
     fn test_prelude() {
         use std::fs::File;
         use std::io::Read;

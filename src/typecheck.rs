@@ -351,6 +351,7 @@ impl <'a> Typecheck<'a> {
                                         self.finish_type(&mut arg.typ);
                                     }
                                 }
+                                ast::Pattern::Record(_) => (),
                                 ast::IdentifierPattern(ref mut id) => self.finish_type(&mut id.typ)
                             }
                         }
@@ -743,6 +744,40 @@ impl <'a> Typecheck<'a> {
                 try!(self.unify(&match_type, return_type));
                 Ok(())
             }
+            ast::Pattern::Record(ref record) => {
+
+                let record_type = {
+                    let fields: Vec<_> = record.iter().map(|t| t.0).collect();
+                    let mut typ = match self.find_record(&fields)
+                                      .map(|t| t.0.clone()) {
+                        Ok(typ) => typ,
+                        Err(_) => {
+                            Type::Record(record.iter()
+                                .map(|field|
+                                    ast::Field {
+                                        name: field.0,
+                                        typ: self.subs.new_var()
+                                    }
+                                )
+                                .collect())
+                        }
+                    };
+                    typ = self.subs.instantiate(&typ);
+                    try!(self.unify(&typ, match_type))
+                };
+                match record_type {
+                    Type::Record(types) => {
+                        for (&(mut name, ref bind), field) in record.iter().zip(&types) {
+                            if let Some(bind_name) = *bind {
+                                name = bind_name;
+                            }
+                            self.stack_var(name, field.typ.clone());
+                        }
+                        Ok(())
+                    }
+                    _ => panic!("Expected record")
+                }
+            }
             ast::IdentifierPattern(ref id) => {
                 self.stack_var(id.id().clone(), match_type);
                 Ok(())
@@ -1103,6 +1138,19 @@ mod tests {
     use base::ast;
     use super::super::tests::{get_local_interner, intern};
 
+    macro_rules! assert_err {
+        ($e: expr, $id: path) => {{
+            use super::TypeError::*;
+            match $e {
+                Ok(x) => assert!(false, "Expected error, got {}", x),
+                Err(err) => assert!(err.errors.iter().any(|e| match *e {
+                                ast::Located { value: $id(..), .. } => true,
+                                _ => false
+                            }), "Found an error but expected {}", stringify!($id))
+            }
+        }}
+    }
+
     fn typ(s: &str) -> TcType {
         assert!(s.len() != 0);
         let is_var = s.chars().next().unwrap().is_lowercase();
@@ -1373,6 +1421,18 @@ in test
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ_a("Test", vec![UNIT_TYPE.clone()])));
+    }
+
+    #[test]
+    fn record_missing_field() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+case { x = 1 } of
+    | { x, y } -> 1
+";
+        let result = typecheck(text);
+        assert_err!(result, TypeMismatch);
     }
 
     #[test]

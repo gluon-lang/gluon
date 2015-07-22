@@ -11,8 +11,10 @@ extern crate combine_language;
 
 use std::cell::RefCell;
 use std::error::Error;
-use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
+use std::iter::FromIterator;
+use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser, Lex, BetweenChar};
 use combine::primitives::{Consumed, Stream};
+use combine::combinator::{SepBy, Token};
 use combine::*;
 
 pub use base::{ast, interner, gc};
@@ -350,6 +352,8 @@ where I: Stream<Item=char>
     }
 
     fn parse_pattern(&self, input: State<I>) -> ParseResult<Pattern<Id>, I> {
+        let record = self.record_parser(optional(self.reserved_op("=").with(self.ident_u())))
+            .map(Pattern::Record);
         self.parser(ParserEnv::parse_ident2)
             .then(|(id, is_ctor)| parser(move |input| 
                 if is_ctor {
@@ -361,6 +365,7 @@ where I: Stream<Item=char>
                     Ok((IdentifierPattern(id.clone()), Consumed::Empty(input)))
                 }
             ))
+            .or(record)
             .parse_state(input)
     }
 
@@ -398,12 +403,21 @@ where I: Stream<Item=char>
     }
 
     fn record(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-        let field = (self.ident_u(), optional(self.reserved_op("=").with(self.expr())));
-        self.braces(sep_by(field, self.lex(char(','))))
+        self.record_parser(optional(self.reserved_op("=").with(self.expr())))
             .map(|fields| Expr::Record(self.intern(""), fields))
             .parse_state(input)
     }
+
+    fn record_parser<'b, P, O>(&'b self, p: P) -> RecordParser<'a, 'b, I, Id, F, P, O>
+    where P: Parser<Input=I>
+        , O: FromIterator<(Id::Untyped, P::Output)> {
+        let field = (self.ident_u(), p);
+        self.braces(sep_by(field, self.lex(char(','))))
+    }
 }
+
+type RecordParser<'a, 'b, I, Id, F, P, O> = BetweenChar<'a, 'b, SepBy<O, (LanguageParser<'a, 'b, I, F, <Id as base::ast::AstId>::Untyped>,  P), Lex<'a, 'b, Token<I>>>>;
+
 
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
 ///type information. The type will just be a dummy value until the AST has passed typechecking
@@ -646,5 +660,15 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new("test + 1 * 23 #Int- test");
         assert_eq!(e, binop(binop(id("test"), "+", binop(int(1), "*", int(23))), "#Int-", id("test")));
+    }
+
+    #[test]
+    fn record_pattern() {
+        let _ = ::env_logger::init();
+        let e = parse_new("case x of | { y, x = z } -> z");
+        assert_eq!(e, case(id("x"), vec![
+            (Pattern::Record(vec![(intern("y"), None), (intern("x"), Some(intern("z")))]),
+                id("z"))
+        ]));
     }
 }

@@ -468,18 +468,23 @@ impl <'a> Compiler<'a> {
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
                 let typename = match expr.type_of() {
-                    &Type::Data(ref id, _) => id,
-                    _ => panic!()
+                    &Type::Data(ref id, _) => Some(id),
+                    _ => None
                 };
                 let mut catch_all = false;
                 for alt in alts.iter() {
                     match alt.pattern {
                         ConstructorPattern(ref id, _) => {
+                            let typename = typename.expect("typename");
                             let tag = self.find_tag(typename, id.id())
                                 .unwrap_or_else(|| panic!("Could not find tag for {}::{}", typename, id.id()));
                             function.instructions.push(TestTag(tag));
                             start_jumps.push(function.instructions.len());
                             function.instructions.push(CJump(0));
+                        }
+                        ast::Pattern::Record(_) => {
+                            catch_all = true;
+                            start_jumps.push(function.instructions.len());
                         }
                         _ => {
                             catch_all = true;
@@ -504,6 +509,13 @@ impl <'a> Compiler<'a> {
                                 self.new_stack_var(arg.id().clone());
                             }
                         }
+                        ast::Pattern::Record(ref record) => {
+                            function.instructions.push(Split);
+                            for &(mut name, bind) in record {
+                                name = bind.unwrap_or(name);
+                                self.new_stack_var(name);
+                            }
+                        }
                         IdentifierPattern(ref id) => {
                             function.instructions[start_index] = Jump(function.instructions.len() as VMIndex);
                             self.new_stack_var(id.id().clone());
@@ -516,6 +528,11 @@ impl <'a> Compiler<'a> {
                     match alt.pattern {
                         ConstructorPattern(_, ref args) => {
                             for _ in 0..args.len() {
+                                self.stack.pop();
+                            }
+                        }
+                        ast::Pattern::Record(ref record) => {
+                            for _ in record {
                                 self.stack.pop();
                             }
                         }

@@ -188,6 +188,7 @@ pub enum LiteralStruct<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id: AstId> {
     ConstructorPattern(Id, Vec<Id>),
+    Record(Vec<(Id::Untyped, Option<Id::Untyped>)>),
     IdentifierPattern(Id)
 }
 
