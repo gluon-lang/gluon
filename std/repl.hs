@@ -1,7 +1,6 @@
-let (>>=) = prelude.monad_IO.(>>=)
+let { (>>=), return } = prelude.monad_IO
 and (>>) = \l r -> l >>= \_ -> r
-and return = prelude.monad_IO.return
-and (==) = prelude.eq_String.(==)
+and { (==) } = prelude.eq_String
 in
 let load_file line: String -> IO String =
     let filename = string_trim (string_slice line 3 (string_length line))

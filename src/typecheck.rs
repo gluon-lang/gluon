@@ -757,22 +757,26 @@ impl <'a> Typecheck<'a> {
 
                 let record_type = {
                     let fields: Vec<_> = record.iter().map(|t| t.0).collect();
-                    let mut typ = match self.find_record(&fields)
-                                      .map(|t| t.0.clone()) {
+                    //actual_type is the record (not hidden behind an alias)
+                    let (mut typ, mut actual_type) = match self.find_record(&fields)
+                                  .map(|t| (t.0.clone(), t.1.clone())) {
                         Ok(typ) => typ,
                         Err(_) => {
-                            Type::Record(record.iter()
+                            let t = Type::Record(record.iter()
                                 .map(|field|
                                     ast::Field {
                                         name: field.0,
                                         typ: self.subs.new_var()
                                     }
                                 )
-                                .collect())
+                                .collect());
+                            (t.clone(), t)
                         }
                     };
                     typ = self.subs.instantiate(&typ);
-                    try!(self.unify(&typ, match_type))
+                    actual_type = self.subs.instantiate_(&actual_type);
+                    try!(self.unify(&typ, match_type));
+                    actual_type
                 };
                 match record_type {
                     Type::Record(ref types) => {
@@ -783,7 +787,7 @@ impl <'a> Typecheck<'a> {
                             self.stack_var(name, field.typ.clone());
                         }
                     }
-                    _ => panic!("Expected record")
+                    _ => panic!("Expected record found {}", record_type)
                 }
                 Ok(record_type)
             }
