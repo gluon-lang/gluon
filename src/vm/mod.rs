@@ -1659,6 +1659,24 @@ case { x = 1, y = "abc" } of
     }
 
     #[test]
+    fn let_record_pattern() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+let (+) x y = x #Int+ y
+in
+let a = { x = 10, y = "abc" }
+in
+let {x, y = z} = a
+in x + string_length z
+"#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text)
+            .unwrap();
+        assert_eq!(result, Int(13));
+    }
+
+    #[test]
     fn test_prelude() {
         use std::fs::File;
         use std::io::Read;

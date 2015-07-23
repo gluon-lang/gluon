@@ -366,6 +366,7 @@ where I: Stream<Item=char>
                 }
             ))
             .or(record)
+            .or(self.parens(self.pattern()))
             .parse_state(input)
     }
 
@@ -392,14 +393,25 @@ where I: Stream<Item=char>
 
     fn binding(&self, input: State<I>) -> ParseResult<Binding<Id>, I> {
         let type_sig = self.reserved_op(":").with(self.typ());
-        (self.ident(), many(self.ident()), optional(type_sig), self.reserved_op("="), self.expr())
-            .map(|(mut name, arguments, typ, _, e)| {
-                if let Some(typ) = typ {
-                    name.set_type(typ);
-                }
-                Binding { name: name, arguments: arguments, expression: e }
-            })
-            .parse_state(input)
+        let (name, input) = try!(self.pattern().parse_state(input));
+        let (arguments, input) = match name {
+            IdentifierPattern(_) => {
+                try!(input.combine(|input| {
+                    many(self.ident())
+                        .parse_state(input)
+                }))
+            }
+            _ => (Vec::new(), input)
+        };
+        let ((typ, _, e), input) = try!(input.combine(|input|
+            (optional(type_sig), self.reserved_op("="), self.expr())
+                .parse_state(input)));
+        Ok((Binding {
+            name: name,
+            typ: typ,
+            arguments: arguments,
+            expression: e
+        }, input))
     }
 
     fn record(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
@@ -494,7 +506,12 @@ pub mod tests {
         let_a(s, &[], e, b)
     }
     fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
-        no_loc(Expr::Let(vec![Binding { name: intern(s), arguments: args.iter().map(|i| intern(i)).collect(), expression: e }], Box::new(b)))
+        no_loc(Expr::Let(vec![Binding {
+            name: IdentifierPattern(intern(s)),
+            typ: None,
+            arguments: args.iter().map(|i| intern(i)).collect(),
+            expression: e }
+            ], Box::new(b)))
     }
     fn id(s: &str) -> PExpr {
         no_loc(Expr::Identifier(intern(s)))
@@ -587,7 +604,7 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new::<TcIdent<InternedStr>>("let f: Int = \\x y -> x + y in f 1 2");
         match e.value {
-            Expr::Let(bind, _) => assert_eq!(bind[0].name.typ, typ("Int")),
+            Expr::Let(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
             _ => assert!(false)
         }
     }
@@ -670,5 +687,18 @@ pub mod tests {
             (Pattern::Record(vec![(intern("y"), None), (intern("x"), Some(intern("z")))]),
                 id("z"))
         ]));
+    }
+    #[test]
+    fn let_pattern() {
+        let _ = ::env_logger::init();
+        let e = parse_new("let {x, y} = test in x");
+        assert_eq!(e, no_loc(Expr::Let(vec![
+                Binding {
+                    name: Pattern::Record(vec![(intern("x"), None), (intern("y"), None)]),
+                    typ: None,
+                    arguments: vec![],
+                    expression: id("test")
+                }], Box::new(id("x")))
+        ));
     }
 }

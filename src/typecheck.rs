@@ -283,7 +283,7 @@ impl <'a> Typecheck<'a> {
         match t {
             Some(typ) => {
                 let x = self.subs.instantiate(typ);
-                debug!("Find {} : {:?}", id, x);
+                debug!("Find {} : {}", id, x);
                 Ok(x)
             }
             None => Err(UndefinedVariable(id.clone()))
@@ -358,7 +358,19 @@ impl <'a> Typecheck<'a> {
                     }
                     ast::Expr::Let(ref mut bindings, _) => {
                         for bind in bindings {
-                            self.finish_type(&mut bind.name.typ);
+                            if let Some(ref mut typ) = bind.typ {
+                                self.finish_type(typ);
+                            }
+                            match bind.name {
+                                ast::ConstructorPattern(ref mut id, ref mut args) => {
+                                    self.finish_type(&mut id.typ);
+                                    for arg in args.iter_mut() {
+                                        self.finish_type(&mut arg.typ);
+                                    }
+                                }
+                                ast::Pattern::Record(_) => (),
+                                ast::IdentifierPattern(ref mut id) => self.finish_type(&mut id.typ)
+                            }
                         }
                     }
                     ast::Expr::Record(ref mut id, _) => self.finish_type(&mut id.typ),
@@ -544,15 +556,15 @@ impl <'a> Typecheck<'a> {
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter_mut() {
-                        if bind.name.typ.is_uninitialized() {
-                            bind.name.typ = self.subs.new_var();
+                        let typ = self.subs.new_var();
+                        if let Some(ref mut type_decl) = bind.typ {
+                            try!(self.kindcheck(type_decl, &mut []));
                         }
-                        else {
-                            try!(self.kindcheck(&mut bind.name.typ, &mut []));
-                        }
-                        self.stack_var(bind.name.name.clone(), bind.name.typ.clone());
+                        try!(self.typecheck_pattern(&mut bind.name, typ));
                         if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
-                            lambda.id.name = bind.name.name;
+                            if let ast::IdentifierPattern(ref name) = bind.name {
+                                lambda.id.name = name.name;
+                            }
                         }
                     }
                 }
@@ -564,30 +576,28 @@ impl <'a> Typecheck<'a> {
                         try!(self.typecheck_lambda(&mut bind.arguments, &mut bind.expression))
                     }
                     else {
-                        if !bind.name.typ.is_uninitialized() {
-                            try!(self.kindcheck(&mut bind.name.typ, &mut []));
+                        if let Some(ref mut type_decl) = bind.typ {
+                            try!(self.kindcheck(type_decl, &mut []));
                         }
                         try!(self.typecheck(&mut bind.expression))
                     };
-                    debug!("let {} : {}", bind.name.name, typ);
+                    debug!("let {:?} : {}", bind.name, typ);
                     if !is_recursive {
                         //Merge the type declaration and the actual type
-                        if !bind.name.typ.is_uninitialized() {
-                            typ = try!(self.unify(&bind.name.typ, typ));
+                        if let Some(ref type_decl) = bind.typ {
+                            typ = try!(self.unify(type_decl, typ));
                         }
-                        bind.name.typ = typ.clone();
                         self.replace_vars(level, &HashMap::new(), &mut bind.expression);
-                        self.stack_var(bind.name.name.clone(), typ);
+                        try!(self.typecheck_pattern(&mut bind.name, typ));
                     }
                     else {
                         types.push(typ);
                     }
                 }
                 if is_recursive {
-                    for (mut typ, bind) in types.into_iter().zip(bindings) {
+                    for (typ, bind) in types.into_iter().zip(bindings) {
                         //Merge the type declaration and the actual type
-                        typ = try!(self.unify(&bind.name.typ, typ));
-                        bind.name.typ = typ;
+                        try!(self.unify(bind.type_of(), typ));
                         self.replace_vars(level, &HashMap::new(), &mut bind.expression);
                     }
                 }
@@ -735,14 +745,13 @@ impl <'a> Typecheck<'a> {
         Ok(ast::fn_type(arg_types, body_type))
     }
 
-    fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<(), TypeError> {
+    fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<TcType, TypeError> {
         match *pattern {
             ast::ConstructorPattern(ref id, ref mut args) => {
                 //Find the enum constructor and return the types for its arguments
                 let ctor_type = try!(self.find(&id.name));
                 let return_type = try!(self.typecheck_pattern_rec(args, ctor_type));
-                try!(self.unify(&match_type, return_type));
-                Ok(())
+                self.unify(&match_type, return_type)
             }
             ast::Pattern::Record(ref record) => {
 
@@ -766,21 +775,22 @@ impl <'a> Typecheck<'a> {
                     try!(self.unify(&typ, match_type))
                 };
                 match record_type {
-                    Type::Record(types) => {
-                        for (&(mut name, ref bind), field) in record.iter().zip(&types) {
+                    Type::Record(ref types) => {
+                        for (&(mut name, ref bind), field) in record.iter().zip(types) {
                             if let Some(bind_name) = *bind {
                                 name = bind_name;
                             }
                             self.stack_var(name, field.typ.clone());
                         }
-                        Ok(())
                     }
                     _ => panic!("Expected record")
                 }
+                Ok(record_type)
             }
-            ast::IdentifierPattern(ref id) => {
-                self.stack_var(id.id().clone(), match_type);
-                Ok(())
+            ast::IdentifierPattern(ref mut id) => {
+                self.stack_var(id.id().clone(), match_type.clone());
+                id.typ = match_type.clone();
+                Ok(match_type)
             }
         }
     }
@@ -810,7 +820,7 @@ impl <'a> Typecheck<'a> {
     }
 
     fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult {
-        debug!("Unify {:?} <=> {:?}", expected, actual);
+        debug!("Unify {} <=> {}", expected, actual);
         match self.unify_(expected, &actual) {
             Ok(()) => {
                 self.set_type(&mut actual);
@@ -830,7 +840,7 @@ impl <'a> Typecheck<'a> {
     fn unify_(&self, expected: &TcType, actual: &TcType) -> Result<(), TypeError> {
         let expected = self.subs.real(expected);
         let actual = self.subs.real(actual);
-        debug!("{:?} <=> {:?}", expected, actual);
+        debug!("{} <=> {}", expected, actual);
         match (expected, actual) {
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(()),
             (&Type::Variable(ref l), _) => self.union(l, actual),
@@ -1127,7 +1137,13 @@ impl <T> Typed for ast::Binding<T>
     where T: Typed<Id=InternedStr> + ast::AstId<Untyped=InternedStr> {
     type Id = T::Untyped;
     fn type_of(&self) -> &TcType {
-        self.name.type_of()
+        match self.typ {
+            Some(ref typ) => typ,
+            None => match self.name {
+                ast::IdentifierPattern(ref name) => name.type_of(),
+                _ => panic!("Not implemented")
+            }
+        }
     }
 }
 
@@ -1289,7 +1305,7 @@ macro_rules! assert_m {
     ($i: expr, $p: pat => $e: expr) => {
         match $i {
             $p => $e,
-            _ => assert!(false)
+            ref x => assert!(false, "Unexpected {}, found {:?}", stringify!($p), x)
         }
     }
 }

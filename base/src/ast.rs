@@ -236,7 +236,8 @@ pub enum Expr<Id: AstId> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Binding<Id: AstId> {
-    pub name: Id,
+    pub name: Pattern<Id>,
+    pub typ: Option<Type<Id::Untyped>>,
     pub arguments: Vec<Id>,
     pub expression: LExpr<Id>
 }

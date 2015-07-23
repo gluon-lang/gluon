@@ -398,7 +398,12 @@ impl <'a> Compiler<'a> {
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter() {
-                        self.new_stack_var(*bind.name.id());
+                        match bind.name {
+                            IdentifierPattern(ref name) => {
+                                self.new_stack_var(*name.id());
+                            }
+                            _ => panic!("ICE: Unexpected non identifer pattern")
+                        }
                         //Add the NewClosure instruction before hand
                         //it will be fixed later
                         function.instructions.push(NewClosure(0, 0));
@@ -408,7 +413,11 @@ impl <'a> Compiler<'a> {
 
                     if is_recursive {
                         function.instructions.push(Push(stack_start + i as VMIndex));
-                        let (function_index, vars, cf) = self.compile_lambda(&bind.name, &bind.arguments, &bind.expression, function);
+                        let name = match bind.name {
+                            IdentifierPattern(ref name) => name,
+                            _ => panic!("Lambda binds to non identifer pattern")
+                        };
+                        let (function_index, vars, cf) = self.compile_lambda(&name, &bind.arguments, &bind.expression, function);
                         let offset = first_index + i;
                         function.instructions[offset] = NewClosure(function_index, vars);
                         function.instructions.push(CloseClosure(vars));
@@ -416,7 +425,21 @@ impl <'a> Compiler<'a> {
                     }
                     else {
                         self.compile(&bind.expression, function, false);
-                        self.new_stack_var(*bind.name.id());
+                        match bind.name {
+                            IdentifierPattern(ref name) => {
+                                self.new_stack_var(*name.id());
+                            }
+                            ast::Pattern::Record(ref record) => {
+                                function.instructions.push(Split);
+                                for &(mut name, bind) in record {
+                                    name = bind.unwrap_or(name);
+                                    self.new_stack_var(name);
+                                }
+                            }
+                            ConstructorPattern(..) => {
+                                panic!("constructor pattern in let")
+                            }
+                        }
                     }
                     //unit expressions do not return a value so we need to add a dummy value
                     //To make the stack correct
@@ -578,7 +601,11 @@ impl <'a> Compiler<'a> {
         }
     }
 
-    fn compile_lambda(&mut self, id: &TcIdent, arguments: &[TcIdent], body: &LExpr<TcIdent>, parent: &mut FunctionEnv) -> (VMIndex, VMIndex, CompiledFunction) {
+    fn compile_lambda(&mut self,
+                      id: &TcIdent,
+                      arguments: &[TcIdent],
+                      body: &LExpr<TcIdent>, parent: &mut FunctionEnv
+                     ) -> (VMIndex, VMIndex, CompiledFunction) {
         self.closure_limits.push(self.stack.len() as VMIndex);
         for arg in arguments {
             self.new_stack_var(*arg.id());
