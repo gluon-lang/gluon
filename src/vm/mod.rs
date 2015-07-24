@@ -1022,7 +1022,7 @@ impl <'a> VM<'a> {
                        ) -> Result<StackFrame<'a, 'b>, Error> {
         debug!(">>>\nEnter frame {:?}: {:?}\n{:?}", function.name, &stack[..], stack.frame);
         while let Some(&instr) = instructions.get(index) {
-            debug!("{:?}: {:?}", index, instr);
+            debug_instruction(&stack, index, instr);
             match instr {
                 Push(i) => {
                     let v = stack[i].clone();
@@ -1304,6 +1304,15 @@ fn binop_float<F>(stack: &mut StackFrame, f: F)
             (l, r) => panic!("{:?} `floatOp` {:?}", l, r)
         }
     })
+}
+
+fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
+    debug!("{:?}: {:?} {:?}", index, instr, match instr {
+        Push(i) => stack[i],
+        NewClosure(..) => Int(stack.len() as isize),
+        MakeClosure(..) => Int(stack.len() as isize),
+        _ => Int(0)
+    });
 }
 
 pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>> {

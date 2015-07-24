@@ -289,7 +289,7 @@ impl <'a> Compiler<'a> {
 
     fn new_stack_var(&mut self, s: InternedStr) {
         if self.stack.iter().find(|i| **i == s).is_some() {
-            panic!("Variable shadowing is not allowed")
+            panic!("Variable shadowing is not allowed: {}", s)
         }
         self.stack.push(s);
     }
@@ -451,6 +451,7 @@ impl <'a> Compiler<'a> {
                 for _ in 0..bindings.len() {
                     self.stack.pop();
                 }
+                function.instructions.push(Slide(bindings.len() as VMIndex));
             }
             Expr::Call(ref func, ref args) => {
                 if let Expr::Identifier(ref id) = func.value {

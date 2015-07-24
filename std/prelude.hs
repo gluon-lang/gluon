@@ -2,6 +2,8 @@ type Option a = | None | Some a in
 type Result t e = | Ok t | Err e in
 type List a = | Nil | Cons a (List a) in
 
+let id x = x
+in
 let (++) xs ys = case xs of
     | Cons x zs -> Cons x (zs ++ ys)
     | Nil -> ys
@@ -108,6 +110,14 @@ let functor_Option: Functor Option = {
     map = \f x -> case x of
                     | Some y -> Some (f y)
                     | None -> None
+}
+and functor_List: Functor List = {
+    map =
+        let map f xs =
+                case xs of
+                    | Cons y ys -> Cons (f y) (map f ys)
+                    | Nil -> Nil
+        in map
 } in
 type Applicative f = {
     (<*>) : f (a -> b) -> f a -> f b,
@@ -121,6 +131,16 @@ let applicative_Option: Applicative Option = {
                                 | None -> None
                         | None -> None,
     pure = \x -> Some x
+}
+and applicative_List: Applicative List = {
+    (<*>) =
+        let (<*>) f xs =
+                case f of
+                    | Cons g gs ->
+                        functor_List.map g xs ++ (gs <*> xs)
+                    | Nil -> Nil
+        in (<*>),
+    pure = \x -> Cons x Nil
 } in
 type Monad m = {
     (>>=) : m a -> (a -> m b) -> m b,
@@ -139,6 +159,27 @@ let monad_List: Monad List = {
 let monad_IO: Monad IO = {
     (>>=) = io_bind,
     return = io_return
+} in
+let make_Monad m =
+    let { (>>=), return } = m
+    //TODO this should not require a second binding
+    and bind = m.(>>=)
+    in {
+        (>>=) = (>>=),
+        return = return,
+        (>>) = \l r -> l >>= \_ -> r,
+        join = \mm -> mm >>= id,
+        map = \x f -> x >>= (\y -> return (f x)),
+        lift2 = \f lm rm -> bind lm (\l -> rm >>= \r -> f l r)
+    }
+in
+let functor_IO: Functor IO = {
+    map = \f m1 -> monad_IO.(>>=) m1 (\x -> monad_IO.return (f x))
+} in
+let applicative_IO: Applicative IO = {
+    (<*>) = \f x ->
+            monad_IO.(>>=) f (\g -> monad_IO.(>>=) x (\y -> monad_IO.return (g y))),
+    pure = monad_IO.return
 } in
 type Show a = {
     show : a -> String
@@ -162,5 +203,13 @@ let show_List: Show a -> Show (List a) = \d ->
         in string_append "[" (show2 xs)
     in { show }
 in
-{ ord_Option, ord_Float, ord_Int, eq_List, eq_Option, eq_Float, eq_Int, eq_String, num_Int, num_Float, functor_Option, monad_Option, monad_List, monad_IO, show_List }
+{ ord_Option, ord_Float, ord_Int,
+  eq_List, eq_Option, eq_Float, eq_Int, eq_String,
+  num_Int, num_Float,
+  functor_Option, functor_List, functor_IO,
+  applicative_Option, applicative_List, applicative_IO,
+  monad_Option, monad_List, monad_IO,
+  make_Monad,
+  show_List
+}
 
