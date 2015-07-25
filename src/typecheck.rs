@@ -345,14 +345,14 @@ impl <'a> Typecheck<'a> {
                     ast::Expr::Match(_, ref mut alts) => {
                         for alt in alts.iter_mut() {
                             match alt.pattern {
-                                ast::ConstructorPattern(ref mut id, ref mut args) => {
+                                ast::Pattern::Constructor(ref mut id, ref mut args) => {
                                     self.finish_type(&mut id.typ);
                                     for arg in args.iter_mut() {
                                         self.finish_type(&mut arg.typ);
                                     }
                                 }
                                 ast::Pattern::Record(_) => (),
-                                ast::IdentifierPattern(ref mut id) => self.finish_type(&mut id.typ)
+                                ast::Pattern::Identifier(ref mut id) => self.finish_type(&mut id.typ)
                             }
                         }
                     }
@@ -362,14 +362,14 @@ impl <'a> Typecheck<'a> {
                                 self.finish_type(typ);
                             }
                             match bind.name {
-                                ast::ConstructorPattern(ref mut id, ref mut args) => {
+                                ast::Pattern::Constructor(ref mut id, ref mut args) => {
                                     self.finish_type(&mut id.typ);
                                     for arg in args.iter_mut() {
                                         self.finish_type(&mut arg.typ);
                                     }
                                 }
                                 ast::Pattern::Record(_) => (),
-                                ast::IdentifierPattern(ref mut id) => self.finish_type(&mut id.typ)
+                                ast::Pattern::Identifier(ref mut id) => self.finish_type(&mut id.typ)
                             }
                         }
                     }
@@ -562,7 +562,7 @@ impl <'a> Typecheck<'a> {
                         }
                         try!(self.typecheck_pattern(&mut bind.name, typ));
                         if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
-                            if let ast::IdentifierPattern(ref name) = bind.name {
+                            if let ast::Pattern::Identifier(ref name) = bind.name {
                                 lambda.id.name = name.name;
                             }
                         }
@@ -747,7 +747,7 @@ impl <'a> Typecheck<'a> {
 
     fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<TcType, TypeError> {
         match *pattern {
-            ast::ConstructorPattern(ref id, ref mut args) => {
+            ast::Pattern::Constructor(ref id, ref mut args) => {
                 //Find the enum constructor and return the types for its arguments
                 let ctor_type = try!(self.find(&id.name));
                 let return_type = try!(self.typecheck_pattern_rec(args, ctor_type));
@@ -791,7 +791,7 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(record_type)
             }
-            ast::IdentifierPattern(ref mut id) => {
+            ast::Pattern::Identifier(ref mut id) => {
                 self.stack_var(id.id().clone(), match_type.clone());
                 id.typ = match_type.clone();
                 Ok(match_type)
@@ -1144,7 +1144,7 @@ impl <T> Typed for ast::Binding<T>
         match self.typ {
             Some(ref typ) => typ,
             None => match self.name {
-                ast::IdentifierPattern(ref name) => name.type_of(),
+                ast::Pattern::Identifier(ref name) => name.type_of(),
                 _ => panic!("Not implemented")
             }
         }

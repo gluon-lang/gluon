@@ -1,7 +1,7 @@
 use base::interner::*;
 use base::gc::Gc;
 use base::ast;
-use base::ast::{LExpr, Expr, Integer, Float, String, Bool, ConstructorPattern, IdentifierPattern};
+use base::ast::{LExpr, Expr, Integer, Float, String, Bool};
 use typecheck::{TcIdent, TcType, Type, Typed, TypeInfos, UNIT_TYPE};
 use self::Instruction::*;
 use self::Variable::*;
@@ -396,7 +396,7 @@ impl <'a> Compiler<'a> {
                 if is_recursive {
                     for bind in bindings.iter() {
                         match bind.name {
-                            IdentifierPattern(ref name) => {
+                            ast::Pattern::Identifier(ref name) => {
                                 self.new_stack_var(*name.id());
                             }
                             _ => panic!("ICE: Unexpected non identifer pattern")
@@ -411,7 +411,7 @@ impl <'a> Compiler<'a> {
                     if is_recursive {
                         function.instructions.push(Push(stack_start + i as VMIndex));
                         let name = match bind.name {
-                            IdentifierPattern(ref name) => name,
+                            ast::Pattern::Identifier(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern")
                         };
                         let (function_index, vars, cf) = self.compile_lambda(&name, &bind.arguments, &bind.expression, function);
@@ -423,7 +423,7 @@ impl <'a> Compiler<'a> {
                     else {
                         self.compile(&bind.expression, function, false);
                         match bind.name {
-                            IdentifierPattern(ref name) => {
+                            ast::Pattern::Identifier(ref name) => {
                                 self.new_stack_var(*name.id());
                             }
                             ast::Pattern::Record(ref record) => {
@@ -433,7 +433,7 @@ impl <'a> Compiler<'a> {
                                     self.new_stack_var(name);
                                 }
                             }
-                            ConstructorPattern(..) => {
+                            ast::Pattern::Constructor(..) => {
                                 panic!("constructor pattern in let")
                             }
                         }
@@ -495,7 +495,7 @@ impl <'a> Compiler<'a> {
                 let mut catch_all = false;
                 for alt in alts.iter() {
                     match alt.pattern {
-                        ConstructorPattern(ref id, _) => {
+                        ast::Pattern::Constructor(ref id, _) => {
                             let typename = typename.expect("typename");
                             let tag = self.find_tag(typename, id.id())
                                 .unwrap_or_else(|| panic!("Could not find tag for {}::{}", typename, id.id()));
@@ -523,7 +523,7 @@ impl <'a> Compiler<'a> {
                 }
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     match alt.pattern {
-                        ConstructorPattern(_, ref args) => {
+                        ast::Pattern::Constructor(_, ref args) => {
                             function.instructions[start_index] = CJump(function.instructions.len() as VMIndex);
                             function.instructions.push(Split);
                             for arg in args.iter() {
@@ -537,7 +537,7 @@ impl <'a> Compiler<'a> {
                                 self.new_stack_var(name);
                             }
                         }
-                        IdentifierPattern(ref id) => {
+                        ast::Pattern::Identifier(ref id) => {
                             function.instructions[start_index] = Jump(function.instructions.len() as VMIndex);
                             self.new_stack_var(id.id().clone());
                         }
@@ -547,7 +547,7 @@ impl <'a> Compiler<'a> {
                     function.instructions.push(Jump(0));
 
                     match alt.pattern {
-                        ConstructorPattern(_, ref args) => {
+                        ast::Pattern::Constructor(_, ref args) => {
                             for _ in 0..args.len() {
                                 self.stack.pop();
                             }
@@ -557,7 +557,7 @@ impl <'a> Compiler<'a> {
                                 self.stack.pop();
                             }
                         }
-                        IdentifierPattern(_) => { self.stack.pop(); }
+                        ast::Pattern::Identifier(_) => { self.stack.pop(); }
                     }
                 }
                 for &index in end_jumps.iter() {

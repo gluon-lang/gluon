@@ -1,7 +1,6 @@
 use std::ops::Deref;
 use std::fmt;
 pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType};
-pub use self::Pattern::{ConstructorPattern, IdentifierPattern};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
 
 ///Trait representing a type that can by used as in identifier in the AST
@@ -187,9 +186,9 @@ pub enum LiteralStruct<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id: AstId> {
-    ConstructorPattern(Id, Vec<Id>),
+    Constructor(Id, Vec<Id>),
     Record(Vec<(Id::Untyped, Option<Id::Untyped>)>),
-    IdentifierPattern(Id)
+    Identifier(Id)
 }
 
 #[derive(Clone, PartialEq, Debug)]

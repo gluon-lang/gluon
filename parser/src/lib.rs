@@ -359,10 +359,10 @@ where I: Stream<Item=char>
                 if is_ctor {
                     many(self.ident())
                         .parse_state(input)
-                        .map(|(args, input)| (ConstructorPattern(id.clone(), args), input))
+                        .map(|(args, input)| (Pattern::Constructor(id.clone(), args), input))
                 }
                 else {
-                    Ok((IdentifierPattern(id.clone()), Consumed::Empty(input)))
+                    Ok((Pattern::Identifier(id.clone()), Consumed::Empty(input)))
                 }
             ))
             .or(record)
@@ -395,7 +395,7 @@ where I: Stream<Item=char>
         let type_sig = self.reserved_op(":").with(self.typ());
         let (name, input) = try!(self.pattern().parse_state(input));
         let (arguments, input) = match name {
-            IdentifierPattern(_) => {
+            Pattern::Identifier(_) => {
                 try!(input.combine(|input| {
                     many(self.ident())
                         .parse_state(input)
@@ -507,7 +507,7 @@ pub mod tests {
     }
     fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
         no_loc(Expr::Let(vec![Binding {
-            name: IdentifierPattern(intern(s)),
+            name: Pattern::Identifier(intern(s)),
             typ: None,
             arguments: args.iter().map(|i| intern(i)).collect(),
             expression: e }
@@ -662,8 +662,8 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new("case None of | Some x -> x | None -> 0");
         assert_eq!(e, case(id("None"), vec![
-                            (ConstructorPattern(intern("Some"), vec![intern("x")]), id("x"))
-                        ,   (ConstructorPattern(intern("None"), vec![]), int(0))
+                            (Pattern::Constructor(intern("Some"), vec![intern("x")]), id("x"))
+                        ,   (Pattern::Constructor(intern("None"), vec![]), int(0))
                         ]));
     }
     #[test]
