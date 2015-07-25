@@ -252,7 +252,7 @@ impl <'a> Compiler<'a> {
     }
 
     fn find(&self, id: &InternedStr, env: &mut FunctionEnv) -> Option<Variable> {
-        (0..).zip(self.stack.iter())
+        (0..self.stack.len() as VMIndex).zip(self.stack.iter()).rev()
             .find(|&(_, var)| var == id)
             .map(|(index, _)| {
                 if self.closure_limits.len() != 0 {
@@ -288,9 +288,6 @@ impl <'a> Compiler<'a> {
     }
 
     fn new_stack_var(&mut self, s: InternedStr) {
-        if self.stack.iter().find(|i| **i == s).is_some() {
-            panic!("Variable shadowing is not allowed: {}", s)
-        }
         self.stack.push(s);
     }
 
