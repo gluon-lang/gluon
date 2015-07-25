@@ -449,9 +449,13 @@ impl <I: fmt::Display> fmt::Display for Type<I> {
 
 pub trait MutVisitor {
     type T: AstId;
-    fn visit_expr(&mut self, e: &mut LExpr< <Self as MutVisitor>::T>) {
+    fn visit_expr(&mut self, e: &mut LExpr<Self::T>) {
         walk_mut_expr(self, e);
     }
+    fn visit_pattern(&mut self, e: &mut Pattern<Self::T>) {
+        walk_mut_pattern(self, e);
+    }
+    fn visit_identifier(&mut self, _: &mut Self::T) { }
 }
 
 pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
@@ -464,12 +468,14 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
                 None => ()
             }
         }
-        Expr::BinOp(ref mut lhs, _, ref mut rhs) => {
+        Expr::BinOp(ref mut lhs, ref mut id, ref mut rhs) => {
             v.visit_expr(&mut **lhs);
+            v.visit_identifier(id);
             v.visit_expr(&mut **rhs);
         }
         Expr::Let(ref mut bindings, ref mut body) => {
             for bind in bindings {
+                v.visit_pattern(&mut bind.name);
                 v.visit_expr(&mut bind.expression);
             }
             v.visit_expr(&mut **body);
@@ -480,16 +486,19 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
                 v.visit_expr(arg);
             }
         }
-        Expr::FieldAccess(ref mut expr, _) => {
+        Expr::FieldAccess(ref mut expr, ref mut id) => {
             v.visit_expr(&mut **expr);
+            v.visit_identifier(id);
         }
         Expr::Match(ref mut expr, ref mut alts) => {
             v.visit_expr(&mut**expr);
             for alt in alts.iter_mut() {
+                v.visit_pattern(&mut alt.pattern);
                 v.visit_expr(&mut alt.expression);
             }
         }
         Expr::Array(ref mut a) => {
+            v.visit_identifier(&mut a.id);
             for expr in a.expressions.iter_mut() {
                 v.visit_expr(expr);
             }
@@ -498,7 +507,8 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
             v.visit_expr(&mut **array);
             v.visit_expr(&mut **index);
         }
-        Expr::Record(_, ref mut fields) => {
+        Expr::Record(ref mut id, ref mut fields) => {
+            v.visit_identifier(id);
             for field in fields {
                 if let Some(ref mut expr) = field.1 {
                     v.visit_expr(expr);
@@ -510,9 +520,26 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
                 v.visit_expr(expr);
             }
         }
-        Expr::Lambda(ref mut lambda) => v.visit_expr(&mut *lambda.body),
+        Expr::Lambda(ref mut lambda) => {
+            v.visit_identifier(&mut lambda.id);
+            v.visit_expr(&mut *lambda.body);
+        }
         Expr::Type(_, _, ref mut expr) => v.visit_expr(&mut *expr),
-        Expr::Literal(..) | Expr::Identifier(..) => ()
+        Expr::Identifier(ref mut id) => v.visit_identifier(id),
+        Expr::Literal(..) => ()
+    }
+}
+
+pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>) {
+    match *p {
+        Pattern::Constructor(ref mut id, ref mut args) => {
+            v.visit_identifier(id);
+            for a in args {
+                v.visit_identifier(a);
+            }
+        }
+        Pattern::Record(..) => (),
+        Pattern::Identifier(ref mut id) => v.visit_identifier(id)
     }
 }
 

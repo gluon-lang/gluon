@@ -318,80 +318,16 @@ impl <'a> Typecheck<'a> {
         }
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { level: u32, tc: &'a mut Typecheck<'b> }
-        impl <'a, 'b> ReplaceVisitor<'a, 'b> {
-            fn finish_type(&mut self, typ: &mut TcType) {
-                ast::walk_mut_type2(typ, &mut |typ| {
-                    self.tc.replace_variable(typ);
-                    *typ = match *typ {
-                        Type::Variable(ref var) if self.tc.subs.get_level(var.id) > self.level => {
-                            let generic = format!("a_{}", var);
-                            let id = self.tc.interner.intern(self.tc.gc, &generic);
-                            Type::Generic(ast::Generic { kind: var.kind.clone(), id: id })
-                        }
-                        _ => return
-                    };
-                }, &mut unroll_app);
-            }
-        }
         impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
             type T = TcIdent;
-            fn visit_expr(&mut self, e: &mut ast::LExpr<TcIdent>) {
-                match e.value {
-                    ast::Expr::Identifier(ref mut id) => self.finish_type(&mut id.typ),
-                    ast::Expr::FieldAccess(_, ref mut id) => self.finish_type(&mut id.typ),
-                    ast::Expr::Array(ref mut array) => self.finish_type(&mut array.id.typ),
-                    ast::Expr::Lambda(ref mut lambda) => self.finish_type(&mut lambda.id.typ),
-                    ast::Expr::BinOp(_, ref mut id, _) => self.finish_type(&mut id.typ),
-                    ast::Expr::Match(_, ref mut alts) => {
-                        for alt in alts.iter_mut() {
-                            match alt.pattern {
-                                ast::Pattern::Constructor(ref mut id, ref mut args) => {
-                                    self.finish_type(&mut id.typ);
-                                    for arg in args.iter_mut() {
-                                        self.finish_type(&mut arg.typ);
-                                    }
-                                }
-                                ast::Pattern::Record(_) => (),
-                                ast::Pattern::Identifier(ref mut id) => self.finish_type(&mut id.typ)
-                            }
-                        }
-                    }
-                    ast::Expr::Let(ref mut bindings, _) => {
-                        for bind in bindings {
-                            if let Some(ref mut typ) = bind.typ {
-                                self.finish_type(typ);
-                            }
-                            match bind.name {
-                                ast::Pattern::Constructor(ref mut id, ref mut args) => {
-                                    self.finish_type(&mut id.typ);
-                                    for arg in args.iter_mut() {
-                                        self.finish_type(&mut arg.typ);
-                                    }
-                                }
-                                ast::Pattern::Record(_) => (),
-                                ast::Pattern::Identifier(ref mut id) => self.finish_type(&mut id.typ)
-                            }
-                        }
-                    }
-                    ast::Expr::Record(ref mut id, _) => self.finish_type(&mut id.typ),
-                    _ => ()
-                }
-                ast::walk_mut_expr(self, e);
+            fn visit_identifier(&mut self, id: &mut TcIdent) {
+                self.tc.finish_type(self.level, &mut id.typ);
             }
         }
         let mut stack = ::std::mem::replace(&mut self.stack, ScopedMap::new());
         for (_, vec) in stack.iter_mut() {
             for typ in vec {
-                ast::walk_mut_type2(typ, &mut |typ| {
-                    self.replace_variable(typ);
-                    *typ = match *typ {
-                        Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
-                            let generic = format!("a_{}", var);
-                            Type::Generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) })
-                        }
-                        _ => return
-                    };
-                }, &mut unroll_app);
+                self.finish_type(level, typ);
             }
         }
         ::std::mem::swap(&mut self.stack, &mut stack);
@@ -994,6 +930,20 @@ impl <'a> Typecheck<'a> {
             }
         };
         Ok(())
+    }
+
+    fn finish_type(&mut self, level: u32, typ: &mut TcType) {
+        ast::walk_mut_type2(typ, &mut |typ| {
+            self.replace_variable(typ);
+            *typ = match *typ {
+                Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
+                    let generic = format!("a_{}", var);
+                    let id = self.interner.intern(self.gc, &generic);
+                    Type::Generic(ast::Generic { kind: var.kind.clone(), id: id })
+                }
+                _ => return
+            };
+        }, &mut unroll_app);
     }
 }
 
