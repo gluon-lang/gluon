@@ -432,9 +432,9 @@ pub struct VM<'a> {
     globals: FixedVec<Global<'a>>,
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
-    interner: RefCell<Interner>,
+    pub interner: RefCell<Interner>,
     names: RefCell<HashMap<InternedStr, Named>>,
-    gc: RefCell<Gc>,
+    pub gc: RefCell<Gc>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     //Since the vm will be retrieved often and the borrowing from a RefCell does not work
     //it needs to be in a unsafe cell
@@ -462,6 +462,7 @@ impl fmt::Display for Error {
     }
 }
 
+#[derive(Debug)]
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global<'a>>,
@@ -603,11 +604,12 @@ impl <'a> VM<'a> {
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new())
         };
-        vm.add_primitives();
+        vm.add_primitives()
+            .unwrap();
         vm
     }
 
-    fn add_primitives(&self) {
+    fn add_primitives(&self) -> VMResult<()> {
         use self::primitives as prim;
         fn f1<A, R>(f: fn (A) -> R) -> fn (A) -> R {
             f
@@ -622,46 +624,46 @@ impl <'a> VM<'a> {
         let b = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("b") });
         let array_a = Type::Array(box a.clone());
         let io = |t| ast::type_con(self.intern("IO"), vec![t]);
-        let _ = self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length);
-        let _ = define_function(self, "string_length", f1(prim::string_length));
-        let _ = define_function(self, "string_find", f2(prim::string_find));
-        let _ = define_function(self, "string_rfind", f2(prim::string_rfind));
-        let _ = define_function(self, "string_trim", f1(prim::string_trim));
-        let _ = self.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box prim::string_append);
-        let _ = self.extern_function("string_eq", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], BOOL_TYPE.clone(), box prim::string_eq);
-        let _ = define_function(self, "string_slice", f3(prim::string_slice));
-        let _ = self.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
-        let _ = self.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box prim::show);
-        let _ = self.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box prim::error);
-        let _ = self.extern_function("error", vec![STRING_TYPE.clone()], a.clone(), box prim::error);
+        try!(self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length));
+        try!(define_function(self, "string_length", f1(prim::string_length)));
+        try!(define_function(self, "string_find", f2(prim::string_find)));
+        try!(define_function(self, "string_rfind", f2(prim::string_rfind)));
+        try!(define_function(self, "string_trim", f1(prim::string_trim)));
+        try!(self.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box prim::string_append));
+        try!(self.extern_function("string_eq", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], BOOL_TYPE.clone(), box prim::string_eq));
+        try!(define_function(self, "string_slice", f3(prim::string_slice)));
+        try!(self.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box prim::show));
+        try!(self.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box prim::show));
+        try!(self.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box prim::error));
+        try!(self.extern_function("error", vec![STRING_TYPE.clone()], a.clone(), box prim::error));
 
         //IO functions
-        let _ = define_function(self, "print_int", f1(prim::print_int));
+        try!(define_function(self, "print_int", f1(prim::print_int)));
         let catch_fn = ast::fn_type(vec![STRING_TYPE.clone()], io(a.clone()));
-        let _ = self.extern_function_io("catch_IO",
+        try!(self.extern_function_io("catch_IO",
                                         3,
                                         ast::fn_type(vec![io(a.clone()), catch_fn], io(a.clone())),
-                                        box prim::catch_io);
-        let _ = self.extern_function_io("read_file",
+                                        box prim::catch_io));
+        try!(self.extern_function_io("read_file",
                                         2,
                                         ast::fn_type(vec![STRING_TYPE.clone()], io(STRING_TYPE.clone())),
-                                        box prim::read_file);
-        let _ = self.extern_function_io("read_line",
+                                        box prim::read_file));
+        try!(self.extern_function_io("read_line",
                                         1,
                                         io(STRING_TYPE.clone()),
-                                        box prim::read_line);
-        let _ = self.extern_function_io("print",
+                                        box prim::read_line));
+        try!(self.extern_function_io("print",
                                         2,
                                         ast::fn_type(vec![STRING_TYPE.clone()], io(UNIT_TYPE.clone())),
-                                        box prim::print);
-        let _ = self.extern_function_io("run_expr",
+                                        box prim::print));
+        try!(self.extern_function_io("run_expr",
                                         2,
                                         ast::fn_type(vec![STRING_TYPE.clone()], io(STRING_TYPE.clone())),
-                                     box prim::run_expr);
-        let _ = self.extern_function_io("load_script",
+                                     box prim::run_expr));
+        try!(self.extern_function_io("load_script",
                                         3,
                                         ast::fn_type(vec![STRING_TYPE.clone(), STRING_TYPE.clone()], io(STRING_TYPE.clone())),
-                                     box prim::load_script);
+                                     box prim::load_script));
         
         // io_bind m f (): IO a -> (a -> IO b) -> IO b
         //     = f (m ())
@@ -675,6 +677,7 @@ impl <'a> VM<'a> {
                           ast::fn_type(vec![a.clone()], io(a.clone())),
                           2,
                           vec![Pop(1)]);
+        Ok(())
     }
     fn add_bytecode(&self, name: &str, typ: TcType, args: VMIndex, instructions: Vec<Instruction>) -> VMIndex {
         let id = self.intern(name);

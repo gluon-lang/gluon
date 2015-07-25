@@ -1489,24 +1489,25 @@ in { empty, insert }
     fn prelude(b: &mut ::test::Bencher) {
         use std::fs::File;
         use std::io::Read;
-        //Only parse once since it takes much more time when running in debug mode
-        thread_local! { static PRELUDE: ::std::cell::RefCell<Option<ast::LExpr<TcIdent>>> = ::std::cell::RefCell::new(None) }
-        let expr = PRELUDE.with(|expr| {
-            let mut expr = expr.borrow_mut();
-            if let None = *expr {
-                let _ = ::env_logger::init();
-                let mut text = String::new();
-                File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-                *expr = Some(parse_new(&text))
-            }
-            expr.as_ref().unwrap().clone()
-        });
-        let interner = get_local_interner();
-        let mut interner = interner.borrow_mut();
-        let &mut(ref mut interner, ref mut gc) = &mut *interner;
+        use vm::VM;
+        let _ = ::env_logger::init();
+        let vm = VM::new();
+        let env = vm.env();
+        let mut interner = vm.interner.borrow_mut();
+        let mut gc = vm.gc.borrow_mut();
+        let mut text = String::new();
+        File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        let expr = ::parser::parse_tc(&mut *gc, &mut *interner, &text)
+            .unwrap_or_else(|err| panic!("{:?}", err));
         b.iter(|| {
-            let mut tc = Typecheck::new(interner, gc);
-            ::test::black_box(tc.typecheck_expr(&mut expr.clone()))
+            let mut tc = Typecheck::new(&mut *interner, &mut *gc);
+            tc.add_environment(&env);
+            let result = tc.typecheck_expr(&mut expr.clone());
+            if let Err(ref err) = result {
+                println!("{}", err);
+                assert!(false);
+            }
+            ::test::black_box(result)
         })
     }
 }

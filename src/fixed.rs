@@ -1,5 +1,6 @@
 use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::Hash;
 use std::iter::{FromIterator, IntoIterator};
 use std::ops::Index;
@@ -20,6 +21,13 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
 pub struct FixedMap<K, V> {
     map: RefCell<HashMap<K, Box<V>>>
 }
+
+impl <K: Eq + Hash + fmt::Debug, V: fmt::Debug> fmt::Debug for FixedMap<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.map.borrow().fmt(f)
+    }
+}
+
 impl <K: Eq + Hash, V> FixedMap<K, V> {
 
     pub fn new() -> FixedMap<K, V> {
@@ -48,6 +56,7 @@ impl <K: Eq + Hash, V> FixedMap<K, V> {
     }
 }
 
+#[derive(Debug)]
 pub struct FixedVec<T> {
     vec: RefCell<Vec<Box<T>>>
 }
