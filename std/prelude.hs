@@ -1,14 +1,15 @@
 type Option a = | None | Some a in
-type Result t e = | Ok t | Err e in
+type Result e t = | Err e | Ok t in
 type List a = | Nil | Cons a (List a) in
 
 let id x = x
-in
-let (++) xs ys = case xs of
+and const x = \_ -> x
+and flip f = \x y -> f y x
+and not x = if x then False else True
+and (++) xs ys = case xs of
     | Cons x zs -> Cons x (zs ++ ys)
     | Nil -> ys
-in
-let concatMap f xs: (a -> List b) -> List a -> List b = case xs of
+and concatMap f xs: (a -> List b) -> List a -> List b = case xs of
     | Cons x ys -> f x ++ concatMap f ys
     | Nil -> Nil
 in
@@ -27,13 +28,25 @@ let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
     (==) = \l r ->
         case l of
             | Some l_val ->
-                case r of
+                (case r of
                     | Some r_val -> eq_a.(==) l_val r_val
-                    | None -> False
+                    | None -> False)
             | None -> 
-                case r of
+                (case r of
                     | Some _ -> False
-                    | None -> True
+                    | None -> True)
+} in
+let eq_Result: Eq t -> Eq e -> Eq (Result t e) = \eq_t eq_e -> {
+    (==) = \l r ->
+        case l of
+            | Ok l_val ->
+                (case r of
+                    | Ok r_val -> eq_t.(==) l_val r_val
+                    | Err _ -> False)
+            | Err l_val -> 
+                (case r of
+                    | Ok _ -> False
+                    | Err r_val -> eq_e.(==) l_val r_val)
 } in
 let eq_List: Eq a -> Eq (List a) = \d -> {
     (==) = let f l r = case l of
@@ -77,13 +90,25 @@ let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
     compare = \l r ->
         case l of
             | Some l_val ->
-                case r of
+                (case r of
                     | Some r_val -> compare_a.compare l_val r_val
-                    | None -> LT
+                    | None -> LT)
             | None -> 
-                case r of
+                (case r of
                     | Some r_val -> GT
-                    | None -> EQ
+                    | None -> EQ)
+} in
+let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_t ord_e -> {
+    compare = \l r ->
+        case l of
+            | Ok l_val ->
+                (case r of
+                    | Ok r_val -> ord_t.compare l_val r_val
+                    | Err _ -> GT)
+            | Err l_val -> 
+                (case r of
+                    | Ok _ -> LT
+                    | Err r_val -> ord_e.compare l_val r_val)
 } in
 type Num a = {
     (+) : a -> a -> a,
@@ -203,8 +228,9 @@ let show_List: Show a -> Show (List a) = \d ->
         in string_append "[" (show2 xs)
     in { show }
 in
-{ ord_Option, ord_Float, ord_Int,
-  eq_List, eq_Option, eq_Float, eq_Int, eq_String,
+{ id, const, flip, not, 
+  ord_Option, ord_Result, ord_Float, ord_Int,
+  eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
   num_Int, num_Float,
   functor_Option, functor_List, functor_IO,
   applicative_Option, applicative_List, applicative_IO,
