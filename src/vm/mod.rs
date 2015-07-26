@@ -622,7 +622,7 @@ impl <'a> VM<'a> {
         }
         let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("a") });
         let b = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("b") });
-        let array_a = Type::Array(box a.clone());
+        let array_a = Type::Array(ast::BoxType::new(a.clone()));
         let io = |t| ast::type_con(self.intern("IO"), vec![t]);
         try!(self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length));
         try!(define_function(self, "string_length", f1(prim::string_length)));

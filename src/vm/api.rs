@@ -451,7 +451,7 @@ impl <'a, 's, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's 
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        Type::Function(args, box make_type::<R>(vm))
+        ast::fn_type(args, make_type::<R>(vm))
     }
 }
 impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Box<Fn($($args),*) -> R + 's> {

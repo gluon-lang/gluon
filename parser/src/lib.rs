@@ -173,7 +173,7 @@ where I: Stream<Item=char>
                         args.push(r);
                         Type::Data(ctor, args)
                     }
-                    _ => Type::App(Box::new(l), Box::new(r))
+                    _ => Type::App(BoxType::new(l), BoxType::new(r))
                 };
                 Ok((f, Consumed::Empty(input)))
         });
@@ -181,7 +181,7 @@ where I: Stream<Item=char>
             .map(|(arg, ret)| {
                 debug!("Parse: {:?} -> {:?}", arg, ret);
                 match ret {
-                    Some(ret) => Type::Function(vec![arg], Box::new(ret)),
+                    Some(ret) => Type::Function(vec![arg], BoxType::new(ret)),
                     None => arg
                 }
             })
@@ -198,7 +198,7 @@ where I: Stream<Item=char>
 
     fn type_arg(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
         let array_type = self.brackets(self.typ())
-            .map(|typ| Type::Array(Box::new(typ)));
+            .map(|typ| Type::Array(BoxType::new(typ)));
         array_type
             .or(self.parser(ParserEnv::record_type))
             .or(self.parens(optional(self.typ()))

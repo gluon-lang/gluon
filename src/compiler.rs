@@ -304,7 +304,7 @@ impl <'a> Compiler<'a> {
         CompiledFunction {
             args: 0,
             id: self.intern(""),
-            typ: Type::Function(vec![], Box::new(expr.type_of().clone())),
+            typ: ast::fn_type(vec![], expr.type_of().clone()),
             instructions: instructions,
             inner_functions: inner_functions,
             strings: strings

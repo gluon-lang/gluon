@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::fmt;
 pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
@@ -66,6 +66,12 @@ impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Line: {}, Column: {}", self.row, self.column)
     }
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Span {
+    pub start: Location,
+    pub end: Location
 }
 
 #[derive(Clone, Debug)]
@@ -142,16 +148,48 @@ pub struct Generic<Id> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Type<Id> {
-    App(Box<Type<Id>>, Box<Type<Id>>),
+pub enum Type<Id, T = BoxType<Id>> {
+    App(T, T),
     Data(TypeConstructor<Id>, Vec<Type<Id>>),
     Variants(Vec<(Id, Type<Id>)>),
     Variable(TypeVariable),
     Generic(Generic<Id>),
-    Function(Vec<Type<Id>>, Box<Type<Id>>),
+    Function(Vec<Type<Id>>, T),
     Builtin(BuiltinType),
-    Array(Box<Type<Id>>),
+    Array(T),
     Record(Vec<Field<Id>>)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct BoxType<Id> {
+    typ: Box<Type<Id, BoxType<Id>>>
+}
+
+impl <Id: fmt::Display> fmt::Display for BoxType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl <Id> Deref for BoxType<Id> {
+    type Target = Type<Id>;
+    fn deref(&self) -> &Type<Id> {
+        &self.typ
+    }
+}
+impl <Id> DerefMut for BoxType<Id> {
+    fn deref_mut(&mut self) -> &mut Type<Id> {
+        &mut self.typ
+    }
+}
+
+impl <Id> BoxType<Id> {
+    pub fn new(typ: Type<Id, BoxType<Id>>) -> BoxType<Id> {
+        BoxType { typ: Box::new(typ) }
+    }
+    pub fn into_inner(self) -> Type<Id> {
+        *self.typ
+    }
 }
 
 impl <Id> Type<Id> {
@@ -298,7 +336,7 @@ pub fn fn_type<I, Id>(args: I, return_type: Type<Id>) -> Type<Id>
     where I: IntoIterator<Item=Type<Id>>
         , I::IntoIter: DoubleEndedIterator {
     args.into_iter().rev()
-        .fold(return_type, |body, arg| Type::Function(vec![arg], Box::new(body)))
+        .fold(return_type, |body, arg| Type::Function(vec![arg], BoxType::new(body)))
 }
 pub fn type_con<I>(s: I, args: Vec<Type<I>>) -> Type<I>
     where I: Deref<Target=str> {

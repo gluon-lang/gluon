@@ -5,7 +5,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use scoped_map::ScopedMap;
 use base::ast;
-use base::ast::MutVisitor;
+use base::ast::{BoxType, MutVisitor};
 use base::interner::{Interner, InternedStr};
 use base::gc::Gc;
 use kindcheck;
@@ -396,14 +396,14 @@ impl <'a> Typecheck<'a> {
             ast::Expr::Call(ref mut func, ref mut args) => {
                 let mut func_type = try!(self.typecheck(&mut**func));
                 for arg in args.iter_mut() {
-                    let f = Type::Function(vec![self.subs.new_var()], Box::new(self.subs.new_var()));
+                    let f = ast::fn_type(vec![self.subs.new_var()], self.subs.new_var());
                     func_type = try!(self.unify(&f, func_type));
                     match func_type {
                         Type::Function(arg_type, ret) => {
                             assert!(arg_type.len() == 1);
                             let actual = try!(self.typecheck(arg));
                             try!(self.unify(&arg_type[0], actual));
-                            func_type = *ret;
+                            func_type = ret.into_inner();
                         }
                         t => return Err(NotAFunction(t))
                     }
@@ -456,8 +456,8 @@ impl <'a> Typecheck<'a> {
                             let func_type = ast::fn_type(vec![lhs_type, rhs_type], self.subs.new_var());
                             match try!(self.unify(&op.typ, func_type)) {
                                 Type::Function(_, return_type) => 
-                                    match *return_type {
-                                        Type::Function(_, return_type) => Ok(*return_type),
+                                    match return_type.into_inner() {
+                                        Type::Function(_, return_type) => Ok(return_type.into_inner()),
                                         _ => panic!("ICE: unify binop")
                                     },
                                 _ => panic!("ICE: unify binop")
@@ -598,15 +598,15 @@ impl <'a> Typecheck<'a> {
                     let typ = try!(self.typecheck(expr));
                     expected_type = try!(self.unify(&expected_type, typ));
                 }
-                a.id.typ = Type::Array(box expected_type);
+                a.id.typ = Type::Array(BoxType::new(expected_type));
                 Ok(a.id.typ.clone())
             }
             ast::Expr::ArrayAccess(ref mut array, ref mut index) => {
                 let array_type = try!(self.typecheck(&mut **array));
                 let var = self.subs.new_var();
-                let array_type = try!(self.unify(&Type::Array(box var), array_type));
+                let array_type = try!(self.unify(&Type::Array(BoxType::new(var)), array_type));
                 let typ = match array_type {
-                    Type::Array(typ) => *typ,
+                    Type::Array(typ) => typ.into_inner(),
                     typ => return Err(IndexError(typ))
                 };
                 let index_type = try!(self.typecheck(&mut **index));
@@ -743,7 +743,7 @@ impl <'a> Typecheck<'a> {
             Type::Function(mut argument_types, return_type) => {
                 assert!(argument_types.len() == 1);
                 self.stack_var(args[0].id().clone(), argument_types.pop().unwrap());
-                self.typecheck_pattern_rec(&mut args[1..], *return_type)
+                self.typecheck_pattern_rec(&mut args[1..], return_type.into_inner())
             }
             _ => Err(PatternError(typ))
         }
@@ -974,10 +974,11 @@ impl Substitution<TcType> {
                 var
             }
             Type::Function(ref args, ref return_type) => {
-                let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
-                Type::Function(args2, box self.instantiate_(&**return_type))
+                let return_type = self.instantiate_(&**return_type);
+                let args2 = args.iter().map(|a| self.instantiate_(a));
+                ast::fn_type(args2, return_type)
             }
-            Type::Array(ref typ) => Type::Array(box self.instantiate_(&**typ)),
+            Type::Array(ref typ) => Type::Array(BoxType::new(self.instantiate_(&**typ))),
             Type::Data(ref id, ref args) => {
                 let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
                 Type::Data(id.clone(), args2)
@@ -992,7 +993,7 @@ impl Substitution<TcType> {
                     .collect())
             }
             Type::App(ref f, ref r) => {
-                Type::App(Box::new(self.instantiate_(f)), Box::new(self.instantiate_(r)))
+                Type::App(BoxType::new(self.instantiate_(f)), BoxType::new(self.instantiate_(r)))
             }
             ref x => x.clone()
         }
