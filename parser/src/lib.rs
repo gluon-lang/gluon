@@ -132,48 +132,50 @@ where I: Stream<Item=char>
             .parse_state(input)
     }
 
-    fn ident_type<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, Type<Id::Untyped>> {
+    fn ident_type<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, ASTType<Id::Untyped>> {
         self.parser(ParserEnv::parse_ident_type)
     }
-    fn parse_ident_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
+    fn parse_ident_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
         try(self.env.identifier())
             .map(|s| {
                 debug!("Id: {}", s);
                 if s.chars().next()
                     .map(|c| c.is_lowercase())
                     .unwrap_or(false) {
-                    Type::Generic(Generic { kind: Kind::Variable(0), id: self.intern(&s).to_id() })
+                    Type::generic(Generic { kind: Kind::Variable(0), id: self.intern(&s).to_id() })
                 }
                 else {
                     match str_to_primitive_type(&s) {
-                        Some(prim) => Type::Builtin(prim),
-                        None => Type::Data(TypeConstructor::Data(self.intern(&s).to_id()), Vec::new())
+                        Some(prim) => Type::builtin(prim),
+                        None => Type::data(TypeConstructor::Data(self.intern(&s).to_id()), Vec::new())
                     }
                 }
             })
             .parse_state(input)
     }
 
-    fn typ<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, Type<Id::Untyped>> {
+    fn typ<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, ASTType<Id::Untyped>> {
         self.parser(ParserEnv::parse_type)
     }
 
-    fn parse_adt(&self, return_type: &Type<Id::Untyped>, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
+    fn parse_adt(&self, return_type: &ASTType<Id::Untyped>, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
         let variant = (self.lex(char('|')), self.ident_u(), many(self.parser(ParserEnv::type_arg)))
-                .map(|(_, id, args): (_, _, Vec<_>)| (id, fn_type(args, return_type.clone())));
+                .map(|(_, id, args): (_, _, Vec<_>)| {
+                    (id, Type::function(args, return_type.clone()))
+                });
         many1(variant)
-            .map(Type::Variants)
+            .map(Type::variants)
             .parse_state(input)
     }
 
-    fn parse_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
+    fn parse_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
         let f = parser(|input| {
-                let f = |l, r| match l {
+                let f = |l: ASTType<Id::Untyped>, r| match (*l).clone() {
                     Type::Data(ctor, mut args) => {
                         args.push(r);
-                        Type::Data(ctor, args)
+                        Type::data(ctor, args)
                     }
-                    _ => Type::App(BoxType::new(l), BoxType::new(r))
+                    _ => Type::app(l, r)
                 };
                 Ok((f, Consumed::Empty(input)))
         });
@@ -181,30 +183,30 @@ where I: Stream<Item=char>
             .map(|(arg, ret)| {
                 debug!("Parse: {:?} -> {:?}", arg, ret);
                 match ret {
-                    Some(ret) => Type::Function(vec![arg], BoxType::new(ret)),
+                    Some(ret) => Type::function(vec![arg], ret),
                     None => arg
                 }
             })
             .parse_state(input)
     }
 
-    fn record_type(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
+    fn record_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
         let field = (self.ident_u(), self.lex(string(":")), self.typ())
             .map(|(name, _, typ)| Field { name: name, typ: typ });
         self.braces(sep_by(field, self.lex(char(','))))
-            .map(Type::Record)
+            .map(Type::record)
             .parse_state(input)
     }
 
-    fn type_arg(&self, input: State<I>) -> ParseResult<Type<Id::Untyped>, I> {
+    fn type_arg(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
         let array_type = self.brackets(self.typ())
-            .map(|typ| Type::Array(BoxType::new(typ)));
+            .map(Type::array);
         array_type
             .or(self.parser(ParserEnv::record_type))
             .or(self.parens(optional(self.typ()))
                .map(|typ| match typ {
                     Some(typ) => typ,
-                    None => Type::Builtin(BuiltinType::UnitType)
+                    None => Type::builtin(BuiltinType::UnitType)
             }))
             .or(self.ident_type())
             .parse_state(input)
@@ -214,8 +216,13 @@ where I: Stream<Item=char>
         debug!("type_decl");
         (self.reserved("type"), self.ident_u(), many(self.ident_u()))//TODO only variables allowed
             .map(|(_, name, args): (_, _, Vec<_>)| {
-                let args = args.into_iter().map(|id| Type::Generic(Generic { kind: Kind::Variable(0), id: id })).collect();
-                Type::Data(TypeConstructor::Data(name), args)
+                let args = args.into_iter().map(|id|
+                        Type::generic(Generic {
+                            kind: Kind::Variable(0),
+                            id: id
+                        })
+                    ).collect();
+                Type::data(TypeConstructor::Data(name), args)
             })
             .then(|return_type| parser(move |input| {
                 let (rhs_type, input) = try!(self.reserved_op("=")
@@ -516,20 +523,20 @@ pub mod tests {
     fn id(s: &str) -> PExpr {
         no_loc(Expr::Identifier(intern(s)))
     }
-    fn field(s: &str, typ: Type<InternedStr>) -> Field<InternedStr> {
+    fn field(s: &str, typ: ASTType<InternedStr>) -> Field<InternedStr> {
         Field { name: intern(s), typ: typ }
     }
-    fn typ(s: &str) -> Type<InternedStr> {
+    fn typ(s: &str) -> ASTType<InternedStr> {
         assert!(s.len() != 0);
         let is_var = s.chars().next().unwrap().is_lowercase();
         match str_to_primitive_type(s) {
-            Some(b) => Type::Builtin(b),
+            Some(b) => Type::builtin(b),
             None if is_var => generic(s),
-            None => Type::Data(TypeConstructor::Data(intern(s)), Vec::new())
+            None => Type::data(TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
-    fn generic(s: &str) -> Type<InternedStr> {
-        Type::Generic(Generic { kind: Kind::Variable(0), id: intern(s) })
+    fn generic(s: &str) -> ASTType<InternedStr> {
+        Type::generic(Generic { kind: Kind::Variable(0), id: intern(s) })
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
         no_loc(Expr::Call(box e, args))
@@ -550,7 +557,7 @@ pub mod tests {
             body: box body 
         }))
     }
-    fn type_decl(name: Type<InternedStr>, typ: Type<InternedStr>, body: PExpr) -> PExpr {
+    fn type_decl(name: ASTType<InternedStr>, typ: ASTType<InternedStr>, body: PExpr) -> PExpr {
         no_loc(Expr::Type(name, typ, box body))
     }
 
@@ -619,8 +626,8 @@ pub mod tests {
     fn type_decl_record() {
         let _ = ::env_logger::init();
         let e = parse_new("type Test = { x: Int, y: {} } in 1");
-        let record = Type::Record(vec![Field { name: intern("x"), typ: typ("Int") }
-                                    ,  Field { name: intern("y"), typ: Type::Record(vec![]) }]);
+        let record = Type::record(vec![Field { name: intern("x"), typ: typ("Int") }
+                                    ,  Field { name: intern("y"), typ: Type::record(vec![]) }]);
         assert_eq!(e, type_decl(typ("Test"), record, int(1)));
     }
 
@@ -650,11 +657,11 @@ pub mod tests {
     fn variant_type() {
         let _ = ::env_logger::init();
         let e = parse_new("type Option a = | None | Some a in Some 1");
-        let option = Type::Data(TypeConstructor::Data(intern("Option")), vec![typ("a")]);
-        let none = fn_type(vec![], option.clone());
-        let some = fn_type(vec![typ("a")], option.clone());
+        let option = Type::data(TypeConstructor::Data(intern("Option")), vec![typ("a")]);
+        let none = Type::function(vec![], option.clone());
+        let some = Type::function(vec![typ("a")], option.clone());
         assert_eq!(e, type_decl(option
-                , Type::Variants(vec![(intern("None"), none), (intern("Some"), some)])
+                , Type::variants(vec![(intern("None"), none), (intern("Some"), some)])
                 , call(id("Some"), vec![int(1)])));
     }
     #[test]

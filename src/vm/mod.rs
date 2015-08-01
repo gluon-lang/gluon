@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::Deref;
 use base::ast;
-use base::ast::Type;
-use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, BOOL_TYPE, STRING_TYPE, INT_TYPE, FLOAT_TYPE, UNIT_TYPE, TcIdent, TcType};
+use base::ast::{Type, ASTType};
+use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
 use compiler::*;
 use compiler::Instruction::*;
 use base::interner::{Interner, InternedStr};
@@ -418,8 +418,8 @@ impl <'a> Traverseable for Global<'a> {
 
 impl <'a> Typed for Global<'a> {
     type Id = InternedStr;
-    fn type_of(&self) -> &TcType {
-        &self.typ
+    fn type_of(&self) -> TcType {
+        self.typ.clone()
     }
 }
 
@@ -482,7 +482,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     fn find_field(&self, data_name: &InternedStr, field_name: &InternedStr) -> Option<VMIndex> {
         self.type_infos.id_to_type.get(data_name)
             .and_then(|typ| {
-                match *typ {
+                match **typ {
                     ast::Type::Record(ref fields) => {
                         fields.iter()
                             .enumerate()
@@ -495,7 +495,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     }
 
     fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
-        match self.type_infos.id_to_type.get(data_name) {
+        match self.type_infos.id_to_type.get(data_name).map(|t| &**t) {
             Some(&Type::Variants(ref ctors)) => {
                 ctors.iter()
                     .enumerate()
@@ -519,7 +519,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
             }
             _ => {
                 self.type_infos.id_to_type.values()
-                    .filter_map(|typ| match *typ {
+                    .filter_map(|typ| match **typ {
                         Type::Variants(ref ctors) => ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1),
                         _ => None
                     })
@@ -604,9 +604,21 @@ impl <'a> VM<'a> {
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new())
         };
+        vm.add_types()
+            .unwrap();
         vm.add_primitives()
             .unwrap();
         vm
+    }
+
+    fn add_types(&self) -> Result<(), (TypeId, TcType)> {
+        let ref ids = self.typeids;
+        try!(ids.try_insert(TypeId::of::<()>(), Type::unit()));
+        try!(ids.try_insert(TypeId::of::<bool>(), Type::bool()));
+        try!(ids.try_insert(TypeId::of::<VMInt>(), Type::int()));
+        try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
+        try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
+        Ok(())
     }
 
     fn add_primitives(&self) -> VMResult<()> {
@@ -620,61 +632,61 @@ impl <'a> VM<'a> {
         fn f3<A, B, C, R>(f: fn (A, B, C) -> R) -> fn (A, B, C) -> R {
             f
         }
-        let a = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("a") });
-        let b = Type::Generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("b") });
-        let array_a = Type::Array(ast::BoxType::new(a.clone()));
-        let io = |t| ast::type_con(self.intern("IO"), vec![t]);
-        try!(self.extern_function("array_length", vec![array_a.clone()], INT_TYPE.clone(), box prim::array_length));
+        let a = Type::generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("a") });
+        let b = Type::generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("b") });
+        let array_a = Type::array(a.clone());
+        let io = |t| ASTType::from(ast::type_con(self.intern("IO"), vec![t]));
+        try!(self.extern_function("array_length", vec![array_a.clone()], Type::int().clone(), box prim::array_length));
         try!(define_function(self, "string_length", f1(prim::string_length)));
         try!(define_function(self, "string_find", f2(prim::string_find)));
         try!(define_function(self, "string_rfind", f2(prim::string_rfind)));
         try!(define_function(self, "string_trim", f1(prim::string_trim)));
-        try!(self.extern_function("string_append", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], STRING_TYPE.clone(), box prim::string_append));
-        try!(self.extern_function("string_eq", vec![STRING_TYPE.clone(), STRING_TYPE.clone()], BOOL_TYPE.clone(), box prim::string_eq));
+        try!(self.extern_function("string_append", vec![Type::string().clone(), Type::string().clone()], Type::string().clone(), box prim::string_append));
+        try!(self.extern_function("string_eq", vec![Type::string().clone(), Type::string().clone()], Type::bool().clone(), box prim::string_eq));
         try!(define_function(self, "string_slice", f3(prim::string_slice)));
-        try!(self.extern_function("show_Int_prim", vec![INT_TYPE.clone()], STRING_TYPE.clone(), box prim::show));
-        try!(self.extern_function("show_Float_prim", vec![FLOAT_TYPE.clone()], STRING_TYPE.clone(), box prim::show));
-        try!(self.extern_function("#error", vec![STRING_TYPE.clone()], a.clone(), box prim::error));
-        try!(self.extern_function("error", vec![STRING_TYPE.clone()], a.clone(), box prim::error));
+        try!(self.extern_function("show_Int_prim", vec![Type::int().clone()], Type::string().clone(), box prim::show));
+        try!(self.extern_function("show_Float_prim", vec![Type::float().clone()], Type::string().clone(), box prim::show));
+        try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), box prim::error));
+        try!(self.extern_function("error", vec![Type::string().clone()], a.clone(), box prim::error));
 
         //IO functions
         try!(define_function(self, "print_int", f1(prim::print_int)));
-        let catch_fn = ast::fn_type(vec![STRING_TYPE.clone()], io(a.clone()));
+        let catch_fn = Type::function(vec![Type::string().clone()], io(a.clone()));
         try!(self.extern_function_io("catch_IO",
                                         3,
-                                        ast::fn_type(vec![io(a.clone()), catch_fn], io(a.clone())),
+                                        Type::function(vec![io(a.clone()), catch_fn], io(a.clone())),
                                         box prim::catch_io));
         try!(self.extern_function_io("read_file",
                                         2,
-                                        ast::fn_type(vec![STRING_TYPE.clone()], io(STRING_TYPE.clone())),
+                                        Type::function(vec![Type::string().clone()], io(Type::string().clone())),
                                         box prim::read_file));
         try!(self.extern_function_io("read_line",
                                         1,
-                                        io(STRING_TYPE.clone()),
+                                        io(Type::string().clone()),
                                         box prim::read_line));
         try!(self.extern_function_io("print",
                                         2,
-                                        ast::fn_type(vec![STRING_TYPE.clone()], io(UNIT_TYPE.clone())),
+                                        Type::function(vec![Type::string().clone()], io(Type::unit().clone())),
                                         box prim::print));
         try!(self.extern_function_io("run_expr",
                                         2,
-                                        ast::fn_type(vec![STRING_TYPE.clone()], io(STRING_TYPE.clone())),
+                                        Type::function(vec![Type::string().clone()], io(Type::string().clone())),
                                      box prim::run_expr));
         try!(self.extern_function_io("load_script",
                                         3,
-                                        ast::fn_type(vec![STRING_TYPE.clone(), STRING_TYPE.clone()], io(STRING_TYPE.clone())),
+                                        Type::function(vec![Type::string().clone(), Type::string().clone()], io(Type::string().clone())),
                                      box prim::load_script));
         
         // io_bind m f (): IO a -> (a -> IO b) -> IO b
         //     = f (m ())
         let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), PushInt(0), TailCall(2)];
-        let f = ast::fn_type(vec![a.clone()], io(b.clone()));
-        let io_bind_type = ast::fn_type(vec![io(a.clone()), f], io(b.clone()));
+        let f = Type::function(vec![a.clone()], io(b.clone()));
+        let io_bind_type = Type::function(vec![io(a.clone()), f], io(b.clone()));
         self.add_bytecode("io_bind", io_bind_type, 3, io_bind);
 
 
         self.add_bytecode("io_return",
-                          ast::fn_type(vec![a.clone()], io(a.clone())),
+            Type::function(vec![a.clone()], io(a.clone())),
                           2,
                           vec![Pop(1)]);
         Ok(())
@@ -744,7 +756,7 @@ impl <'a> VM<'a> {
 
     pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: Box<Fn(&VM<'a>) -> Status + 'static>) -> Result<(), Error> {
         let num_args = args.len() as VMIndex;
-        self.extern_function_io(name, num_args, ast::fn_type(args, return_type), f)
+        self.extern_function_io(name, num_args, Type::function(args, return_type), f)
     }
     pub fn extern_function_io(&self, name: &str, num_args: VMIndex, typ: TcType, f: Box<Fn(&VM<'a>) -> Status + 'static>) -> Result<(), Error> {
         let id = self.intern(name);
@@ -766,7 +778,7 @@ impl <'a> VM<'a> {
         Ok(())
     }
 
-    pub fn register_type<T: ?Sized + Any>(&mut self, name: &str) -> Result<&TcType, ()> {
+    pub fn register_type<T: ?Sized + Any>(&self, name: &str) -> Result<&TcType, ()> {
         let n = self.intern(name);
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(&n) {
@@ -774,12 +786,12 @@ impl <'a> VM<'a> {
         }
         else {
             let id = TypeId::of::<T>();
-            let typ = Type::Data(ast::TypeConstructor::Data(n), Vec::new());
+            let typ = Type::data(ast::TypeConstructor::Data(n), Vec::new());
             try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
             let t = self.typeids.get(&id).unwrap();
-            let ctor = Type::Variants(vec![(n, typ)]);
+            let ctor = Type::variants(vec![(n, typ)]);
             type_infos.id_to_type.insert(n, ctor.clone());
-            type_infos.type_to_id.insert(ctor, Type::Data(ast::TypeConstructor::Data(n), vec![]));
+            type_infos.type_to_id.insert(ctor, Type::data(ast::TypeConstructor::Data(n), vec![]));
             Ok(t)
         }
     }
@@ -867,7 +879,7 @@ impl <'a> VM<'a> {
     ///Calls a module, allowed to to run IO expressions
     pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData<'a>>) -> VMResult<Value<'a>> {
         let value = try!(self.call_bytecode(0, closure));
-        if let Type::Data(ast::TypeConstructor::Data(id), _) = *typ {
+        if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
             if id == "IO" {
                 debug!("Run IO {:?}", value);
                 self.push(value);

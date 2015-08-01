@@ -3,7 +3,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Deref;
-use ast::{AstId, Type};
+use ast::{AstId, ASTType};
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
 
@@ -139,7 +139,7 @@ impl AstId for InternedStr {
         env.intern(s)
     }
     fn to_id(self) -> InternedStr { self }
-    fn set_type(&mut self, _: Type<Self::Untyped>) { }
+    fn set_type(&mut self, _: ASTType<Self::Untyped>) { }
 }
 
 #[cfg(test)]

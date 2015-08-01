@@ -5,7 +5,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use scoped_map::ScopedMap;
 use base::ast;
-use base::ast::{BoxType, MutVisitor};
+use base::ast::{ASTType, MutVisitor};
 use base::interner::{Interner, InternedStr};
 use base::gc::Gc;
 use kindcheck;
@@ -17,13 +17,7 @@ pub use base::ast::{TypeVariable, Type, Kind};
 
 pub type TcIdent = ::ast::TcIdent<InternedStr>;
 
-pub type TcType = Type<InternedStr>;
-
-pub static INT_TYPE: TcType = Type::Builtin(ast::IntType);
-pub static FLOAT_TYPE: TcType = Type::Builtin(ast::FloatType);
-pub static STRING_TYPE: TcType = Type::Builtin(ast::StringType);
-pub static BOOL_TYPE: TcType = Type::Builtin(ast::BoolType);
-pub static UNIT_TYPE: TcType = Type::Builtin(ast::UnitType);
+pub type TcType = ast::ASTType<InternedStr>;
 
 #[derive(Debug, PartialEq)]
 enum TypeError {
@@ -65,10 +59,10 @@ pub type TcResult = Result<TcType, TypeError>;
 
 impl Substitutable for TcType {
     fn new(id: u32) -> TcType {
-        Type::Variable(ast::TypeVariable::new(id))
+        Type::variable(ast::TypeVariable::new(id))
     }
     fn get_var(&self) -> Option<u32> {
-        match *self {
+        match **self {
             Type::Variable(ref var) => Some(var.id),
             _ => None
         }
@@ -94,7 +88,7 @@ impl TypeInfos {
     pub fn find_adt(&self, id: &InternedStr) -> Option<&TcType> {
         self.id_to_type.iter()
             .filter_map(|(_, typ)| {
-                match *typ {
+                match **typ {
                     Type::Variants(ref variants) => variants.iter().find(|v| v.0 == *id),
                     _ => None
                 }
@@ -106,7 +100,7 @@ impl TypeInfos {
     pub fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
         self.id_to_type.iter()
             .find(|&(_, typ)| {
-                match *typ {
+                match **typ {
                     Type::Record(ref record_fields) => {
                         fields.iter().all(|&name| record_fields.iter().any(|f| f.name == name))
                     }
@@ -115,6 +109,7 @@ impl TypeInfos {
             })
             .and_then(|t| self.type_to_id.get(&t.1).map(|id_type| (id_type, t.1)))
     }
+
     pub fn find_id(&self, typ: &TcType) -> Option<TcType> {
         self.type_to_id.iter()
             .filter_map(|(real_type, id_type)| {
@@ -134,11 +129,11 @@ fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcT
     let mut result = HashMap::new();
     if find_real_type_(id_rhs_type, real_type, &mut result) {
         let mut typ = id_type.clone();
-        ast::walk_mut_type(&mut typ, &mut |typ| {
-            *typ = match *typ {
-                Type::Generic(ref id) => result[&id.id].clone(),
-                _ => return
-            };
+        typ = ast::walk_move_type(typ, &mut |typ| {
+            match *typ {
+                Type::Generic(ref id) => Some(result[&id.id].clone()),
+                _ => return None
+            }
         });
         Some(typ)
     }
@@ -147,20 +142,20 @@ fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcT
     }
 }
 fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut HashMap<InternedStr, &'a TcType>) -> bool {
-    match (id_rhs_type, real_type) {
+    match (&**id_rhs_type, &**real_type) {
         (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
             l_args.iter().zip(r_args.iter())
                 .all(|(l, r)| find_real_type_(l, r, out))
-                && find_real_type_(&**l_ret, &**r_ret, out)
+                && find_real_type_(l_ret, r_ret, out)
         }
         (&Type::Variable(_), _) => {
             panic!()
         }
-        (&Type::Generic(ref i), real_type) => {
+        (&Type::Generic(ref i), _) => {
             out.insert(i.id, real_type);
             true
         }
-        (&Type::Array(ref l), &Type::Array(ref r)) => find_real_type_(&**l, &**r, out),
+        (&Type::Array(ref l), &Type::Array(ref r)) => find_real_type_(l, r, out),
         (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
             l == r && l_args.iter().zip(r_args.iter()).all(|(l, r)| find_real_type_(l, r, out))
         }
@@ -314,20 +309,20 @@ impl <'a> Typecheck<'a> {
         //Insert all type variables in the type declaration so that they get replaced by their
         //corresponding generic variable
         for (generic_id, var_id) in variables {
-            unsafe { self.subs.insert(*var_id, Type::Generic(ast::Generic { kind: ast::Kind::Star, id: *generic_id })); }
+            unsafe { self.subs.insert(*var_id, Type::generic(ast::Generic { kind: ast::Kind::Star, id: *generic_id })); }
         }
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { level: u32, tc: &'a mut Typecheck<'b> }
         impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
             type T = TcIdent;
             fn visit_identifier(&mut self, id: &mut TcIdent) {
-                self.tc.finish_type(self.level, &mut id.typ);
+                id.typ = self.tc.finish_type(self.level, id.typ.clone());
             }
         }
         let mut stack = ::std::mem::replace(&mut self.stack, ScopedMap::new());
         for (_, vec) in stack.iter_mut() {
             for typ in vec {
-                self.finish_type(level, typ);
+                *typ = self.finish_type(level, typ.clone());
             }
         }
         ::std::mem::swap(&mut self.stack, &mut stack);
@@ -350,12 +345,13 @@ impl <'a> Typecheck<'a> {
         }
         else {
             let mut generic = String::from("a");
-            ast::walk_mut_type2(&mut typ, &mut |typ| {
-                self.replace_variable(typ);
+            typ = ast::walk_move_type(typ, &mut |typ| {
+                let result = self.replace_variable(typ);
+                let typ = result.as_ref().map(|t| &**t).unwrap_or(typ);
                 match *typ {
                     Type::Variable(ref var) => {
                         if let None = self.subs.find_type_for_var(var.id) {
-                            let gen = Type::Generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) });
+                            let gen = Type::generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) });
                             let c = generic.pop().unwrap();
                             generic.push((c as u8 + 1) as char);
                             unsafe { self.subs.insert(var.id, gen) }
@@ -363,8 +359,10 @@ impl <'a> Typecheck<'a> {
                     }
                     _ => ()
                 }
-                self.replace_variable(typ);
-            }, &mut unroll_app);
+                let result2 = self.replace_variable(typ);
+                result2.or(result.clone())
+            });
+            typ = ast::walk_move_type(typ, &mut unroll_app);
             self.replace_vars(0, &HashMap::new(), expr);
             Ok(typ)
         }
@@ -387,36 +385,36 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Literal(ref lit) => {
                 Ok(match *lit {
-                    ast::Integer(_) => INT_TYPE.clone(),
-                    ast::Float(_) => FLOAT_TYPE.clone(),
-                    ast::String(_) => STRING_TYPE.clone(),
-                    ast::Bool(_) => BOOL_TYPE.clone()
+                    ast::Integer(_) => Type::int(),
+                    ast::Float(_) => Type::float(),
+                    ast::String(_) => Type::string(),
+                    ast::Bool(_) => Type::bool()
                 })
             }
             ast::Expr::Call(ref mut func, ref mut args) => {
                 let mut func_type = try!(self.typecheck(&mut**func));
                 for arg in args.iter_mut() {
-                    let f = ast::fn_type(vec![self.subs.new_var()], self.subs.new_var());
+                    let f = Type::function(vec![self.subs.new_var()], self.subs.new_var());
                     func_type = try!(self.unify(&f, func_type));
-                    match func_type {
-                        Type::Function(arg_type, ret) => {
+                    func_type = match *func_type {
+                        Type::Function(ref arg_type, ref ret) => {
                             assert!(arg_type.len() == 1);
                             let actual = try!(self.typecheck(arg));
                             try!(self.unify(&arg_type[0], actual));
-                            func_type = ret.into_inner();
+                            ret.clone()
                         }
-                        t => return Err(NotAFunction(t))
-                    }
+                        _ => return Err(NotAFunction(func_type.clone()))
+                    };
                 }
                 Ok(func_type)
             }
             ast::Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut**pred));
-                try!(self.unify(&BOOL_TYPE, pred_type));
+                try!(self.unify(&Type::bool(), pred_type));
                 let true_type = try!(self.typecheck(&mut**if_true));
                 let false_type = match *if_false {
                     Some(ref mut if_false) => try!(self.typecheck(&mut**if_false)),
-                    None => UNIT_TYPE.clone()
+                    None => Type::unit()
                 };
                 self.unify(&true_type, false_type)
             }
@@ -428,20 +426,20 @@ impl <'a> Typecheck<'a> {
                     let offset;
                     let typ = if op.name[1..].starts_with("Int") {
                         offset = "Int".len();
-                        op.typ = ast::fn_type(vec![INT_TYPE.clone(), INT_TYPE.clone()], INT_TYPE.clone());
-                        try!(self.unify(&INT_TYPE, arg_type))
+                        op.typ = Type::function(vec![Type::int(), Type::int()], Type::int());
+                        try!(self.unify(&Type::int(), arg_type))
                     }
                     else if op.name[1..].starts_with("Float") {
                         offset = "Float".len();
-                        op.typ = ast::fn_type(vec![FLOAT_TYPE.clone(), FLOAT_TYPE.clone()], FLOAT_TYPE.clone());
-                        try!(self.unify(&FLOAT_TYPE, arg_type))
+                        op.typ = Type::function(vec![Type::float(), Type::float()], Type::float());
+                        try!(self.unify(&Type::float(), arg_type))
                     }
                     else {
                         panic!("ICE: Unknown primitive type")
                     };
                     match &op.name[1+offset..] {
                         "+" | "-" | "*" => Ok(typ),
-                        "==" | "<" => Ok(BOOL_TYPE.clone()),
+                        "==" | "<" => Ok(Type::bool().clone()),
                         _ => Err(UndefinedVariable(op.name.clone()))
                     }
                 }
@@ -449,15 +447,15 @@ impl <'a> Typecheck<'a> {
                     match &op.name[..] {
                         "&&" | "||" => {
                             try!(self.unify(&lhs_type, rhs_type.clone()));
-                            self.unify(&BOOL_TYPE, lhs_type)
+                            self.unify(&Type::bool(), lhs_type)
                         }
                         _ => {
                             op.typ = try!(self.find(op.id()));
-                            let func_type = ast::fn_type(vec![lhs_type, rhs_type], self.subs.new_var());
-                            match try!(self.unify(&op.typ, func_type)) {
-                                Type::Function(_, return_type) => 
-                                    match return_type.into_inner() {
-                                        Type::Function(_, return_type) => Ok(return_type.into_inner()),
+                            let func_type = Type::function(vec![lhs_type, rhs_type], self.subs.new_var());
+                            match *try!(self.unify(&op.typ, func_type)) {
+                                Type::Function(_, ref return_type) => 
+                                    match **return_type {
+                                        Type::Function(_, ref return_type) => Ok(return_type.clone()),
                                         _ => panic!("ICE: unify binop")
                                     },
                                 _ => panic!("ICE: unify binop")
@@ -468,7 +466,7 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Tuple(ref mut exprs) => {
                 assert!(exprs.len() == 0);
-                Ok(UNIT_TYPE.clone())
+                Ok(Type::unit())
             }
             ast::Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = try!(self.typecheck(&mut**expr));
@@ -533,7 +531,7 @@ impl <'a> Typecheck<'a> {
                 if is_recursive {
                     for (typ, bind) in types.into_iter().zip(bindings) {
                         //Merge the type declaration and the actual type
-                        try!(self.unify(bind.type_of(), typ));
+                        try!(self.unify(&TcType::from(bind.type_of().clone()), typ));
                         self.replace_vars(level, &HashMap::new(), &mut bind.expression);
                     }
                 }
@@ -544,13 +542,13 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
-                if let Type::Variable(_) = typ {
+                if let Type::Variable(_) = *typ {
                     let (record_type, _) = try!(self.find_record(&[field_access.name])
                                               .map(|t| (t.0.clone(), t.1.clone())));
                     let record_type = self.subs.instantiate(&record_type);
                     typ = try!(self.unify(&record_type, typ));
                 }
-                let record = match typ {
+                let record = match *typ {
                     Type::Data(ast::TypeConstructor::Data(id), _) => {
                         self.find_type_info(&id)
                             .map(|t| t.clone())
@@ -569,7 +567,7 @@ impl <'a> Typecheck<'a> {
                     _ => typ.clone()
                 };
                 let record = self.subs.instantiate(&record);
-                match record {
+                match *record {
                     Type::Record(ref fields) => {
                         let field_type = fields.iter()
                             .find(|field| field.name == *field_access.id())
@@ -598,19 +596,19 @@ impl <'a> Typecheck<'a> {
                     let typ = try!(self.typecheck(expr));
                     expected_type = try!(self.unify(&expected_type, typ));
                 }
-                a.id.typ = Type::Array(BoxType::new(expected_type));
+                a.id.typ = Type::array(expected_type);
                 Ok(a.id.typ.clone())
             }
             ast::Expr::ArrayAccess(ref mut array, ref mut index) => {
                 let array_type = try!(self.typecheck(&mut **array));
                 let var = self.subs.new_var();
-                let array_type = try!(self.unify(&Type::Array(BoxType::new(var)), array_type));
-                let typ = match array_type {
-                    Type::Array(typ) => typ.into_inner(),
-                    typ => return Err(IndexError(typ))
+                let array_type = try!(self.unify(&Type::array(var), array_type));
+                let typ = match *array_type {
+                    Type::Array(ref typ) => typ.clone(),
+                    _ => return Err(IndexError(array_type.clone()))
                 };
                 let index_type = try!(self.typecheck(&mut **index));
-                try!(self.unify(&INT_TYPE, index_type));
+                try!(self.unify(&Type::int(), index_type));
                 Ok(typ)
             }
             ast::Expr::Lambda(ref mut lambda) => {
@@ -621,17 +619,20 @@ impl <'a> Typecheck<'a> {
                 Ok(typ)
             }
             ast::Expr::Type(ref mut id_type, ref mut typ, ref mut expr) => {
-                let id = match *id_type {
-                    Type::Data(ast::TypeConstructor::Data(id), ref mut args) => {
+                let id = match (**id_type).clone() {
+                    Type::Data(ast::TypeConstructor::Data(id), mut args) => {
                         for arg in args.iter_mut() {
-                            if let Type::Generic(ref mut gen) = *arg {
+                            let mut a = (**arg).clone();
+                            if let Type::Generic(ref mut gen) = a {
                                 gen.kind = self.subs.new_kind();
                             }
+                            *arg = TcType::from(a);
                         }
-                        let id_type_copy = Type::Data(ast::TypeConstructor::Data(id), args.clone());
-                        self.type_infos.type_to_id.insert(typ.clone(), id_type_copy);
+                        let id_type_copy = Type::data(ast::TypeConstructor::Data(id), args.clone());
+                        self.type_infos.type_to_id.insert(typ.clone(), id_type_copy.clone());
                         self.type_infos.id_to_type.insert(id, typ.clone());
-                        try!(self.kindcheck(typ, args));
+                        try!(self.kindcheck(typ, &mut args));
+                        *id_type = id_type_copy;
                         self.stack_var(id, typ.clone());
                         id
                     }
@@ -655,13 +656,13 @@ impl <'a> Typecheck<'a> {
                                                   .map(|t| (t.0.clone(), t.1.clone())) {
                     Ok(x) => x,
                     Err(_) => {
-                        id.typ = Type::Record(fields);
+                        id.typ = Type::record(fields);
                         return Ok(id.typ.clone());
                     }
                 };
                 let id_type = self.subs.instantiate(&id_type);
                 let record_type = self.subs.instantiate_(&record_type);
-                try!(self.unify(&Type::Record(fields), record_type));
+                try!(self.unify(&Type::record(fields), record_type));
                 id.typ = id_type.clone();
                 Ok(id_type.clone())
             }
@@ -678,7 +679,7 @@ impl <'a> Typecheck<'a> {
         }
         let body_type = try!(self.typecheck(body));
         self.stack.exit_scope();
-        Ok(ast::fn_type(arg_types, body_type))
+        Ok(Type::function(arg_types, body_type))
     }
 
     fn typecheck_pattern(&mut self, pattern: &mut ast::Pattern<TcIdent>, match_type: TcType) -> Result<TcType, TypeError> {
@@ -698,7 +699,7 @@ impl <'a> Typecheck<'a> {
                                   .map(|t| (t.0.clone(), t.1.clone())) {
                         Ok(typ) => typ,
                         Err(_) => {
-                            let t = Type::Record(record.iter()
+                            let t = Type::record(record.iter()
                                 .map(|field|
                                     ast::Field {
                                         name: field.0,
@@ -714,7 +715,7 @@ impl <'a> Typecheck<'a> {
                     try!(self.unify(&typ, match_type));
                     actual_type
                 };
-                match record_type {
+                match *record_type {
                     Type::Record(ref types) => {
                         for (&(mut name, ref bind), field) in record.iter().zip(types) {
                             if let Some(bind_name) = *bind {
@@ -735,17 +736,17 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_pattern_rec(&mut self, args: &mut [TcIdent], typ: TcType) -> Result<TcType, TypeError> {
+    fn typecheck_pattern_rec(&mut self, args: &[TcIdent], typ: TcType) -> Result<TcType, TypeError> {
         if args.len() == 0 {
             return Ok(typ)
         }
-        match typ {
-            Type::Function(mut argument_types, return_type) => {
+        match *typ {
+            Type::Function(ref argument_types, ref return_type) => {
                 assert!(argument_types.len() == 1);
-                self.stack_var(args[0].id().clone(), argument_types.pop().unwrap());
-                self.typecheck_pattern_rec(&mut args[1..], return_type.into_inner())
+                self.stack_var(args[0].id().clone(), argument_types.last().unwrap().clone());
+                self.typecheck_pattern_rec(&args[1..], return_type.clone())
             }
-            _ => Err(PatternError(typ))
+            _ => Err(PatternError(typ.clone()))
         }
     }
 
@@ -763,14 +764,14 @@ impl <'a> Typecheck<'a> {
         debug!("Unify {} <=> {}", expected, actual);
         match self.unify_(expected, &actual) {
             Ok(()) => {
-                self.set_type(&mut actual);
+                actual = self.set_type(actual);
                 Ok(actual)
             }
             //TODO should use these inner type mismatches in errors
             Err(TypeError::TypeMismatch(_, _)) => {
                 let mut expected = expected.clone();
-                self.set_type(&mut expected);
-                self.set_type(&mut actual);
+                expected = self.set_type(expected);
+                actual = self.set_type(actual);
                 debug!("Mismatch {:?} <---> {:?}", expected, actual);
                 Err(TypeMismatch(expected, actual))
             }
@@ -781,7 +782,7 @@ impl <'a> Typecheck<'a> {
         let expected = self.subs.real(expected);
         let actual = self.subs.real(actual);
         debug!("{} <=> {}", expected, actual);
-        match (expected, actual) {
+        match (&**expected, &**actual) {
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(()),
             (&Type::Variable(ref l), _) => self.union(l, actual),
             (_, &Type::Variable(ref r)) => self.union(r, expected),
@@ -790,13 +791,13 @@ impl <'a> Typecheck<'a> {
                     for (l, r) in l_args.iter().zip(r_args.iter()) {
                         try!(self.unify_(l, r));
                     }
-                    self.unify_(&**l_ret, &**r_ret)
+                    self.unify_(l_ret, r_ret)
                 }
                 else {
                     Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
                 }
             }
-            (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(&**l, &**r),
+            (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(l, r),
             (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args))
                 if l == r && l_args.len() == r_args.len() => {
 
@@ -842,7 +843,7 @@ impl <'a> Typecheck<'a> {
     fn unify_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> Result<(), TypeError>
             where F: Fn(&TcType, &TcType) -> Result<(), TypeError> {
         let r = self.subs.real(r);
-        match *r {
+        match **r {
             Type::App(ref r, ref r_arg) => {
                 match l_args.last() {
                     Some(last) => {
@@ -852,18 +853,18 @@ impl <'a> Typecheck<'a> {
                             )
                     }
                     None => {
-                        let l = Type::Data(l.clone(), l_args.iter().cloned().collect());
-                        Err(TypeError::TypeMismatch(l, (**r).clone()))
+                        let l = Type::data(l.clone(), l_args.iter().cloned().collect());
+                        Err(TypeError::TypeMismatch(l, r.clone()))
                     }
                 }
             }
             Type::Data(ref r, _) if l_args.len() == 0 && l == r => Ok(()),
             Type::Variable(ref r) => {
-                self.union(r, &Type::Data(l.clone(), Vec::new()))
+                self.union(r, &Type::data(l.clone(), Vec::new()))
             }
             _ => {
                 debug!("aaaaaaaaaaa{:?} {:?}", l, r);
-                let l = Type::Data(l.clone(), l_args.iter().cloned().collect());
+                let l = Type::data(l.clone(), l_args.iter().cloned().collect());
                 Err(TypeError::TypeMismatch(l, r.clone()))
             }
         }
@@ -884,24 +885,27 @@ impl <'a> Typecheck<'a> {
         occurs
     }
 
-    fn set_type(&self, t: &mut TcType) {
-        ast::walk_mut_type(t, &mut |typ| {
-            self.replace_variable(typ);
-            unroll_app(typ);
-        });
+    fn set_type(&self, t: TcType) -> TcType {
+        ast::walk_move_type(t, &mut |typ| {
+            let replacement = self.replace_variable(typ);
+            let result = {
+                let mut typ = typ;
+                if let Some(ref t) = replacement {
+                    typ = &**t;
+                }
+                unroll_app(typ)
+            };
+            result.or(replacement)
+        })
     }
 
-    fn replace_variable(&self, typ: &mut TcType) {
-        let replacement = match *typ {
+    fn replace_variable(&self, typ: &Type<InternedStr>) -> Option<TcType> {
+        match *typ {
             Type::Variable(ref id) => {
                 self.subs.find_type_for_var(id.id)
                     .map(|t| t.clone())
             }
             _ => None
-        };
-        match replacement {
-            Some(x) => *typ = x,
-            None => ()
         }
     }
 
@@ -912,7 +916,7 @@ impl <'a> Typecheck<'a> {
         {
             let id_type = self.subs.find_type_for_var(id.id);
             let other_type = self.subs.real(typ);
-            if id_type.map(|x| x == other_type).unwrap_or(Type::Variable(id.clone()) == *other_type) {
+            if id_type.map(|x| x == other_type).unwrap_or(Type::variable(id.clone()) == *other_type) {
                 return Ok(())
             }
         }
@@ -920,9 +924,9 @@ impl <'a> Typecheck<'a> {
         //Always make sure the mapping is from a higher variable to a lower
         //This way the resulting variables are always equal to any variables in the globals
         //declaration
-        match *typ {
+        match **typ {
             Type::Variable(ref other_id) if self.subs.get_level(id.id) < self.subs.get_level(other_id.id) => {
-                map.insert(other_id.id, box Type::Variable(id.clone()));
+                map.insert(other_id.id, box Type::variable(id.clone()));
                 self.subs.update_level(id.id, other_id.id);
             }
             _ => {
@@ -932,29 +936,33 @@ impl <'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn finish_type(&mut self, level: u32, typ: &mut TcType) {
-        ast::walk_mut_type2(typ, &mut |typ| {
-            self.replace_variable(typ);
-            *typ = match *typ {
+    fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
+        ast::walk_move_type(typ, &mut |typ| {
+            let replacement = self.replace_variable(typ);
+            let mut typ = typ;
+            if let Some(ref t) = replacement {
+                typ = &**t;
+            }
+            match *typ {
                 Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
                     let generic = format!("a_{}", var);
                     let id = self.interner.intern(self.gc, &generic);
-                    Type::Generic(ast::Generic { kind: var.kind.clone(), id: id })
+                    Some(Type::generic(ast::Generic { kind: var.kind.clone(), id: id }))
                 }
-                _ => return
-            };
-        }, &mut unroll_app);
+                _ => unroll_app(typ).or(replacement.clone())
+            }
+        })
     }
 }
 
 impl Substitution<TcType> {
 
     fn variable_for2(&mut self, generic: &ast::Generic<InternedStr>) -> TcType {
-        let mut var = self.variable_for(generic.id);
+        let mut var = (*self.variable_for(generic.id)).clone();
         if let Type::Variable(ref mut var) = var {
             var.kind = generic.kind.clone()
         }
-        var
+        TcType::from(var)
     }
 
     fn new_kind(&mut self) -> ast::Kind {
@@ -967,24 +975,24 @@ impl Substitution<TcType> {
         self.instantiate_(typ)
     }
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
-        match *typ {
+        match **typ {
             Type::Generic(ref x) => {
                 let var = self.variable_for2(x);
                 debug!("Bind generic {} -> {}", x, var);
                 var
             }
             Type::Function(ref args, ref return_type) => {
-                let return_type = self.instantiate_(&**return_type);
-                let args2 = args.iter().map(|a| self.instantiate_(a));
-                ast::fn_type(args2, return_type)
+                let return_type = self.instantiate_(&return_type);
+                let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
+                Type::function(args2, return_type)
             }
-            Type::Array(ref typ) => Type::Array(BoxType::new(self.instantiate_(&**typ))),
+            Type::Array(ref typ) => Type::array(self.instantiate_(&typ)),
             Type::Data(ref id, ref args) => {
                 let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
-                Type::Data(id.clone(), args2)
+                Type::data(id.clone(), args2)
             }
             Type::Record(ref fields) => {
-                Type::Record(fields.iter()
+                Type::record(fields.iter()
                     .map(|field| ast::Field {
                             name: field.name,
                             typ: self.instantiate_(&field.typ)
@@ -993,84 +1001,88 @@ impl Substitution<TcType> {
                     .collect())
             }
             Type::App(ref f, ref r) => {
-                Type::App(BoxType::new(self.instantiate_(f)), BoxType::new(self.instantiate_(r)))
+                Type::app(self.instantiate_(f), self.instantiate_(r))
             }
-            ref x => x.clone()
+            _ => typ.clone()
         }
     }
 }
 
-fn unroll_app(typ: &mut TcType) {
-    *typ = match *typ {
-        Type::App(ref mut l, ref mut r) => {
-            match &mut **l {
-                &mut Type::Data(ref mut l, ref mut args) => {
-                    let l = ::std::mem::replace(l, ast::TypeConstructor::Builtin(ast::BuiltinType::StringType));
-                    let r = ::std::mem::replace(&mut **r, Type::Variable(ast::TypeVariable::new(0)));
-                    let mut args = ::std::mem::replace(args, Vec::new());
-                    args.push(r);
-                    Type::Data(l, args)
-                }
-                _ => return
+fn unroll_app(typ: &Type<InternedStr>) -> Option<TcType> {
+    let mut args = Vec::new();
+    let mut current = typ;
+    loop {
+        match *current {
+            Type::App(ref l, ref r) => {
+                args.push(r.clone());
+                current = &**l;
             }
+            Type::Data(ref l, ref rest) => {
+                args.extend(rest.iter().rev().cloned());
+                args.reverse();
+                return Some(Type::data(l.clone(), args))
+            }
+            _ => return None
         }
-        _ => return
     }
 }
     
 pub trait Typed {
     type Id;
-    fn type_of(&self) -> &Type<Self::Id>;
+    fn type_of(&self) -> ASTType<Self::Id>;
 }
-impl <Id> Typed for ast::TcIdent<Id> {
+impl <Id: Clone> Typed for ast::TcIdent<Id> {
     type Id = Id;
-    fn type_of(&self) -> &Type<Id> {
-        &self.typ
+    fn type_of(&self) -> ASTType<Id> {
+        self.typ.clone()
     }
 }
 impl <Id> Typed for ast::Expr<Id>
     where Id: Typed<Id=InternedStr> + AsRef<str> + ast::AstId<Untyped=InternedStr> {
     type Id = Id::Id;
-    fn type_of(&self) -> &Type<Id::Untyped> {
+    fn type_of(&self) -> ASTType<Id::Untyped> {
         match *self {
             ast::Expr::Identifier(ref id) => id.type_of(),
             ast::Expr::Literal(ref lit) => {
                 match *lit {
-                    ast::Integer(_) => &INT_TYPE,
-                    ast::Float(_) => &FLOAT_TYPE,
-                    ast::String(_) => &STRING_TYPE,
-                    ast::Bool(_) => &BOOL_TYPE
+                    ast::Integer(_) => Type::int(),
+                    ast::Float(_) => Type::float(),
+                    ast::String(_) => Type::string(),
+                    ast::Bool(_) => Type::bool()
                 }
             }
             ast::Expr::IfElse(_, ref arm, _) => arm.type_of(),
             ast::Expr::Tuple(ref exprs) => {
                 assert!(exprs.len() == 0);
-                &UNIT_TYPE
+                Type::unit()
             }
             ast::Expr::BinOp(ref lhs, ref op, _) => {
                 match *op.type_of() {
                     Type::Function(_, ref return_type) => 
                         match **return_type {
-                            Type::Function(_, ref return_type) => return return_type,
+                            Type::Function(_, ref return_type) => return return_type.clone(),
                             _ => ()
                         },
                     _ => ()
                 }
                 match AsRef::<str>::as_ref(op) {
                     "+" | "-" | "*" => lhs.type_of(),
-                    "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => &BOOL_TYPE,
+                    "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => Type::bool(),
                     _ => panic!()
                 }
             }
             ast::Expr::Let(_, ref expr) => expr.type_of(),
-            ast::Expr::Call(ref func, _) => func.type_of().return_type(),
+            ast::Expr::Call(ref func, _) => func.type_of().return_type().clone(),
             ast::Expr::Match(_, ref alts) => alts[0].expression.type_of(),
             ast::Expr::FieldAccess(_, ref id) => id.type_of(),
             ast::Expr::Array(ref a) => a.id.type_of(),
-            ast::Expr::ArrayAccess(ref array, _) => match array.type_of() {
-                &Type::Array(ref t) => &**t,
-                t => panic!("Not an array type {:?}", t)
-            },
+            ast::Expr::ArrayAccess(ref array, _) => {
+                let typ = array.type_of();
+                match *typ {
+                    Type::Array(ref t) => t.clone(),
+                    _ => panic!("Not an array type {:?}", typ)
+                }
+            }
             ast::Expr::Lambda(ref lambda) => lambda.id.type_of(),
             ast::Expr::Type(_, _, ref expr) => expr.type_of(),
             ast::Expr::Record(ref id, _) => id.type_of()
@@ -1080,10 +1092,10 @@ impl <Id> Typed for ast::Expr<Id>
 
 impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<InternedStr>>>>> {
     type Id = InternedStr;
-    fn type_of(&self) -> &TcType {
+    fn type_of(&self) -> ASTType<InternedStr> {
         match *self {
             Some(ref t) => t.type_of(),
-            None => &UNIT_TYPE
+            None => Type::unit()
         }
     }
 }
@@ -1091,9 +1103,9 @@ impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<InternedStr>>>>> {
 impl <T> Typed for ast::Binding<T>
     where T: Typed<Id=InternedStr> + ast::AstId<Untyped=InternedStr> {
     type Id = T::Untyped;
-    fn type_of(&self) -> &TcType {
+    fn type_of(&self) -> ASTType<T::Untyped> {
         match self.typ {
-            Some(ref typ) => typ,
+            Some(ref typ) => typ.clone(),
             None => match self.name {
                 ast::Pattern::Identifier(ref name) => name.type_of(),
                 _ => panic!("Not implemented")
@@ -1126,18 +1138,18 @@ mod tests {
         assert!(s.len() != 0);
         let is_var = s.chars().next().unwrap().is_lowercase();
         match ast::str_to_primitive_type(s) {
-            Some(b) => Type::Builtin(b),
-            None if is_var => Type::Generic(ast::Generic { kind: ast::Kind::Star, id: intern(s) }),
-            None => Type::Data(ast::TypeConstructor::Data(intern(s)), Vec::new())
+            Some(b) => Type::builtin(b),
+            None if is_var => Type::generic(ast::Generic { kind: ast::Kind::Star, id: intern(s) }),
+            None => Type::data(ast::TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
     fn typ_a(s: &str, args: Vec<TcType>) -> TcType {
         assert!(s.len() != 0);
         let is_var = s.chars().next().unwrap().is_lowercase();
         match ast::str_to_primitive_type(s) {
-            Some(b) => Type::Builtin(b),
-            None if is_var => Type::Generic(ast::Generic { kind: ast::Kind::Star, id: intern(s) }),
-            None => Type::Data(ast::TypeConstructor::Data(intern(s)), args)
+            Some(b) => Type::builtin(b),
+            None if is_var => Type::generic(ast::Generic { kind: ast::Kind::Star, id: intern(s) }),
+            None => Type::data(ast::TypeConstructor::Data(intern(s)), args)
         }
     }
 
@@ -1173,7 +1185,7 @@ r"
 ";
         let result = typecheck(text);
         assert!(result.is_ok());
-        match result.unwrap() {
+        match *result.unwrap() {
             Type::Function(_, _) => {
                 assert!(true);
             }
@@ -1189,7 +1201,7 @@ r"
 \x y -> 1 #Int+ x #Int+ y
 ";
         let result = typecheck(text);
-        assert_eq!(result, Ok(ast::fn_type(vec![typ("Int"), typ("Int")], typ("Int"))));
+        assert_eq!(result, Ok(Type::function(vec![typ("Int"), typ("Int")], typ("Int"))));
     }
 
     #[test]
@@ -1226,7 +1238,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
         assert_eq!(result, Ok(typ("Float")));
         match expr.value {
             ast::Expr::Let(ref bindings, _) => {
-                assert_eq!(*bindings[0].expression.type_of(), ast::fn_type(vec![typ("a"), typ("b")], typ("a")));
+                assert_eq!(*bindings[0].expression.type_of(), *Type::function(vec![typ("a"), typ("b")], typ("a")));
             }
             _ => assert!(false)
         }
@@ -1239,7 +1251,7 @@ r"
 let fac x = if x #Int== 0 then 1 else x #Int* fac (x #Int- 1) in fac
 ";
         let (_, result) = typecheck_expr(text);
-        assert_eq!(result, Ok(ast::fn_type(vec![typ("Int")], typ("Int"))));
+        assert_eq!(result, Ok(Type::function(vec![typ("Int")], typ("Int"))));
     }
     #[test]
     fn let_binding_mutually_recursive() {
@@ -1278,10 +1290,10 @@ in test2 1";
         assert_m!(expr.value, ast::Expr::Let(ref binds, _) => {
             assert_eq!(binds.len(), 2);
             assert_m!(*binds[0].type_of(), ast::Type::Function(ref args, _) => {
-                assert_m!(args[0], ast::Type::Generic(_) => ())
+                assert_m!(*args[0], ast::Type::Generic(_) => ())
             });
             assert_m!(*binds[1].type_of(), ast::Type::Function(ref args, _) => {
-                assert_m!(args[0], ast::Type::Generic(_) => ())
+                assert_m!(*args[0], ast::Type::Generic(_) => ())
             });
         });
     }
@@ -1391,7 +1403,7 @@ let test: Test () = T 1 >>= \x -> monad_Test.return ()
 in test
 ";
         let result = typecheck(text);
-        assert_eq!(result, Ok(typ_a("Test", vec![UNIT_TYPE.clone()])));
+        assert_eq!(result, Ok(typ_a("Test", vec![Type::unit()])));
     }
 
     #[test]
@@ -1425,15 +1437,15 @@ in { empty, insert }
         let result = typecheck(text);
         let a = || typ("a");
         let list = |s| typ_a("SortedList", vec![typ(s)]);
-        let cmp = ast::fn_type(vec![a(), a()], typ("Bool"));
-        let insert = ast::fn_type(vec![a(), list("a")], list("a"));
-        let record = Type::Record(vec![
+        let cmp = Type::function(vec![a(), a()], typ("Bool"));
+        let insert = Type::function(vec![a(), list("a")], list("a"));
+        let record = Type::record(vec![
             ast::Field { name: intern("empty"), typ: list("b") },
             ast::Field {
                 name: intern("insert"),
                 typ: insert
             }]);
-        assert_eq!(result, Ok(ast::fn_type(vec![cmp], record)));
+        assert_eq!(result, Ok(Type::function(vec![cmp], record)));
     }
 
     #[bench]

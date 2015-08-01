@@ -53,12 +53,12 @@ impl <'a> KindCheck<'a> {
 
     fn find(&mut self, id: InternedStr) -> Result<Kind> {
         let kind = self.variables.iter()
-            .find(|var| match **var { Type::Generic(ref other) => other.id == id, _ => false })
+            .find(|var| match ***var { Type::Generic(ref other) => other.id == id, _ => false })
             .map(|t| t.kind().clone())
             .or_else(|| {
                 (self.info)(id)
                     .and_then(|typ| {
-                        match *typ {
+                        match **typ {
                             Type::Data(_, ref args) => {
                                 let mut kind = Kind::Star;
                                 for arg in args.iter().rev() {
@@ -77,46 +77,55 @@ impl <'a> KindCheck<'a> {
     }
 
     pub fn kindcheck_type(&mut self, typ: &mut TcType) -> Result<Kind> {
-        let kind = try!(self.kindcheck(typ));
+        let (kind, t) = try!(self.kindcheck(typ));
         let subs = &mut self.subs;
-        let mut f = |typ| ast::walk_mut_type(typ, &mut |typ| {
+        let mut f = |typ| ast::walk_move_type(typ, &mut |typ| {
             match *typ {
-                Type::Variable(ref mut var) => subs.set_kind(&mut var.kind),
-                Type::Generic(ref mut var) => subs.set_kind(&mut var.kind),
-                _ => ()
-            };
+                Type::Variable(ref var) => {
+                    let mut kind = var.kind.clone();
+                    subs.set_kind(&mut kind);
+                    Some(Type::variable(ast::TypeVariable { id: var.id, kind: kind }))
+                }
+                Type::Generic(ref var) => {
+                    let mut kind = var.kind.clone();
+                    subs.set_kind(&mut kind);
+                    Some(Type::generic(ast::Generic { id: var.id, kind: kind }))
+                }
+                _ => None
+            }
         });
-        f(typ);
+        *typ  = f(t);
         for typ in self.variables.iter_mut() {
-            f(typ);
+            *typ = f(typ.clone());
         }
         Ok(kind)
     }
 
-    fn kindcheck(&mut self, typ: &mut TcType) -> Result<Kind> {
-        match *typ {
-            Type::Generic(ref mut gen) => {
+    fn kindcheck(&mut self, typ: &TcType) -> Result<(Kind, TcType)> {
+        match **typ {
+            Type::Generic(ref gen) => {
+                let mut gen = gen.clone();
                 gen.kind = try!(self.find(gen.id));
-                Ok(gen.kind.clone())
+                Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Variable(_) => {
                 panic!("kindcheck called on variable")
             }
-            Type::Builtin(_) => Ok(Kind::Star),
-            Type::Array(ref mut typ) => {
-                let kind = try!(self.kindcheck(typ));
+            Type::Builtin(_) => Ok((Kind::Star, typ.clone())),
+            Type::Array(ref typ) => {
+                let (kind, typ) = try!(self.kindcheck(typ));
                 try!(self.unify(&Kind::Star, kind));
-                Ok(Kind::Star)
+                Ok((Kind::Star, Type::array(typ)))
             }
-            Type::App(ref mut f, ref mut r) => {
-                let kind = try!(self.kindcheck(f));
-                let f = Kind::Function(Box::new(self.subs.new_kind()), Box::new(self.subs.new_kind()));
-                let kind = try!(self.unify(&f, kind));
+            Type::App(ref f, ref r) => {
+                let (kind, f) = try!(self.kindcheck(f));
+                let kind_fn = Kind::Function(Box::new(self.subs.new_kind()), Box::new(self.subs.new_kind()));
+                let kind = try!(self.unify(&kind_fn, kind));
                 match kind {
                     Kind::Function(arg, ret) => {
-                        let arg_kind = try!(self.kindcheck(r));
+                        let (arg_kind, r) = try!(self.kindcheck(r));
                         try!(self.unify(&arg, arg_kind));
-                        Ok(*ret)
+                        Ok((*ret, Type::app(f, r)))
                     }
                     _ => panic!("Expected kind function")
                 }
@@ -124,41 +133,46 @@ impl <'a> KindCheck<'a> {
             Type::Data(ast::TypeConstructor::Builtin(_), _) => {
                 panic!("Builtin with arguments")
             }
-            Type::Data(ast::TypeConstructor::Data(ctor), ref mut args) => {
+            Type::Data(ast::TypeConstructor::Data(ctor), ref args) => {
                 let mut kind = try!(self.find(ctor));
+                let mut new_args = Vec::new();
                 for arg in args {
                     let f = Kind::Function(Box::new(self.subs.new_kind()), Box::new(self.subs.new_kind()));
                     kind = try!(self.unify(&f, kind));
                     match kind {
                         Kind::Function(arg_kind, ret) => {
-                            let actual = try!(self.kindcheck(arg));
+                            let (actual, new_arg) = try!(self.kindcheck(arg));
+                            new_args.push(new_arg);
                             try!(self.unify(&arg_kind, actual));
                             kind = *ret;
                         }
                         _ => return Err(StringError("Expected kind: a -> a"))
                     }
                 }
-                Ok(kind)
+                Ok((kind, Type::data(ast::TypeConstructor::Data(ctor), new_args)))
             }
-            Type::Function(ref mut args, ref mut ret) => {
-                let kind = try!(self.kindcheck(&mut args[0]));
+            Type::Function(ref args, ref ret) => {
+                let (kind, arg) = try!(self.kindcheck(&args[0]));
                 try!(self.unify(&Kind::Star, kind));
-                let kind = try!(self.kindcheck(ret));
-                self.unify(&Kind::Star, kind)
+                let (kind, ret) = try!(self.kindcheck(ret));
+                let new_kind = try!(self.unify(&Kind::Star, kind));
+                Ok((new_kind, Type::function(vec![arg], ret)))
             }
-            Type::Variants(ref mut variants) => {
-                for variant in variants {
-                    let kind = try!(self.kindcheck(&mut variant.1));
+            Type::Variants(ref variants) => {
+                let variants = try!(variants.iter().map(|variant| {
+                    let (kind, typ) = try!(self.kindcheck(&variant.1));
                     try!(self.unify(&Kind::Star, kind));
-                }
-                Ok(Kind::Star)
+                    Ok((variant.0, typ))
+                }).collect());
+                Ok((Kind::Star, Type::variants(variants)))
             }
-            Type::Record(ref mut fields) => {
-                for field in fields {
-                    let kind = try!(self.kindcheck(&mut field.typ));
+            Type::Record(ref fields) => {
+                let fields = try!(fields.iter().map(|field| {
+                    let (kind, typ) = try!(self.kindcheck(&field.typ));
                     try!(self.unify(&Kind::Star, kind));
-                }
-                Ok(Kind::Star)
+                    Ok(ast::Field { name: field.name, typ: typ })
+                }).collect());
+                Ok((Kind::Star, Type::record(fields)))
             }
         }
     }

@@ -2,7 +2,7 @@ use base::interner::*;
 use base::gc::Gc;
 use base::ast;
 use base::ast::{LExpr, Expr, Integer, Float, String, Bool};
-use typecheck::{TcIdent, TcType, Type, Typed, TypeInfos, UNIT_TYPE};
+use typecheck::{TcIdent, TcType, Type, Typed, TypeInfos};
 use self::Instruction::*;
 use self::Variable::*;
 
@@ -177,7 +177,7 @@ impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
 impl CompilerEnv for TypeInfos {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
         fn count_function_args(typ: &TcType) -> VMIndex {
-            match *typ {
+            match **typ {
                 Type::Function(_, ref rest) => 1 + count_function_args(rest),
                 _ => 0
             }
@@ -185,7 +185,7 @@ impl CompilerEnv for TypeInfos {
 
         self.id_to_type.iter()
             .filter_map(|(_, typ)| {
-                match *typ {
+                match **typ {
                     Type::Variants(ref variants) => variants.iter()
                                                         .enumerate()
                                                         .find(|&(_, v)| v.0 == *id),
@@ -200,7 +200,7 @@ impl CompilerEnv for TypeInfos {
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         self.id_to_type.get(struct_)
             .and_then(|typ| {
-                match *typ {
+                match **typ {
                     Type::Record(ref fields) => fields.iter()
                         .position(|f| f.name == *field)
                         .map(|i| i as VMIndex),
@@ -212,7 +212,7 @@ impl CompilerEnv for TypeInfos {
     fn find_tag(&self, type_id: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
         self.id_to_type.get(type_id)
             .and_then(|typ| {
-                match *typ {
+                match **typ {
                     Type::Variants(ref variants) => variants.iter()
                                                         .enumerate()
                                                         .find(|&(_, v)| v.0 == *ctor_name)
@@ -304,7 +304,7 @@ impl <'a> Compiler<'a> {
         CompiledFunction {
             args: 0,
             id: self.intern(""),
-            typ: ast::fn_type(vec![], expr.type_of().clone()),
+            typ: Type::function(vec![], TcType::from(expr.type_of().clone())),
             instructions: instructions,
             inner_functions: inner_functions,
             strings: strings
@@ -440,7 +440,7 @@ impl <'a> Compiler<'a> {
                     }
                     //unit expressions do not return a value so we need to add a dummy value
                     //To make the stack correct
-                    if *bind.expression.type_of() == UNIT_TYPE {
+                    if bind.expression.type_of() == Type::unit() {
                         function.instructions.push(PushInt(0));
                     }
                 }
@@ -469,7 +469,8 @@ impl <'a> Compiler<'a> {
             Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function, tail_position);
                 debug!("{:?} {:?}", expr, field);
-                let typ = expr.type_of().inner_app();
+                let typ = expr.type_of();
+                let typ = typ.inner_app();
                 debug!("FieldAccess {}", typ);
                 let field_index = match *typ {
                     Type::Data(ref id, _) => {
@@ -488,8 +489,9 @@ impl <'a> Compiler<'a> {
                 self.compile(&**expr, function, false);
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
-                let typename = match expr.type_of() {
-                    &Type::Data(ref id, _) => Some(id),
+                let typ = expr.type_of();
+                let typename = match *typ {
+                    Type::Data(ref id, _) => Some(id),
                     _ => None
                 };
                 let mut catch_all = false;

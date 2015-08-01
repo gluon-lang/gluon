@@ -1,7 +1,10 @@
 use std::ops::{Deref, DerefMut};
 use std::fmt;
+use std::rc::Rc;
 pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
+
+pub type ASTType<Id> = RcType<Id>;
 
 ///Trait representing a type that can by used as in identifier in the AST
 ///Used to allow the AST to both have a representation which has typed expressions etc as well
@@ -12,12 +15,12 @@ pub trait AstId {
     type Untyped: Clone + PartialEq + Eq + fmt::Debug;
     fn from_str(env: &mut Self::Env, s: &str) -> Self;
     fn to_id(self) -> Self::Untyped;
-    fn set_type(&mut self, typ: Type<Self::Untyped>);
+    fn set_type(&mut self, typ: ASTType<Self::Untyped>);
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct TcIdent<Id> {
-    pub typ: Type<Id>,
+    pub typ: ASTType<Id>,
     pub name: Id
 }
 impl <Id> TcIdent<Id> {
@@ -39,12 +42,12 @@ impl <Id> AstId for TcIdent<Id>
     type Untyped = Id;
     fn from_str(env: &mut Id::Env, s: &str) -> TcIdent<Id> {
         TcIdent {
-            typ: Type::Variable(TypeVariable::with_kind(Kind::Variable(0), 0)),
+            typ: ASTType::from(Type::Variable(TypeVariable::with_kind(Kind::Variable(0), 0))),
             name: AstId::from_str(env, s)
         }
     }
     fn to_id(self) -> Id { self.name }
-    fn set_type(&mut self, typ: Type<Self::Untyped>) {
+    fn set_type(&mut self, typ: ASTType<Self::Untyped>) {
         self.typ = typ;
     }
 }
@@ -148,16 +151,16 @@ pub struct Generic<Id> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Type<Id, T = BoxType<Id>> {
+pub enum Type<Id, T = ASTType<Id>> {
     App(T, T),
-    Data(TypeConstructor<Id>, Vec<Type<Id>>),
-    Variants(Vec<(Id, Type<Id>)>),
+    Data(TypeConstructor<Id>, Vec<T>),
+    Variants(Vec<(Id, T)>),
     Variable(TypeVariable),
     Generic(Generic<Id>),
-    Function(Vec<Type<Id>>, T),
+    Function(Vec<T>, T),
     Builtin(BuiltinType),
     Array(T),
-    Record(Vec<Field<Id>>)
+    Record(Vec<Field<Id, T>>)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -172,14 +175,20 @@ impl <Id: fmt::Display> fmt::Display for BoxType<Id> {
 }
 
 impl <Id> Deref for BoxType<Id> {
-    type Target = Type<Id>;
-    fn deref(&self) -> &Type<Id> {
+    type Target = Type<Id, BoxType<Id>>;
+    fn deref(&self) -> &Type<Id, BoxType<Id>> {
         &self.typ
     }
 }
 impl <Id> DerefMut for BoxType<Id> {
-    fn deref_mut(&mut self) -> &mut Type<Id> {
+    fn deref_mut(&mut self) -> &mut Type<Id, BoxType<Id>> {
         &mut self.typ
+    }
+}
+
+impl <Id> From<Type<Id, BoxType<Id>>> for BoxType<Id> {
+    fn from(typ: Type<Id, BoxType<Id>>) -> BoxType<Id> {
+        BoxType::new(typ)
     }
 }
 
@@ -187,8 +196,44 @@ impl <Id> BoxType<Id> {
     pub fn new(typ: Type<Id, BoxType<Id>>) -> BoxType<Id> {
         BoxType { typ: Box::new(typ) }
     }
-    pub fn into_inner(self) -> Type<Id> {
+    pub fn into_inner(self) -> Type<Id, BoxType<Id>> {
         *self.typ
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct RcType<Id> {
+    typ: Rc<Type<Id, ASTType<Id>>>
+}
+
+impl <Id: fmt::Display> fmt::Display for RcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl <Id> Deref for RcType<Id> {
+    type Target = Type<Id, RcType<Id>>;
+    fn deref(&self) -> &Type<Id, RcType<Id>> {
+        &self.typ
+    }
+}
+
+impl <Id> RcType<Id> {
+    pub fn new(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
+        RcType { typ: Rc::new(typ) }
+    }
+}
+
+impl <Id: Clone> RcType<Id> {
+    pub fn into_inner(self) -> Type<Id, RcType<Id>> {
+        (*self.typ).clone()
+    }
+}
+
+impl <Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
+    fn from(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
+        RcType::new(typ)
     }
 }
 
@@ -268,26 +313,26 @@ pub enum Expr<Id: AstId> {
     Record(Id, Vec<(Id::Untyped, Option<LExpr<Id>>)>),
     Lambda(LambdaStruct<Id>),
     Tuple(Vec<LExpr<Id>>),
-    Type(Type<Id::Untyped>, Type<Id::Untyped>, Box<LExpr<Id>>)
+    Type(ASTType<Id::Untyped>, ASTType<Id::Untyped>, Box<LExpr<Id>>)
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Binding<Id: AstId> {
     pub name: Pattern<Id>,
-    pub typ: Option<Type<Id::Untyped>>,
+    pub typ: Option<ASTType<Id::Untyped>>,
     pub arguments: Vec<Id>,
     pub expression: LExpr<Id>
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
-pub struct Field<Id> {
+pub struct Field<Id, T = ASTType<Id>> {
     pub name: Id,
-    pub typ: Type<Id>
+    pub typ: T
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum ConstructorType<Id> {
-    Tuple(Vec<Type<Id>>),
+    Tuple(Vec<ASTType<Id>>),
     Record(Vec<Field<Id>>)
 }
 
@@ -332,14 +377,15 @@ pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
     }
 }
 
-pub fn fn_type<I, Id>(args: I, return_type: Type<Id>) -> Type<Id>
-    where I: IntoIterator<Item=Type<Id>>
-        , I::IntoIter: DoubleEndedIterator {
+pub fn fn_type<I, Id, T>(args: I, return_type: Type<Id, T>) -> Type<Id, T>
+where I: IntoIterator<Item=T>
+    , I::IntoIter: DoubleEndedIterator
+    , T: From<Type<Id, T>> {
     args.into_iter().rev()
-        .fold(return_type, |body, arg| Type::Function(vec![arg], BoxType::new(body)))
+        .fold(return_type, |body, arg| Type::Function(vec![arg], T::from(body)))
 }
-pub fn type_con<I>(s: I, args: Vec<Type<I>>) -> Type<I>
-    where I: Deref<Target=str> {
+pub fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
+where I: Deref<Target=str> {
     assert!(s.len() != 0);
     let is_var = s.chars().next().unwrap().is_lowercase();
     match str_to_primitive_type(&s) {
@@ -349,9 +395,69 @@ pub fn type_con<I>(s: I, args: Vec<Type<I>>) -> Type<I>
     }
 }
 
-impl <Id> Type<Id> {
+impl <Id> Type<Id, ()> {
+
+    pub fn app(l: ASTType<Id>, r: ASTType<Id>) -> ASTType<Id> {
+        ASTType::from(Type::App(l, r))
+    }
+
+    pub fn array(typ: ASTType<Id>) -> ASTType<Id> {
+        ASTType::from(Type::Array(typ))
+    }
+
+    pub fn data(id: TypeConstructor<Id>, args: Vec<ASTType<Id>>) -> ASTType<Id> {
+        ASTType::from(Type::Data(id, args))
+    }
+
+    pub fn variants(vs: Vec<(Id, ASTType<Id>)>) -> ASTType<Id> {
+        ASTType::from(Type::Variants(vs))
+    }
+
+    pub fn record(fs: Vec<Field<Id>>) -> ASTType<Id> {
+        ASTType::from(Type::Record(fs))
+    }
+
+    pub fn function(args: Vec<ASTType<Id>>, ret: ASTType<Id>) -> ASTType<Id> {
+        ASTType::from(args.into_iter().rev()
+            .fold(ret, |body, arg| ASTType::from(Type::Function(vec![arg], body))))
+    }
+
+    pub fn generic(typ: Generic<Id>) -> ASTType<Id> {
+        ASTType::from(Type::Generic(typ))
+    }
+
+    pub fn builtin(typ: BuiltinType) -> ASTType<Id> {
+        ASTType::from(Type::Builtin(typ))
+    }
+
+    pub fn variable(typ: TypeVariable) -> ASTType<Id> {
+        ASTType::from(Type::Variable(typ))
+    }
+
+    pub fn string() -> ASTType<Id> {
+        Type::builtin(BuiltinType::StringType)
+    }
+
+    pub fn int() -> ASTType<Id> {
+        Type::builtin(BuiltinType::IntType)
+    }
+
+    pub fn float() -> ASTType<Id> {
+        Type::builtin(BuiltinType::FloatType)
+    }
+
+    pub fn bool() -> ASTType<Id> {
+        Type::builtin(BuiltinType::BoolType)
+    }
+
+    pub fn unit() -> ASTType<Id> {
+        Type::builtin(BuiltinType::UnitType)
+    }
+}
+impl <Id, T> Type<Id, T>
+where T: Deref<Target=Type<Id, T>> {
     ///Returns the inner most application of a type application
-    pub fn inner_app(&self) -> &Type<Id> {
+    pub fn inner_app(&self) -> &Type<Id, T> {
         match *self {
             Type::App(ref a, _) => a.inner_app(),
             _ => self
@@ -363,7 +469,7 @@ impl <Id> Type<Id> {
             Type::App(ref l , ref r) => min(l.level(), r.level()),
             Type::Data(_, ref types) =>
                 types.iter()
-                    .map(Type::level)
+                    .map(|t| t.level())
                     .min()
                     .unwrap_or(u32::max_value()),
             Type::Variants(ref types) =>
@@ -374,7 +480,7 @@ impl <Id> Type<Id> {
             Type::Variable(ref var) => var.id,
             Type::Function(ref args, ref r) =>
                 min(args.iter()
-                    .map(Type::level)
+                    .map(|t| t.level())
                     .min()
                     .unwrap_or(u32::max_value()), r.level()),
             Type::Array(ref e) => e.level(),
@@ -386,9 +492,11 @@ impl <Id> Type<Id> {
             Type::Builtin(_) | Type::Generic(_) => u32::max_value(),
         }
     }
+}
 
-    pub fn return_type(&self) -> &Type<Id> {
-        match *self {
+impl <Id> ASTType<Id> {
+    pub fn return_type(&self) -> &ASTType<Id> {
+        match **self {
             Type::Function(_, ref return_type) => return_type.return_type(),
             _ => self
         }
@@ -432,10 +540,11 @@ impl fmt::Display for BuiltinType {
     }
 }
 
-impl <I: fmt::Display> fmt::Display for Type<I> {
+impl <I: fmt::Display, T: fmt::Display> fmt::Display for Type<I, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_type<I, T>(f: &mut fmt::Formatter, t: &T, args: &[Type<I>]) -> fmt::Result
-            where I: fmt::Display, T: fmt::Display {
+        fn fmt_type<T, U>(f: &mut fmt::Formatter, t: &T, args: &[U]) -> fmt::Result
+        where T: fmt::Display
+            , U: fmt::Display {
             try!(write!(f, "{}", t));
             match args {
                 [ref first, rest..] => {
@@ -617,13 +726,15 @@ pub fn walk_type<F, I>(typ: &Type<I>, f: &mut F)
     }
 }
 
-pub fn walk_mut_type<F, I>(typ: &mut Type<I>, f: &mut F)
-    where F: FnMut(&mut Type<I>) {
+pub fn walk_mut_type<F, I, T>(typ: &mut Type<I, T>, f: &mut F)
+    where F: FnMut(&mut Type<I, T>)
+        , T: DerefMut<Target=Type<I, T>> {
     walk_mut_type2(typ, f, &mut |_| ())
 }
-pub fn walk_mut_type2<F, G, I>(typ: &mut Type<I>, f: &mut F, g: &mut G)
-    where F: FnMut(&mut Type<I>)
-        , G: FnMut(&mut Type<I>) {
+pub fn walk_mut_type2<F, G, I, T>(typ: &mut Type<I, T>, f: &mut F, g: &mut G)
+    where F: FnMut(&mut Type<I, T>)
+        , G: FnMut(&mut Type<I, T>)
+        , T: DerefMut<Target=Type<I, T>> {
     f(typ);
     match *typ {
         Type::Data(_, ref mut args) => {
@@ -657,4 +768,107 @@ pub fn walk_mut_type2<F, G, I>(typ: &mut Type<I>, f: &mut F, g: &mut G)
         Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => ()
     }
     g(typ);
+}
+
+pub fn walk_move_type<F, I, T>(typ: T, f: &mut F) -> T
+    where F: FnMut(&Type<I, T>) -> Option<T>
+        , T: Deref<Target=Type<I, T>> + From<Type<I, T>> + Clone
+        , I: Clone {
+    walk_move_type2(&typ, f).unwrap_or(typ)
+}
+
+fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
+    where F: FnMut(&Type<I, T>) -> Option<T>
+        , T: Deref<Target=Type<I, T>> + From<Type<I, T>> + Clone
+        , I: Clone {
+    let new = f(typ);
+    let result = {
+        let typ = new.as_ref().map(|t| &**t).unwrap_or(typ);
+        match *typ {
+            Type::Data(ref id, ref args) => {
+                walk_move_types(args.iter(), |t| walk_move_type2(t, f))
+                    .map(|args| Type::Data(id.clone(), args))
+                    .map(From::from)
+            }
+            Type::Array(ref inner) => {
+                walk_move_type2(&**inner, f)
+                    .map(Type::Array)
+                    .map(From::from)
+            }
+            Type::Function(ref args, ref ret) => {
+                let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
+                (match (new_args, walk_move_type2(ret, f)) {
+                    (Some(args), Some(ret)) => Some(Type::Function(args, ret)),
+                    (Some(args), None) => Some(Type::Function(args, ret.clone())),
+                    (None, Some(ret)) => Some(Type::Function(args.clone(), ret)),
+                    (None, None) => None
+                }).map(From::from)
+            }
+            Type::Record(ref fields) => {
+                walk_move_types(fields.iter(), |field| {
+                    walk_move_type2(&field.typ, f).map(|typ| {
+                        Field { name: field.name.clone(), typ: typ }
+                    })
+                })
+                .map(Type::Record)
+                .map(From::from)
+            }
+            Type::App(ref l, ref r) => {
+                (match (walk_move_type2(l, f), walk_move_type2(r, f)) {
+                    (Some(l), Some(r)) => Some(Type::App(l, r)),
+                    (Some(l), _) => Some(Type::App(l.into(), r.clone())),
+                    (_, Some(r)) => Some(Type::App(l.clone(), r.into())),
+                    _ => None
+                }).map(From::from)
+            }
+            Type::Variants(ref variants) => {
+                walk_move_types(variants.iter(), |v| {
+                    walk_move_type2(&v.1, f).map(|t| (v.0.clone(), t))
+                })
+                    .map(Type::Variants)
+                    .map(From::from)
+            }
+            Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => None
+        }
+    };
+    result.or(new)
+}
+fn walk_move_types<'a, I, F, T>(types: I,
+                               mut f: F) -> Option<Vec<T>>
+    where I: Iterator<Item=&'a T>
+        , F: FnMut(&'a T) -> Option<T>
+        , T: Clone + 'a {
+    let mut out = Vec::new();
+    walk_move_types2(types, false, &mut out, &mut f);
+    if out.len() == 0 {
+        None
+    }
+    else {
+        out.reverse();
+        Some(out)
+    }
+}
+fn walk_move_types2<'a, I, F, T>(mut types: I,
+                               replaced: bool,
+                               output: &mut Vec<T>,
+                               f: &mut F)
+    where I: Iterator<Item=&'a T>
+        , F: FnMut(&'a T) -> Option<T>
+        , T: Clone + 'a {
+    match types.next() {
+        Some(typ) => {
+            let new = f(typ);
+            walk_move_types2(types, replaced || new.is_some(), output, f);
+            match new {
+                Some(typ) => {
+                    output.push(typ);
+                }
+                None if replaced || output.len() > 0 => {
+                    output.push(typ.clone());
+                }
+                None => ()
+            }
+        }
+        None => ()
+    }
 }

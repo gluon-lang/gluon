@@ -1,6 +1,7 @@
 use base::ast;
+use base::interner::InternedStr;
 use vm::{VM, VMResult, Status, BytecodeFunction, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
-use typecheck::{TcType, Typed, Type, UNIT_TYPE, BOOL_TYPE, INT_TYPE, FLOAT_TYPE, STRING_TYPE};
+use typecheck::{TcType, Typed, Type};
 use compiler::Instruction::Call;
 use compiler::VMIndex;
 use std::any::Any;
@@ -12,9 +13,9 @@ use std::marker::PhantomData;
 pub struct IO<T>(pub T);
 
 pub trait VMType {
-    fn vm_type<'a>(vm: &'a VM) -> &'a TcType;
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr>;
     fn make_type(vm: &VM) -> TcType {
-        <Self as VMType>::vm_type(vm).clone()
+        TcType::from(<Self as VMType>::vm_type(vm).clone())
     }
 }
 
@@ -28,8 +29,8 @@ pub trait VMValue<'a, 'vm> : Pushable<'a> + Getable<'a, 'vm> { }
 impl <'a, 'vm, T> VMValue<'a, 'vm> for T where T: Pushable<'a> + Getable<'a, 'vm> { }
 
 impl VMType for () {
-    fn vm_type<'a>(_: &VM) -> &'a TcType {
-        &UNIT_TYPE
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<()>()
     }
 }
 impl <'a> Pushable<'a> for () {
@@ -44,8 +45,8 @@ impl <'a, 'vm> Getable<'a, 'vm> for () {
 }
 
 impl VMType for VMInt {
-    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
-        &INT_TYPE
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<Self>()
     }
 }
 impl <'a> Pushable<'a> for VMInt {
@@ -63,8 +64,8 @@ impl <'a, 'vm> Getable<'a, 'vm> for VMInt {
     }
 }
 impl VMType for f64 {
-    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
-        &FLOAT_TYPE
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<Self>()
     }
 }
 impl <'a> Pushable<'a> for f64 {
@@ -82,8 +83,8 @@ impl <'a, 'vm> Getable<'a, 'vm> for f64 {
     }
 }
 impl VMType for bool {
-    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
-        &BOOL_TYPE
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<Self>()
     }
 }
 impl <'a> Pushable<'a> for bool {
@@ -102,18 +103,18 @@ impl <'a, 'vm> Getable<'a, 'vm> for bool {
     }
 }
 impl VMType for str {
-    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
-        &STRING_TYPE
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<String>()
     }
 }
 impl <'s> VMType for &'s str {
-    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
-        &STRING_TYPE
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<String>()
     }
 }
 impl VMType for String {
-    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
-        &STRING_TYPE
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<Self>()
     }
 }
 impl <'a, 's> Pushable<'a> for &'s str {
@@ -140,7 +141,7 @@ impl <'a> Pushable<'a> for String {
 }
 
 impl <T: Any> VMType for Box<T> {
-    fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<T>()
     }
 }
@@ -152,7 +153,7 @@ impl <'a, T: Any> Pushable<'a> for Box<T> {
 }
 
 impl <T: Any> VMType for *mut T {
-    fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<T>()
     }
 }
@@ -171,11 +172,12 @@ impl <'a, 'vm, T: Any> Getable<'a, 'vm> for *mut T {
     }
 }
 impl <T: VMType + Any> VMType for Option<T> {
-    fn vm_type<'b>(vm: &'b VM) -> &'b TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<Option<T>>()
     }
     fn make_type(vm: &VM) -> TcType {
-        ast::type_con(vm.intern("Option"), vec![T::make_type(vm)])
+        let ctor = ast::TypeConstructor::Data(vm.intern("Option"));
+        ast::Type::data(ctor, vec![T::make_type(vm)])
     }
 }
 impl <'a, T: Pushable<'a> + Any> Pushable<'a> for Option<T> {
@@ -213,7 +215,7 @@ impl <'a, 'vm, T: Getable<'a, 'vm>> Getable<'a, 'vm> for Option<T> {
 }
 
 impl <T: VMType, E> VMType for Result<T, E> {
-    fn vm_type<'b>(vm: &'b VM) -> &'b TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         T::vm_type(vm)
     }
 }
@@ -235,11 +237,11 @@ impl <'a, T: Pushable<'a>, E: fmt::Display> Pushable<'a> for Result<T, E> {
 }
 
 impl <T: Any + VMType> VMType for IO<T> {
-    fn vm_type<'b>(vm: &'b VM) -> &'b TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<IO<T>>()
     }
     fn make_type(vm: &VM) -> TcType {
-        ast::Type::Data(ast::TypeConstructor::Data(vm.intern("IO")), vec![T::make_type(vm)])
+        ast::Type::data(ast::TypeConstructor::Data(vm.intern("IO")), vec![T::make_type(vm)])
     }
 }
 impl <'a, T: Pushable<'a> + Any> Pushable<'a> for IO<T> {
@@ -249,7 +251,7 @@ impl <'a, T: Pushable<'a> + Any> Pushable<'a> for IO<T> {
 }
 
 impl <'r, T: Any> VMType for Root<'r, T> {
-    fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<T>()
     }
 }
@@ -263,8 +265,8 @@ impl <'a, 'vm, T: Any> Getable<'a, 'vm> for Root<'vm, T> {
 }
 
 impl <'r> VMType for RootStr<'r> {
-    fn vm_type<'a>(_: &'a VM) -> &'a TcType {
-        &STRING_TYPE
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<String>()
     }
 }
 impl <'a, 'vm> Getable<'a, 'vm> for RootStr<'vm> {
@@ -276,7 +278,7 @@ impl <'a, 'vm> Getable<'a, 'vm> for RootStr<'vm> {
     }
 }
 
-fn vm_type<'a, T: ?Sized + VMType>(vm: &'a VM) -> &'a TcType {
+fn vm_type<'a, T: ?Sized + VMType>(vm: &'a VM) -> &'a Type<InternedStr> {
     <T as VMType>::vm_type(vm)
 }
 
@@ -290,14 +292,14 @@ pub trait Get<'a, 'b> {
 
 
 pub struct ArgIterator<'a> {
-    pub typ: &'a TcType
+    pub typ: &'a Type<InternedStr>
 }
-fn arg_iter(typ: &TcType) -> ArgIterator {
+fn arg_iter(typ: &Type<InternedStr>) -> ArgIterator {
     ArgIterator { typ: typ }
 }
 impl <'a> Iterator for ArgIterator<'a> {
-    type Item = &'a TcType;
-    fn next(&mut self) -> Option<&'a TcType> {
+    type Item = &'a Type<InternedStr>;
+    fn next(&mut self) -> Option<&'a Type<InternedStr>> {
         match *self.typ {
             Type::Function(ref arg, ref return_type) => {
                 self.typ = &**return_type;
@@ -314,7 +316,8 @@ impl <'a, 'b, $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a>> Ge
     fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Callable<'a, 'b, ($($args,)*), R>> {
         let value = match vm.get_global(name) {
             Some(global) => {
-                let mut arg_iter = arg_iter(global.type_of());
+                let typ = global.type_of();
+                let mut arg_iter = arg_iter(&typ);
                 let ok = $({
                     arg_iter.next().expect("Arg iter") == vm_type::<$args>(vm)
                     } &&)* true;
@@ -357,7 +360,7 @@ impl <'a, Args, R> Copy for FunctionRef<'a, Args, R> { }
 impl <'a, Args, R> Clone for FunctionRef<'a, Args, R> { fn clone(&self) -> FunctionRef<'a, Args, R> { *self } }
 
 impl <'b, Args, R> VMType for FunctionRef<'b, Args, R> {
-    fn vm_type<'a>(vm: &'a VM) -> &'a TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<&fn (Args) -> R>()
     }
 }
@@ -418,13 +421,13 @@ macro_rules! make_vm_function {
     ($($args:ident),*) => (
 impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
-    fn vm_type<'r>(vm: &'r VM) -> &'r TcType {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<fn ($($args),*) -> R>()
     }
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        ast::fn_type(args, make_type::<R>(vm))
+        Type::function(args, make_type::<R>(vm))
     }
 }
 
@@ -445,13 +448,13 @@ impl <'a, 'vm, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm
 }
 impl <'a, 's, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's {
     #[allow(non_snake_case)]
-    fn vm_type<'r>(vm: &'r VM) -> &'r TcType {
+    fn vm_type<'r>(vm: &'r VM) -> &'r Type<InternedStr> {
         vm.get_type::<fn ($($args),*) -> R>()
     }
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        ast::fn_type(args, make_type::<R>(vm))
+        Type::function(args, make_type::<R>(vm))
     }
 }
 impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Box<Fn($($args),*) -> R + 's> {
@@ -596,7 +599,7 @@ let id : Test -> Test = \x -> x in id
 r#"
 \x -> test x 1
 "#;
-        let mut vm = VM::new();
+        let vm = VM::new();
         fn test(r: Root<Test>, i: VMInt) -> VMInt {
             r.0 + i
         }

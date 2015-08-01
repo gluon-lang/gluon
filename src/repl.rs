@@ -13,7 +13,7 @@ fn print(vm: &VM) -> Status {
 #[allow(dead_code)]
 pub fn run() {
     let vm = VM::new();
-    vm.extern_function("printInt", vec![INT_TYPE.clone()], UNIT_TYPE.clone(), Box::new(print))
+    vm.extern_function("printInt", vec![Type::int()], Type::unit(), Box::new(print))
         .unwrap();
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
