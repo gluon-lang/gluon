@@ -3,7 +3,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Deref;
-use ast::{AstId, ASTType};
+use ast::{AstId, IdentEnv, ASTType};
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
 
@@ -105,9 +105,9 @@ impl Interner {
         gc_str
     }
 
-    pub fn with_env<F, R>(&mut self, gc: &mut Gc, f: F) -> R
-        where F: FnOnce(&mut InternerEnv) -> R {
-        f(&mut InternerEnv(self, gc))
+    pub fn with_env<'a, F, R>(&'a mut self, gc: &'a mut Gc, f: F) -> R
+        where F: FnOnce(InternerEnv<'a>) -> R {
+        f(InternerEnv(self, gc))
     }
 }
 
@@ -122,22 +122,25 @@ impl fmt::Display for InternedStr {
     }
 }
 
-pub struct InternerEnv(*mut Interner, *mut Gc);
+pub struct InternerEnv<'a>(&'a mut Interner, &'a mut Gc);
 
-impl InternerEnv {
+impl <'a> InternerEnv<'a> {
     pub fn intern(&mut self, s: &str) -> InternedStr {
-        //We ensure that this is safe by only allowing access to an InternerEnv
-        //through the Gc::with_env method
-        unsafe { (*self.0).intern(&mut *self.1, s) }
+        self.0.intern(self.1, s)
+    }
+}
+
+impl <'a> IdentEnv for InternerEnv<'a> {
+    type Ident = InternedStr;
+
+    fn from_str(&mut self, s: &str) -> InternedStr {
+        self.intern(s)
     }
 }
 
 impl AstId for InternedStr {
-    type Env = InternerEnv;
     type Untyped = InternedStr;
-    fn from_str(env: &mut Self::Env, s: &str) -> InternedStr {
-        env.intern(s)
-    }
+
     fn to_id(self) -> InternedStr { self }
     fn set_type(&mut self, _: ASTType<Self::Untyped>) { }
 }

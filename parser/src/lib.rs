@@ -440,9 +440,19 @@ type RecordParser<'a, 'b, I, Id, F, P, O> = BetweenChar<'a, 'b, SepBy<O, (Langua
 
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
 ///type information. The type will just be a dummy value until the AST has passed typechecking
-pub fn parse_tc(gc: &mut Gc, interner: &mut Interner, input: &str) -> Result<LExpr<TcIdent<InternedStr>>, Box<Error>> {
+pub fn parse_tc(gc: &mut Gc,
+                interner: &mut Interner,
+                input: &str
+                ) -> Result<LExpr<TcIdent<InternedStr>>, Box<Error>> {
     interner.with_env(gc, |env| {
-        parse_module(|s| AstId::from_str(env, s), input)
+        let mut env = ast::TcIdentEnv {
+            typ: Type::variable(ast::TypeVariable {
+                id: 0,
+                kind: ast::Kind::Star
+            }),
+            env: env
+        };
+        parse_module(|s| env.from_str(s), input)
     })
 }
 

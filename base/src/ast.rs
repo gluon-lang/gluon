@@ -9,13 +9,20 @@ pub type ASTType<Id> = RcType<Id>;
 ///Trait representing a type that can by used as in identifier in the AST
 ///Used to allow the AST to both have a representation which has typed expressions etc as well
 ///as one which only has identifiers (useful for testing)
-pub trait AstId {
-    type Env = ();
+pub trait AstId: Sized {
     ///The type used instead of `Self` when the identifier does not need a type
     type Untyped: Clone + PartialEq + Eq + fmt::Debug;
-    fn from_str(env: &mut Self::Env, s: &str) -> Self;
+    fn from_str<E>(env: &mut E, s: &str) -> Self
+    where E: IdentEnv<Ident=Self> {
+        env.from_str(s)
+    }
     fn to_id(self) -> Self::Untyped;
     fn set_type(&mut self, typ: ASTType<Self::Untyped>);
+}
+
+pub trait IdentEnv {
+    type Ident;
+    fn from_str(&mut self, s: &str) -> Self::Ident;
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -36,19 +43,31 @@ impl <Id> AsRef<str> for TcIdent<Id>
     }
 }
 
+pub struct TcIdentEnv<Id, Env> {
+    pub typ: ASTType<Id>,
+    pub env: Env
+}
+
 impl <Id> AstId for TcIdent<Id>
     where Id: Clone + PartialEq + Eq + fmt::Debug + AstId {
-    type Env = Id::Env;
     type Untyped = Id;
-    fn from_str(env: &mut Id::Env, s: &str) -> TcIdent<Id> {
-        TcIdent {
-            typ: ASTType::from(Type::Variable(TypeVariable::with_kind(Kind::Variable(0), 0))),
-            name: AstId::from_str(env, s)
-        }
-    }
-    fn to_id(self) -> Id { self.name }
+
+    fn to_id(self) -> Self::Untyped { self.name }
+
     fn set_type(&mut self, typ: ASTType<Self::Untyped>) {
         self.typ = typ;
+    }
+}
+
+impl <Id, Env> IdentEnv for TcIdentEnv<Id, Env>
+where Id: Clone
+    , Env: IdentEnv<Ident=Id> {
+    type Ident = TcIdent<Id>;
+    fn from_str(&mut self, s: &str) -> TcIdent<Id> {
+        TcIdent {
+            typ: self.typ.clone(),
+            name: self.env.from_str(s)
+        }
     }
 }
 
