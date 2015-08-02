@@ -1,6 +1,12 @@
 # embed_lang (working title)
 
 This library is a complete compiler and virtual machine for implemented in [Rust][Rust].
+## Usage
+
+You can start a rudimentary REPL by starting the repl binary using -i. It currently has support for:
+* Evaluating expressions (expressions of type IO will be evaluated in the IO context).
+* Loading files with `:l filename` the result of evaluating the expression in `filename` is store in a variable called `filename` without the extension.
+* Checking the types of expressions with `:t expression`
 
 ## Goals/Features
 These goals may change or be refined over time as I experiment with what is possible to with the language.
