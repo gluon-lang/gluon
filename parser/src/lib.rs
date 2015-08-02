@@ -2,6 +2,9 @@
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
 #![feature(box_syntax)]
+#![cfg_attr(test, feature(test))]
+#[cfg(test)]
+extern crate test;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
@@ -584,13 +587,12 @@ pub mod tests {
         no_loc(Expr::Array(ArrayStruct { id: intern(""), expressions: fields }))
     }
 
-    pub fn parse_new<Id>(input: &str) -> LExpr<Id>
-        where Id: AstId<Env=InternerEnv, Untyped=InternedStr> + AsRef<str> + Clone {
+    pub fn parse_new(input: &str) -> LExpr<InternedStr> {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
         let &mut(ref mut interner, ref mut gc) = &mut *interner;
-        let x = interner.with_env(gc, |env| {
-                parse_module(|s| AstId::from_str(env, s), input)
+        let x = interner.with_env(gc, |mut env| {
+                parse_module(|s| AstId::from_str(&mut env, s), input)
             })
             .unwrap_or_else(|err| panic!("{:?}", err));
         x
@@ -619,7 +621,11 @@ pub mod tests {
     #[test]
     fn let_type_decl() {
         let _ = ::env_logger::init();
-        let e = parse_new::<TcIdent<InternedStr>>("let f: Int = \\x y -> x + y in f 1 2");
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+        let &mut(ref mut interner, ref mut gc) = &mut *interner;
+        let e = super::parse_tc(gc, interner, "let f: Int = \\x y -> x + y in f 1 2")
+            .unwrap();
         match e.value {
             Expr::Let(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
             _ => assert!(false)
@@ -717,5 +723,21 @@ pub mod tests {
                     expression: id("test")
                 }], Box::new(id("x")))
         ));
+    }
+
+    #[bench]
+    fn prelude(b: &mut ::test::Bencher) {
+        use std::fs::File;
+        use std::io::Read;
+        let mut text = String::new();
+        File::open("../std/prelude.hs").unwrap()
+            .read_to_string(&mut text).unwrap();
+        b.iter(|| {
+            let mut interner = Interner::new();
+            let mut gc = Gc::new();
+            let expr = super::parse_tc(&mut gc, &mut interner, &text)
+                .unwrap_or_else(|err| panic!("{:?}", err));
+            ::test::black_box(expr)
+        })
     }
 }
