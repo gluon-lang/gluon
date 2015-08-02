@@ -7,6 +7,8 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Statically typed** - It currently roughly uses the Hindley-Milner type system with some extensions.
 
+* **Tiny** - The language should be as small as possible while still remaining practical. Every feature added should be turned on its head several time and asked "Can I do this with what already exists". An example of this is that previously there was a difference between compiling a module, which was a list of bindings and types, and an expression. Modules where removed as practically the same result could be achieved by returning a record of the bindings (Caveat: Types currently always globally exported though this should change). Now instead of files being compiled as modules they are just expressions which return a record of the functions they export!
+
 * **Strict** - Laziness will probably be supported through an explicit type but being strict by default leads to easier to debug code.
 
 * **Pure** Purity is a really powerful concept when reasoning about code. The language is currently pure though given the goal to be embeddable this might be to restrictive.
