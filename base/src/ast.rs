@@ -155,17 +155,17 @@ impl <I: fmt::Display> fmt::Display for TypeConstructor<I> {
 pub enum Kind {
     Variable(u32),
     Star,
-    Function(Box<Kind>, Box<Kind>)
+    Function(Rc<Kind>, Rc<Kind>)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable {
-    pub kind: Kind,
+    pub kind: Rc<Kind>,
     pub id: u32
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Generic<Id> {
-    pub kind: Kind,
+    pub kind: Rc<Kind>,
     pub id: Id
 }
 
@@ -263,17 +263,16 @@ impl <Id> Type<Id> {
             _ => false
         }
     }
-    pub fn kind(&self) -> &Kind {
+    pub fn kind(&self) -> Rc<Kind> {
         use self::Type::*;
-        static STAR: Kind = Kind::Star;
         match *self {
             App(ref arg, _) => match *arg.kind() {
-                Kind::Function(_, ref ret) => &**ret,
+                Kind::Function(_, ref ret) => ret.clone(),
                 _ => panic!("Expected function kind")
             },
-            Variable(ref var) => &var.kind,
-            Generic(ref gen) => &gen.kind,
-            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) | Record(_) => &STAR,
+            Variable(ref var) => var.kind.clone(),
+            Generic(ref gen) => gen.kind.clone(),
+            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) | Record(_) => Rc::new(Kind::Star),
         }
     }
 }
@@ -409,7 +408,7 @@ where I: Deref<Target=str> {
     let is_var = s.chars().next().unwrap().is_lowercase();
     match str_to_primitive_type(&s) {
         Some(b) => Type::Builtin(b),
-        None if is_var => Type::Generic(Generic { kind: Kind::Star, id: s }),
+        None if is_var => Type::Generic(Generic { kind: Rc::new(Kind::Star), id: s }),
         None => Type::Data(TypeConstructor::Data(s), args)
     }
 }
@@ -527,7 +526,7 @@ impl TypeVariable {
         TypeVariable::with_kind(Kind::Star, var)
     }
     pub fn with_kind(kind: Kind, var: u32) -> TypeVariable {
-        TypeVariable { kind: kind, id: var  }
+        TypeVariable { kind: Rc::new(kind), id: var  }
     }
 }
 

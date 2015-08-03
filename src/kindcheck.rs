@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use base::ast::{Type, Kind};
 use typecheck::TcType;
 use base::ast;
@@ -6,7 +7,7 @@ use substitution::{Substitution, Substitutable};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    KindMismatch(Kind, Kind),
+    KindMismatch(Rc<Kind>, Rc<Kind>),
     StringError(&'static str)
 }
 use self::Error::*;
@@ -28,19 +29,35 @@ impl Substitutable for Kind {
 pub struct KindCheck<'a> {
     variables: &'a mut [TcType],
     info: &'a (Fn(InternedStr) -> Option<&'a TcType> + 'a),
-    subs: Substitution<Kind>
+    subs: Substitution<Kind>,
+    star: Rc<Kind>
 }
 
-fn walk_mut_kind<F>(kind: &mut Kind, f: &mut F)
-    where F: FnMut(&mut Kind) {
-    f(kind);
-    match *kind {
-        Kind::Function(ref mut a, ref mut r) => {
-            walk_mut_kind(a, f);
-            walk_mut_kind(r, f);
-        }
-        Kind::Star | Kind::Variable(_) => (),
+fn walk_move_kind<F>(kind: Rc<Kind>, f: &mut F) -> Rc<Kind>
+    where F: FnMut(&Kind) -> Option<Rc<Kind>> {
+    match walk_move_kind2(&kind, f) {
+        Some(kind) => kind,
+        None => kind
     }
+}
+fn walk_move_kind2<F>(kind: &Rc<Kind>, f: &mut F) -> Option<Rc<Kind>>
+    where F: FnMut(&Kind) -> Option<Rc<Kind>> {
+    let new = f(kind);
+    let new2 = {
+        let kind = new.as_ref().map(|k| &**k).unwrap_or(kind);
+        match *kind {
+            Kind::Function(ref a, ref r) => {
+                match (walk_move_kind2(a, f), walk_move_kind2(r, f)) {
+                    (Some(a), Some(r)) => Some(Rc::new(Kind::Function(a, r))),
+                    (Some(a), None) => Some(Rc::new(Kind::Function(a, r.clone()))),
+                    (None, Some(r)) => Some(Rc::new(Kind::Function(a.clone(), r))),
+                    (None, None) => None
+                }
+            }
+            Kind::Star | Kind::Variable(_) => None
+        }
+    };
+    new2.or(new)
 }
 
 impl <'a> KindCheck<'a> {
@@ -48,10 +65,15 @@ impl <'a> KindCheck<'a> {
     pub fn new(info: &'a Fn(InternedStr) -> Option<&'a TcType>, variables: &'a mut [TcType], id: u32) -> KindCheck<'a> {
         let mut subs = Substitution::new();
         subs.var_id = id;
-        KindCheck { variables: variables, info: info, subs: subs }
+        KindCheck {
+            variables: variables,
+            info: info,
+            subs: subs,
+            star: Rc::new(Kind::Star)
+        }
     }
 
-    fn find(&mut self, id: InternedStr) -> Result<Kind> {
+    fn find(&mut self, id: InternedStr) -> Result<Rc<Kind>> {
         let kind = self.variables.iter()
             .find(|var| match ***var { Type::Generic(ref other) => other.id == id, _ => false })
             .map(|t| t.kind().clone())
@@ -60,9 +82,9 @@ impl <'a> KindCheck<'a> {
                     .and_then(|typ| {
                         match **typ {
                             Type::Data(_, ref args) => {
-                                let mut kind = Kind::Star;
+                                let mut kind = self.star.clone();
                                 for arg in args.iter().rev() {
-                                    kind = Kind::Function(Box::new(arg.kind().clone()), Box::new(kind));
+                                    kind = Rc::new(Kind::Function(arg.kind(), kind));
                                 }
                                 Some(kind)
                             }
@@ -71,7 +93,7 @@ impl <'a> KindCheck<'a> {
                     })
             })
             .map(|t| Ok(t))
-            .unwrap_or_else(|| Ok(self.subs.variable_for(id)));
+            .unwrap_or_else(|| Ok(Rc::new(self.subs.variable_for(id))));
         debug!("Find kind: {} => {}", id, kind.as_ref().unwrap());
         kind
     }
@@ -83,12 +105,12 @@ impl <'a> KindCheck<'a> {
             match *typ {
                 Type::Variable(ref var) => {
                     let mut kind = var.kind.clone();
-                    subs.set_kind(&mut kind);
+                    kind = subs.update_kind(kind);
                     Some(Type::variable(ast::TypeVariable { id: var.id, kind: kind }))
                 }
                 Type::Generic(ref var) => {
                     let mut kind = var.kind.clone();
-                    subs.set_kind(&mut kind);
+                    kind = subs.update_kind(kind);
                     Some(Type::generic(ast::Generic { id: var.id, kind: kind }))
                 }
                 _ => None
@@ -98,10 +120,10 @@ impl <'a> KindCheck<'a> {
         for typ in self.variables.iter_mut() {
             *typ = f(typ.clone());
         }
-        Ok(kind)
+        Ok((*kind).clone())
     }
 
-    fn kindcheck(&mut self, typ: &TcType) -> Result<(Kind, TcType)> {
+    fn kindcheck(&mut self, typ: &TcType) -> Result<(Rc<Kind>, TcType)> {
         match **typ {
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
@@ -111,21 +133,22 @@ impl <'a> KindCheck<'a> {
             Type::Variable(_) => {
                 panic!("kindcheck called on variable")
             }
-            Type::Builtin(_) => Ok((Kind::Star, typ.clone())),
+            Type::Builtin(_) => Ok((self.star.clone(), typ.clone())),
             Type::Array(ref typ) => {
                 let (kind, typ) = try!(self.kindcheck(typ));
-                try!(self.unify(&Kind::Star, kind));
-                Ok((Kind::Star, Type::array(typ)))
+                let star = self.star.clone();
+                try!(self.unify(&star, kind));
+                Ok((self.star.clone(), Type::array(typ)))
             }
             Type::App(ref f, ref r) => {
                 let (kind, f) = try!(self.kindcheck(f));
-                let kind_fn = Kind::Function(Box::new(self.subs.new_kind()), Box::new(self.subs.new_kind()));
+                let kind_fn = Rc::new(Kind::Function(self.subs.new_kind(), self.subs.new_kind()));
                 let kind = try!(self.unify(&kind_fn, kind));
-                match kind {
-                    Kind::Function(arg, ret) => {
+                match *kind {
+                    Kind::Function(ref arg, ref ret) => {
                         let (arg_kind, r) = try!(self.kindcheck(r));
                         try!(self.unify(&arg, arg_kind));
-                        Ok((*ret, Type::app(f, r)))
+                        Ok((ret.clone(), Type::app(f, r)))
                     }
                     _ => panic!("Expected kind function")
                 }
@@ -137,56 +160,59 @@ impl <'a> KindCheck<'a> {
                 let mut kind = try!(self.find(ctor));
                 let mut new_args = Vec::new();
                 for arg in args {
-                    let f = Kind::Function(Box::new(self.subs.new_kind()), Box::new(self.subs.new_kind()));
+                    let f = Rc::new(Kind::Function(self.subs.new_kind(), self.subs.new_kind()));
                     kind = try!(self.unify(&f, kind));
-                    match kind {
-                        Kind::Function(arg_kind, ret) => {
+                    kind = match *kind {
+                        Kind::Function(ref arg_kind, ref ret) => {
                             let (actual, new_arg) = try!(self.kindcheck(arg));
                             new_args.push(new_arg);
-                            try!(self.unify(&arg_kind, actual));
-                            kind = *ret;
+                            try!(self.unify(arg_kind, actual));
+                            ret.clone()
                         }
                         _ => return Err(StringError("Expected kind: a -> a"))
-                    }
+                    };
                 }
                 Ok((kind, Type::data(ast::TypeConstructor::Data(ctor), new_args)))
             }
             Type::Function(ref args, ref ret) => {
                 let (kind, arg) = try!(self.kindcheck(&args[0]));
-                try!(self.unify(&Kind::Star, kind));
+                let star = self.star.clone();
+                try!(self.unify(&star, kind));
                 let (kind, ret) = try!(self.kindcheck(ret));
-                let new_kind = try!(self.unify(&Kind::Star, kind));
+                let star = self.star.clone();
+                let new_kind = try!(self.unify(&star, kind));
                 Ok((new_kind, Type::function(vec![arg], ret)))
             }
             Type::Variants(ref variants) => {
                 let variants = try!(variants.iter().map(|variant| {
                     let (kind, typ) = try!(self.kindcheck(&variant.1));
-                    try!(self.unify(&Kind::Star, kind));
+                    let star = self.star.clone();
+                    try!(self.unify(&star, kind));
                     Ok((variant.0, typ))
                 }).collect());
-                Ok((Kind::Star, Type::variants(variants)))
+                Ok((self.star.clone(), Type::variants(variants)))
             }
             Type::Record(ref fields) => {
                 let fields = try!(fields.iter().map(|field| {
                     let (kind, typ) = try!(self.kindcheck(&field.typ));
-                    try!(self.unify(&Kind::Star, kind));
+                    let star = self.star.clone();
+                    try!(self.unify(&star, kind));
                     Ok(ast::Field { name: field.name, typ: typ })
                 }).collect());
-                Ok((Kind::Star, Type::record(fields)))
+                Ok((self.star.clone(), Type::record(fields)))
             }
         }
     }
 
-    fn unify(&mut self, expected: &Kind, mut actual: Kind) -> Result<Kind> {
+    fn unify(&mut self, expected: &Rc<Kind>, mut actual: Rc<Kind>) -> Result<Rc<Kind>> {
         debug!("Unify {:?} <=> {:?}", expected, actual);
         if self.unify_(expected, &actual) {
-            self.subs.set_kind(&mut actual);
-            Ok(actual)
+            Ok(self.subs.update_kind(actual))
         }
         else {
             let mut expected = expected.clone();
-            self.subs.set_kind(&mut expected);
-            self.subs.set_kind(&mut actual);
+            expected = self.subs.update_kind(expected);
+            actual = self.subs.update_kind(actual);
             Err(KindMismatch(expected, actual))
         }
     }
@@ -227,20 +253,16 @@ impl <'a> KindCheck<'a> {
 }
 
 impl Substitution<Kind> {
-    fn new_kind(&mut self) -> ast::Kind {
-        self.new_var()
+    fn new_kind(&mut self) -> Rc<ast::Kind> {
+        Rc::new(self.new_var())
     }
 
-    fn set_kind(&mut self, kind: &mut Kind) {
-        walk_mut_kind(kind, &mut |kind| {
-            *kind = match *kind {
-                Kind::Variable(id) =>
-                    match self.find_type_for_var(id).map(|t| t.clone()) {
-                        Some(k) => k,
-                        None => return
-                    },
-                _ => return
+    fn update_kind(&mut self, kind: Rc<Kind>) -> Rc<Kind> {
+        walk_move_kind(kind, &mut |kind| {
+            match *kind {
+                Kind::Variable(id) => self.find_type_for_var(id).map(|t| Rc::new(t.clone())),
+                _ => None
             }
-        });
+        })
     }
 }

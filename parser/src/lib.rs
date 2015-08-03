@@ -15,6 +15,7 @@ extern crate combine_language;
 use std::cell::RefCell;
 use std::error::Error;
 use std::iter::FromIterator;
+use std::rc::Rc;
 use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser, Lex, BetweenChar};
 use combine::primitives::{Consumed, Stream};
 use combine::combinator::{SepBy, Token};
@@ -145,7 +146,7 @@ where I: Stream<Item=char>
                 if s.chars().next()
                     .map(|c| c.is_lowercase())
                     .unwrap_or(false) {
-                    Type::generic(Generic { kind: Kind::Variable(0), id: self.intern(&s).to_id() })
+                    Type::generic(Generic { kind: Rc::new(Kind::Variable(0)), id: self.intern(&s).to_id() })
                 }
                 else {
                     match str_to_primitive_type(&s) {
@@ -221,7 +222,7 @@ where I: Stream<Item=char>
             .map(|(_, name, args): (_, _, Vec<_>)| {
                 let args = args.into_iter().map(|id|
                         Type::generic(Generic {
-                            kind: Kind::Variable(0),
+                            kind: Rc::new(Kind::Variable(0)),
                             id: id
                         })
                     ).collect();
@@ -451,7 +452,7 @@ pub fn parse_tc(gc: &mut Gc,
         let mut env = ast::TcIdentEnv {
             typ: Type::variable(ast::TypeVariable {
                 id: 0,
-                kind: ast::Kind::Star
+                kind: Rc::new(ast::Kind::Star)
             }),
             env: env
         };
@@ -549,7 +550,7 @@ pub mod tests {
         }
     }
     fn generic(s: &str) -> ASTType<InternedStr> {
-        Type::generic(Generic { kind: Kind::Variable(0), id: intern(s) })
+        Type::generic(Generic { kind: Rc::new(Kind::Variable(0)), id: intern(s) })
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
         no_loc(Expr::Call(box e, args))

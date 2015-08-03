@@ -6,6 +6,7 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::Deref;
+use std::rc::Rc;
 use base::ast;
 use base::ast::{Type, ASTType};
 use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
@@ -632,8 +633,8 @@ impl <'a> VM<'a> {
         fn f3<A, B, C, R>(f: fn (A, B, C) -> R) -> fn (A, B, C) -> R {
             f
         }
-        let a = Type::generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("a") });
-        let b = Type::generic(ast::Generic { kind: ast::Kind::Star, id: self.intern("b") });
+        let a = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: self.intern("a") });
+        let b = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: self.intern("b") });
         let array_a = Type::array(a.clone());
         let io = |t| ASTType::from(ast::type_con(self.intern("IO"), vec![t]));
         try!(self.extern_function("array_length", vec![array_a.clone()], Type::int().clone(), box prim::array_length));

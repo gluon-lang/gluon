@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::convert::AsRef;
 use std::error::Error as StdError;
 use std::fmt;
+use std::rc::Rc;
+
 use scoped_map::ScopedMap;
 use base::ast;
 use base::ast::{ASTType, MutVisitor};
@@ -309,7 +311,8 @@ impl <'a> Typecheck<'a> {
         //Insert all type variables in the type declaration so that they get replaced by their
         //corresponding generic variable
         for (generic_id, var_id) in variables {
-            unsafe { self.subs.insert(*var_id, Type::generic(ast::Generic { kind: ast::Kind::Star, id: *generic_id })); }
+            let typ = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: *generic_id });
+            unsafe { self.subs.insert(*var_id, typ); }
         }
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { level: u32, tc: &'a mut Typecheck<'b> }
@@ -965,9 +968,9 @@ impl Substitution<TcType> {
         TcType::from(var)
     }
 
-    fn new_kind(&mut self) -> ast::Kind {
+    fn new_kind(&mut self) -> Rc<ast::Kind> {
         self.var_id += 1;
-        ast::Kind::Variable(self.var_id)
+        Rc::new(ast::Kind::Variable(self.var_id))
     }
 
     fn instantiate(&mut self, typ: &TcType) -> TcType {
@@ -1136,21 +1139,11 @@ mod tests {
 
     fn typ(s: &str) -> TcType {
         assert!(s.len() != 0);
-        let is_var = s.chars().next().unwrap().is_lowercase();
-        match ast::str_to_primitive_type(s) {
-            Some(b) => Type::builtin(b),
-            None if is_var => Type::generic(ast::Generic { kind: ast::Kind::Star, id: intern(s) }),
-            None => Type::data(ast::TypeConstructor::Data(intern(s)), Vec::new())
-        }
+        typ_a(s, Vec::new())
     }
     fn typ_a(s: &str, args: Vec<TcType>) -> TcType {
         assert!(s.len() != 0);
-        let is_var = s.chars().next().unwrap().is_lowercase();
-        match ast::str_to_primitive_type(s) {
-            Some(b) => Type::builtin(b),
-            None if is_var => Type::generic(ast::Generic { kind: ast::Kind::Star, id: intern(s) }),
-            None => Type::data(ast::TypeConstructor::Data(intern(s)), args)
-        }
+        ast::ASTType::new(ast::type_con(intern(s), args))
     }
 
     pub fn parse_new(s: &str) -> ast::LExpr<TcIdent> {
