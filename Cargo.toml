@@ -23,3 +23,5 @@ path = "src/main.rs"
 path = "base"
 [dependencies.parser]
 path = "parser"
+[dependencies.check]
+path = "check"

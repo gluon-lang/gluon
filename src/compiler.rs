@@ -2,7 +2,7 @@ use base::interner::*;
 use base::gc::Gc;
 use base::ast;
 use base::ast::{LExpr, Expr, Integer, Float, String, Bool};
-use typecheck::{TcIdent, TcType, Type, Typed, TypeInfos};
+use check::typecheck::{TcIdent, TcType, Type, Typed, TypeInfos};
 use self::Instruction::*;
 use self::Variable::*;
 

@@ -10,17 +10,14 @@ extern crate test;
 
 extern crate base;
 extern crate parser;
+extern crate check;
 
 pub use base::interner::InternedStr;
-pub use typecheck::TcType;
+pub use check::typecheck::TcType;
 pub use compiler::{CompiledFunction, Instruction};
 
 pub use base::{ast, gc, interner};
 
-mod scoped_map;
-mod substitution;
-mod kindcheck;
-pub mod typecheck;
 pub mod compiler;
 #[macro_use]
 pub mod vm;

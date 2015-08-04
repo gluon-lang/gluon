@@ -3,6 +3,7 @@ name = "embed_lang"
 version = "0.0.1"
 dependencies = [
  "base 0.1.0",
+ "check 0.1.0",
  "clap 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -27,6 +28,14 @@ name = "base"
 version = "0.1.0"
 dependencies = [
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "check"
+version = "0.1.0"
+dependencies = [
+ "base 0.1.0",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

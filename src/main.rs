@@ -4,6 +4,7 @@ extern crate env_logger;
 extern crate clap;
 
 extern crate embed_lang;
+extern crate check;
 
 
 #[cfg(not(test))]

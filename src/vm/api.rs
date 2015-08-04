@@ -1,7 +1,7 @@
 use base::ast;
 use base::interner::InternedStr;
 use vm::{VM, VMResult, Status, BytecodeFunction, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
-use typecheck::{TcType, Typed, Type};
+use check::typecheck::{TcType, Typed, Type};
 use compiler::Instruction::Call;
 use compiler::VMIndex;
 use std::any::Any;

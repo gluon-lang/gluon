@@ -9,7 +9,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use base::ast;
 use base::ast::{Type, ASTType};
-use typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
+use check::typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
 use compiler::*;
 use compiler::Instruction::*;
 use base::interner::{Interner, InternedStr};

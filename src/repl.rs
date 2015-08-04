@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::io;
 use std::io::BufRead;
 
-use embed_lang::typecheck::*;
+use check::typecheck::{Type, Typed, TypeEnv};
 use embed_lang::vm::{VM, Error, Status, typecheck_expr, run_expr, load_script};
 
 fn print(vm: &VM) -> Status {
