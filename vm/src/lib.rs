@@ -1,4 +1,4 @@
-#![feature(as_unsafe_cell, core_intrinsics, raw)]
+#![feature(core_intrinsics, raw)]
 #![cfg_attr(test, feature(test))]
 #[cfg(test)]
 extern crate test;

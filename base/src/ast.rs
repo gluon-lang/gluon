@@ -564,16 +564,13 @@ impl <I: fmt::Display, T: fmt::Display> fmt::Display for Type<I, T> {
         where T: fmt::Display
             , U: fmt::Display {
             try!(write!(f, "{}", t));
-            match args {
-                [ref first, rest..] => {
-                    try!(write!(f, "<"));
-                    try!(write!(f, "{}", first));
-                    for arg in rest {
-                        try!(write!(f, ", {}", arg));
-                    }
-                    try!(write!(f, ">"));
+            if args.len() > 0 {
+                try!(write!(f, "<"));
+                try!(write!(f, "{}", args[0]));
+                for arg in &args[1..] {
+                    try!(write!(f, ", {}", arg));
                 }
-                [] => ()
+                try!(write!(f, ">"));
             }
             Ok(())
         }

@@ -93,9 +93,7 @@ unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
         let result = unsafe { &mut *result };
         result.function = self.0;
         for (field, value) in result.upvars.iter().zip(self.1.iter()) {
-            unsafe {
-                ::std::ptr::write(field.as_unsafe_cell().get(), value.clone());
-            }
+            field.set(value.clone());
         }
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut ClosureData<'a> {
@@ -242,9 +240,7 @@ unsafe impl <'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
         let result = unsafe { &mut *result };
         result.function = self.0;
         for (field, value) in result.arguments.iter().zip(self.1.iter()) {
-            unsafe {
-                ::std::ptr::write(field.as_unsafe_cell().get(), value.clone());
-            }
+            field.set(value.clone());
         }
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut PartialApplicationData<'a> {
@@ -549,9 +545,7 @@ unsafe impl <'a, 'b> DataDef for Def<'a, 'b> {
         let result = unsafe { &mut *result };
         result.tag = self.tag;
         for (field, value) in result.fields.iter().zip(self.elems.iter()) {
-            unsafe {
-                ::std::ptr::write(field.as_unsafe_cell().get(), value.clone());
-            }
+            field.set(value.clone());
         }
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {

@@ -1,7 +1,5 @@
 #![crate_type="lib"]
-#![feature(collections, slice_patterns)]
 #![cfg_attr(test, feature(test))]
-extern crate collections;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
