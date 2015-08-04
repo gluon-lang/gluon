@@ -929,11 +929,11 @@ impl <'a> Typecheck<'a> {
         //declaration
         match **typ {
             Type::Variable(ref other_id) if self.subs.get_level(id.id) < self.subs.get_level(other_id.id) => {
-                map.insert(other_id.id, box Type::variable(id.clone()));
+                map.insert(other_id.id, Box::new(Type::variable(id.clone())));
                 self.subs.update_level(id.id, other_id.id);
             }
             _ => {
-                map.insert(id.id, box typ.clone());
+                map.insert(id.id, Box::new(typ.clone()));
             }
         };
         Ok(())

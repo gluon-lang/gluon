@@ -39,7 +39,7 @@ impl <K: Eq + Hash, V> FixedMap<K, V> {
             Err((key, value))
         }
         else {
-            self.map.borrow_mut().insert(key, box value);
+            self.map.borrow_mut().insert(key, Box::new(value));
             Ok(())
         }
     }
@@ -67,12 +67,12 @@ impl <T> FixedVec<T> {
     }
 
     pub fn push(&self, value: T) {
-        self.vec.borrow_mut().push(box value)
+        self.vec.borrow_mut().push(Box::new(value))
     }
 
     #[allow(dead_code)]
     pub fn extend<I: Iterator<Item=T>>(&self, iter: I) {
-        self.vec.borrow_mut().extend(iter.map(|v| box v))
+        self.vec.borrow_mut().extend(iter.map(|v| Box::new(v)))
     }
 
     pub fn borrow(&self) -> Ref<Vec<Box<T>>> {
@@ -104,7 +104,7 @@ impl <T> Index<usize> for FixedVec<T> {
 
 impl <A> FromIterator<A> for FixedVec<A> {
     fn from_iter<T: IntoIterator<Item=A>>(iterator: T) -> FixedVec<A> {
-        let vec: Vec<_> = iterator.into_iter().map(|x| box x).collect();
+        let vec: Vec<_> = iterator.into_iter().map(|x| Box::new(x)).collect();
         FixedVec { vec: RefCell::new(vec) }
     }
 }

@@ -42,7 +42,7 @@ pub struct Userdata_ {
 
 impl Userdata_ {
     pub fn new<T: Any>(vm: &VM, v: T) -> Userdata_ {
-        let v: Box<Any> = box v;
+        let v: Box<Any> = Box::new(v);
         Userdata_ { data: vm.gc.borrow_mut().alloc(Move(v)) }
     }
     fn ptr(&self) -> *const () {
@@ -632,18 +632,18 @@ impl <'a> VM<'a> {
         let b = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: self.intern("b") });
         let array_a = Type::array(a.clone());
         let io = |t| ASTType::from(ast::type_con(self.intern("IO"), vec![t]));
-        try!(self.extern_function("array_length", vec![array_a.clone()], Type::int().clone(), box prim::array_length));
+        try!(self.extern_function("array_length", vec![array_a.clone()], Type::int().clone(), Box::new(prim::array_length)));
         try!(define_function(self, "string_length", f1(prim::string_length)));
         try!(define_function(self, "string_find", f2(prim::string_find)));
         try!(define_function(self, "string_rfind", f2(prim::string_rfind)));
         try!(define_function(self, "string_trim", f1(prim::string_trim)));
-        try!(self.extern_function("string_append", vec![Type::string().clone(), Type::string().clone()], Type::string().clone(), box prim::string_append));
-        try!(self.extern_function("string_eq", vec![Type::string().clone(), Type::string().clone()], Type::bool().clone(), box prim::string_eq));
+        try!(self.extern_function("string_append", vec![Type::string().clone(), Type::string().clone()], Type::string().clone(), Box::new(prim::string_append)));
+        try!(self.extern_function("string_eq", vec![Type::string().clone(), Type::string().clone()], Type::bool().clone(), Box::new(prim::string_eq)));
         try!(define_function(self, "string_slice", f3(prim::string_slice)));
-        try!(self.extern_function("show_Int_prim", vec![Type::int().clone()], Type::string().clone(), box prim::show));
-        try!(self.extern_function("show_Float_prim", vec![Type::float().clone()], Type::string().clone(), box prim::show));
-        try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), box prim::error));
-        try!(self.extern_function("error", vec![Type::string().clone()], a.clone(), box prim::error));
+        try!(self.extern_function("show_Int_prim", vec![Type::int().clone()], Type::string().clone(), Box::new(prim::show)));
+        try!(self.extern_function("show_Float_prim", vec![Type::float().clone()], Type::string().clone(), Box::new(prim::show)));
+        try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
+        try!(self.extern_function("error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
 
         //IO functions
         try!(define_function(self, "print_int", f1(prim::print_int)));
@@ -651,27 +651,27 @@ impl <'a> VM<'a> {
         try!(self.extern_function_io("catch_IO",
                                         3,
                                         Type::function(vec![io(a.clone()), catch_fn], io(a.clone())),
-                                        box prim::catch_io));
+                                        Box::new(prim::catch_io)));
         try!(self.extern_function_io("read_file",
                                         2,
                                         Type::function(vec![Type::string().clone()], io(Type::string().clone())),
-                                        box prim::read_file));
+                                        Box::new(prim::read_file)));
         try!(self.extern_function_io("read_line",
                                         1,
                                         io(Type::string().clone()),
-                                        box prim::read_line));
+                                        Box::new(prim::read_line)));
         try!(self.extern_function_io("print",
                                         2,
                                         Type::function(vec![Type::string().clone()], io(Type::unit().clone())),
-                                        box prim::print));
+                                        Box::new(prim::print)));
         try!(self.extern_function_io("run_expr",
                                         2,
                                         Type::function(vec![Type::string().clone()], io(Type::string().clone())),
-                                     box prim::run_expr));
+                                     Box::new(prim::run_expr)));
         try!(self.extern_function_io("load_script",
                                         3,
                                         Type::function(vec![Type::string().clone(), Type::string().clone()], io(Type::string().clone())),
-                                     box prim::load_script));
+                                     Box::new(prim::load_script)));
         
         // io_bind m f (): IO a -> (a -> IO b) -> IO b
         //     = f (m ())

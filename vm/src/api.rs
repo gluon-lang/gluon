@@ -506,9 +506,9 @@ where F: VMFunction<'a, 'vm> + VMType + 'static {
             _ => 0
         })
     };
-    let f = box move |vm: &'vm VM<'a>| {
+    let f = Box::new(move |vm: &'vm VM<'a>| {
         f.unpack_and_call(vm)
-    };
+    });
     unsafe {
         //The VM guarantess that it only ever calls this function with itself which should
         //make sure that ignoring the lifetime is safe

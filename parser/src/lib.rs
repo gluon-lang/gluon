@@ -1,7 +1,6 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![feature(box_syntax)]
 #![cfg_attr(test, feature(test))]
 #[cfg(test)]
 extern crate test;
@@ -518,7 +517,7 @@ pub mod tests {
     type PExpr = LExpr<InternedStr>;
     
     fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
-        no_loc(Expr::BinOp(box l, intern(s), box r))
+        no_loc(Expr::BinOp(Box::new(l), intern(s), Box::new(r)))
     }
     fn int(i: i64) -> PExpr {
         no_loc(Expr::Literal(Integer(i)))
@@ -553,13 +552,13 @@ pub mod tests {
         Type::generic(Generic { kind: Rc::new(Kind::Variable(0)), id: intern(s) })
     }
     fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
-        no_loc(Expr::Call(box e, args))
+        no_loc(Expr::Call(Box::new(e), args))
     }
     fn if_else(p: PExpr, if_true: PExpr, if_false: PExpr) -> PExpr {
-        no_loc(Expr::IfElse(box p, box if_true, Some(box if_false)))
+        no_loc(Expr::IfElse(Box::new(p), Box::new(if_true), Some(Box::new(if_false))))
     }
     fn case(e: PExpr, alts: Vec<(Pattern<InternedStr>, PExpr)>) -> PExpr {
-        no_loc(Expr::Match(box e, alts.into_iter()
+        no_loc(Expr::Match(Box::new(e), alts.into_iter()
                                     .map(|(p, e)| Alternative { pattern: p, expression: e })
                                     .collect()))
     }
@@ -568,11 +567,11 @@ pub mod tests {
             id: intern(name),
             free_vars: Vec::new(),
             arguments: args,
-            body: box body 
+            body: Box::new(body)
         }))
     }
     fn type_decl(name: ASTType<InternedStr>, typ: ASTType<InternedStr>, body: PExpr) -> PExpr {
-        no_loc(Expr::Type(name, typ, box body))
+        no_loc(Expr::Type(name, typ, Box::new(body)))
     }
 
     fn bool(b: bool) -> PExpr {
