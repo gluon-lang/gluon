@@ -10,16 +10,16 @@ use std::rc::Rc;
 use base::ast;
 use base::ast::{Type, ASTType};
 use check::typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
-use compiler::*;
-use compiler::Instruction::*;
+use types::*;
 use base::interner::{Interner, InternedStr};
 use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move};
+use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
 use fixed::*;
-use self::api::define_function;
+use api::define_function;
 
 use self::Named::*;
 
-use vm::Value::{
+use self::Value::{
     Int,
     Float,
     String,
@@ -33,12 +33,7 @@ use vm::Value::{
 };
 
 
-pub use self::stack::{Stack, StackFrame};
-
-#[macro_use]
-pub mod api;
-mod stack;
-mod primitives;
+pub use stack::{Stack, StackFrame};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Userdata_ {
@@ -63,8 +58,8 @@ impl PartialEq for Userdata_ {
 
 #[derive(Debug)]
 pub struct ClosureData<'a> {
-    function: GcPtr<BytecodeFunction>,
-    upvars: [Cell<Value<'a>>]
+    pub function: GcPtr<BytecodeFunction>,
+    pub upvars: [Cell<Value<'a>>]
 }
 
 impl <'a> PartialEq for ClosureData<'a> {
@@ -149,8 +144,8 @@ impl Traverseable for BytecodeFunction {
 }
 
 pub struct DataStruct<'a> {
-    tag: VMTag,
-    fields: [Cell<Value<'a>>]
+    pub tag: VMTag,
+    pub fields: [Cell<Value<'a>>]
 }
 
 impl <'a> Traverseable for DataStruct<'a> {
@@ -623,7 +618,7 @@ impl <'a> VM<'a> {
     }
 
     fn add_primitives(&self) -> VMResult<()> {
-        use self::primitives as prim;
+        use primitives as prim;
         fn f1<A, R>(f: fn (A) -> R) -> fn (A) -> R {
             f
         }
@@ -857,7 +852,7 @@ impl <'a> VM<'a> {
         f(&mut gc, roots)
     }
 
-    fn alloc<T: ?Sized, D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<T>
+    pub fn alloc<T: ?Sized, D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<T>
         where D: DataDef<Value=T> + Traverseable {
         self.with_roots(stack, |gc, mut roots| {
             unsafe { gc.alloc_and_collect(&mut roots, def) }
@@ -1363,7 +1358,7 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>
     Ok(())
 }
 
-pub fn parse_expr(input: &str, vm: &VM) -> Result<::ast::LExpr<TcIdent>, Box<StdError>> {
+pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, Box<StdError>> {
     let mut interner = vm.interner.borrow_mut();
     let mut gc = vm.gc.borrow_mut();
     Ok(try!(::parser::parse_tc(&mut gc, &mut interner, input)))
@@ -1406,8 +1401,10 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 
 #[cfg(test)]
 mod tests {
-    use super::{VM, load_script, run_expr};
-    use super::Value::{Float, Int};
+    use vm::{VM, load_script, run_expr};
+    use vm::Value::{Float, Int};
+    use stack::StackFrame;
+    use check::typecheck::Typecheck;
 
     #[test]
     fn pass_function_value() {
@@ -1559,7 +1556,7 @@ in f 4
         use std::cell::Cell;
         let _ = ::env_logger::init();
         let vm = VM::new();
-        let _: Result<_, ()> = super::StackFrame::new_scope(vm.stack.borrow_mut(), 0, None, |mut stack| {
+        let _: Result<_, ()> = StackFrame::new_scope(vm.stack.borrow_mut(), 0, None, |mut stack| {
             stack.push(Int(0));
             stack.insert_slice(0, &[Cell::new(Int(2)), Cell::new(Int(1))]);
             assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
@@ -1707,7 +1704,7 @@ in x + string_length z
         use std::io::Read;
         let _ = ::env_logger::init();
         let mut text = String::new();
-        File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
         let mut vm = VM::new();
         run_expr(&mut vm, &text)
             .unwrap_or_else(|err| panic!("{}", err));
@@ -1719,12 +1716,38 @@ in x + string_length z
         let _ = ::env_logger::init();
         let mut vm = VM::new();
         let mut text = String::new();
-        File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
         load_script(&mut vm, "prelude", &text).unwrap();
         text.clear();
-        File::open("std/map.hs").unwrap().read_to_string(&mut text).unwrap();
+        File::open("../std/map.hs").unwrap().read_to_string(&mut text).unwrap();
         run_expr(&mut vm, &text)
             .unwrap_or_else(|err| panic!("{}", err));
+    }
+
+    #[bench]
+    fn prelude(b: &mut ::test::Bencher) {
+        use std::fs::File;
+        use std::io::Read;
+        use vm::VM;
+        let _ = ::env_logger::init();
+        let vm = VM::new();
+        let env = vm.env();
+        let mut interner = vm.interner.borrow_mut();
+        let mut gc = vm.gc.borrow_mut();
+        let mut text = String::new();
+        File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        let expr = ::parser::parse_tc(&mut *gc, &mut *interner, &text)
+            .unwrap_or_else(|err| panic!("{:?}", err));
+        b.iter(|| {
+            let mut tc = Typecheck::new(&mut *interner, &mut *gc);
+            tc.add_environment(&env);
+            let result = tc.typecheck_expr(&mut expr.clone());
+            if let Err(ref err) = result {
+                println!("{}", err);
+                assert!(false);
+            }
+            ::test::black_box(result)
+        })
     }
 }
 

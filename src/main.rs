@@ -5,12 +5,13 @@ extern crate clap;
 
 extern crate embed_lang;
 extern crate check;
+extern crate vm;
 
 
 #[cfg(not(test))]
 use std::error::Error as StdError;
 #[cfg(not(test))]
-use embed_lang::vm::{VM, Error, load_script};
+use vm::vm::{VM, Error, load_script};
 #[cfg(not(test))]
 use clap::{Arg, App};
 

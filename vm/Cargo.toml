@@ -1,7 +1,8 @@
 [package]
-name = "check"
+name = "vm"
 version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
+
 
 [dependencies.log]
 [dependencies.env_logger]
@@ -9,4 +10,5 @@ authors = ["Markus <marwes91@gmail.com>"]
 path = "../base"
 [dependencies.parser]
 path = "../parser"
-
+[dependencies.check]
+path = "../check"

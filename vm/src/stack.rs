@@ -1,9 +1,9 @@
 use std::cell::{Cell, RefMut};
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
-use gc::GcPtr;
+use base::gc::GcPtr;
 use vm::{ClosureData, Value, VM};
-use compiler::VMIndex;
+use types::VMIndex;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Frame<'a> {

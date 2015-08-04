@@ -1,10 +1,10 @@
 use std::fs::File;
 use std::io::{Read, stdin};
 
-use vm::api::IO;
+use api::IO;
 use vm::{VM, BytecodeFunction, VMInt, Status, Value, RootStr};
-use compiler::Instruction::Call;
-use vm::stack::StackFrame;
+use types::Instruction::Call;
+use stack::StackFrame;
 
 pub fn array_length(vm: &VM) -> Status {
     match vm.pop() {

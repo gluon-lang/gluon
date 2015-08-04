@@ -8,6 +8,7 @@ dependencies = [
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "parser 0.1.0",
+ "vm 0.1.0",
 ]
 
 [[package]]
@@ -36,7 +37,9 @@ name = "check"
 version = "0.1.0"
 dependencies = [
  "base 0.1.0",
+ "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parser 0.1.0",
 ]
 
 [[package]]
@@ -121,4 +124,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "strsim"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "vm"
+version = "0.1.0"
+dependencies = [
+ "base 0.1.0",
+ "check 0.1.0",
+ "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "parser 0.1.0",
+]
 

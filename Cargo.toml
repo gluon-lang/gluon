@@ -25,3 +25,5 @@ path = "base"
 path = "parser"
 [dependencies.check]
 path = "check"
+[dependencies.vm]
+path = "vm"

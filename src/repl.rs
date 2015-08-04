@@ -3,7 +3,7 @@ use std::io;
 use std::io::BufRead;
 
 use check::typecheck::{Type, Typed, TypeEnv};
-use embed_lang::vm::{VM, Error, Status, typecheck_expr, run_expr, load_script};
+use vm::vm::{VM, Error, Status, typecheck_expr, run_expr, load_script};
 
 fn print(vm: &VM) -> Status {
     println!("{:?}", vm.pop());
