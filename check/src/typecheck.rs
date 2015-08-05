@@ -76,18 +76,8 @@ pub struct TypeInfos {
     pub id_to_type: HashMap<InternedStr, TcType>,
     pub type_to_id: HashMap<TcType, TcType>
 }
-
-impl TypeInfos {
-    pub fn new() -> TypeInfos {
-        TypeInfos {
-            id_to_type: HashMap::new(),
-            type_to_id: HashMap::new()
-        }
-    }
-    pub fn find_type_info(&self, id: &InternedStr) -> Option<&TcType> {
-        self.id_to_type.get(id)
-    }
-    pub fn find_adt(&self, id: &InternedStr) -> Option<&TcType> {
+impl TypeEnv for TypeInfos {
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         self.id_to_type.iter()
             .filter_map(|(_, typ)| {
                 match **typ {
@@ -99,7 +89,13 @@ impl TypeInfos {
             .map(|x| &x.1)
     }
 
-    pub fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<&TcType> {
+        self.id_to_type.get(id)
+    }
+    fn find_type_name(&self, _typ: &TcType) -> Option<TcType> {
+        None
+    }
+    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
         self.id_to_type.iter()
             .find(|&(_, typ)| {
                 match **typ {
@@ -111,6 +107,15 @@ impl TypeInfos {
             })
             .and_then(|t| self.type_to_id.get(&t.1).map(|id_type| (id_type, t.1)))
     }
+}
+
+impl TypeInfos {
+    pub fn new() -> TypeInfos {
+        TypeInfos {
+            id_to_type: HashMap::new(),
+            type_to_id: HashMap::new()
+        }
+    }
 
     pub fn find_id(&self, typ: &TcType) -> Option<TcType> {
         self.type_to_id.iter()
@@ -119,6 +124,7 @@ impl TypeInfos {
             })
             .next()
     }
+
     pub fn extend(&mut self, other: TypeInfos) {
         let TypeInfos { id_to_type, type_to_id } = other;
         self.id_to_type.extend(id_to_type);
@@ -178,6 +184,44 @@ pub trait TypeEnv {
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)>;
 }
 
+impl <'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+        (**self).find_type(id)
+    }
+    fn find_type_info(&self, id: &InternedStr) -> Option<&TcType> {
+        (**self).find_type_info(id)
+    }
+    fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
+        (**self).find_type_name(typ)
+    }
+    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+        (**self).find_record(fields)
+    }
+}
+
+impl <T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+        let &(ref outer, ref inner) = self;
+        inner.find_type(id)
+            .or_else(|| outer.find_type(id))
+    }
+    fn find_type_info(&self, id: &InternedStr) -> Option<&TcType> {
+        let &(ref outer, ref inner) = self;
+        inner.find_type_info(id)
+            .or_else(|| outer.find_type_info(id))
+    }
+    fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
+        let &(ref outer, ref inner) = self;
+        inner.find_type_name(typ)
+            .or_else(|| outer.find_type_name(typ))
+    }
+    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+        let &(ref outer, ref inner) = self;
+        inner.find_record(fields)
+            .or_else(|| outer.find_record(fields))
+    }
+}
+
 pub struct Typecheck<'a> {
     environment: Option<&'a (TypeEnv + 'a)>,
     interner: &'a mut Interner,
@@ -232,7 +276,7 @@ impl <'a> TypeEnv for Typecheck<'a> {
         match stack.find(id) {
             Some(x) => Some(x),
             None => module.get(id)
-                .or_else(|| type_infos.find_adt(id))
+                .or_else(|| type_infos.find_type(id))
                 .or_else(|| environment.and_then(|e| e.find_type(id)))
         }
     }
@@ -273,7 +317,7 @@ impl <'a> Typecheck<'a> {
             match stack.find(id) {
                 Some(x) => Some(x),
                 None => module.get(id)
-                    .or_else(|| type_infos.find_adt(id))
+                    .or_else(|| type_infos.find_type(id))
                     .or_else(|| environment.and_then(|e| e.find_type(id)))
             }
         };

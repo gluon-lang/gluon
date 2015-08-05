@@ -2,7 +2,7 @@ use base::interner::*;
 use base::gc::Gc;
 use base::ast;
 use base::ast::{LExpr, Expr, Integer, Float, String, Bool};
-use check::typecheck::{TcIdent, TcType, Type, Typed, TypeInfos};
+use check::typecheck::{TcIdent, TcType, Type, Typed, TypeInfos, TypeEnv};
 use types::*;
 use self::Variable::*;
 
@@ -74,7 +74,7 @@ impl FunctionEnv {
     }
 }
 
-pub trait CompilerEnv {
+pub trait CompilerEnv: TypeEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
     fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<VMIndex>;
     fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<VMTag>;
@@ -468,12 +468,10 @@ impl <'a> Compiler<'a> {
                                 self.new_stack_var(arg.id().clone());
                             }
                         }
-                        ast::Pattern::Record(ref record) => {
-                            function.instructions.push(Split);
-                            for &(mut name, bind) in record {
-                                name = bind.unwrap_or(name);
-                                self.new_stack_var(name);
-                            }
+                        ast::Pattern::Record(_) => {
+                            self.compile_let_pattern(&alt.pattern,
+                                                     &expr.type_of(),
+                                                     function);
                         }
                         ast::Pattern::Identifier(ref id) => {
                             function.instructions[start_index] = Jump(function.instructions.len() as VMIndex);
@@ -539,21 +537,31 @@ impl <'a> Compiler<'a> {
 
     fn compile_let_pattern(&mut self,
                            pattern: &ast::Pattern<TcIdent>,
-                           mut typ: &TcType,
+                           typ: &TcType,
                            function: &mut FunctionEnv) {
         match *pattern {
             ast::Pattern::Identifier(ref name) => {
                 self.new_stack_var(*name.id());
             }
             ast::Pattern::Record(ref record) => {
+                let mut typ = typ;
                 if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
-                    typ = self.find_type_info(id)
+                    typ = self.globals.find_type_info(&id)
                         .unwrap_or(typ);
                 }
-                function.instructions.push(Split);
-                for &(mut name, bind) in record {
-                    name = bind.unwrap_or(name);
-                    self.new_stack_var(name);
+                match **typ {
+                    Type::Record(ref type_fields) => {
+                        function.instructions.push(Split);
+                        for field in type_fields {
+                            let name = match record.iter().find(|tup| tup.0 == field.name) {
+                                Some(&(name, bind)) => bind.unwrap_or(name),
+                                None => self.intern("")
+                            };
+                            println!("{:?}", field);
+                            self.new_stack_var(name);
+                        }
+                    }
+                    _ => panic!("Expected record, got {}", typ)
                 }
             }
             ast::Pattern::Constructor(..) => {
