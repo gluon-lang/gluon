@@ -1,6 +1,7 @@
 # embed_lang (working title)
 
-This library is a complete compiler and virtual machine for implemented in [Rust][Rust].
+This library is a complete compiler and virtual machine for implemented in [Rust][Rust]. This is currently very unstable as neither the semantics of syntax is nailed down yet.
+
 ## Usage
 
 You can start a rudimentary REPL by starting the repl binary using -i. It currently has support for:
@@ -28,7 +29,7 @@ These goals may change or be refined over time as I experiment with what is poss
 
 This language takes its primary inspiration from [Lua][Lua], [Haskell][Haskell] and [OCaml][OCaml].
 
-[Lua]: www.lua.org
-[Haskell]: www.haskell.org
-[OCaml]: www.ocamlorg
-[Rust]: www.rust-lang.org
+[Lua]: http://www.lua.org
+[Haskell]: http://www.haskell.org
+[OCaml]: http://www.ocaml.org
+[Rust]: http://www.rust-lang.org
