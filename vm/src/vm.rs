@@ -1680,6 +1680,21 @@ in x + string_length z
     }
 
     #[test]
+    fn partial_record_pattern() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+type A = { x: Int, y: Float } in
+let x = { x = 1, y = 2.0 }
+in case x of
+    | { y } -> y
+"#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert_eq!(result, Float(2.0));
+    }
+
+    #[test]
     fn test_prelude() {
         use std::fs::File;
         use std::io::Read;

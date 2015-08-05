@@ -371,21 +371,8 @@ impl <'a> Compiler<'a> {
                     }
                     else {
                         self.compile(&bind.expression, function, false);
-                        match bind.name {
-                            ast::Pattern::Identifier(ref name) => {
-                                self.new_stack_var(*name.id());
-                            }
-                            ast::Pattern::Record(ref record) => {
-                                function.instructions.push(Split);
-                                for &(mut name, bind) in record {
-                                    name = bind.unwrap_or(name);
-                                    self.new_stack_var(name);
-                                }
-                            }
-                            ast::Pattern::Constructor(..) => {
-                                panic!("constructor pattern in let")
-                            }
-                        }
+                        let typ = bind.expression.type_of();
+                        self.compile_let_pattern(&bind.name, &typ, function);
                     }
                     //unit expressions do not return a value so we need to add a dummy value
                     //To make the stack correct
@@ -546,6 +533,31 @@ impl <'a> Compiler<'a> {
                     self.compile(expr, function, false);
                 }
                 function.instructions.push(Construct(0, exprs.len() as u32));
+            }
+        }
+    }
+
+    fn compile_let_pattern(&mut self,
+                           pattern: &ast::Pattern<TcIdent>,
+                           mut typ: &TcType,
+                           function: &mut FunctionEnv) {
+        match *pattern {
+            ast::Pattern::Identifier(ref name) => {
+                self.new_stack_var(*name.id());
+            }
+            ast::Pattern::Record(ref record) => {
+                if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
+                    typ = self.find_type_info(id)
+                        .unwrap_or(typ);
+                }
+                function.instructions.push(Split);
+                for &(mut name, bind) in record {
+                    name = bind.unwrap_or(name);
+                    self.new_stack_var(name);
+                }
+            }
+            ast::Pattern::Constructor(..) => {
+                panic!("constructor pattern in let")
             }
         }
     }
