@@ -1395,10 +1395,15 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 
 #[cfg(test)]
 mod tests {
-    use vm::{VM, load_script, run_expr};
+    use vm::{VM, Value, load_script};
     use vm::Value::{Float, Int};
     use stack::StackFrame;
     use check::typecheck::Typecheck;
+
+    fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
+        super::run_expr(vm, s)
+            .unwrap_or_else(|err| panic!("{}", err))
+    }
 
     #[test]
     fn pass_function_value() {
@@ -1410,8 +1415,7 @@ let test: (() -> Int) -> Int = \f -> f () #Int+ 10
 in test lazy
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(52));
     }
     #[test]
@@ -1424,8 +1428,7 @@ let f = \x -> y #Int+ x #Int+ 1
 in f(22)
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(123));
     }
     #[test]
@@ -1436,8 +1439,7 @@ r"
 let (+) = \x y -> x #Int+ y in 1 + 2 + 3
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(6));
     }
 
@@ -1449,8 +1451,7 @@ r"
 { x = 0, y = 1.0, z = {} }
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         let unit = vm.new_data(0, &mut []);
         assert_eq!(value, vm.new_data(0, &mut [Int(0), Float(1.0), unit]));
     }
@@ -1465,8 +1466,7 @@ let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, vm.new_data(0, &mut [Int(1), Int(2)]));
     }
     #[test]
@@ -1483,8 +1483,7 @@ let sub = \l r -> { x = l.x #Int- r.x, y = l.y #Int- r.y } in
         load_script(&mut vm, "Vec", text)
             .unwrap_or_else(|err| panic!("{}", err));
 
-        let value = run_expr(&mut vm, "Vec.add { x = 10, y = 5 } { x = 1, y = 2 }")
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, "Vec.add { x = 10, y = 5 } { x = 1, y = 2 }");
         assert_eq!(value, vm.new_data(0, &mut [Int(11), Int(7)]));
     }
     #[test]
@@ -1496,8 +1495,7 @@ type Option a = | None | Some a
 in Some 1
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, vm.new_data(1, &mut [Int(1)]));
     }
     #[test]
@@ -1511,8 +1509,7 @@ let fib x = if x #Int< 3
 in fib 7
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(13));
     }
     #[test]
@@ -1527,8 +1524,7 @@ and g x = f (x #Int- 1)
 in g 3
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(-1));
     }
     #[test]
@@ -1541,8 +1537,7 @@ let f y = x
 in f 4
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(2));
     }
     #[test]
@@ -1575,8 +1570,7 @@ let g = f 10
 in g 2 #Int+ g 3
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(25));
     }
     #[test]
@@ -1590,8 +1584,7 @@ let h = g 20
 in h 2 #Int+ g 10 3
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(55));
     }
     #[test]
@@ -1604,8 +1597,7 @@ let g = f 20
 in f 10 2 #Int+ g 3
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(35));
     }
     #[test]
@@ -1618,8 +1610,7 @@ let g = f 20 5
 in f 10 2 1 #Int+ g 2
 ";
         let mut vm = VM::new();
-        let value = run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        let value = run_expr(&mut vm, text);
         assert_eq!(value, Int(40));
     }
     #[test]
@@ -1630,8 +1621,7 @@ r"
 print_int 123
 ";
         let mut vm = VM::new();
-        run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        run_expr(&mut vm, text);
     }
     #[test]
     fn no_io_eval() {
@@ -1642,8 +1632,7 @@ let x = io_bind (print_int 1) (\x -> error "NOOOOOOOO")
 in { x }
 "#;
         let mut vm = VM::new();
-        run_expr(&mut vm, text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        run_expr(&mut vm, text);
     }
 
     #[test]
@@ -1656,7 +1645,7 @@ case A of
     | B -> True
 ";
         let mut vm = VM::new();
-        let result = run_expr(&mut vm, text);
+        let result = super::run_expr(&mut vm, text);
         assert!(result.is_err());
     }
 
@@ -1669,8 +1658,7 @@ case { x = 1, y = "abc" } of
     | { x, y = z } -> x #Int+ string_length z
 "#;
         let mut vm = VM::new();
-        let result = run_expr(&mut vm, text)
-            .unwrap();
+        let result = run_expr(&mut vm, text);
         assert_eq!(result, Int(4));
     }
 
@@ -1687,8 +1675,7 @@ let {x, y = z} = a
 in x + string_length z
 "#;
         let mut vm = VM::new();
-        let result = run_expr(&mut vm, text)
-            .unwrap();
+        let result = run_expr(&mut vm, text);
         assert_eq!(result, Int(13));
     }
 
@@ -1700,9 +1687,9 @@ in x + string_length z
         let mut text = String::new();
         File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
         let mut vm = VM::new();
-        run_expr(&mut vm, &text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        run_expr(&mut vm, &text);
     }
+
     #[test]
     fn test_map() {
         use std::fs::File;
@@ -1714,8 +1701,7 @@ in x + string_length z
         load_script(&mut vm, "prelude", &text).unwrap();
         text.clear();
         File::open("../std/map.hs").unwrap().read_to_string(&mut text).unwrap();
-        run_expr(&mut vm, &text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        run_expr(&mut vm, &text);
     }
 
     #[bench]
