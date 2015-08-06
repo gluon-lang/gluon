@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::convert::AsRef;
 use std::error::Error as StdError;
 use std::fmt;
+use std::mem;
 use std::rc::Rc;
 
 use scoped_map::ScopedMap;
@@ -351,13 +352,7 @@ impl <'a> Typecheck<'a> {
         self.environment = Some(env);
     }
 
-    fn replace_vars(&mut self, level: u32, variables: &HashMap<InternedStr, u32>, expr: &mut ast::LExpr<TcIdent>) {
-        //Insert all type variables in the type declaration so that they get replaced by their
-        //corresponding generic variable
-        for (generic_id, var_id) in variables {
-            let typ = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: *generic_id });
-            unsafe { self.subs.insert(*var_id, typ); }
-        }
+    fn replace_vars(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { level: u32, tc: &'a mut Typecheck<'b> }
         impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
@@ -366,13 +361,13 @@ impl <'a> Typecheck<'a> {
                 id.typ = self.tc.finish_type(self.level, id.typ.clone());
             }
         }
-        let mut stack = ::std::mem::replace(&mut self.stack, ScopedMap::new());
+        let mut stack = mem::replace(&mut self.stack, ScopedMap::new());
         for (_, vec) in stack.iter_mut() {
             for typ in vec {
                 *typ = self.finish_type(level, typ.clone());
             }
         }
-        ::std::mem::swap(&mut self.stack, &mut stack);
+        mem::swap(&mut self.stack, &mut stack);
         ReplaceVisitor { level: level, tc: self }.visit_expr(expr);
     }
 
@@ -384,11 +379,11 @@ impl <'a> Typecheck<'a> {
             Ok(typ) => typ,
             Err(err) => {
                 self.errors.error(ast::Located { location: expr.location, value: err });
-                return Err(::std::mem::replace(&mut self.errors, Errors::new()));
+                return Err(mem::replace(&mut self.errors, Errors::new()));
             }
         };
         if self.errors.has_errors() {
-            Err(::std::mem::replace(&mut self.errors, Errors::new()))
+            Err(mem::replace(&mut self.errors, Errors::new()))
         }
         else {
             let mut generic = String::from("a");
@@ -410,7 +405,7 @@ impl <'a> Typecheck<'a> {
                 result2.or(result.clone())
             });
             typ = ast::walk_move_type(typ, &mut unroll_app);
-            self.replace_vars(0, &HashMap::new(), expr);
+            self.replace_vars(0, expr);
             Ok(typ)
         }
     }
@@ -568,7 +563,7 @@ impl <'a> Typecheck<'a> {
                         if let Some(ref type_decl) = bind.typ {
                             typ = try!(self.unify(type_decl, typ));
                         }
-                        self.replace_vars(level, &HashMap::new(), &mut bind.expression);
+                        self.replace_vars(level, &mut bind.expression);
                         try!(self.typecheck_pattern(&mut bind.name, typ));
                     }
                     else {
@@ -579,7 +574,7 @@ impl <'a> Typecheck<'a> {
                     for (typ, bind) in types.into_iter().zip(bindings) {
                         //Merge the type declaration and the actual type
                         try!(self.unify(&TcType::from(bind.type_of().clone()), typ));
-                        self.replace_vars(level, &HashMap::new(), &mut bind.expression);
+                        self.replace_vars(level, &mut bind.expression);
                     }
                 }
                 debug!("Typecheck `in`");
@@ -1022,36 +1017,16 @@ impl Substitution<TcType> {
         self.instantiate_(typ)
     }
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
-        match **typ {
-            Type::Generic(ref x) => {
-                let var = self.variable_for2(x);
-                debug!("Bind generic {} -> {}", x, var);
-                var
+        ast::walk_move_type(typ.clone(), &mut |typ| {
+            match *typ {
+                Type::Generic(ref x) => {
+                    let var = self.variable_for2(x);
+                    debug!("Bind generic {} -> {}", x, var);
+                    Some(var)
+                }
+                _ => None
             }
-            Type::Function(ref args, ref return_type) => {
-                let return_type = self.instantiate_(&return_type);
-                let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
-                Type::function(args2, return_type)
-            }
-            Type::Array(ref typ) => Type::array(self.instantiate_(&typ)),
-            Type::Data(ref id, ref args) => {
-                let args2 = args.iter().map(|a| self.instantiate_(a)).collect();
-                Type::data(id.clone(), args2)
-            }
-            Type::Record(ref fields) => {
-                Type::record(fields.iter()
-                    .map(|field| ast::Field {
-                            name: field.name,
-                            typ: self.instantiate_(&field.typ)
-                        }
-                    )
-                    .collect())
-            }
-            Type::App(ref f, ref r) => {
-                Type::app(self.instantiate_(f), self.instantiate_(r))
-            }
-            _ => typ.clone()
-        }
+        })
     }
 }
 
