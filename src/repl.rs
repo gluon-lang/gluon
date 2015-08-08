@@ -42,8 +42,8 @@ fn run_command(vm: &VM, command: char, args: &str) -> Result<bool, Box<StdError>
         }
         'i' => {
             match vm.env().find_type_info(&vm.intern(args)) {
-                Some(typ) => {
-                    println!("type {} = {}", args, typ);
+                Some(&(ref generic_args, ref typ)) => {
+                    println!("type {} {:?} = {}", args, generic_args, typ);
                 }
                 None => println!("{} is not a type", args)
             }

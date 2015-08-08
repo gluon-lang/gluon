@@ -133,7 +133,7 @@ impl CompilerEnv for TypeInfos {
         }
 
         self.id_to_type.iter()
-            .filter_map(|(_, typ)| {
+            .filter_map(|(_, &(_, ref typ))| {
                 match **typ {
                     Type::Variants(ref variants) => variants.iter()
                                                         .enumerate()
@@ -148,7 +148,7 @@ impl CompilerEnv for TypeInfos {
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         self.id_to_type.get(struct_)
-            .and_then(|typ| {
+            .and_then(|&(_, ref typ)| {
                 match **typ {
                     Type::Record(ref fields) => fields.iter()
                         .position(|f| f.name == *field)
@@ -160,7 +160,7 @@ impl CompilerEnv for TypeInfos {
 
     fn find_tag(&self, type_id: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
         self.id_to_type.get(type_id)
-            .and_then(|typ| {
+            .and_then(|&(_, ref typ)| {
                 match **typ {
                     Type::Variants(ref variants) => variants.iter()
                                                         .enumerate()
@@ -547,6 +547,7 @@ impl <'a> Compiler<'a> {
                 let mut typ = typ;
                 if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
                     typ = self.globals.find_type_info(&id)
+                        .map(|&(_, ref typ)| typ)
                         .unwrap_or(typ);
                 }
                 match **typ {

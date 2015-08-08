@@ -473,7 +473,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     }
     fn find_field(&self, data_name: &InternedStr, field_name: &InternedStr) -> Option<VMIndex> {
         self.type_infos.id_to_type.get(data_name)
-            .and_then(|typ| {
+            .and_then(|&(_, ref typ)| {
                 match **typ {
                     ast::Type::Record(ref fields) => {
                         fields.iter()
@@ -487,7 +487,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     }
 
     fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
-        match self.type_infos.id_to_type.get(data_name).map(|t| &**t) {
+        match self.type_infos.id_to_type.get(data_name).map(|&(_, ref typ)| &**typ) {
             Some(&Type::Variants(ref ctors)) => {
                 ctors.iter()
                     .enumerate()
@@ -511,7 +511,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
             }
             _ => {
                 self.type_infos.id_to_type.values()
-                    .filter_map(|typ| match **typ {
+                    .filter_map(|tuple| match *tuple.1 {
                         Type::Variants(ref ctors) => ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1),
                         _ => None
                     })
@@ -520,7 +520,7 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
             }
         }
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<&TcType> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<&(Vec<ast::Generic<InternedStr>>, TcType)> {
         self.type_infos.find_type_info(id)
     }
     fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
@@ -780,7 +780,7 @@ impl <'a> VM<'a> {
             try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
             let t = self.typeids.get(&id).unwrap();
             let ctor = Type::variants(vec![(n, typ)]);
-            type_infos.id_to_type.insert(n, ctor.clone());
+            type_infos.id_to_type.insert(n, (Vec::new(), ctor.clone()));
             type_infos.type_to_id.insert(ctor, Type::data(ast::TypeConstructor::Data(n), vec![]));
             Ok(t)
         }

@@ -1,4 +1,4 @@
-use std::cell::UnsafeCell;
+use std::cell::{Cell, RefCell, UnsafeCell};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt;
@@ -7,8 +7,8 @@ use base::interner::InternedStr;
 pub struct Substitution<T> {
     pub map: UnsafeCell<HashMap<u32, Box<T>>>,
     levels: UnsafeCell<HashMap<u32, u32>>,
-    pub variables: HashMap<InternedStr, T>,
-    pub var_id: u32
+    pub variables: RefCell<HashMap<InternedStr, T>>,
+    pub var_id: Cell<u32>
 }
 
 pub trait Substitutable: Clone {
@@ -20,7 +20,7 @@ impl <T: fmt::Debug> fmt::Debug for Substitution<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let map: &_ = unsafe { &*self.map.get() };
         write!(f, "Substitution {{ map: {:?}, variables: {:?}, var_id: {:?} }}",
-               map, self.variables, self.var_id)
+               map, self.variables.borrow(), self.var_id.get())
     }
 }
 
@@ -29,15 +29,15 @@ impl <T: Substitutable> Substitution<T> {
         Substitution {
             map: UnsafeCell::new(HashMap::new()),
             levels: UnsafeCell::new(HashMap::new()),
-            variables: HashMap::new(),
-            var_id: 1
+            variables: RefCell::new(HashMap::new()),
+            var_id: Cell::new(1)
         }
     }
 
     pub fn clear(&mut self) {
         unsafe { (*self.map.get()).clear(); }
-        self.variables.clear();
-        self.var_id = 1;
+        self.variables.borrow_mut().clear();
+        self.var_id.set(1);
     }
 
     pub unsafe fn insert(&mut self, var: u32, t: T) {
@@ -45,8 +45,8 @@ impl <T: Substitutable> Substitution<T> {
     }
 
     pub fn new_var(&mut self) -> T {
-        self.var_id += 1;
-        T::new(self.var_id)
+        self.var_id.set(self.var_id.get() + 1);
+        T::new(self.var_id.get())
     }
 
     pub fn real<'r>(&'r self, typ: &'r T) -> &'r T {
@@ -82,11 +82,12 @@ impl <T: Substitutable> Substitution<T> {
         })
     }
 
-    pub fn variable_for(&mut self, id: InternedStr) -> T {
-        match self.variables.entry(id) {
+    pub fn variable_for(&self, id: InternedStr) -> T {
+        let mut variables = self.variables.borrow_mut();
+        match variables.entry(id) {
             Entry::Vacant(entry) => {
-                self.var_id += 1;
-                entry.insert(T::new(self.var_id)).clone()
+                self.var_id.set(self.var_id.get() + 1);
+                entry.insert(T::new(self.var_id.get())).clone()
             }
             Entry::Occupied(entry) => entry.get().clone()
         }

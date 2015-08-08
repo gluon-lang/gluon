@@ -63,8 +63,8 @@ fn walk_move_kind2<F>(kind: &Rc<Kind>, f: &mut F) -> Option<Rc<Kind>>
 impl <'a> KindCheck<'a> {
 
     pub fn new(info: &'a Fn(InternedStr) -> Option<&'a TcType>, variables: &'a mut [TcType], id: u32) -> KindCheck<'a> {
-        let mut subs = Substitution::new();
-        subs.var_id = id;
+        let subs = Substitution::new();
+        subs.var_id.set(id);
         KindCheck {
             variables: variables,
             info: info,
