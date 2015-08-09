@@ -1695,6 +1695,20 @@ in case x of
     }
 
     #[test]
+    fn record_let_adjust() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+let x = \z -> let { x, y } = { x = 1, y = 2 } in z in
+let a = 3
+in a
+"#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert_eq!(result, Int(3));
+    }
+
+    #[test]
     fn test_prelude() {
         use std::fs::File;
         use std::io::Read;

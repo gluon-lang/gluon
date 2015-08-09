@@ -237,7 +237,13 @@ impl <'a> Compiler<'a> {
     }
 
     fn new_stack_var(&mut self, s: InternedStr) {
+        debug!("Push var: {}", s);
         self.stack.push(s);
+    }
+
+    fn pop_var(&mut self) {
+        let x = self.stack.pop();
+        debug!("Pop var: {:?}", x);
     }
 
     fn stack_size(&self) -> VMIndex {
@@ -381,10 +387,11 @@ impl <'a> Compiler<'a> {
                     }
                 }
                 self.compile(&body, function, tail_position);
-                for _ in 0..bindings.len() {
-                    self.stack.pop();
+                let mut count = 0;
+                for binding in bindings {
+                    count += self.pop_pattern(&binding.name);
                 }
-                function.instructions.push(Slide(bindings.len() as VMIndex));
+                function.instructions.push(Slide(count));
             }
             Expr::Call(ref func, ref args) => {
                 if let Expr::Identifier(ref id) = func.value {
@@ -480,21 +487,9 @@ impl <'a> Compiler<'a> {
                     }
                     self.compile(&alt.expression, function, tail_position);
                     end_jumps.push(function.instructions.len());
+                    let count = self.pop_pattern(&alt.pattern);
+                    function.instructions.push(Slide(count));
                     function.instructions.push(Jump(0));
-
-                    match alt.pattern {
-                        ast::Pattern::Constructor(_, ref args) => {
-                            for _ in 0..args.len() {
-                                self.stack.pop();
-                            }
-                        }
-                        ast::Pattern::Record(ref record) => {
-                            for _ in record {
-                                self.stack.pop();
-                            }
-                        }
-                        ast::Pattern::Identifier(_) => { self.stack.pop(); }
-                    }
                 }
                 for &index in end_jumps.iter() {
                     function.instructions[index] = Jump(function.instructions.len() as VMIndex);
@@ -571,6 +566,24 @@ impl <'a> Compiler<'a> {
         }
     }
 
+    fn pop_pattern(&mut self, pattern: &ast::Pattern<TcIdent>) -> VMIndex {
+        match *pattern {
+            ast::Pattern::Constructor(_, ref args) => {
+                for _ in 0..args.len() {
+                    self.pop_var();
+                }
+                args.len() as VMIndex
+            }
+            ast::Pattern::Record(ref record) => {
+                for _ in record {
+                    self.pop_var();
+                }
+                record.len() as VMIndex
+            }
+            ast::Pattern::Identifier(_) => { self.pop_var(); 1 }
+        }
+    }
+
     fn compile_lambda(&mut self,
                       id: &TcIdent,
                       arguments: &[TcIdent],
@@ -585,7 +598,7 @@ impl <'a> Compiler<'a> {
 
         self.closure_limits.pop().expect("closure_limits: pop");
         for _ in 0..arguments.len() {
-            self.stack.pop();
+            self.pop_var();
         }
         //Insert all free variables into the above globals free variables
         //if they arent in that lambdas scope
