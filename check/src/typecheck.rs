@@ -675,7 +675,12 @@ impl <'a> Typecheck<'a> {
                         self.type_infos.type_to_id.insert(typ.clone(), id_type_copy.clone());
                         self.type_infos.id_to_type.insert(id, (generic_args.clone(), typ.clone().clone()));
                         try!(self.kindcheck(typ, &mut args));
-                        *id_type = id_type_copy;
+                        try!(self.kindcheck(id_type, &mut args));
+                        for (g, a) in generic_args.iter_mut().zip(&args) {
+                            if let Type::Generic(ref gen) = **a {
+                                g.kind = gen.kind.clone();
+                            }
+                        }
                         self.stack_var(id, typ.clone());
                         (generic_args, id)
                     }
@@ -812,14 +817,17 @@ impl <'a> Typecheck<'a> {
                 Ok(self.set_type(expected.clone()))
             }
             //TODO should use these inner type mismatches in errors
-            Err(TypeError::TypeMismatch(_, _)) => {
+            Err(TypeError::TypeMismatch(l, r)) => {
                 let mut expected = expected.clone();
                 expected = self.set_type(expected);
                 actual = self.set_type(actual);
-                debug!("Mismatch {:?} <---> {:?}", expected, actual);
+                debug!("Mismatch:>> {:?}\n>> {:?}", l, r);
                 Err(TypeMismatch(expected, actual))
             }
-            Err(err) => Err(err),
+            Err(err) => {
+                debug!("Error '{}' between:\n>> {}\n>> {}", err, expected, actual);
+                Err(err)
+            }
         }
     }
 
@@ -841,6 +849,12 @@ impl <'a> Typecheck<'a> {
                 else {
                     Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
                 }
+            }
+            (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
+                self.unify_function(&l_args[0], l_ret, actual)
+            }
+            (&Type::App(..), &Type::Function(ref l_args, ref l_ret)) => {
+                self.unify_function(&l_args[0], l_ret, expected)
             }
             (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(l, r),
             (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args))
@@ -923,6 +937,32 @@ impl <'a> Typecheck<'a> {
         }
     }
 
+    fn unify_function(&self,
+                         arg: &TcType,
+                         ret: &TcType,
+                         other: &TcType
+                        ) -> Result<(), TypeError> {
+        let error = || {
+            let func = Type::function(vec![arg.clone()], ret.clone());
+            Err(TypeError::TypeMismatch(func, other.clone()))
+        };
+        let other = self.subs.real(other);
+        match **other {
+            Type::App(ref other_f, ref other_ret) => {
+                let other_f = self.subs.real(other_f);
+                match **other_f {
+                    Type::App(ref fn_prim, ref other_arg) => {
+                        self.unify_(fn_prim, &Type::builtin(ast::BuiltinType::FunctionType))
+                            .and_then(|()| self.unify_(arg, other_arg))
+                            .and_then(|()| self.unify_(ret, other_ret))
+                    }
+                    _ => error()
+                }
+            }
+            _ => error()
+        }
+    }
+
     fn occurs(&self, var: &ast::TypeVariable, typ: &TcType) -> bool {
         let mut occurs = false;
         ast::walk_type(typ, &mut |typ| {
@@ -994,6 +1034,7 @@ impl <'a> Typecheck<'a> {
             let replacement = self.replace_variable(typ);
             let mut typ = typ;
             if let Some(ref t) = replacement {
+                debug!("{} ==> {}",  typ, t);
                 typ = &**t;
             }
             match *typ {
@@ -1052,6 +1093,7 @@ impl Substitution<TcType> {
 
 fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 where F: FnMut(&ast::Generic<InternedStr>) -> TcType {
+    debug!("Instantiate {}", typ);
     ast::walk_move_type(typ, &mut |typ| {
         match *typ {
             Type::Generic(ref x) => {
@@ -1177,6 +1219,13 @@ mod tests {
     use base::ast;
     use super::super::tests::{get_local_interner, intern};
 
+    macro_rules! assert_pass {
+        ($e: expr) => {{
+            if !$e.is_ok() {
+                panic!("assert_pass: {}", $e.unwrap_err());
+            }
+        }}
+    }
     macro_rules! assert_err {
         ($e: expr, $id: path) => {{
             use super::TypeError::*;
@@ -1476,6 +1525,32 @@ in f
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ_a("Fn", vec![typ("String"), typ("Int")])));
+    }
+
+    #[test]
+    fn partial_function_unify() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type Monad m = {
+    (>>=) : m a -> (a -> m b) -> m b,
+    return : a -> m a
+} in
+type State s a = s -> { value: a, state: s }
+in
+let (>>=) m f: State s a -> (a -> State s b) -> State s b =
+    \state ->
+        let { value, state } = m state
+        and m2 = f value
+        in m2 state
+in
+let return value: a -> State s a = \state -> { value, state }
+in
+let monad_State: Monad (State s) = { (>>=), return }
+in { monad_State }
+";
+        let result = typecheck(text);
+        assert_pass!(result);
     }
 
     #[test]

@@ -99,6 +99,7 @@ impl <'a> KindCheck<'a> {
     }
 
     pub fn kindcheck_type(&mut self, typ: &mut TcType) -> Result<Kind> {
+        debug!("Kindcheck {}", typ);
         let (kind, t) = try!(self.kindcheck(typ));
         let subs = &mut self.subs;
         let mut f = |typ| ast::walk_move_type(typ, &mut |typ| {
@@ -120,6 +121,7 @@ impl <'a> KindCheck<'a> {
         for typ in self.variables.iter_mut() {
             *typ = f(typ.clone());
         }
+        debug!("Done {:?}", typ);
         Ok((*kind).clone())
     }
 

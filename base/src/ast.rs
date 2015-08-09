@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use std::fmt;
 use std::rc::Rc;
-pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType};
+pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType, FunctionType};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
 
 pub type ASTType<Id> = RcType<Id>;
@@ -133,7 +133,8 @@ pub enum BuiltinType {
     IntType,
     FloatType,
     BoolType,
-    UnitType
+    UnitType,
+    FunctionType
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -391,7 +392,8 @@ pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
         IntType => "Int",
         FloatType => "Float",
         BoolType => "Bool",
-        UnitType => "()"
+        UnitType => "()",
+        FunctionType => "->"
     }
 }
 
