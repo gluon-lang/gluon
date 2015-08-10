@@ -6,7 +6,8 @@ authors = ["Markus <marwes91@gmail.com>"]
 
 [dependencies.log]
 [dependencies.env_logger]
-[dependencies.combine]
-[dependencies.combine-language]
+[dependencies]
+combine = "^1.0.0"
+combine-language = "0.7.0"
 [dependencies.base]
 path = "../base"

@@ -12,11 +12,12 @@ extern crate combine;
 extern crate combine_language;
 
 use std::cell::RefCell;
-use std::error::Error;
+use std::error::Error as StdError;
+use std::fmt;
 use std::iter::FromIterator;
 use std::rc::Rc;
 use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser, Lex, BetweenChar};
-use combine::primitives::{Consumed, Stream};
+use combine::primitives::{Consumed, Stream, Error, Info};
 use combine::combinator::{SepBy, Token};
 use combine::*;
 
@@ -28,22 +29,26 @@ use interner::{Interner, InternedStr};
 
 /// Parser passes the environment to each parser function
 struct LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T>
-    where I: Stream<Item=char> {
+    where I: Stream<Item=char>
+        , I::Range: 'b {
     env: &'b ParserEnv<'a, I, F>,
     parser: fn (&ParserEnv<'a, I, F>, State<I>) -> ParseResult<T, I>
 }
 
 impl <'a, 'b, I, F, T> Clone for LanguageParser<'a, 'b, I, F, T>
-    where I: Stream<Item=char> {
+    where I: Stream<Item=char>
+        , I::Range: 'b {
     fn clone(&self) -> LanguageParser<'a, 'b, I, F, T> {
         LanguageParser { env: self.env, parser: self.parser }
     }
 }
 impl <'a, 'b, I, F, T> Copy for LanguageParser<'a, 'b, I, F, T>
-    where I: Stream<Item=char> { }
+    where I: Stream<Item=char> 
+        , I::Range: 'b { }
 
 impl <'a, 'b, F, Id, I, O> Parser for LanguageParser<'a, 'b, I, F, O>
     where I: Stream<Item=char>
+        , I::Range: 'b
         , F: FnMut(&str) -> Id
         , Id: AstId + Clone {
     type Output = O;
@@ -69,16 +74,17 @@ impl <'a, I, F> ::std::ops::Deref for ParserEnv<'a, I, F>
     }
 }
 
-impl <'a, I, Id, F> ParserEnv<'a, I, F>
+impl <'a, 's, I, Id, F> ParserEnv<'a, I, F>
 where I: Stream<Item=char>
     , F: FnMut(&str) -> Id
-    , Id: AstId + AsRef<str> + Clone {
+    , Id: AstId + AsRef<str> + Clone
+    , I::Range: fmt::Debug + 's {
 
     fn intern(&self, s: &str) -> Id {
         (&mut *self.make_ident.borrow_mut())(s)
     }
 
-    fn parser<'b, T>(&'b self, parser: fn (&ParserEnv<'a, I, F>, State<I>) -> ParseResult<T, I>) -> LanguageParser<'a, 'b, I, F, T> {
+    fn parser<T>(&'s self, parser: fn (&ParserEnv<'a, I, F>, State<I>) -> ParseResult<T, I>) -> LanguageParser<'a, 's, I, F, T> {
         LanguageParser { env: self, parser: parser }
     }
 
@@ -109,7 +115,7 @@ where I: Stream<Item=char>
         }
     }
 
-    fn ident<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, Id> {
+    fn ident(&'s self) -> LanguageParser<'a, 's, I, F, Id> {
         self.parser(ParserEnv::parse_ident)
     }
     fn parse_ident(&self, input: State<I>) -> ParseResult<Id, I> {
@@ -126,7 +132,7 @@ where I: Stream<Item=char>
             .map(|s| { debug!("Id: {}", s); (self.intern(&s), s.chars().next().unwrap().is_uppercase()) })
             .parse_state(input)
     }
-    fn ident_u<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, Id::Untyped> {
+    fn ident_u(&'s self) -> LanguageParser<'a, 's, I, F, Id::Untyped> {
         self.parser(ParserEnv::parse_untyped_ident)
     }
     fn parse_untyped_ident(&self, input: State<I>) -> ParseResult<Id::Untyped, I> {
@@ -135,7 +141,7 @@ where I: Stream<Item=char>
             .parse_state(input)
     }
 
-    fn ident_type<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, ASTType<Id::Untyped>> {
+    fn ident_type(&'s self) -> LanguageParser<'a, 's, I, F, ASTType<Id::Untyped>> {
         self.parser(ParserEnv::parse_ident_type)
     }
     fn parse_ident_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
@@ -157,7 +163,7 @@ where I: Stream<Item=char>
             .parse_state(input)
     }
 
-    fn typ<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, ASTType<Id::Untyped>> {
+    fn typ(&'s self) -> LanguageParser<'a, 's, I, F, ASTType<Id::Untyped>> {
         self.parser(ParserEnv::parse_type)
     }
 
@@ -240,7 +246,7 @@ where I: Stream<Item=char>
             .parse_state(input)
     }
 
-    fn expr<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, LExpr<Id>> {
+    fn expr(&'s self) -> LanguageParser<'a, 's, I, F, LExpr<Id>> {
         self.parser(ParserEnv::top_expr)
     }
 
@@ -299,7 +305,7 @@ where I: Stream<Item=char>
     }
 
     ///Parses an operator
-    fn op<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, Id> {
+    fn op(&'s self) -> LanguageParser<'a, 's, I, F, Id> {
         self.parser(ParserEnv::parse_op)
     }
 
@@ -357,7 +363,7 @@ where I: Stream<Item=char>
             .parse_state(input)
     }
 
-    fn pattern<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, Pattern<Id>> {
+    fn pattern(&'s self) -> LanguageParser<'a, 's, I, F, Pattern<Id>> {
         self.parser(ParserEnv::parse_pattern)
     }
 
@@ -430,7 +436,7 @@ where I: Stream<Item=char>
             .parse_state(input)
     }
 
-    fn record_parser<'b, P, O>(&'b self, p: P) -> RecordParser<'a, 'b, I, Id, F, P, O>
+    fn record_parser<P, O>(&'s self, p: P) -> RecordParser<'a, 's, I, Id, F, P, O>
     where P: Parser<Input=I>
         , O: FromIterator<(Id::Untyped, P::Output)> {
         let field = (self.ident_u(), p);
@@ -446,7 +452,7 @@ type RecordParser<'a, 'b, I, Id, F, P, O> = BetweenChar<'a, 'b, SepBy<O, (Langua
 pub fn parse_tc(gc: &mut Gc,
                 interner: &mut Interner,
                 input: &str
-                ) -> Result<LExpr<TcIdent<InternedStr>>, Box<Error>> {
+                ) -> Result<LExpr<TcIdent<InternedStr>>, Box<StdError>> {
     interner.with_env(gc, |env| {
         let mut env = ast::TcIdentEnv {
             typ: Type::variable(ast::TypeVariable {
@@ -459,7 +465,7 @@ pub fn parse_tc(gc: &mut Gc,
     })
 }
 
-fn parse_module<F, Id>(make_ident: F, input: &str) -> Result<LExpr<Id>, Box<Error>>
+fn parse_module<F, Id>(make_ident: F, input: &str) -> Result<LExpr<Id>, Box<StdError>>
 where Id: AstId + AsRef<str> + Clone
     , F: FnMut(&str) -> Id {
 
@@ -475,9 +481,9 @@ where Id: AstId + AsRef<str> + Clone
             rest: satisfy(move |c| ops.chars().any(|x| x == c)),
             reserved: ["->", "\\", "|"].iter().map(|x| (*x).into()).collect()
         },
-        comment_start: "/*",
-        comment_end: "*/",
-        comment_line: "//",
+        comment_start: string("/*").map(|_| ()),
+        comment_end: string("*/").map(|_| ()),
+        comment_line: string("//").map(|_| ()),
     });
 
     let env = ParserEnv {
@@ -488,7 +494,33 @@ where Id: AstId + AsRef<str> + Clone
         .with(env.expr())
         .parse(input)
         .map(|t| t.0)
-        .map_err(From::from)
+        .map_err(|err| {
+            let errors = err.errors.into_iter()
+                .map(static_error)
+                .collect();
+            From::from(ParseError::<&'static str> {
+                position: err.position,
+                errors: errors
+            })
+        })
+}
+
+//Converts an error into a static error by transforming any range arguments into strings
+fn static_error(e: Error<char, &str>) -> Error<char, &'static str> {
+    fn static_info<I: fmt::Display>(i: Info<char, I>) -> Info<char, &'static str> {
+        match i {
+            Info::Token(t) => Info::Token(t),
+            Info::Range(t) => Info::Owned(format!("{}", t)),
+            Info::Borrowed(t) => Info::Borrowed(t),
+            Info::Owned(t) => Info::Owned(t),
+        }
+    }
+    match e {
+        Error::Unexpected(t) => Error::Unexpected(t),
+        Error::Expected(t) => Error::Expected(static_info(t)),
+        Error::Message(t) => Error::Message(static_info(t)),
+        Error::Other(t) => Error::Other(t)
+    }
 }
 
 #[cfg(test)]
