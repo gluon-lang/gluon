@@ -59,6 +59,16 @@ impl <T: Substitutable> Substitution<T> {
         }
     }
 
+    pub fn make_real(&self, typ: &mut T) {
+        match typ.get_var() {
+            Some(var) => match self.find_type_for_var(var) {
+                Some(t) => *typ = t.clone(),
+                None => ()
+            },
+            None => ()
+        }
+    }
+
     pub fn find_type_for_var(&self, var: u32) -> Option<&T> {
         //Use unsafe so that we can hold a reference into the map and continue
         //to look for parents

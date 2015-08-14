@@ -532,9 +532,11 @@ impl <'a> Typecheck<'a> {
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter_mut() {
-                        let typ = self.subs.new_var();
+                        let mut typ = self.subs.new_var();
                         if let Some(ref mut type_decl) = bind.typ {
                             try!(self.kindcheck(type_decl, &mut []));
+                            let decl = self.subs.instantiate(type_decl);
+                            typ = try!(self.unify(&decl, typ));
                         }
                         try!(self.typecheck_pattern(&mut bind.name, typ));
                         if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
@@ -548,7 +550,13 @@ impl <'a> Typecheck<'a> {
                 for bind in bindings.iter_mut() {
                     //Functions which are declared as `let f x = ...` are allowed to be self recursive
                     let mut typ = if bind.arguments.len() != 0 {
-                        try!(self.typecheck_lambda(&mut bind.arguments, &mut bind.expression))
+                        let function_type = match bind.typ {
+                            Some(ref typ) => typ.clone(),
+                            None => self.subs.new_var()
+                        };
+                        try!(self.typecheck_lambda(function_type,
+                                                   &mut bind.arguments,
+                                                   &mut bind.expression))
                     }
                     else {
                         if let Some(ref mut type_decl) = bind.typ {
@@ -583,6 +591,8 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
+                debug!("FieldAccess {} . {}", typ, field_access.name);
+                self.subs.make_real(&mut typ);
                 if let Type::Variable(_) = *typ {
                     let (record_type, _) = try!(self.find_record(&[field_access.name])
                                               .map(|t| (t.0.clone(), t.1.clone())));
@@ -655,7 +665,8 @@ impl <'a> Typecheck<'a> {
             ast::Expr::Lambda(ref mut lambda) => {
                 let loc = format!("lambda:{}", expr.location);
                 lambda.id.name = self.interner.intern(self.gc, &loc);
-                let typ = try!(self.typecheck_lambda(&mut lambda.arguments, &mut lambda.body));
+                let function_type = self.subs.new_var();
+                let typ = try!(self.typecheck_lambda(function_type, &mut lambda.arguments, &mut lambda.body));
                 lambda.id.typ = typ.clone();
                 Ok(typ)
             }
@@ -717,13 +728,21 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_lambda(&mut self, arguments: &mut [TcIdent], body: &mut ast::LExpr<TcIdent>) -> Result<TcType, TypeError> {
+    fn typecheck_lambda(&mut self,
+                        function_type: TcType,
+                        arguments: &mut [TcIdent],
+                        body: &mut ast::LExpr<TcIdent>
+                       ) -> Result<TcType, TypeError> {
         self.stack.enter_scope();
         let mut arg_types = Vec::new();
-        for arg in arguments {
-            arg.typ = self.subs.new_var();
-            arg_types.push(arg.typ.clone());
-            self.stack_var(arg.name.clone(), arg.typ.clone());
+        {
+            let mut iter1 = function_arg_iter(self, function_type);
+            let mut iter2 = arguments.iter_mut();
+            while let (Some(arg_type), Some(arg)) = (iter1.next(), iter2.next()) {
+                arg.typ = arg_type;
+                arg_types.push(arg.typ.clone());
+                iter1.tc.stack_var(arg.name.clone(), arg.typ.clone());
+            }
         }
         let body_type = try!(self.typecheck(body));
         self.stack.exit_scope();
@@ -910,6 +929,7 @@ impl <'a> Typecheck<'a> {
     fn unify_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> Result<(), TypeError>
             where F: Fn(&TcType, &TcType) -> Result<(), TypeError> {
         let r = self.subs.real(r);
+        debug!("{:?} {:?} <==> {}", l, l_args, r);
         match **r {
             Type::App(ref r, ref r_arg) => {
                 match l_args.last() {
@@ -925,9 +945,15 @@ impl <'a> Typecheck<'a> {
                     }
                 }
             }
-            Type::Data(ref r, _) if l_args.len() == 0 && l == r => Ok(()),
+            Type::Data(ref r, ref r_args)
+            if l == r && l_args.len() == r_args.len() => {
+                for (l, r) in l_args.iter().zip(r_args) {
+                    try!(self.unify_(l, r));
+                }
+                Ok(())
+            }
             Type::Variable(ref r) => {
-                self.union(r, &Type::data(l.clone(), Vec::new()))
+                self.union(r, &Type::data(l.clone(), l_args.iter().cloned().collect()))
             }
             _ => {
                 debug!("aaaaaaaaaaa{:?} {:?}", l, r);
@@ -1091,7 +1117,7 @@ impl Substitution<TcType> {
     }
 }
 
-fn instantiate<F>(typ: TcType, mut f: F) -> TcType
+pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 where F: FnMut(&ast::Generic<InternedStr>) -> TcType {
     debug!("Instantiate {}", typ);
     ast::walk_move_type(typ, &mut |typ| {
@@ -1127,20 +1153,23 @@ fn unroll_app(typ: &Type<InternedStr>) -> Option<TcType> {
     
 pub trait Typed {
     type Id;
-    fn type_of(&self) -> ASTType<Self::Id>;
+    fn type_of(&self) -> ASTType<Self::Id> {
+        self.env_type_of(&TypeInfos::new())
+    }
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Self::Id>;
 }
 impl <Id: Clone> Typed for ast::TcIdent<Id> {
     type Id = Id;
-    fn type_of(&self) -> ASTType<Id> {
+    fn env_type_of(&self, _: &TypeEnv) -> ASTType<Id> {
         self.typ.clone()
     }
 }
 impl <Id> Typed for ast::Expr<Id>
     where Id: Typed<Id=InternedStr> + AsRef<str> + ast::AstId<Untyped=InternedStr> {
     type Id = Id::Id;
-    fn type_of(&self) -> ASTType<Id::Untyped> {
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<InternedStr> {
         match *self {
-            ast::Expr::Identifier(ref id) => id.type_of(),
+            ast::Expr::Identifier(ref id) => id.env_type_of(env),
             ast::Expr::Literal(ref lit) => {
                 match *lit {
                     ast::Integer(_) => Type::int(),
@@ -1149,13 +1178,13 @@ impl <Id> Typed for ast::Expr<Id>
                     ast::Bool(_) => Type::bool()
                 }
             }
-            ast::Expr::IfElse(_, ref arm, _) => arm.type_of(),
+            ast::Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),
             ast::Expr::Tuple(ref exprs) => {
                 assert!(exprs.len() == 0);
                 Type::unit()
             }
             ast::Expr::BinOp(ref lhs, ref op, _) => {
-                match *op.type_of() {
+                match *op.env_type_of(env) {
                     Type::Function(_, ref return_type) => 
                         match **return_type {
                             Type::Function(_, ref return_type) => return return_type.clone(),
@@ -1164,35 +1193,37 @@ impl <Id> Typed for ast::Expr<Id>
                     _ => ()
                 }
                 match AsRef::<str>::as_ref(op) {
-                    "+" | "-" | "*" => lhs.type_of(),
+                    "+" | "-" | "*" => lhs.env_type_of(env),
                     "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => Type::bool(),
                     _ => panic!()
                 }
             }
-            ast::Expr::Let(_, ref expr) => expr.type_of(),
-            ast::Expr::Call(ref func, _) => func.type_of().return_type().clone(),
-            ast::Expr::Match(_, ref alts) => alts[0].expression.type_of(),
-            ast::Expr::FieldAccess(_, ref id) => id.type_of(),
-            ast::Expr::Array(ref a) => a.id.type_of(),
+            ast::Expr::Let(_, ref expr) => expr.env_type_of(env),
+            ast::Expr::Call(ref func, ref args) => {
+                get_return_type(env, func.env_type_of(env), args.len())
+            }
+            ast::Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),
+            ast::Expr::FieldAccess(_, ref id) => id.env_type_of(env),
+            ast::Expr::Array(ref a) => a.id.env_type_of(env),
             ast::Expr::ArrayAccess(ref array, _) => {
-                let typ = array.type_of();
+                let typ = array.env_type_of(env);
                 match *typ {
                     Type::Array(ref t) => t.clone(),
                     _ => panic!("Not an array type {:?}", typ)
                 }
             }
-            ast::Expr::Lambda(ref lambda) => lambda.id.type_of(),
-            ast::Expr::Type(_, _, ref expr) => expr.type_of(),
-            ast::Expr::Record(ref id, _) => id.type_of()
+            ast::Expr::Lambda(ref lambda) => lambda.id.env_type_of(env),
+            ast::Expr::Type(_, _, ref expr) => expr.env_type_of(env),
+            ast::Expr::Record(ref id, _) => id.env_type_of(env)
         }
     }
 }
 
 impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<InternedStr>>>>> {
     type Id = InternedStr;
-    fn type_of(&self) -> ASTType<InternedStr> {
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<InternedStr> {
         match *self {
-            Some(ref t) => t.type_of(),
+            Some(ref t) => t.env_type_of(env),
             None => Type::unit()
         }
     }
@@ -1201,17 +1232,84 @@ impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<InternedStr>>>>> {
 impl <T> Typed for ast::Binding<T>
     where T: Typed<Id=InternedStr> + ast::AstId<Untyped=InternedStr> {
     type Id = T::Untyped;
-    fn type_of(&self) -> ASTType<T::Untyped> {
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<T::Untyped> {
         match self.typ {
             Some(ref typ) => typ.clone(),
             None => match self.name {
-                ast::Pattern::Identifier(ref name) => name.type_of(),
+                ast::Pattern::Identifier(ref name) => name.env_type_of(env),
                 _ => panic!("Not implemented")
             }
         }
     }
 }
 
+struct FunctionArgIter<'a, 'b: 'a> {
+    tc: &'a mut Typecheck<'b>,
+    typ: TcType
+}
+
+impl <'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
+    type Item = TcType;
+    fn next(&mut self) -> Option<TcType> {
+        loop {
+            let (arg, new) = match *self.typ {
+                Type::Function(ref args, ref ret) => {
+                    (Some(args[0].clone()), ret.clone())
+                }
+                Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+                    match self.tc.type_of_alias(id, args) {
+                        Ok(typ) => (None, typ.clone()),
+                        Err(_) => return Some(self.tc.subs.new_var())
+                    }
+                }
+                _ => return Some(self.tc.subs.new_var())
+            };
+            self.typ = new;
+            if let Some(arg) = arg {
+                return Some(arg)
+            }
+        }
+    }
+}
+
+fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>,
+                         typ: TcType
+                        ) -> FunctionArgIter<'a, 'b> {
+    FunctionArgIter { tc: tc, typ: typ }
+}
+
+fn get_return_type(env: &TypeEnv, typ: TcType, arg_count: usize) -> TcType {
+    if arg_count == 0 {
+        typ
+    }
+    else {
+        match *typ {
+            Type::Function(_, ref ret) => {
+                get_return_type(env, ret.clone(), arg_count - 1)
+            }
+            Type::Data(ast::TypeConstructor::Data(id), ref arguments) => {
+                let (args, typ) = {
+                    let &(ref args, ref typ) = env.find_type_info(&id)
+                        .unwrap_or_else(|| panic!("ICE: '{}' does not exist", id));
+                    //TODO avoid clones here
+                    (args.clone(), typ.clone())
+                };
+                let typ = instantiate(typ, |gen| {
+                    //Replace the generic variable with the type from the list
+                    //or if it is not found the make a fresh variable
+                    args.iter().zip(arguments)
+                        .find(|&(arg, _)| arg.id == gen.id)
+                        .map(|(_, typ)| typ.clone())
+                        .expect("Bound variable")
+                });
+                get_return_type(env, typ, arg_count)
+
+            }
+            _ => panic!("Expected function with {} more arguments, found {}",
+                        arg_count, typ)
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

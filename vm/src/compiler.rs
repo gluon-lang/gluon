@@ -259,7 +259,7 @@ impl <'a> Compiler<'a> {
         CompiledFunction {
             args: 0,
             id: self.intern(""),
-            typ: Type::function(vec![], TcType::from(expr.type_of().clone())),
+            typ: Type::function(vec![], TcType::from(expr.env_type_of(&self.globals).clone())),
             instructions: instructions,
             inner_functions: inner_functions,
             strings: strings
@@ -377,12 +377,12 @@ impl <'a> Compiler<'a> {
                     }
                     else {
                         self.compile(&bind.expression, function, false);
-                        let typ = bind.expression.type_of();
+                        let typ = bind.expression.env_type_of(&self.globals);
                         self.compile_let_pattern(&bind.name, &typ, function);
                     }
                     //unit expressions do not return a value so we need to add a dummy value
                     //To make the stack correct
-                    if bind.expression.type_of() == Type::unit() {
+                    if bind.expression.env_type_of(&self.globals) == Type::unit() {
                         function.instructions.push(PushInt(0));
                     }
                 }
@@ -412,7 +412,7 @@ impl <'a> Compiler<'a> {
             Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function, tail_position);
                 debug!("{:?} {:?}", expr, field);
-                let typ = expr.type_of();
+                let typ = expr.env_type_of(&self.globals);
                 let typ = typ.inner_app();
                 debug!("FieldAccess {}", typ);
                 let field_index = match *typ {
@@ -432,7 +432,7 @@ impl <'a> Compiler<'a> {
                 self.compile(&**expr, function, false);
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
-                let typ = expr.type_of();
+                let typ = expr.env_type_of(&self.globals);
                 let typename = match *typ {
                     Type::Data(ref id, _) => Some(id),
                     _ => None
@@ -476,9 +476,8 @@ impl <'a> Compiler<'a> {
                             }
                         }
                         ast::Pattern::Record(_) => {
-                            self.compile_let_pattern(&alt.pattern,
-                                                     &expr.type_of(),
-                                                     function);
+                            let typ = &expr.env_type_of(&self.globals);
+                            self.compile_let_pattern(&alt.pattern, typ, function);
                         }
                         ast::Pattern::Identifier(ref id) => {
                             function.instructions[start_index] = Jump(function.instructions.len() as VMIndex);
@@ -553,11 +552,10 @@ impl <'a> Compiler<'a> {
                                 Some(&(name, bind)) => bind.unwrap_or(name),
                                 None => self.intern("")
                             };
-                            println!("{:?}", field);
                             self.new_stack_var(name);
                         }
                     }
-                    _ => panic!("Expected record, got {}", typ)
+                    _ => panic!("Expected record, got {} at {:?}", typ, pattern)
                 }
             }
             ast::Pattern::Constructor(..) => {

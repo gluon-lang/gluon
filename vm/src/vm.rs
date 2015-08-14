@@ -410,7 +410,7 @@ impl <'a> Traverseable for Global<'a> {
 
 impl <'a> Typed for Global<'a> {
     type Id = InternedStr;
-    fn type_of(&self) -> TcType {
+    fn env_type_of(&self, _: &TypeEnv) -> ASTType<InternedStr> {
         self.typ.clone()
     }
 }
@@ -1395,6 +1395,9 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::Read;
+
     use vm::{VM, Value, load_script};
     use vm::Value::{Float, Int};
     use stack::StackFrame;
@@ -1710,8 +1713,6 @@ in a
 
     #[test]
     fn test_prelude() {
-        use std::fs::File;
-        use std::io::Read;
         let _ = ::env_logger::init();
         let mut text = String::new();
         File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
@@ -1721,8 +1722,6 @@ in a
 
     #[test]
     fn test_map() {
-        use std::fs::File;
-        use std::io::Read;
         let _ = ::env_logger::init();
         let mut vm = VM::new();
         let mut text = String::new();
@@ -1733,10 +1732,20 @@ in a
         run_expr(&mut vm, &text);
     }
 
+    #[test]
+    fn test_state() {
+        let _ = ::env_logger::init();
+        let mut vm = VM::new();
+        let mut text = String::new();
+        File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        load_script(&mut vm, "prelude", &text).unwrap();
+        text.clear();
+        File::open("../std/state.hs").unwrap().read_to_string(&mut text).unwrap();
+        run_expr(&mut vm, &text);
+    }
+
     #[bench]
     fn prelude(b: &mut ::test::Bencher) {
-        use std::fs::File;
-        use std::io::Read;
         use vm::VM;
         let _ = ::env_logger::init();
         let vm = VM::new();
