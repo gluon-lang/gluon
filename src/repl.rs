@@ -22,14 +22,21 @@ fn find_type_info(vm: &VM) -> Status {
         let args = args.trim();
         IO(match vm.env().find_type_info(&vm.intern(args)) {
             Some((generic_args, typ)) => {
-                match typ {
-                    Some(typ) => {
-                        format!("type {} {:?} = {}", args, generic_args, typ)
+                let fmt = || -> Result<String, ::std::fmt::Error> {
+                    use std::fmt::Write;
+                    let mut buffer = String::new();
+                    try!(write!(&mut buffer, "type {}", args));
+                    for g in generic_args {
+                        try!(write!(&mut buffer, " {}", g))
                     }
-                    None => {
-                        format!("type {} {:?} = <abstract>", args, generic_args)
+                    try!(write!(&mut buffer, " = "));
+                    match typ {
+                        Some(typ) => try!(write!(&mut buffer, "{}", typ)),
+                        None => try!(write!(&mut buffer, "<abstract>"))
                     }
-                }
+                    Ok(buffer)
+                };
+                fmt().unwrap()
             }
             None => format!("'{}' is not a type", args)
         })
