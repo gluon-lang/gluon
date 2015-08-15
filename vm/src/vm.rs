@@ -637,6 +637,7 @@ impl <'a> VM<'a> {
         try!(define_function(self, "string_find", f2(prim::string_find)));
         try!(define_function(self, "string_rfind", f2(prim::string_rfind)));
         try!(define_function(self, "string_trim", f1(prim::string_trim)));
+        try!(define_function(self, "string_compare", f2(prim::string_compare)));
         try!(self.extern_function("string_append", vec![Type::string().clone(), Type::string().clone()], Type::string().clone(), Box::new(prim::string_append)));
         try!(self.extern_function("string_eq", vec![Type::string().clone(), Type::string().clone()], Type::bool().clone(), Box::new(prim::string_eq)));
         try!(define_function(self, "string_slice", f3(prim::string_slice)));

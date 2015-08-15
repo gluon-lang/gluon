@@ -86,6 +86,11 @@ let ord_Float = {
         then EQ
         else GT
 } in
+let ord_String: Ord String = {
+    compare = \l r ->
+        let o = string_compare l r
+        in if o #Int== 0 then EQ else if o #Int== (0 #Int- 1) then LT else GT
+} in
 let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
     compare = \l r ->
         case l of
@@ -251,7 +256,7 @@ let show_List: Show a -> Show (List a) = \d ->
     in { show }
 in
 { id, const, flip, not, 
-  ord_Option, ord_Result, ord_Float, ord_Int, make_Ord,
+  ord_Option, ord_Result, ord_Float, ord_Int, ord_String, make_Ord,
   eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
   num_Int, num_Float,
   functor_Option, functor_List, functor_IO,

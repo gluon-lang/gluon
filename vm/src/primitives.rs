@@ -45,6 +45,15 @@ pub fn string_eq(vm: &VM) -> Status {
     }
     Status::Ok
 }
+
+pub fn string_compare(l: RootStr, r: RootStr) -> VMInt {
+    use std::cmp::Ordering::*;
+    match l.cmp(&r) {
+        Less => -1,
+        Equal => 0,
+        Greater => 1
+    }
+}
 pub fn string_slice(s: RootStr, start: VMInt, end: VMInt) -> String {
     String::from(&s[start as usize..end as usize])
 }
