@@ -78,17 +78,12 @@ pub trait CompilerEnv: TypeEnv {
     fn find_var(&self, id: &InternedStr) -> Option<Variable>;
     fn find_field(&self, _struct: &InternedStr, _field: &InternedStr) -> Option<VMIndex>;
     fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<VMTag>;
-    fn next_global_index(&self) -> VMIndex;
 }
 
 impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
         let &(ref outer, ref inner) = self;
         inner.find_var(s)
-            .map(|var| match var {
-                Global(i, y) => Global(i + outer.next_global_index(), y),
-                var => var
-            })
             .or_else(|| outer.find_var(s))
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
@@ -102,25 +97,18 @@ impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         inner.find_tag(struct_, field)
             .or_else(|| outer.find_tag(struct_, field))
     }
-    fn next_global_index(&self) -> VMIndex {
-        let &(ref outer, ref inner) = self;
-        outer.next_global_index() + inner.next_global_index()
-    }
 }
 
 impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
-        (*self).find_var(s)
+        (**self).find_var(s)
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
-        (*self).find_field(struct_, field)
+        (**self).find_field(struct_, field)
     }
 
     fn find_tag(&self, enum_: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
-        (*self).find_tag(enum_, ctor_name)
-    }
-    fn next_global_index(&self) -> VMIndex {
-        (*self).next_global_index()
+        (**self).find_tag(enum_, ctor_name)
     }
 }
 impl CompilerEnv for TypeInfos {
@@ -169,9 +157,6 @@ impl CompilerEnv for TypeInfos {
                     _ => None
                 }
             })
-    }
-    fn next_global_index(&self) -> VMIndex {
-        0
     }
 }
 

@@ -497,9 +497,6 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             _ => None
         }
     }
-    fn next_global_index(&self) -> VMIndex {
-        self.globals.len() as VMIndex
-    }
 }
 
 impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
