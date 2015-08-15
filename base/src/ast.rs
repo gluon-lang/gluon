@@ -560,41 +560,65 @@ impl fmt::Display for BuiltinType {
     }
 }
 
-impl <I: fmt::Display, T: fmt::Display> fmt::Display for Type<I, T> {
+
+#[derive(PartialEq, Copy, Clone, PartialOrd)]
+enum Prec_ {
+    Top,
+    Function,
+    Constructor,
+}
+#[derive(Copy, Clone)]
+struct Prec<'a, I: 'a, T: 'a>(Prec_, &'a Type<I, T>);
+
+impl <'a, I, T> fmt::Display for Prec<'a, I, T>
+where I: fmt::Display
+    , T: fmt::Display + Deref<Target=Type<I, T>> {
+
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_type<T, U>(f: &mut fmt::Formatter, t: &T, args: &[U]) -> fmt::Result
-        where T: fmt::Display
-            , U: fmt::Display {
+        fn fmt_type<C, I, T>(f: &mut fmt::Formatter, t: &C, args: &[T]) -> fmt::Result
+        where C: fmt::Display
+            , I: fmt::Display
+            , T: fmt::Display + Deref<Target=Type<I, T>> {
             try!(write!(f, "{}", t));
-            if args.len() > 0 {
-                try!(write!(f, "<"));
-                try!(write!(f, "{}", args[0]));
-                for arg in &args[1..] {
-                    try!(write!(f, ", {}", arg));
-                }
-                try!(write!(f, ">"));
+            for arg in args {
+                try!(write!(f, " {}", Prec(Prec_::Constructor, &arg)));
             }
             Ok(())
         }
-        match *self {
-            Type::App(ref a, ref r) => write!(f, "({} {})", a, r),
-            Type::Data(ref t, ref args) => fmt_type(f, t, &args),
+        let Prec(p, t) = *self;
+        match *t {
+            Type::Variable(ref var) => write!(f, "{}", var),
+            Type::Generic(ref gen) => write!(f, "{}", gen),
+            Type::Function(ref args, ref result) => {
+                if p >= Prec_::Function {
+                    write!(f, "({} -> {})", &args[0], result)
+                }
+                else {
+                    write!(f, "{} -> {}", Prec(Prec_::Function, &args[0]), result)
+                }
+            }
+            Type::App(ref lhs, ref rhs) => {
+                if p >= Prec_::Constructor {
+                    write!(f, "({} {})", Prec(Prec_::Function, &lhs), Prec(Prec_::Constructor, &rhs))
+                }
+                else {
+                    write!(f, "{} {}", Prec(Prec_::Function, &lhs), Prec(Prec_::Constructor, &rhs))
+                }
+            }
+            Type::Data(ref t, ref args) => {
+                if p >= Prec_::Constructor {
+                    try!(write!(f, "("));
+                }
+                try!(fmt_type(f, t, &args));
+                if p >= Prec_::Constructor {
+                    try!(write!(f, ")"));
+                }
+                Ok(())
+            }
             Type::Variants(ref variants) => {
                 for variant in variants {
                     try!(write!(f, "| {} {}", variant.0, variant.1));
                 }
-                Ok(())
-            }
-            Type::Variable(ref x) => x.fmt(f),
-            Type::Generic(ref x) => write!(f, "#{}", x),
-            Type::Function(ref args, ref return_type) => {
-                try!(write!(f, "("));
-                let mut delim = "";
-                for arg in args {
-                    try!(write!(f, "{}{}", delim, arg));
-                    delim = ", ";
-                }
-                try!(write!(f, ") -> {}", return_type));
                 Ok(())
             }
             Type::Builtin(ref t) => t.fmt(f),
@@ -607,6 +631,15 @@ impl <I: fmt::Display, T: fmt::Display> fmt::Display for Type<I, T> {
                 write!(f, "}}")
             }
         }
+    }
+}
+
+impl <I, T> fmt::Display for Type<I, T>
+where I: fmt::Display
+    , T: fmt::Display + Deref<Target=Type<I, T>> {
+
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", Prec(Prec_::Top, self))
     }
 }
 
