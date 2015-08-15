@@ -579,9 +579,13 @@ impl <'a> Typecheck<'a> {
                     }
                 }
                 if is_recursive {
-                    for (typ, bind) in types.into_iter().zip(bindings) {
-                        //Merge the type declaration and the actual type
+                    for (typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
+                        //Merge the variable we bound to the name and the type inferred
+                        //in the expression
                         try!(self.unify(&TcType::from(bind.type_of().clone()), typ));
+                    }
+                    //Once all variables inside the let has been unified we can quantify them
+                    for bind in bindings {
                         self.replace_vars(level, &mut bind.expression);
                     }
                 }
@@ -969,7 +973,6 @@ impl <'a> Typecheck<'a> {
                 self.union(r, &Type::data(l.clone(), l_args.iter().cloned().collect()))
             }
             _ => {
-                debug!("aaaaaaaaaaa{:?} {:?}", l, r);
                 let l = Type::data(l.clone(), l_args.iter().cloned().collect());
                 Err(TypeError::TypeMismatch(l, r.clone()))
             }
@@ -1171,7 +1174,7 @@ fn unroll_app(typ: &Type<InternedStr>) -> Option<TcType> {
         }
     }
 }
-    
+
 pub trait Typed {
     type Id;
     fn type_of(&self) -> ASTType<Self::Id> {
@@ -1337,6 +1340,7 @@ fn get_return_type(env: &TypeEnv, alias_type: TcType, arg_count: usize) -> TcTyp
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
     use super::*;
     use base::ast;
     use super::super::tests::{get_local_interner, intern};
@@ -1359,6 +1363,11 @@ mod tests {
                             }), "Found an error but expected {}", stringify!($id))
             }
         }}
+    }
+
+    fn gen(s: &str) -> TcType {
+        assert!(s.len() != 0);
+        Type::generic(ast::Generic { id: intern(s), kind: Rc::new(ast::Kind::Star) })
     }
 
     fn typ(s: &str) -> TcType {
@@ -1647,6 +1656,32 @@ in f
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ_a("Fn", vec![typ("String"), typ("Int")])));
+    }
+
+    #[test]
+    fn infer_mutually_recursive() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let id x = x
+and const x = \_ -> x
+in const
+";
+        let result = typecheck(text);
+        assert_eq!(result, Ok(Type::function(vec![gen("a"), gen("b")], gen("a"))));
+    }
+
+    #[test]
+    fn error_mutually_recursive() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+let id x = x
+and const x = \_ -> x
+in const #Int+ 1
+";
+        let result = typecheck(text);
+        assert!(result.is_err());
     }
 
     #[test]
