@@ -458,7 +458,8 @@ impl fmt::Display for Error {
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global<'a>>,
-    names: Ref<'b, HashMap<InternedStr, Named>>
+    names: Ref<'b, HashMap<InternedStr, Named>>,
+    io_arg: [ast::Generic<InternedStr>; 1]
 }
 
 impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
@@ -517,8 +518,16 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
             }
         }
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<&(Vec<ast::Generic<InternedStr>>, TcType)> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
         self.type_infos.find_type_info(id)
+            .or_else(|| {
+                if &id[..] == "IO" {
+                    Some((&self.io_arg, None))
+                }
+                else {
+                    None
+                }
+            })
     }
     fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
         self.type_infos.find_id(typ)
@@ -791,7 +800,8 @@ impl <'a> VM<'a> {
         VMEnv {
             type_infos: self.type_infos.borrow(),
             globals: &self.globals,
-            names: self.names.borrow()
+            names: self.names.borrow(),
+            io_arg: [ast::Generic { id: self.intern("a"), kind: Rc::new(ast::Kind::Star) }]
         }
     }
 

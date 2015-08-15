@@ -17,6 +17,9 @@ pub trait VMType {
     fn make_type(vm: &VM) -> TcType {
         TcType::from(<Self as VMType>::vm_type(vm).clone())
     }
+
+    //How many extra arguments a function returning this type requires
+    fn extra_args() -> VMIndex { 0 }
 }
 
 pub trait Pushable<'a> : VMType {
@@ -243,6 +246,7 @@ impl <T: Any + VMType> VMType for IO<T> {
     fn make_type(vm: &VM) -> TcType {
         ast::Type::data(ast::TypeConstructor::Data(vm.intern("IO")), vec![T::make_type(vm)])
     }
+    fn extra_args() -> VMIndex { 1 }
 }
 impl <'a, T: Pushable<'a> + Any> Pushable<'a> for IO<T> {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
@@ -411,6 +415,14 @@ pub fn get_function<'a, 'b, T: Get<'a, 'b>>(vm: &'a VM<'b>, name: &str) -> Optio
 pub trait VMFunction<'a, 'vm> {
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status;
 }
+
+impl <'a, 'vm, 's, T> VMFunction<'a, 'vm> for &'s T
+where T: VMFunction<'a, 'vm> {
+    fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
+        (**self).unpack_and_call(vm)
+    }
+}
+
 macro_rules! count {
     () => { 0 };
     ($_e: ident) => { 1 };
@@ -434,11 +446,11 @@ impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
 impl <'a, 'vm, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for fn ($($args),*) -> R {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
-        let n_args = count!($($args),*);
+        let n_args = count!($($args),*) + R::extra_args();
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0;
         $(let $args = {
-            let x = $args::from_value(vm, stack[i].clone()).expect(stringify!($args));
+            let x = $args::from_value(vm, stack[i].clone()).expect(stringify!(Argument $args));
             i += 1;
             x
         });*;
@@ -457,19 +469,24 @@ impl <'a, 's, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's 
         Type::function(args, make_type::<R>(vm))
     }
 }
-impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Box<Fn($($args),*) -> R + 's> {
+impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Fn($($args),*) -> R + 's {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
-        let n_args = count!($($args),*);
+        let n_args = count!($($args),*) + R::extra_args();
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0;
         $(let $args = {
-            let x = $args::from_value(vm, stack[i].clone()).expect(stringify!($args));
+            let x = $args::from_value(vm, stack[i].clone()).expect(stringify!(Argument $args));
             i += 1;
             x
         });*;
         let r = (*self)($($args),*);
         r.push(vm, &mut stack)
+    }
+}
+impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Box<Fn($($args),*) -> R + 's> {
+    fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
+        (**self).unpack_and_call(vm)
     }
 }
     )

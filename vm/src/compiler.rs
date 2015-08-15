@@ -526,7 +526,7 @@ impl <'a> Compiler<'a> {
                 let mut typ = typ;
                 if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
                     typ = self.globals.find_type_info(&id)
-                        .map(|&(_, ref typ)| typ)
+                        .and_then(|(_, typ)| typ)
                         .unwrap_or(typ);
                 }
                 match **typ {

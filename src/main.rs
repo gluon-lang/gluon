@@ -3,6 +3,7 @@ extern crate log;
 extern crate env_logger;
 extern crate clap;
 
+extern crate base;
 extern crate embed_lang;
 extern crate check;
 extern crate vm;
@@ -53,7 +54,9 @@ fn main() {
         )
         .get_matches();
     if matches.is_present("REPL") {
-        repl::run();
+        if let Err(err) = repl::run() {
+            println!("{}", err);
+        }
     }
     else if let Some(args) = matches.values_of("INPUT") {
         match run_files(&args) {

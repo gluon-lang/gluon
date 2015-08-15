@@ -90,8 +90,9 @@ impl TypeEnv for TypeInfos {
             .map(|x| &x.1)
     }
 
-    fn find_type_info(&self, id: &InternedStr) -> Option<&(Vec<ast::Generic<InternedStr>>, TcType)> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
         self.id_to_type.get(id)
+            .map(|&(ref args, ref typ)| (&args[..], Some(typ)))
     }
     fn find_type_name(&self, _typ: &TcType) -> Option<TcType> {
         None
@@ -180,7 +181,7 @@ fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut Ha
 
 pub trait TypeEnv {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType>;
-    fn find_type_info(&self, id: &InternedStr) -> Option<&(Vec<ast::Generic<InternedStr>>, TcType)>;
+    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)>;
     fn find_type_name(&self, typ: &TcType) -> Option<TcType>;
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)>;
 }
@@ -189,7 +190,7 @@ impl <'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         (**self).find_type(id)
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<&(Vec<ast::Generic<InternedStr>>, TcType)> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
         (**self).find_type_info(id)
     }
     fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
@@ -206,7 +207,7 @@ impl <T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
         inner.find_type(id)
             .or_else(|| outer.find_type(id))
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<&(Vec<ast::Generic<InternedStr>>, TcType)> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
         let &(ref outer, ref inner) = self;
         inner.find_type_info(id)
             .or_else(|| outer.find_type_info(id))
@@ -281,7 +282,7 @@ impl <'a> TypeEnv for Typecheck<'a> {
                 .or_else(|| environment.and_then(|e| e.find_type(id)))
         }
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<&(Vec<ast::Generic<InternedStr>>, TcType)> {
+    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
         self.type_infos.find_type_info(id)
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
     }
@@ -338,7 +339,7 @@ impl <'a> Typecheck<'a> {
             .unwrap_or_else(|| Err(StringError("Expected fields")))
     }
 
-    fn find_type_info(&self, id: &InternedStr) -> Result<&(Vec<ast::Generic<InternedStr>>, TcType), TypeError> {
+    fn find_type_info(&self, id: &InternedStr) -> Result<(&[ast::Generic<InternedStr>], Option<&TcType>), TypeError> {
         TypeEnv::find_type_info(self, id)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedType(id.clone())))
@@ -602,15 +603,17 @@ impl <'a> Typecheck<'a> {
                 let record = match *typ {
                     Type::Data(ast::TypeConstructor::Data(id), _) => {
                         self.find_type_info(&id)
-                            .map(|t| t.1.clone())
-                            .unwrap_or_else(|_| typ.clone())
+                            .ok()
+                            .and_then(|t| t.1.cloned())
+                            .unwrap_or_else(|| typ.clone())
                     }
                     Type::App(ref f, _) => {
                         match **f {
                             Type::Data(ast::TypeConstructor::Data(id), _) => {
                                 self.find_type_info(&id)
-                                    .map(|t| t.1.clone())
-                                    .unwrap_or_else(|_| typ.clone())
+                                    .ok()
+                                    .and_then(|t| t.1.cloned())
+                                    .unwrap_or_else(|| typ.clone())
                             }
                             _ => typ.clone()
                         }
@@ -909,11 +912,21 @@ impl <'a> Typecheck<'a> {
             }
             (&Type::Data(ast::TypeConstructor::Data(l), ref l_args), _) => {
                 let l = try!(self.type_of_alias(l, l_args));
-                self.unify_(&l, actual)
+                match l {
+                    Some(l) => self.unify_(&l, actual),
+                    None => {
+                        Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
+                    }
+                }
             }
             (_, &Type::Data(ast::TypeConstructor::Data(r), ref r_args)) => {
                 let r = try!(self.type_of_alias(r, r_args));
-                self.unify_(expected, &r)
+                match r {
+                    Some(r) => self.unify_(expected, &r),
+                    None => {
+                        Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
+                    }
+                }
             }
             _ => {
                 if expected == actual {
@@ -1074,11 +1087,19 @@ impl <'a> Typecheck<'a> {
         })
     }
 
-    fn type_of_alias(&self, id: InternedStr, arguments: &[TcType]) -> TcResult {
+    fn type_of_alias(&self, id: InternedStr, arguments: &[TcType]) -> Result<Option<TcType>, TypeError> {
         let (args, typ) = {
-            let &(ref args, ref typ) = try!(self.find_type_info(&id));
-            //TODO avoid clones here
-            (args.clone(), typ.clone())
+            let (args, typ) = try!(self.find_type_info(&id));
+            match typ {
+                Some(typ) => {
+                    //TODO avoid clones here
+                    let args: Vec<_> = args.iter().cloned().collect();
+                    (args, typ.clone())
+                }
+                None => {
+                    return Ok(None)
+                }
+            }
         };
         self.subs.variables.borrow_mut().clear();
         let typ = instantiate(typ, |gen| {
@@ -1089,7 +1110,7 @@ impl <'a> Typecheck<'a> {
                 .map(|(_, typ)| typ.clone())
                 .unwrap_or_else(|| self.subs.variable_for2(gen))
         });
-        Ok(typ)
+        Ok(Some(typ))
     }
 }
 
@@ -1258,7 +1279,8 @@ impl <'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                 }
                 Type::Data(ast::TypeConstructor::Data(id), ref args) => {
                     match self.tc.type_of_alias(id, args) {
-                        Ok(typ) => (None, typ.clone()),
+                        Ok(Some(typ)) => (None, typ.clone()),
+                        Ok(None) => return None,
                         Err(_) => return Some(self.tc.subs.new_var())
                     }
                 }
@@ -1278,21 +1300,23 @@ fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>,
     FunctionArgIter { tc: tc, typ: typ }
 }
 
-fn get_return_type(env: &TypeEnv, typ: TcType, arg_count: usize) -> TcType {
+fn get_return_type(env: &TypeEnv, alias_type: TcType, arg_count: usize) -> TcType {
     if arg_count == 0 {
-        typ
+        alias_type
     }
     else {
-        match *typ {
+        match *alias_type {
             Type::Function(_, ref ret) => {
                 get_return_type(env, ret.clone(), arg_count - 1)
             }
             Type::Data(ast::TypeConstructor::Data(id), ref arguments) => {
                 let (args, typ) = {
-                    let &(ref args, ref typ) = env.find_type_info(&id)
+                    let (args, typ) = env.find_type_info(&id)
                         .unwrap_or_else(|| panic!("ICE: '{}' does not exist", id));
-                    //TODO avoid clones here
-                    (args.clone(), typ.clone())
+                    match typ {
+                        Some(typ) => (args, typ.clone()),
+                        None => panic!("Unexpected type {} is not a function", alias_type)
+                    }
                 };
                 let typ = instantiate(typ, |gen| {
                     //Replace the generic variable with the type from the list
@@ -1306,7 +1330,7 @@ fn get_return_type(env: &TypeEnv, typ: TcType, arg_count: usize) -> TcType {
 
             }
             _ => panic!("Expected function with {} more arguments, found {}",
-                        arg_count, typ)
+                        arg_count, alias_type)
         }
     }
 }
