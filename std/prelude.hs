@@ -110,6 +110,28 @@ let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_t ord_e -> {
                     | Ok _ -> LT
                     | Err r_val -> ord_e.compare l_val r_val)
 } in
+let make_Ord ord
+    =
+    let compare = ord.compare
+    in {
+        (<=) = \l r -> case compare l r of
+            | LT -> True
+            | EQ -> True
+            | GT -> False,
+        (<) = \l r -> case compare l r of
+            | LT -> True
+            | EQ -> False
+            | GT -> False,
+        (>) = \l r -> case compare l r of
+            | LT -> False
+            | EQ -> True
+            | GT -> False,
+        (=>) = \l r -> case compare l r of
+            | LT -> False
+            | EQ -> True
+            | GT -> True
+    }
+in
 type Num a = {
     (+) : a -> a -> a,
     (-) : a -> a -> a,
@@ -229,7 +251,7 @@ let show_List: Show a -> Show (List a) = \d ->
     in { show }
 in
 { id, const, flip, not, 
-  ord_Option, ord_Result, ord_Float, ord_Int,
+  ord_Option, ord_Result, ord_Float, ord_Int, make_Ord,
   eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
   num_Int, num_Float,
   functor_Option, functor_List, functor_IO,
