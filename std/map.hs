@@ -12,14 +12,14 @@ in \ord ->
                     | EQ -> Some v
                     | GT -> find k r)
             | Tip -> None
-    in let insert k v m = case m of
+    and insert k v m = case m of
         | Bin k2 v2 l r ->
             (case compare k k2 of
                 | LT -> Bin k2 v2 (insert k v l) r
                 | EQ -> Bin k v l r
                 | GT -> Bin k2 v2 l (insert k v r))
         | Tip -> Bin k v empty empty
-    in let (++) l r = case l of
+    and (++) l r = case l of
         | Bin lk lv ll lr -> (case r of
             | Bin rk rv rl rr ->
                 (case compare lk rk of
@@ -30,4 +30,9 @@ in \ord ->
         | Tip -> case r of
             | Bin a b c d -> r
             | Tip -> empty
-    in { empty, singleton, find, insert, (++) }
+    and to_list m =
+        let (++) = prelude.(++)
+        in case m of
+            | Bin key value l r -> to_list l ++ Cons { key, value } (to_list r)
+            | Tip -> Nil
+    in { empty, singleton, find, insert, (++), to_list }
