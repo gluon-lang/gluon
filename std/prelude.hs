@@ -163,6 +163,11 @@ let functor_Option: Functor Option = {
                     | Some y -> Some (f y)
                     | None -> None
 }
+and functor_Result: Functor (Result e) = {
+    map = \f x -> case x of
+                    | Ok y -> Ok (f y)
+                    | Err _ -> x
+}
 and functor_List: Functor List = {
     map =
         let map f xs =
@@ -178,11 +183,20 @@ type Applicative f = {
 let applicative_Option: Applicative Option = {
     (<*>) = \f x -> case f of
                         | Some g ->
-                            case x of
+                            (case x of
                                 | Some y -> Some (g y)
-                                | None -> None
+                                | None -> None)
                         | None -> None,
     pure = \x -> Some x
+}
+and applicative_Result: Applicative (Result e) = {
+    (<*>) = \f x -> case f of
+                        | Ok g ->
+                            (case x of
+                                | Ok y -> Ok (g y)
+                                | Err _ -> x)
+                        | Err x -> Err x,
+    pure = \x -> Ok x
 }
 and applicative_List: Applicative List = {
     (<*>) =
@@ -259,8 +273,8 @@ in
   ord_Option, ord_Result, ord_Float, ord_Int, ord_String, make_Ord,
   eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
   num_Int, num_Float,
-  functor_Option, functor_List, functor_IO,
-  applicative_Option, applicative_List, applicative_IO,
+  functor_Option, functor_Result, functor_List, functor_IO,
+  applicative_Option, applicative_Result, applicative_List, applicative_IO,
   monad_Option, monad_List, monad_IO,
   make_Monad,
   show_List
