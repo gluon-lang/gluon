@@ -236,13 +236,21 @@ let make_Monad m =
     let { (>>=), return } = m
     //TODO this should not require a second binding
     and bind = m.(>>=)
+    in
+    let (>>) l r = l >>= \_ -> r
+    in
+    let forM_ xs f = case xs of
+            | Cons y ys ->
+                f y >> forM_ ys f
+            | Nil -> return ()
     in {
         (>>=) = (>>=),
         return = return,
-        (>>) = \l r -> l >>= \_ -> r,
+        (>>),
         join = \mm -> mm >>= id,
         map = \x f -> x >>= (\y -> return (f x)),
-        lift2 = \f lm rm -> bind lm (\l -> rm >>= \r -> f l r)
+        lift2 = \f lm rm -> bind lm (\l -> rm >>= \r -> f l r),
+        forM_
     }
 in
 let functor_IO: Functor IO = {
