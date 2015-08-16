@@ -299,7 +299,7 @@ impl <'a> fmt::Debug for Value<'a> {
                 match *self.1 {
                     Int(i) => write!(f, "{:?}", i),
                     Float(x) => write!(f, "{:?}f", x),
-                    String(x) => write!(f, "\"{:?}\"", &*x),
+                    String(x) => write!(f, "{:?}", &*x),
                     Data(ref data) => {
                         write!(f, "{{{:?} {:?}}}", data.tag, LevelSlice(level - 1, &data.fields))
                     }
@@ -645,6 +645,7 @@ impl <'a> VM<'a> {
         try!(self.extern_function("show_Float_prim", vec![Type::float().clone()], Type::string().clone(), Box::new(prim::show)));
         try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
         try!(self.extern_function("error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
+        try!(self.extern_function("trace", vec![a.clone()], Type::unit(), Box::new(prim::trace)));
 
         //IO functions
         try!(define_function(self, "print_int", f1(prim::print_int)));

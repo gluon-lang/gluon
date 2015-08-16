@@ -70,6 +70,11 @@ pub fn print_int(i: VMInt) -> IO<()> {
     print!("{}", i);
     IO(())
 }
+pub fn trace(vm: &VM) -> Status {
+    let stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    println!("{:?}", stack[0]);
+    Status::Ok
+}
 
 pub fn read_file(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
