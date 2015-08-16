@@ -516,7 +516,7 @@ fn static_error(e: Error<char, &str>) -> Error<char, &'static str> {
         }
     }
     match e {
-        Error::Unexpected(t) => Error::Unexpected(t),
+        Error::Unexpected(t) => Error::Unexpected(static_info(t)),
         Error::Expected(t) => Error::Expected(static_info(t)),
         Error::Message(t) => Error::Message(static_info(t)),
         Error::Other(t) => Error::Other(t)

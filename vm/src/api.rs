@@ -25,7 +25,7 @@ pub trait VMType {
 pub trait Pushable<'a> : VMType {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status;
 }
-pub trait Getable<'a, 'vm> {
+pub trait Getable<'a, 'vm>: Sized {
     fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Self>;
 }
 pub trait VMValue<'a, 'vm> : Pushable<'a> + Getable<'a, 'vm> { }
@@ -290,7 +290,7 @@ fn make_type<T: ?Sized + VMType>(vm: &VM) -> TcType {
     <T as VMType>::make_type(vm)
 }
 
-pub trait Get<'a, 'b> {
+pub trait Get<'a, 'b>: Sized {
     fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Self>;
 }
 
@@ -363,13 +363,13 @@ struct FunctionRef<'a, Args, R> {
 impl <'a, Args, R> Copy for FunctionRef<'a, Args, R> { }
 impl <'a, Args, R> Clone for FunctionRef<'a, Args, R> { fn clone(&self) -> FunctionRef<'a, Args, R> { *self } }
 
-impl <'b, Args, R> VMType for FunctionRef<'b, Args, R> {
+impl <'b, Args: 'static, R: 'static> VMType for FunctionRef<'b, Args, R> {
     fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<&fn (Args) -> R>()
     }
 }
 
-impl <'a, Args, R> Pushable<'a> for FunctionRef<'a, Args, R> {
+impl <'a, Args: 'static, R: 'static> Pushable<'a> for FunctionRef<'a, Args, R> {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         stack.push(self.value);
         Status::Ok
@@ -381,7 +381,7 @@ impl <'a, 'vm, Args, R> Getable<'a, 'vm> for FunctionRef<'a, Args, R> {
     }
 }
 
-impl <'a, 'b, A: Pushable<'b>, R: Getable<'b, 'a>> Callable<'a, 'b, (A,), R> {
+impl <'a, 'b, A: Pushable<'b> + 'static, R: Getable<'b, 'a> + 'static> Callable<'a, 'b, (A,), R> {
     pub fn call(&mut self, a: A) -> Result<R, Error> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
@@ -393,7 +393,7 @@ impl <'a, 'b, A: Pushable<'b>, R: Getable<'b, 'a>> Callable<'a, 'b, (A,), R> {
         }
     }
 }
-impl <'a, 'b, A: Pushable<'b>, B: Pushable<'b>, R: Getable<'b, 'a>> Callable<'a, 'b, (A, B), R> {
+impl <'a, 'b, A: Pushable<'b> + 'static, B: Pushable<'b> + 'static, R: Getable<'b, 'a> + 'static> Callable<'a, 'b, (A, B), R> {
     pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
@@ -431,7 +431,7 @@ macro_rules! count {
 
 macro_rules! make_vm_function {
     ($($args:ident),*) => (
-impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
+impl <$($args: VMType + 'static ,)* R: VMType + 'static> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
     fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<fn ($($args),*) -> R>()
@@ -458,7 +458,7 @@ impl <'a, 'vm, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm
         r.push(vm, &mut stack)
     }
 }
-impl <'a, 's, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's {
+impl <'a, 's, $($args: VMType + 'static,)* R: VMType + 'static> VMType for Fn($($args),*) -> R + 's {
     #[allow(non_snake_case)]
     fn vm_type<'r>(vm: &'r VM) -> &'r Type<InternedStr> {
         vm.get_type::<fn ($($args),*) -> R>()
