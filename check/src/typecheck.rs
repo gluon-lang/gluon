@@ -605,18 +605,24 @@ impl <'a> Typecheck<'a> {
                     typ = try!(self.unify(&record_type, typ));
                 }
                 let record = match *typ {
-                    Type::Data(ast::TypeConstructor::Data(id), _) => {
+                    Type::Data(ast::TypeConstructor::Data(id), ref arguments) => {
                         self.find_type_info(&id)
                             .ok()
-                            .and_then(|t| t.1.cloned())
+                            .and_then(|t| t.1.map(|typ| (t.0, typ.clone())))
+                            .map(|(generic_args, typ)| {
+                                self.subs.instantiate_with(typ, arguments, generic_args)
+                            })
                             .unwrap_or_else(|| typ.clone())
                     }
                     Type::App(ref f, _) => {
                         match **f {
-                            Type::Data(ast::TypeConstructor::Data(id), _) => {
+                            Type::Data(ast::TypeConstructor::Data(id), ref arguments) => {
                                 self.find_type_info(&id)
                                     .ok()
-                                    .and_then(|t| t.1.cloned())
+                                    .and_then(|t| t.1.map(|typ| (t.0, typ.clone())))
+                                    .map(|(generic_args, typ)| {
+                                        self.subs.instantiate_with(typ, arguments, generic_args)
+                                    })
                                     .unwrap_or_else(|| typ.clone())
                             }
                             _ => typ.clone()
@@ -624,7 +630,6 @@ impl <'a> Typecheck<'a> {
                     }
                     _ => typ.clone()
                 };
-                let record = self.subs.instantiate(&record);
                 match *record {
                     Type::Record(ref fields) => {
                         let field_type = fields.iter()
@@ -1104,15 +1109,7 @@ impl <'a> Typecheck<'a> {
                 }
             }
         };
-        self.subs.variables.borrow_mut().clear();
-        let typ = instantiate(typ, |gen| {
-            //Replace the generic variable with the type from the list
-            //or if it is not found the make a fresh variable
-            args.iter().zip(arguments)
-                .find(|&(arg, _)| arg.id == gen.id)
-                .map(|(_, typ)| typ.clone())
-                .unwrap_or_else(|| self.subs.variable_for2(gen))
-        });
+        let typ = self.subs.instantiate_with(typ, arguments, &args);
         Ok(Some(typ))
     }
 }
@@ -1138,6 +1135,22 @@ impl Substitution<TcType> {
     }
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
         instantiate(typ.clone(), |id| self.variable_for2(id))
+    }
+
+    fn instantiate_with(&self,
+                        typ: TcType,
+                        arguments: &[TcType],
+                        args: &[ast::Generic<InternedStr>]
+                       ) -> TcType {
+        self.variables.borrow_mut().clear();
+        instantiate(typ, |gen| {
+            //Replace the generic variable with the type from the list
+            //or if it is not found the make a fresh variable
+            args.iter().zip(arguments)
+                .find(|&(arg, _)| arg.id == gen.id)
+                .map(|(_, typ)| typ.clone())
+                .unwrap_or_else(|| self.variable_for2(gen))
+        })
     }
 }
 
@@ -1682,6 +1695,43 @@ in const #Int+ 1
 ";
         let result = typecheck(text);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn infer_ord_int() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+type Ordering = | LT | EQ | GT
+in
+
+type Ord a = {
+    compare : a -> a -> Ordering
+} in
+
+let ord_Int = {
+    compare = \l r ->
+        if l #Int< r
+        then LT
+        else if l #Int== r
+        then EQ
+        else GT
+} in
+let make_Ord ord
+    =
+    let compare = ord.compare
+    in {
+        (<=) = \l r -> case compare l r of
+            | LT -> True
+            | EQ -> True
+            | GT -> False
+    }
+in
+let (<=) = (make_Ord ord_Int).(<=)
+in "" <= ""
+"#;
+        let result = typecheck(text);
+        assert_err!(result, TypeMismatch);
     }
 
     #[test]
