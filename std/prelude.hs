@@ -36,7 +36,7 @@ let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
                     | Some _ -> False
                     | None -> True)
 } in
-let eq_Result: Eq t -> Eq e -> Eq (Result t e) = \eq_t eq_e -> {
+let eq_Result: Eq e -> Eq t -> Eq (Result e t) = \eq_e eq_t -> {
     (==) = \l r ->
         case l of
             | Ok l_val ->
@@ -103,7 +103,7 @@ let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
                     | Some r_val -> GT
                     | None -> EQ)
 } in
-let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_t ord_e -> {
+let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_e ord_t -> {
     compare = \l r ->
         case l of
             | Ok l_val ->
