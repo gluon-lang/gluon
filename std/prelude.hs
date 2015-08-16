@@ -12,6 +12,12 @@ and (++) xs ys = case xs of
 and concatMap f xs: (a -> List b) -> List a -> List b = case xs of
     | Cons x ys -> f x ++ concatMap f ys
     | Nil -> Nil
+and foldl f x xs = case xs of
+    | Cons y ys -> foldl f (f x y) ys
+    | Nil -> x
+and foldr f x xs = case xs of
+    | Cons y ys -> f y (foldr f x ys)
+    | Nil -> x
 in
 
 type Eq a = {
@@ -269,7 +275,8 @@ let show_List: Show a -> Show (List a) = \d ->
         in string_append "[" (show2 xs)
     in { show }
 in
-{ id, const, flip, not, 
+{ id, const, flip, not,
+  (++), foldl, foldr,
   ord_Option, ord_Result, ord_Float, ord_Int, ord_String, make_Ord,
   eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
   num_Int, num_Float,
