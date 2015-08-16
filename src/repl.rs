@@ -51,6 +51,7 @@ pub fn run() -> Result<(), Box<StdError>> {
     try!(vm.extern_function_io("type_of_expr", 2, Type::function(vec![Type::string()], io(Type::string())), Box::new(type_of_expr)));
     try!(vm.extern_function_io("find_type_info", 2, Type::function(vec![Type::string()], io(Type::string())), Box::new(find_type_info)));
     try!(load_file(&vm, "std/prelude.hs"));
+    try!(load_file(&vm, "std/map.hs"));
     try!(load_file(&vm, "std/repl.hs"));
     Ok(())
 }
@@ -63,6 +64,7 @@ fn load_file(vm: &VM, filename: &str) -> Result<(), Box<StdError>> {
     let mut file = try!(File::open(path));
     let mut buffer = String::new();
     try!(file.read_to_string(&mut buffer));
+    drop(file);
     let name = path.file_stem().and_then(|f| f.to_str()).expect("filename");
     load_script(vm, name, &buffer)
 }

@@ -1,7 +1,8 @@
-let { (>>=), return } = prelude.monad_IO
-and (>>) = \l r -> l >>= \_ -> r
+let { (>>=), return, (>>), join, map = fmap, lift2, forM_ } = prelude.make_Monad prelude.monad_IO
 and { (==) } = prelude.eq_String
 and (++) = string_append
+and { empty, singleton, find, insert, (++) = (<>), to_list }
+    = map prelude.ord_String
 in
 let load_file filename: String -> IO String =
     let last_slash = (\_ -> case string_rfind filename "/" of
@@ -14,19 +15,46 @@ let load_file filename: String -> IO String =
             | Ok expr -> load_script modulename expr
             | Err msg -> return msg
 in
+type Cmd = { info: String, action: String -> IO Bool }
+in
+let commands: Map String Cmd
+    =  singleton "q" { info = "Quit the REPL", action = \_ -> return False }
+    <> singleton "t" {
+        info = "Prints the type of an expression",
+        action = \arg -> type_of_expr arg >>= print >> return True
+    }
+    <> singleton "i" {
+        info = "Prints information about the given type",
+        action = \arg -> find_type_info arg >>= print >> return True
+    }
+    <> singleton "l" {
+        info = "Loads the file at 'folder/module.ext' and stores it at 'module'",
+        action = \arg -> load_file arg >>= print >> return True
+    }
+in
+let help =
+    let info = "Print this help"
+    in {
+    info,
+    action = \_ -> print "Available commands\n" >>
+        print ("    :h " ++ info) >>
+        forM_ (to_list commands) (\cmd ->
+            //FIXME This type declaration should not be needed
+            let cmd: { key: String, value: Cmd } = cmd
+            in print ("    :" ++ cmd.key ++ " " ++ cmd.value.info))
+            >>
+        return True
+}
+in
+let commands = insert "h" help commands
+in
 let do_command line: String -> IO Bool
     = 
     let cmd = string_slice line 1 2
     and arg = string_trim (string_slice line 3 (string_length line))
-    in if cmd == "q"
-        then return False
-        else if cmd == "t"
-        then type_of_expr arg >>= print >> return True
-        else if cmd == "i"
-        then find_type_info arg >>= print >> return True
-        else if cmd == "l"
-        then load_file arg >>= print >> return True
-        else print (string_append "Unknown command " cmd) >> return True
+    in case find cmd commands of
+        | Some command -> command.action arg
+        | None -> print ("Unknown command '"  ++ cmd ++ "'") >> return True
 in
 let store line: String -> IO Bool
     =
