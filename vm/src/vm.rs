@@ -1361,6 +1361,19 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>
     Ok(())
 }
 
+pub fn load_file(vm: &VM, filename: &str) -> Result<(), Box<StdError>> {
+    use std::fs::File;
+    use std::io::Read;
+    use std::path::Path;
+    let path = Path::new(filename);
+    let mut file = try!(File::open(path));
+    let mut buffer = ::std::string::String::new();
+    try!(file.read_to_string(&mut buffer));
+    drop(file);
+    let name = path.file_stem().and_then(|f| f.to_str()).expect("filename");
+    load_script(vm, name, &buffer)
+}
+
 pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, Box<StdError>> {
     let mut interner = vm.interner.borrow_mut();
     let mut gc = vm.gc.borrow_mut();
@@ -1718,6 +1731,20 @@ in a
         let mut vm = VM::new();
         let result = run_expr(&mut vm, text);
         assert_eq!(result, Int(3));
+    }
+
+    #[test]
+    fn unit_expr() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+let x = ()
+and y = 1
+in y
+"#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert_eq!(result, Int(1));
     }
 
     #[test]

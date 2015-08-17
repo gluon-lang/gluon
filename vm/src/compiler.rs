@@ -365,11 +365,6 @@ impl <'a> Compiler<'a> {
                         let typ = bind.expression.env_type_of(&self.globals);
                         self.compile_let_pattern(&bind.name, &typ, function);
                     }
-                    //unit expressions do not return a value so we need to add a dummy value
-                    //To make the stack correct
-                    if bind.expression.env_type_of(&self.globals) == Type::unit() {
-                        function.instructions.push(PushInt(0));
-                    }
                 }
                 self.compile(&body, function, tail_position);
                 let mut count = 0;

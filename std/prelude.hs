@@ -292,6 +292,6 @@ in
   applicative_Option, applicative_Result, applicative_List, applicative_IO,
   monad_Option, monad_List, monad_IO,
   make_Monad,
-  show_List
+  show_Int, show_Float, show_String, show_List
 }
 

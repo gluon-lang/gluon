@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use base::ast;
 use check::typecheck::{Type, TypeEnv, Typed};
-use vm::vm::{VM, RootStr, Status, typecheck_expr, load_script};
+use vm::vm::{VM, RootStr, Status, typecheck_expr, load_file};
 use vm::api::{VMFunction, IO};
 
 fn type_of_expr(vm: &VM) -> Status {
@@ -55,17 +55,3 @@ pub fn run() -> Result<(), Box<StdError>> {
     try!(load_file(&vm, "std/repl.hs"));
     Ok(())
 }
-
-fn load_file(vm: &VM, filename: &str) -> Result<(), Box<StdError>> {
-    use std::fs::File;
-    use std::io::Read;
-    use std::path::Path;
-    let path = Path::new(filename);
-    let mut file = try!(File::open(path));
-    let mut buffer = String::new();
-    try!(file.read_to_string(&mut buffer));
-    drop(file);
-    let name = path.file_stem().and_then(|f| f.to_str()).expect("filename");
-    load_script(vm, name, &buffer)
-}
-
