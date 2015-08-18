@@ -646,6 +646,8 @@ impl <'a> VM<'a> {
         try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
         try!(self.extern_function("error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
         try!(self.extern_function("trace", vec![a.clone()], Type::unit(), Box::new(prim::trace)));
+        try!(define_function(self, "force", f1(::lazy::force)));
+        try!(define_function(self, "lazy", f1(::lazy::lazy)));
 
         //IO functions
         try!(define_function(self, "print_int", f1(prim::print_int)));

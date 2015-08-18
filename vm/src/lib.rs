@@ -19,4 +19,5 @@ pub mod vm;
 mod stack;
 mod primitives;
 mod fixed;
+mod lazy;
 

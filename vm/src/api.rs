@@ -31,6 +31,51 @@ pub trait Getable<'a, 'vm>: Sized {
 pub trait VMValue<'a, 'vm> : Pushable<'a> + Getable<'a, 'vm> { }
 impl <'a, 'vm, T> VMValue<'a, 'vm> for T where T: Pushable<'a> + Getable<'a, 'vm> { }
 
+
+#[derive(Clone, Copy)]
+pub struct Generic<'a, T>(Value<'a>, PhantomData<T>);
+
+impl <'a, T: VMType> VMType for Generic<'a, T> {
+    fn vm_type<'b>(vm: &'b VM) -> &'b Type<InternedStr> {
+        T::vm_type(vm)
+    }
+
+    fn extra_args() -> VMIndex { T::extra_args() }
+}
+impl <'a, T: VMType> Pushable<'a> for Generic<'a, T> {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        stack.push(self.0);
+        Status::Ok
+    }
+}
+impl <'a, 'vm, T> Getable<'a, 'vm> for Generic<'a, T> {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<Generic<'a, T>> {
+        Some(Generic(value, PhantomData))
+    }
+}
+
+pub mod generic {
+    use super::VMType;
+    use base::interner::InternedStr;
+    use check::typecheck::Type;
+    use vm::VM;
+
+    macro_rules! make_generics {
+        ($($i: ident)+) => {
+            $(
+            #[derive(Clone, Copy)]
+            pub struct $i;
+            impl VMType for $i {
+                fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+                    vm.get_type::<$i>()
+                }
+            }
+            )+
+        }
+    }
+    make_generics!{A B C D E F G H I J K L M N O P Q R X Y Z}
+}
+
 impl VMType for () {
     fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<()>()
@@ -363,20 +408,59 @@ struct FunctionRef<'a, Args, R> {
 impl <'a, Args, R> Copy for FunctionRef<'a, Args, R> { }
 impl <'a, Args, R> Clone for FunctionRef<'a, Args, R> { fn clone(&self) -> FunctionRef<'a, Args, R> { *self } }
 
-impl <'b, Args: 'static, R: 'static> VMType for FunctionRef<'b, Args, R> {
+impl <'vm, 'b, Args: 'static, R: 'static> VMType for Callable<'vm, 'b, Args, R> {
     fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
         vm.get_type::<&fn (Args) -> R>()
     }
 }
 
-impl <'a, Args: 'static, R: 'static> Pushable<'a> for FunctionRef<'a, Args, R> {
+impl <'vm, 'a, Args: 'static, R: 'static> Pushable<'a> for Callable<'vm, 'a, Args, R> {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        stack.push(self.value.value);
+        Status::Ok
+    }
+}
+impl <'a, 'vm, Args, R> Getable<'a, 'vm> for Callable<'vm, 'a, Args, R> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Callable<'vm, 'a, Args, R>> {
+        Some(Callable {
+            vm: vm,
+            value: FunctionRef { value: value, _marker: PhantomData }
+        })//TODO not type safe
+    }
+}
+
+impl <'b, A: 'static, R: 'static> VMType for FunctionRef<'b, (A,), R> {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<fn (A) -> R>()
+    }
+}
+
+impl <'a, A: 'static, R: 'static> Pushable<'a> for FunctionRef<'a, (A,), R> {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         stack.push(self.value);
         Status::Ok
     }
 }
-impl <'a, 'vm, Args, R> Getable<'a, 'vm> for FunctionRef<'a, Args, R> {
-    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<FunctionRef<'a, Args, R>> {
+impl <'a, 'vm, A, R> Getable<'a, 'vm> for FunctionRef<'a, (A,), R> {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<FunctionRef<'a, (A,), R>> {
+        Some(FunctionRef { value: value, _marker: PhantomData })//TODO not type safe
+    }
+}
+
+impl <'b, A: 'static, B: 'static, R: 'static> VMType for FunctionRef<'b, (A, B), R> {
+    fn vm_type<'a>(vm: &'a VM) -> &'a Type<InternedStr> {
+        vm.get_type::<fn (A, B) -> R>()
+    }
+}
+
+impl <'a, A: 'static, B: 'static, R: 'static> Pushable<'a> for FunctionRef<'a, (A, B), R> {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        stack.push(self.value);
+        Status::Ok
+    }
+}
+impl <'a, 'vm, A, B, R> Getable<'a, 'vm> for FunctionRef<'a, (A, B), R> {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<FunctionRef<'a, (A, B), R>> {
         Some(FunctionRef { value: value, _marker: PhantomData })//TODO not type safe
     }
 }
