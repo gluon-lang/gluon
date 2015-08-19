@@ -1,38 +1,79 @@
-
-use base::interner::InternedStr;
-use base::ast::Type;
-use api::{Callable, Getable, Pushable, Generic, VMType};
-use api::generic::A;
-use types::VMIndex;
-use vm::{Root, StackFrame, Status, Value, VM, Userdata_};
+use base::gc::{Gc, Traverseable, Move};
+use std::cell::Cell;
+use api::Pushable;
+use vm::{StackFrame, Status, Value, VM};
 
 
-#[derive(Clone, Copy)]
-pub enum Lazy<T> {
-    Thunk(T),
-    Value(T)
+#[derive(Clone, PartialEq)]
+pub struct Lazy<'a> {
+    value: Cell<Lazy_<'a>>
 }
 
-impl <'a> VMType for Lazy<Generic<'a, A>> {
-    fn vm_type<'b>(vm: &'b VM) -> &'b Type<InternedStr> {
-        vm.get_type::<Lazy<Generic<'static, A>>>()
+#[derive(Clone, Copy, PartialEq)]
+enum Lazy_<'a> {
+    Blackhole,
+    Thunk(Value<'a>),
+    Value(Value<'a>)
+}
+
+impl <'a> Traverseable for Lazy<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        match self.value.get() {
+            Lazy_::Blackhole => (),
+            Lazy_::Thunk(value) => value.traverse(gc),
+            Lazy_::Value(value) => value.traverse(gc),
+        }
     }
 }
 
-impl <'a> Pushable<'a> for Lazy<Generic<'a, A>> {
-    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        let self_= unsafe {
-            ::std::mem::transmute::<Lazy<Generic<'a, A>>, Lazy<Generic<'static, A>>>(self)
-        };
-        stack.push(Value::Userdata(Userdata_::new(vm, self_)));
-        Status::Ok
+pub fn force(vm: &VM) -> Status {
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    println!("{:?}", stack.stack.values);
+    match stack[0] {
+        Value::Lazy(lazy) => {
+            match lazy.value.get() {
+                Lazy_::Blackhole => {
+                    "<<loop>>".push(vm, &mut stack);
+                    Status::Error
+                }
+                Lazy_::Thunk(value) => {
+                    stack.push(value);
+                    stack.push(Value::Int(0));
+                    lazy.value.set(Lazy_::Blackhole);
+                    let frame = stack.frame;
+                    drop(stack);
+                    let result = vm.execute_call(1);
+                    stack = StackFrame { stack: vm.stack.borrow_mut(), frame: frame };
+                    match result {
+                        Ok(value) => {
+                            while stack.len() > 1 {
+                                stack.pop();
+                            }
+                            lazy.value.set(Lazy_::Value(value));
+                            stack.push(value);
+                            Status::Ok
+                        }
+                        Err(err) => {
+                            let err = format!("{}", err);
+                            err.push(vm, &mut stack);
+                            Status::Error
+                        }
+                    }
+                }
+                Lazy_::Value(value) => {
+                    stack[0] = value;
+                    Status::Ok
+                }
+            }
+        }
+        x => panic!("Expected lazy got {:?}", x)
     }
 }
 
-pub fn force<'vm, 'a>(value: Root<'vm, Lazy<Generic<'a, A>>>) -> Generic<'a, A> {
-    panic!()
-}
-
-pub fn lazy<'vm, 'a>(value: Root<'vm, Callable<'vm, 'a, ((),), Generic<'a, A>>>) {
-    panic!()
+pub fn lazy(vm: &VM) -> Status {
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let f = stack[0];
+    let lazy = vm.gc.borrow_mut().alloc(Move(Lazy { value: Cell::new(Lazy_::Thunk(f)) }));
+    stack.push(Value::Lazy(lazy));
+    Status::Ok
 }

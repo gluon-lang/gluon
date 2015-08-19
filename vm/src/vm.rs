@@ -16,6 +16,7 @@ use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move};
 use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
 use fixed::*;
 use api::define_function;
+use lazy::Lazy;
 
 use self::Named::*;
 
@@ -29,7 +30,6 @@ use self::Value::{
     Closure,
     TraitObject,
     Userdata,
-    Bottom
 };
 
 
@@ -171,7 +171,7 @@ pub enum Value<'a> {
     PartialApplication(GcPtr<PartialApplicationData<'a>>),
     TraitObject(GcPtr<DataStruct<'a>>),
     Userdata(Userdata_),
-    Bottom//Special value used to mark that a global was used before it was initialized
+    Lazy(GcPtr<Lazy<'a>>)
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -273,7 +273,8 @@ impl <'a> Traverseable for Value<'a> {
             TraitObject(ref data) => data.traverse(gc),
             Userdata(ref data) => data.data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
-            Int(_) | Float(_) | Bottom => ()
+            Value::Lazy(ref lazy) => lazy.traverse(gc),
+            Int(_) | Float(_) => ()
         }
     }
 }
@@ -324,7 +325,7 @@ impl <'a> fmt::Debug for Value<'a> {
                     }
                     TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, LevelSlice(level - 1, &object.fields)),
                     Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
-                    Bottom => write!(f, "Bottom")
+                    Value::Lazy(_) => write!(f, "<lazy>"),
                 }
             }
         }
@@ -335,7 +336,6 @@ impl <'a> fmt::Debug for Value<'a> {
 macro_rules! get_global {
     ($vm: ident, $i: expr) => (
         match $vm.globals[$i].value.get() {
-            Bottom => return Err(Error::Message(format!("Global '{}' was used before it was initialized", $vm.globals[$i].id))),
             x => x
         }
     )
@@ -646,8 +646,15 @@ impl <'a> VM<'a> {
         try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
         try!(self.extern_function("error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
         try!(self.extern_function("trace", vec![a.clone()], Type::unit(), Box::new(prim::trace)));
-        try!(define_function(self, "force", f1(::lazy::force)));
-        try!(define_function(self, "lazy", f1(::lazy::lazy)));
+        let lazy = |t| ASTType::from(ast::type_con(self.intern("Lazy"), vec![t]));
+        try!(self.extern_function("lazy",
+                                  vec![Type::function(vec![Type::unit()], a.clone())],
+                                  lazy(a.clone()),
+                                  Box::new(::lazy::lazy)));
+        try!(self.extern_function("force",
+                                  vec![lazy(a.clone())],
+                                  a.clone(),
+                                  Box::new(::lazy::force)));
 
         //IO functions
         try!(define_function(self, "print_int", f1(prim::print_int)));
@@ -726,7 +733,7 @@ impl <'a> VM<'a> {
         self.globals.find(|g| n == g.id).map(|tup| tup.1)
     }
 
-    pub fn get_type<T: Any>(&self) -> &TcType {
+    pub fn get_type<T: ?Sized + Any>(&self) -> &TcType {
         let id = TypeId::of::<T>();
         self.typeids.get(&id)
             .unwrap_or_else(|| {
@@ -737,6 +744,22 @@ impl <'a> VM<'a> {
 
     pub fn run_function(&self, cf: &Global<'a>) -> VMResult<Value<'a>> {
         self.call_function(0, cf)
+    }
+
+    pub fn execute_call(&self, args: VMIndex) -> VMResult<Value<'a>> {
+        let stack = self.stack.borrow_mut();
+        let frame = StackFrame::new_scope(stack, args + 1, None, |frame| {
+            self.execute(frame, &[Call(args)], &BytecodeFunction::empty())
+        });
+        frame.map(|mut frame| {
+            if frame.len() > 0 {
+                frame.pop()
+            }
+            else {
+                Int(0)
+            }
+        })
+
     }
 
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> VMResult<Value<'a>> {

@@ -36,8 +36,10 @@ fn main_() -> Result<(), Box<Error>> {
         });
     let _ = ::env_logger::init();
     for filename in iter {
-        let mut file = try!(File::open(filename));
+        let mut file = try!(File::open(&filename));
+        text.clear();
         try!(file.read_to_string(&mut text));
+        println!("test {}", filename.to_str().unwrap_or("<unknown>"));
         try!(run_expr(&vm, &text));
     }
     Ok(())
