@@ -11,13 +11,10 @@ pub enum Instruction {
     PushString(VMIndex),
     Push(VMIndex),
     PushGlobal(VMIndex),
-    Store(VMIndex),
-    StoreGlobal(VMIndex),
     Call(VMIndex),
     TailCall(VMIndex),
     Construct(VMIndex, VMIndex),
     GetField(VMIndex),
-    SetField(VMIndex),
     Split,
     TestTag(VMTag),
     Jump(VMIndex),
@@ -32,9 +29,7 @@ pub enum Instruction {
     NewClosure(VMIndex, VMIndex),
     //Fills the previously allocated closure with `n` upvariables
     CloseClosure(VMIndex),
-    InstantiateConstrained(VMIndex),
     PushUpVar(VMIndex),
-    StoreUpVar(VMIndex),
 
     GetIndex,
     SetIndex,
@@ -51,4 +46,3 @@ pub enum Instruction {
     FloatLT,
     FloatEQ,
 }
-

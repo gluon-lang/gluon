@@ -1078,13 +1078,6 @@ impl <'a> VM<'a> {
                     stack.push(x);
                 }
                 PushFloat(f) => stack.push(Float(f)),
-                Store(i) => {
-                    stack[i] = stack.pop();
-                }
-                StoreGlobal(i) => {
-                    let v = stack.pop();
-                    self.globals[i as usize].value.set(v);
-                }
                 Call(args) => {
                     stack.frame.instruction_index = index + 1;
                     return self.do_call(stack, args);
@@ -1131,16 +1124,6 @@ impl <'a> VM<'a> {
                             stack.push(v);
                         }
                         x => return Err(Error::Message(format!("GetField on {:?}", x)))
-                    }
-                }
-                SetField(i) => {
-                    let value = stack.pop();
-                    let data = stack.pop();
-                    match data {
-                        Data(data) => {
-                            data.fields[i as usize].set(value);
-                        }
-                        _ => return Err(Error::Message("Op SetField called on non data type".to_string()))
                     }
                 }
                 TestTag(tag) => {
@@ -1241,24 +1224,9 @@ impl <'a> VM<'a> {
                         x => panic!("Expected closure, got {:?}", x)
                     }
                 }
-                InstantiateConstrained(gi) => {
-                    let closure = {
-                        let dict = stack.pop();
-                        let func = match get_global!(self, gi as usize) {
-                            Closure(closure) => closure.function,
-                            _ => panic!()
-                        };
-                        Closure(self.new_closure_and_collect(&mut stack, func, &mut [dict]))
-                    };
-                    stack.push(closure);
-                }
                 PushUpVar(i) => {
                     let v = stack.get_upvar(i).clone();
                     stack.push(v);
-                }
-                StoreUpVar(i) => {
-                    let v = stack.pop();
-                    stack.set_upvar(i, v);
                 }
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
