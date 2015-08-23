@@ -11,6 +11,7 @@ use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType};
 use check::typecheck::{Typecheck, TypeEnv, TypeInfos, TcIdent, TcType};
+use check::macros::{MacroEnv, MacroExpander};
 use check::Typed;
 use types::*;
 use base::fixed::{FixedMap, FixedVec};
@@ -458,7 +459,8 @@ pub struct VM<'a> {
     pub gc: RefCell<Gc>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value<'a>>>,
-    pub stack: RefCell<Stack<'a>>
+    pub stack: RefCell<Stack<'a>>,
+    macros: MacroEnv<VM<'a>>
 }
 
 pub type VMResult<T> = Result<T, Error>;
@@ -626,12 +628,14 @@ impl <'a> VM<'a> {
             gc: RefCell::new(Gc::new()),
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new()),
-            rooted_values: RefCell::new(Vec::new())
+            rooted_values: RefCell::new(Vec::new()),
+            macros: MacroEnv::new()
         };
         vm.add_types()
             .unwrap();
         vm.add_primitives()
             .unwrap();
+        vm.macros.insert(vm.intern("import"), ::import::Import::new());
         vm
     }
 
@@ -1387,21 +1391,17 @@ fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
     });
 }
 
+fn macro_expand(vm: &VM, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Box<StdError>> {
+    let macros = MacroExpander::new(vm, &vm.macros);
+    try!(macros.run(expr));
+    Ok(())
+}
+
 pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>> {
-    let mut expr = try!(parse_expr(input, vm));
     let (type_infos, function, typ) = {
-        let env = vm.env();
-        let (typ, type_infos) = {
-            let mut interner = vm.interner.borrow_mut();
-            let mut gc = vm.gc.borrow_mut();
-            let mut tc = Typecheck::new(&mut interner, &mut gc);
-            tc.add_environment(&env);
-            let typ = try!(tc.typecheck_expr(&mut expr)
-                           .map_err(|errors| ::check::error::in_file(name.into(), errors)));
-            (typ, tc.type_infos)
-        };
+        let (expr, typ, type_infos) = try!(typecheck_expr(vm, input));
         let mut function = {
-            let env = (&env, &type_infos);
+            let env = (vm.env(), &type_infos);
             let mut interner = vm.interner.borrow_mut();
             let mut gc = vm.gc.borrow_mut();
             let mut compiler = Compiler::new(&env, &mut interner, &mut gc);
@@ -1438,20 +1438,21 @@ pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, Box<StdEr
     let mut gc = vm.gc.borrow_mut();
     Ok(try!(::parser::parse_tc(&mut gc, &mut interner, input)))
 }
-pub fn typecheck_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<(ast::LExpr<TcIdent>, TypeInfos), Box<StdError>> {
+pub fn typecheck_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<(ast::LExpr<TcIdent>, TcType, TypeInfos), Box<StdError>> {
     let mut expr = try!(parse_expr(&expr_str, vm));
+    try!(macro_expand(vm, &mut expr));
     let env = vm.env();
     let mut interner = vm.interner.borrow_mut();
     let mut gc = vm.gc.borrow_mut();
     let mut tc = Typecheck::new(&mut interner, &mut gc);
     tc.add_environment(&env);
-    try!(tc.typecheck_expr(&mut expr));
-    Ok((expr, tc.type_infos))
+    let typ = try!(tc.typecheck_expr(&mut expr));
+    Ok((expr, typ, tc.type_infos))
 }
 
 pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Box<StdError>> {
     let mut function = {
-        let (expr, type_infos) = try!(typecheck_expr(vm, expr_str));
+        let (expr, _, type_infos) = try!(typecheck_expr(vm, expr_str));
         let env = (vm.env(), &type_infos);
         let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();

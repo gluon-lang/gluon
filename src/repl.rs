@@ -7,7 +7,7 @@ use vm::api::{VMFunction, IO, primitive};
 fn type_of_expr(vm: &VM) -> Status {
     let closure: &Fn(_) -> _ = &|args: RootStr| -> IO<String> {
         IO::Value(match typecheck_expr(vm, &args) {
-            Ok((expr, infos)) => {
+            Ok((expr, _, infos)) => {
                 let ref env = (vm.env(), infos);
                 format!("{}", expr.env_type_of(env))
             }
@@ -52,7 +52,6 @@ pub fn run() -> Result<(), Box<StdError>> {
         find_type_info => primitive::<fn (String) -> IO<String>>(find_type_info)
     )));
     try!(load_file(&vm, "std/prelude.hs"));
-    try!(load_file(&vm, "std/map.hs"));
     try!(load_file(&vm, "std/repl.hs"));
     Ok(())
 }

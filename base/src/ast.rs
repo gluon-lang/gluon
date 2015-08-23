@@ -31,6 +31,15 @@ pub struct TcIdent<Id> {
     pub name: Id
 }
 impl <Id> TcIdent<Id> {
+    pub fn new(name: Id) -> TcIdent<Id> {
+        TcIdent {
+            typ: Type::variable(TypeVariable {
+                id: 0,
+                kind: Rc::new(Kind::Variable(0))
+            }),
+            name: name
+        }
+    }
     pub fn id(&self) -> &Id {
         &self.name
     }

@@ -1,3 +1,5 @@
+let map = import "std/map.hs"
+in
 let { (>>=), return, (>>), join, map = fmap, lift2, forM_ } = prelude.make_Monad prelude.monad_IO
 and { (==) } = prelude.eq_String
 and (++) = string.append

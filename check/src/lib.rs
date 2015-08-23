@@ -19,6 +19,7 @@ pub mod typecheck;
 mod typed;
 pub mod error;
 mod kindcheck;
+pub mod macros;
 mod substitution;
 mod scoped_map;
 
