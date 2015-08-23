@@ -1315,10 +1315,10 @@ fn binop_float<F>(stack: &mut StackFrame, f: F)
 
 fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
     debug!("{:?}: {:?} {:?}", index, instr, match instr {
-        Push(i) => stack[i],
-        NewClosure(..) => Int(stack.len() as isize),
-        MakeClosure(..) => Int(stack.len() as isize),
-        _ => Int(0)
+        Push(i) => stack.get(i as usize).cloned(),
+        NewClosure(..) => Some(Int(stack.len() as isize)),
+        MakeClosure(..) => Some(Int(stack.len() as isize)),
+        _ => None
     });
 }
 
@@ -1738,6 +1738,18 @@ in y
         let mut vm = VM::new();
         let result = run_expr(&mut vm, text);
         assert_eq!(result, Int(1));
+    }
+
+    #[test]
+    fn let_not_in_tail_position() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+1 #Int+ let x = 2 in x
+"#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert_eq!(result, Int(3));
     }
 
     #[test]
