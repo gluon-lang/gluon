@@ -770,42 +770,59 @@ impl <'a> Typecheck<'a> {
                 self.unify(&match_type, return_type)
             }
             ast::Pattern::Record(ref record) => {
-
-                let record_type = {
-                    let fields: Vec<_> = record.iter().map(|t| t.0).collect();
-                    //actual_type is the record (not hidden behind an alias)
-                    let (mut typ, mut actual_type) = match self.find_record(&fields)
-                                  .map(|t| (t.0.clone(), t.1.clone())) {
-                        Ok(typ) => typ,
-                        Err(_) => {
-                            let t = Type::record(record.iter()
-                                .map(|field|
-                                    ast::Field {
-                                        name: field.0,
-                                        typ: self.subs.new_var()
-                                    }
-                                )
-                                .collect());
-                            (t.clone(), t)
+                let mut match_type = self.remove_alias(match_type);
+                let mut types = Vec::new();
+                let new_type = match *match_type {
+                    Type::Record(ref expected_fields) => {
+                        for pattern_field in record {
+                            let expected_field = try!(expected_fields.iter()
+                                .find(|expected_field| pattern_field.0 == expected_field.name)
+                                .ok_or(UndefinedField(match_type.clone(), pattern_field.0)));
+                            let var = self.subs.new_var();
+                            types.push(var.clone());
+                            try!(self.unify(&var, expected_field.typ.clone()));
                         }
-                    };
-                    typ = self.subs.instantiate(&typ);
-                    actual_type = self.subs.instantiate_(&actual_type);
-                    try!(self.unify(&typ, match_type));
-                    actual_type
-                };
-                match *record_type {
-                    Type::Record(ref types) => {
-                        for (&(mut name, ref bind), field) in record.iter().zip(types) {
-                            if let Some(bind_name) = *bind {
-                                name = bind_name;
-                            }
-                            self.stack_var(name, field.typ.clone());
-                        }
+                        None
                     }
-                    _ => panic!("Expected record found {}", record_type)
+                    _ => {
+                        let fields: Vec<_> = record.iter().map(|t| t.0).collect();
+                        //actual_type is the record (not hidden behind an alias)
+                        let (mut typ, mut actual_type) = match self.find_record(&fields)
+                                .map(|t| (t.0.clone(), t.1.clone())) {
+                            Ok(typ) => typ,
+                            Err(_) => {
+                                let t = Type::record(record.iter()
+                                    .map(|field|
+                                        ast::Field {
+                                            name: field.0,
+                                            typ: self.subs.new_var()
+                                        }
+                                    )
+                                    .collect());
+                                (t.clone(), t)
+                            }
+                        };
+                        typ = self.subs.instantiate_(&typ);
+                        actual_type = self.subs.instantiate_(&actual_type);
+                        try!(self.unify(&match_type, typ));
+                        match *actual_type {
+                            Type::Record(ref record_types) => {
+                                types.extend(record_types.iter().map(|f| f.typ.clone()));
+                            }
+                            _ => panic!("Expected record found {}", match_type)
+                        }
+                        Some(actual_type)
+                    }
+                };
+                match_type = new_type.unwrap_or(match_type);
+                for (field, field_type) in record.iter().zip(types) {
+                    let (mut name, ref bind) = *field;
+                    if let Some(bind_name) = *bind {
+                        name = bind_name;
+                    }
+                    self.stack_var(name, field_type);
                 }
-                Ok(record_type)
+                Ok(match_type)
             }
             ast::Pattern::Identifier(ref mut id) => {
                 self.stack_var(id.id().clone(), match_type.clone());
@@ -1095,6 +1112,17 @@ impl <'a> Typecheck<'a> {
         })
     }
 
+    fn remove_alias(&self, typ: TcType) -> TcType {
+        let x = match *typ {
+            Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+                self.type_of_alias(id, args)
+                    .unwrap_or_else(|_| None)
+            }
+            _ => None
+        };
+        x.unwrap_or(typ)
+    }
+
     fn type_of_alias(&self, id: InternedStr, arguments: &[TcType]) -> Result<Option<TcType>, TypeError> {
         let (args, typ) = {
             let (args, typ) = try!(self.find_type_info(&id));
@@ -1373,7 +1401,7 @@ mod tests {
                 Err(err) => assert!(err.errors.iter().any(|e| match *e {
                                 ast::Located { value: $id(..), .. } => true,
                                 _ => false
-                            }), "Found an error but expected {}", stringify!($id))
+                            }), "Found errors:\n{}\nbut expected {}", err, stringify!($id))
             }
         }}
     }
@@ -1654,7 +1682,7 @@ case { x = 1 } of
     | { x, y } -> 1
 ";
         let result = typecheck(text);
-        assert_err!(result, TypeMismatch);
+        assert_err!(result, UndefinedField);
     }
 
     #[test]
@@ -1758,6 +1786,19 @@ in { monad_State }
 ";
         let result = typecheck(text);
         assert_pass!(result);
+    }
+
+    ///Test that not all fields are required when unifying record patterns
+    #[test]
+    fn partial_pattern() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+let { y } = { x = 1, y = "" }
+in y
+"#;
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ("String")));
     }
 
     #[test]
