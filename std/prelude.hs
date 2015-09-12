@@ -234,8 +234,6 @@ let monad_IO: Monad IO = {
 } in
 let make_Monad m =
     let { (>>=), return } = m
-    //TODO this should not require a second binding
-    and bind = m.(>>=)
     in
     let (>>) l r = l >>= \_ -> r
     in
@@ -249,7 +247,7 @@ let make_Monad m =
         (>>),
         join = \mm -> mm >>= id,
         map = \x f -> x >>= (\y -> return (f x)),
-        lift2 = \f lm rm -> bind lm (\l -> rm >>= \r -> f l r),
+        lift2 = \f lm rm -> lm >>= \l -> rm >>= \r -> f l r,
         forM_
     }
 in

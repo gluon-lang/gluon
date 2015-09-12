@@ -584,10 +584,10 @@ impl <'a> Typecheck<'a> {
                         //in the expression
                         try!(self.unify(&TcType::from(bind.type_of().clone()), typ));
                     }
-                    //Once all variables inside the let has been unified we can quantify them
-                    for bind in bindings {
-                        self.replace_vars(level, &mut bind.expression);
-                    }
+                }
+                //Once all variables inside the let has been unified we can quantify them
+                for bind in bindings {
+                    self.replace_vars(level, &mut bind.expression);
                 }
                 debug!("Typecheck `in`");
                 let result = self.typecheck(body);
@@ -636,7 +636,7 @@ impl <'a> Typecheck<'a> {
                             .find(|field| field.name == *field_access.id())
                             .map(|field| field.typ.clone());
                         field_access.typ = match field_type {
-                            Some(typ) => typ,
+                            Some(typ) => self.subs.instantiate(&typ),
                             None => return Err(UndefinedField(typ.clone(), field_access.name.clone()))
                         };
                         Ok(field_access.typ.clone())
@@ -1162,7 +1162,7 @@ impl Substitution<TcType> {
         self.instantiate_(typ)
     }
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
-        instantiate(typ.clone(), |id| self.variable_for2(id))
+        instantiate(typ.clone(), |id| Some(self.variable_for2(id)))
     }
 
     fn instantiate_with(&self,
@@ -1177,20 +1177,21 @@ impl Substitution<TcType> {
             args.iter().zip(arguments)
                 .find(|&(arg, _)| arg.id == gen.id)
                 .map(|(_, typ)| typ.clone())
-                .unwrap_or_else(|| self.variable_for2(gen))
         })
     }
 }
 
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-where F: FnMut(&ast::Generic<InternedStr>) -> TcType {
+where F: FnMut(&ast::Generic<InternedStr>) -> Option<TcType> {
     debug!("Instantiate {}", typ);
     ast::walk_move_type(typ, &mut |typ| {
         match *typ {
             Type::Generic(ref x) => {
                 let var = f(x);
-                debug!("Bind generic {} -> {}", x, var);
-                Some(var)
+                if let Some(ref var) = var {
+                    debug!("Bind generic {} -> {}", x, var);
+                }
+                var
             }
             _ => None
         }
@@ -1368,7 +1369,6 @@ fn get_return_type(env: &TypeEnv, alias_type: TcType, arg_count: usize) -> TcTyp
                     args.iter().zip(arguments)
                         .find(|&(arg, _)| arg.id == gen.id)
                         .map(|(_, typ)| typ.clone())
-                        .expect("Bound variable")
                 });
                 get_return_type(env, typ, arg_count)
 
