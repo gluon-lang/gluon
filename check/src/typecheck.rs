@@ -1,7 +1,5 @@
-use std::any::Any;
 use std::collections::HashMap;
 use std::convert::AsRef;
-use std::error::Error as StdError;
 use std::fmt;
 use std::mem;
 use std::rc::Rc;
@@ -13,6 +11,7 @@ use base::interner::{Interner, InternedStr};
 use base::gc::Gc;
 use kindcheck;
 use substitution::{Substitution, Substitutable};
+use error::Errors;
 
 use self::TypeError::*;
 
@@ -134,7 +133,6 @@ impl TypeInfos {
     }
 }
 
-
 fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcType) -> Option<TcType> {
     let mut result = HashMap::new();
     if find_real_type_(id_rhs_type, real_type, &mut result) {
@@ -151,6 +149,7 @@ fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcT
         None
     }
 }
+
 fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut HashMap<InternedStr, &'a TcType>) -> bool {
     match (&**id_rhs_type, &**real_type) {
         (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
@@ -233,38 +232,6 @@ pub struct Typecheck<'a> {
     stack: ScopedMap<InternedStr, TcType>,
     subs: Substitution<TcType>,
     errors: Errors<ast::Located<TypeError>>
-}
-
-#[derive(Debug, PartialEq)]
-struct Errors<T> {
-    errors: Vec<T>
-}
-
-impl <T> Errors<T> {
-    fn new() -> Errors<T> {
-        Errors { errors: Vec::new() }
-    }
-    fn has_errors(&self) -> bool {
-        self.errors.len() != 0
-    }
-    fn error(&mut self, t: T) {
-        self.errors.push(t);
-    }
-}
-
-impl <T: fmt::Display> fmt::Display for Errors<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for error in self.errors.iter() {
-            try!(write!(f, "{}\n", error));
-        }
-        Ok(())
-    }
-}
-
-impl <T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
-    fn description(&self) -> &str {
-        "Errors"
-    }
 }
 
 pub type StringErrors = Errors<ast::Located<TypeError>>;
