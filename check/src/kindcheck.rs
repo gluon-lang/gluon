@@ -1,4 +1,6 @@
 use std::rc::Rc;
+use std::fmt;
+
 use base::ast::{Type, Kind};
 use typecheck::TcType;
 use base::ast;
@@ -11,6 +13,15 @@ pub enum Error {
     StringError(&'static str)
 }
 use self::Error::*;
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            KindMismatch(ref expected, ref actual) => write!(f, "Kind mismatch\nExpected: {}\nFound: {}", expected, actual),
+            StringError(s) => write!(f, "{}", s)
+        }
+    }
+}
 
 type Result<T> = ::std::result::Result<T, Error>;
 

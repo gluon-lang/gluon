@@ -30,7 +30,7 @@ enum TypeError {
     UndefinedField(TcType, InternedStr),
     Occurs(TypeVariable, TcType),
     IndexError(TcType),
-    PatternError(TcType),
+    PatternError(TcType, usize),
     KindError(kindcheck::Error),
     StringError(&'static str)
 }
@@ -49,10 +49,12 @@ impl fmt::Display for TypeError {
             NotAFunction(ref typ) => write!(f, "`{}` is not a function", typ),
             TypeMismatch(ref l, ref r) => write!(f, "Expected: {}\nFound: {} does not unify", l, r),
             UndefinedType(name) => write!(f, "Type `{}` is not defined", name),
-            StringError(name) => write!(f, "{}", name),
-            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`", var, typ),
             UndefinedField(ref typ, ref field) => write!(f, "Type `{}` does not have the field `{}`", typ, field),
-            _ => write!(f, "{:?}", self)
+            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`", var, typ),
+            IndexError(ref typ) => write!(f, "Type {} cannot be indexed", typ),
+            PatternError(ref typ, expected_len) => write!(f, "Type {} has {} to few arguments", typ, expected_len),
+            KindError(ref err) => write!(f, "{}", err),
+            StringError(name) => write!(f, "{}", name),
         }
     }
 }
@@ -809,7 +811,7 @@ impl <'a> Typecheck<'a> {
                 self.stack_var(args[0].id().clone(), argument_types.last().unwrap().clone());
                 self.typecheck_pattern_rec(&args[1..], return_type.clone())
             }
-            _ => Err(PatternError(typ.clone()))
+            _ => Err(PatternError(typ.clone(), args.len()))
         }
     }
 
