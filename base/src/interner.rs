@@ -3,6 +3,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Deref;
+use std::slice;
 use ast::{AstId, IdentEnv, ASTType};
 
 use gc::{GcPtr, Gc, DataDef, Traverseable};
@@ -65,12 +66,13 @@ unsafe impl <'a> DataDef for &'a str {
     fn initialize(self, ptr: *mut str) {
         let ptr: &mut [u8] = unsafe { mem::transmute::<*mut str, &mut [u8]>(ptr) };
         assert_eq!(self.len(), ptr.len());
-        ::std::slice::bytes::copy_memory(self.as_bytes(), ptr);
+        for (to, from) in ptr.iter_mut().zip(self.as_bytes()) {
+            *to = *from;
+        }
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut str {
         unsafe {
-            use std::raw::Slice;
-            let x = Slice { data: ptr as *mut u8, len: self.len() };
+            let x = slice::from_raw_parts_mut(ptr as *mut u8, self.len());
             mem::transmute(x)
         }
     }

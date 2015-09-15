@@ -16,16 +16,16 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::iter::FromIterator;
 use std::rc::Rc;
-use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser, Lex, BetweenChar};
+
+use base::ast;
+use base::ast::*;
+use base::gc::Gc;
+use base::interner::{Interner, InternedStr};
+
 use combine::primitives::{Consumed, Stream, Error, Info};
 use combine::combinator::{SepBy, Token};
 use combine::*;
-
-pub use base::{ast, interner, gc};
-
-use ast::*;
-use gc::Gc;
-use interner::{Interner, InternedStr};
+use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser, Lex, BetweenChar};
 
 /// Parser passes the environment to each parser function
 struct LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T>
@@ -51,8 +51,8 @@ impl <'a, 'b, F, Id, I, O> Parser for LanguageParser<'a, 'b, I, F, O>
         , I::Range: 'b
         , F: FnMut(&str) -> Id
         , Id: AstId + Clone {
-    type Output = O;
     type Input = I;
+    type Output = O;
     fn parse_state(&mut self, input: State<I>) -> ParseResult<O, I> {
         (self.parser)(self.env, input)
     }

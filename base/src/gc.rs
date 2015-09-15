@@ -3,11 +3,31 @@ use std::mem;
 use std::ptr;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
-use std::rt::heap::{allocate, deallocate};
 use std::ops::{Deref, DerefMut};
 use std::cell::Cell;
 use std::any::Any;
 
+
+#[inline]
+unsafe fn allocate(size: usize) -> *mut u8 {
+    //Allocate an extra element if it does not fit exactly
+    let cap = size / mem::size_of::<f64>() + (if size % mem::size_of::<f64>() != 0 { 1 } else { 0 });
+    ptr_from_vec(Vec::<f64>::with_capacity(cap))
+}
+
+#[inline]
+fn ptr_from_vec(mut buf: Vec<f64>) -> *mut u8 {
+    let ptr = buf.as_mut_ptr();
+    mem::forget(buf);
+
+    ptr as *mut u8
+}
+
+#[inline]
+unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
+    let cap = old_size / mem::size_of::<f64>() + (if old_size % mem::size_of::<f64>() != 0 { 1 } else { 0 });
+    Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
+}
 
 #[derive(Debug)]
 pub struct Gc {
@@ -59,7 +79,7 @@ impl AllocPtr {
     fn new(value_size: usize) -> AllocPtr {
         unsafe {
             let alloc_size = GcHeader::value_offset() + value_size;
-            let ptr = allocate(alloc_size, mem::align_of::<f64>()) as *mut GcHeader;
+            let ptr = allocate(alloc_size) as *mut GcHeader;
             ptr::write(ptr, GcHeader {
                 next: None,
                 value_size: Cell::new(value_size),
@@ -82,7 +102,7 @@ impl Drop for AllocPtr {
         unsafe {
             ptr::read(&*self.ptr);
             let size = GcHeader::value_offset() + self.value_size.get();
-            deallocate(self.ptr as *mut u8, size, mem::align_of::<f64>());
+            deallocate(self.ptr as *mut u8, size);
         }
     }
 }
@@ -260,9 +280,6 @@ impl Gc {
 
     pub fn alloc<T: ?Sized, D>(&mut self, def: D) -> GcPtr<T>
         where D: DataDef<Value=T> {
-        debug!("ALLOC: {}, size: {}", unsafe {
-            ::std::intrinsics::type_name::<T>()
-        }, def.size());
 
         let mut ptr = AllocPtr::new(def.size());
         ptr.next = self.values.take();
