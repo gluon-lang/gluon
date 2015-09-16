@@ -5,6 +5,7 @@ extern crate env_logger;
 
 extern crate base;
 
+#[cfg(test)]
 extern crate parser;
 
 pub use base::interner::InternedStr;
