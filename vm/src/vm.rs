@@ -1,12 +1,12 @@
 use std::cell::{Cell, RefCell, Ref};
 use std::error::Error as StdError;
 use std::fmt;
-use std::intrinsics::type_name;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::Deref;
 use std::rc::Rc;
+use std::slice;
 use base::ast;
 use base::ast::{Type, ASTType};
 use check::typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
@@ -98,8 +98,7 @@ unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut ClosureData<'a> {
         let x = unsafe {
-            use std::raw::Slice;
-            let x = Slice { data: &*ptr, len: self.1.len() };
+            let x = slice::from_raw_parts_mut(&mut *ptr, self.1.len());
             ::std::mem::transmute(x)
         };
         x
@@ -245,8 +244,7 @@ unsafe impl <'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut PartialApplicationData<'a> {
         unsafe {
-            use std::raw::Slice;
-            let x = Slice { data: &*ptr, len: self.1.len() };
+            let x = slice::from_raw_parts_mut(&mut *ptr, self.1.len());
             ::std::mem::transmute(x)
         }
     }
@@ -556,8 +554,7 @@ unsafe impl <'a, 'b> DataDef for Def<'a, 'b> {
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {
         unsafe {
-            use std::raw::Slice;
-            let x = Slice { data: &*ptr, len: self.elems.len() };
+            let x = slice::from_raw_parts_mut(&mut *ptr, self.elems.len());
             ::std::mem::transmute(x)
         }
     }
@@ -736,10 +733,7 @@ impl <'a> VM<'a> {
     pub fn get_type<T: ?Sized + Any>(&self) -> &TcType {
         let id = TypeId::of::<T>();
         self.typeids.get(&id)
-            .unwrap_or_else(|| {
-                let name = unsafe { type_name::<T>() };
-                panic!("Expected type {} to be inserted before get_type call", name)
-            })
+            .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call"))
     }
 
     pub fn run_function(&self, cf: &Global<'a>) -> VMResult<Value<'a>> {
