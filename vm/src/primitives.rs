@@ -19,31 +19,14 @@ pub fn array_length(vm: &VM) -> Status {
 pub fn string_length(s: RootStr) -> VMInt {
     s.len() as VMInt
 }
-pub fn string_append(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
-    match (&stack[0], &stack[1]) {
-        (&Value::String(l), &Value::String(r)) => {
-            let mut s = String::with_capacity(l.len() + r.len());
-            s.push_str(&l);
-            s.push_str(&r);
-            stack.push(Value::String(vm.gc.borrow_mut().alloc(&s[..])));
-        }
-        _ => panic!()
-    }
-    Status::Ok
+pub fn string_append(l: RootStr, r: RootStr) -> String {
+    let mut s = String::with_capacity(l.len() + r.len());
+    s.push_str(&l);
+    s.push_str(&r);
+    s
 }
-pub fn string_eq(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
-    match (&stack[0], &stack[1]) {
-        (&Value::String(l), &Value::String(r)) => {
-            let b = if l == r { 1 } else { 0 };
-            stack.pop();
-            stack.pop();
-            stack.push(Value::Int(b));
-        }
-        _ => panic!()
-    }
-    Status::Ok
+pub fn string_eq(l: RootStr, r: RootStr) -> bool {
+    *l == *r
 }
 
 pub fn string_compare(l: RootStr, r: RootStr) -> VMInt {

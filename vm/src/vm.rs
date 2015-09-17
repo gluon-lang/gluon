@@ -15,7 +15,7 @@ use base::interner::{Interner, InternedStr};
 use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move};
 use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
 use fixed::*;
-use api::define_function;
+use api::{define_function, Pushable};
 use lazy::Lazy;
 
 use self::Named::*;
@@ -366,6 +366,7 @@ impl <'a> Deref for RootStr<'a> {
     }
 }
 
+#[derive(Eq, PartialEq)]
 pub enum Status {
     Ok,
     Error
@@ -630,14 +631,16 @@ impl <'a> VM<'a> {
         let array_a = Type::array(a.clone());
         let io = |t| ASTType::from(ast::type_con(self.intern("IO"), vec![t]));
         try!(self.extern_function("array_length", vec![array_a.clone()], Type::int().clone(), Box::new(prim::array_length)));
-        try!(define_function(self, "string_length", f1(prim::string_length)));
-        try!(define_function(self, "string_find", f2(prim::string_find)));
-        try!(define_function(self, "string_rfind", f2(prim::string_rfind)));
-        try!(define_function(self, "string_trim", f1(prim::string_trim)));
-        try!(define_function(self, "string_compare", f2(prim::string_compare)));
-        try!(self.extern_function("string_append", vec![Type::string().clone(), Type::string().clone()], Type::string().clone(), Box::new(prim::string_append)));
-        try!(self.extern_function("string_eq", vec![Type::string().clone(), Type::string().clone()], Type::bool().clone(), Box::new(prim::string_eq)));
-        try!(define_function(self, "string_slice", f3(prim::string_slice)));
+        try!(self.define_global("string", record!(
+            length => f1(prim::string_length),
+            find => f2(prim::string_find),
+            rfind => f2(prim::string_rfind),
+            trim => f1(prim::string_trim),
+            compare => f2(prim::string_compare),
+            append => f2(prim::string_append),
+            eq => f2(prim::string_eq),
+            slice => f3(prim::string_slice)
+        )));
         try!(self.extern_function("show_Int_prim", vec![Type::int().clone()], Type::string().clone(), Box::new(prim::show)));
         try!(self.extern_function("show_Float_prim", vec![Type::float().clone()], Type::string().clone(), Box::new(prim::show)));
         try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
@@ -789,6 +792,30 @@ impl <'a> VM<'a> {
                     args: num_args,
                     function: f
                 }))))
+        };
+        self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
+        self.globals.push(global);
+        Ok(())
+    }
+
+    pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
+    where T: Pushable<'a> {
+        let id = self.intern(name);
+        if self.names.borrow().contains_key(&id) {
+            return Err(Error::Message(format!("{} is already defined", name)))
+        }
+        let (status, value) = {
+            let mut stack = StackFrame::new(self.stack.borrow_mut(), 0, None);
+            let status = value.push(self, &mut stack);
+            (status, stack.pop())
+        };
+        if status == Status::Error {
+            return Err(Error::Message(format!("{:?}", value)));
+        }
+        let global = Global {
+            id: id,
+            typ: T::make_type(self),
+            value: Cell::new(value),
         };
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(global);
@@ -1636,7 +1663,7 @@ case A of
 test_expr!{ record_pattern,
 r#"
 case { x = 1, y = "abc" } of
-    | { x, y = z } -> x #Int+ string_length z
+    | { x, y = z } -> x #Int+ string.length z
 "#,
 Int(4)
 }
@@ -1648,7 +1675,7 @@ in
 let a = { x = 10, y = "abc" }
 in
 let {x, y = z} = a
-in x + string_length z
+in x + string.length z
 "#,
 Int(13)
 }
@@ -1686,6 +1713,11 @@ r#"
 1 #Int+ let x = 2 in x
 "#,
 Int(3)
+}
+
+test_expr!{ module_function,
+r#"let x = string.length "test" in x"#,
+Int(4)
 }
 
     #[test]

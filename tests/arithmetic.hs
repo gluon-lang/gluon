@@ -1,4 +1,4 @@
-let (++) = string_append
+let (++) = string.append
 and { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
     = prelude.make_Monad prelude.monad_IO
 in
