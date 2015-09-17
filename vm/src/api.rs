@@ -11,7 +11,10 @@ use std::marker::PhantomData;
 
 
 #[derive(Debug)]
-pub struct IO<T>(pub T);
+pub enum IO<T> {
+    Value(T),
+    Exception(String)
+}
 
 pub trait VMType {
     type Type: ?Sized + Any;
@@ -232,7 +235,16 @@ where T::Type: Sized {
 impl <'a, T: Pushable<'a> + Any> Pushable<'a> for IO<T>
 where T::Type: Sized {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        self.0.push(vm, stack)
+        match self {
+            IO::Value(value) => {
+                value.push(vm, stack);
+                Status::Ok
+            }
+            IO::Exception(exc) => {
+                exc.push(vm, stack);
+                Status::Error
+            }
+        }
     }
 }
 

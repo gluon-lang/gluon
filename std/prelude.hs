@@ -263,10 +263,10 @@ type Show a = {
     show : a -> String
 } in
 let show_Int: Show Int = {
-    show = show_Int_prim
+    show = prim.show_Int
 } in
 let show_Float: Show Float = {
-    show = show_Float_prim
+    show = prim.show_Float
 } in
 let show_String: Show String = {
     show = \x -> x

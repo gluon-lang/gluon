@@ -6,7 +6,7 @@ use vm::api::{VMFunction, IO};
 
 fn type_of_expr(vm: &VM) -> Status {
     let closure: &Fn(_) -> _ = &|args: RootStr| -> IO<String> {
-        IO(match typecheck_expr(vm, &args) {
+        IO::Value(match typecheck_expr(vm, &args) {
             Ok((expr, infos)) => {
                 let ref env = (vm.env(), infos);
                 format!("{}", expr.env_type_of(env))
@@ -20,7 +20,7 @@ fn type_of_expr(vm: &VM) -> Status {
 fn find_type_info(vm: &VM) -> Status {
     let closure: &Fn(RootStr) -> IO<String> = &|args| {
         let args = args.trim();
-        IO(match vm.env().find_type_info(&vm.intern(args)) {
+        IO::Value(match vm.env().find_type_info(&vm.intern(args)) {
             Some((generic_args, typ)) => {
                 let fmt = || -> Result<String, ::std::fmt::Error> {
                     use std::fmt::Write;

@@ -15,7 +15,7 @@ use base::interner::{Interner, InternedStr};
 use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move};
 use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
 use fixed::*;
-use api::{define_function, Pushable};
+use api::Pushable;
 use lazy::Lazy;
 
 use self::Named::*;
@@ -617,6 +617,9 @@ impl <'a> VM<'a> {
 
     fn add_primitives(&self) -> VMResult<()> {
         use primitives as prim;
+        fn f0<R>(f: fn () -> R) -> fn () -> R {
+            f
+        }
         fn f1<A, R>(f: fn (A) -> R) -> fn (A) -> R {
             f
         }
@@ -630,7 +633,9 @@ impl <'a> VM<'a> {
         let b = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: self.intern("b") });
         let array_a = Type::array(a.clone());
         let io = |t| ASTType::from(ast::type_con(self.intern("IO"), vec![t]));
+
         try!(self.extern_function("array_length", vec![array_a.clone()], Type::int().clone(), Box::new(prim::array_length)));
+
         try!(self.define_global("string", record!(
             length => f1(prim::string_length),
             find => f2(prim::string_find),
@@ -641,8 +646,11 @@ impl <'a> VM<'a> {
             eq => f2(prim::string_eq),
             slice => f3(prim::string_slice)
         )));
-        try!(self.extern_function("show_Int_prim", vec![Type::int().clone()], Type::string().clone(), Box::new(prim::show)));
-        try!(self.extern_function("show_Float_prim", vec![Type::float().clone()], Type::string().clone(), Box::new(prim::show)));
+        try!(self.define_global("prim", record!(
+            show_Int => f1(prim::show_int),
+            show_Float => f1(prim::show_float)
+        )));
+
         try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
         try!(self.extern_function("error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
         try!(self.extern_function("trace", vec![a.clone()], Type::unit(), Box::new(prim::trace)));
@@ -657,24 +665,17 @@ impl <'a> VM<'a> {
                                   Box::new(::lazy::force)));
 
         //IO functions
-        try!(define_function(self, "print_int", f1(prim::print_int)));
+        try!(self.define_global("io", record!(
+            print_int => f1(prim::print_int),
+            read_file => f1(prim::read_file),
+            read_line => f0(prim::read_line),
+            print => f1(prim::print)
+        )));
         let catch_fn = Type::function(vec![Type::string().clone()], io(a.clone()));
         try!(self.extern_function_io("catch_IO",
                                         3,
                                         Type::function(vec![io(a.clone()), catch_fn], io(a.clone())),
                                         Box::new(prim::catch_io)));
-        try!(self.extern_function_io("read_file",
-                                        2,
-                                        Type::function(vec![Type::string().clone()], io(Type::string().clone())),
-                                        Box::new(prim::read_file)));
-        try!(self.extern_function_io("read_line",
-                                        1,
-                                        io(Type::string().clone()),
-                                        Box::new(prim::read_line)));
-        try!(self.extern_function_io("print",
-                                        2,
-                                        Type::function(vec![Type::string().clone()], io(Type::unit().clone())),
-                                        Box::new(prim::print)));
         try!(self.extern_function_io("run_expr",
                                         2,
                                         Type::function(vec![Type::string().clone()], io(Type::string().clone())),
@@ -1635,13 +1636,13 @@ Int(40)
 
 test_expr!{ print_int,
 r"
-print_int 123
+io.print_int 123
 "
 }
 
 test_expr!{ no_io_eval,
 r#"
-let x = io_bind (print_int 1) (\x -> error "NOOOOOOOO")
+let x = io_bind (io.print_int 1) (\x -> error "NOOOOOOOO")
 in { x }
 "#
 }
