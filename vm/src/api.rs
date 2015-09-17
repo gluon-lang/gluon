@@ -16,6 +16,62 @@ pub enum IO<T> {
     Exception(String)
 }
 
+pub struct Primitive<F> {
+    function: fn(&VM) -> Status,
+    _typ: PhantomData<F>
+}
+
+pub fn primitive<F>(function: fn(&VM) -> Status) -> Primitive<F> {
+    Primitive { function: function, _typ: PhantomData }
+}
+
+#[derive(Clone, Copy)]
+pub struct Generic<'a, T>(Value<'a>, PhantomData<T>);
+
+impl <'a, T: VMType> VMType for Generic<'a, T> {
+    type Type = T::Type;
+
+    fn extra_args() -> VMIndex { T::extra_args() }
+}
+impl <'a, T: VMType> Pushable<'a> for Generic<'a, T> {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        stack.push(self.0);
+        Status::Ok
+    }
+}
+impl <'a, 'vm, T> Getable<'a, 'vm> for Generic<'a, T> {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<Generic<'a, T>> {
+        Some(Generic(value, PhantomData))
+    }
+}
+
+pub mod generic {
+    use super::VMType;
+    use base::ast;
+    use check::typecheck::{TcType, Type};
+    use vm::VM;
+    use std::rc::Rc;
+
+    macro_rules! make_generics {
+        ($($i: ident)+) => {
+            $(
+            #[derive(Clone, Copy)]
+            pub struct $i;
+            impl VMType for $i {
+                type Type = $i;
+                fn make_type(vm: &VM) -> TcType {
+                    let s = stringify!($i);
+                    let lower  = [s.as_bytes()[0] + 32];
+                    let lower_str = unsafe { ::std::str::from_utf8_unchecked(&lower) };
+                    Type::generic(ast::Generic { id: vm.intern(lower_str), kind: Rc::new(ast::Kind::Star) })
+                }
+            }
+            )+
+        }
+    }
+    make_generics!{A B C D E F G H I J K L M N O P Q R X Y Z}
+}
+
 pub trait VMType {
     type Type: ?Sized + Any;
 
@@ -384,6 +440,34 @@ macro_rules! record {
     }
 }
 
+impl <F: VMType> VMType for Primitive<F> {
+    type Type = F::Type;
+    fn make_type(vm: &VM) -> TcType {
+        F::make_type(vm)
+    }
+}
+
+impl <'a: 'vm, 'vm, F: FunctionType + VMType> Pushable<'a> for Primitive<F> {
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        let extern_function = unsafe {
+            //The VM guarantess that it only ever calls this function with itself which should
+            //make sure that ignoring the lifetime is safe
+            ::std::mem::transmute
+                    ::<Box<Fn(&'vm VM<'a>) -> Status + 'static>,
+                       Box<Fn(&VM<'a>) -> Status + 'static>>(Box::new(self.function))
+        };
+        let id = vm.intern("<extern>");
+        let value = Value::Function(vm.gc.borrow_mut().alloc(Move(
+            ExternFunction {
+                id: id,
+                args: F::arguments(),
+                function: extern_function
+            })));
+        stack.push(value);
+        Status::Ok
+    }
+}
+
 fn vm_type<'a, T: ?Sized + VMType>(vm: &'a VM) -> &'a Type<InternedStr> {
     vm.get_type::<T::Type>()
 }
@@ -546,9 +630,18 @@ pub fn get_function<'a, 'b, T: Get<'a, 'b>>(vm: &'a VM<'b>, name: &str) -> Optio
     Get::get_function(vm, name)
 }
 
+pub trait FunctionType {
+    fn arguments() -> VMIndex;
+}
 
 pub trait VMFunction<'a, 'vm> {
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status;
+}
+
+impl <'s, T: FunctionType> FunctionType for &'s T {
+    fn arguments() -> VMIndex {
+        T::arguments()
+    }
 }
 
 impl <'a, 'vm, 's, T> VMFunction<'a, 'vm> for &'s T
@@ -566,9 +659,9 @@ macro_rules! count {
 
 macro_rules! make_vm_function {
     ($($args:ident),*) => (
-impl <$($args: VMType + 'static ,)* R: VMType + 'static> VMType for fn ($($args),*) -> R {
+impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
-    type Type = fn ($($args),*) -> R;
+    type Type = fn ($($args::Type),*) -> R::Type;
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
@@ -600,10 +693,16 @@ impl <'a, 'vm, $($args: Getable<'a, 'vm> + VMType + 'static,)* R: Pushable<'a> +
     }
 }
 
+impl <'a, 'vm, $($args,)* R: VMType> FunctionType for fn ($($args),*) -> R {
+    fn arguments() -> VMIndex {
+        count!($($args),*) + R::extra_args()
+    }
+}
+
 impl <'a, 'vm, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for fn ($($args),*) -> R {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
-        let n_args = count!($($args),*) + R::extra_args();
+        let n_args = Self::arguments();
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0;
         $(let $args = {
@@ -615,8 +714,15 @@ impl <'a, 'vm, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm
         r.push(vm, &mut stack)
     }
 }
-impl <'a, 's, $($args: VMType + 'static,)* R: VMType + 'static> VMType for Fn($($args),*) -> R + 's {
-    type Type = fn ($($args),*) -> R;
+
+impl <'s, $($args,)* R: VMType> FunctionType for Fn($($args),*) -> R + 's {
+    fn arguments() -> VMIndex {
+        count!($($args),*) + R::extra_args()
+    }
+}
+
+impl <'a, 's, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's {
+    type Type = fn ($($args::Type),*) -> R::Type;
 
     #[allow(non_snake_case)]
     fn make_type(vm: &VM) -> TcType {
@@ -627,7 +733,7 @@ impl <'a, 's, $($args: VMType + 'static,)* R: VMType + 'static> VMType for Fn($(
 impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Fn($($args),*) -> R + 's {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
-        let n_args = count!($($args),*) + R::extra_args();
+        let n_args = Self::arguments();
         let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
         let mut i = 0;
         $(let $args = {
@@ -639,6 +745,13 @@ impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a,
         r.push(vm, &mut stack)
     }
 }
+
+impl <'s, $($args,)* R: VMType> FunctionType for Box<Fn($($args),*) -> R + 's> {
+    fn arguments() -> VMIndex {
+        count!($($args),*) + R::extra_args()
+    }
+}
+
 impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Box<Fn($($args),*) -> R + 's> {
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         (**self).unpack_and_call(vm)

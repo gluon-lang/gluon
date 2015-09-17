@@ -7,6 +7,7 @@ use std::cmp::Ordering;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::slice;
+use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType};
 use check::typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
@@ -15,7 +16,7 @@ use base::interner::{Interner, InternedStr};
 use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move};
 use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
 use fixed::*;
-use api::Pushable;
+use api::{primitive, Pushable, IO};
 use lazy::Lazy;
 
 use self::Named::*;
@@ -617,6 +618,7 @@ impl <'a> VM<'a> {
 
     fn add_primitives(&self) -> VMResult<()> {
         use primitives as prim;
+        use api::generic::A;
         fn f0<R>(f: fn () -> R) -> fn () -> R {
             f
         }
@@ -669,21 +671,11 @@ impl <'a> VM<'a> {
             print_int => f1(prim::print_int),
             read_file => f1(prim::read_file),
             read_line => f0(prim::read_line),
-            print => f1(prim::print)
+            print => f1(prim::print),
+            catch => primitive::<fn (A, fn (StdString) -> IO<A>) -> IO<A>>(prim::catch_io),
+            run_expr => primitive::<fn (StdString) -> IO<StdString>>(prim::run_expr),
+            load_script => primitive::<fn (StdString, StdString) -> IO<StdString>>(prim::load_script)
         )));
-        let catch_fn = Type::function(vec![Type::string().clone()], io(a.clone()));
-        try!(self.extern_function_io("catch_IO",
-                                        3,
-                                        Type::function(vec![io(a.clone()), catch_fn], io(a.clone())),
-                                        Box::new(prim::catch_io)));
-        try!(self.extern_function_io("run_expr",
-                                        2,
-                                        Type::function(vec![Type::string().clone()], io(Type::string().clone())),
-                                     Box::new(prim::run_expr)));
-        try!(self.extern_function_io("load_script",
-                                        3,
-                                        Type::function(vec![Type::string().clone(), Type::string().clone()], io(Type::string().clone())),
-                                     Box::new(prim::load_script)));
         
         // io_bind m f (): IO a -> (a -> IO b) -> IO b
         //     = f (m ())
