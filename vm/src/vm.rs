@@ -653,9 +653,9 @@ impl <'a> VM<'a> {
             show_Float => f1(prim::show_float)
         )));
 
-        try!(self.extern_function("#error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
-        try!(self.extern_function("error", vec![Type::string().clone()], a.clone(), Box::new(prim::error)));
-        try!(self.extern_function("trace", vec![a.clone()], Type::unit(), Box::new(prim::trace)));
+        try!(self.define_global("#error", primitive::<fn (StdString) -> A>(prim::error)));
+        try!(self.define_global("error", primitive::<fn (StdString) -> A>(prim::error)));
+        try!(self.define_global("trace", primitive::<fn (A)>(prim::trace)));
         let lazy = |t| ASTType::from(ast::type_con(self.intern("Lazy"), vec![t]));
         try!(self.extern_function("lazy",
                                   vec![Type::function(vec![Type::unit()], a.clone())],
