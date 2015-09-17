@@ -1417,44 +1417,50 @@ mod tests {
             .unwrap_or_else(|err| panic!("{}", err))
     }
 
-    #[test]
-    fn pass_function_value() {
-        let _ = ::env_logger::init();
-        let text = 
+    macro_rules! test_expr {
+        ($name: ident, $expr: expr, $value: expr) => {
+            #[test]
+            fn $name() {
+                let _ = ::env_logger::init();
+                let mut vm = VM::new();
+                let value = run_expr(&mut vm, $expr);
+                assert_eq!(value, $value);
+            }
+        };
+        ($name: ident, $expr: expr) => {
+            #[test]
+            fn $name() {
+                let _ = ::env_logger::init();
+                let mut vm = VM::new();
+                run_expr(&mut vm, $expr);
+            }
+        }
+    }
+
+test_expr!{ pass_function_value,
 r"
 let lazy: () -> Int = \x -> 42 in
 let test: (() -> Int) -> Int = \f -> f () #Int+ 10
 in test lazy
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(52));
-    }
-    #[test]
-    fn lambda() {
-        let _ = ::env_logger::init();
-        let text = 
+",
+Int(52)
+}
+
+test_expr!{ lambda,
 r"
 let y = 100 in
 let f = \x -> y #Int+ x #Int+ 1
 in f(22)
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(123));
-    }
-    #[test]
-    fn add_operator() {
-        let _ = ::env_logger::init();
-        let text = 
+",
+Int(123)
+}
+
+test_expr!{ add_operator,
 r"
 let (+) = \x y -> x #Int+ y in 1 + 2 + 3
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(6));
-    }
-
+",
+Int(6)
+}
     #[test]
     fn record() {
         let _ = ::env_logger::init();
@@ -1510,48 +1516,38 @@ in Some 1
         let value = run_expr(&mut vm, text);
         assert_eq!(value, vm.new_data(1, &mut [Int(1)]));
     }
-    #[test]
-    fn recursive_function() {
-        let _ = ::env_logger::init();
-        let text = 
+
+
+test_expr!{ recursive_function,
 r"
 let fib x = if x #Int< 3
             then 1
             else fib (x #Int- 1) #Int+ fib (x #Int- 2)
 in fib 7
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(13));
-    }
-    #[test]
-    fn mutually_recursive_function() {
-        let _ = ::env_logger::init();
-        let text = 
+",
+Int(13)
+}
+
+test_expr!{ mutually_recursive_function,
 r"
 let f x = if x #Int< 0
           then x
           else g x
 and g x = f (x #Int- 1)
 in g 3
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(-1));
-    }
-    #[test]
-    fn no_capture_self_function() {
-        let _ = ::env_logger::init();
-        let text = 
+",
+Int(-1)
+}
+
+test_expr!{ no_capture_self_function,
 r"
 let x = 2 in
 let f y = x
 in f 4
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(2));
-    }
+",
+Int(2)
+}
+
     #[test]
     fn insert_stack_slice() {
         use std::cell::Cell;
@@ -1572,80 +1568,56 @@ in f 4
             })
         });
     }
-    #[test]
-    fn partial_application() {
-        let _ = ::env_logger::init();
-        let text = 
+
+test_expr!{ partial_application,
 r"
 let f x y = x #Int+ y in
 let g = f 10
 in g 2 #Int+ g 3
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(25));
-    }
-    #[test]
-    fn partial_application2() {
-        let _ = ::env_logger::init();
-        let text = 
+",
+Int(25)
+}
+
+test_expr!{ partial_application2,
 r"
 let f x y z = x #Int+ y #Int+ z in
 let g = f 10 in
 let h = g 20
 in h 2 #Int+ g 10 3
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(55));
-    }
-    #[test]
-    fn to_many_args_application() {
-        let _ = ::env_logger::init();
-        let text = 
+",
+Int(55)
+}
+
+test_expr!{ to_many_args_application,
 r"
 let f x = \y -> x #Int+ y in
 let g = f 20
 in f 10 2 #Int+ g 3
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(35));
-    }
-    #[test]
-    fn to_many_args_partial_application_twice() {
-        let _ = ::env_logger::init();
-        let text = 
+",
+Int(35)
+}
+
+test_expr!{ to_many_args_partial_application_twice,
 r"
 let f x = \y z -> x #Int+ y #Int+ z in
 let g = f 20 5
 in f 10 2 1 #Int+ g 2
-";
-        let mut vm = VM::new();
-        let value = run_expr(&mut vm, text);
-        assert_eq!(value, Int(40));
-    }
-    #[test]
-    fn print_int() {
-        let _ = ::env_logger::init();
-        let text = 
+",
+Int(40)
+}
+
+test_expr!{ print_int,
 r"
 print_int 123
-";
-        let mut vm = VM::new();
-        run_expr(&mut vm, text);
-    }
-    #[test]
-    fn no_io_eval() {
-        let _ = ::env_logger::init();
-        let text = 
+"
+}
+
+test_expr!{ no_io_eval,
 r#"
 let x = io_bind (print_int 1) (\x -> error "NOOOOOOOO")
 in { x }
-"#;
-        let mut vm = VM::new();
-        run_expr(&mut vm, text);
-    }
+"#
+}
 
     #[test]
     fn non_exhaustive_pattern() {
@@ -1661,23 +1633,15 @@ case A of
         assert!(result.is_err());
     }
 
-    #[test]
-    fn record_pattern() {
-        let _ = ::env_logger::init();
-        let text = 
+test_expr!{ record_pattern,
 r#"
 case { x = 1, y = "abc" } of
     | { x, y = z } -> x #Int+ string_length z
-"#;
-        let mut vm = VM::new();
-        let result = run_expr(&mut vm, text);
-        assert_eq!(result, Int(4));
-    }
+"#,
+Int(4)
+}
 
-    #[test]
-    fn let_record_pattern() {
-        let _ = ::env_logger::init();
-        let text = 
+test_expr!{ let_record_pattern,
 r#"
 let (+) x y = x #Int+ y
 in
@@ -1685,66 +1649,44 @@ let a = { x = 10, y = "abc" }
 in
 let {x, y = z} = a
 in x + string_length z
-"#;
-        let mut vm = VM::new();
-        let result = run_expr(&mut vm, text);
-        assert_eq!(result, Int(13));
-    }
+"#,
+Int(13)
+}
 
-    #[test]
-    fn partial_record_pattern() {
-        let _ = ::env_logger::init();
-        let text = 
+test_expr!{ partial_record_pattern,
 r#"
 type A = { x: Int, y: Float } in
 let x = { x = 1, y = 2.0 }
 in case x of
     | { y } -> y
-"#;
-        let mut vm = VM::new();
-        let result = run_expr(&mut vm, text);
-        assert_eq!(result, Float(2.0));
-    }
+"#,
+Float(2.0)
+}
 
-    #[test]
-    fn record_let_adjust() {
-        let _ = ::env_logger::init();
-        let text = 
+test_expr!{ record_let_adjust,
 r#"
 let x = \z -> let { x, y } = { x = 1, y = 2 } in z in
 let a = 3
 in a
-"#;
-        let mut vm = VM::new();
-        let result = run_expr(&mut vm, text);
-        assert_eq!(result, Int(3));
-    }
+"#,
+Int(3)
+}
 
-    #[test]
-    fn unit_expr() {
-        let _ = ::env_logger::init();
-        let text = 
+test_expr!{ unit_expr,
 r#"
 let x = ()
 and y = 1
 in y
-"#;
-        let mut vm = VM::new();
-        let result = run_expr(&mut vm, text);
-        assert_eq!(result, Int(1));
-    }
+"#,
+Int(1)
+}
 
-    #[test]
-    fn let_not_in_tail_position() {
-        let _ = ::env_logger::init();
-        let text = 
+test_expr!{ let_not_in_tail_position,
 r#"
 1 #Int+ let x = 2 in x
-"#;
-        let mut vm = VM::new();
-        let result = run_expr(&mut vm, text);
-        assert_eq!(result, Int(3));
-    }
+"#,
+Int(3)
+}
 
     #[test]
     fn test_prelude() {
