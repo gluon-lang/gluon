@@ -1,6 +1,7 @@
 use base::ast;
+use base::gc::Move;
 use base::interner::InternedStr;
-use vm::{VM, VMResult, Status, BytecodeFunction, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
+use vm::{VM, VMResult, Status, BytecodeFunction, ExternFunction, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
 use check::typecheck::{TcType, Typed, Type};
 use types::Instruction::Call;
 use types::VMIndex;
@@ -259,6 +260,118 @@ impl <'a, 'vm> Getable<'a, 'vm> for RootStr<'vm> {
     }
 }
 
+pub struct Record<T> {
+    pub fields: T
+}
+pub struct HList<H, T>(pub H, pub T);
+
+pub trait Field {
+    fn name() -> &'static str;
+}
+
+pub trait FieldList {
+    fn len() -> VMIndex;
+
+    fn field_types(vm: &VM, fields: &mut Vec<ast::Field<InternedStr, TcType>>);
+}
+
+impl FieldList for () {
+    fn len() -> VMIndex { 0 }
+
+    fn field_types(_: &VM, _: &mut Vec<ast::Field<InternedStr, TcType>>) {
+
+    }
+}
+
+impl <F: Field, H: VMType, T> FieldList for HList<(F, H), T>
+where T: FieldList {
+    fn len() -> VMIndex { 1 + T::len() }
+
+    fn field_types(vm: &VM, fields: &mut Vec<ast::Field<InternedStr, TcType>>) {
+        fields.push(ast::Field {
+            name: vm.intern(F::name()),
+            typ: H::make_type(vm)
+        });
+        T::field_types(vm, fields);
+    }
+}
+
+pub trait PushableFieldList<'a>: FieldList {
+    fn push<'b>(self, vm: &VM<'a>, fields: &mut StackFrame<'a, 'b>);
+}
+
+impl <'a> PushableFieldList<'a> for () {
+    fn push<'b>(self, _: &VM<'a>, _: &mut StackFrame<'a, 'b>) {
+    }
+}
+
+impl <'a, F: Field, H: Pushable<'a>, T> PushableFieldList<'a> for HList<(F, H), T>
+where T: PushableFieldList<'a> {
+    fn push<'b>(self, vm: &VM<'a>, fields: &mut StackFrame<'a, 'b>) {
+        let HList((_, head), tail) = self;
+        head.push(vm, fields);
+        tail.push(vm, fields);
+    }
+}
+
+impl <A: VMType + Any + 'static, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>> {
+    type Type = Record<((&'static str, A),)>;
+    fn make_type(vm: &VM) -> TcType {
+        let len = HList::<(F, A), T>::len() as usize;
+        let mut fields = Vec::with_capacity(len);
+        HList::<(F, A), T>::field_types(vm, &mut fields);
+        ast::Type::record(fields)
+    }
+}
+impl <'a, A: Pushable<'a> + Any + 'static, F: Field, T: PushableFieldList<'a>> Pushable<'a> for Record<HList<(F, A), T>> {
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        self.fields.push(vm, stack);
+        let len = HList::<(F, A), T>::len();
+        let offset = stack.len() - len;
+        let value = vm.new_data(0, &stack[offset..]);
+        for _ in 0..len {
+            stack.pop();
+        }
+        stack.push(value);
+        Status::Ok
+    }
+}
+
+macro_rules! types {
+    ($($field: ident),*) => {
+        $(
+        #[allow(non_camel_case_types)]
+        struct $field;
+        impl $crate::api::Field for $field {
+            fn name() -> &'static str {
+                stringify!($field)
+            }
+        }
+        )*
+    }
+}
+
+macro_rules! hlist {
+    () => { () };
+    ($field: ident => $value: expr) => {
+        $crate::api::HList(($field, $value), ())
+    };
+    ($field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
+        $crate::api::HList(($field, $value), hlist!($($field_tail => $value_tail),*))
+    }
+}
+
+macro_rules! record {
+    ($($field: ident => $value: expr),*) => {
+        {
+            types!($($field),*);
+            $crate::api::Record {
+                fields: hlist!($($field => $value),*)
+            }
+        }
+    }
+}
+
 fn vm_type<'a, T: ?Sized + VMType>(vm: &'a VM) -> &'a Type<InternedStr> {
     vm.get_type::<T::Type>()
 }
@@ -448,6 +561,30 @@ impl <$($args: VMType + 'static ,)* R: VMType + 'static> VMType for fn ($($args)
     fn make_type(vm: &VM) -> TcType {
         let args = vec![$(make_type::<$args>(vm)),*];
         Type::function(args, make_type::<R>(vm))
+    }
+}
+
+impl <'a, 'vm, $($args: Getable<'a, 'vm> + VMType + 'static,)* R: Pushable<'a> + 'static> Pushable<'a> for fn ($($args),*) -> R {
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        let f = Box::new(move |vm: &'vm VM<'a>| {
+            self.unpack_and_call(vm)
+        });
+        let extern_function = unsafe {
+            //The VM guarantess that it only ever calls this function with itself which should
+            //make sure that ignoring the lifetime is safe
+            ::std::mem::transmute
+                    ::<Box<Fn(&'vm VM<'a>) -> Status + 'static>,
+                       Box<Fn(&VM<'a>) -> Status + 'static>>(f)
+        };
+        let id = vm.intern("<extern>");
+        let value = Value::Function(vm.gc.borrow_mut().alloc(Move(
+            ExternFunction {
+                id: id,
+                args: count!($($args),*) + R::extra_args(),
+                function: extern_function
+            })));
+        stack.push(value);
+        Status::Ok
     }
 }
 

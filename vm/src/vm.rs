@@ -372,9 +372,9 @@ pub enum Status {
 }
 
 pub struct ExternFunction<'a> {
-    id: InternedStr,
-    args: VMIndex,
-    function: Box<Fn(&VM<'a>) -> Status + 'static>
+    pub id: InternedStr,
+    pub args: VMIndex,
+    pub function: Box<Fn(&VM<'a>) -> Status + 'static>
 }
 
 impl <'a> PartialEq for ExternFunction<'a> {
