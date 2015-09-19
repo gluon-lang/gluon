@@ -672,7 +672,7 @@ impl <'a> VM<'a> {
             read_file => f1(prim::read_file),
             read_line => f0(prim::read_line),
             print => f1(prim::print),
-            catch => primitive::<fn (A, fn (StdString) -> IO<A>) -> IO<A>>(prim::catch_io),
+            catch => primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>(prim::catch_io),
             run_expr => primitive::<fn (StdString) -> IO<StdString>>(prim::run_expr),
             load_script => primitive::<fn (StdString, StdString) -> IO<StdString>>(prim::load_script)
         )));
@@ -1097,9 +1097,8 @@ impl <'a> VM<'a> {
                     return self.do_call(stack, args);
                 }
                 TailCall(mut args) => {
-                    let mut amount = stack.len() - args;
+                    let mut amount = stack.len() - args - 1;
                     if stack.frame.excess {
-                        amount += 1;
                         let i = stack.stack.values.len() - stack.len() as usize - 2;
                         match stack.stack.values[i] {
                             Data(excess) => {
@@ -1113,7 +1112,7 @@ impl <'a> VM<'a> {
                         }
                     }
                     stack = stack.exit_scope();
-                    debug!("{:?}", &stack[..]);
+                    debug!("{} {} {:?}", stack.len(), amount, &stack[..]);
                     let end = stack.len() - args - 1;
                     stack.remove_range(end - amount, end);
                     debug!("{:?}", &stack[..]);
@@ -1731,7 +1730,15 @@ Int(4)
         load_script(&mut vm, "prelude", &text).unwrap();
         text.clear();
         File::open("../std/map.hs").unwrap().read_to_string(&mut text).unwrap();
-        run_expr(&mut vm, &text);
+        load_script(&mut vm, "map", &text)
+            .unwrap();
+
+let text =
+r#"
+let { singleton, (++) } = map prelude.ord_String
+in singleton "test" 1 ++ singleton "asd" 2
+"#;
+        run_expr(&vm, text);
     }
 
     #[test]

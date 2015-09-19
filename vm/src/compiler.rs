@@ -505,6 +505,9 @@ impl <'a> Compiler<'a> {
                     self.load_identifier(error_fn, function);
                     function.emit_string(self.intern("Non-exhaustive pattern"));
                     function.emit(Call(1));
+                    //The stack has been increased by 1 here but it should not affect compiling the
+                    //alternatives
+                    function.stack_size -= 1;
                 }
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     match alt.pattern {
