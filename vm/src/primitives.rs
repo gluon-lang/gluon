@@ -106,16 +106,13 @@ pub fn error(_: &VM) -> Status {
 
 /// IO a -> (String -> IO a) -> IO a
 pub fn catch_io(vm: &VM) -> Status {
-    let mut stack = StackFrame::frame(vm.stack.borrow_mut(), 3, None);
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
     let frame_level = stack.stack.frames.len();
     let action = stack[0];
     stack.push(action);
     stack.push(Value::Int(0));
     match vm.execute(stack, &[Call(1)], &BytecodeFunction::empty()) {
-        Ok(new_stack) => {
-            new_stack.exit_scope();
-            Status::Ok
-        }
+        Ok(_) => Status::Ok,
         Err(err) => {
             stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
             while stack.stack.frames.len() > frame_level {
@@ -128,7 +125,7 @@ pub fn catch_io(vm: &VM) -> Status {
             stack.push(result);
             stack.push(Value::Int(0));
             match vm.execute(stack, &[Call(2)], &BytecodeFunction::empty()) {
-                Ok(stack) => { stack.exit_scope(); Status::Ok }
+                Ok(_) => Status::Ok,
                 Err(err) => {
                     stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
                     let fmt = format!("{}", err);
@@ -142,7 +139,7 @@ pub fn catch_io(vm: &VM) -> Status {
 }
 
 pub fn run_expr(vm: &VM) -> Status {
-    let mut stack = StackFrame::frame(vm.stack.borrow_mut(), 2, None);
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     let s = stack[0];
     match s {
         Value::String(s) => {
@@ -161,7 +158,6 @@ pub fn run_expr(vm: &VM) -> Status {
                     stack.push(Value::String(result));
                 }
             }
-            stack.exit_scope();
             Status::Ok
         }
         x => panic!("Expected string got {:?}", x)
@@ -169,7 +165,7 @@ pub fn run_expr(vm: &VM) -> Status {
 }
 
 pub fn load_script(vm: &VM) -> Status {
-    let mut stack = StackFrame::frame(vm.stack.borrow_mut(), 3, None);
+    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
     match (stack[0], stack[1]) {
         (Value::String(name), Value::String(expr)) => {
             drop(stack);
@@ -187,7 +183,6 @@ pub fn load_script(vm: &VM) -> Status {
                     stack.push(Value::String(result));
                 }
             }
-            stack.exit_scope();
             Status::Ok
         }
         x => panic!("Expected 2 strings got {:?}", x)

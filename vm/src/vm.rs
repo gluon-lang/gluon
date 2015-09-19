@@ -924,7 +924,12 @@ impl <'a> VM<'a> {
                 self.push(Int(0));
                 let mut stack = StackFrame::frame(self.stack.borrow_mut(), 2, None);
                 stack = try!(self.execute(stack, &[Call(1)], &BytecodeFunction::empty()));
-                return Ok(if stack.len() > 0 { stack.pop() } else { Int(0) })
+                let result = stack.pop();
+                while stack.len() > 0 {
+                    stack.pop();
+                }
+                stack.exit_scope();
+                return Ok(result);
             }
         }
         Ok(value)
@@ -951,16 +956,18 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn execute_function<'b>(&'b self, stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, Error> {
+    fn execute_function<'b>(&'b self, mut stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, Error> {
         //Make sure that the stack is not borrowed during the external function call
         //Necessary since we do not know what will happen during the function call
         assert!(stack.len() >= function.args + 1);
         let function_index = stack.len() - function.args - 1;
         debug!("------- {} {:?}", function_index, &stack[..]);
+        stack = stack.enter_scope(function.args, None);
         let StackFrame { stack, frame } = stack;
         drop(stack);
         let status = (function.function)(self);
         let mut stack = StackFrame { stack: self.stack.borrow_mut(), frame: frame };
+        stack = stack.exit_scope();
         let result = stack.pop();
         while stack.len() > function_index {
             debug!("{} {:?}", stack.len(), &stack[..]);
@@ -985,7 +992,8 @@ impl <'a> VM<'a> {
                                     , required_args: VMIndex
                                     , callable: Callable<'a>
                                     ) -> Result<StackFrame<'a, 'b>, Error> {
-        debug!("cmp {} {}", args, required_args);
+        debug!("cmp {} {} {:?} {:?}", args, required_args, callable,
+               { let function_index = stack.len() - 1 - args; &(*stack)[(function_index + 1) as usize..] });
         match args.cmp(&required_args) {
             Ordering::Equal => self.execute_callable(stack, &callable, false),
             Ordering::Less => {
@@ -1097,8 +1105,9 @@ impl <'a> VM<'a> {
                     return self.do_call(stack, args);
                 }
                 TailCall(mut args) => {
-                    let mut amount = stack.len() - args - 1;
+                    let mut amount = stack.len() - args;
                     if stack.frame.excess {
+                        amount += 1;
                         let i = stack.stack.values.len() - stack.len() as usize - 2;
                         match stack.stack.values[i] {
                             Data(excess) => {
@@ -1710,6 +1719,25 @@ Int(3)
 test_expr!{ module_function,
 r#"let x = string.length "test" in x"#,
 Int(4)
+}
+
+test_expr!{ io_print,
+r#"io.print "123" "#
+}
+
+    #[test]
+    fn run_expr_int() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"io.run_expr "123" "#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert_eq!(result, Value::String(vm.gc.borrow_mut().alloc("123")));
+    }
+
+test_expr!{ run_expr_io,
+r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
+Int(100)
 }
 
     #[test]

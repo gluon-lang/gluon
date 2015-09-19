@@ -43,6 +43,23 @@ impl <'a> Stack<'a> {
         self.values.push(v)
     }
 
+    pub fn remove_range(&mut self, from: VMIndex, to: VMIndex) {
+        let from = from as usize;
+        let to = to as usize;
+        let len = to - from;
+        let mid = from + ::std::cmp::min(self.values.len() - to, len);
+        for i in from..mid {
+            self.values[i] = self.values[i + len];
+        }
+        for i in mid..(self.values.len() - len) {
+            self.values[i] = self.values[i + len];
+        }
+        unsafe {
+            let current_len = self.values.len();
+            self.values.set_len(current_len - len as usize);
+        }
+    }
+
     pub fn len(&self) -> VMIndex {
         self.values.len() as VMIndex
     }
@@ -99,18 +116,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 
     pub fn remove_range(&mut self, from: VMIndex, to: VMIndex) {
-        let len = to - from;
-        let mid = from + ::std::cmp::min(self.len() - to, len);
-        for i in from..mid {
-            self[i] = self[i + len];
-        }
-        for i in mid..(self.len() - len) {
-            self[i] = self[i + len];
-        }
-        unsafe {
-            let current_len = self.stack.values.len();
-            self.stack.values.set_len(current_len - len as usize);
-        }
+        self.stack.remove_range(self.frame.offset + from, self.frame.offset + to);
     }
 
     pub fn set_upvar(&self, index: VMIndex, v: Value<'a>) {
@@ -147,7 +153,7 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.frames.pop().expect("Expected frame");
         let frame = self.stack.frames.last().cloned()
             .unwrap_or(Frame { offset: 0, upvars: None, instruction_index: 0, excess: false });
-        debug!("Restore {} {:?}", self.stack.frames.len(), frame);
+        debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
         StackFrame {
             stack: self.stack,
             frame: frame
@@ -170,10 +176,11 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
              upvars: Option<GcPtr<ClosureData<'a>>>
             ) -> StackFrame<'a, 'b> {
         assert!(stack.len() >= args);
+        let prev = stack.frames.last().cloned();
         let offset = stack.len() - args;
         let frame = Frame { offset: offset, instruction_index: 0, upvars: upvars, excess: false };
         stack.frames.push(frame);
-        debug!("Store {} {:?}", stack.frames.len(), frame);
+        debug!("----> Store {} {:?}\n||| {:?}", stack.frames.len(), frame, prev);
         StackFrame { stack: stack, frame: frame }
     }
 }
