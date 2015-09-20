@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{Read, stdin};
 use std::slice;
 
-use api::{generic, Generic, Getable, Array, IO};
+use api::{generic, Generic, Getable, Array, IO, MaybeError};
 use base::gc::DataDef;
 use vm::{VM, BytecodeFunction, DataStruct, VMInt, Status, Value, RootStr};
 use types::Instruction::Call;
@@ -16,9 +16,11 @@ pub fn array_length(array: Array<generic::A>) -> VMInt {
 
 pub fn array_index<'a, 'vm>(array: Array<'a, 'vm, Generic<'a, generic::A>>,
                             index: VMInt
-                           ) -> Result<Generic<'a, generic::A>, String> {
-    array.get(index)
-        .ok_or_else(|| format!("{} is out of range", index))
+                           ) -> MaybeError<Generic<'a, generic::A>, String> {
+    match array.get(index) {
+        Some(value) => MaybeError::Ok(value),
+        None => MaybeError::Err(format!("{} is out of range", index))
+    }
 }
 
 pub fn array_append<'a, 'vm>(lhs: Array<'a, 'vm, Generic<'a, generic::A>>,

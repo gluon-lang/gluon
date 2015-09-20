@@ -265,20 +265,71 @@ impl <'a, 'vm, T: Getable<'a, 'vm>> Getable<'a, 'vm> for Option<T> {
     }
 }
 
-impl <T: VMType, E> VMType for Result<T, E> {
+impl <T: VMType, E: VMType> VMType for Result<T, E>
+where T::Type: Sized
+    , E::Type: Sized {
+    type Type = Result<T::Type, E::Type>;
+    fn make_type(vm: &VM) -> TcType {
+        let ctor = ast::TypeConstructor::Data(vm.intern("Result"));
+        ast::Type::data(ctor, vec![E::make_type(vm), T::make_type(vm)])
+    }
+}
+
+impl <'a, T: Pushable<'a>, E: Pushable<'a>> Pushable<'a> for Result<T, E>
+where T::Type: Sized
+    , E::Type: Sized {
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        let tag = match self {
+            Ok(ok) => {
+                ok.push(vm, stack);
+                1
+            }
+            Err(err) => {
+                err.push(vm, stack);
+                0
+            }
+        };
+        let value = stack.pop();
+        let data = vm.new_data_and_collect(&mut stack.stack.values, tag, &mut [value]);
+        stack.push(Value::Data(data));
+        Status::Ok
+    }
+}
+
+impl <'a, 'vm, T: Getable<'a, 'vm>, E: Getable<'a, 'vm>> Getable<'a, 'vm> for Result<T, E> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Result<T, E>> {
+        match value {
+            Value::Data(data) => {
+                match data.tag {
+                    0 => E::from_value(vm, data.fields[0].get()).map(Err),
+                    1 => T::from_value(vm, data.fields[0].get()).map(Ok),
+                    _ => None
+                }
+            }
+            _ => None
+        }
+    }
+}
+
+pub enum MaybeError<T, E> {
+    Ok(T),
+    Err(E)
+}
+
+impl <T: VMType, E> VMType for MaybeError<T, E> {
     type Type = T::Type;
     fn make_type(vm: &VM) -> TcType {
         T::make_type(vm)
     }
 }
-impl <'a, T: Pushable<'a>, E: fmt::Display> Pushable<'a> for Result<T, E> {
+impl <'a, T: Pushable<'a>, E: fmt::Display> Pushable<'a> for MaybeError<T, E> {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         match self {
-            Ok(value) => {
+            MaybeError::Ok(value) => {
                 value.push(vm, stack);
                 Status::Ok
             }
-            Err(err) => {
+            MaybeError::Err(err) => {
                 let msg = format!("{}", err);
                 let s = vm.alloc(&mut stack.stack.values, &msg[..]);
                 stack.push(Value::String(s));

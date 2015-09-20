@@ -912,7 +912,8 @@ impl <'a> VM<'a> {
     where D: DataDef {
         self.gc.borrow_mut().alloc(def)
     }
-    fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> GcPtr<DataStruct<'a>> {
+
+    pub fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> GcPtr<DataStruct<'a>> {
        self.alloc(stack, Def { tag: tag, elems: fields })
     }
     fn new_closure(&self, func: GcPtr<BytecodeFunction>, fields: &[Value<'a>]) -> GcPtr<ClosureData<'a>> {
