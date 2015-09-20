@@ -342,13 +342,13 @@ macro_rules! get_global {
 
 #[derive(Clone)]
 pub struct RootedValue<'a: 'vm, 'vm> {
-    roots: &'vm RefCell<Vec<Value<'a>>>,
+    vm: &'vm VM<'a>,
     value: Value<'a>
 }
 
 impl <'a, 'vm> Drop for RootedValue<'a, 'vm> {
     fn drop(&mut self) {
-        self.roots.borrow_mut().pop();//TODO not safe if the root changes order of being dropped with another root
+        self.vm.rooted_values.borrow_mut().pop();//TODO not safe if the root changes order of being dropped with another root
     }
 }
 
@@ -356,6 +356,12 @@ impl <'a, 'vm> Deref for RootedValue<'a, 'vm> {
     type Target = Value<'a>;
     fn deref(&self) -> &Value<'a> {
         &self.value
+    }
+}
+
+impl <'a, 'vm> RootedValue<'a, 'vm> {
+    pub fn vm(&self) -> &'vm VM<'a> {
+        self.vm
     }
 }
 
@@ -659,7 +665,9 @@ impl <'a> VM<'a> {
         let io = |t| ASTType::from(ast::type_con(self.intern("IO"), vec![t]));
         
         try!(self.define_global("array", record!(
-            length => f1(prim::array_length)
+            length => f1(prim::array_length),
+            index => f2(prim::array_index),
+            append => f2(prim::array_append)
         )));
 
         try!(self.define_global("string", record!(
@@ -894,11 +902,15 @@ impl <'a> VM<'a> {
 
     pub fn root_value<'vm>(&'vm self, value: Value<'a>) -> RootedValue<'a, 'vm> {
         self.rooted_values.borrow_mut().push(value);
-        RootedValue { roots: &self.rooted_values, value: value }
+        RootedValue { vm: self, value: value }
     }
 
     pub fn new_data(&self, tag: VMTag, fields: &[Value<'a>]) -> Value<'a> {
         Data(self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields }))
+    }
+    pub fn new_def<D>(&self, def: D) -> GcPtr<D::Value>
+    where D: DataDef {
+        self.gc.borrow_mut().alloc(def)
     }
     fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> GcPtr<DataStruct<'a>> {
        self.alloc(stack, Def { tag: tag, elems: fields })
@@ -1753,6 +1765,15 @@ Int(4)
 
 test_expr!{ io_print,
 r#"io.print "123" "#
+}
+
+test_expr!{ array,
+r#"
+let arr = [1,2,3]
+in array.index arr 0 #Int== 1
+&& array.length arr #Int== 3
+&& array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
+Int(1)
 }
 
     #[test]

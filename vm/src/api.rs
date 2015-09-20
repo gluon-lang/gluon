@@ -1,13 +1,14 @@
 use base::ast;
 use base::gc::Move;
 use base::interner::InternedStr;
-use vm::{VM, VMResult, Status, BytecodeFunction, ExternFunction, RootedValue, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
+use vm::{VM, VMResult, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
 use check::typecheck::{TcType, Typed, Type};
 use types::Instruction::Call;
 use types::VMIndex;
 use std::any::Any;
 use std::fmt;
 use std::marker::PhantomData;
+use std::ops::Deref;
 
 
 #[derive(Debug)]
@@ -30,6 +31,10 @@ pub struct Generic<'a, T>(Value<'a>, PhantomData<T>);
 
 impl <'a, T: VMType> VMType for Generic<'a, T> {
     type Type = T::Type;
+
+    fn make_type(vm: &VM) -> TcType {
+        T::make_type(vm)
+    }
 
     fn extra_args() -> VMIndex { T::extra_args() }
 }
@@ -262,6 +267,9 @@ impl <'a, 'vm, T: Getable<'a, 'vm>> Getable<'a, 'vm> for Option<T> {
 
 impl <T: VMType, E> VMType for Result<T, E> {
     type Type = T::Type;
+    fn make_type(vm: &VM) -> TcType {
+        T::make_type(vm)
+    }
 }
 impl <'a, T: Pushable<'a>, E: fmt::Display> Pushable<'a> for Result<T, E> {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
@@ -306,14 +314,34 @@ where T::Type: Sized {
 
 pub struct Array<'a: 'vm, 'vm, T: 'a>(RootedValue<'a, 'vm>, PhantomData<T>);
 
+impl <'a, 'vm, T> Deref for Array<'a, 'vm, T> {
+    type Target = DataStruct<'a>;
+    fn deref(&self) -> &DataStruct<'a> {
+        match *self.0 {
+            Value::Data(ref data) => data,
+            _ => panic!("Expected data")
+        }
+    }
+}
 
 impl <'a, 'vm, T> Array<'a, 'vm, T> {
+    pub fn vm(&self) -> &'vm VM<'a> {
+        self.0.vm()
+    }
+
     pub fn len(&self) -> VMIndex {
+        self.fields.len() as VMIndex
+    }
+}
+
+impl <'a, 'vm, T: Getable<'a, 'vm>> Array<'a, 'vm, T> {
+    pub fn get(&self, index: VMInt) -> Option<T> {
         match *self.0 {
             Value::Data(data) => {
-                data.fields.len() as VMIndex
+                data.fields.get(index as usize)
+                    .and_then(|v| T::from_value(self.0.vm(), v.get()))
             }
-            _ => panic!("Expected data")
+            _ => None
         }
     }
 }

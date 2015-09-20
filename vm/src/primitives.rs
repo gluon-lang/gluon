@@ -1,17 +1,61 @@
+use std::cell::Cell;
 use std::fs::File;
 use std::io::{Read, stdin};
+use std::slice;
 
-use api::{generic, Array, IO};
-use vm::{VM, BytecodeFunction, VMInt, Status, Value, RootStr};
+use api::{generic, Generic, Getable, Array, IO};
+use base::gc::DataDef;
+use vm::{VM, BytecodeFunction, DataStruct, VMInt, Status, Value, RootStr};
 use types::Instruction::Call;
 use stack::StackFrame;
+
 
 pub fn array_length(array: Array<generic::A>) -> VMInt {
     array.len() as VMInt
 }
+
+pub fn array_index<'a, 'vm>(array: Array<'a, 'vm, Generic<'a, generic::A>>,
+                            index: VMInt
+                           ) -> Result<Generic<'a, generic::A>, String> {
+    array.get(index)
+        .ok_or_else(|| format!("{} is out of range", index))
+}
+
+pub fn array_append<'a, 'vm>(lhs: Array<'a, 'vm, Generic<'a, generic::A>>,
+                             rhs: Array<'a, 'vm, Generic<'a, generic::A>>,
+                            ) -> Array<'a, 'vm, Generic<'a, generic::A>> {
+    struct Append<'a:'b, 'b> {
+        lhs: &'b [Cell<Value<'a>>],
+        rhs: &'b [Cell<Value<'a>>]
+    }
+    unsafe impl <'a, 'b> DataDef for Append<'a, 'b> {
+        type Value = DataStruct<'a>;
+        fn size(&self) -> usize {
+            use std::mem::size_of;
+            size_of::<usize>() + size_of::<Value<'a>>() * (self.lhs.len() + self.rhs.len())
+        }
+        fn initialize(self, result: *mut DataStruct<'a>) {
+            let result = unsafe { &mut *result };
+            result.tag = 0;
+            for (field, value) in result.fields.iter().zip(self.lhs.iter().chain(self.rhs.iter())) {
+                field.set(value.get());
+            }
+        }
+        fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {
+            unsafe {
+                let x = slice::from_raw_parts_mut(&mut *ptr, self.lhs.len() + self.rhs.len());
+                ::std::mem::transmute(x)
+            }
+        }
+    }
+    Getable::from_value(lhs.vm(), Value::Data(lhs.vm().new_def(Append { lhs: &lhs.fields, rhs: &rhs.fields } )))
+        .expect("Array")
+}
+
 pub fn string_length(s: RootStr) -> VMInt {
     s.len() as VMInt
 }
+
 pub fn string_append(l: RootStr, r: RootStr) -> String {
     let mut s = String::with_capacity(l.len() + r.len());
     s.push_str(&l);
