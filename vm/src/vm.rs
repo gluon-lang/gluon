@@ -340,6 +340,25 @@ macro_rules! get_global {
     )
 }
 
+#[derive(Clone)]
+pub struct RootedValue<'a: 'vm, 'vm> {
+    roots: &'vm RefCell<Vec<Value<'a>>>,
+    value: Value<'a>
+}
+
+impl <'a, 'vm> Drop for RootedValue<'a, 'vm> {
+    fn drop(&mut self) {
+        self.roots.borrow_mut().pop();//TODO not safe if the root changes order of being dropped with another root
+    }
+}
+
+impl <'a, 'vm> Deref for RootedValue<'a, 'vm> {
+    type Target = Value<'a>;
+    fn deref(&self) -> &Value<'a> {
+        &self.value
+    }
+}
+
 pub struct Root<'a, T: ?Sized + 'a> {
     roots: &'a RefCell<Vec<GcPtr<Traverseable + 'static>>>,
     ptr: *const T
@@ -428,6 +447,7 @@ pub struct VM<'a> {
     names: RefCell<HashMap<InternedStr, Named>>,
     pub gc: RefCell<Gc>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
+    rooted_values: RefCell<Vec<Value<'a>>>,
     //Since the vm will be retrieved often and the borrowing from a RefCell does not work
     //it needs to be in a unsafe cell
     pub stack: RefCell<Stack<'a>>
@@ -572,7 +592,8 @@ struct Roots<'a: 'b, 'b> {
     globals: &'b FixedVec<Global<'a>>,
     stack: &'b mut [Value<'a>],
     interner: &'b mut Interner,
-    roots: Ref<'b, Vec<GcPtr<Traverseable>>>
+    roots: Ref<'b, Vec<GcPtr<Traverseable>>>,
+    rooted_values: Ref<'b, Vec<Value<'a>>>
 }
 impl <'a, 'b> Traverseable for Roots<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
@@ -583,6 +604,7 @@ impl <'a, 'b> Traverseable for Roots<'a, 'b> {
         //Also need to check the interned string table
         self.interner.traverse(gc);
         self.roots.traverse(gc);
+        self.rooted_values.traverse(gc);
     }
 }
 
@@ -597,7 +619,8 @@ impl <'a> VM<'a> {
             names: RefCell::new(HashMap::new()),
             gc: RefCell::new(Gc::new()),
             stack: RefCell::new(Stack::new()),
-            roots: RefCell::new(Vec::new())
+            roots: RefCell::new(Vec::new()),
+            rooted_values: RefCell::new(Vec::new())
         };
         vm.add_types()
             .unwrap();
@@ -633,10 +656,11 @@ impl <'a> VM<'a> {
         }
         let a = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: self.intern("a") });
         let b = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: self.intern("b") });
-        let array_a = Type::array(a.clone());
         let io = |t| ASTType::from(ast::type_con(self.intern("IO"), vec![t]));
-
-        try!(self.extern_function("array_length", vec![array_a.clone()], Type::int().clone(), Box::new(prim::array_length)));
+        
+        try!(self.define_global("array", record!(
+            length => f1(prim::array_length)
+        )));
 
         try!(self.define_global("string", record!(
             length => f1(prim::string_length),
@@ -868,6 +892,11 @@ impl <'a> VM<'a> {
         RootStr(Root { roots: &self.roots, ptr: &*ptr })
     }
 
+    pub fn root_value<'vm>(&'vm self, value: Value<'a>) -> RootedValue<'a, 'vm> {
+        self.rooted_values.borrow_mut().push(value);
+        RootedValue { roots: &self.rooted_values, value: value }
+    }
+
     pub fn new_data(&self, tag: VMTag, fields: &[Value<'a>]) -> Value<'a> {
         Data(self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields }))
     }
@@ -888,7 +917,8 @@ impl <'a> VM<'a> {
             globals: &self.globals,
             stack: stack,
             interner: &mut *interner,
-            roots: self.roots.borrow()
+            roots: self.roots.borrow(),
+            rooted_values: self.rooted_values.borrow(),
         };
         let mut gc = self.gc.borrow_mut();
         f(&mut gc, roots)

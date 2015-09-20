@@ -1,20 +1,13 @@
 use std::fs::File;
 use std::io::{Read, stdin};
 
-use api::IO;
+use api::{generic, Array, IO};
 use vm::{VM, BytecodeFunction, VMInt, Status, Value, RootStr};
 use types::Instruction::Call;
 use stack::StackFrame;
 
-pub fn array_length(vm: &VM) -> Status {
-    match vm.pop() {
-        Value::Data(values) => {
-            let i = values.fields.len();
-            vm.push(Value::Int(i as VMInt));
-        }
-        x => panic!("{:?}", x)
-    }
-    Status::Ok
+pub fn array_length(array: Array<generic::A>) -> VMInt {
+    array.len() as VMInt
 }
 pub fn string_length(s: RootStr) -> VMInt {
     s.len() as VMInt

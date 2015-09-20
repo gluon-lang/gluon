@@ -191,8 +191,8 @@ impl <T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
     }
 }
 
-impl <T: Traverseable + 'static> GcPtr<T> {
-    pub fn as_traverseable(self) -> GcPtr<Traverseable> {
+impl <'a, T: Traverseable + 'a> GcPtr<T> {
+    pub fn as_traverseable(self) -> GcPtr<Traverseable + 'a> {
         GcPtr { ptr: self.ptr as *const Traverseable }
     }
 }

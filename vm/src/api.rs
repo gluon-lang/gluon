@@ -1,7 +1,7 @@
 use base::ast;
 use base::gc::Move;
 use base::interner::InternedStr;
-use vm::{VM, VMResult, Status, BytecodeFunction, ExternFunction, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
+use vm::{VM, VMResult, Status, BytecodeFunction, ExternFunction, RootedValue, Value, Userdata_, StackFrame, VMInt, Error, Root, RootStr};
 use check::typecheck::{TcType, Typed, Type};
 use types::Instruction::Call;
 use types::VMIndex;
@@ -217,7 +217,7 @@ impl <'a, 'vm, T: Any> Getable<'a, 'vm> for *mut T {
         }
     }
 }
-impl <T: VMType + Any> VMType for Option<T>
+impl <T: VMType> VMType for Option<T>
 where T::Type: Sized {
     type Type = Option<T::Type>;
     fn make_type(vm: &VM) -> TcType {
@@ -225,7 +225,7 @@ where T::Type: Sized {
         ast::Type::data(ctor, vec![T::make_type(vm)])
     }
 }
-impl <'a, T: Pushable<'a> + Any> Pushable<'a> for Option<T>
+impl <'a, T: Pushable<'a>> Pushable<'a> for Option<T>
 where T::Type: Sized {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         match self {
@@ -288,7 +288,7 @@ where T::Type: Sized {
     }
     fn extra_args() -> VMIndex { 1 }
 }
-impl <'a, T: Pushable<'a> + Any> Pushable<'a> for IO<T>
+impl <'a, T: Pushable<'a>> Pushable<'a> for IO<T>
 where T::Type: Sized {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         match self {
@@ -301,6 +301,43 @@ where T::Type: Sized {
                 Status::Error
             }
         }
+    }
+}
+
+pub struct Array<'a: 'vm, 'vm, T: 'a>(RootedValue<'a, 'vm>, PhantomData<T>);
+
+
+impl <'a, 'vm, T> Array<'a, 'vm, T> {
+    pub fn len(&self) -> VMIndex {
+        match *self.0 {
+            Value::Data(data) => {
+                data.fields.len() as VMIndex
+            }
+            _ => panic!("Expected data")
+        }
+    }
+}
+
+impl <'a, 'vm, T: VMType> VMType for Array<'a, 'vm, T>
+where T::Type: Sized {
+    type Type = Array<'static, 'static, T::Type>;
+    fn make_type(vm: &VM) -> TcType {
+        ast::Type::array(T::make_type(vm))
+    }
+}
+
+
+impl <'a, 'vm, T: VMType> Pushable<'a> for Array<'a, 'vm, T>
+where T::Type: Sized {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        stack.push(*self.0);
+        Status::Ok
+    }
+}
+
+impl <'a: 'vm, 'vm, T> Getable<'a, 'vm> for Array<'a, 'vm, T> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Array<'a, 'vm, T>> {
+        Some(Array(vm.root_value(value), PhantomData))
     }
 }
 
@@ -382,8 +419,9 @@ where T: PushableFieldList<'a> {
     }
 }
 
-impl <A: VMType + Any + 'static, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>> {
-    type Type = Record<((&'static str, A),)>;
+impl <A: VMType, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>>
+where A::Type: Sized {
+    type Type = Record<((&'static str, A::Type),)>;
     fn make_type(vm: &VM) -> TcType {
         let len = HList::<(F, A), T>::len() as usize;
         let mut fields = Vec::with_capacity(len);
@@ -391,7 +429,8 @@ impl <A: VMType + Any + 'static, F: Field, T: FieldList> VMType for Record<HList
         ast::Type::record(fields)
     }
 }
-impl <'a, A: Pushable<'a> + Any + 'static, F: Field, T: PushableFieldList<'a>> Pushable<'a> for Record<HList<(F, A), T>> {
+impl <'a, A: Pushable<'a>, F: Field, T: PushableFieldList<'a>> Pushable<'a> for Record<HList<(F, A), T>>
+where A::Type: Sized {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         self.fields.push(vm, stack);
         let len = HList::<(F, A), T>::len();
@@ -634,7 +673,7 @@ pub trait FunctionType {
     fn arguments() -> VMIndex;
 }
 
-pub trait VMFunction<'a, 'vm> {
+pub trait VMFunction<'a: 'vm, 'vm> {
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status;
 }
 
@@ -644,7 +683,7 @@ impl <'s, T: FunctionType> FunctionType for &'s T {
     }
 }
 
-impl <'a, 'vm, 's, T> VMFunction<'a, 'vm> for &'s T
+impl <'a: 'vm, 'vm, 's, T> VMFunction<'a, 'vm> for &'s T
 where T: VMFunction<'a, 'vm> {
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         (**self).unpack_and_call(vm)
@@ -669,17 +708,15 @@ impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
     }
 }
 
-impl <'a, 'vm, $($args: Getable<'a, 'vm> + VMType + 'static,)* R: Pushable<'a> + 'static> Pushable<'a> for fn ($($args),*) -> R {
+impl <'a: 'vm, 'vm, $($args: Getable<'a, 'vm> + VMType + 'vm,)* R: Pushable<'a> + 'a> Pushable<'a> for fn ($($args),*) -> R {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        let f = Box::new(move |vm: &'vm VM<'a>| {
-            self.unpack_and_call(vm)
-        });
+        let f = Box::new(move |vm| self.unpack_and_call(vm));
         let extern_function = unsafe {
             //The VM guarantess that it only ever calls this function with itself which should
             //make sure that ignoring the lifetime is safe
             ::std::mem::transmute
-                    ::<Box<Fn(&'vm VM<'a>) -> Status + 'static>,
-                       Box<Fn(&VM<'a>) -> Status + 'static>>(f)
+                    ::<Box<Fn(&'vm VM<'a>) -> Status>,
+                       Box<Fn(&VM<'a>) -> Status>>(f)
         };
         let id = vm.intern("<extern>");
         let value = Value::Function(vm.gc.borrow_mut().alloc(Move(
@@ -699,7 +736,7 @@ impl <'a, 'vm, $($args,)* R: VMType> FunctionType for fn ($($args),*) -> R {
     }
 }
 
-impl <'a, 'vm, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for fn ($($args),*) -> R {
+impl <'a: 'vm, 'vm, $($args : Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm + 'a> VMFunction<'a, 'vm> for fn ($($args),*) -> R {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         let n_args = Self::arguments();
@@ -730,7 +767,7 @@ impl <'a, 's, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's 
         Type::function(args, make_type::<R>(vm))
     }
 }
-impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Fn($($args),*) -> R + 's {
+impl <'a: 'vm, 'vm, 's, $($args : Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm> VMFunction<'a, 'vm> for Fn($($args),*) -> R + 's {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         let n_args = Self::arguments();
@@ -752,7 +789,7 @@ impl <'s, $($args,)* R: VMType> FunctionType for Box<Fn($($args),*) -> R + 's> {
     }
 }
 
-impl <'a, 'vm, 's, $($args : Getable<'a, 'vm>,)* R: Pushable<'a>> VMFunction<'a, 'vm> for Box<Fn($($args),*) -> R + 's> {
+impl <'a: 'vm, 'vm, 's, $($args : Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm> VMFunction<'a, 'vm> for Box<Fn($($args),*) -> R + 's> {
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         (**self).unpack_and_call(vm)
     }
@@ -780,8 +817,8 @@ macro_rules! vm_function {
 }
 
 
-pub fn define_function<'a, 'vm, F>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()>
-where F: VMFunction<'a, 'vm> + VMType + 'static {
+pub fn define_function<'a: 'vm, 'vm, F>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()>
+where F: VMFunction<'a, 'vm> + VMType + 'vm {
     let typ = make_type::<F>(vm);
     let args = {
         let mut iter = arg_iter(&typ);
@@ -798,7 +835,7 @@ where F: VMFunction<'a, 'vm> + VMType + 'static {
         //The VM guarantess that it only ever calls this function with itself which should
         //make sure that ignoring the lifetime is safe
         let extern_fn = ::std::mem::transmute
-                ::<Box<Fn(&'vm VM<'a>) -> Status + 'static>,
+                ::<Box<Fn(&'vm VM<'a>) -> Status + 'vm>,
                    Box<Fn(&VM<'a>) -> Status + 'static>>(f);
         vm.extern_function_io(name, args, typ, extern_fn)
     }
