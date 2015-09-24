@@ -25,14 +25,32 @@ pub type TcType = ast::ASTType<InternedStr>;
 enum TypeError {
     UndefinedVariable(InternedStr),
     NotAFunction(TcType),
-    TypeMismatch(TcType, TcType),
     UndefinedType(InternedStr),
     UndefinedField(TcType, InternedStr),
-    Occurs(TypeVariable, TcType),
     IndexError(TcType),
     PatternError(TcType, usize),
+    Unification(TcType, TcType, UnificationError),
     KindError(kindcheck::Error),
     StringError(&'static str)
+}
+
+#[derive(Debug, PartialEq)]
+enum UnificationError {
+    TypeMismatch(TcType, TcType),
+    Occurs(TypeVariable, TcType),
+    UndefinedType(InternedStr)
+}
+
+fn apply_subs(tc: &Typecheck, error: UnificationError) -> UnificationError {
+    match error {
+        UnificationError::TypeMismatch(expected, actual) => {
+            UnificationError::TypeMismatch(tc.set_type(expected), tc.set_type(actual))
+        }
+        UnificationError::Occurs(var, typ) => {
+            UnificationError::Occurs(var, tc.set_type(typ))
+        }
+        UnificationError::UndefinedType(id) => UnificationError::UndefinedType(id)
+    }
 }
 
 impl From<kindcheck::Error> for TypeError {
@@ -44,13 +62,18 @@ impl From<kindcheck::Error> for TypeError {
 impl fmt::Display for TypeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::TypeError::*;
+        use self::UnificationError::{TypeMismatch, Occurs};
         match *self {
             UndefinedVariable(name) => write!(f, "Undefined variable `{}`", name),
             NotAFunction(ref typ) => write!(f, "`{}` is not a function", typ),
-            TypeMismatch(ref l, ref r) => write!(f, "Expected: {}\nFound: {} does not unify", l, r),
             UndefinedType(name) => write!(f, "Type `{}` is not defined", name),
             UndefinedField(ref typ, ref field) => write!(f, "Type `{}` does not have the field `{}`", typ, field),
-            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`", var, typ),
+            Unification(ref expected, ref actual, TypeMismatch(ref l, ref r)) =>
+                write!(f, "Expected: {}\nFound: {} does not unify\n(Expected: {}\nFound: {})", expected, actual, l, r),
+            Unification(ref expected, ref actual, Occurs(ref var, ref typ)) =>
+                write!(f, "Variable `{}` occurs in `{}`\n(Expected: {}\nFound: {})", var, typ, expected, actual),
+            Unification(ref expected, ref actual, UnificationError::UndefinedType(id)) =>
+                write!(f, "Type `{}` does not exist. \n(Expected: {}\nFound: {})", id, expected, actual),
             IndexError(ref typ) => write!(f, "Type {} cannot be indexed", typ),
             PatternError(ref typ, expected_len) => write!(f, "Type {} has {} to few arguments", typ, expected_len),
             KindError(ref err) => write!(f, "{}", err),
@@ -60,6 +83,7 @@ impl fmt::Display for TypeError {
 }
 
 pub type TcResult = Result<TcType, TypeError>;
+pub type UnificationResult = Result<(), UnificationError>;
 
 impl Substitutable for TcType {
     fn new(id: u32) -> TcType {
@@ -833,22 +857,17 @@ impl <'a> Typecheck<'a> {
                 //declarations
                 Ok(self.set_type(expected.clone()))
             }
-            //TODO should use these inner type mismatches in errors
-            Err(TypeError::TypeMismatch(l, r)) => {
+            Err(err) => {
                 let mut expected = expected.clone();
                 expected = self.set_type(expected);
                 actual = self.set_type(actual);
-                debug!("Mismatch:>> {:?}\n>> {:?}", l, r);
-                Err(TypeMismatch(expected, actual))
-            }
-            Err(err) => {
-                debug!("Error '{}' between:\n>> {}\n>> {}", err, expected, actual);
-                Err(err)
+                debug!("Error '{:?}' between:\n>> {}\n>> {}", err, expected, actual);
+                Err(Unification(expected, actual, apply_subs(self, err)))
             }
         }
     }
 
-    fn unify_(&self, expected: &TcType, actual: &TcType) -> Result<(), TypeError> {
+    fn unify_(&self, expected: &TcType, actual: &TcType) -> UnificationResult {
         let expected = self.subs.real(expected);
         let actual = self.subs.real(actual);
         debug!("{} <=> {}", expected, actual);
@@ -864,7 +883,7 @@ impl <'a> Typecheck<'a> {
                     self.unify_(l_ret, r_ret)
                 }
                 else {
-                    Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
+                    Err(UnificationError::TypeMismatch(expected.clone(), actual.clone()))
                 }
             }
             (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
@@ -887,7 +906,7 @@ impl <'a> Typecheck<'a> {
 
                 for (l, r) in l_args.iter().zip(r_args.iter()) {
                     if l.name != r.name {
-                        return Err(TypeError::TypeMismatch(l.typ.clone(), r.typ.clone()))
+                        return Err(UnificationError::TypeMismatch(l.typ.clone(), r.typ.clone()))
                     }
                     else {
                         try!(self.unify_(&l.typ, &r.typ));
@@ -910,7 +929,7 @@ impl <'a> Typecheck<'a> {
                 match l {
                     Some(l) => self.unify_(&l, actual),
                     None => {
-                        Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
+                        Err(UnificationError::TypeMismatch(expected.clone(), actual.clone()))
                     }
                 }
             }
@@ -919,7 +938,7 @@ impl <'a> Typecheck<'a> {
                 match r {
                     Some(r) => self.unify_(expected, &r),
                     None => {
-                        Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
+                        Err(UnificationError::TypeMismatch(expected.clone(), actual.clone()))
                     }
                 }
             }
@@ -928,14 +947,14 @@ impl <'a> Typecheck<'a> {
                     Ok(())
                 }
                 else {
-                    Err(TypeError::TypeMismatch(expected.clone(), actual.clone()))
+                    Err(UnificationError::TypeMismatch(expected.clone(), actual.clone()))
                 }
             }
         }
     }
 
-    fn unify_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> Result<(), TypeError>
-            where F: Fn(&TcType, &TcType) -> Result<(), TypeError> {
+    fn unify_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> UnificationResult
+            where F: Fn(&TcType, &TcType) -> UnificationResult {
         let r = self.subs.real(r);
         debug!("{:?} {:?} <==> {}", l, l_args, r);
         match **r {
@@ -949,7 +968,7 @@ impl <'a> Typecheck<'a> {
                     }
                     None => {
                         let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                        Err(TypeError::TypeMismatch(l, r.clone()))
+                        Err(UnificationError::TypeMismatch(l, r.clone()))
                     }
                 }
             }
@@ -965,7 +984,7 @@ impl <'a> Typecheck<'a> {
             }
             _ => {
                 let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                Err(TypeError::TypeMismatch(l, r.clone()))
+                Err(UnificationError::TypeMismatch(l, r.clone()))
             }
         }
     }
@@ -974,10 +993,10 @@ impl <'a> Typecheck<'a> {
                          arg: &TcType,
                          ret: &TcType,
                          other: &TcType
-                        ) -> Result<(), TypeError> {
+                        ) -> UnificationResult {
         let error = || {
             let func = Type::function(vec![arg.clone()], ret.clone());
-            Err(TypeError::TypeMismatch(func, other.clone()))
+            Err(UnificationError::TypeMismatch(func, other.clone()))
         };
         let other = self.subs.real(other);
         match **other {
@@ -1035,9 +1054,9 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> Result<(), TypeError> {
+    fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> UnificationResult {
         if self.occurs(id, typ) {
-            return Err(TypeError::Occurs(id.clone(), typ.clone()))
+            return Err(UnificationError::Occurs(id.clone(), typ.clone()))
         }
         {
             let id_type = self.subs.find_type_for_var(id.id);
@@ -1092,9 +1111,11 @@ impl <'a> Typecheck<'a> {
         x.unwrap_or(typ)
     }
 
-    fn type_of_alias(&self, id: InternedStr, arguments: &[TcType]) -> Result<Option<TcType>, TypeError> {
+    fn type_of_alias(&self, id: InternedStr, arguments: &[TcType]) -> Result<Option<TcType>, UnificationError> {
         let (args, typ) = {
-            let (args, typ) = try!(self.find_type_info(&id));
+            let (args, typ) = try!(TypeEnv::find_type_info(self, &id)
+                    .map(|s| Ok(s))
+                    .unwrap_or_else(|| Err(UnificationError::UndefinedType(id.clone()))));
             match typ {
                 Some(typ) => {
                     //TODO avoid clones here
@@ -1363,12 +1384,14 @@ mod tests {
         }}
     }
     macro_rules! assert_err {
-        ($e: expr, $id: path) => {{
+        ($e: expr, $id: pat) => {{
             use super::TypeError::*;
+            #[allow(unused_imports)]
+            use super::UnificationError::{TypeMismatch, Occurs};
             match $e {
                 Ok(x) => assert!(false, "Expected error, got {}", x),
                 Err(err) => assert!(err.errors.iter().any(|e| match *e {
-                                ast::Located { value: $id(..), .. } => true,
+                                ast::Located { value: $id, .. } => true,
                                 _ => false
                             }), "Found errors:\n{}\nbut expected {}", err, stringify!($id))
             }
@@ -1651,7 +1674,7 @@ case { x = 1 } of
     | { x, y } -> 1
 ";
         let result = typecheck(text);
-        assert_err!(result, UndefinedField);
+        assert_err!(result, UndefinedField(..));
     }
 
     #[test]
@@ -1728,7 +1751,7 @@ let (<=) = (make_Ord ord_Int).(<=)
 in "" <= ""
 "#;
         let result = typecheck(text);
-        assert_err!(result, TypeMismatch);
+        assert_err!(result, Unification(_, _, TypeMismatch(..)));
     }
 
     #[test]
