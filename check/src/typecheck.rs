@@ -895,7 +895,6 @@ impl <'a> Typecheck<'a> {
             (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(l, r),
             (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args))
                 if l == r && l_args.len() == r_args.len() => {
-
                 for (l, r) in l_args.iter().zip(r_args.iter()) {
                     try!(self.unify_(l, r));
                 }
@@ -1017,7 +1016,7 @@ impl <'a> Typecheck<'a> {
 
     fn occurs(&self, var: &ast::TypeVariable, typ: &TcType) -> bool {
         let mut occurs = false;
-        ast::walk_type(typ, &mut |typ| {
+        walk_real_type(&self.subs, typ, &mut |typ| {
             if occurs { return }
             if let Type::Variable(ref other) = *typ {
                 if var == other {
@@ -1368,6 +1367,44 @@ fn get_return_type(env: &TypeEnv, alias_type: TcType, arg_count: usize) -> TcTyp
         }
     }
 }
+
+pub fn walk_real_type<F>(subs: &Substitution<TcType>, typ: &TcType, f: &mut F)
+    where F: FnMut(&Type<InternedStr>) {
+    let typ = subs.real(typ);
+    f(typ);
+    match **typ {
+        Type::Data(_, ref args) => {
+            for a in args {
+                walk_real_type(subs, a, f);
+            }
+        }
+        Type::Array(ref inner) => {
+            walk_real_type(subs, inner, f);
+        }
+        Type::Function(ref args, ref ret) => {
+            for a in args {
+                walk_real_type(subs, a, f);
+            }
+            walk_real_type(subs, ret, f);
+        }
+        Type::Record(ref fields) => {
+            for field in fields {
+                walk_real_type(subs, &field.typ, f);
+            }
+        }
+        Type::App(ref l, ref r) => {
+            walk_real_type(subs, l, f);
+            walk_real_type(subs, r, f);
+        }
+        Type::Variants(ref variants) => {
+            for variant in variants {
+                walk_real_type(subs, &variant.1, f);
+            }
+        }
+        Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => ()
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

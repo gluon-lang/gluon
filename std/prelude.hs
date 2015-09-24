@@ -224,6 +224,18 @@ let monad_Option: Monad Option = {
                         | None -> None,
     return = \x -> Some x
 } in
+let monad_OptionT m: Monad m -> {} =
+    let
+        { (>>=), return } = m
+    in {
+        (>>=) = \mx f ->
+            mx >>= \opt_x ->
+                case opt_x of
+                    | Some x -> f x
+                    | None -> return None,
+        return = \x -> return (Some x) 
+    }
+in
 let monad_List: Monad List = {
     (>>=) = \m f -> concatMap f m,
     return = \x -> Cons x Nil
