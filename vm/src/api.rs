@@ -877,16 +877,9 @@ macro_rules! vm_function {
 
 
 pub fn define_function<'a: 'vm, 'vm, F>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()>
-where F: VMFunction<'a, 'vm> + VMType + 'vm {
+where F: VMFunction<'a, 'vm> + VMType + FunctionType + 'vm {
     let typ = make_type::<F>(vm);
-    let args = {
-        let mut iter = arg_iter(&typ);
-        let args = iter.by_ref().count() as VMIndex;
-        args + (match *iter.typ {
-            ast::Type::Data(ast::TypeConstructor::Data(name), _) if name == "IO" => 1,
-            _ => 0
-        })
-    };
+    let args = F::arguments();
     let f = Box::new(move |vm: &'vm VM<'a>| {
         f.unpack_and_call(vm)
     });
