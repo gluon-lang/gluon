@@ -908,9 +908,38 @@ impl <'a> Typecheck<'a> {
             }
             (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
                 self.unify_app(l, l_args, actual, &|last, r_arg| self.unify_(last, r_arg))
+                    .or_else(|err| {
+                        //Attempt to unify using the type that is aliased if that exists
+                        match *l {
+                            ast::TypeConstructor::Data(l) => {
+                                let l = try!(self.type_of_alias(l, l_args));
+                                match l {
+                                    Some(l) => self.unify_(&l, actual),
+                                    None => {
+                                        Err(err)
+                                    }
+                                }
+                            }
+                            _ => Err(err)
+                        }
+                    })
             }
             (&Type::App(_, _), &Type::Data(ref r, ref r_args)) => {
                 self.unify_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last))
+                    .or_else(|err| {
+                        match *r {
+                            ast::TypeConstructor::Data(r) => {
+                                let r = try!(self.type_of_alias(r, r_args));
+                                match r {
+                                    Some(r) => self.unify_(&r, expected),
+                                    None => {
+                                        Err(err)
+                                    }
+                                }
+                            }
+                            _ => Err(err)
+                        }
+                    })
             }
             (&Type::App(ref l1, ref l2), &Type::App(ref r1, ref r2)) => {
                 self.unify_(l1, r1)
@@ -1119,6 +1148,10 @@ impl <'a> Typecheck<'a> {
                 }
             }
         };
+        if arguments.len() != args.len() {
+            let expected = Type::data(ast::TypeConstructor::Data(id), arguments.iter().cloned().collect());
+            return Err(UnificationError::TypeMismatch(expected, typ));
+        }
         let typ = self.subs.instantiate_with(typ, arguments, &args);
         Ok(Some(typ))
     }
@@ -1849,6 +1882,30 @@ in return 1
 "#;
         let result = typecheck(text);
         assert_eq!(result, Ok(typ_a("IdT", vec![typ("Test"), typ("Int")])));
+    }
+
+    #[test]
+    fn unify_transformer2() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type Option a = | None | Some a in
+type Monad m = {
+    return : a -> m a
+} in
+let monad_Option: Monad Option = {
+    return = \x -> Some x
+} in
+type OptionT m a = m (Option a)
+in
+let monad_OptionT m: Monad m1 -> Monad (OptionT m1) =
+    let return x: b -> OptionT m1 b = m.return (Some x) 
+    in {
+        return
+    }
+in 1
+"#;
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ("Int")));
     }
 
     #[test]

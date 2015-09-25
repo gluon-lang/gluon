@@ -1807,11 +1807,12 @@ Int(100)
         let mut vm = VM::new();
         let mut text = String::new();
         File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        load_script(&mut vm, "prelude", &text).unwrap();
+        load_script(&mut vm, "prelude", &text)
+            .unwrap_or_else(|err| panic!("{}", err));
         text.clear();
         File::open("../std/map.hs").unwrap().read_to_string(&mut text).unwrap();
         load_script(&mut vm, "map", &text)
-            .unwrap();
+            .unwrap_or_else(|err| panic!("{}", err));
 
 let text =
 r#"

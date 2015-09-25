@@ -224,16 +224,18 @@ let monad_Option: Monad Option = {
                         | None -> None,
     return = \x -> Some x
 } in
-let monad_OptionT m: Monad m -> {} =
-    let
-        { (>>=), return } = m
-    in {
-        (>>=) = \mx f ->
-            mx >>= \opt_x ->
+type OptionT m a = m (Option a)
+in
+let monad_OptionT m: Monad m1 -> Monad (OptionT m1) =
+    let (>>=) mx f: OptionT m1 a -> (a -> OptionT m1 b) -> OptionT m1 b =
+            m.(>>=) mx (\opt_x ->
                 case opt_x of
                     | Some x -> f x
-                    | None -> return None,
-        return = \x -> return (Some x) 
+                    | None -> let y: OptionT m1 b = m.return None in y)
+    and return x: a -> OptionT m1 a = m.return (Some x) 
+    in {
+        (>>=),
+        return
     }
 in
 let monad_List: Monad List = {
