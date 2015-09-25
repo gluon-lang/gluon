@@ -231,13 +231,12 @@ impl <'a> KindCheck<'a> {
     }
     fn unify_(&self, expected: &Kind, actual: &Kind) -> bool {
         match (expected, actual) {
+            (&Kind::Variable(l), &Kind::Variable(r)) if l == r => true,
             (&Kind::Variable(l), r) => {
-                self.union(l, r);
-                true
+                self.union(l, r)
             }
             (l, &Kind::Variable(r)) => {
-                self.union(r, l);
-                true
+                self.union(r, l)
             }
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
                 self.unify_(l1, r1) && self.unify_(l2, r2)
@@ -246,12 +245,15 @@ impl <'a> KindCheck<'a> {
         }
     }
 
-    fn union(&self, id: u32, typ: &Kind) {
+    fn union(&self, id: u32, typ: &Kind) -> bool {
+        if self.occurs(id, typ) {
+            return false
+        }
         {
             let id_type = self.subs.find_type_for_var(id);
             let other_type = self.subs.real(typ);
             if id_type.map(|x| x == other_type).unwrap_or(Kind::Variable(id.clone()) == *other_type) {
-                return
+                return true
             }
         }
         let map: &mut _ = unsafe { &mut *self.subs.map.get() };
@@ -262,6 +264,16 @@ impl <'a> KindCheck<'a> {
             Kind::Variable(other_id) if id < other_id => map.insert(other_id, Box::new(Kind::Variable(id))),
             _ => map.insert(id, Box::new(typ.clone()))
         };
+        true
+    }
+
+    fn occurs(&self, var: u32, kind: &Kind) -> bool {
+        let kind = self.subs.real(kind);
+        match *kind {
+            Kind::Variable(other) => var == other,
+            Kind::Function(ref a, ref r) => self.occurs(var, a) || self.occurs(var, r),
+            Kind::Star => false
+        }
     }
 }
 
