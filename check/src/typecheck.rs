@@ -254,7 +254,6 @@ pub struct Typecheck<'a> {
     interner: &'a mut Interner,
     gc: &'a mut Gc,
     pub type_infos: TypeInfos,
-    module: HashMap<InternedStr, TcType>,
     stack: ScopedMap<InternedStr, TcType>,
     subs: Substitution<TcType>,
     errors: Errors<ast::Located<TypeError>>
@@ -265,13 +264,11 @@ pub type StringErrors = Errors<ast::Located<TypeError>>;
 impl <'a> TypeEnv for Typecheck<'a> {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         let stack = &self.stack;
-        let module = &self.module;
         let environment = &self.environment;
         let type_infos = &self.type_infos;
         match stack.find(id) {
             Some(x) => Some(x),
-            None => module.get(id)
-                .or_else(|| type_infos.find_type(id))
+            None => type_infos.find_type(id)
                 .or_else(|| environment.and_then(|e| e.find_type(id)))
         }
     }
@@ -295,7 +292,6 @@ impl <'a> Typecheck<'a> {
             environment: None,
             interner: interner,
             gc: gc,
-            module: HashMap::new(),
             type_infos: TypeInfos::new(),
             stack: ScopedMap::new(),
             subs: Substitution::new(),
@@ -306,13 +302,11 @@ impl <'a> Typecheck<'a> {
     fn find(&mut self, id: &InternedStr) -> TcResult {
         let t: Option<&TcType> = {
             let stack = &self.stack;
-            let module = &self.module;
             let environment = &self.environment;
             let type_infos = &self.type_infos;
             match stack.find(id) {
                 Some(x) => Some(x),
-                None => module.get(id)
-                    .or_else(|| type_infos.find_type(id))
+                None => type_infos.find_type(id)
                     .or_else(|| environment.and_then(|e| e.find_type(id)))
             }
         };
@@ -697,7 +691,6 @@ impl <'a> Typecheck<'a> {
                                 g.kind = gen.kind.clone();
                             }
                         }
-                        self.stack_var(id, typ.clone());
                         (generic_args, id)
                     }
                     _ => panic!("ICE: Unexpected lhs of type binding {}", id_type)
@@ -1828,6 +1821,34 @@ in y
 "#;
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("String")));
+    }
+    #[test]
+    fn unify_variant() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type Test a = | Test a
+in Test 1
+"#;
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ_a("Test", vec![typ("Int")])));
+    }
+
+    #[test]
+    fn unify_transformer() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type Test a = | Test a
+in
+type Id a = | Id a
+in
+type IdT m a = m (Id a)
+in
+let return x: a -> IdT IO a = Test (Some x) 
+in return 1
+"#;
+        let result = typecheck(text);
+        println!("{}", result.as_ref().unwrap_err());
+        assert_eq!(result, Ok(typ_a("OptionT", vec![typ("IO"), typ("Int")])));
     }
 
     #[test]

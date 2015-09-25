@@ -598,26 +598,6 @@ pub trait Get<'a, 'b>: Sized {
     fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Self>;
 }
 
-
-pub struct ArgIterator<'a> {
-    pub typ: &'a Type<InternedStr>
-}
-fn arg_iter(typ: &Type<InternedStr>) -> ArgIterator {
-    ArgIterator { typ: typ }
-}
-impl <'a> Iterator for ArgIterator<'a> {
-    type Item = &'a Type<InternedStr>;
-    fn next(&mut self) -> Option<&'a Type<InternedStr>> {
-        match *self.typ {
-            Type::Function(ref arg, ref return_type) => {
-                self.typ = &**return_type;
-                Some(&arg[0])
-            }
-            _ => None
-        }
-    }
-}
-
 macro_rules! make_get {
     ($($args:ident),*) => (
 impl <'a, 'b, $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a>> Get<'a, 'b> for Callable<'a, 'b, ($($args,)*), R> {
@@ -625,7 +605,7 @@ impl <'a, 'b, $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a>> Ge
         let value = match vm.get_global(name) {
             Some(global) => {
                 let typ = global.type_of();
-                let mut arg_iter = arg_iter(&typ);
+                let mut arg_iter = ast::arg_iter(&typ);
                 let ok = $({
                     arg_iter.next().expect("Arg iter") == vm_type::<$args>(vm)
                     } &&)* true;
