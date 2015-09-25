@@ -514,6 +514,29 @@ where T: Deref<Target=Type<Id, T>> {
     }
 }
 
+pub struct ArgIterator<'a, Id: 'a, T: 'a> {
+    pub typ: &'a Type<Id, T>
+}
+
+pub fn arg_iter<Id, T>(typ: &Type<Id, T>) -> ArgIterator<Id, T>
+where T: Deref<Target=Type<Id, T>> {
+    ArgIterator { typ: typ }
+}
+
+impl <'a, Id, T> Iterator for ArgIterator<'a, Id, T>
+where T: Deref<Target=Type<Id, T>> {
+    type Item = &'a Type<Id, T>;
+    fn next(&mut self) -> Option<&'a Type<Id, T>> {
+        match *self.typ {
+            Type::Function(ref arg, ref return_type) => {
+                self.typ = &**return_type;
+                Some(&arg[0])
+            }
+            _ => None
+        }
+    }
+}
+
 impl <Id> ASTType<Id> {
     pub fn return_type(&self) -> &ASTType<Id> {
         match **self {
@@ -616,8 +639,17 @@ where I: fmt::Display
                 Ok(())
             }
             Type::Variants(ref variants) => {
+                if p >= Prec_::Constructor {
+                    try!(write!(f, "("));
+                }
                 for variant in variants {
-                    try!(write!(f, "| {} {}", variant.0, variant.1));
+                    try!(write!(f, "| {}", variant.0));
+                    for arg in arg_iter(&variant.1) {
+                        try!(write!(f, " {}", Prec(Prec_::Constructor, &arg)));
+                    }
+                }
+                if p >= Prec_::Constructor {
+                    try!(write!(f, ")"));
                 }
                 Ok(())
             }
