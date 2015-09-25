@@ -109,9 +109,12 @@ impl <'a> KindCheck<'a> {
         kind
     }
 
+    //Kindhecks `typ`, infering it to be of kind `*`
     pub fn kindcheck_type(&mut self, typ: &mut TcType) -> Result<Kind> {
         debug!("Kindcheck {}", typ);
         let (kind, t) = try!(self.kindcheck(typ));
+        let star = self.star.clone();
+        let kind = try!(self.unify(&star, kind));
         let subs = &mut self.subs;
         let mut f = |typ| ast::walk_move_type(typ, &mut |typ| {
             match *typ {

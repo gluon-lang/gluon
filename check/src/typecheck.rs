@@ -1822,6 +1822,7 @@ in y
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("String")));
     }
+
     #[test]
     fn unify_variant() {
         let _ = ::env_logger::init();
@@ -1843,12 +1844,11 @@ type Id a = | Id a
 in
 type IdT m a = m (Id a)
 in
-let return x: a -> IdT IO a = Test (Some x) 
+let return x: a -> IdT Test a = Test (Id x) 
 in return 1
 "#;
         let result = typecheck(text);
-        println!("{}", result.as_ref().unwrap_err());
-        assert_eq!(result, Ok(typ_a("OptionT", vec![typ("IO"), typ("Int")])));
+        assert_eq!(result, Ok(typ_a("IdT", vec![typ("Test"), typ("Int")])));
     }
 
     #[test]
