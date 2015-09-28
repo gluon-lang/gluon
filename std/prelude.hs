@@ -56,9 +56,9 @@ let eq_Result: Eq e -> Eq t -> Eq (Result e t) = \eq_e eq_t -> {
 } in
 let eq_List: Eq a -> Eq (List a) = \d -> {
     (==) = let f l r = case l of
-                | Nil -> case r of
+                | Nil -> (case r of
                     | Nil -> True
-                    | Cons x y -> False
+                    | Cons x y -> False)
                 | Cons x xs -> case r of
                     | Nil -> False
                     | Cons y ys -> d.(==) x y && f xs ys
@@ -213,7 +213,44 @@ and applicative_List: Applicative List = {
                     | Nil -> Nil
         in (<*>),
     pure = \x -> Cons x Nil
-} in
+}
+in
+type Alternative f = {
+    (<|>) : f a -> f a -> f a,
+    empty : f a
+}
+in
+let alternative_Option: Alternative Option = {
+    (<|>) = \x y ->
+        case x of
+            | Some _ -> x
+            | None -> y,
+    empty = None
+}
+and alternative_List: Alternative List = {
+    (<|>) = (++),
+    empty = Nil
+}
+in
+let make_Alternative fun app alt =
+    let { (<|>), empty } = alt
+    and { (<*>), pure } = app
+    in
+    let many x =
+        let many_v _ = some_v () <|> pure Nil
+        and some_v _ = fun.map (\h l -> Cons h l) x <*> many_v ()
+        in many_v ()
+    and some x =
+        let many_v _ = some_v () <|> pure Nil
+        and some_v _ = fun.map (\h l -> Cons h l) x <*> many_v ()
+        in some_v ()
+    in {
+        (<|>),
+        empty,
+        many,
+        some
+    }
+in
 type Monad m = {
     (>>=) : m a -> (a -> m b) -> m b,
     return : a -> m a
@@ -285,14 +322,23 @@ let show_Float: Show Float = {
 let show_String: Show String = {
     show = \x -> x
 } in
+let (+++) = string_prim.append
+in
 let show_List: Show a -> Show (List a) = \d ->
     let show xs =
         let show2 ys = case ys of
             | Cons y ys2 -> case ys2 of
-                | Cons z zs -> string_prim.append (d.show y) (string_prim.append ", " (show2 ys2))
-                | Nil -> string_prim.append (d.show y) "]"
+                | Cons z zs -> d.show y +++ ", " +++ show2 ys2
+                | Nil -> d.show y +++ "]"
             | Nil -> "]"
-        in string_prim.append "[" (show2 xs)
+        in "[" +++ show2 xs
+    in { show }
+in
+let show_Option: Show a -> Show (Option a) = \d ->
+    let show o =
+            case o of
+                | Some x -> "Some (" +++ d.show x +++ ")"
+                | None -> "None"
     in { show }
 in
 {
@@ -303,6 +349,8 @@ in
     Result,
     List,
     Functor,
+    Applicative,
+    Alternative,
     Monad,
     Num,
     Show,
@@ -313,8 +361,10 @@ in
     num_Int, num_Float,
     functor_Option, functor_Result, functor_List, functor_IO,
     applicative_Option, applicative_Result, applicative_List, applicative_IO,
+    alternative_Option, alternative_List,
+    make_Alternative,
     monad_Option, monad_List, monad_IO,
     make_Monad,
-    show_Int, show_Float, show_String, show_List
+    show_Int, show_Float, show_String, show_List, show_Option
 }
 
