@@ -26,13 +26,29 @@ impl fmt::Display for Error {
 type Result<T> = ::std::result::Result<T, Error>;
 
 impl Substitutable for Kind {
+    type Variable = u32;
+
     fn new(x: u32) -> Kind {
         Kind::Variable(x)
     }
-    fn get_var(&self) -> Option<u32> {
+
+    fn from_variable(x: u32) -> Kind {
+        Kind::Variable(x)
+    }
+
+    fn get_var(&self) -> Option<&u32> {
         match *self {
-            Kind::Variable(var) => Some(var),
+            Kind::Variable(ref var) => Some(var),
             _ => None
+        }
+    }
+
+    fn occurs(&self, subs: &Substitution<Kind>, var: &u32) -> bool {
+        let kind = subs.real(self);
+        match *kind {
+            Kind::Variable(other) => *var == other,
+            Kind::Function(ref a, ref r) => a.occurs(subs, var) || r.occurs(subs, var),
+            Kind::Star => false
         }
     }
 }
@@ -235,47 +251,18 @@ impl <'a> KindCheck<'a> {
     fn unify_(&self, expected: &Kind, actual: &Kind) -> bool {
         match (expected, actual) {
             (&Kind::Variable(l), &Kind::Variable(r)) if l == r => true,
-            (&Kind::Variable(l), r) => {
-                self.union(l, r)
+            (&Kind::Variable(ref l), r) => {
+                self.subs.union(l, r)
+                    .is_ok()
             }
-            (l, &Kind::Variable(r)) => {
-                self.union(r, l)
+            (l, &Kind::Variable(ref r)) => {
+                self.subs.union(r, l)
+                    .is_ok()
             }
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
                 self.unify_(l1, r1) && self.unify_(l2, r2)
             }
             (l, r) => l == r
-        }
-    }
-
-    fn union(&self, id: u32, typ: &Kind) -> bool {
-        if self.occurs(id, typ) {
-            return false
-        }
-        {
-            let id_type = self.subs.find_type_for_var(id);
-            let other_type = self.subs.real(typ);
-            if id_type.map(|x| x == other_type).unwrap_or(Kind::Variable(id.clone()) == *other_type) {
-                return true
-            }
-        }
-        let map: &mut _ = unsafe { &mut *self.subs.map.get() };
-        //Always make sure the mapping is from a higher variable to a lower
-        //This way the resulting variables are always equal to any variables in the globals
-        //declaration
-        match *typ {
-            Kind::Variable(other_id) if id < other_id => map.insert(other_id, Box::new(Kind::Variable(id))),
-            _ => map.insert(id, Box::new(typ.clone()))
-        };
-        true
-    }
-
-    fn occurs(&self, var: u32, kind: &Kind) -> bool {
-        let kind = self.subs.real(kind);
-        match *kind {
-            Kind::Variable(other) => var == other,
-            Kind::Function(ref a, ref r) => self.occurs(var, a) || self.occurs(var, r),
-            Kind::Star => false
         }
     }
 }

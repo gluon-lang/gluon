@@ -10,7 +10,7 @@ use base::ast::{ASTType, MutVisitor};
 use base::interner::{Interner, InternedStr};
 use base::gc::Gc;
 use kindcheck;
-use substitution::{Substitution, Substitutable};
+use substitution::{Substitution, Substitutable, Variable};
 use error::Errors;
 
 use self::TypeError::*;
@@ -85,15 +85,43 @@ impl fmt::Display for TypeError {
 pub type TcResult = Result<TcType, TypeError>;
 pub type UnificationResult = Result<(), UnificationError>;
 
+impl Variable for ast::TypeVariable {
+    fn get_id(&self) -> u32 {
+        self.id
+    }
+}
+
 impl Substitutable for TcType {
+    type Variable = ast::TypeVariable;
+
     fn new(id: u32) -> TcType {
         Type::variable(ast::TypeVariable::new(id))
     }
-    fn get_var(&self) -> Option<u32> {
+
+    fn from_variable(var: ast::TypeVariable) -> TcType {
+        Type::variable(var)
+    }
+
+    fn get_var(&self) -> Option<&ast::TypeVariable> {
         match **self {
-            Type::Variable(ref var) => Some(var.id),
+            Type::Variable(ref var) => Some(var),
             _ => None
         }
+    }
+
+    fn occurs(&self, subs: &Substitution<TcType>, var: &ast::TypeVariable) -> bool {
+        let mut occurs = false;
+        walk_real_type(subs, self, &mut |typ| {
+            if occurs { return }
+            if let Type::Variable(ref other) = *typ {
+                if var == other {
+                    occurs = true;
+                    return
+                }
+                subs.update_level(var.id, other.id);
+            }
+        });
+        occurs
     }
 }
 
@@ -1036,21 +1064,6 @@ impl <'a> Typecheck<'a> {
         }
     }
 
-    fn occurs(&self, var: &ast::TypeVariable, typ: &TcType) -> bool {
-        let mut occurs = false;
-        walk_real_type(&self.subs, typ, &mut |typ| {
-            if occurs { return }
-            if let Type::Variable(ref other) = *typ {
-                if var == other {
-                    occurs = true;
-                    return
-                }
-                self.subs.update_level(var.id, other.id);
-            }
-        });
-        occurs
-    }
-
     fn set_type(&self, t: TcType) -> TcType {
         ast::walk_move_type(t, &mut |typ| {
             let replacement = self.replace_variable(typ);
@@ -1076,30 +1089,8 @@ impl <'a> Typecheck<'a> {
     }
 
     fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> UnificationResult {
-        if self.occurs(id, typ) {
-            return Err(UnificationError::Occurs(id.clone(), typ.clone()))
-        }
-        {
-            let id_type = self.subs.find_type_for_var(id.id);
-            let other_type = self.subs.real(typ);
-            if id_type.map(|x| x == other_type).unwrap_or(Type::variable(id.clone()) == *other_type) {
-                return Ok(())
-            }
-        }
-        let map: &mut _ = unsafe { &mut *self.subs.map.get() };
-        //Always make sure the mapping is from a higher variable to a lower
-        //This way the resulting variables are always equal to any variables in the globals
-        //declaration
-        match **typ {
-            Type::Variable(ref other_id) if self.subs.get_level(id.id) < self.subs.get_level(other_id.id) => {
-                map.insert(other_id.id, Box::new(Type::variable(id.clone())));
-                self.subs.update_level(id.id, other_id.id);
-            }
-            _ => {
-                map.insert(id.id, Box::new(typ.clone()));
-            }
-        };
-        Ok(())
+        self.subs.union(id, typ)
+            .map_err(|()| UnificationError::Occurs(id.clone(), typ.clone()))
     }
 
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
