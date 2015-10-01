@@ -96,8 +96,7 @@ pub struct Move<T>(pub T);
 unsafe impl <T> DataDef for Move<T> {
     type Value = T;
     fn size(&self) -> usize {
-        use std::mem::size_of;
-        size_of::<T>()
+        mem::size_of::<T>()
     }
     fn initialize(self, result: WriteOnly<T>) -> &mut T {
         result.write(self.0)
@@ -235,6 +234,21 @@ impl <T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
     }
 }
 
+impl <T: ?Sized> GcPtr<T> {
+    fn header(&self) -> &GcHeader {
+        //Use of transmute_copy allows us to get the pointer
+        //to the data regardless of wether T is unsized or not
+        //(DST is structured as (ptr, len))
+        //This function should always be safe to call as GcPtr's should always have a header
+        //TODO: Better way of doing this?
+        unsafe {
+            let p: *mut u8 = mem::transmute_copy(&self.ptr);
+            let header = p.offset(-(GcHeader::value_offset() as isize));
+            &*(header as *const GcHeader)
+        }
+    }
+}
+
 impl <'a, T: Traverseable + 'a> GcPtr<T> {
     pub fn as_traverseable(self) -> GcPtr<Traverseable + 'a> {
         GcPtr { ptr: self.ptr as *const Traverseable }
@@ -366,7 +380,7 @@ impl Gc {
     }
 
     
-    fn collect2<R: ?Sized, D>(&mut self, roots: &mut R, def: &mut D)
+    unsafe fn collect2<R: ?Sized, D>(&mut self, roots: &mut R, def: &mut D)
         where R: Traverseable, D: Traverseable {
         debug!("Start collect");
         roots.traverse(self);
@@ -377,7 +391,7 @@ impl Gc {
     ///Marks the GcPtr
     ///Returns true if the pointer was already marked
     fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
-        let header = unsafe { Gc::gc_header(&value) };
+        let header = value.header();
         if header.marked.get() {
             return true
         }
@@ -387,13 +401,13 @@ impl Gc {
         }
     }
 
-    fn sweep(&mut self) {
+    unsafe fn sweep(&mut self) {
         //Usage of unsafe are sadly needed to circumvent the borrow checker
         let mut first = self.values.take();
         {
             let mut maybe_header = &mut first;
             loop {
-                let current: &mut Option<AllocPtr> = unsafe { mem::transmute(&mut *maybe_header) };
+                let current: &mut Option<AllocPtr> = mem::transmute(&mut *maybe_header);
                 maybe_header = match *maybe_header {
                     Some(ref mut header) => {
                         if !header.marked.get() {
@@ -403,7 +417,7 @@ impl Gc {
                         }
                         else {
                             header.marked.set(false);
-                            let next: &mut Option<AllocPtr> = unsafe { mem::transmute(&mut header.next) };
+                            let next: &mut Option<AllocPtr> = mem::transmute(&mut header.next);
                             next
                         }
                     }
@@ -413,20 +427,11 @@ impl Gc {
         }
         self.values = first;
     }
+
     fn free(&mut self, header: Option<AllocPtr>) {
         self.allocated_objects -= 1;
         debug!("FREE: {:?}", header);
         drop(header);
-    }
-
-    unsafe fn gc_header<T: ?Sized>(value: &GcPtr<T>) -> &GcHeader {
-        //Use of transmute_copy allows us to get the pointer
-        //to the data regardless of wether T is unsized or not
-        //(DST is structured as (ptr, len))
-        //TODO: Better way of doing this?
-        let p: *mut u8 = mem::transmute_copy(&value.ptr);
-        let header = p.offset(-(GcHeader::value_offset() as isize));
-        &*(header as *const GcHeader)
     }
 }
 
@@ -436,6 +441,7 @@ mod tests {
     use super::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};
     use std::ops::Deref;
     use std::fmt;
+    use std::mem;
 
     use self::Value::*;
 
@@ -467,8 +473,7 @@ mod tests {
     unsafe impl <'a> DataDef for Def<'a> {
         type Value = Vec<Value>;
         fn size(&self) -> usize {
-            use std::mem::size_of;
-            self.elems.len() * size_of::<Value>()
+            self.elems.len() * mem::size_of::<Value>()
         }
         fn initialize(self, result: WriteOnly<Vec<Value>>) -> &mut Vec<Value> {
             let vec = self.elems.iter().map(|x| *x).collect();
@@ -516,7 +521,7 @@ mod tests {
     fn gc_header() {
         let mut gc: Gc = Gc::new();
         let ptr = gc.alloc(Def { elems: &[Int(1)] });
-        let header: *const _ = unsafe { Gc::gc_header(&ptr) };
+        let header: *const _ = ptr.header();
         let other: *const _ = &**gc.values.as_mut().unwrap();
         assert_eq!(header, other);
     }
