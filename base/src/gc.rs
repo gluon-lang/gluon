@@ -6,6 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::cell::Cell;
 use std::any::Any;
+use std::marker::PhantomData;
 
 
 #[inline]
@@ -29,6 +30,51 @@ unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
     Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
 }
 
+pub struct WriteOnly<'s, T: ?Sized + 's>(*mut T, PhantomData<&'s mut T>);
+
+impl <'s, T: ?Sized> WriteOnly<'s, T> {
+    unsafe fn new(t: *mut T) -> WriteOnly<'s, T> {
+        WriteOnly(t, PhantomData)
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.0
+    }
+}
+
+impl <'s, T> WriteOnly<'s, T> {
+    pub fn write(self, t: T) -> &'s mut T {
+        unsafe {
+            ptr::write(self.0, t);
+            &mut *self.0
+        }
+    }
+}
+
+impl<'s, T: Copy> WriteOnly<'s, [T]> {
+    pub fn write_slice(self, s: &[T]) -> &'s mut [T] {
+        let self_ = unsafe { &mut *self.0 };
+        assert!(s.len() == self_.len());
+        for (to, from) in self_.iter_mut().zip(s) {
+            *to = *from;
+        }
+        self_
+    }
+}
+
+impl<'s> WriteOnly<'s, str> {
+    pub fn write_str(self, s: &str) -> &'s mut str {
+        unsafe {
+            let ptr: &mut [u8] = mem::transmute::<*mut str, &mut [u8]>(self.0);
+            assert!(s.len() == ptr.len());
+            for (to, from) in ptr.iter_mut().zip(s.as_bytes()) {
+                *to = *from;
+            }
+            &mut *self.0
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Gc {
     values: Option<AllocPtr>,
@@ -39,8 +85,8 @@ pub struct Gc {
 pub unsafe trait DataDef {
     type Value: ?Sized;
     fn size(&self) -> usize;
-    fn initialize(self, ptr: *mut <Self as DataDef>::Value);
-    fn make_ptr(&self, ptr: *mut ()) -> *mut <Self as DataDef>::Value;
+    fn initialize(self, ptr: WriteOnly<Self::Value>) -> &mut Self::Value;
+    fn make_ptr(&self, ptr: *mut ()) -> *mut Self::Value;
 }
 
 ///Datadefinition that moves its value directly into the pointer
@@ -53,10 +99,8 @@ unsafe impl <T> DataDef for Move<T> {
         use std::mem::size_of;
         size_of::<T>()
     }
-    fn initialize(self, result: *mut T) {
-        unsafe {
-            ::std::ptr::write(result, self.0);
-        }
+    fn initialize(self, result: WriteOnly<T>) -> &mut T {
+        result.write(self.0)
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut T {
         ptr as *mut T
@@ -285,8 +329,11 @@ impl Gc {
         ptr.next = self.values.take();
         self.allocated_objects += 1;
         unsafe {
-            let p: &mut T = &mut *def.make_ptr(ptr.value());
-            def.initialize(p);
+            let p: *mut T = def.make_ptr(ptr.value());
+            let ret: *const T = &*def.initialize(WriteOnly::new(p));
+            //Check that the returned pointer is the same as the one we sent as an extra precaution
+            //that the pointer was initialized
+            assert!(ret == p);
             self.values = Some(ptr);
             GcPtr { ptr: p }
         }
@@ -386,7 +433,7 @@ impl Gc {
 
 #[cfg(test)]
 mod tests {
-    use super::{Gc, GcPtr, Traverseable, DataDef};
+    use super::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};
     use std::ops::Deref;
     use std::fmt;
 
@@ -423,11 +470,9 @@ mod tests {
             use std::mem::size_of;
             self.elems.len() * size_of::<Value>()
         }
-        fn initialize(self, result: *mut Vec<Value>) {
+        fn initialize(self, result: WriteOnly<Vec<Value>>) -> &mut Vec<Value> {
             let vec = self.elems.iter().map(|x| *x).collect();
-            unsafe {
-                ::std::ptr::write(result, vec);
-            }
+            result.write(vec)
         }
         fn make_ptr(&self, ptr: *mut ()) -> *mut Vec<Value> {
             ptr as *mut _

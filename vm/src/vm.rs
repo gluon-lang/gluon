@@ -13,7 +13,7 @@ use base::ast::{Type, ASTType};
 use check::typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
 use types::*;
 use base::interner::{Interner, InternedStr};
-use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move};
+use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
 use fixed::*;
 use api::{primitive, Pushable, IO};
@@ -90,12 +90,13 @@ unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
         use std::mem::size_of;
         size_of::<GcPtr<BytecodeFunction>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
     }
-    fn initialize(self, result: *mut ClosureData<'a>) {
-        let result = unsafe { &mut *result };
+    fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData<'a>>) -> &'w mut ClosureData<'a> {
+        let result = unsafe { &mut *result.as_mut_ptr() };
         result.function = self.0;
         for (field, value) in result.upvars.iter().zip(self.1.iter()) {
             field.set(value.clone());
         }
+        result
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut ClosureData<'a> {
         let x = unsafe {
@@ -236,12 +237,13 @@ unsafe impl <'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
         use std::mem::size_of;
         size_of::<Callable<'a>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
     }
-    fn initialize(self, result: *mut PartialApplicationData<'a>) {
-        let result = unsafe { &mut *result };
+    fn initialize<'w>(self, mut result: WriteOnly<'w, PartialApplicationData<'a>>) -> &'w mut PartialApplicationData<'a> {
+        let result = unsafe { &mut *result.as_mut_ptr() };
         result.function = self.0;
         for (field, value) in result.arguments.iter().zip(self.1.iter()) {
             field.set(value.clone());
         }
+        result
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut PartialApplicationData<'a> {
         unsafe {
@@ -573,12 +575,13 @@ unsafe impl <'a, 'b> DataDef for Def<'a, 'b> {
         use std::mem::size_of;
         size_of::<usize>() + size_of::<Value<'a>>() * self.elems.len()
     }
-    fn initialize(self, result: *mut DataStruct<'a>) {
-        let result = unsafe { &mut *result };
+    fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct<'a>>) -> &'w mut DataStruct<'a> {
+        let result = unsafe { &mut *result.as_mut_ptr() };
         result.tag = self.tag;
         for (field, value) in result.fields.iter().zip(self.elems.iter()) {
             field.set(value.clone());
         }
+        result
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {
         unsafe {

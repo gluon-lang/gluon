@@ -4,7 +4,7 @@ use std::io::{Read, stdin};
 use std::slice;
 
 use api::{generic, Generic, Getable, Array, IO, MaybeError};
-use base::gc::DataDef;
+use base::gc::{DataDef, WriteOnly};
 use vm::{VM, BytecodeFunction, DataStruct, VMInt, Status, Value, RootStr};
 use types::Instruction::Call;
 use stack::StackFrame;
@@ -36,12 +36,13 @@ pub fn array_append<'a, 'vm>(lhs: Array<'a, 'vm, Generic<'a, generic::A>>,
             use std::mem::size_of;
             size_of::<usize>() + size_of::<Value<'a>>() * (self.lhs.len() + self.rhs.len())
         }
-        fn initialize(self, result: *mut DataStruct<'a>) {
-            let result = unsafe { &mut *result };
+        fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct<'a>>) -> &'w mut DataStruct<'a> {
+            let result = unsafe { &mut *result.as_mut_ptr() };
             result.tag = 0;
             for (field, value) in result.fields.iter().zip(self.lhs.iter().chain(self.rhs.iter())) {
                 field.set(value.get());
             }
+            result
         }
         fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {
             unsafe {

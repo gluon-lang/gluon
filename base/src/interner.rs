@@ -6,7 +6,7 @@ use std::ops::Deref;
 use std::slice;
 use ast::{AstId, IdentEnv, ASTType};
 
-use gc::{GcPtr, Gc, DataDef, Traverseable};
+use gc::{GcPtr, Gc, DataDef, Traverseable, WriteOnly};
 
 /// Interned strings which allow for fast equality checks and hashing
 #[derive(Copy, Clone, Eq)]
@@ -63,13 +63,11 @@ unsafe impl <'a> DataDef for &'a str {
     fn size(&self) -> usize {
         self.len()
     }
-    fn initialize(self, ptr: *mut str) {
-        let ptr: &mut [u8] = unsafe { mem::transmute::<*mut str, &mut [u8]>(ptr) };
-        assert_eq!(self.len(), ptr.len());
-        for (to, from) in ptr.iter_mut().zip(self.as_bytes()) {
-            *to = *from;
-        }
+
+    fn initialize(self, ptr: WriteOnly<str>) -> &mut str {
+        ptr.write_str(self)
     }
+
     fn make_ptr(&self, ptr: *mut ()) -> *mut str {
         unsafe {
             let x = slice::from_raw_parts_mut(ptr as *mut u8, self.len());
