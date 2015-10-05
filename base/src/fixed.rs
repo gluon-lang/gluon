@@ -34,6 +34,10 @@ impl <K: Eq + Hash, V> FixedMap<K, V> {
         FixedMap { map: RefCell::new(HashMap::new()) }
     }
 
+    pub fn clear(&mut self) {
+        self.map.borrow_mut().clear();
+    }
+
     pub fn try_insert(&self, key: K, value: V) -> Result<(), (K, V)> {
         if self.get(&key).is_some() {
             Err((key, value))

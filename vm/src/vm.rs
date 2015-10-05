@@ -12,10 +12,10 @@ use base::ast;
 use base::ast::{Type, ASTType};
 use check::typecheck::{Typecheck, TypeEnv, TypeInfos, Typed, TcIdent, TcType};
 use types::*;
+use base::fixed::{FixedMap, FixedVec};
 use base::interner::{Interner, InternedStr};
 use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
-use fixed::*;
 use api::{primitive, Pushable, IO};
 use lazy::Lazy;
 
