@@ -56,7 +56,7 @@ impl Substitutable for Kind {
 pub struct KindCheck<'a> {
     variables: &'a mut [TcType],
     info: &'a (Fn(InternedStr) -> Option<&'a TcType> + 'a),
-    subs: Substitution<Kind>,
+    pub subs: Substitution<Kind>,
     star: Rc<Kind>
 }
 
@@ -89,9 +89,7 @@ fn walk_move_kind2<F>(kind: &Rc<Kind>, f: &mut F) -> Option<Rc<Kind>>
 
 impl <'a> KindCheck<'a> {
 
-    pub fn new(info: &'a Fn(InternedStr) -> Option<&'a TcType>, variables: &'a mut [TcType], id: u32) -> KindCheck<'a> {
-        let subs = Substitution::new();
-        subs.var_id.set(id);
+    pub fn new(info: &'a Fn(InternedStr) -> Option<&'a TcType>, variables: &'a mut [TcType], subs: Substitution<Kind>) -> KindCheck<'a> {
         KindCheck {
             variables: variables,
             info: info,
@@ -249,7 +247,7 @@ impl <'a> KindCheck<'a> {
         }
     }
     fn unify_(&self, expected: &Kind, actual: &Kind) -> bool {
-        match (expected, actual) {
+        match (self.subs.real(expected), self.subs.real(actual)) {
             (&Kind::Variable(l), &Kind::Variable(r)) if l == r => true,
             (&Kind::Variable(ref l), r) => {
                 self.subs.union(l, r)

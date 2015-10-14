@@ -3,6 +3,8 @@ extern crate log;
 #[cfg(test)]
 extern crate env_logger;
 
+extern crate union_find;
+
 extern crate base;
 
 #[cfg(test)]

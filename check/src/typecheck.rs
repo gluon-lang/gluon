@@ -402,24 +402,7 @@ impl <'a> Typecheck<'a> {
             Err(mem::replace(&mut self.errors, Errors::new()))
         }
         else {
-            let mut generic = String::from("a");
-            typ = ast::walk_move_type(typ, &mut |typ| {
-                let result = self.replace_variable(typ);
-                let typ = result.as_ref().map(|t| &**t).unwrap_or(typ);
-                match *typ {
-                    Type::Variable(ref var) => {
-                        if let None = self.subs.find_type_for_var(var.id) {
-                            let gen = Type::generic(ast::Generic { kind: var.kind.clone(), id: self.interner.intern(self.gc, &generic) });
-                            let c = generic.pop().unwrap();
-                            generic.push((c as u8 + 1) as char);
-                            unsafe { self.subs.insert(var.id, gen) }
-                        }
-                    }
-                    _ => ()
-                }
-                let result2 = self.replace_variable(typ);
-                result2.or(result.clone())
-            });
+            typ = self.finish_type(0, typ);
             typ = ast::walk_move_type(typ, &mut unroll_app);
             self.replace_vars(0, expr);
             Ok(typ)
@@ -544,7 +527,7 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Let(ref mut bindings, ref mut body) => {
                 self.stack.enter_scope();
-                let level = self.subs.var_id.get();
+                let level = self.subs.var_id();
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter_mut() {
@@ -601,6 +584,7 @@ impl <'a> Typecheck<'a> {
                     }
                 }
                 //Once all variables inside the let has been unified we can quantify them
+                debug!("Quantifiy {}", level);
                 for bind in bindings {
                     self.replace_vars(level, &mut bind.expression);
                 }
@@ -700,11 +684,13 @@ impl <'a> Typecheck<'a> {
             ast::Expr::Type(ref mut id_type, ref mut typ, ref mut expr) => {
                 let (generic_args, id) = match (**id_type).clone() {
                     Type::Data(ast::TypeConstructor::Data(id), mut args) => {
+                        let subs = Substitution::new();
+                        subs.set_var_id(self.subs.var_id());
                         let mut generic_args = Vec::with_capacity(args.len());
                         for arg in args.iter_mut() {
                             let mut a = (**arg).clone();
                             if let Type::Generic(ref mut gen) = a {
-                                gen.kind = self.subs.new_kind();
+                                gen.kind = Rc::new(subs.new_var());
                                 generic_args.push(gen.clone());
                             }
                             *arg = TcType::from(a);
@@ -712,8 +698,17 @@ impl <'a> Typecheck<'a> {
                         let id_type_copy = Type::data(ast::TypeConstructor::Data(id), args.clone());
                         self.type_infos.type_to_id.insert(typ.clone(), id_type_copy.clone());
                         self.type_infos.id_to_type.insert(id, (generic_args.clone(), typ.clone().clone()));
-                        try!(self.kindcheck(typ, &mut args));
-                        try!(self.kindcheck(id_type, &mut args));
+
+                        {
+                            let f = |id| {
+                                self.type_infos.id_to_type.get(&id).map(|t| &t.1)
+                                    .and_then(|typ| self.type_infos.type_to_id.get(typ))
+                            };
+                            let mut check = super::kindcheck::KindCheck::new(&f, &mut args, subs);
+                            try!(check.kindcheck_type(typ));
+                            try!(check.kindcheck_type(id_type));
+                        }
+
                         for (g, a) in generic_args.iter_mut().zip(&args) {
                             if let Type::Generic(ref gen) = **a {
                                 g.kind = gen.kind.clone();
@@ -865,7 +860,9 @@ impl <'a> Typecheck<'a> {
             self.type_infos.id_to_type.get(&id).map(|t| &t.1)
                 .and_then(|typ| self.type_infos.type_to_id.get(typ))
         };
-        let mut check = super::kindcheck::KindCheck::new(&f, args, self.subs.var_id.get());
+        let subs = Substitution::new();
+        subs.set_var_id(self.subs.var_id());
+        let mut check = super::kindcheck::KindCheck::new(&f, args, subs);
         try!(check.kindcheck_type(typ));
         Ok(())
     }
@@ -1094,6 +1091,19 @@ impl <'a> Typecheck<'a> {
     }
 
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
+        let mut generic = {
+            let vars = self.subs.named_variables.borrow();
+            let max_var = vars.keys()
+                .fold("a", |max, current| {
+                    if current.len() == 1 {
+                        ::std::cmp::max(max, &current[..])
+                    }
+                    else {
+                        max
+                    }
+                });
+            String::from(max_var)
+        };
         ast::walk_move_type(typ, &mut |typ| {
             let replacement = self.replace_variable(typ);
             let mut typ = typ;
@@ -1103,9 +1113,13 @@ impl <'a> Typecheck<'a> {
             }
             match *typ {
                 Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
-                    let generic = format!("a_{}", var);
+                    let c = generic.pop().unwrap();
+                    generic.push((c as u8 + 1) as char);
                     let id = self.interner.intern(self.gc, &generic);
-                    Some(Type::generic(ast::Generic { kind: var.kind.clone(), id: id }))
+                    let gen = Type::generic(ast::Generic { kind: var.kind.clone(), id: id });
+                    self.subs.insert(var.id, gen.clone());
+                    self.subs.named_variables.borrow_mut().insert(id, gen.clone());
+                    Some(gen)
                 }
                 _ => unroll_app(typ).or(replacement.clone())
             }
@@ -1158,15 +1172,11 @@ impl Substitution<TcType> {
         TcType::from(var)
     }
 
-    fn new_kind(&mut self) -> Rc<ast::Kind> {
-        self.var_id.set(self.var_id.get() + 1);
-        Rc::new(ast::Kind::Variable(self.var_id.get()))
-    }
-
     fn instantiate(&mut self, typ: &TcType) -> TcType {
-        self.variables.borrow_mut().clear();
+        self.named_variables.borrow_mut().clear();
         self.instantiate_(typ)
     }
+
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
         instantiate(typ.clone(), |id| Some(self.variable_for2(id)))
     }
@@ -1176,7 +1186,7 @@ impl Substitution<TcType> {
                         arguments: &[TcType],
                         args: &[ast::Generic<InternedStr>]
                        ) -> TcType {
-        self.variables.borrow_mut().clear();
+        self.named_variables.borrow_mut().clear();
         instantiate(typ, |gen| {
             //Replace the generic variable with the type from the list
             //or if it is not found the make a fresh variable
@@ -1755,6 +1765,7 @@ and const x = \_ -> x
 in const
 ";
         let result = typecheck(text);
+        //FIXME Currently failing as there is no stable way of assigning unbound variables
         assert_eq!(result, Ok(Type::function(vec![gen("a"), gen("b")], gen("a"))));
     }
 
@@ -1916,12 +1927,12 @@ in \(<) ->
 in { empty, insert }
 ";
         let result = typecheck(text);
-        let a = || typ("a");
+        let b = || typ("b");
         let list = |s| typ_a("SortedList", vec![typ(s)]);
-        let cmp = Type::function(vec![a(), a()], typ("Bool"));
-        let insert = Type::function(vec![a(), list("a")], list("a"));
+        let cmp = Type::function(vec![b(), b()], typ("Bool"));
+        let insert = Type::function(vec![b(), list("b")], list("b"));
         let record = Type::record(vec![
-            ast::Field { name: intern("empty"), typ: list("b") },
+            ast::Field { name: intern("empty"), typ: list("c") },
             ast::Field {
                 name: intern("insert"),
                 typ: insert

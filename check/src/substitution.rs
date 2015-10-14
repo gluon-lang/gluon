@@ -1,14 +1,17 @@
-use std::cell::{Cell, RefCell, UnsafeCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::default::Default;
 use std::fmt;
+use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
+use base::fixed::{FixedMap, FixedVec};
 use base::interner::InternedStr;
 
 pub struct Substitution<T> {
-    pub map: UnsafeCell<HashMap<u32, Box<T>>>,
-    levels: UnsafeCell<HashMap<u32, u32>>,
-    pub variables: RefCell<HashMap<InternedStr, T>>,
-    pub var_id: Cell<u32>
+    map: RefCell<QuickFindUf<UnionByLevel>>,
+    variables: FixedVec<T>,
+    types: FixedMap<u32, T>,
+    pub named_variables: RefCell<HashMap<InternedStr, T>>,
 }
 
 pub trait Variable {
@@ -29,37 +32,86 @@ pub trait Substitutable: PartialEq + Clone {
     fn occurs(&self, subs: &Substitution<Self>, var: &Self::Variable) -> bool;
 }
 
+#[derive(Debug)]
+struct UnionByLevel {
+    rank: UnionByRank,
+    level: u32
+}
+
+impl Default for UnionByLevel {
+    fn default() -> UnionByLevel {
+        UnionByLevel { rank: UnionByRank::default(), level: ::std::u32::MAX }
+    }
+}
+
+impl Union for UnionByLevel {
+    #[inline]
+    fn union(left: UnionByLevel, right: UnionByLevel) -> UnionResult<UnionByLevel> {
+        use std::cmp::Ordering;
+        let (rank_result, rank) = match Union::union(left.rank, right.rank) {
+            UnionResult::Left(l) => (UnionResult::Left(UnionByLevel { rank: l, level: left.level }), l),
+            UnionResult::Right(r) => (UnionResult::Right(UnionByLevel { rank: r, level: left.level }), r)
+        };
+        match left.level.cmp(&right.level) {
+            Ordering::Less => UnionResult::Left(UnionByLevel { rank: rank, level: left.level }),
+            Ordering::Greater => UnionResult::Right(UnionByLevel { rank: rank, level: right.level }),
+            Ordering::Equal => rank_result
+        }
+    }
+}
+
 impl <T: fmt::Debug> fmt::Debug for Substitution<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let map: &_ = unsafe { &*self.map.get() };
-        write!(f, "Substitution {{ map: {:?}, variables: {:?}, var_id: {:?} }}",
-               map, self.variables.borrow(), self.var_id.get())
+        write!(f, "Substitution {{ map: {:?}, named_variables: {:?}, var_id: {:?} }}",
+               self.map.borrow(), self.named_variables.borrow(), self.var_id())
+    }
+}
+
+impl <T> Substitution<T> {
+    pub fn var_id(&self) -> u32 {
+        (self.variables.borrow().len() - 1) as u32
     }
 }
 
 impl <T: Substitutable> Substitution<T> {
     pub fn new() -> Substitution<T> {
+        let variables = FixedVec::new();
+        variables.push(T::new(0));
         Substitution {
-            map: UnsafeCell::new(HashMap::new()),
-            levels: UnsafeCell::new(HashMap::new()),
-            variables: RefCell::new(HashMap::new()),
-            var_id: Cell::new(1)
+            map: RefCell::new(QuickFindUf::new(1)),
+            variables: variables, 
+            types: FixedMap::new(),
+            named_variables: RefCell::new(HashMap::new()),
         }
     }
 
     pub fn clear(&mut self) {
-        unsafe { (*self.map.get()).clear(); }
-        self.variables.borrow_mut().clear();
-        self.var_id.set(1);
+        self.types.clear();
+        self.variables.clear();
+        self.variables.push(T::new(0));
+        self.named_variables.borrow_mut().clear();
     }
 
-    pub unsafe fn insert(&mut self, var: u32, t: T) {
-        (*self.map.get()).insert(var, Box::new(t));
+    pub fn insert(&self, var: u32, t: T) {
+        match t.get_var() {
+            Some(_) => {
+                panic!("Tried to insert variable which is not allowed as that would cause memory unsafety")
+            }
+            None => match self.types.try_insert(var, t) {
+                Ok(()) => (),
+                Err(_) => panic!("Expected variable to not have a type associated with it")
+            }
+        }
     }
 
-    pub fn new_var(&mut self) -> T {
-        self.var_id.set(self.var_id.get() + 1);
-        T::new(self.var_id.get())
+    pub fn new_var(&self) -> T
+    where T: Clone {
+        let var_id = self.variables.len() as u32;
+        let _id = self.map.borrow_mut().new_key();
+        assert_eq!(_id, self.variables.len());
+        self.variables.push(T::new(var_id));
+        let last = self.variables.len() - 1;
+        self.variables[last].clone()
     }
 
     pub fn real<'r>(&'r self, typ: &'r T) -> &'r T {
@@ -87,54 +139,37 @@ impl <T: Substitutable> Substitution<T> {
         //to look for parents
         //Since we never have a cycle in the map we will never hold a &mut
         //to the same place
-        let map = unsafe { &mut *self.map.get() };
-        map.get_mut(&var).map(|typ| {
-            let new_type = match typ.get_var() {
-                Some(parent_var) if parent_var.get_id() != var => {
-                    match self.find_type_for_var(parent_var.get_id()) {
-                        Some(other) => Some(other.clone()),
-                        None => None
-                    }
-                }
-                _ => None
-            };
-            if let Some(new_type) = new_type {
-                **typ = new_type;
-            }
-            &**typ
-        })
+        let index = self.map.borrow_mut().find(var as usize) as u32;
+        self.types.get(&index)
+            .or_else(|| if var == index { None } else { Some(&self.variables[index as usize]) })
     }
 
     pub fn variable_for(&self, id: InternedStr) -> T {
-        let mut variables = self.variables.borrow_mut();
+        let mut variables = self.named_variables.borrow_mut();
         match variables.entry(id) {
             Entry::Vacant(entry) => {
-                self.var_id.set(self.var_id.get() + 1);
-                entry.insert(T::new(self.var_id.get())).clone()
+                let t = self.new_var();
+                entry.insert(t).clone()
             }
             Entry::Occupied(entry) => entry.get().clone()
         }
     }
 
     pub fn update_level(&self, var: u32, other: u32) {
-        let map = unsafe { &mut *self.levels.get() };
-        let level = self.get_level(var);
-        match map.get_mut(&other) {
-            Some(t) => {
-                *t = ::std::cmp::min(*t, level);
-                return
-            }
-            None => ()
-        }
-        map.insert(other, ::std::cmp::min(other, level));
+        let level = ::std::cmp::min(self.get_level(var), self.get_level(other));
+        let mut map = self.map.borrow_mut();
+        map.get_mut(var as usize).level = level;
+        map.get_mut(other as usize).level = level;
     }
 
     pub fn get_level(&self, mut var: u32) -> u32 {
         if let Some(v) = self.find_type_for_var(var) {
             var = v.get_var().map(|v| v.get_id()).unwrap_or(var);
         }
-        let map = unsafe { &mut *self.levels.get() };
-        map.get(&var).cloned().unwrap_or(var)
+        let mut map = self.map.borrow_mut();
+        let level = &mut map.get_mut(var as usize).level;
+        *level = ::std::cmp::min(*level, var);
+        *level
     }
 
     pub fn union(&self, id: &T::Variable, typ: &T) -> Result<(), ()>
@@ -149,19 +184,24 @@ impl <T: Substitutable> Substitution<T> {
                 return Ok(())
             }
         }
-        let map: &mut _ = unsafe { &mut *self.map.get() };
         //Always make sure the mapping is from a higher variable to a lower
         //This way the resulting variables are always equal to any variables in the globals
         //declaration
         match typ.get_var() {
-            Some(other_id) if self.get_level(id.get_id()) < self.get_level(other_id.get_id()) => {
-                map.insert(other_id.get_id(), Box::new(T::from_variable(id.clone())));
+            Some(other_id) => {
+                self.map.borrow_mut().union(id.get_id() as usize, other_id.get_id() as usize);
                 self.update_level(id.get_id(), other_id.get_id());
             }
             _ => {
-                map.insert(id.get_id(), Box::new(typ.clone()));
+                self.insert(id.get_id(), typ.clone());
             }
         };
         Ok(())
+    }
+
+    pub fn set_var_id(&self, id: u32) {
+        for _ in self.var_id()..id {
+            self.new_var();
+        }
     }
 }

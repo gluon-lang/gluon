@@ -5,6 +5,10 @@ authors = ["Markus <marwes91@gmail.com>"]
 
 [dependencies.log]
 [dependencies.env_logger]
+
+[dependencies.union-find]
+git = "https://github.com/Marwes/union-find-rs"
+
 [dependencies.base]
 path = "../base"
 [dependencies.parser]
