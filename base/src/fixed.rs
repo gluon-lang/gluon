@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 use std::iter::{FromIterator, IntoIterator};
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
 //NOTE: transmute is used to circumvent the borrow checker in this module
 //This is safe since the containers hold boxed values meaning allocating larger
@@ -12,6 +12,10 @@ use std::ops::Index;
 //is not done for efficiency since it is not needed)
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
+    ::std::mem::transmute(x) 
+}
+
+unsafe fn forget_lifetime_mut<'a, 'b, T: ?Sized>(x: &'a mut T) -> &'b mut T {
     ::std::mem::transmute(x) 
 }
 
@@ -70,6 +74,10 @@ impl <T> FixedVec<T> {
         FixedVec { vec: RefCell::new(Vec::new()) }
     }
 
+    pub fn clear(&mut self) {
+        self.vec.borrow_mut().clear();
+    }
+
     pub fn push(&self, value: T) {
         self.vec.borrow_mut().push(Box::new(value))
     }
@@ -100,11 +108,18 @@ impl <T> Index<usize> for FixedVec<T> {
     type Output = T;
     fn index(&self, index: usize) -> &T {
         let vec = self.vec.borrow();
-        let result = &*(*vec)[index];
+        let result = &*vec[index];
         unsafe { forget_lifetime(result) }
     }
 }
 
+impl <T> IndexMut<usize> for FixedVec<T> {
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        let mut vec = self.vec.borrow_mut();
+        let result = &mut *vec[index];
+        unsafe { forget_lifetime_mut(result) }
+    }
+}
 
 impl <A> FromIterator<A> for FixedVec<A> {
     fn from_iter<T: IntoIterator<Item=A>>(iterator: T) -> FixedVec<A> {
