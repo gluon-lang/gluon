@@ -4,7 +4,7 @@ version = "0.0.1"
 dependencies = [
  "base 0.1.0",
  "check 0.1.0",
- "clap 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clap 1.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "parser 0.1.0",
@@ -33,6 +33,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitflags"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "check"
 version = "0.1.0"
 dependencies = [
@@ -45,16 +50,17 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "1.4.0"
+version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "ansi_term 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bitflags 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "strsim 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "combine"
-version = "1.0.0"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
@@ -62,7 +68,7 @@ name = "combine-language"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "combine 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "combine 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -100,7 +106,7 @@ name = "parser"
 version = "0.1.0"
 dependencies = [
  "base 0.1.0",
- "combine 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "combine 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "combine-language 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -129,7 +135,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "union-find"
 version = "0.2.1"
-source = "git+https://github.com/Marwes/union-find-rs#84f7a9460d115d832c7c383ff9d8f142b77065dc"
+source = "git+https://github.com/Marwes/union-find-rs#e5f1ac5a5094aa8307dfb32d0e4cb34016b5e170"
 
 [[package]]
 name = "vm"

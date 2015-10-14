@@ -107,7 +107,7 @@ impl <T: Substitutable> Substitution<T> {
     pub fn new_var(&self) -> T
     where T: Clone {
         let var_id = self.variables.len() as u32;
-        let _id = self.map.borrow_mut().new_key();
+        let _id = self.map.borrow_mut().new_key(UnionByLevel::default());
         assert_eq!(_id, self.variables.len());
         self.variables.push(T::new(var_id));
         let last = self.variables.len() - 1;
