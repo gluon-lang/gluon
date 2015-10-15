@@ -412,6 +412,7 @@ impl <'a> PartialEq for ExternFunction<'a> {
 
 impl <'a> fmt::Debug for ExternFunction<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        //read the v-table pointer of the Fn(..) type and print that
         let p: *const () = unsafe { ::std::mem::transmute_copy(& &*self.function) };
         write!(f, "{:?}", p)
     }
@@ -456,8 +457,6 @@ pub struct VM<'a> {
     pub gc: RefCell<Gc>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value<'a>>>,
-    //Since the vm will be retrieved often and the borrowing from a RefCell does not work
-    //it needs to be in a unsafe cell
     pub stack: RefCell<Stack<'a>>
 }
 

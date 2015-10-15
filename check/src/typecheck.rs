@@ -1435,7 +1435,6 @@ pub fn walk_real_type<F>(subs: &Substitution<TcType>, typ: &TcType, f: &mut F)
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
     use super::*;
     use base::ast;
     use super::super::tests::{get_local_interner, intern};

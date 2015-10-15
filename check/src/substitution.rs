@@ -135,10 +135,6 @@ impl <T: Substitutable> Substitution<T> {
     }
 
     pub fn find_type_for_var(&self, var: u32) -> Option<&T> {
-        //Use unsafe so that we can hold a reference into the map and continue
-        //to look for parents
-        //Since we never have a cycle in the map we will never hold a &mut
-        //to the same place
         let index = self.map.borrow_mut().find(var as usize) as u32;
         self.types.get(&index)
             .or_else(|| if var == index { None } else { Some(&self.variables[index as usize]) })
