@@ -147,9 +147,6 @@ impl TypeEnv for TypeInfos {
         self.id_to_type.get(id)
             .map(|&(ref args, ref typ)| (&args[..], Some(typ)))
     }
-    fn find_type_name(&self, _typ: &TcType) -> Option<TcType> {
-        None
-    }
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
         self.id_to_type.iter()
             .find(|&(_, &(_, ref typ))| {
@@ -172,14 +169,6 @@ impl TypeInfos {
         }
     }
 
-    pub fn find_id(&self, typ: &TcType) -> Option<TcType> {
-        self.type_to_id.iter()
-            .filter_map(|(real_type, id_type)| {
-                find_real_type(id_type, real_type, typ)
-            })
-            .next()
-    }
-
     pub fn extend(&mut self, other: TypeInfos) {
         let TypeInfos { id_to_type, type_to_id } = other;
         self.id_to_type.extend(id_to_type);
@@ -187,55 +176,9 @@ impl TypeInfos {
     }
 }
 
-fn find_real_type<'a>(id_type: &TcType, id_rhs_type: &TcType, real_type: &'a TcType) -> Option<TcType> {
-    let mut result = HashMap::new();
-    if find_real_type_(id_rhs_type, real_type, &mut result) {
-        let mut typ = id_type.clone();
-        typ = ast::walk_move_type(typ, &mut |typ| {
-            match *typ {
-                Type::Generic(ref id) => Some(result[&id.id].clone()),
-                _ => return None
-            }
-        });
-        Some(typ)
-    }
-    else {
-        None
-    }
-}
-
-fn find_real_type_<'a>(id_rhs_type: &TcType, real_type: &'a TcType, out: &mut HashMap<InternedStr, &'a TcType>) -> bool {
-    match (&**id_rhs_type, &**real_type) {
-        (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
-            l_args.iter().zip(r_args.iter())
-                .all(|(l, r)| find_real_type_(l, r, out))
-                && find_real_type_(l_ret, r_ret, out)
-        }
-        (&Type::Variable(_), _) => {
-            panic!()
-        }
-        (&Type::Generic(ref i), _) => {
-            out.insert(i.id, real_type);
-            true
-        }
-        (&Type::Array(ref l), &Type::Array(ref r)) => find_real_type_(l, r, out),
-        (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
-            l == r && l_args.iter().zip(r_args.iter()).all(|(l, r)| find_real_type_(l, r, out))
-        }
-        (&Type::Record(ref l_args), &Type::Record(ref r_args)) => {
-            l_args.iter().zip(r_args.iter()).all(|(l, r)| l.name == r.name && find_real_type_(&l.typ, &r.typ, out))
-        }
-        (&Type::App(ref l_1, ref r_1), &Type::App(ref l_2, ref r_2)) => {
-            find_real_type_(l_1, l_2, out) && find_real_type_(r_1, r_2, out)
-        }
-        (l, r) => l == r
-    }
-}
-
 pub trait TypeEnv {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType>;
     fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)>;
-    fn find_type_name(&self, typ: &TcType) -> Option<TcType>;
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)>;
 }
 
@@ -245,9 +188,6 @@ impl <'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
     }
     fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
         (**self).find_type_info(id)
-    }
-    fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
-        (**self).find_type_name(typ)
     }
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
         (**self).find_record(fields)
@@ -264,11 +204,6 @@ impl <T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
         let &(ref outer, ref inner) = self;
         inner.find_type_info(id)
             .or_else(|| outer.find_type_info(id))
-    }
-    fn find_type_name(&self, typ: &TcType) -> Option<TcType> {
-        let &(ref outer, ref inner) = self;
-        inner.find_type_name(typ)
-            .or_else(|| outer.find_type_name(typ))
     }
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
         let &(ref outer, ref inner) = self;
@@ -303,9 +238,6 @@ impl <'a> TypeEnv for Typecheck<'a> {
     fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
         self.type_infos.find_type_info(id)
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
-    }
-    fn find_type_name(&self, _typ: &TcType) -> Option<TcType> {
-        None
     }
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
         self.type_infos.find_record(fields)
