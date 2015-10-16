@@ -300,7 +300,7 @@ impl <'a> Typecheck<'a> {
         self.environment = Some(env);
     }
 
-    fn replace_vars(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
+    fn generalize_variables(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
         //Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b:'a> { level: u32, tc: &'a mut Typecheck<'b> }
         impl <'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
@@ -336,7 +336,7 @@ impl <'a> Typecheck<'a> {
         else {
             typ = self.finish_type(0, typ);
             typ = ast::walk_move_type(typ, &mut unroll_app);
-            self.replace_vars(0, expr);
+            self.generalize_variables(0, expr);
             Ok(typ)
         }
     }
@@ -443,19 +443,20 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = try!(self.typecheck(&mut**expr));
-                self.stack.enter_scope();
-                try!(self.typecheck_pattern(&mut alts[0].pattern, typ.clone()));
-                let alt1_type = try!(self.typecheck(&mut alts[0].expression));
-                self.stack.exit_scope();
+                let mut expected_alt_type = None;
 
-                for alt in alts.iter_mut().skip(1) {
+                for alt in alts.iter_mut() {
                     self.stack.enter_scope();
                     try!(self.typecheck_pattern(&mut alt.pattern, typ.clone()));
-                    let alt_type = try!(self.typecheck(&mut alt.expression));
+                    let mut alt_type = try!(self.typecheck(&mut alt.expression));
                     self.stack.exit_scope();
-                    try!(self.unify(&alt1_type, alt_type));
+                    if let Some(ref expected) = expected_alt_type {
+                        alt_type = try!(self.unify(expected, alt_type));
+                    }
+                    expected_alt_type = Some(alt_type);
                 }
-                Ok(alt1_type)
+                expected_alt_type
+                    .ok_or(StringError("No alternative in case expression"))
             }
             ast::Expr::Let(ref mut bindings, ref mut body) => {
                 self.stack.enter_scope();
@@ -501,7 +502,7 @@ impl <'a> Typecheck<'a> {
                     }
                     if !is_recursive {
                         //Merge the type declaration and the actual type
-                        self.replace_vars(level, &mut bind.expression);
+                        self.generalize_variables(level, &mut bind.expression);
                         try!(self.typecheck_pattern(&mut bind.name, typ));
                     }
                     else {
@@ -512,13 +513,13 @@ impl <'a> Typecheck<'a> {
                     for (typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
                         //Merge the variable we bound to the name and the type inferred
                         //in the expression
-                        try!(self.unify(&TcType::from(bind.type_of().clone()), typ));
+                        try!(self.unify(&bind.type_of().clone(), typ));
                     }
                 }
                 //Once all variables inside the let has been unified we can quantify them
-                debug!("Quantifiy {}", level);
+                debug!("Generalize {}", level);
                 for bind in bindings {
-                    self.replace_vars(level, &mut bind.expression);
+                    self.generalize_variables(level, &mut bind.expression);
                 }
                 debug!("Typecheck `in`");
                 let result = self.typecheck(body);
