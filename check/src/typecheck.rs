@@ -618,7 +618,6 @@ impl <'a> Typecheck<'a> {
                 let (generic_args, id) = match (**id_type).clone() {
                     Type::Data(ast::TypeConstructor::Data(id), mut args) => {
                         let subs = Substitution::new();
-                        subs.set_var_id(self.subs.var_id());
                         let mut generic_args = Vec::with_capacity(args.len());
                         for arg in args.iter_mut() {
                             let mut a = (**arg).clone();
@@ -794,7 +793,6 @@ impl <'a> Typecheck<'a> {
                 .and_then(|typ| self.type_infos.type_to_id.get(typ))
         };
         let subs = Substitution::new();
-        subs.set_var_id(self.subs.var_id());
         let mut check = super::kindcheck::KindCheck::new(&f, args, subs);
         try!(check.kindcheck_type(typ));
         Ok(())

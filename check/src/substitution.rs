@@ -194,10 +194,4 @@ impl <T: Substitutable> Substitution<T> {
         };
         Ok(())
     }
-
-    pub fn set_var_id(&self, id: u32) {
-        for _ in self.var_id()..id {
-            self.new_var();
-        }
-    }
 }
