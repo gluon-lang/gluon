@@ -1396,7 +1396,8 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>
             let mut gc = vm.gc.borrow_mut();
             let mut tc = Typecheck::new(&mut interner, &mut gc);
             tc.add_environment(&env);
-            let typ = try!(tc.typecheck_expr(&mut expr));
+            let typ = try!(tc.typecheck_expr(&mut expr)
+                           .map_err(|errors| ::check::error::in_file(name.into(), errors)));
             (typ, tc.type_infos)
         };
         let mut function = {

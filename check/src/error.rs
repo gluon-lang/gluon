@@ -33,3 +33,28 @@ impl <T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
         "Errors"
     }
 }
+
+#[derive(Debug)]
+pub struct InFile<E> {
+    file: String,
+    error: Errors<E>
+}
+
+pub fn in_file<E>(file: String, error: Errors<E>) -> InFile<E> {
+    InFile { file: file, error: error }
+}
+
+impl <E: fmt::Display> fmt::Display for InFile<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for error in self.error.errors.iter() {
+            try!(write!(f, "{}:{}\n", self.file, error));
+        }
+        Ok(())
+    }
+}
+
+impl <T: fmt::Display + fmt::Debug + Any> StdError for InFile<T> {
+    fn description(&self) -> &str {
+        "Error in file"
+    }
+}

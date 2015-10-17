@@ -17,7 +17,7 @@ pub use typed::Typed;
 
 pub mod typecheck;
 mod typed;
-mod error;
+pub mod error;
 mod kindcheck;
 mod substitution;
 mod scoped_map;
