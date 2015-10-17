@@ -485,32 +485,12 @@ where T: Deref<Target=Type<Id, T>> {
     }
     pub fn level(&self) -> u32 {
         use std::cmp::min;
-        match *self {
-            Type::App(ref l , ref r) => min(l.level(), r.level()),
-            Type::Data(_, ref types) =>
-                types.iter()
-                    .map(|t| t.level())
-                    .min()
-                    .unwrap_or(u32::max_value()),
-            Type::Variants(ref types) =>
-                types.iter()
-                    .map(|v| v.1.level())
-                    .min()
-                    .unwrap_or(u32::max_value()),
-            Type::Variable(ref var) => var.id,
-            Type::Function(ref args, ref r) =>
-                min(args.iter()
-                    .map(|t| t.level())
-                    .min()
-                    .unwrap_or(u32::max_value()), r.level()),
-            Type::Array(ref e) => e.level(),
-            Type::Record(ref types) => 
-                types.iter()
-                    .map(|v| v.typ.level())
-                    .min()
-                    .unwrap_or(u32::max_value()),
-            Type::Builtin(_) | Type::Generic(_) => u32::max_value(),
-        }
+        fold_type(self, |typ, level| {
+            match *typ {
+                Type::Variable(ref var) => min(var.id, level),
+                _ => level
+            }
+        }, u32::max_value())
     }
 }
 
@@ -772,8 +752,9 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
     }
 }
 
-pub fn walk_type<F, I>(typ: &Type<I>, f: &mut F)
-    where F: FnMut(&Type<I>) {
+pub fn walk_type<I, T, F>(typ: &Type<I, T>, f: &mut F)
+    where F: FnMut(&Type<I, T>)
+        , T: Deref<Target=Type<I, T>> {
     f(typ);
     match *typ {
         Type::Data(_, ref args) => {
@@ -806,6 +787,16 @@ pub fn walk_type<F, I>(typ: &Type<I>, f: &mut F)
         }
         Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => ()
     }
+}
+
+pub fn fold_type<I, T, F, A>(typ: &Type<I, T>, mut f: F, a: A) -> A
+    where F: FnMut(&Type<I, T>, A) -> A
+        , T: Deref<Target=Type<I, T>> {
+    let mut a = Some(a);
+    walk_type(typ, &mut |t| {
+        a = Some(f(t, a.take().expect("None in fold_type")));
+    });
+    a.expect("fold_type")
 }
 
 pub fn walk_mut_type<F, I, T>(typ: &mut Type<I, T>, f: &mut F)
