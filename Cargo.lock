@@ -45,7 +45,7 @@ dependencies = [
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "parser 0.1.0",
- "union-find 0.2.1 (git+https://github.com/Marwes/union-find-rs)",
+ "union-find 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -134,8 +134,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "union-find"
-version = "0.2.1"
-source = "git+https://github.com/Marwes/union-find-rs#e5f1ac5a5094aa8307dfb32d0e4cb34016b5e170"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "vm"

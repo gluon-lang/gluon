@@ -6,8 +6,8 @@ authors = ["Markus <marwes91@gmail.com>"]
 [dependencies.log]
 [dependencies.env_logger]
 
-[dependencies.union-find]
-git = "https://github.com/Marwes/union-find-rs"
+[dependencies]
+union-find = "0.2.2"
 
 [dependencies.base]
 path = "../base"
