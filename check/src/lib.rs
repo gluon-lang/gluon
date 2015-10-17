@@ -13,8 +13,10 @@ extern crate parser;
 pub use base::interner::InternedStr;
 
 pub use base::{ast, gc, interner};
+pub use typed::Typed;
 
 pub mod typecheck;
+mod typed;
 mod error;
 mod kindcheck;
 mod substitution;
