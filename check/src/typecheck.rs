@@ -520,6 +520,14 @@ impl <'a> Typecheck<'a> {
                 debug!("Generalize {}", level);
                 for bind in bindings {
                     self.generalize_variables(level, &mut bind.expression);
+                    match bind.name {
+                        ast::Pattern::Identifier(ref mut _id) => {
+                            _id.typ = self.finish_type(level, _id.typ.clone());
+                            debug!("{}: {}", _id.name, _id.typ);
+                        }
+                        ast::Pattern::Record(_) => debug!("{{ .. }}: {}", bind.expression.type_of()),
+                        ast::Pattern::Constructor(ref _id, _) => debug!("{}: {}", _id.name, bind.expression.type_of())
+                    }
                 }
                 debug!("Typecheck `in`");
                 let result = self.typecheck(body);
@@ -1727,19 +1735,12 @@ in \(<) ->
         | Cons y ys -> if x < y
                        then Cons x xs
                        else Cons y (insert x ys)
-in { empty, insert }
+in
+let ret : { empty: SortedList a, insert: a -> SortedList a -> SortedList a }
+        = { empty, insert }
+in ret
 ";
         let result = typecheck(text);
-        let b = || typ("b");
-        let list = |s| typ_a("SortedList", vec![typ(s)]);
-        let cmp = Type::function(vec![b(), b()], typ("Bool"));
-        let insert = Type::function(vec![b(), list("b")], list("b"));
-        let record = Type::record(vec![
-            ast::Field { name: intern("empty"), typ: list("c") },
-            ast::Field {
-                name: intern("insert"),
-                typ: insert
-            }]);
-        assert_eq!(result, Ok(Type::function(vec![cmp], record)));
+        assert!(result.is_ok());
     }
 }

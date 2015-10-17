@@ -154,7 +154,6 @@ impl <T: Substitutable> Substitution<T> {
     pub fn update_level(&self, var: u32, other: u32) {
         let level = ::std::cmp::min(self.get_level(var), self.get_level(other));
         let mut map = self.map.borrow_mut();
-        map.get_mut(var as usize).level = level;
         map.get_mut(other as usize).level = level;
     }
 
@@ -187,6 +186,7 @@ impl <T: Substitutable> Substitution<T> {
             Some(other_id) => {
                 self.map.borrow_mut().union(id.get_id() as usize, other_id.get_id() as usize);
                 self.update_level(id.get_id(), other_id.get_id());
+                self.update_level(other_id.get_id(), id.get_id());
             }
             _ => {
                 self.insert(id.get_id(), typ.clone());
