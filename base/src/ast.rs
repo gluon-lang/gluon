@@ -636,9 +636,13 @@ where I: fmt::Display
             Type::Builtin(ref t) => t.fmt(f),
             Type::Array(ref t) => write!(f, "[{}]", t),
             Type::Record(ref fields) => {
-                try!(write!(f, "{{ "));
-                for field in fields {
-                    try!(write!(f, " {}: {},", field.name, field.typ));
+                try!(write!(f, "{{"));
+                if fields.len() > 0 {
+                    try!(write!(f, " {}: {}", fields[0].name, fields[0].typ));
+                    for field in &fields[1..] {
+                        try!(write!(f, ", {}: {}", field.name, field.typ));
+                    }
+                    try!(write!(f, " "));
                 }
                 write!(f, "}}")
             }
