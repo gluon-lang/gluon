@@ -21,11 +21,11 @@ let commands: Map String Cmd
     =  singleton "q" { info = "Quit the REPL", action = \_ -> return False }
     <> singleton "t" {
         info = "Prints the type of an expression",
-        action = \arg -> type_of_expr arg >>= io.print >> return True
+        action = \arg -> repl_prim.type_of_expr arg >>= io.print >> return True
     }
     <> singleton "i" {
         info = "Prints information about the given type",
-        action = \arg -> find_type_info arg >>= io.print >> return True
+        action = \arg -> repl_prim.find_type_info arg >>= io.print >> return True
     }
     <> singleton "l" {
         info = "Loads the file at 'folder/module.ext' and stores it at 'module'",

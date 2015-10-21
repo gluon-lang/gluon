@@ -1,9 +1,8 @@
 use std::error::Error as StdError;
-use base::ast;
-use check::typecheck::{Type, TypeEnv};
+use check::typecheck::TypeEnv;
 use check::Typed;
 use vm::vm::{VM, RootStr, Status, typecheck_expr, load_file};
-use vm::api::{VMFunction, IO};
+use vm::api::{VMFunction, IO, primitive};
 
 fn type_of_expr(vm: &VM) -> Status {
     let closure: &Fn(_) -> _ = &|args: RootStr| -> IO<String> {
@@ -48,9 +47,10 @@ fn find_type_info(vm: &VM) -> Status {
 #[allow(dead_code)]
 pub fn run() -> Result<(), Box<StdError>> {
     let vm = VM::new();
-    let io = |t| ast::ASTType::from(ast::type_con(vm.intern("IO"), vec![t]));
-    try!(vm.extern_function_io("type_of_expr", 2, Type::function(vec![Type::string()], io(Type::string())), Box::new(type_of_expr)));
-    try!(vm.extern_function_io("find_type_info", 2, Type::function(vec![Type::string()], io(Type::string())), Box::new(find_type_info)));
+    try!(vm.define_global("repl_prim", record!(
+        type_of_expr => primitive::<fn (String) -> IO<String>>(type_of_expr),
+        find_type_info => primitive::<fn (String) -> IO<String>>(find_type_info)
+    )));
     try!(load_file(&vm, "std/prelude.hs"));
     try!(load_file(&vm, "std/map.hs"));
     try!(load_file(&vm, "std/repl.hs"));

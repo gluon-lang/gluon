@@ -6,6 +6,7 @@ extern crate clap;
 extern crate base;
 extern crate embed_lang;
 extern crate check;
+#[macro_use]
 extern crate vm;
 
 

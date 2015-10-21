@@ -524,11 +524,12 @@ where A::Type: Sized {
     }
 }
 
+#[macro_export]
 macro_rules! types {
     ($($field: ident),*) => {
         $(
         #[allow(non_camel_case_types)]
-        struct $field;
+        pub struct $field;
         impl $crate::api::Field for $field {
             fn name() -> &'static str {
                 stringify!($field)
@@ -538,20 +539,22 @@ macro_rules! types {
     }
 }
 
+#[macro_export]
 macro_rules! hlist {
     () => { () };
     ($field: ident => $value: expr) => {
-        $crate::api::HList(($field, $value), ())
+        $crate::api::HList((_field::$field, $value), ())
     };
     ($field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
-        $crate::api::HList(($field, $value), hlist!($($field_tail => $value_tail),*))
+        $crate::api::HList((_field::$field, $value), hlist!($($field_tail => $value_tail),*))
     }
 }
 
+#[macro_export]
 macro_rules! record {
     ($($field: ident => $value: expr),*) => {
         {
-            types!($($field),*);
+            mod _field { types!($($field),*); }
             $crate::api::Record {
                 fields: hlist!($($field => $value),*)
             }
