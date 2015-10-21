@@ -332,7 +332,13 @@ pub enum Expr<Id: AstId> {
     Record(Id, Vec<(Id::Untyped, Option<LExpr<Id>>)>),
     Lambda(LambdaStruct<Id>),
     Tuple(Vec<LExpr<Id>>),
-    Type(ASTType<Id::Untyped>, ASTType<Id::Untyped>, Box<LExpr<Id>>)
+    Type(Vec<TypeBinding<Id::Untyped>>, Box<LExpr<Id>>)
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct TypeBinding<Id> {
+    pub name: ASTType<Id>,
+    pub typ: ASTType<Id>
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -737,7 +743,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
             v.visit_identifier(&mut lambda.id);
             v.visit_expr(&mut *lambda.body);
         }
-        Expr::Type(_, _, ref mut expr) => v.visit_expr(&mut *expr),
+        Expr::Type(_, ref mut expr) => v.visit_expr(&mut *expr),
         Expr::Identifier(ref mut id) => v.visit_identifier(id),
         Expr::Literal(..) => ()
     }

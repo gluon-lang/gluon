@@ -622,44 +622,46 @@ impl <'a> Typecheck<'a> {
                 lambda.id.typ = typ.clone();
                 Ok(typ)
             }
-            ast::Expr::Type(ref mut id_type, ref mut typ, ref mut expr) => {
-                let (generic_args, id) = match (**id_type).clone() {
-                    Type::Data(ast::TypeConstructor::Data(id), mut args) => {
-                        let subs = Substitution::new();
-                        let mut generic_args = Vec::with_capacity(args.len());
-                        for arg in args.iter_mut() {
-                            let mut a = (**arg).clone();
-                            if let Type::Generic(ref mut gen) = a {
-                                gen.kind = Rc::new(subs.new_var());
-                                generic_args.push(gen.clone());
+            ast::Expr::Type(ref mut bindings, ref mut expr) => {
+                for &mut ast::TypeBinding { ref mut name, ref mut typ } in bindings {
+                    let (generic_args, id) = match (**name).clone() {
+                        Type::Data(ast::TypeConstructor::Data(id), mut args) => {
+                            let subs = Substitution::new();
+                            let mut generic_args = Vec::with_capacity(args.len());
+                            for arg in args.iter_mut() {
+                                let mut a = (**arg).clone();
+                                if let Type::Generic(ref mut gen) = a {
+                                    gen.kind = Rc::new(subs.new_var());
+                                    generic_args.push(gen.clone());
+                                }
+                                *arg = TcType::from(a);
                             }
-                            *arg = TcType::from(a);
-                        }
-                        let id_type_copy = Type::data(ast::TypeConstructor::Data(id), args.clone());
-                        self.type_infos.type_to_id.insert(typ.clone(), id_type_copy.clone());
-                        self.type_infos.id_to_type.insert(id, (generic_args.clone(), typ.clone().clone()));
+                            let name_copy = Type::data(ast::TypeConstructor::Data(id), args.clone());
+                            self.type_infos.type_to_id.insert(typ.clone(), name_copy.clone());
+                            self.type_infos.id_to_type.insert(id, (generic_args.clone(), typ.clone().clone()));
 
-                        {
-                            let f = |id| {
-                                self.type_infos.id_to_type.get(&id).map(|t| &t.1)
-                                    .and_then(|typ| self.type_infos.type_to_id.get(typ))
-                            };
-                            let mut check = super::kindcheck::KindCheck::new(&f, &mut args, subs);
-                            try!(check.kindcheck_type(typ));
-                            try!(check.kindcheck_type(id_type));
-                        }
-
-                        for (g, a) in generic_args.iter_mut().zip(&args) {
-                            if let Type::Generic(ref gen) = **a {
-                                g.kind = gen.kind.clone();
+                            {
+                                let f = |id| {
+                                    self.type_infos.id_to_type.get(&id).map(|t| &t.1)
+                                        .and_then(|typ| self.type_infos.type_to_id.get(typ))
+                                };
+                                let mut check = super::kindcheck::KindCheck::new(&f, &mut args, subs);
+                                try!(check.kindcheck_type(typ));
+                                try!(check.kindcheck_type(name));
                             }
+
+                            for (g, a) in generic_args.iter_mut().zip(&args) {
+                                if let Type::Generic(ref gen) = **a {
+                                    g.kind = gen.kind.clone();
+                                }
+                            }
+                            (generic_args, id)
                         }
-                        (generic_args, id)
-                    }
-                    _ => panic!("ICE: Unexpected lhs of type binding {}", id_type)
-                };
-                self.type_infos.type_to_id.insert(typ.clone(), id_type.clone());
-                self.type_infos.id_to_type.insert(id, (generic_args, typ.clone()));
+                        _ => panic!("ICE: Unexpected lhs of type binding {}", name)
+                    };
+                    self.type_infos.type_to_id.insert(typ.clone(), name.clone());
+                    self.type_infos.id_to_type.insert(id, (generic_args, typ.clone()));
+                }
                 let expr_type = try!(self.typecheck(&mut **expr));
                 Ok(expr_type)
             }
@@ -1346,6 +1348,19 @@ type Test = { x: Int } in { x = 0 }
 ";
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("Test")));
+    }
+
+    #[test]
+    fn type_decl_multiple() {
+        let _ = ::env_logger::init();
+        let text = 
+r"
+type Test = Int -> Int
+and Test2 = | Test2 Test
+in Test2 (\x -> x #Int+ 2)
+";
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ("Test2")));
     }
 
     #[test]

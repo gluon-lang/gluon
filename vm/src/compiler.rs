@@ -555,7 +555,7 @@ impl <'a> Compiler<'a> {
                 function.stack_size -= vars;
                 function.inner_functions.push(cf);
             }
-            Expr::Type(_, _, ref expr) => self.compile(&**expr, function, tail_position),
+            Expr::Type(_, ref expr) => self.compile(&**expr, function, tail_position),
             Expr::Record(_, ref fields) => {
                 for field in fields {
                     match field.1 {

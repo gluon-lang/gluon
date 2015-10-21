@@ -223,8 +223,27 @@ where I: Stream<Item=char>
 
     fn type_decl(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
         debug!("type_decl");
-        (self.reserved("type"), self.ident_u(), many(self.ident_u()))//TODO only variables allowed
-            .map(|(_, name, args): (_, _, Vec<_>)| {
+        let bind = self.parser(ParserEnv::type_binding);
+        (
+            self.reserved("type"),
+            bind,
+            many(self.reserved("and").with(bind)),
+            self.reserved("in"),
+            self.expr()
+        )
+            .map(|(_, first, rest, _, expr): (_, _, Vec<_>, _, _)| {
+                let binds = Some(first).into_iter()
+                    .chain(rest)
+                    .map(|(name, typ)| ast::TypeBinding { name: name, typ: typ })
+                    .collect();
+                Expr::Type(binds, Box::new(expr))
+            })
+            .parse_state(input)
+    }
+
+    fn type_binding(&self, input: State<I>) -> ParseResult<(ASTType<Id::Untyped>, ASTType<Id::Untyped>), I> {
+        (self.ident_u(), many(self.ident_u()))//TODO only variables allowed
+            .map(|(name, args): (_, Vec<_>)| {
                 let args = args.into_iter().map(|id|
                         Type::generic(Generic {
                             kind: Rc::new(Kind::Variable(0)),
@@ -237,12 +256,9 @@ where I: Stream<Item=char>
                 let (rhs_type, input) = try!(self.reserved_op("=")
                     .with(self.typ()
                         .or(parser(|input| self.parse_adt(&return_type, input))))
-                    .skip(self.reserved("in"))
-                    .and(self.expr())
                     .parse_state(input));
                 Ok(((return_type.clone(), rhs_type), input))
             }))
-            .map(|(id, (typ, expr))| Expr::Type(id, typ, Box::new(expr)))
             .parse_state(input)
     }
 
@@ -602,8 +618,13 @@ pub mod tests {
             body: Box::new(body)
         }))
     }
+
     fn type_decl(name: ASTType<InternedStr>, typ: ASTType<InternedStr>, body: PExpr) -> PExpr {
-        no_loc(Expr::Type(name, typ, Box::new(body)))
+        type_decls(vec![TypeBinding { name: name, typ: typ }], body)
+    }
+
+    fn type_decls(binds: Vec<TypeBinding<InternedStr>>, body: PExpr) -> PExpr {
+        no_loc(Expr::Type(binds, Box::new(body)))
     }
 
     fn bool(b: bool) -> PExpr {
@@ -677,6 +698,20 @@ pub mod tests {
         let record = Type::record(vec![Field { name: intern("x"), typ: typ("Int") }
                                     ,  Field { name: intern("y"), typ: Type::record(vec![]) }]);
         assert_eq!(e, type_decl(typ("Test"), record, int(1)));
+    }
+
+    #[test]
+    fn type_mutually_recursive() {
+        let _ = ::env_logger::init();
+        let e = parse_new("type Test = | Test Int and Test2 = { x: Int, y: {} } in 1");
+        let test = Type::variants(vec![(intern("Test"), Type::function(vec![typ("Int")], typ("Test")))]);
+        let test2 = Type::record(vec![Field { name: intern("x"), typ: typ("Int") }
+                                    ,  Field { name: intern("y"), typ: Type::record(vec![]) }]);
+        let binds = vec![
+            TypeBinding { name: typ("Test"), typ: test },
+            TypeBinding { name: typ("Test2"), typ: test2 },
+            ];
+        assert_eq!(e, type_decls(binds, int(1)));
     }
 
     #[test]

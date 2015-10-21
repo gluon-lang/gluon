@@ -68,7 +68,7 @@ impl <Id> Typed for ast::Expr<Id>
                 }
             }
             ast::Expr::Lambda(ref lambda) => lambda.id.env_type_of(env),
-            ast::Expr::Type(_, _, ref expr) => expr.env_type_of(env),
+            ast::Expr::Type(_, ref expr) => expr.env_type_of(env),
             ast::Expr::Record(ref id, _) => id.env_type_of(env)
         }
     }
