@@ -54,7 +54,9 @@ impl Substitutable for Kind {
 }
 
 pub struct KindCheck<'a> {
-    variables: &'a mut [TcType],
+    variables: Vec<TcType>,
+    ///Type bindings local to the current kindcheck invocation
+    locals: Vec<(InternedStr, Rc<Kind>)>,
     info: &'a (Fn(InternedStr) -> Option<&'a TcType> + 'a),
     pub subs: Substitution<Kind>,
     star: Rc<Kind>
@@ -89,19 +91,38 @@ fn walk_move_kind2<F>(kind: &Rc<Kind>, f: &mut F) -> Option<Rc<Kind>>
 
 impl <'a> KindCheck<'a> {
 
-    pub fn new(info: &'a Fn(InternedStr) -> Option<&'a TcType>, variables: &'a mut [TcType], subs: Substitution<Kind>) -> KindCheck<'a> {
+    pub fn new(info: &'a Fn(InternedStr) -> Option<&'a TcType>, subs: Substitution<Kind>) -> KindCheck<'a> {
         KindCheck {
-            variables: variables,
+            variables: Vec::new(),
+            locals: Vec::new(),
             info: info,
             subs: subs,
             star: Rc::new(Kind::Star)
         }
     }
 
+    pub fn add_local(&mut self, name: InternedStr, kind: Rc<Kind>) {
+        self.locals.push((name, kind));
+    }
+
+    pub fn set_variables(&mut self, variables: &[TcType]) {
+        self.variables.clear();
+        self.variables.extend(variables.iter().cloned());
+    }
+
+    pub fn star(&self) -> Rc<Kind> {
+        self.star.clone()
+    }
+
     fn find(&mut self, id: InternedStr) -> Result<Rc<Kind>> {
         let kind = self.variables.iter()
             .find(|var| match ***var { Type::Generic(ref other) => other.id == id, _ => false })
             .map(|t| t.kind().clone())
+            .or_else(|| {
+                self.locals.iter()
+                    .find(|t| t.0 == id)
+                    .map(|t| t.1.clone())
+            })
             .or_else(|| {
                 (self.info)(id)
                     .and_then(|typ| {
@@ -129,26 +150,7 @@ impl <'a> KindCheck<'a> {
         let (kind, t) = try!(self.kindcheck(typ));
         let star = self.star.clone();
         let kind = try!(self.unify(&star, kind));
-        let subs = &mut self.subs;
-        let mut f = |typ| ast::walk_move_type(typ, &mut |typ| {
-            match *typ {
-                Type::Variable(ref var) => {
-                    let mut kind = var.kind.clone();
-                    kind = subs.update_kind(kind);
-                    Some(Type::variable(ast::TypeVariable { id: var.id, kind: kind }))
-                }
-                Type::Generic(ref var) => {
-                    let mut kind = var.kind.clone();
-                    kind = subs.update_kind(kind);
-                    Some(Type::generic(ast::Generic { id: var.id, kind: kind }))
-                }
-                _ => None
-            }
-        });
-        *typ  = f(t);
-        for typ in self.variables.iter_mut() {
-            *typ = f(typ.clone());
-        }
+        *typ  = self.finalize_type(t);
         debug!("Done {:?}", typ);
         Ok((*kind).clone())
     }
@@ -263,14 +265,32 @@ impl <'a> KindCheck<'a> {
             (l, r) => l == r
         }
     }
+
+    pub fn finalize_type(&self, typ: TcType) -> TcType {
+        ast::walk_move_type(typ, &mut |typ| {
+            match *typ {
+                Type::Variable(ref var) => {
+                    let mut kind = var.kind.clone();
+                    kind = self.subs.update_kind(kind);
+                    Some(Type::variable(ast::TypeVariable { id: var.id, kind: kind }))
+                }
+                Type::Generic(ref var) => {
+                    let mut kind = var.kind.clone();
+                    kind = self.subs.update_kind(kind);
+                    Some(Type::generic(ast::Generic { id: var.id, kind: kind }))
+                }
+                _ => None
+            }
+        })
+    }
 }
 
 impl Substitution<Kind> {
-    fn new_kind(&mut self) -> Rc<ast::Kind> {
+    pub fn new_kind(&mut self) -> Rc<ast::Kind> {
         Rc::new(self.new_var())
     }
 
-    fn update_kind(&mut self, kind: Rc<Kind>) -> Rc<Kind> {
+    fn update_kind(&self, kind: Rc<Kind>) -> Rc<Kind> {
         walk_move_kind(kind, &mut |kind| {
             match *kind {
                 Kind::Variable(id) => self.find_type_for_var(id).map(|t| Rc::new(t.clone())),

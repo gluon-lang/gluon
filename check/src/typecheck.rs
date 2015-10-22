@@ -623,44 +623,74 @@ impl <'a> Typecheck<'a> {
                 Ok(typ)
             }
             ast::Expr::Type(ref mut bindings, ref mut expr) => {
-                for &mut ast::TypeBinding { ref mut name, ref mut typ } in bindings {
-                    let (generic_args, id) = match (**name).clone() {
-                        Type::Data(ast::TypeConstructor::Data(id), mut args) => {
-                            let subs = Substitution::new();
-                            let mut generic_args = Vec::with_capacity(args.len());
-                            for arg in args.iter_mut() {
-                                let mut a = (**arg).clone();
-                                if let Type::Generic(ref mut gen) = a {
-                                    gen.kind = Rc::new(subs.new_var());
-                                    generic_args.push(gen.clone());
+                {
+                    let f = |id| {
+                        self.type_infos.id_to_type.get(&id).map(|t| &t.1)
+                            .and_then(|typ| self.type_infos.type_to_id.get(typ))
+                    };
+                    let subs = Substitution::new();
+                    let mut check = super::kindcheck::KindCheck::new(&f, subs);
+                    //Setup kind variables for all type variables and insert the types in the
+                    //this type expression into the kindcheck environment
+                    for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
+                        *name = match (**name).clone() {
+                            Type::Data(ast::TypeConstructor::Data(id), mut args) => {
+                                //Create the kind for this binding
+                                //Test a b: 2 -> 1 -> *
+                                //and bind the same variables to the arguments of the type binding
+                                //('a' and 'b' in the example)
+                                let mut id_kind = check.star();
+                                for arg in args.iter_mut().rev() {
+                                    let mut a = (**arg).clone();
+                                    if let Type::Generic(ref mut gen) = a {
+                                        gen.kind = check.subs.new_kind();
+                                        id_kind = Rc::new(Kind::Function(gen.kind.clone(), id_kind));
+                                    }
+                                    *arg = TcType::from(a);
                                 }
-                                *arg = TcType::from(a);
+                                check.add_local(id, id_kind);
+                                Type::data(ast::TypeConstructor::Data(id), args.clone())
                             }
-                            let name_copy = Type::data(ast::TypeConstructor::Data(id), args.clone());
-                            self.type_infos.type_to_id.insert(typ.clone(), name_copy.clone());
-                            self.type_infos.id_to_type.insert(id, (generic_args.clone(), typ.clone().clone()));
+                            _ => panic!("ICE: Unexpected lhs of type binding {}", name)
+                        };
+                    }
 
-                            {
-                                let f = |id| {
-                                    self.type_infos.id_to_type.get(&id).map(|t| &t.1)
-                                        .and_then(|typ| self.type_infos.type_to_id.get(typ))
-                                };
-                                let mut check = super::kindcheck::KindCheck::new(&f, &mut args, subs);
-                                try!(check.kindcheck_type(typ));
-                                try!(check.kindcheck_type(name));
+                    //Kindcheck all the types in the environment
+                    for &mut ast::TypeBinding { ref mut name, ref mut typ } in bindings.iter_mut() {
+                        match **name {
+                            Type::Data(_, ref args) => {
+                                check.set_variables(args);
                             }
+                            _ => panic!("ICE: Unexpected lhs of type binding {}", name)
+                        }
+                        try!(check.kindcheck_type(typ));
+                        try!(check.kindcheck_type(name));
+                    }
 
-                            for (g, a) in generic_args.iter_mut().zip(&args) {
-                                if let Type::Generic(ref gen) = **a {
-                                    g.kind = gen.kind.clone();
-                                }
-                            }
-                            (generic_args, id)
+                    //All kinds are now inferred so replace the kinds store in the AST
+                    for &mut ast::TypeBinding { ref mut name, ref mut typ } in bindings.iter_mut() {
+                        *typ = check.finalize_type(typ.clone());
+                        *name = check.finalize_type(name.clone());
+                    }
+                }
+
+                //Finally insert the declared types into the global scope
+                for &mut ast::TypeBinding { ref name, ref typ } in bindings {
+                    match **name {
+                        Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+                            let generic_args = args.iter()
+                                .map(|arg| {
+                                    match **arg {
+                                        Type::Generic(ref gen) => gen.clone(),
+                                        _ => panic!("The type on the lhs of a type binding did not have all generic arguments")
+                                    }
+                                })
+                                .collect();
+                            self.type_infos.type_to_id.insert(typ.clone(), name.clone());
+                            self.type_infos.id_to_type.insert(id, (generic_args, typ.clone()));
                         }
                         _ => panic!("ICE: Unexpected lhs of type binding {}", name)
-                    };
-                    self.type_infos.type_to_id.insert(typ.clone(), name.clone());
-                    self.type_infos.id_to_type.insert(id, (generic_args, typ.clone()));
+                    }
                 }
                 let expr_type = try!(self.typecheck(&mut **expr));
                 Ok(expr_type)
@@ -803,7 +833,8 @@ impl <'a> Typecheck<'a> {
                 .and_then(|typ| self.type_infos.type_to_id.get(typ))
         };
         let subs = Substitution::new();
-        let mut check = super::kindcheck::KindCheck::new(&f, args, subs);
+        let mut check = super::kindcheck::KindCheck::new(&f, subs);
+        check.set_variables(args);
         try!(check.kindcheck_type(typ));
         Ok(())
     }
@@ -1267,6 +1298,8 @@ mod tests {
     macro_rules! assert_err {
         ($e: expr, $id: pat) => {{
             use super::TypeError::*;
+            #[allow(unused_imports)]
+            use kindcheck::Error::KindMismatch;
             #[allow(unused_imports)]
             use super::UnificationError::{TypeMismatch, Occurs};
             match $e {
@@ -1734,6 +1767,30 @@ in 1
 "#;
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("Int")));
+    }
+
+    #[test]
+    fn mutually_recursive_types() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type Tree a = | Empty | Node (Data a) (Data a)
+and Data a = { value: a, tree: Tree a }
+in Node { value = 1, tree = Empty } { value = 123, tree = Node { value = 0, tree = Empty } { value = 42, tree = Empty } }
+"#;
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ_a("Tree", vec![typ("Int")])));
+    }
+
+    #[test]
+    fn mutually_recursive_types_error() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type List a = | Empty | Node (a (Data a))
+and Data a = { value: a, list: List a }
+in 1
+"#;
+        let result = typecheck(text);
+        assert_err!(result, KindError(KindMismatch(..)));
     }
 
     #[test]
