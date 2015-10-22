@@ -135,8 +135,8 @@ let make_Ord ord
             | GT -> False,
         (>) = \l r -> case compare l r of
             | LT -> False
-            | EQ -> True
-            | GT -> False,
+            | EQ -> False
+            | GT -> True,
         (=>) = \l r -> case compare l r of
             | LT -> False
             | EQ -> True
