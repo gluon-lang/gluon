@@ -75,8 +75,8 @@ impl <'a, I, F> ::std::ops::Deref for ParserEnv<'a, I, F>
 }
 
 impl <'a, 's, I, Id, F> ParserEnv<'a, I, F>
-where I: Stream<Item=char>
-    , F: FnMut(&str) -> Id
+where I: Stream<Item=char> + 'a
+    , F: FnMut(&str) -> Id + 'a
     , Id: AstId + AsRef<str> + Clone
     , I::Range: fmt::Debug + 's {
 
