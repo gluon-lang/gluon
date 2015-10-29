@@ -1,6 +1,3 @@
-#![cfg_attr(test, feature(test))]
-#[cfg(test)]
-extern crate test;
 #[macro_use]
 extern crate log;
 #[cfg(test)]

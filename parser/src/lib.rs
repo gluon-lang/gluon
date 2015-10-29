@@ -1,9 +1,6 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![cfg_attr(test, feature(test))]
-#[cfg(test)]
-extern crate test;
 #[macro_use]
 extern crate log;
 extern crate env_logger;
@@ -790,21 +787,5 @@ pub mod tests {
                     expression: id("test")
                 }], Box::new(id("x")))
         ));
-    }
-
-    #[bench]
-    fn prelude(b: &mut ::test::Bencher) {
-        use std::fs::File;
-        use std::io::Read;
-        let mut text = String::new();
-        File::open("../std/prelude.hs").unwrap()
-            .read_to_string(&mut text).unwrap();
-        b.iter(|| {
-            let mut interner = Interner::new();
-            let mut gc = Gc::new();
-            let expr = super::parse_tc(&mut gc, &mut interner, &text)
-                .unwrap_or_else(|err| panic!("{:?}", err));
-            ::test::black_box(expr)
-        })
     }
 }

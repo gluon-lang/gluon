@@ -1483,7 +1483,6 @@ mod tests {
     use vm::{VM, Value, load_script};
     use vm::Value::{Float, Int};
     use stack::StackFrame;
-    use check::typecheck::Typecheck;
 
     fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
         super::run_expr(vm, s)
@@ -1834,30 +1833,6 @@ in singleton "test" 1 ++ singleton "asd" 2
         text.clear();
         File::open("../std/state.hs").unwrap().read_to_string(&mut text).unwrap();
         run_expr(&mut vm, &text);
-    }
-
-    #[bench]
-    fn prelude(b: &mut ::test::Bencher) {
-        use vm::VM;
-        let _ = ::env_logger::init();
-        let vm = VM::new();
-        let env = vm.env();
-        let mut interner = vm.interner.borrow_mut();
-        let mut gc = vm.gc.borrow_mut();
-        let mut text = String::new();
-        File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        let expr = ::parser::parse_tc(&mut *gc, &mut *interner, &text)
-            .unwrap_or_else(|err| panic!("{:?}", err));
-        b.iter(|| {
-            let mut tc = Typecheck::new(&mut *interner, &mut *gc);
-            tc.add_environment(&env);
-            let result = tc.typecheck_expr(&mut expr.clone());
-            if let Err(ref err) = result {
-                println!("{}", err);
-                assert!(false);
-            }
-            ::test::black_box(result)
-        })
     }
 }
 

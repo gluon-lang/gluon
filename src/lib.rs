@@ -1,10 +1,7 @@
 #![crate_type="lib"]
-#![cfg_attr(test, feature(test))]
 #[macro_use]
 extern crate log;
 extern crate env_logger;
-#[cfg(test)]
-extern crate test;
 
 extern crate base;
 extern crate vm;
