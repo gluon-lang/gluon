@@ -78,7 +78,7 @@ impl<'s> WriteOnly<'s, str> {
 #[derive(Debug)]
 pub struct Gc {
     values: Option<AllocPtr>,
-    allocated_objects: usize,
+    allocated_memory: usize,
     collect_limit: usize
 }
 
@@ -109,7 +109,7 @@ unsafe impl <T> DataDef for Move<T> {
 #[derive(Debug)]
 struct GcHeader {
     next: Option<AllocPtr>,
-    value_size: Cell<usize>,
+    value_size: usize,
     marked: Cell<bool>,
 }
 
@@ -125,11 +125,15 @@ impl AllocPtr {
             let ptr = allocate(alloc_size) as *mut GcHeader;
             ptr::write(ptr, GcHeader {
                 next: None,
-                value_size: Cell::new(value_size),
+                value_size: value_size,
                 marked: Cell::new(false)
             });
             AllocPtr { ptr: ptr }
         }
+    }
+
+    fn size(&self) -> usize {
+        GcHeader::value_offset() + self.value_size
     }
 }
 
@@ -143,8 +147,8 @@ impl Drop for AllocPtr {
     
     fn drop(&mut self) {
         unsafe {
+            let size = self.size();
             ptr::read(&*self.ptr);
-            let size = GcHeader::value_offset() + self.value_size.get();
             deallocate(self.ptr as *mut u8, size);
         }
     }
@@ -331,13 +335,13 @@ impl <T: ?Sized> Traverseable for GcPtr<T>
 impl Gc {
 
     pub fn new() -> Gc {
-        Gc { values: None, allocated_objects: 0, collect_limit: 100 }
+        Gc { values: None, allocated_memory: 0, collect_limit: 100 }
     }
 
     ///Unsafe since it calls collects if memory needs to be collected
     pub unsafe fn alloc_and_collect<T: ?Sized, R: ?Sized, D>(&mut self, roots: &mut R, mut def: D) -> GcPtr<T>
         where R: Traverseable, D: DataDef<Value=T> + Traverseable {
-        if self.allocated_objects >= self.collect_limit {
+        if self.allocated_memory >= self.collect_limit {
             self.collect2(roots, &mut def);
         }
         self.alloc(def)
@@ -345,10 +349,10 @@ impl Gc {
 
     pub fn alloc<T: ?Sized, D>(&mut self, def: D) -> GcPtr<T>
         where D: DataDef<Value=T> {
-
-        let mut ptr = AllocPtr::new(def.size());
+        let size = def.size();
+        let mut ptr = AllocPtr::new(size);
         ptr.next = self.values.take();
-        self.allocated_objects += 1;
+        self.allocated_memory += ptr.size();
         unsafe {
             let p: *mut T = def.make_ptr(ptr.value());
             let ret: *const T = &*def.initialize(WriteOnly::new(p));
@@ -393,6 +397,7 @@ impl Gc {
         roots.traverse(self);
         def.traverse(self);
         self.sweep();
+        self.collect_limit = 2 * self.allocated_memory;
     }
 
     ///Marks the GcPtr
@@ -436,7 +441,9 @@ impl Gc {
     }
 
     fn free(&mut self, header: Option<AllocPtr>) {
-        self.allocated_objects -= 1;
+        if let Some(ref ptr) = header {
+            self.allocated_memory -= ptr.size();
+        }
         debug!("FREE: {:?}", header);
         drop(header);
     }
