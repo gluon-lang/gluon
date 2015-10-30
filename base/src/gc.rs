@@ -310,6 +310,13 @@ impl <U> Traverseable for [U]
     }
 }
 
+impl <T> Traverseable for Vec<T>
+    where T: Traverseable {
+    fn traverse(&self, gc: &mut Gc) {
+        (**self).traverse(gc);
+    }
+}
+
 ///When traversing a GcPtr we need to mark it
 impl <T: ?Sized> Traverseable for GcPtr<T>
     where T: Traverseable {
@@ -439,7 +446,6 @@ impl Gc {
 #[cfg(test)]
 mod tests {
     use super::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};
-    use std::ops::Deref;
     use std::fmt;
     use std::mem;
 
@@ -450,12 +456,6 @@ mod tests {
         fields: GcPtr<Vec<Value>>
     }
 
-    impl Deref for Data_ {
-        type Target = Vec<Value>;
-        fn deref(&self) -> &Vec<Value> {
-            &*self.fields
-        }
-    }
     impl PartialEq for Data_ {
         fn eq(&self, other: &Data_) -> bool {
             self.fields.ptr == other.fields.ptr
@@ -490,24 +490,10 @@ mod tests {
         Data(Data_)
     }
 
-    impl Traverseable for Vec<Value> {
-        fn traverse(&self, gc: &mut Gc) {
-            for v in self.iter() {
-                match *v {
-                    Data(ref data) => {
-                        gc.mark(data.fields);
-                    }
-                    _ => ()
-                }
-            }
-        }
-    }
     impl Traverseable for Value {
         fn traverse(&self, gc: &mut Gc) {
             match *self {
-                Data(ref data) => {
-                    gc.mark(data.fields);
-                }
+                Data(ref data) => data.fields.traverse(gc),
                 _ => ()
             }
         }
@@ -534,19 +520,19 @@ mod tests {
         let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }));
         stack.push(d2);
         assert_eq!(gc.object_count(), 2);
-        unsafe { gc.collect(&mut stack); }
+        unsafe { gc.collect(&mut *stack); }
         assert_eq!(gc.object_count(), 2);
         match stack[0] {
-            Data(ref data) => assert_eq!((**data)[0], Int(1)),
+            Data(ref data) => assert_eq!(data.fields[0], Int(1)),
             _ => panic!()
         }
         match stack[1] {
-            Data(ref data) => assert_eq!((**data)[0], stack[0]),
+            Data(ref data) => assert_eq!(data.fields[0], stack[0]),
             _ => panic!()
         }
         stack.pop();
         stack.pop();
-        unsafe { gc.collect(&mut stack); }
+        unsafe { gc.collect(&mut *stack); }
         assert_eq!(gc.object_count(), 0);
     }
 }
