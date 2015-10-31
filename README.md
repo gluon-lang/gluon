@@ -14,6 +14,12 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 
 As a warning, the standard math operators (+, -, * etc) are not exported in the global scope, as such the expression `2 + 2` will not compile. To use these operators they need to explicitly be brought into scope `let { (+), (-), (*) } = prelude.num_Int in 2 + 2`. See the reason for this in issue [#10][]
 
+## Contributing
+
+If you are interested in contributing to this project there are a few issues open marked as [beginner][] which should be possible to for someone unfamiliar with the code. If you find something that looks interesting leave a comment on the issue so I know about it annd can give some assistance if needed.
+
+[beginner]:https://github.com/Marwes/embed_lang/labels/Beginner
+
 ## Goals/Features
 These goals may change or be refined over time as I experiment with what is possible to with the language.
 
