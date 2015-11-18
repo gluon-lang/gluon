@@ -669,6 +669,14 @@ pub mod tests {
     }
 
     #[test]
+    fn if_else_test() {
+        let _ = ::env_logger::init();
+        let e = parse_new("if True then 1 else 0");
+        let a = if_else(bool(true), int(1), int(0));
+        assert_eq!(e, a);
+    }
+
+    #[test]
     fn let_type_decl() {
         let _ = ::env_logger::init();
         let interner = get_local_interner();
@@ -692,8 +700,8 @@ pub mod tests {
     fn type_decl_record() {
         let _ = ::env_logger::init();
         let e = parse_new("type Test = { x: Int, y: {} } in 1");
-        let record = Type::record(vec![Field { name: intern("x"), typ: typ("Int") }
-                                    ,  Field { name: intern("y"), typ: Type::record(vec![]) }]);
+        let record = Type::record(vec![field("x", typ("Int")),
+                                       field("y", Type::record(vec![]))]);
         assert_eq!(e, type_decl(typ("Test"), record, int(1)));
     }
 
