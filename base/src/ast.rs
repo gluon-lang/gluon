@@ -168,6 +168,15 @@ pub enum Kind {
     Function(Rc<Kind>, Rc<Kind>)
 }
 
+impl Kind {
+    pub fn star() -> Rc<Kind> {
+        Rc::new(Kind::Star)
+    }
+    pub fn function(l: Rc<Kind>, r: Rc<Kind>) -> Rc<Kind> {
+        Rc::new(Kind::Function(l, r))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable {
     pub kind: Rc<Kind>,

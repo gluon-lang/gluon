@@ -7,7 +7,6 @@ use std::cmp::Ordering;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::slice;
-use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType};
 use check::typecheck::{Typecheck, TypeEnv, TypeInfos, TcIdent, TcType};
@@ -18,7 +17,7 @@ use base::fixed::{FixedMap, FixedVec};
 use base::interner::{Interner, InternedStr};
 use base::gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
-use api::{primitive, Pushable, IO};
+use api::Pushable;
 use lazy::Lazy;
 
 use self::Named::*;
@@ -633,7 +632,7 @@ impl <'a> VM<'a> {
         };
         vm.add_types()
             .unwrap();
-        vm.add_primitives()
+        ::primitives::load(&vm)
             .unwrap();
         vm.macros.insert(vm.intern("import"), ::import::Import::new());
         vm
@@ -649,85 +648,7 @@ impl <'a> VM<'a> {
         Ok(())
     }
 
-    fn add_primitives(&self) -> VMResult<()> {
-        use primitives as prim;
-        use api::generic::A;
-        fn f0<R>(f: fn () -> R) -> fn () -> R {
-            f
-        }
-        fn f1<A, R>(f: fn (A) -> R) -> fn (A) -> R {
-            f
-        }
-        fn f2<A, B, R>(f: fn (A, B) -> R) -> fn (A, B) -> R {
-            f
-        }
-        fn f3<A, B, C, R>(f: fn (A, B, C) -> R) -> fn (A, B, C) -> R {
-            f
-        }
-        let a = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: self.intern("a") });
-        let b = Type::generic(ast::Generic { kind: Rc::new(ast::Kind::Star), id: self.intern("b") });
-        let io = |t| ASTType::from(ast::type_con(self.intern("IO"), vec![t]));
-        
-        try!(self.define_global("array", record!(
-            length => f1(prim::array_length),
-            index => f2(prim::array_index),
-            append => f2(prim::array_append)
-        )));
-
-        try!(self.define_global("string", record!(
-            length => f1(prim::string_length),
-            find => f2(prim::string_find),
-            rfind => f2(prim::string_rfind),
-            trim => f1(prim::string_trim),
-            compare => f2(prim::string_compare),
-            append => f2(prim::string_append),
-            eq => f2(prim::string_eq),
-            slice => f3(prim::string_slice)
-        )));
-        try!(self.define_global("prim", record!(
-            show_Int => f1(prim::show_int),
-            show_Float => f1(prim::show_float)
-        )));
-
-        try!(self.define_global("#error", primitive::<fn (StdString) -> A>(prim::error)));
-        try!(self.define_global("error", primitive::<fn (StdString) -> A>(prim::error)));
-        try!(self.define_global("trace", primitive::<fn (A)>(prim::trace)));
-        let lazy = |t| ASTType::from(ast::type_con(self.intern("Lazy"), vec![t]));
-        try!(self.extern_function("lazy",
-                                  vec![Type::function(vec![Type::unit()], a.clone())],
-                                  lazy(a.clone()),
-                                  Box::new(::lazy::lazy)));
-        try!(self.extern_function("force",
-                                  vec![lazy(a.clone())],
-                                  a.clone(),
-                                  Box::new(::lazy::force)));
-
-        //IO functions
-        try!(self.define_global("io", record!(
-            print_int => f1(prim::print_int),
-            read_file => f1(prim::read_file),
-            read_line => f0(prim::read_line),
-            print => f1(prim::print),
-            catch => primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>(prim::catch_io),
-            run_expr => primitive::<fn (StdString) -> IO<StdString>>(prim::run_expr),
-            load_script => primitive::<fn (StdString, StdString) -> IO<StdString>>(prim::load_script)
-        )));
-        
-        // io_bind m f (): IO a -> (a -> IO b) -> IO b
-        //     = f (m ())
-        let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), PushInt(0), TailCall(2)];
-        let f = Type::function(vec![a.clone()], io(b.clone()));
-        let io_bind_type = Type::function(vec![io(a.clone()), f], io(b.clone()));
-        self.add_bytecode("io_bind", io_bind_type, 3, io_bind);
-
-
-        self.add_bytecode("io_return",
-            Type::function(vec![a.clone()], io(a.clone())),
-                          2,
-                          vec![Pop(1)]);
-        Ok(())
-    }
-    fn add_bytecode(&self, name: &str, typ: TcType, args: VMIndex, instructions: Vec<Instruction>) -> VMIndex {
+    pub fn add_bytecode(&self, name: &str, typ: TcType, args: VMIndex, instructions: Vec<Instruction>) -> VMIndex {
         let id = self.intern(name);
         let compiled_fn = CompiledFunction {
             args: args,
