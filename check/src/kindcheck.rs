@@ -139,7 +139,11 @@ impl <'a> KindCheck<'a> {
                     })
             })
             .map(|t| Ok(t))
-            .unwrap_or_else(|| Ok(Rc::new(self.subs.variable_for(id))));
+            .unwrap_or_else(|| {
+                //Create a new variable
+                self.locals.push((id, Rc::new(self.subs.new_var())));
+                Ok(self.locals.last().unwrap().1.clone())
+            });
         debug!("Find kind: {} => {}", id, kind.as_ref().unwrap());
         kind
     }

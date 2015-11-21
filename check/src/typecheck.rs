@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fmt;
 use std::mem;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use scoped_map::ScopedMap;
 use base::ast;
@@ -218,7 +220,7 @@ pub struct Typecheck<'a> {
     gc: &'a mut Gc,
     pub type_infos: TypeInfos,
     stack: ScopedMap<InternedStr, TcType>,
-    subs: Substitution<TcType>,
+    inst: Instantiator,
     errors: Errors<ast::Located<TypeError>>
 }
 
@@ -254,7 +256,7 @@ impl <'a> Typecheck<'a> {
             gc: gc,
             type_infos: TypeInfos::new(),
             stack: ScopedMap::new(),
-            subs: Substitution::new(),
+            inst: Instantiator::new(),
             errors: Errors::new()
         }
     }
@@ -272,7 +274,7 @@ impl <'a> Typecheck<'a> {
         };
         match t {
             Some(typ) => {
-                let x = self.subs.instantiate(typ);
+                let x = self.inst.instantiate(typ);
                 debug!("Find {} : {}", id, x);
                 Ok(x)
             }
@@ -320,7 +322,7 @@ impl <'a> Typecheck<'a> {
     }
 
     pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, StringErrors> {
-        self.subs.clear();
+        self.inst.subs.clear();
         self.stack.clear();
 
         let mut typ = match self.typecheck(expr) {
@@ -346,7 +348,7 @@ impl <'a> Typecheck<'a> {
             Ok(typ) => Ok(typ),
             Err(err) => {
                 self.errors.error(ast::Located { location: expr.location, value: err });
-                Ok(self.subs.new_var())
+                Ok(self.inst.subs.new_var())
             }
         }
     }
@@ -367,7 +369,7 @@ impl <'a> Typecheck<'a> {
             ast::Expr::Call(ref mut func, ref mut args) => {
                 let mut func_type = try!(self.typecheck(&mut**func));
                 for arg in args.iter_mut() {
-                    let f = Type::function(vec![self.subs.new_var()], self.subs.new_var());
+                    let f = Type::function(vec![self.inst.subs.new_var()], self.inst.subs.new_var());
                     func_type = try!(self.unify(&f, func_type));
                     func_type = match *func_type {
                         Type::Function(ref arg_type, ref ret) => {
@@ -424,7 +426,7 @@ impl <'a> Typecheck<'a> {
                         }
                         _ => {
                             op.typ = try!(self.find(op.id()));
-                            let func_type = Type::function(vec![lhs_type, rhs_type], self.subs.new_var());
+                            let func_type = Type::function(vec![lhs_type, rhs_type], self.inst.subs.new_var());
                             match *try!(self.unify(&op.typ, func_type)) {
                                 Type::Function(_, ref return_type) => 
                                     match **return_type {
@@ -460,14 +462,14 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::Let(ref mut bindings, ref mut body) => {
                 self.stack.enter_scope();
-                let level = self.subs.var_id();
+                let level = self.inst.subs.var_id();
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter_mut() {
-                        let mut typ = self.subs.new_var();
+                        let mut typ = self.inst.subs.new_var();
                         if let Some(ref mut type_decl) = bind.typ {
                             try!(self.kindcheck(type_decl, &mut []));
-                            let decl = self.subs.instantiate(type_decl);
+                            let decl = self.inst.instantiate(type_decl);
                             typ = try!(self.unify(&decl, typ));
                         }
                         try!(self.typecheck_pattern(&mut bind.name, typ));
@@ -484,7 +486,7 @@ impl <'a> Typecheck<'a> {
                     let mut typ = if bind.arguments.len() != 0 {
                         let function_type = match bind.typ {
                             Some(ref typ) => typ.clone(),
-                            None => self.subs.new_var()
+                            None => self.inst.subs.new_var()
                         };
                         try!(self.typecheck_lambda(function_type,
                                                    &mut bind.arguments,
@@ -537,11 +539,11 @@ impl <'a> Typecheck<'a> {
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
                 debug!("FieldAccess {} . {}", typ, field_access.name);
-                self.subs.make_real(&mut typ);
+                self.inst.subs.make_real(&mut typ);
                 if let Type::Variable(_) = *typ {
                     let (record_type, _) = try!(self.find_record(&[field_access.name])
                                               .map(|t| (t.0.clone(), t.1.clone())));
-                    let record_type = self.subs.instantiate(&record_type);
+                    let record_type = self.inst.instantiate(&record_type);
                     typ = try!(self.unify(&record_type, typ));
                 }
                 let record = match *typ {
@@ -550,7 +552,7 @@ impl <'a> Typecheck<'a> {
                             .ok()
                             .and_then(|t| t.1.map(|typ| (t.0, typ.clone())))
                             .map(|(generic_args, typ)| {
-                                self.subs.instantiate_with(typ, arguments, generic_args)
+                                self.inst.instantiate_with(typ, arguments, generic_args)
                             })
                             .unwrap_or_else(|| typ.clone())
                     }
@@ -561,7 +563,7 @@ impl <'a> Typecheck<'a> {
                                     .ok()
                                     .and_then(|t| t.1.map(|typ| (t.0, typ.clone())))
                                     .map(|(generic_args, typ)| {
-                                        self.subs.instantiate_with(typ, arguments, generic_args)
+                                        self.inst.instantiate_with(typ, arguments, generic_args)
                                     })
                                     .unwrap_or_else(|| typ.clone())
                             }
@@ -576,7 +578,7 @@ impl <'a> Typecheck<'a> {
                             .find(|field| field.name == *field_access.id())
                             .map(|field| field.typ.clone());
                         field_access.typ = match field_type {
-                            Some(typ) => self.subs.instantiate(&typ),
+                            Some(typ) => self.inst.instantiate(&typ),
                             None => return Err(UndefinedField(typ.clone(), field_access.name.clone()))
                         };
                         Ok(field_access.typ.clone())
@@ -594,7 +596,7 @@ impl <'a> Typecheck<'a> {
                 }
             }
             ast::Expr::Array(ref mut a) => {
-                let mut expected_type = self.subs.new_var();
+                let mut expected_type = self.inst.subs.new_var();
                 for expr in a.expressions.iter_mut() {
                     let typ = try!(self.typecheck(expr));
                     expected_type = try!(self.unify(&expected_type, typ));
@@ -604,7 +606,7 @@ impl <'a> Typecheck<'a> {
             }
             ast::Expr::ArrayAccess(ref mut array, ref mut index) => {
                 let array_type = try!(self.typecheck(&mut **array));
-                let var = self.subs.new_var();
+                let var = self.inst.subs.new_var();
                 let array_type = try!(self.unify(&Type::array(var), array_type));
                 let typ = match *array_type {
                     Type::Array(ref typ) => typ.clone(),
@@ -617,7 +619,7 @@ impl <'a> Typecheck<'a> {
             ast::Expr::Lambda(ref mut lambda) => {
                 let loc = format!("lambda:{}", expr.location);
                 lambda.id.name = self.interner.intern(self.gc, &loc);
-                let function_type = self.subs.new_var();
+                let function_type = self.inst.subs.new_var();
                 let typ = try!(self.typecheck_lambda(function_type, &mut lambda.arguments, &mut lambda.body));
                 lambda.id.typ = typ.clone();
                 Ok(typ)
@@ -712,8 +714,8 @@ impl <'a> Typecheck<'a> {
                         return Ok(id.typ.clone());
                     }
                 };
-                let id_type = self.subs.instantiate(&id_type);
-                let record_type = self.subs.instantiate_(&record_type);
+                let id_type = self.inst.instantiate(&id_type);
+                let record_type = self.inst.instantiate_(&record_type);
                 try!(self.unify(&Type::record(fields), record_type));
                 id.typ = id_type.clone();
                 Ok(id_type.clone())
@@ -759,7 +761,7 @@ impl <'a> Typecheck<'a> {
                             let expected_field = try!(expected_fields.iter()
                                 .find(|expected_field| pattern_field.0 == expected_field.name)
                                 .ok_or(UndefinedField(match_type.clone(), pattern_field.0)));
-                            let var = self.subs.new_var();
+                            let var = self.inst.subs.new_var();
                             types.push(var.clone());
                             try!(self.unify(&var, expected_field.typ.clone()));
                         }
@@ -776,15 +778,15 @@ impl <'a> Typecheck<'a> {
                                     .map(|field|
                                         ast::Field {
                                             name: field.0,
-                                            typ: self.subs.new_var()
+                                            typ: self.inst.subs.new_var()
                                         }
                                     )
                                     .collect());
                                 (t.clone(), t)
                             }
                         };
-                        typ = self.subs.instantiate_(&typ);
-                        actual_type = self.subs.instantiate_(&actual_type);
+                        typ = self.inst.instantiate_(&typ);
+                        actual_type = self.inst.instantiate_(&actual_type);
                         try!(self.unify(&match_type, typ));
                         match *actual_type {
                             Type::Record(ref record_types) => {
@@ -858,8 +860,8 @@ impl <'a> Typecheck<'a> {
     }
 
     fn unify_(&self, expected: &TcType, actual: &TcType) -> UnificationResult {
-        let expected = self.subs.real(expected);
-        let actual = self.subs.real(actual);
+        let expected = self.inst.subs.real(expected);
+        let actual = self.inst.subs.real(actual);
         debug!("{} <=> {}", expected, actual);
         match (&**expected, &**actual) {
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(()),
@@ -973,7 +975,7 @@ impl <'a> Typecheck<'a> {
 
     fn unify_app<F>(&self, l: &ast::TypeConstructor<InternedStr>, l_args: &[TcType], r: &TcType, f: &F) -> UnificationResult
             where F: Fn(&TcType, &TcType) -> UnificationResult {
-        let r = self.subs.real(r);
+        let r = self.inst.subs.real(r);
         debug!("{:?} {:?} <==> {}", l, l_args, r);
         match **r {
             Type::App(ref r, ref r_arg) => {
@@ -1007,6 +1009,11 @@ impl <'a> Typecheck<'a> {
         }
     }
 
+    fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> UnificationResult {
+        self.inst.subs.union(id, typ)
+            .map_err(|()| UnificationError::Occurs(id.clone(), typ.clone()))
+    }
+
     fn unify_function(&self,
                          arg: &TcType,
                          ret: &TcType,
@@ -1016,10 +1023,10 @@ impl <'a> Typecheck<'a> {
             let func = Type::function(vec![arg.clone()], ret.clone());
             Err(UnificationError::TypeMismatch(func, other.clone()))
         };
-        let other = self.subs.real(other);
+        let other = self.inst.subs.real(other);
         match **other {
             Type::App(ref other_f, ref other_ret) => {
-                let other_f = self.subs.real(other_f);
+                let other_f = self.inst.subs.real(other_f);
                 match **other_f {
                     Type::App(ref fn_prim, ref other_arg) => {
                         self.unify_(fn_prim, &Type::builtin(ast::BuiltinType::FunctionType))
@@ -1035,7 +1042,7 @@ impl <'a> Typecheck<'a> {
 
     fn set_type(&self, t: TcType) -> TcType {
         ast::walk_move_type(t, &mut |typ| {
-            let replacement = self.replace_variable(typ);
+            let replacement = self.inst.replace_variable(typ);
             let result = {
                 let mut typ = typ;
                 if let Some(ref t) = replacement {
@@ -1047,24 +1054,9 @@ impl <'a> Typecheck<'a> {
         })
     }
 
-    fn replace_variable(&self, typ: &Type<InternedStr>) -> Option<TcType> {
-        match *typ {
-            Type::Variable(ref id) => {
-                self.subs.find_type_for_var(id.id)
-                    .map(|t| t.clone())
-            }
-            _ => None
-        }
-    }
-
-    fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> UnificationResult {
-        self.subs.union(id, typ)
-            .map_err(|()| UnificationError::Occurs(id.clone(), typ.clone()))
-    }
-
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
         let mut generic = {
-            let vars = self.subs.named_variables.borrow();
+            let vars = self.inst.named_variables.borrow();
             let max_var = vars.keys()
                 .fold("a", |max, current| {
                     if current.len() == 1 {
@@ -1077,20 +1069,20 @@ impl <'a> Typecheck<'a> {
             String::from(max_var)
         };
         ast::walk_move_type(typ, &mut |typ| {
-            let replacement = self.replace_variable(typ);
+            let replacement = self.inst.replace_variable(typ);
             let mut typ = typ;
             if let Some(ref t) = replacement {
                 debug!("{} ==> {}",  typ, t);
                 typ = &**t;
             }
             match *typ {
-                Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
+                Type::Variable(ref var) if self.inst.subs.get_level(var.id) > level => {
                     let c = generic.pop().unwrap();
                     generic.push((c as u8 + 1) as char);
                     let id = self.interner.intern(self.gc, &generic);
                     let gen = Type::generic(ast::Generic { kind: var.kind.clone(), id: id });
-                    self.subs.insert(var.id, gen.clone());
-                    self.subs.named_variables.borrow_mut().insert(id, gen.clone());
+                    self.inst.subs.insert(var.id, gen.clone());
+                    self.inst.named_variables.borrow_mut().insert(id, gen.clone());
                     Some(gen)
                 }
                 _ => unroll_app(typ).or(replacement.clone())
@@ -1129,17 +1121,36 @@ impl <'a> Typecheck<'a> {
             let expected = Type::data(ast::TypeConstructor::Data(id), arguments.iter().cloned().collect());
             return Err(UnificationError::TypeMismatch(expected, typ));
         }
-        let typ = self.subs.instantiate_with(typ, arguments, &args);
+        let typ = self.inst.instantiate_with(typ, arguments, &args);
         Ok(Some(typ))
     }
 }
 
-impl Substitution<TcType> {
+struct Instantiator {
+    subs: Substitution<TcType>,
+    named_variables: RefCell<HashMap<InternedStr, TcType>>
+}
 
-    fn variable_for2(&self, generic: &ast::Generic<InternedStr>) -> TcType {
-        let mut var = (*self.variable_for(generic.id)).clone();
+impl Instantiator {
+    fn new() -> Instantiator {
+        Instantiator {
+            subs: Substitution::new(),
+            named_variables: RefCell::new(HashMap::new())
+        }
+    }
+
+    fn variable_for(&self, generic: &ast::Generic<InternedStr>) -> TcType {
+        let mut variables = self.named_variables.borrow_mut();
+        let var = match variables.entry(generic.id) {
+            Entry::Vacant(entry) => {
+                let t = self.subs.new_var();
+                entry.insert(t).clone()
+            }
+            Entry::Occupied(entry) => entry.get().clone()
+        };
+        let mut var = (*var).clone();
         if let Type::Variable(ref mut var) = var {
-            var.kind = generic.kind.clone()
+            var.kind = generic.kind.clone();
         }
         TcType::from(var)
     }
@@ -1151,7 +1162,7 @@ impl Substitution<TcType> {
     }
 
     fn instantiate_(&mut self, typ: &TcType) -> TcType {
-        instantiate(typ.clone(), |id| Some(self.variable_for2(id)))
+        instantiate(typ.clone(), |id| Some(self.variable_for(id)))
     }
 
     fn instantiate_with(&self,
@@ -1167,6 +1178,16 @@ impl Substitution<TcType> {
                 .find(|&(arg, _)| arg.id == gen.id)
                 .map(|(_, typ)| typ.clone())
         })
+    }
+
+    fn replace_variable(&self, typ: &Type<InternedStr>) -> Option<TcType> {
+        match *typ {
+            Type::Variable(ref id) => {
+                self.subs.find_type_for_var(id.id)
+                    .map(|t| t.clone())
+            }
+            _ => None
+        }
     }
 }
 
@@ -1223,10 +1244,10 @@ impl <'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                     match self.tc.type_of_alias(id, args) {
                         Ok(Some(typ)) => (None, typ.clone()),
                         Ok(None) => return None,
-                        Err(_) => return Some(self.tc.subs.new_var())
+                        Err(_) => return Some(self.tc.inst.subs.new_var())
                     }
                 }
-                _ => return Some(self.tc.subs.new_var())
+                _ => return Some(self.tc.inst.subs.new_var())
             };
             self.typ = new;
             if let Some(arg) = arg {

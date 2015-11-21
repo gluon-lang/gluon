@@ -1,11 +1,8 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::default::Default;
 use std::fmt;
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 use base::fixed::{FixedMap, FixedVec};
-use base::interner::InternedStr;
 
 pub struct Substitution<T> {
     ///Union-find data structure used to store the relationships of all variables in the
@@ -18,8 +15,6 @@ pub struct Substitution<T> {
     ///stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
     ///`&T` from this map safely.
     types: FixedMap<u32, T>,
-    ///TODO Is this the wrong struct to hold this field?
-    pub named_variables: RefCell<HashMap<InternedStr, T>>,
 }
 
 ///Trait which variables need to implement to allow the substitution to get to the u32 identifying
@@ -76,8 +71,8 @@ impl Union for UnionByLevel {
 
 impl <T: fmt::Debug> fmt::Debug for Substitution<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Substitution {{ map: {:?}, named_variables: {:?}, var_id: {:?} }}",
-               self.union.borrow(), self.named_variables.borrow(), self.var_id())
+        write!(f, "Substitution {{ map: {:?}, var_id: {:?} }}",
+               self.union.borrow(), self.var_id())
     }
 }
 
@@ -97,7 +92,6 @@ impl <T: Substitutable> Substitution<T> {
             union: RefCell::new(QuickFindUf::new(1)),
             variables: variables, 
             types: FixedMap::new(),
-            named_variables: RefCell::new(HashMap::new()),
         }
     }
 
@@ -105,7 +99,6 @@ impl <T: Substitutable> Substitution<T> {
         self.types.clear();
         self.variables.clear();
         self.variables.push(T::new(0));
-        self.named_variables.borrow_mut().clear();
     }
 
     pub fn insert(&self, var: u32, t: T) {
@@ -152,17 +145,6 @@ impl <T: Substitutable> Substitution<T> {
         let index = self.union.borrow_mut().find(var as usize) as u32;
         self.types.get(&index)
             .or_else(|| if var == index { None } else { Some(&self.variables[index as usize]) })
-    }
-
-    pub fn variable_for(&self, id: InternedStr) -> T {
-        let mut variables = self.named_variables.borrow_mut();
-        match variables.entry(id) {
-            Entry::Vacant(entry) => {
-                let t = self.new_var();
-                entry.insert(t).clone()
-            }
-            Entry::Occupied(entry) => entry.get().clone()
-        }
     }
 
     ///Updates the level of `other` to be the minimum level value of `var` and `other`
