@@ -20,9 +20,9 @@ use base::gc::Gc;
 use base::interner::{Interner, InternedStr};
 
 use combine::primitives::{Consumed, Stream, Error, Info};
-use combine::combinator::{EnvParser, SepBy, Token};
+use combine::combinator::EnvParser;
 use combine::*;
-use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser, Lex, BetweenChar};
+use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
 
 /// Parser passes the environment to each parser function
 type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<'a, I, F>, I, T>;
@@ -169,10 +169,35 @@ where I: Stream<Item=char> + 'a
     }
 
     fn record_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
-        let field = (self.ident_u(), self.lex(string(":")), self.typ())
-            .map(|(name, _, typ)| Field { name: name, typ: typ });
+        let field = self.parser(ParserEnv::parse_ident2)
+                .then(|(id, is_ctor)| {
+                    parser(move |input| {
+                        if is_ctor {
+                            value((id.clone().to_id(), None))
+                                .parse_state(input)
+                        }
+                        else {
+                            self.reserved_op(":").with(self.typ())
+                                .map(|typ| (id.clone().to_id(), Some(typ)))
+                                .parse_state(input)
+                        }
+                    })
+                });
         self.braces(sep_by(field, self.lex(char(','))))
-            .map(Type::record)
+            .map(|fields: Vec<_>| {
+                let mut associated = Vec::new();
+                let mut types = Vec::new();
+                for (id, field) in fields {
+                    match field {
+                        Some(typ) => types.push(Field { name: id, typ: typ }),
+                        None => {
+                            let typ = Type::data(TypeConstructor::Data(id), Vec::new());
+                            associated.push(Field { name: typ.clone(), typ: typ });
+                        }
+                    }
+                }
+                Type::record(associated, types)
+            })
             .parse_state(input)
     }
 
@@ -353,22 +378,30 @@ where I: Stream<Item=char> + 'a
     }
 
     fn parse_pattern(&self, input: State<I>) -> ParseResult<Pattern<Id>, I> {
-        let record = self.record_parser(optional(self.reserved_op("=").with(self.ident_u())))
-            .map(Pattern::Record);
-        self.parser(ParserEnv::parse_ident2)
-            .then(|(id, is_ctor)| parser(move |input| 
-                if is_ctor {
-                    many(self.ident())
-                        .parse_state(input)
-                        .map(|(args, input)| (Pattern::Constructor(id.clone(), args), input))
-                }
-                else {
-                    Ok((Pattern::Identifier(id.clone()), Consumed::Empty(input)))
-                }
-            ))
-            .or(record)
-            .or(self.parens(self.pattern()))
-            .parse_state(input)
+        self.record_parser(self.ident_u(), self.ident_u(), |record| {
+            self.parser(ParserEnv::parse_ident2)
+                .then(|(id, is_ctor)| parser(move |input| 
+                    if is_ctor {
+                        many(self.ident())
+                            .parse_state(input)
+                            .map(|(args, input)| (Pattern::Constructor(id.clone(), args), input))
+                    }
+                    else {
+                        Ok((Pattern::Identifier(id.clone()), Consumed::Empty(input)))
+                    }
+                ))
+                .or(record.map(|fields: Vec<_>| {
+                    let mut patterns = Vec::new();
+                    for (id, field) in fields {
+                        if let Err(pattern) = field {
+                            patterns.push((id, pattern));
+                        }
+                    }
+                    Pattern::Record(patterns)
+                }))
+                .or(self.parens(self.pattern()))
+                .parse_state(input)
+        })
     }
 
     fn if_else(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
@@ -417,20 +450,52 @@ where I: Stream<Item=char> + 'a
     }
 
     fn record(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-        self.record_parser(optional(self.reserved_op("=").with(self.expr())))
-            .map(|fields| Expr::Record(self.intern(""), fields))
-            .parse_state(input)
+        self.record_parser(self.typ(), self.expr(), |record| {
+            record.map(|fields: Vec<_>| {
+                    let mut types = Vec::new();
+                    let mut exprs = Vec::new();
+                    for (id, field) in fields {
+                        match field {
+                            Ok(typ) => types.push((id, typ)),
+                            Err(expr) => exprs.push((id, expr)),
+                        }
+                    }
+                    Expr::Record {
+                        typ: self.intern(""),
+                        types: types,
+                        exprs: exprs
+                    }
+                })
+                .parse_state(input)
+        })
     }
 
-    fn record_parser<P, O>(&'s self, p: P) -> RecordParser<'a, 's, I, Id, F, P, O>
-    where P: Parser<Input=I>
-        , O: FromIterator<(Id::Untyped, P::Output)> {
-        let field = (self.ident_u(), p);
-        self.braces(sep_by(field, self.lex(char(','))))
+    fn record_parser<P1, P2, O, G, R>(&'s self, ref p1: P1, ref p2: P2, f: G) -> R
+    where P1: Parser<Input=I> + Clone
+        , P2: Parser<Input=I> + Clone
+        , O: FromIterator<(Id::Untyped, Result<Option<P1::Output>, Option<P2::Output>>)>
+        , G: FnOnce(&mut Parser<Input=I, Output=O>) -> R {
+        let mut field = self.parser(ParserEnv::parse_ident2)
+                .then(move |(id, is_ctor)| {
+                    parser(move |input| {
+                        let result = if is_ctor {
+                            optional(self.reserved_op("=").with(p1.clone()))
+                                .map(Ok)
+                                .parse_state(input)
+                            
+                        }
+                        else {
+                            optional(self.reserved_op("=").with(p2.clone()))
+                                .map(Err)
+                                .parse_state(input)
+                        };
+                        result.map(|(x, input)| ((id.clone().to_id(), x), input))
+                    })
+                });
+        let mut parser = self.braces(sep_by(&mut field, self.lex(char(','))));
+        f(&mut parser)
     }
 }
-
-type RecordParser<'a, 'b, I, Id, F, P, O> = BetweenChar<'a, 'b, SepBy<O, (LanguageParser<'a, 'b, I, F, <Id as base::ast::AstId>::Untyped>,  P), Lex<'a, 'b, Token<I>>>>;
 
 
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
@@ -518,6 +583,7 @@ pub mod tests {
     use std::rc::Rc;
     use std::cell::RefCell;
     use base::gc::Gc;
+    use base::ast;
 
     ///Returns a reference to the interner stored in TLD
     pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
@@ -566,6 +632,10 @@ pub mod tests {
             None => Type::data(TypeConstructor::Data(intern(s)), Vec::new())
         }
     }
+    fn typ_a(s: &str, args: Vec<ASTType<InternedStr>>) -> ASTType<InternedStr> {
+        assert!(s.len() != 0);
+        ASTType::new(ast::type_con(intern(s), args))
+    }
     fn generic(s: &str) -> ASTType<InternedStr> {
         Type::generic(Generic { kind: Rc::new(Kind::Variable(0)), id: intern(s) })
     }
@@ -601,7 +671,10 @@ pub mod tests {
         no_loc(Expr::Literal(Bool(b)))
     }
     fn record(fields: Vec<(InternedStr, Option<PExpr>)>) -> PExpr {
-        no_loc(Expr::Record(intern(""), fields))
+        record_a(Vec::new(), fields)
+    }
+    fn record_a(types: Vec<(InternedStr, Option<ASTType<InternedStr>>)>, fields: Vec<(InternedStr, Option<PExpr>)>) -> PExpr {
+        no_loc(Expr::Record { typ: intern(""), types: types, exprs: fields })
     }
     fn field_access(expr: PExpr, field: &str) -> PExpr {
         no_loc(Expr::FieldAccess(Box::new(expr), intern(field)))
@@ -673,8 +746,8 @@ pub mod tests {
     fn type_decl_record() {
         let _ = ::env_logger::init();
         let e = parse_new("type Test = { x: Int, y: {} } in 1");
-        let record = Type::record(vec![field("x", typ("Int")),
-                                       field("y", Type::record(vec![]))]);
+        let record = Type::record(Vec::new(), vec![field("x", typ("Int")),
+                                       field("y", Type::record(vec![], vec![]))]);
         assert_eq!(e, type_decl(typ("Test"), record, int(1)));
     }
 
@@ -683,8 +756,8 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new("type Test = | Test Int and Test2 = { x: Int, y: {} } in 1");
         let test = Type::variants(vec![(intern("Test"), Type::function(vec![typ("Int")], typ("Test")))]);
-        let test2 = Type::record(vec![Field { name: intern("x"), typ: typ("Int") }
-                                    ,  Field { name: intern("y"), typ: Type::record(vec![]) }]);
+        let test2 = Type::record(Vec::new(), vec![Field { name: intern("x"), typ: typ("Int") }
+                                    ,  Field { name: intern("y"), typ: Type::record(vec![], vec![]) }]);
         let binds = vec![
             TypeBinding { name: typ("Test"), typ: test },
             TypeBinding { name: typ("Test2"), typ: test2 },
@@ -768,5 +841,17 @@ pub mod tests {
                     expression: id("test")
                 }], Box::new(id("x")))
         ));
+    }
+
+    #[test]
+    fn associated_record() {
+        let _ = ::env_logger::init();
+        let e = parse_new("type Test a = { Fn, x: a } in { Fn = Int -> Array Int, Test, x = 1 }");
+        
+        let test_type = Type::record(vec![typ("Fn")], vec![Field { name: intern("x"), typ: typ("a") }]);
+        let fn_type = Type::function(vec![typ("Int")], typ_a("Array", vec![typ("Int")]));
+        let record = record_a(vec![(intern("Fn"), Some(fn_type)), (intern("Test"), None)],
+                               vec![(intern("x"), Some(int(1)))]);
+        assert_eq!(e, type_decl(typ_a("Test", vec![typ("a")]), test_type, record));
     }
 }

@@ -198,7 +198,10 @@ pub enum Type<Id, T = ASTType<Id>> {
     Function(Vec<T>, T),
     Builtin(BuiltinType),
     Array(T),
-    Record(Vec<Field<Id, T>>)
+    Record {
+        types: Vec<Field<T, T>>,
+        fields: Vec<Field<Id, T>>
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -291,7 +294,7 @@ impl <Id> Type<Id> {
             },
             Variable(ref var) => var.kind.clone(),
             Generic(ref gen) => gen.kind.clone(),
-            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) | Record(_) => Rc::new(Kind::Star),
+            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) | Record { .. } => Rc::new(Kind::Star),
         }
     }
 }
@@ -347,7 +350,11 @@ pub enum Expr<Id: AstId> {
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
     ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
-    Record(Id, Vec<(Id::Untyped, Option<LExpr<Id>>)>),
+    Record {
+        typ: Id,
+        types: Vec<(Id::Untyped, Option<ASTType<Id::Untyped>>)>,
+        exprs: Vec<(Id::Untyped, Option<LExpr<Id>>)>,
+    },
     Lambda(LambdaStruct<Id>),
     Tuple(Vec<LExpr<Id>>),
     Type(Vec<TypeBinding<Id::Untyped>>, Box<LExpr<Id>>)
@@ -457,8 +464,8 @@ impl <Id> Type<Id, ()> {
         ASTType::from(Type::Variants(vs))
     }
 
-    pub fn record(fs: Vec<Field<Id>>) -> ASTType<Id> {
-        ASTType::from(Type::Record(fs))
+    pub fn record(types: Vec<Field<ASTType<Id>, ASTType<Id>>>, fields: Vec<Field<Id>>) -> ASTType<Id> {
+        ASTType::from(Type::Record { types: types, fields: fields })
     }
 
     pub fn function(args: Vec<ASTType<Id>>, ret: ASTType<Id>) -> ASTType<Id> {
@@ -659,8 +666,15 @@ where I: fmt::Display
             }
             Type::Builtin(ref t) => t.fmt(f),
             Type::Array(ref t) => write!(f, "[{}]", t),
-            Type::Record(ref fields) => {
+            Type::Record { ref types, ref fields } => {
                 try!(write!(f, "{{"));
+                if types.len() > 0 {
+                    try!(write!(f, " {} = {}", types[0].name, types[0].typ));
+                    for field in &types[1..] {
+                        try!(write!(f, ", {} = {}", field.name, field.typ));
+                    }
+                    try!(write!(f, " "));
+                }
                 if fields.len() > 0 {
                     try!(write!(f, " {}: {}", fields[0].name, fields[0].typ));
                     for field in &fields[1..] {
@@ -744,9 +758,9 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
             v.visit_expr(&mut **array);
             v.visit_expr(&mut **index);
         }
-        Expr::Record(ref mut id, ref mut fields) => {
-            v.visit_identifier(id);
-            for field in fields {
+        Expr::Record { ref mut typ, ref mut exprs, .. } => {
+            v.visit_identifier(typ);
+            for field in exprs {
                 if let Some(ref mut expr) = field.1 {
                     v.visit_expr(expr);
                 }
@@ -799,9 +813,13 @@ pub fn walk_type<I, T, F>(typ: &Type<I, T>, f: &mut F)
             }
             walk_type(& **ret, f);
         }
-        Type::Record(ref fields) => {
+        Type::Record { ref types, ref fields } => {
+            for field in types {
+                walk_type(&field.name, f);
+                walk_type(&field.typ, f);
+            }
             for field in fields {
-                walk_type(& field.typ, f);
+                walk_type(&field.typ, f);
             }
         }
         Type::App(ref l, ref r) => {
@@ -852,7 +870,11 @@ pub fn walk_mut_type2<F, G, I, T>(typ: &mut Type<I, T>, f: &mut F, g: &mut G)
             }
             walk_mut_type2(&mut **ret, f, g);
         }
-        Type::Record(ref mut fields) => {
+        Type::Record { ref mut types, ref mut fields } => {
+            for field in types {
+                walk_mut_type2(&mut field.name, f, g);
+                walk_mut_type2(&mut field.typ, f, g);
+            }
             for field in fields {
                 walk_mut_type2(&mut field.typ, f, g);
             }
@@ -878,6 +900,20 @@ pub fn walk_move_type<F, I, T>(typ: T, f: &mut F) -> T
     walk_move_type2(&typ, f).unwrap_or(typ)
 }
 
+///Create a new instance of `R` if one or both values are `Some`
+fn merge<F, A, B, R>(a_original: &A, a: Option<A>, b_original: &B, b: Option<B>, f: F) -> Option<R>
+where A: Clone
+    , B: Clone
+    , F: FnOnce(A, B) -> R
+{
+    match (a, b) {
+        (Some(a), Some(b)) => Some(f(a, b)),
+        (Some(a), None) => Some(f(a, b_original.clone())),
+        (None, Some(b)) => Some(f(a_original.clone(), b)),
+        (None, None) => None
+    }
+}
+
 fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
     where F: FnMut(&Type<I, T>) -> Option<T>
         , T: Deref<Target=Type<I, T>> + From<Type<I, T>> + Clone
@@ -898,29 +934,26 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
             }
             Type::Function(ref args, ref ret) => {
                 let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                (match (new_args, walk_move_type2(ret, f)) {
-                    (Some(args), Some(ret)) => Some(Type::Function(args, ret)),
-                    (Some(args), None) => Some(Type::Function(args, ret.clone())),
-                    (None, Some(ret)) => Some(Type::Function(args.clone(), ret)),
-                    (None, None) => None
-                }).map(From::from)
+                merge(args, new_args, ret, walk_move_type2(ret, f), Type::Function)
+                    .map(From::from)
             }
-            Type::Record(ref fields) => {
-                walk_move_types(fields.iter(), |field| {
+            Type::Record { ref types, ref fields } => {
+                let new_types = walk_move_types(types.iter(), |bind| {
+                    walk_move_type2(&bind.typ, f).map(|typ| {
+                        Field { name: bind.name.clone(), typ: typ }
+                    })
+                });
+                let new_fields = walk_move_types(fields.iter(), |field| {
                     walk_move_type2(&field.typ, f).map(|typ| {
                         Field { name: field.name.clone(), typ: typ }
                     })
-                })
-                .map(Type::Record)
-                .map(From::from)
+                });
+                merge(types, new_types, fields, new_fields, |types, fields| Type::Record { types: types, fields: fields })
+                    .map(From::from)
             }
             Type::App(ref l, ref r) => {
-                (match (walk_move_type2(l, f), walk_move_type2(r, f)) {
-                    (Some(l), Some(r)) => Some(Type::App(l, r)),
-                    (Some(l), _) => Some(Type::App(l.into(), r.clone())),
-                    (_, Some(r)) => Some(Type::App(l.clone(), r.into())),
-                    _ => None
-                }).map(From::from)
+                merge(l, walk_move_type2(l, f), r, walk_move_type2(r, f), Type::App)
+                    .map(From::from)
             }
             Type::Variants(ref variants) => {
                 walk_move_types(variants.iter(), |v| {
