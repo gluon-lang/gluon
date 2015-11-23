@@ -20,40 +20,12 @@ use base::gc::Gc;
 use base::interner::{Interner, InternedStr};
 
 use combine::primitives::{Consumed, Stream, Error, Info};
-use combine::combinator::{SepBy, Token};
+use combine::combinator::{EnvParser, SepBy, Token};
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser, Lex, BetweenChar};
 
 /// Parser passes the environment to each parser function
-struct LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T>
-    where I: Stream<Item=char>
-        , I::Range: 'b {
-    env: &'b ParserEnv<'a, I, F>,
-    parser: fn (&ParserEnv<'a, I, F>, State<I>) -> ParseResult<T, I>
-}
-
-impl <'a, 'b, I, F, T> Clone for LanguageParser<'a, 'b, I, F, T>
-    where I: Stream<Item=char>
-        , I::Range: 'b {
-    fn clone(&self) -> LanguageParser<'a, 'b, I, F, T> {
-        LanguageParser { env: self.env, parser: self.parser }
-    }
-}
-impl <'a, 'b, I, F, T> Copy for LanguageParser<'a, 'b, I, F, T>
-    where I: Stream<Item=char> 
-        , I::Range: 'b { }
-
-impl <'a, 'b, F, Id, I, O> Parser for LanguageParser<'a, 'b, I, F, O>
-    where I: Stream<Item=char>
-        , I::Range: 'b
-        , F: FnMut(&str) -> Id
-        , Id: AstId + Clone {
-    type Input = I;
-    type Output = O;
-    fn parse_state(&mut self, input: State<I>) -> ParseResult<O, I> {
-        (self.parser)(self.env, input)
-    }
-}
+type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<'a, I, F>, I, T>;
 
 /// `ParserEnv` is passed around to all individual parsers so that identifiers can always be
 /// constructed through calling `make_ident`.
@@ -82,7 +54,7 @@ where I: Stream<Item=char> + 'a
     }
 
     fn parser<T>(&'s self, parser: fn (&ParserEnv<'a, I, F>, State<I>) -> ParseResult<T, I>) -> LanguageParser<'a, 's, I, F, T> {
-        LanguageParser { env: self, parser: parser }
+        env_parser(self, parser)
     }
 
     fn precedence(&self, s: &str) -> i32 {
@@ -220,11 +192,10 @@ where I: Stream<Item=char> + 'a
 
     fn type_decl(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
         debug!("type_decl");
-        let bind = self.parser(ParserEnv::type_binding);
         (
             self.reserved("type"),
-            bind,
-            many(self.reserved("and").with(bind)),
+            self.parser(ParserEnv::type_binding),
+            many(self.reserved("and").with(self.parser(ParserEnv::type_binding))),
             self.reserved("in"),
             self.expr()
         )
@@ -264,8 +235,9 @@ where I: Stream<Item=char> + 'a
     }
 
     fn parse_expr(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
-        let arg_expr = self.parser(ParserEnv::parse_arg);
-        (arg_expr, many(arg_expr))
+        let arg_expr1 = self.parser(ParserEnv::parse_arg);
+        let arg_expr2 = self.parser(ParserEnv::parse_arg);
+        (arg_expr1, many(arg_expr2))
             .map(|(f, args): (LExpr<Id>, Vec<_>)| {
                 if args.len() > 0 {
                     located(f.location, Expr::Call(Box::new(f), args))
@@ -410,8 +382,9 @@ where I: Stream<Item=char> + 'a
     }
 
     fn let_in(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-        let bind = self.parser(ParserEnv::binding);
-        (self.reserved("let"), bind.and(many(self.reserved("and").with(bind))), self.reserved("in"), self.expr())
+        let bind1 = self.parser(ParserEnv::binding);
+        let bind2 = self.parser(ParserEnv::binding);
+        (self.reserved("let"), bind1.and(many(self.reserved("and").with(bind2))), self.reserved("in"), self.expr())
             .map(|(_, (b, bindings), _, expr)| {
                 let mut bindings: Vec<_> = bindings;
                 bindings.insert(0, b);

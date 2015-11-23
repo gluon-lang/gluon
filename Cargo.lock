@@ -60,15 +60,15 @@ dependencies = [
 
 [[package]]
 name = "combine"
-version = "1.0.2"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "combine-language"
-version = "0.7.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "combine 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "combine 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -106,8 +106,8 @@ name = "parser"
 version = "0.1.0"
 dependencies = [
  "base 0.1.0",
- "combine 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "combine-language 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "combine 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "combine-language 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
