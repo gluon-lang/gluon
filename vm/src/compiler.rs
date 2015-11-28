@@ -216,7 +216,7 @@ impl CompilerEnv for TypeInfos {
         self.id_to_type.get(struct_)
             .and_then(|&(_, ref typ)| {
                 match **typ {
-                    Type::Record(ref fields) => fields.iter()
+                    Type::Record { ref fields, .. } => fields.iter()
                         .position(|f| f.name == *field)
                         .map(|i| i as VMIndex),
                     _ => None
@@ -460,7 +460,7 @@ impl <'a> Compiler<'a> {
                     Type::Data(ref id, _) => {
                         self.find_field(id, field.id())
                     }
-                    Type::Record(ref fields) => {
+                    Type::Record { ref fields, .. } => {
                         fields.iter()
                             .position(|f| f.name == field.name)
                             .map(|i| i as VMIndex)
@@ -556,7 +556,7 @@ impl <'a> Compiler<'a> {
                 function.inner_functions.push(cf);
             }
             Expr::Type(_, ref expr) => self.compile(&**expr, function, tail_position),
-            Expr::Record(_, ref fields) => {
+            Expr::Record { exprs: ref fields, .. } => {
                 for field in fields {
                     match field.1 {
                         Some(ref field_expr) => self.compile(field_expr, function, false),
@@ -590,7 +590,7 @@ impl <'a> Compiler<'a> {
                         .unwrap_or(typ);
                 }
                 match **typ {
-                    Type::Record(ref type_fields) => {
+                    Type::Record { fields: ref type_fields, .. } => {
                         function.emit(Split);
                         for field in type_fields {
                             let name = match record.iter().find(|tup| tup.0 == field.name) {

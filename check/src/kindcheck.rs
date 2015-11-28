@@ -228,14 +228,14 @@ impl <'a> KindCheck<'a> {
                 }).collect());
                 Ok((self.star.clone(), Type::variants(variants)))
             }
-            Type::Record(ref fields) => {
+            Type::Record { ref types, ref fields } => {
                 let fields = try!(fields.iter().map(|field| {
                     let (kind, typ) = try!(self.kindcheck(&field.typ));
                     let star = self.star.clone();
                     try!(self.unify(&star, kind));
                     Ok(ast::Field { name: field.name, typ: typ })
                 }).collect());
-                Ok((self.star.clone(), Type::record(fields)))
+                Ok((self.star.clone(), Type::record(types.clone(), fields)))
             }
         }
     }

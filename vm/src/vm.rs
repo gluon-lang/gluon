@@ -505,7 +505,7 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         self.type_infos.id_to_type.get(data_name)
             .and_then(|&(_, ref typ)| {
                 match **typ {
-                    ast::Type::Record(ref fields) => {
+                    ast::Type::Record { ref fields, .. } => {
                         fields.iter()
                             .enumerate()
                             .find(|&(_, f)| f.name == *field_name)

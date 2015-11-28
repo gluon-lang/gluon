@@ -506,7 +506,7 @@ where A::Type: Sized {
         let len = HList::<(F, A), T>::len() as usize;
         let mut fields = Vec::with_capacity(len);
         HList::<(F, A), T>::field_types(vm, &mut fields);
-        ast::Type::record(fields)
+        ast::Type::record(Vec::new(), fields)
     }
 }
 impl <'a, A: Pushable<'a>, F: Field, T: PushableFieldList<'a>> Pushable<'a> for Record<HList<(F, A), T>>

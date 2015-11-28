@@ -848,7 +848,7 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new("type Test a = { Fn, x: a } in { Fn = Int -> Array Int, Test, x = 1 }");
         
-        let test_type = Type::record(vec![typ("Fn")], vec![Field { name: intern("x"), typ: typ("a") }]);
+        let test_type = Type::record(vec![Field { name: typ("Fn"), typ: typ("Fn") }], vec![Field { name: intern("x"), typ: typ("a") }]);
         let fn_type = Type::function(vec![typ("Int")], typ_a("Array", vec![typ("Int")]));
         let record = record_a(vec![(intern("Fn"), Some(fn_type)), (intern("Test"), None)],
                                vec![(intern("x"), Some(int(1)))]);
