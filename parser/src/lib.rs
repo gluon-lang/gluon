@@ -391,13 +391,15 @@ where I: Stream<Item=char> + 'a
                     }
                 ))
                 .or(record.map(|fields: Vec<_>| {
+                    let mut types = Vec::new();
                     let mut patterns = Vec::new();
                     for (id, field) in fields {
-                        if let Err(pattern) = field {
-                            patterns.push((id, pattern));
+                        match field {
+                            Ok(name) => types.push((id, name)),
+                            Err(pattern) => patterns.push((id, pattern)),
                         }
                     }
-                    Pattern::Record(patterns)
+                    Pattern::Record { types: types, fields: patterns }
                 }))
                 .or(self.parens(self.pattern()))
                 .parse_state(input)
@@ -825,7 +827,7 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new("case x of | { y, x = z } -> z");
         assert_eq!(e, case(id("x"), vec![
-            (Pattern::Record(vec![(intern("y"), None), (intern("x"), Some(intern("z")))]),
+            (Pattern::Record { types: Vec::new(), fields: vec![(intern("y"), None), (intern("x"), Some(intern("z")))] },
                 id("z"))
         ]));
     }
@@ -835,7 +837,7 @@ pub mod tests {
         let e = parse_new("let {x, y} = test in x");
         assert_eq!(e, no_loc(Expr::Let(vec![
                 Binding {
-                    name: Pattern::Record(vec![(intern("x"), None), (intern("y"), None)]),
+                    name: Pattern::Record { types: Vec::new(), fields: vec![(intern("x"), None), (intern("y"), None)] },
                     typ: None,
                     arguments: vec![],
                     expression: id("test")

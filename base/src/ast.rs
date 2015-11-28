@@ -310,7 +310,10 @@ pub enum LiteralStruct<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id: AstId> {
     Constructor(Id, Vec<Id>),
-    Record(Vec<(Id::Untyped, Option<Id::Untyped>)>),
+    Record {
+        types: Vec<(Id::Untyped, Option<Id::Untyped>)>,
+        fields: Vec<(Id::Untyped, Option<Id::Untyped>)>
+    },
     Identifier(Id)
 }
 
@@ -789,7 +792,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
                 v.visit_identifier(a);
             }
         }
-        Pattern::Record(..) => (),
+        Pattern::Record { .. } => (),
         Pattern::Identifier(ref mut id) => v.visit_identifier(id)
     }
 }
