@@ -10,6 +10,7 @@ use self::Variable::*;
 
 pub type CExpr = LExpr<TcIdent>;
 
+#[derive(Clone, Debug)]
 pub enum Variable<'a> {
     Stack(VMIndex),
     Global(VMIndex, &'a TcType),
@@ -33,6 +34,7 @@ struct FunctionEnv {
     inner_functions: Vec<CompiledFunction>,
     strings: Vec<InternedStr>,
     stack: Vec<(VMIndex, InternedStr)>,
+    stack_constructors: Vec<(TcType, InternedStr)>,
     stack_size: VMIndex
 }
 
@@ -77,6 +79,7 @@ impl FunctionEnv {
             inner_functions: Vec::new(),
             strings: Vec::new(),
             stack: Vec::new(),
+            stack_constructors: Vec::new(),
             stack_size: 0
         }
     }
@@ -133,7 +136,7 @@ impl FunctionEnv {
         debug!("Pop var: {:?}", x);
     }
 
-    fn pop_pattern(&mut self, pattern: &ast::Pattern<TcIdent>) -> VMIndex {
+    fn pop_pattern(&mut self, typ: &TcType, pattern: &ast::Pattern<TcIdent>) -> VMIndex {
         match *pattern {
             ast::Pattern::Constructor(_, ref args) => {
                 for _ in 0..args.len() {
@@ -141,10 +144,13 @@ impl FunctionEnv {
                 }
                 args.len() as VMIndex
             }
-            ast::Pattern::Record { ref fields, .. } => {
+            ast::Pattern::Record { ref types, ref fields, .. } => {
                 for _ in fields {
                     self.pop_var();
                 }
+                with_pattern_types(types, typ, |_, _| {
+                    self.stack_constructors.pop();
+                });
                 fields.len() as VMIndex
             }
             ast::Pattern::Identifier(_) => { self.pop_var(); 1 }
@@ -260,37 +266,83 @@ impl <'a> Compiler<'a> {
     }
 
     fn find(&self, id: InternedStr, current: &mut FunctionEnvs) -> Option<Variable> {
-        current.stack.iter().rev().cloned()
-            .find(|&(_, var)| var == id)
-            .map(|(index, _)| {
-                Stack(index)
+        current.envs.iter()
+            .flat_map(|env| env.stack_constructors.iter())
+            .filter_map(|&(ref typ, _)| {
+                match **typ {
+                    Type::Variants(ref variants) => variants.iter()
+                                                        .enumerate()
+                                                        .find(|&(_, v)| v.0 == id),
+                    _ => None
+                }
+            })
+            .next()
+            .map(|(tag, &(_, ref typ))| {
+                Constructor(tag as VMIndex, ast::arg_iter(typ).count() as VMIndex)
             })
             .or_else(|| {
-                let i = current.envs.len() - 1;
-                let (rest, current) = current.envs.split_at_mut(i);
-                rest.iter().rev()
-                    .filter_map(|env| {
-                        env.stack.iter().rev().cloned()
-                            .find(|&(_, var)| var == id)
-                            .map(|_| {
-                                UpVar(current[0].upvar(id))
-                            })
+                current.stack.iter().rev().cloned()
+                    .find(|&(_, var)| var == id)
+                    .map(|(index, _)| {
+                        Stack(index)
                     })
-                    .next()
+                    .or_else(|| {
+                        let i = current.envs.len() - 1;
+                        let (rest, current) = current.envs.split_at_mut(i);
+                        rest.iter().rev()
+                            .filter_map(|env| {
+                                env.stack.iter().rev().cloned()
+                                    .find(|&(_, var)| var == id)
+                                    .map(|_| {
+                                        UpVar(current[0].upvar(id))
+                                    })
+                            })
+                            .next()
+                    })
             })
-            .or_else(||  self.globals.find_var(&id))
+            .or_else(|| self.globals.find_var(&id))
     }
 
-    fn find_field(&self, struct_: &ast::TypeConstructor<InternedStr>, field: &InternedStr) -> Option<VMIndex> {
+    fn find_field(&self, function: &mut FunctionEnvs, struct_: &ast::TypeConstructor<InternedStr>, field: &InternedStr) -> Option<VMIndex> {
         match *struct_ {
-            ast::TypeConstructor::Data(ref struct_) => self.globals.find_field(struct_, field),
+            ast::TypeConstructor::Data(ref struct_) => {
+                function.envs.iter()
+                    .flat_map(|env| env.stack_constructors.iter())
+                    .find(|& &(_, name)| name == *struct_)
+                    .and_then(|&(ref typ, _)| {
+                        match **typ {
+                            Type::Record { ref fields, ..} => fields.iter()
+                                                                .enumerate()
+                                                                .find(|&(_, v)| v.name == *field)
+                                                                .map(|(offset, _)| offset as VMIndex),
+                            _ => None
+                        }
+                    })
+                    .or_else(|| self.globals.find_field(struct_, field))
+            }
             _ => None
         }
     }
 
-    fn find_tag(&self, enum_: &ast::TypeConstructor<InternedStr>, constructor: &InternedStr) -> Option<VMTag> {
+    fn find_tag(&self, function: &mut FunctionEnvs, enum_: &ast::TypeConstructor<InternedStr>, constructor: &InternedStr) -> Option<VMTag> {
         match *enum_ {
-            ast::TypeConstructor::Data(ref enum_) => self.globals.find_tag(enum_, constructor),
+            ast::TypeConstructor::Data(ref enum_) => {
+                function.envs.iter()
+                    .flat_map(|env| env.stack_constructors.iter())
+                    .filter_map(|&(ref typ, _)| {
+                        match **typ {
+                            Type::Variants(ref variants) => variants.iter()
+                                                                .enumerate()
+                                                                .find(|&(_, v)| v.0 == *constructor),
+                            _ => None
+                        }
+                    })
+                    .next()
+                    .map(|(tag, _)| {
+                        tag as VMTag
+                    })
+                    .or_else(|| self.globals.find_tag(enum_, constructor))
+            }
             _ => None
         }
     }
@@ -430,7 +482,7 @@ impl <'a> Compiler<'a> {
                 self.compile(&body, function, tail_position);
                 let mut count = 0;
                 for binding in bindings {
-                    count += function.pop_pattern(&binding.name);
+                    count += function.pop_pattern(&binding.expression.env_type_of(&self.globals), &binding.name);
                 }
                 function.emit(Slide(count));
             }
@@ -458,7 +510,7 @@ impl <'a> Compiler<'a> {
                 debug!("FieldAccess {}", typ);
                 let field_index = match *typ {
                     Type::Data(ref id, _) => {
-                        self.find_field(id, field.id())
+                        self.find_field(function, id, field.id())
                     }
                     Type::Record { ref fields, .. } => {
                         fields.iter()
@@ -483,7 +535,7 @@ impl <'a> Compiler<'a> {
                     match alt.pattern {
                         ast::Pattern::Constructor(ref id, _) => {
                             let typename = typename.expect("typename");
-                            let tag = self.find_tag(typename, id.id())
+                            let tag = self.find_tag(function, typename, id.id())
                                 .unwrap_or_else(|| panic!("Could not find tag for {}::{}", typename, id.id()));
                             function.emit(TestTag(tag));
                             start_jumps.push(function.instructions.len());
@@ -530,7 +582,7 @@ impl <'a> Compiler<'a> {
                     }
                     self.compile(&alt.expression, function, tail_position);
                     end_jumps.push(function.instructions.len());
-                    let count = function.pop_pattern(&alt.pattern);
+                    let count = function.pop_pattern(&expr.env_type_of(&self.globals), &alt.pattern);
                     function.emit(Slide(count));
                     function.emit(Jump(0));
                 }
@@ -555,7 +607,14 @@ impl <'a> Compiler<'a> {
                 function.stack_size -= vars;
                 function.inner_functions.push(cf);
             }
-            Expr::Type(_, ref expr) => self.compile(&**expr, function, tail_position),
+            Expr::Type(ref type_bindings, ref expr) => {
+                for type_binding in type_bindings {
+                    if let ast::Type::Data(ast::TypeConstructor::Data(name), _) = *type_binding.name {
+                        function.stack_constructors.push((type_binding.typ.clone(), name));
+                    }
+                }
+                self.compile(&**expr, function, tail_position)
+            }
             Expr::Record { exprs: ref fields, .. } => {
                 for field in fields {
                     match field.1 {
@@ -582,13 +641,17 @@ impl <'a> Compiler<'a> {
             ast::Pattern::Identifier(ref name) => {
                 function.new_stack_var(*name.id());
             }
-            ast::Pattern::Record { ref fields, .. } => {
+            ast::Pattern::Record { ref types, ref fields } => {
                 let mut typ = typ;
                 if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
                     typ = self.globals.find_type_info(&id)
                         .and_then(|(_, typ)| typ)
                         .unwrap_or(typ);
                 }
+                // Insert all variant constructor into scope
+                with_pattern_types(types, typ, |name, typ| {
+                    function.stack_constructors.push((typ.clone(), name));
+                });
                 match **typ {
                     Type::Record { fields: ref type_fields, .. } => {
                         function.emit(Split);
@@ -648,3 +711,20 @@ impl <'a> Compiler<'a> {
     }
 }
 
+fn with_pattern_types<F>(types: &[(InternedStr, Option<InternedStr>)], typ: &TcType, mut f: F)
+    where F: FnMut(InternedStr, &TcType) {
+    if let Type::Record { types: ref record_type_fields, .. } = **typ {
+        for field in types {
+            let associated_type = record_type_fields.iter()
+                .find(|type_field| {
+                    match *type_field.name {
+                        Type::Data(ast::TypeConstructor::Data(name), _)
+                            if name == field.0 => true,
+                        _ => false
+                    }
+                })
+                .expect("Associated type to exist in record");
+            f(field.0, &associated_type.typ);
+        }
+    }
+}
