@@ -57,7 +57,10 @@ fn apply_subs(tc: &Typecheck, error: UnificationError) -> UnificationError {
 
 impl From<kindcheck::Error> for TypeError {
     fn from(e: kindcheck::Error) -> TypeError {
-        KindError(e)
+        match e {
+            kindcheck::Error::UndefinedType(name) => UndefinedType(name),
+            e => KindError(e),
+        }
     }
 }
 
@@ -220,6 +223,7 @@ pub struct Typecheck<'a> {
     gc: &'a mut Gc,
     pub type_infos: TypeInfos,
     stack: ScopedMap<InternedStr, TcType>,
+    stack_types: ScopedMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
     inst: Instantiator,
     errors: Errors<ast::Located<TypeError>>
 }
@@ -238,11 +242,22 @@ impl <'a> TypeEnv for Typecheck<'a> {
         }
     }
     fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
-        self.type_infos.find_type_info(id)
+        self.stack_types.find(id)
+            .map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
+            .or_else(|| self.type_infos.find_type_info(id))
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
     }
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
-        self.type_infos.find_record(fields)
+        self.stack_types.iter()
+            .find(|&(_, &(_, ref typ))| {
+                match **typ {
+                    Type::Record { fields: ref record_fields, .. } => {
+                        fields.iter().all(|&name| record_fields.iter().any(|f| f.name == name))
+                    }
+                    _ => false
+                }
+            })
+            .and_then(|t| self.type_infos.type_to_id.get(&(t.1).1).map(|id_type| (id_type, &(t.1).1)))
             .or_else(|| self.environment.and_then(|e| e.find_record(fields)))
     }
 }
@@ -256,6 +271,7 @@ impl <'a> Typecheck<'a> {
             gc: gc,
             type_infos: TypeInfos::new(),
             stack: ScopedMap::new(),
+            stack_types: ScopedMap::new(),
             inst: Instantiator::new(),
             errors: Errors::new()
         }
@@ -296,6 +312,26 @@ impl <'a> Typecheck<'a> {
     
     fn stack_var(&mut self, id: InternedStr, typ: TcType) {
         self.stack.insert(id, typ);
+    }
+    
+    fn stack_type(&mut self, id: InternedStr, generics: Vec<ast::Generic<InternedStr>>, typ: TcType) {
+        // Insert variant constructors into the local scope
+        if let Type::Variants(ref variants) = *typ {
+            for &(name, ref typ) in variants {
+                self.stack_var(name, typ.clone());
+            }
+        }
+        self.stack_types.insert(id, (generics, typ));
+    }
+
+    fn enter_scope(&mut self) {
+        self.stack.enter_scope();
+        self.stack_types.enter_scope();
+    }
+
+    fn exit_scope(&mut self) {
+        self.stack.exit_scope();
+        self.stack_types.exit_scope();
     }
 
     pub fn add_environment(&mut self, env: &'a TypeEnv) {
@@ -448,10 +484,10 @@ impl <'a> Typecheck<'a> {
                 let mut expected_alt_type = None;
 
                 for alt in alts.iter_mut() {
-                    self.stack.enter_scope();
+                    self.enter_scope();
                     try!(self.typecheck_pattern(&mut alt.pattern, typ.clone()));
                     let mut alt_type = try!(self.typecheck(&mut alt.expression));
-                    self.stack.exit_scope();
+                    self.exit_scope();
                     if let Some(ref expected) = expected_alt_type {
                         alt_type = try!(self.unify(expected, alt_type));
                     }
@@ -461,7 +497,7 @@ impl <'a> Typecheck<'a> {
                     .ok_or(StringError("No alternative in case expression"))
             }
             ast::Expr::Let(ref mut bindings, ref mut body) => {
-                self.stack.enter_scope();
+                self.enter_scope();
                 let level = self.inst.subs.var_id();
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
@@ -533,7 +569,7 @@ impl <'a> Typecheck<'a> {
                 }
                 debug!("Typecheck `in`");
                 let result = self.typecheck(body);
-                self.stack.exit_scope();
+                self.exit_scope();
                 result
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
@@ -625,9 +661,10 @@ impl <'a> Typecheck<'a> {
                 Ok(typ)
             }
             ast::Expr::Type(ref mut bindings, ref mut expr) => {
+                self.enter_scope();
                 {
                     let f = |id| {
-                        self.type_infos.id_to_type.get(&id).map(|t| &t.1)
+                        self.stack_types.find(&id).map(|t| &t.1)
                             .and_then(|typ| self.type_infos.type_to_id.get(typ))
                     };
                     let subs = Substitution::new();
@@ -680,35 +717,28 @@ impl <'a> Typecheck<'a> {
                 for &mut ast::TypeBinding { ref name, ref typ } in bindings {
                     match **name {
                         Type::Data(ast::TypeConstructor::Data(id), ref args) => {
-                            let generic_args = args.iter()
-                                .map(|arg| {
-                                    match **arg {
-                                        Type::Generic(ref gen) => gen.clone(),
-                                        _ => panic!("The type on the lhs of a type binding did not have all generic arguments")
-                                    }
-                                })
-                                .collect();
+                            let generic_args = extract_generics(args);
                             self.type_infos.type_to_id.insert(typ.clone(), name.clone());
-                            self.type_infos.id_to_type.insert(id, (generic_args, typ.clone()));
+                            self.stack_type(id, generic_args, typ.clone());
                         }
                         _ => panic!("ICE: Unexpected lhs of type binding {}", name)
                     }
                 }
                 let expr_type = try!(self.typecheck(&mut **expr));
+                self.exit_scope();
                 Ok(expr_type)
             }
             ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
                     .map(|tup| {
                         let (generics, typ) = try!(self.find_type_info(&tup.0));
+                        let gs = generics.iter().map(|g| Type::generic(g.clone())).collect();
+                        let name = Type::data(ast::TypeConstructor::Data(tup.0), gs);
                         let typ = match typ {
                             Some(typ) => typ.clone(),
-                            None => {
-                                let gs = generics.iter().map(|g| Type::generic(g.clone())).collect();
-                                Type::data(ast::TypeConstructor::Data(tup.0), gs)
-                            }
+                            None => name.clone(),
                         };
-                        Ok(ast::Field { name: typ.clone(), typ: typ.clone() })
+                        Ok(ast::Field { name: name, typ: typ.clone() })
                     })
                     .collect::<Result<Vec<_>, TypeError>>());
                 let fields = try!(fields.iter_mut()
@@ -741,7 +771,7 @@ impl <'a> Typecheck<'a> {
                         arguments: &mut [TcIdent],
                         body: &mut ast::LExpr<TcIdent>
                        ) -> Result<TcType, TypeError> {
-        self.stack.enter_scope();
+        self.enter_scope();
         let mut arg_types = Vec::new();
         {
             let mut iter1 = function_arg_iter(self, function_type);
@@ -753,7 +783,7 @@ impl <'a> Typecheck<'a> {
             }
         }
         let body_type = try!(self.typecheck(body));
-        self.stack.exit_scope();
+        self.exit_scope();
         Ok(Type::function(arg_types, body_type))
     }
 
@@ -819,6 +849,38 @@ impl <'a> Typecheck<'a> {
                     }
                     self.stack_var(name, field_type);
                 }
+                match *match_type {
+                    Type::Record { ref types, .. } => {
+                        for field in associated_types.iter() {
+                            let (mut name, ref bind) = *field;
+                            if let Some(bind_name) = *bind {
+                                name = bind_name;
+                            }
+                            // The `types` in the record type should have a type matching the
+                            // `name`
+                            let field_type = types.iter()
+                                .find(|field| {
+                                    match *field.name {
+                                        ast::Type::Data(ast::TypeConstructor::Data(id), _)
+                                            if name == id => true,
+                                        _ => false
+                                    }
+                                });
+                            match field_type {
+                                Some(field_type) => {
+                                    match *field_type.name {
+                                        ast::Type::Data(_, ref args) => {
+                                            self.stack_type(name, extract_generics(args), field_type.typ.clone());
+                                        }
+                                        _ => panic!()
+                                    }
+                                }
+                                None => return Err(UndefinedField(match_type.clone(), name))
+                            }
+                        }
+                    }
+                    _ => panic!("Expected a record")
+                }
                 Ok(match_type)
             }
             ast::Pattern::Identifier(ref mut id) => {
@@ -845,7 +907,7 @@ impl <'a> Typecheck<'a> {
 
     fn kindcheck(&self, typ: &mut TcType, args: &mut [TcType]) -> Result<(), TypeError> {
         let f = |id| {
-            self.type_infos.id_to_type.get(&id).map(|t| &t.1)
+            self.stack_types.find(&id).map(|t| &t.1)
                 .and_then(|typ| self.type_infos.type_to_id.get(typ))
         };
         let subs = Substitution::new();
@@ -1139,6 +1201,17 @@ impl <'a> Typecheck<'a> {
         let typ = self.inst.instantiate_with(typ, arguments, &args);
         Ok(Some(typ))
     }
+}
+
+fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<InternedStr>> {
+    args.iter()
+        .map(|arg| {
+            match **arg {
+                Type::Generic(ref gen) => gen.clone(),
+                _ => panic!("The type on the lhs of a type binding did not have all generic arguments")
+            }
+        })
+        .collect()
 }
 
 struct Instantiator {
@@ -1755,6 +1828,49 @@ in y
 "#;
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("String")));
+    }
+
+    #[test]
+    fn type_pattern() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+type Test = | Test String Int in { Test, x = 1 }
+"#;
+        let result = typecheck(text);
+        let variant = Type::function(vec![typ("String"), typ("Int")], typ("Test"));
+        assert_eq!(result, Ok(Type::record(vec![ast::Field { name: typ("Test"), typ: Type::variants(vec![(intern("Test"), variant)]) }],
+                                           vec![ast::Field { name: intern("x"), typ: typ("Int") }])));
+    }
+
+    #[test]
+    fn undefined_type() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+let x = 
+    type Test = | Test String Int
+    in { Test, x = 1 }
+in
+type Test2 = Test
+in x
+"#;
+        let result = typecheck(text);
+        assert_err!(result, UndefinedType(..));
+    }
+
+    #[test]
+    fn undefined_variant() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+let x = 
+    type Test = | Test String Int
+    in { Test, x = 1 }
+in Test "" 2
+"#;
+        let result = typecheck(text);
+        assert_err!(result, UndefinedVariable(..));
     }
 
     #[test]

@@ -10,6 +10,7 @@ use substitution::{Substitution, Substitutable};
 #[derive(Debug, PartialEq)]
 pub enum Error {
     KindMismatch(Rc<Kind>, Rc<Kind>),
+    UndefinedType(InternedStr),
     StringError(&'static str)
 }
 use self::Error::*;
@@ -18,6 +19,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             KindMismatch(ref expected, ref actual) => write!(f, "Kind mismatch\nExpected: {}\nFound: {}", expected, actual),
+            UndefinedType(name) => write!(f, "Type '{}' is not defined", name),
             StringError(s) => write!(f, "{}", s)
         }
     }
@@ -140,9 +142,13 @@ impl <'a> KindCheck<'a> {
             })
             .map(|t| Ok(t))
             .unwrap_or_else(|| {
-                //Create a new variable
-                self.locals.push((id, Rc::new(self.subs.new_var())));
-                Ok(self.locals.last().unwrap().1.clone())
+                if id.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                    Err(UndefinedType(id))
+                } else {
+                    // Create a new variable
+                    self.locals.push((id, Rc::new(self.subs.new_var())));
+                    Ok(self.locals.last().unwrap().1.clone())
+                }
             });
         debug!("Find kind: {} => {}", id, kind.as_ref().unwrap());
         kind

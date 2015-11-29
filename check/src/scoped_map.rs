@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::hash_map;
 use std::collections::hash_map::{Entry, IterMut};
 use std::hash::Hash;
 
@@ -125,6 +126,28 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         vec.push(v);
         self.scopes.push(Some(k));
         vec.len() == 1
+    }
+
+    pub fn iter(&self) -> Iter<K, V> {
+        Iter { iter: self.map.iter() }
+    }
+}
+
+pub struct Iter<'a, K, V>
+    where K: 'a,
+          V: 'a {
+    iter: hash_map::Iter<'a, K, Vec<V>>
+}
+
+impl <'a, K, V> Iterator for Iter<'a, K, V>
+    where K: 'a,
+          V: 'a {
+
+    type Item = (&'a K, &'a V);
+
+    fn next(&mut self) -> Option<(&'a K, &'a V)> {
+        self.iter.next()
+            .map(|(k, vs)| (k, vs.last().unwrap()))
     }
 }
 

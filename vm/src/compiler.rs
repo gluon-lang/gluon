@@ -141,11 +141,11 @@ impl FunctionEnv {
                 }
                 args.len() as VMIndex
             }
-            ast::Pattern::Record(ref record) => {
-                for _ in record {
+            ast::Pattern::Record { ref fields, .. } => {
+                for _ in fields {
                     self.pop_var();
                 }
-                record.len() as VMIndex
+                fields.len() as VMIndex
             }
             ast::Pattern::Identifier(_) => { self.pop_var(); 1 }
         }
@@ -489,7 +489,7 @@ impl <'a> Compiler<'a> {
                             start_jumps.push(function.instructions.len());
                             function.emit(CJump(0));
                         }
-                        ast::Pattern::Record(_) => {
+                        ast::Pattern::Record { .. } => {
                             catch_all = true;
                             start_jumps.push(function.instructions.len());
                         }
@@ -519,7 +519,7 @@ impl <'a> Compiler<'a> {
                                 function.push_stack_var(arg.id().clone());
                             }
                         }
-                        ast::Pattern::Record(_) => {
+                        ast::Pattern::Record { .. } => {
                             let typ = &expr.env_type_of(&self.globals);
                             self.compile_let_pattern(&alt.pattern, typ, function);
                         }
@@ -582,7 +582,7 @@ impl <'a> Compiler<'a> {
             ast::Pattern::Identifier(ref name) => {
                 function.new_stack_var(*name.id());
             }
-            ast::Pattern::Record(ref record) => {
+            ast::Pattern::Record { ref fields, .. } => {
                 let mut typ = typ;
                 if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
                     typ = self.globals.find_type_info(&id)
@@ -593,7 +593,7 @@ impl <'a> Compiler<'a> {
                     Type::Record { fields: ref type_fields, .. } => {
                         function.emit(Split);
                         for field in type_fields {
-                            let name = match record.iter().find(|tup| tup.0 == field.name) {
+                            let name = match fields.iter().find(|tup| tup.0 == field.name) {
                                 Some(&(name, bind)) => bind.unwrap_or(name),
                                 None => self.intern("")
                             };
