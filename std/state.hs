@@ -1,3 +1,5 @@
+let { Monad } = prelude
+in
 type State s a = s -> { value: a, state: s }
 in
 let (>>=) m f: State s a -> (a -> State s b) -> State s b =

@@ -941,11 +941,7 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                     .map(From::from)
             }
             Type::Record { ref types, ref fields } => {
-                let new_types = walk_move_types(types.iter(), |bind| {
-                    walk_move_type2(&bind.typ, f).map(|typ| {
-                        Field { name: bind.name.clone(), typ: typ }
-                    })
-                });
+                let new_types = None;
                 let new_fields = walk_move_types(fields.iter(), |field| {
                     walk_move_type2(&field.typ, f).map(|typ| {
                         Field { name: field.name.clone(), typ: typ }

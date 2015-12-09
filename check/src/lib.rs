@@ -18,10 +18,10 @@ pub use typed::Typed;
 pub mod typecheck;
 mod typed;
 pub mod error;
-mod kindcheck;
+pub mod kindcheck;
 pub mod macros;
 mod substitution;
-mod scoped_map;
+pub mod scoped_map;
 
 #[cfg(test)]
 pub mod tests {

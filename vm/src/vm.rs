@@ -10,6 +10,7 @@ use std::slice;
 use base::ast;
 use base::ast::{Type, ASTType};
 use check::typecheck::{Typecheck, TypeEnv, TypeInfos, TcIdent, TcType};
+use check::kindcheck::KindEnv;
 use check::macros::{MacroEnv, MacroExpander};
 use check::Typed;
 use types::*;
@@ -529,6 +530,18 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     }
 }
 
+impl <'a, 'b> KindEnv for VMEnv<'a, 'b> {
+    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<ast::Kind>> {
+        self.type_infos.find_kind(type_name)
+            .or_else(|| {
+                if &type_name[..] == "IO" {
+                    Some(ast::Kind::function(ast::Kind::star(), ast::Kind::star()))
+                } else {
+                    None
+                }
+            })
+    }
+}
 impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         match self.names.get(id) {
@@ -639,12 +652,19 @@ impl <'a> VM<'a> {
     }
 
     fn add_types(&self) -> Result<(), (TypeId, TcType)> {
+        use api::{Generic, IO, VMType};
+        use api::generic::A;
         let ref ids = self.typeids;
         try!(ids.try_insert(TypeId::of::<()>(), Type::unit()));
         try!(ids.try_insert(TypeId::of::<bool>(), Type::bool()));
         try!(ids.try_insert(TypeId::of::<VMInt>(), Type::int()));
         try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
+        let io_str = self.intern("IO");
+        let io_type = IO::<Generic<A>>::make_type(self);
+        let io_args = vec![ast::Generic { kind: ast::Kind::star(), id: self.intern("a") }];
+        self.type_infos.borrow_mut()
+            .id_to_type.insert(io_str, (io_args, io_type));
         Ok(())
     }
 
@@ -1488,13 +1508,18 @@ r"
 type T = { x: Int, y: Int } in
 let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 let sub = \l r -> { x = l.x #Int- r.x, y = l.y #Int- r.y } in
-{ add = add, sub = sub }
+{ T, add, sub }
 ";
         let mut vm = VM::new();
         load_script(&mut vm, "Vec", text)
             .unwrap_or_else(|err| panic!("{}", err));
 
-        let value = run_expr(&mut vm, "Vec.add { x = 10, y = 5 } { x = 1, y = 2 }");
+let script =
+r#"
+let { T, add, sub } = Vec
+in add { x = 10, y = 5 } { x = 1, y = 2 }
+"#;
+        let value = run_expr(&mut vm, script);
         assert_eq!(value, vm.new_data(0, &mut [Int(11), Int(7)]));
     }
     #[test]
@@ -1750,7 +1775,8 @@ in singleton "test" 1 ++ singleton "asd" 2
         let mut vm = VM::new();
         let mut text = String::new();
         File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        load_script(&mut vm, "prelude", &text).unwrap();
+        load_script(&mut vm, "prelude", &text)
+            .unwrap_or_else(|err| panic!("{}", err));
         text.clear();
         File::open("../std/state.hs").unwrap().read_to_string(&mut text).unwrap();
         run_expr(&mut vm, &text);

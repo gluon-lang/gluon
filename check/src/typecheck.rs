@@ -135,6 +135,15 @@ pub struct TypeInfos {
     pub id_to_type: HashMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
     pub type_to_id: HashMap<TcType, TcType>
 }
+
+impl kindcheck::KindEnv for TypeInfos {
+    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<Kind>> {
+        self.id_to_type.get(&type_name)
+            .and_then(|tup| self.type_to_id.get(&tup.1))
+            .map(|typ| typ.kind())
+    }
+}
+
 impl TypeEnv for TypeInfos {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         self.id_to_type.iter()
@@ -181,7 +190,7 @@ impl TypeInfos {
     }
 }
 
-pub trait TypeEnv {
+pub trait TypeEnv: kindcheck::KindEnv {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType>;
     fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)>;
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)>;
@@ -223,12 +232,26 @@ pub struct Typecheck<'a> {
     gc: &'a mut Gc,
     pub type_infos: TypeInfos,
     stack: ScopedMap<InternedStr, TcType>,
-    stack_types: ScopedMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
+    stack_types: ScopedMap<InternedStr, (TcType, Vec<ast::Generic<InternedStr>>, TcType)>,
     inst: Instantiator,
     errors: Errors<ast::Located<TypeError>>
 }
 
 pub type StringErrors = Errors<ast::Located<TypeError>>;
+
+impl <'a> kindcheck::KindEnv for Typecheck<'a> {
+    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<Kind>> {
+        self.stack_types.find(&type_name)
+            .map(|&(_, ref args, ref typ)| {
+                let mut kind = ast::Kind::star();
+                for arg in args.iter().rev() {
+                    kind = Rc::new(Kind::Function(arg.kind.clone(), kind));
+                }
+                kind
+            })
+            .or_else(|| self.environment.and_then(|env| env.find_kind(type_name)))
+    }
+}
 
 impl <'a> TypeEnv for Typecheck<'a> {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
@@ -243,13 +266,13 @@ impl <'a> TypeEnv for Typecheck<'a> {
     }
     fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
         self.stack_types.find(id)
-            .map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
+            .map(|&(_, ref generics, ref typ)| (&generics[..], Some(typ)))
             .or_else(|| self.type_infos.find_type_info(id))
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
     }
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
         self.stack_types.iter()
-            .find(|&(_, &(_, ref typ))| {
+            .find(|&(_, &(_, _, ref typ))| {
                 match **typ {
                     Type::Record { fields: ref record_fields, .. } => {
                         fields.iter().all(|&name| record_fields.iter().any(|f| f.name == name))
@@ -257,7 +280,7 @@ impl <'a> TypeEnv for Typecheck<'a> {
                     _ => false
                 }
             })
-            .and_then(|t| self.type_infos.type_to_id.get(&(t.1).1).map(|id_type| (id_type, &(t.1).1)))
+            .map(|t| (&(t.1).0, &(t.1).2))
             .or_else(|| self.environment.and_then(|e| e.find_record(fields)))
     }
 }
@@ -314,14 +337,14 @@ impl <'a> Typecheck<'a> {
         self.stack.insert(id, typ);
     }
     
-    fn stack_type(&mut self, id: InternedStr, generics: Vec<ast::Generic<InternedStr>>, typ: TcType) {
+    fn stack_type(&mut self, id: InternedStr, typ: TcType, generics: Vec<ast::Generic<InternedStr>>, real_type: TcType) {
         // Insert variant constructors into the local scope
-        if let Type::Variants(ref variants) = *typ {
+        if let Type::Variants(ref variants) = *real_type {
             for &(name, ref typ) in variants {
                 self.stack_var(name, typ.clone());
             }
         }
-        self.stack_types.insert(id, (generics, typ));
+        self.stack_types.insert(id, (typ, generics, real_type));
     }
 
     fn enter_scope(&mut self) {
@@ -563,8 +586,8 @@ impl <'a> Typecheck<'a> {
                             _id.typ = self.finish_type(level, _id.typ.clone());
                             debug!("{}: {}", _id.name, _id.typ);
                         }
-                        ast::Pattern::Record { .. } => debug!("{{ .. }}: {}", bind.expression.type_of()),
-                        ast::Pattern::Constructor(ref _id, _) => debug!("{}: {}", _id.name, bind.expression.type_of())
+                        ast::Pattern::Record { .. } => debug!("{{ .. }}: {}", bind.expression.env_type_of(self)),
+                        ast::Pattern::Constructor(ref _id, _) => debug!("{}: {}", _id.name, bind.expression.env_type_of(self))
                     }
                 }
                 debug!("Typecheck `in`");
@@ -663,12 +686,8 @@ impl <'a> Typecheck<'a> {
             ast::Expr::Type(ref mut bindings, ref mut expr) => {
                 self.enter_scope();
                 {
-                    let f = |id| {
-                        self.stack_types.find(&id).map(|t| &t.1)
-                            .and_then(|typ| self.type_infos.type_to_id.get(typ))
-                    };
                     let subs = Substitution::new();
-                    let mut check = super::kindcheck::KindCheck::new(&f, subs);
+                    let mut check = super::kindcheck::KindCheck::new(self, subs);
                     //Setup kind variables for all type variables and insert the types in the
                     //this type expression into the kindcheck environment
                     for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
@@ -719,7 +738,7 @@ impl <'a> Typecheck<'a> {
                         Type::Data(ast::TypeConstructor::Data(id), ref args) => {
                             let generic_args = extract_generics(args);
                             self.type_infos.type_to_id.insert(typ.clone(), name.clone());
-                            self.stack_type(id, generic_args, typ.clone());
+                            self.stack_type(id, name.clone(), generic_args, typ.clone());
                         }
                         _ => panic!("ICE: Unexpected lhs of type binding {}", name)
                     }
@@ -870,7 +889,7 @@ impl <'a> Typecheck<'a> {
                                 Some(field_type) => {
                                     match *field_type.name {
                                         ast::Type::Data(_, ref args) => {
-                                            self.stack_type(name, extract_generics(args), field_type.typ.clone());
+                                            self.stack_type(name, field_type.name.clone(), extract_generics(args), field_type.typ.clone());
                                         }
                                         _ => panic!()
                                     }
@@ -906,12 +925,8 @@ impl <'a> Typecheck<'a> {
     }
 
     fn kindcheck(&self, typ: &mut TcType, args: &mut [TcType]) -> Result<(), TypeError> {
-        let f = |id| {
-            self.stack_types.find(&id).map(|t| &t.1)
-                .and_then(|typ| self.type_infos.type_to_id.get(typ))
-        };
         let subs = Substitution::new();
-        let mut check = super::kindcheck::KindCheck::new(&f, subs);
+        let mut check = super::kindcheck::KindCheck::new(self, subs);
         check.set_variables(args);
         try!(check.kindcheck_type(typ));
         Ok(())
@@ -1132,19 +1147,15 @@ impl <'a> Typecheck<'a> {
     }
 
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
-        let mut generic = {
+        let generic = {
             let vars = self.inst.named_variables.borrow();
             let max_var = vars.keys()
                 .fold("a", |max, current| {
-                    if current.len() == 1 {
-                        ::std::cmp::max(max, &current[..])
-                    }
-                    else {
-                        max
-                    }
+                    ::std::cmp::max(max, &current[..])
                 });
             String::from(max_var)
         };
+        let mut i = 0;
         ast::walk_move_type(typ, &mut |typ| {
             let replacement = self.inst.replace_variable(typ);
             let mut typ = typ;
@@ -1154,8 +1165,8 @@ impl <'a> Typecheck<'a> {
             }
             match *typ {
                 Type::Variable(ref var) if self.inst.subs.get_level(var.id) > level => {
-                    let c = generic.pop().unwrap();
-                    generic.push((c as u8 + 1) as char);
+                    let generic = format!("{}{}", generic, i);
+                    i += 1;
                     let id = self.interner.intern(self.gc, &generic);
                     let gen = Type::generic(ast::Generic { kind: var.kind.clone(), id: id });
                     self.inst.subs.insert(var.id, gen.clone());

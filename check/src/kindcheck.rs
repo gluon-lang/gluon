@@ -25,7 +25,7 @@ impl fmt::Display for Error {
     }
 }
 
-type Result<T> = ::std::result::Result<T, Error>;
+pub type Result<T> = ::std::result::Result<T, Error>;
 
 impl Substitutable for Kind {
     type Variable = u32;
@@ -55,11 +55,29 @@ impl Substitutable for Kind {
     }
 }
 
+pub trait KindEnv {
+    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<Kind>>;
+}
+
+impl <'a, T: ?Sized + KindEnv> KindEnv for &'a T {
+    fn find_kind(&self, id: InternedStr) -> Option<Rc<Kind>> {
+        (**self).find_kind(id)
+    }
+}
+
+impl <T: KindEnv, U: KindEnv> KindEnv for (T, U) {
+    fn find_kind(&self, id: InternedStr) -> Option<Rc<Kind>> {
+        let &(ref outer, ref inner) = self;
+        inner.find_kind(id)
+            .or_else(|| outer.find_kind(id))
+    }
+}
+
 pub struct KindCheck<'a> {
     variables: Vec<TcType>,
     ///Type bindings local to the current kindcheck invocation
     locals: Vec<(InternedStr, Rc<Kind>)>,
-    info: &'a (Fn(InternedStr) -> Option<&'a TcType> + 'a),
+    info: &'a (KindEnv + 'a),
     pub subs: Substitution<Kind>,
     star: Rc<Kind>
 }
@@ -93,7 +111,7 @@ fn walk_move_kind2<F>(kind: &Rc<Kind>, f: &mut F) -> Option<Rc<Kind>>
 
 impl <'a> KindCheck<'a> {
 
-    pub fn new(info: &'a Fn(InternedStr) -> Option<&'a TcType>, subs: Substitution<Kind>) -> KindCheck<'a> {
+    pub fn new(info: &'a (KindEnv + 'a), subs: Substitution<Kind>) -> KindCheck<'a> {
         KindCheck {
             variables: Vec::new(),
             locals: Vec::new(),
@@ -125,21 +143,7 @@ impl <'a> KindCheck<'a> {
                     .find(|t| t.0 == id)
                     .map(|t| t.1.clone())
             })
-            .or_else(|| {
-                (self.info)(id)
-                    .and_then(|typ| {
-                        match **typ {
-                            Type::Data(_, ref args) => {
-                                let mut kind = self.star.clone();
-                                for arg in args.iter().rev() {
-                                    kind = Rc::new(Kind::Function(arg.kind(), kind));
-                                }
-                                Some(kind)
-                            }
-                            _ => None
-                        }
-                    })
-            })
+            .or_else(|| self.info.find_kind(id))
             .map(|t| Ok(t))
             .unwrap_or_else(|| {
                 if id.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {

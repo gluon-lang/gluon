@@ -4,6 +4,7 @@ use base::gc::Gc;
 use base::ast;
 use base::ast::{LExpr, Expr, Integer, Float, String, Bool};
 use check::typecheck::{TcIdent, TcType, Type, TypeInfos, TypeEnv};
+use check::scoped_map::ScopedMap;
 use check::Typed;
 use types::*;
 use self::Variable::*;
@@ -35,6 +36,7 @@ struct FunctionEnv {
     strings: Vec<InternedStr>,
     stack: Vec<(VMIndex, InternedStr)>,
     stack_constructors: Vec<(TcType, InternedStr)>,
+    stack_types: ScopedMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
     stack_size: VMIndex
 }
 
@@ -52,6 +54,26 @@ impl Deref for FunctionEnvs {
 impl DerefMut for FunctionEnvs {
     fn deref_mut(&mut self) -> &mut FunctionEnv {
         self.envs.last_mut().expect("FunctionEnv")
+    }
+}
+
+impl TypeEnv for FunctionEnvs {
+    fn find_type(&self, _id: &InternedStr) -> Option<&TcType> {
+        None
+    }
+    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
+        self.envs.iter()
+            .flat_map(|env| env.stack_types.find(&id).map(|&(ref generics, ref typ)| (&generics[..], Some(typ))))
+            .next()
+    }
+    fn find_record(&self, _fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+        None
+    }
+}
+
+impl ::check::kindcheck::KindEnv for FunctionEnvs {
+    fn find_kind(&self, _type_name: InternedStr) -> Option<::std::rc::Rc<::base::ast::Kind>> {
+        None
     }
 }
 
@@ -80,6 +102,7 @@ impl FunctionEnv {
             strings: Vec::new(),
             stack: Vec::new(),
             stack_constructors: Vec::new(),
+            stack_types: ScopedMap::new(),
             stack_size: 0
         }
     }
@@ -303,6 +326,11 @@ impl <'a> Compiler<'a> {
             .or_else(|| self.globals.find_var(&id))
     }
 
+    fn find_type_info<'s>(&'s self, function: &'s mut FunctionEnvs, id: InternedStr) -> Option<(&'s [ast::Generic<InternedStr>], Option<&'s TcType>)> {
+        function.find_type_info(&id)
+            .or_else(|| self.globals.find_type_info(&id))
+    }
+
     fn find_field(&self, function: &mut FunctionEnvs, struct_: &ast::TypeConstructor<InternedStr>, field: &InternedStr) -> Option<VMIndex> {
         match *struct_ {
             ast::TypeConstructor::Data(ref struct_) => {
@@ -475,14 +503,15 @@ impl <'a> Compiler<'a> {
                     }
                     else {
                         self.compile(&bind.expression, function, false);
-                        let typ = bind.expression.env_type_of(&self.globals);
+                        let typ = bind.expression.env_type_of(&(self.globals, &*function));
                         self.compile_let_pattern(&bind.name, &typ, function);
                     }
                 }
                 self.compile(&body, function, tail_position);
                 let mut count = 0;
                 for binding in bindings {
-                    count += function.pop_pattern(&binding.expression.env_type_of(&self.globals), &binding.name);
+                    let t = binding.expression.env_type_of(&(self.globals, &*function));
+                    count += function.pop_pattern(&t, &binding.name);
                 }
                 function.emit(Slide(count));
             }
@@ -505,7 +534,7 @@ impl <'a> Compiler<'a> {
             Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function, tail_position);
                 debug!("{:?} {:?}", expr, field);
-                let typ = expr.env_type_of(&self.globals);
+                let typ = expr.env_type_of(&(self.globals, &*function));
                 let typ = typ.inner_app();
                 debug!("FieldAccess {}", typ);
                 let field_index = match *typ {
@@ -525,7 +554,7 @@ impl <'a> Compiler<'a> {
                 self.compile(&**expr, function, false);
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
-                let typ = expr.env_type_of(&self.globals);
+                let typ = expr.env_type_of(&(self.globals, &*function));
                 let typename = match *typ {
                     Type::Data(ref id, _) => Some(id),
                     _ => None
@@ -572,7 +601,7 @@ impl <'a> Compiler<'a> {
                             }
                         }
                         ast::Pattern::Record { .. } => {
-                            let typ = &expr.env_type_of(&self.globals);
+                            let typ = &expr.env_type_of(&(self.globals, &*function));
                             self.compile_let_pattern(&alt.pattern, typ, function);
                         }
                         ast::Pattern::Identifier(ref id) => {
@@ -582,7 +611,8 @@ impl <'a> Compiler<'a> {
                     }
                     self.compile(&alt.expression, function, tail_position);
                     end_jumps.push(function.instructions.len());
-                    let count = function.pop_pattern(&expr.env_type_of(&self.globals), &alt.pattern);
+                    let t = expr.env_type_of(&(self.globals, &*function));
+                    let count = function.pop_pattern(&t, &alt.pattern);
                     function.emit(Slide(count));
                     function.emit(Jump(0));
                 }
@@ -609,7 +639,9 @@ impl <'a> Compiler<'a> {
             }
             Expr::Type(ref type_bindings, ref expr) => {
                 for type_binding in type_bindings {
-                    if let ast::Type::Data(ast::TypeConstructor::Data(name), _) = *type_binding.name {
+                    if let ast::Type::Data(ast::TypeConstructor::Data(name), ref args) = *type_binding.name {
+                        let generic_args = extract_generics(args);
+                        function.stack_types.insert(name, (generic_args, type_binding.typ.clone()));
                         function.stack_constructors.push((type_binding.typ.clone(), name));
                     }
                 }
@@ -636,23 +668,23 @@ impl <'a> Compiler<'a> {
     fn compile_let_pattern(&mut self,
                            pattern: &ast::Pattern<TcIdent>,
                            typ: &TcType,
-                           function: &mut FunctionEnv) {
+                           function: &mut FunctionEnvs) {
         match *pattern {
             ast::Pattern::Identifier(ref name) => {
                 function.new_stack_var(*name.id());
             }
             ast::Pattern::Record { ref types, ref fields } => {
-                let mut typ = typ;
-                if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
-                    typ = self.globals.find_type_info(&id)
-                        .and_then(|(_, typ)| typ)
-                        .unwrap_or(typ);
+                let mut typ = typ.clone();
+                if let Type::Data(ast::TypeConstructor::Data(id), _) = *typ {
+                    typ = self.find_type_info(function, id)
+                        .and_then(|(_, typ)| typ.cloned())
+                        .unwrap_or(typ.clone());
                 }
                 // Insert all variant constructor into scope
-                with_pattern_types(types, typ, |name, typ| {
+                with_pattern_types(types, &typ, |name, typ| {
                     function.stack_constructors.push((typ.clone(), name));
                 });
-                match **typ {
+                match *typ {
                     Type::Record { fields: ref type_fields, .. } => {
                         function.emit(Split);
                         for field in type_fields {
@@ -727,4 +759,15 @@ fn with_pattern_types<F>(types: &[(InternedStr, Option<InternedStr>)], typ: &TcT
             f(field.0, &associated_type.typ);
         }
     }
+}
+
+fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<InternedStr>> {
+    args.iter()
+        .map(|arg| {
+            match **arg {
+                Type::Generic(ref gen) => gen.clone(),
+                _ => panic!("The type on the lhs of a type binding did not have all generic arguments")
+            }
+        })
+        .collect()
 }

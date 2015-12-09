@@ -1,3 +1,5 @@
+let { Ordering, Ord, Option, List } = prelude
+in
 type Map k a = | Bin k a (Map k a) (Map k a)
                | Tip
 in let empty = Tip

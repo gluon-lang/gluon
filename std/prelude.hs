@@ -295,15 +295,24 @@ let show_List: Show a -> Show (List a) = \d ->
         in string.append "[" (show2 xs)
     in { show }
 in
-{ id, const, flip, not,
-  (++), foldl, foldr,
-  ord_Option, ord_Result, ord_Float, ord_Int, ord_String, make_Ord,
-  eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
-  num_Int, num_Float,
-  functor_Option, functor_Result, functor_List, functor_IO,
-  applicative_Option, applicative_Result, applicative_List, applicative_IO,
-  monad_Option, monad_List, monad_IO,
-  make_Monad,
-  show_Int, show_Float, show_String, show_List
+{
+    Eq,
+    Ord,
+    Ordering,
+    Option,
+    Result,
+    List,
+    Functor,
+    Monad,
+    id, const, flip, not,
+    (++), foldl, foldr,
+    ord_Option, ord_Result, ord_Float, ord_Int, ord_String, make_Ord,
+    eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
+    num_Int, num_Float,
+    functor_Option, functor_Result, functor_List, functor_IO,
+    applicative_Option, applicative_Result, applicative_List, applicative_IO,
+    monad_Option, monad_List, monad_IO,
+    make_Monad,
+    show_Int, show_Float, show_String, show_List
 }
 

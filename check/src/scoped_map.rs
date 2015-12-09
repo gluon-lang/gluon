@@ -7,7 +7,8 @@ use std::hash::Hash;
 ///Introducing a new scope will make it possible to introduce additional
 ///variables with names already defined, shadowing the old name
 ///After exiting a scope the shadowed variable will again be re introduced
-pub struct ScopedMap<K, V> {
+#[derive(Debug)]
+pub struct ScopedMap<K: Eq + Hash + Clone, V> {
     ///A hashmap storing a key -> value mapping
     ///Stores a vector of values in which the value at the top is value returned from 'find'
     map: HashMap<K, Vec<V>>,
