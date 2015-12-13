@@ -21,7 +21,7 @@ fn prelude(b: &mut ::test::Bencher) {
     let mut text = String::new();
     File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
     let expr = ::parser::parse_tc(&mut *gc, &mut *interner, &text)
-        .unwrap_or_else(|err| panic!("{:?}", err));
+                   .unwrap_or_else(|err| panic!("{:?}", err));
     b.iter(|| {
         let mut tc = Typecheck::new(&mut *interner, &mut *gc);
         tc.add_environment(&env);

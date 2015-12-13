@@ -11,7 +11,7 @@ fn type_of_expr(vm: &VM) -> Status {
                 let ref env = (vm.env(), infos);
                 format!("{}", expr.env_type_of(env))
             }
-            Err(msg) => format!("{}", msg)
+            Err(msg) => format!("{}", msg),
         })
     };
     closure.unpack_and_call(vm)
@@ -32,20 +32,21 @@ fn find_type_info(vm: &VM) -> Status {
                     try!(write!(&mut buffer, " = "));
                     match typ {
                         Some(typ) => try!(write!(&mut buffer, "{}", typ)),
-                        None => try!(write!(&mut buffer, "<abstract>"))
+                        None => try!(write!(&mut buffer, "<abstract>")),
                     }
                     Ok(buffer)
                 };
                 fmt().unwrap()
             }
-            None => format!("'{}' is not a type", args)
+            None => format!("'{}' is not a type", args),
         })
     };
     closure.unpack_and_call(vm)
 }
 
 fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
-    try!(vm.define_global("repl_prim", record!(
+    try!(vm.define_global("repl_prim",
+                          record!(
         type_of_expr => primitive::<fn (String) -> IO<String>>(type_of_expr),
         find_type_info => primitive::<fn (String) -> IO<String>>(find_type_info)
     )));
@@ -58,8 +59,7 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
 pub fn run() -> Result<(), Box<StdError>> {
     let vm = VM::new();
     try!(compile_repl(&vm));
-    let mut repl: Callable<((),), IO<()>> = Get::get_function(&vm, "repl")
-        .expect("repl function");
+    let mut repl: Callable<((),), IO<()>> = Get::get_function(&vm, "repl").expect("repl function");
     try!(repl.call(()));
     Ok(())
 }
@@ -72,7 +72,6 @@ mod tests {
     #[test]
     fn compile_repl_test() {
         let vm = VM::new();
-        compile_repl(&vm)
-            .unwrap_or_else(|err| panic!("{}", err));
+        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
     }
 }

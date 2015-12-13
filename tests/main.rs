@@ -22,7 +22,9 @@ impl fmt::Display for StringError {
 }
 
 impl Error for StringError {
-    fn description(&self) -> &str { &self.0 }
+    fn description(&self) -> &str {
+        &self.0
+    }
 }
 
 #[test]
@@ -32,21 +34,19 @@ fn main() {
     }
 }
 
-fn test_files(path: &str) -> Result<Box<Iterator<Item=PathBuf>>, Box<Error>> {
+fn test_files(path: &str) -> Result<Box<Iterator<Item = PathBuf>>, Box<Error>> {
     let dir = try!(read_dir(path));
-    Ok(Box::new(dir
-        .filter_map(|f| {
-            f.ok()
-                .and_then(|f| {
-                    let path = f.path();
-                    if path.extension().and_then(|e| e.to_str()) == Some("hs") {
-                        Some(path)
-                    }
-                    else {
-                        None
-                    }
-                })
-        })))
+    Ok(Box::new(dir.filter_map(|f| {
+        f.ok()
+         .and_then(|f| {
+             let path = f.path();
+             if path.extension().and_then(|e| e.to_str()) == Some("hs") {
+                 Some(path)
+             } else {
+                 None
+             }
+         })
+    })))
 }
 
 fn main_() -> Result<(), Box<Error>> {
@@ -67,8 +67,13 @@ fn main_() -> Result<(), Box<Error>> {
         try!(file.read_to_string(&mut text));
         println!("test {}", filename.to_str().unwrap_or("<unknown>"));
         match run_expr(&vm, &text) {
-            Ok(x) => return Err(StringError(format!("Expected test '{}' to fail got {:?}", filename.to_str().unwrap(), x)).into()),
-            Err(_) => ()
+            Ok(x) => {
+                return Err(StringError(format!("Expected test '{}' to fail got {:?}",
+                                               filename.to_str().unwrap(),
+                                               x))
+                               .into())
+            }
+            Err(_) => (),
         }
     }
     Ok(())
