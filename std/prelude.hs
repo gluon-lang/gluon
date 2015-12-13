@@ -304,6 +304,8 @@ in
     List,
     Functor,
     Monad,
+    Num,
+    Show,
     id, const, flip, not,
     (++), foldl, foldr,
     ord_Option, ord_Result, ord_Float, ord_Int, ord_String, make_Ord,

@@ -171,7 +171,7 @@ impl FunctionEnv {
                 for _ in fields {
                     self.pop_var();
                 }
-                with_pattern_types(types, typ, |_, _| {
+                with_pattern_types(types, typ, |_, _, _| {
                     self.stack_constructors.pop();
                 });
                 fields.len() as VMIndex
@@ -681,8 +681,12 @@ impl <'a> Compiler<'a> {
                         .unwrap_or(typ.clone());
                 }
                 // Insert all variant constructor into scope
-                with_pattern_types(types, &typ, |name, typ| {
-                    function.stack_constructors.push((typ.clone(), name));
+                with_pattern_types(types, &typ, |name, name_type, typ| {
+                    if let ast::Type::Data(_, ref args) = **name_type {
+                        let generic_args = extract_generics(args);
+                        function.stack_types.insert(name, (generic_args, typ.clone()));
+                        function.stack_constructors.push((typ.clone(), name));
+                    }
                 });
                 match *typ {
                     Type::Record { fields: ref type_fields, .. } => {
@@ -744,7 +748,7 @@ impl <'a> Compiler<'a> {
 }
 
 fn with_pattern_types<F>(types: &[(InternedStr, Option<InternedStr>)], typ: &TcType, mut f: F)
-    where F: FnMut(InternedStr, &TcType) {
+    where F: FnMut(InternedStr, &TcType, &TcType) {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
             let associated_type = record_type_fields.iter()
@@ -756,7 +760,7 @@ fn with_pattern_types<F>(types: &[(InternedStr, Option<InternedStr>)], typ: &TcT
                     }
                 })
                 .expect("Associated type to exist in record");
-            f(field.0, &associated_type.typ);
+            f(field.0, &associated_type.name, &associated_type.typ);
         }
     }
 }

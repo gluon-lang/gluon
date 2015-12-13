@@ -1,3 +1,5 @@
+let { Show, Num, Eq } = prelude
+in
 let (++) = string.append
 and { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
     = prelude.make_Monad prelude.monad_IO
