@@ -17,19 +17,21 @@ impl PartialEq<InternedStr> for InternedStr {
         self.as_ptr() == other.as_ptr()
     }
 }
-impl <'a> PartialEq<&'a str> for InternedStr {
-    fn eq(&self, other: & &'a str) -> bool {
+impl<'a> PartialEq<&'a str> for InternedStr {
+    fn eq(&self, other: &&'a str) -> bool {
         **self == **other
     }
 }
 
 impl Hash for InternedStr {
-    fn hash<H>(&self, hasher: &mut H) where H: Hasher {
+    fn hash<H>(&self, hasher: &mut H)
+        where H: Hasher
+    {
         self.as_ptr().hash(hasher)
     }
 }
 
-unsafe impl Sync for InternedStr { }
+unsafe impl Sync for InternedStr {}
 
 impl Deref for InternedStr {
     type Target = str;
@@ -51,14 +53,14 @@ impl InternedStr {
 }
 
 pub struct Interner {
-    //For this map and this map only we can't use InternedStr as keys since the hash should
-    //not be expected to be the same as ordinary strings, we use a transmute to &'static str to
-    //have the keys as strings without any unsafety as the keys do not escape the interner and they
-    //live as long as their values
-    indexes: HashMap<&'static str, InternedStr>
+    // For this map and this map only we can't use InternedStr as keys since the hash should
+    // not be expected to be the same as ordinary strings, we use a transmute to &'static str to
+    // have the keys as strings without any unsafety as the keys do not escape the interner and they
+    // live as long as their values
+    indexes: HashMap<&'static str, InternedStr>,
 }
 
-unsafe impl <'a> DataDef for &'a str {
+unsafe impl<'a> DataDef for &'a str {
     type Value = str;
     fn size(&self) -> usize {
         self.len()
@@ -85,28 +87,26 @@ impl Traverseable for Interner {
 }
 
 impl Interner {
-
     pub fn new() -> Interner {
         Interner { indexes: HashMap::new() }
     }
 
     pub fn intern(&mut self, gc: &mut Gc, s: &str) -> InternedStr {
         match self.indexes.get(s) {
-            Some(interned_str) => {
-                return *interned_str
-            }
-            None => ()
+            Some(interned_str) => return *interned_str,
+            None => (),
         }
         let gc_str = InternedStr(gc.alloc(s));
-        //The key will live as long as the value it refers to and the static str never escapes
-        //outside interner so this is safe
+        // The key will live as long as the value it refers to and the static str never escapes
+        // outside interner so this is safe
         let key: &'static str = unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };
         self.indexes.insert(key, gc_str);
         gc_str
     }
 
     pub fn with_env<'a, F, R>(&'a mut self, gc: &'a mut Gc, f: F) -> R
-        where F: FnOnce(InternerEnv<'a>) -> R {
+        where F: FnOnce(InternerEnv<'a>) -> R
+    {
         f(InternerEnv(self, gc))
     }
 }
@@ -124,13 +124,13 @@ impl fmt::Display for InternedStr {
 
 pub struct InternerEnv<'a>(&'a mut Interner, &'a mut Gc);
 
-impl <'a> InternerEnv<'a> {
+impl<'a> InternerEnv<'a> {
     pub fn intern(&mut self, s: &str) -> InternedStr {
         self.0.intern(self.1, s)
     }
 }
 
-impl <'a> IdentEnv for InternerEnv<'a> {
+impl<'a> IdentEnv for InternerEnv<'a> {
     type Ident = InternedStr;
 
     fn from_str(&mut self, s: &str) -> InternedStr {
@@ -141,8 +141,10 @@ impl <'a> IdentEnv for InternerEnv<'a> {
 impl AstId for InternedStr {
     type Untyped = InternedStr;
 
-    fn to_id(self) -> InternedStr { self }
-    fn set_type(&mut self, _: ASTType<Self::Untyped>) { }
+    fn to_id(self) -> InternedStr {
+        self
+    }
+    fn set_type(&mut self, _: ASTType<Self::Untyped>) {}
 }
 
 #[cfg(test)]
@@ -152,17 +154,18 @@ pub mod tests {
     use super::*;
     use gc::Gc;
 
-///Returns a reference to the interner stored in TLD
-pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
-    thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>> = Rc::new(RefCell::new((Interner::new(), Gc::new()))));
-    INTERNER.with(|interner| interner.clone())
-}
+    ///Returns a reference to the interner stored in TLD
+    pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
+        thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>>
+                      = Rc::new(RefCell::new((Interner::new(), Gc::new()))));
+        INTERNER.with(|interner| interner.clone())
+    }
 
-pub fn intern(s: &str) -> InternedStr {
-    let i = get_local_interner();
-    let mut i = i.borrow_mut();
-    let &mut(ref mut i, ref mut gc) = &mut *i;
-    i.intern(gc, s)
-}
+    pub fn intern(s: &str) -> InternedStr {
+        let i = get_local_interner();
+        let mut i = i.borrow_mut();
+        let &mut (ref mut i, ref mut gc) = &mut *i;
+        i.intern(gc, s)
+    }
 
 }

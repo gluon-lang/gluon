@@ -11,8 +11,13 @@ use std::marker::PhantomData;
 
 #[inline]
 unsafe fn allocate(size: usize) -> *mut u8 {
-    //Allocate an extra element if it does not fit exactly
-    let cap = size / mem::size_of::<f64>() + (if size % mem::size_of::<f64>() != 0 { 1 } else { 0 });
+    // Allocate an extra element if it does not fit exactly
+    let cap = size / mem::size_of::<f64>() +
+              (if size % mem::size_of::<f64>() != 0 {
+        1
+    } else {
+        0
+    });
     ptr_from_vec(Vec::<f64>::with_capacity(cap))
 }
 
@@ -26,13 +31,18 @@ fn ptr_from_vec(mut buf: Vec<f64>) -> *mut u8 {
 
 #[inline]
 unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
-    let cap = old_size / mem::size_of::<f64>() + (if old_size % mem::size_of::<f64>() != 0 { 1 } else { 0 });
+    let cap = old_size / mem::size_of::<f64>() +
+              (if old_size % mem::size_of::<f64>() != 0 {
+        1
+    } else {
+        0
+    });
     Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
 }
 
 pub struct WriteOnly<'s, T: ?Sized + 's>(*mut T, PhantomData<&'s mut T>);
 
-impl <'s, T: ?Sized> WriteOnly<'s, T> {
+impl<'s, T: ?Sized> WriteOnly<'s, T> {
     unsafe fn new(t: *mut T) -> WriteOnly<'s, T> {
         WriteOnly(t, PhantomData)
     }
@@ -42,7 +52,7 @@ impl <'s, T: ?Sized> WriteOnly<'s, T> {
     }
 }
 
-impl <'s, T> WriteOnly<'s, T> {
+impl<'s, T> WriteOnly<'s, T> {
     pub fn write(self, t: T) -> &'s mut T {
         unsafe {
             ptr::write(self.0, t);
@@ -79,7 +89,7 @@ impl<'s> WriteOnly<'s, str> {
 pub struct Gc {
     values: Option<AllocPtr>,
     allocated_memory: usize,
-    collect_limit: usize
+    collect_limit: usize,
 }
 
 pub unsafe trait DataDef {
@@ -93,7 +103,7 @@ pub unsafe trait DataDef {
 ///useful for sized types
 pub struct Move<T>(pub T);
 
-unsafe impl <T> DataDef for Move<T> {
+unsafe impl<T> DataDef for Move<T> {
     type Value = T;
     fn size(&self) -> usize {
         mem::size_of::<T>()
@@ -115,7 +125,7 @@ struct GcHeader {
 
 
 struct AllocPtr {
-    ptr: *mut GcHeader
+    ptr: *mut GcHeader,
 }
 
 impl AllocPtr {
@@ -123,11 +133,12 @@ impl AllocPtr {
         unsafe {
             let alloc_size = GcHeader::value_offset() + value_size;
             let ptr = allocate(alloc_size) as *mut GcHeader;
-            ptr::write(ptr, GcHeader {
-                next: None,
-                value_size: value_size,
-                marked: Cell::new(false)
-            });
+            ptr::write(ptr,
+                       GcHeader {
+                           next: None,
+                           value_size: value_size,
+                           marked: Cell::new(false),
+                       });
             AllocPtr { ptr: ptr }
         }
     }
@@ -144,7 +155,6 @@ impl fmt::Debug for AllocPtr {
 }
 
 impl Drop for AllocPtr {
-    
     fn drop(&mut self) {
         unsafe {
             let size = self.size();
@@ -157,7 +167,7 @@ impl Drop for AllocPtr {
 impl Deref for AllocPtr {
     type Target = GcHeader;
     fn deref(&self) -> &GcHeader {
-        unsafe { & *self.ptr }
+        unsafe { &*self.ptr }
     }
 }
 
@@ -168,7 +178,6 @@ impl DerefMut for AllocPtr {
 }
 
 impl GcHeader {
-
     fn value(&self) -> *mut () {
         unsafe {
             let ptr: *const GcHeader = self;
@@ -185,66 +194,73 @@ impl GcHeader {
 
 
 pub struct GcPtr<T: ?Sized> {
-    ptr: *const T
+    ptr: *const T,
 }
 
-impl <T: ?Sized> Copy for GcPtr<T> {}
+impl<T: ?Sized> Copy for GcPtr<T> {}
 
-impl <T: ?Sized> Clone for GcPtr<T> {
+impl<T: ?Sized> Clone for GcPtr<T> {
     fn clone(&self) -> GcPtr<T> {
         GcPtr { ptr: self.ptr }
     }
 }
 
-impl <T: ?Sized> Deref for GcPtr<T> {
+impl<T: ?Sized> Deref for GcPtr<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        unsafe { & *self.ptr }
+        unsafe { &*self.ptr }
     }
 }
 
-impl <T: ?Sized> ::std::borrow::Borrow<T> for GcPtr<T> {
+impl<T: ?Sized> ::std::borrow::Borrow<T> for GcPtr<T> {
     fn borrow(&self) -> &T {
         &**self
     }
 }
 
-impl <T: ?Sized + Eq> Eq for GcPtr<T> { }
-impl <T: ?Sized + PartialEq> PartialEq for GcPtr<T> {
-    fn eq(&self, other: &GcPtr<T>) -> bool { **self == **other }
+impl<T: ?Sized + Eq> Eq for GcPtr<T> {}
+impl<T: ?Sized + PartialEq> PartialEq for GcPtr<T> {
+    fn eq(&self, other: &GcPtr<T>) -> bool {
+        **self == **other
+    }
 }
 
-impl <T: ?Sized + Ord> Ord for GcPtr<T> {
-    fn cmp(&self, other: &GcPtr<T>) -> Ordering { (**self).cmp(&**other) }
+impl<T: ?Sized + Ord> Ord for GcPtr<T> {
+    fn cmp(&self, other: &GcPtr<T>) -> Ordering {
+        (**self).cmp(&**other)
+    }
 }
-impl <T: ?Sized + PartialOrd> PartialOrd for GcPtr<T> {
-    fn partial_cmp(&self, other: &GcPtr<T>) -> Option<Ordering> { (**self).partial_cmp(&**other) }
+impl<T: ?Sized + PartialOrd> PartialOrd for GcPtr<T> {
+    fn partial_cmp(&self, other: &GcPtr<T>) -> Option<Ordering> {
+        (**self).partial_cmp(&**other)
+    }
 }
 
-impl <T: ?Sized + Hash> Hash for GcPtr<T> {
+impl<T: ?Sized + Hash> Hash for GcPtr<T> {
     fn hash<H>(&self, state: &mut H)
-        where H: Hasher {
+        where H: Hasher
+    {
         (**self).hash(state)
     }
 }
-impl <T: ?Sized + fmt::Debug> fmt::Debug for GcPtr<T> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for GcPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "GcPtr({:?})", &**self)
     }
 }
-impl <T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
+impl<T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl <T: ?Sized> GcPtr<T> {
+impl<T: ?Sized> GcPtr<T> {
     fn header(&self) -> &GcHeader {
-        //Use of transmute_copy allows us to get the pointer
-        //to the data regardless of wether T is unsized or not
-        //(DST is structured as (ptr, len))
-        //This function should always be safe to call as GcPtr's should always have a header
-        //TODO: Better way of doing this?
+        // Use of transmute_copy allows us to get the pointer
+        // to the data regardless of wether T is unsized or not
+        // (DST is structured as (ptr, len))
+        // This function should always be safe to call as GcPtr's should always have a header
+        // TODO: Better way of doing this?
         unsafe {
             let p: *mut u8 = mem::transmute_copy(&self.ptr);
             let header = p.offset(-(GcHeader::value_offset() as isize));
@@ -253,15 +269,15 @@ impl <T: ?Sized> GcPtr<T> {
     }
 }
 
-impl <'a, T: Traverseable + 'a> GcPtr<T> {
+impl<'a, T: Traverseable + 'a> GcPtr<T> {
     pub fn as_traverseable(self) -> GcPtr<Traverseable + 'a> {
         GcPtr { ptr: self.ptr as *const Traverseable }
     }
 }
 impl GcPtr<str> {
     pub fn as_traverseable_string(self) -> GcPtr<Traverseable> {
-        //As there is nothing to traverse in a str we can safely cast it to *const u8 and use
-        //u8's Traverseable impl
+        // As there is nothing to traverse in a str we can safely cast it to *const u8 and use
+        // u8's Traverseable impl
         GcPtr { ptr: self.as_ptr() as *const Traverseable }
     }
 }
@@ -273,40 +289,44 @@ pub trait Traverseable {
     fn traverse(&self, func: &mut Gc);
 }
 
-impl <T: ?Sized> Traverseable for Box<T>
-    where T: Traverseable {
-    fn traverse(&self, gc: &mut Gc) { (**self).traverse(gc) }
+impl<T: ?Sized> Traverseable for Box<T> where T: Traverseable
+{
+    fn traverse(&self, gc: &mut Gc) {
+        (**self).traverse(gc)
+    }
 }
 
-impl <'a, T: ?Sized> Traverseable for &'a T
-    where T: Traverseable {
-    fn traverse(&self, gc: &mut Gc) { (**self).traverse(gc); }
+impl<'a, T: ?Sized> Traverseable for &'a T where T: Traverseable
+{
+    fn traverse(&self, gc: &mut Gc) {
+        (**self).traverse(gc);
+    }
 }
 
 impl Traverseable for Any {
-    fn traverse(&self, _: &mut Gc) { }
+    fn traverse(&self, _: &mut Gc) {}
 }
 
 impl Traverseable for () {
-    fn traverse(&self, _: &mut Gc) { }
+    fn traverse(&self, _: &mut Gc) {}
 }
 impl Traverseable for u8 {
-    fn traverse(&self, _: &mut Gc) { }
+    fn traverse(&self, _: &mut Gc) {}
 }
 
 impl Traverseable for str {
-    fn traverse(&self, _: &mut Gc) { }
+    fn traverse(&self, _: &mut Gc) {}
 }
 
-impl <T> Traverseable for Cell<T>
-    where T: Traverseable + Copy {
+impl<T> Traverseable for Cell<T> where T: Traverseable + Copy
+{
     fn traverse(&self, f: &mut Gc) {
         self.get().traverse(f);
     }
 }
 
-impl <U> Traverseable for [U]
-    where U: Traverseable {
+impl<U> Traverseable for [U] where U: Traverseable
+{
     fn traverse(&self, f: &mut Gc) {
         for x in self.iter() {
             x.traverse(f);
@@ -314,33 +334,41 @@ impl <U> Traverseable for [U]
     }
 }
 
-impl <T> Traverseable for Vec<T>
-    where T: Traverseable {
+impl<T> Traverseable for Vec<T> where T: Traverseable
+{
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
     }
 }
 
 ///When traversing a GcPtr we need to mark it
-impl <T: ?Sized> Traverseable for GcPtr<T>
-    where T: Traverseable {
+impl<T: ?Sized> Traverseable for GcPtr<T> where T: Traverseable
+{
     fn traverse(&self, gc: &mut Gc) {
         if !gc.mark(*self) {
-            //Continue traversing if this ptr was not already marked
+            // Continue traversing if this ptr was not already marked
             (**self).traverse(gc);
         }
     }
 }
 
 impl Gc {
-
     pub fn new() -> Gc {
-        Gc { values: None, allocated_memory: 0, collect_limit: 100 }
+        Gc {
+            values: None,
+            allocated_memory: 0,
+            collect_limit: 100,
+        }
     }
 
     ///Unsafe since it calls collects if memory needs to be collected
-    pub unsafe fn alloc_and_collect<T: ?Sized, R: ?Sized, D>(&mut self, roots: &mut R, mut def: D) -> GcPtr<T>
-        where R: Traverseable, D: DataDef<Value=T> + Traverseable {
+    pub unsafe fn alloc_and_collect<T: ?Sized, R: ?Sized, D>(&mut self,
+                                                             roots: &mut R,
+                                                             mut def: D)
+                                                             -> GcPtr<T>
+        where R: Traverseable,
+              D: DataDef<Value = T> + Traverseable
+    {
         if self.allocated_memory >= self.collect_limit {
             self.collect2(roots, &mut def);
         }
@@ -348,7 +376,8 @@ impl Gc {
     }
 
     pub fn alloc<T: ?Sized, D>(&mut self, def: D) -> GcPtr<T>
-        where D: DataDef<Value=T> {
+        where D: DataDef<Value = T>
+    {
         let size = def.size();
         let mut ptr = AllocPtr::new(size);
         ptr.next = self.values.take();
@@ -356,8 +385,8 @@ impl Gc {
         unsafe {
             let p: *mut T = def.make_ptr(ptr.value());
             let ret: *const T = &*def.initialize(WriteOnly::new(p));
-            //Check that the returned pointer is the same as the one we sent as an extra precaution
-            //that the pointer was initialized
+            // Check that the returned pointer is the same as the one we sent as an extra precaution
+            // that the pointer was initialized
             assert!(ret == p);
             self.values = Some(ptr);
             GcPtr { ptr: p }
@@ -367,7 +396,8 @@ impl Gc {
     ///Does a mark and sweep collection by walking from `roots`. This function is unsafe since
     ///roots need to cover all reachable object.
     pub unsafe fn collect<R: ?Sized>(&mut self, roots: &mut R)
-        where R: Traverseable {
+        where R: Traverseable
+    {
         self.collect2(roots, &mut ());
     }
 
@@ -375,7 +405,7 @@ impl Gc {
     pub fn object_count(&self) -> usize {
         let mut header: &GcHeader = match self.values {
             Some(ref x) => &**x,
-            None => return 0
+            None => return 0,
         };
         let mut count = 1;
         loop {
@@ -384,15 +414,17 @@ impl Gc {
                     count += 1;
                     header = &**ptr;
                 }
-                None => break
+                None => break,
             }
         }
         count
     }
 
-    
+
     unsafe fn collect2<R: ?Sized, D>(&mut self, roots: &mut R, def: &mut D)
-        where R: Traverseable, D: Traverseable {
+        where R: Traverseable,
+              D: Traverseable
+    {
         debug!("Start collect");
         roots.traverse(self);
         def.traverse(self);
@@ -405,16 +437,15 @@ impl Gc {
     fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
         let header = value.header();
         if header.marked.get() {
-            return true
-        }
-        else {
+            return true;
+        } else {
             header.marked.set(true);
-            return false
+            return false;
         }
     }
 
     unsafe fn sweep(&mut self) {
-        //Usage of unsafe are sadly needed to circumvent the borrow checker
+        // Usage of unsafe are sadly needed to circumvent the borrow checker
         let mut first = self.values.take();
         {
             let mut maybe_header = &mut first;
@@ -425,15 +456,14 @@ impl Gc {
                         if !header.marked.get() {
                             let unreached = mem::replace(current, header.next.take());
                             self.free(unreached);
-                            continue
-                        }
-                        else {
+                            continue;
+                        } else {
                             header.marked.set(false);
                             let next: &mut Option<AllocPtr> = mem::transmute(&mut header.next);
                             next
                         }
                     }
-                    None => break
+                    None => break,
                 };
             }
         }
@@ -460,7 +490,7 @@ mod tests {
 
     #[derive(Copy, Clone)]
     struct Data_ {
-        fields: GcPtr<Vec<Value>>
+        fields: GcPtr<Vec<Value>>,
     }
 
     impl PartialEq for Data_ {
@@ -475,9 +505,9 @@ mod tests {
     }
 
     struct Def<'a> {
-        elems: &'a [Value]
+        elems: &'a [Value],
     }
-    unsafe impl <'a> DataDef for Def<'a> {
+    unsafe impl<'a> DataDef for Def<'a> {
         type Value = Vec<Value>;
         fn size(&self) -> usize {
             self.elems.len() * mem::size_of::<Value>()
@@ -494,14 +524,14 @@ mod tests {
     #[derive(Copy, Clone, PartialEq, Debug)]
     enum Value {
         Int(i32),
-        Data(Data_)
+        Data(Data_),
     }
 
     impl Traverseable for Value {
         fn traverse(&self, gc: &mut Gc) {
             match *self {
                 Data(ref data) => data.fields.traverse(gc),
-                _ => ()
+                _ => (),
             }
         }
     }
@@ -527,19 +557,23 @@ mod tests {
         let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }));
         stack.push(d2);
         assert_eq!(gc.object_count(), 2);
-        unsafe { gc.collect(&mut *stack); }
+        unsafe {
+            gc.collect(&mut *stack);
+        }
         assert_eq!(gc.object_count(), 2);
         match stack[0] {
             Data(ref data) => assert_eq!(data.fields[0], Int(1)),
-            _ => panic!()
+            _ => panic!(),
         }
         match stack[1] {
             Data(ref data) => assert_eq!(data.fields[0], stack[0]),
-            _ => panic!()
+            _ => panic!(),
         }
         stack.pop();
         stack.pop();
-        unsafe { gc.collect(&mut *stack); }
+        unsafe {
+            gc.collect(&mut *stack);
+        }
         assert_eq!(gc.object_count(), 0);
     }
 }
