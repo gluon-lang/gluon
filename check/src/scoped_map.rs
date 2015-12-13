@@ -14,13 +14,16 @@ pub struct ScopedMap<K: Eq + Hash + Clone, V> {
     map: HashMap<K, Vec<V>>,
     ///A vector of scopes, when entering a scope, None is added as a marker
     ///when later exiting a scope, values are removed from the map until the marker is found
-    scopes: Vec<Option<K>>
+    scopes: Vec<Option<K>>,
 }
 
 #[allow(dead_code)]
-impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
+impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn new() -> ScopedMap<K, V> {
-        ScopedMap { map: HashMap::new(), scopes: Vec::new() }
+        ScopedMap {
+            map: HashMap::new(),
+            scopes: Vec::new(),
+        }
     }
     ///Introduces a new scope
     pub fn enter_scope(&mut self) {
@@ -31,8 +34,10 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn exit_scope(&mut self) {
         loop {
             match self.scopes.pop() {
-                Some(Some(key)) => { self.map.get_mut(&key).map(|x| x.pop()); }
-                _ => break
+                Some(Some(key)) => {
+                    self.map.get_mut(&key).map(|x| x.pop());
+                }
+                _ => break,
             }
         }
     }
@@ -49,7 +54,7 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
                 }
                 true
             }
-            None => false
+            None => false,
         }
     }
 
@@ -59,7 +64,7 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             match *n {
                 Some(ref name) if name == k => return true,
                 None => break,
-                _ => ()
+                _ => (),
             }
         }
         false
@@ -76,7 +81,9 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
     ///Returns the number of elements in the container.
     ///Shadowed elements are not counted
-    pub fn len(&self) -> usize { self.map.len() }
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
 
     ///Removes all elements
     pub fn clear(&mut self) {
@@ -88,14 +95,13 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn swap(&mut self, k: K, v: V) -> Option<V> {
         let vec = match self.map.entry(k.clone()) {
             Entry::Occupied(v) => v.into_mut(),
-            Entry::Vacant(v) => v.insert(Vec::new())
+            Entry::Vacant(v) => v.insert(Vec::new()),
         };
         if vec.len() != 0 {
-            let r  = vec.pop();
+            let r = vec.pop();
             vec.push(v);
             r
-        }
-        else {
+        } else {
             vec.push(v);
             self.scopes.push(Some(k));
             None
@@ -113,16 +119,19 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
                 }
                 Some(v)
             }
-            None => None
+            None => None,
         }
     }
     pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
-        self.map.get_mut(key).and_then(|x| { let last = x.len() - 1; x.get_mut(last) })
+        self.map.get_mut(key).and_then(|x| {
+            let last = x.len() - 1;
+            x.get_mut(last)
+        })
     }
     pub fn insert(&mut self, k: K, v: V) -> bool {
         let vec = match self.map.entry(k.clone()) {
             Entry::Occupied(v) => v.into_mut(),
-            Entry::Vacant(v) => v.insert(Vec::new())
+            Entry::Vacant(v) => v.insert(Vec::new()),
         };
         vec.push(v);
         self.scopes.push(Some(k));
@@ -136,14 +145,15 @@ impl <K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
 pub struct Iter<'a, K, V>
     where K: 'a,
-          V: 'a {
-    iter: hash_map::Iter<'a, K, Vec<V>>
+          V: 'a
+{
+    iter: hash_map::Iter<'a, K, Vec<V>>,
 }
 
-impl <'a, K, V> Iterator for Iter<'a, K, V>
+impl<'a, K, V> Iterator for Iter<'a, K, V>
     where K: 'a,
-          V: 'a {
-
+          V: 'a
+{
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<(&'a K, &'a V)> {
@@ -154,7 +164,7 @@ impl <'a, K, V> Iterator for Iter<'a, K, V>
                         return Some((k, v));
                     }
                 }
-                None => return None
+                None => return None,
             }
         }
     }

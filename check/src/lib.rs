@@ -30,17 +30,18 @@ pub mod tests {
     use base::interner::*;
     use base::gc::Gc;
 
-///Returns a reference to the interner stored in TLD
-pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
-    thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>> = Rc::new(RefCell::new((Interner::new(), Gc::new()))));
-    INTERNER.with(|interner| interner.clone())
-}
+    ///Returns a reference to the interner stored in TLD
+    pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
+        thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>>
+                      = Rc::new(RefCell::new((Interner::new(), Gc::new()))));
+        INTERNER.with(|interner| interner.clone())
+    }
 
-pub fn intern(s: &str) -> InternedStr {
-    let i = get_local_interner();
-    let mut i = i.borrow_mut();
-    let &mut(ref mut i, ref mut gc) = &mut *i;
-    i.intern(gc, s)
-}
+    pub fn intern(s: &str) -> InternedStr {
+        let i = get_local_interner();
+        let mut i = i.borrow_mut();
+        let &mut (ref mut i, ref mut gc) = &mut *i;
+        i.intern(gc, s)
+    }
 
 }

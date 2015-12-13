@@ -12,29 +12,35 @@ use error::Errors;
 pub type Error = Box<StdError>;
 
 pub trait Macro<Env> {
-    fn expand(&self, env: &Env, arguments: &mut [ast::LExpr<TcIdent>]) -> Result<ast::LExpr<TcIdent>, Error>;
+    fn expand(&self,
+              env: &Env,
+              arguments: &mut [ast::LExpr<TcIdent>])
+              -> Result<ast::LExpr<TcIdent>, Error>;
 }
 
-impl <F: ?Sized, Env> Macro<Env> for F
-where F: Fn(&Env, &mut [ast::LExpr<TcIdent>]) -> Result<ast::LExpr<TcIdent>, Error> {
-    fn expand(&self, env: &Env, arguments: &mut [ast::LExpr<TcIdent>]) -> Result<ast::LExpr<TcIdent>, Error> {
+impl<F: ?Sized, Env> Macro<Env> for F
+    where F: Fn(&Env, &mut [ast::LExpr<TcIdent>]) -> Result<ast::LExpr<TcIdent>, Error>
+{
+    fn expand(&self,
+              env: &Env,
+              arguments: &mut [ast::LExpr<TcIdent>])
+              -> Result<ast::LExpr<TcIdent>, Error> {
         self(env, arguments)
     }
 }
 
 pub struct MacroEnv<Env> {
-    macros: RefCell<HashMap<InternedStr, Rc<Macro<Env>>>>
+    macros: RefCell<HashMap<InternedStr, Rc<Macro<Env>>>>,
 }
-   
-impl <Env> MacroEnv<Env> {
+
+impl<Env> MacroEnv<Env> {
     pub fn new() -> MacroEnv<Env> {
-        MacroEnv {
-            macros: RefCell::new(HashMap::new())
-        }
+        MacroEnv { macros: RefCell::new(HashMap::new()) }
     }
 
     pub fn insert<M>(&self, name: InternedStr, mac: M)
-    where M: Macro<Env> + 'static {
+        where M: Macro<Env> + 'static
+    {
         self.macros.borrow_mut().insert(name, Rc::new(mac));
     }
 }
@@ -42,15 +48,15 @@ impl <Env> MacroEnv<Env> {
 pub struct MacroExpander<'a, Env: 'a> {
     env: &'a Env,
     macros: &'a MacroEnv<Env>,
-    errors: Errors<Error>
+    errors: Errors<Error>,
 }
 
-impl <'a, Env> MacroExpander<'a, Env> {
+impl<'a, Env> MacroExpander<'a, Env> {
     pub fn new(env: &'a Env, macros: &'a MacroEnv<Env>) -> MacroExpander<'a, Env> {
         MacroExpander {
             env: env,
             macros: macros,
-            errors: Errors::new()
+            errors: Errors::new(),
         }
     }
 
@@ -58,14 +64,13 @@ impl <'a, Env> MacroExpander<'a, Env> {
         self.visit_expr(expr);
         if self.errors.has_errors() {
             Err(self.errors)
-        }
-        else {
+        } else {
             Ok(())
         }
     }
 }
 
-impl <'a, Env> MutVisitor for MacroExpander<'a, Env> {
+impl<'a, Env> MutVisitor for MacroExpander<'a, Env> {
     type T = TcIdent;
 
     fn visit_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) {
@@ -83,13 +88,13 @@ impl <'a, Env> MutVisitor for MacroExpander<'a, Env> {
                                     }
                                 }
                             }
-                            None => None
+                            None => None,
                         }
                     }
-                    _ => None
+                    _ => None,
                 }
             }
-            _ => None
+            _ => None,
         };
         if let Some(mut e) = replacement {
             e.location = expr.location;
