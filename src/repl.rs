@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use check::typecheck::TypeEnv;
 use check::Typed;
 use vm::vm::{VM, RootStr, Status, typecheck_expr, load_file};
-use vm::api::{VMFunction, IO, primitive};
+use vm::api::{VMFunction, IO, Get, Callable, primitive};
 
 fn type_of_expr(vm: &VM) -> Status {
     let closure: &Fn(_) -> _ = &|args: RootStr| -> IO<String> {
@@ -44,14 +44,35 @@ fn find_type_info(vm: &VM) -> Status {
     closure.unpack_and_call(vm)
 }
 
-#[allow(dead_code)]
-pub fn run() -> Result<(), Box<StdError>> {
-    let vm = VM::new();
+fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
     try!(vm.define_global("repl_prim", record!(
         type_of_expr => primitive::<fn (String) -> IO<String>>(type_of_expr),
         find_type_info => primitive::<fn (String) -> IO<String>>(find_type_info)
     )));
-    try!(load_file(&vm, "std/prelude.hs"));
-    try!(load_file(&vm, "std/repl.hs"));
+    try!(load_file(vm, "std/prelude.hs"));
+    try!(load_file(vm, "std/repl.hs"));
     Ok(())
+}
+
+#[allow(dead_code)]
+pub fn run() -> Result<(), Box<StdError>> {
+    let vm = VM::new();
+    try!(compile_repl(&vm));
+    let mut repl: Callable<((),), IO<()>> = Get::get_function(&vm, "repl")
+        .expect("repl function");
+    try!(repl.call(()));
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use vm::vm::VM;
+    use super::compile_repl;
+
+    #[test]
+    fn compile_repl_test() {
+        let vm = VM::new();
+        compile_repl(&vm)
+            .unwrap_or_else(|err| panic!("{}", err));
+    }
 }

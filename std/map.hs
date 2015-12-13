@@ -3,8 +3,9 @@ in
 type Map k a = | Bin k a (Map k a) (Map k a)
                | Tip
 in let empty = Tip
-in let singleton k v = Bin k v empty empty
-in \ord ->
+in
+let singleton k v = Bin k v empty empty
+and make ord =
     let compare = ord.compare
     in
     let find k m = case m of
@@ -38,3 +39,4 @@ in \ord ->
             | Bin key value l r -> to_list l ++ Cons { key, value } (to_list r)
             | Tip -> Nil
     in { empty, singleton, find, insert, (++), to_list }
+in { Map, make }

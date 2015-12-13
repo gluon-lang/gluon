@@ -102,7 +102,8 @@ impl VMType for () {
     type Type = Self;
 }
 impl <'a> Pushable<'a> for () {
-    fn push<'b>(self, _: &VM<'a>, _: &mut StackFrame<'a, 'b>) -> Status {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        stack.push(Value::Int(0));
         Status::Ok
     }
 }
@@ -348,6 +349,13 @@ where T::Type: Sized {
     }
     fn extra_args() -> VMIndex { 1 }
 }
+
+impl <'a, 'vm, T: Getable<'a, 'vm>> Getable<'a, 'vm> for IO<T> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<IO<T>> {
+        T::from_value(vm, value).map(IO::Value)
+    }
+}
+
 impl <'a, T: Pushable<'a>> Pushable<'a> for IO<T>
 where T::Type: Sized {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
@@ -611,9 +619,9 @@ impl <'a, 'b, $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a>> Ge
                 let typ = global.type_of();
                 let mut arg_iter = ast::arg_iter(&typ);
                 let ok = $({
-                    arg_iter.next().expect("Arg iter") == vm_type::<$args>(vm)
+                    arg_iter.next().expect("Arg iter") == &*$args::make_type(vm)
                     } &&)* true;
-                if arg_iter.next().is_none() && ok && arg_iter.typ == vm_type::<R>(vm) {
+                if arg_iter.next().is_none() && ok && arg_iter.typ == &*R::make_type(vm) {
                     Some(FunctionRef { value: global.value.get(), _marker: PhantomData })
                 }
                 else {
@@ -702,25 +710,33 @@ impl <'a, 'vm, A, B, R> Getable<'a, 'vm> for FunctionRef<'a, (A, B), R> {
     }
 }
 
-impl <'a, 'b, A: Pushable<'b> + 'static, R: Getable<'b, 'a> + 'static> Callable<'a, 'b, (A,), R> {
+impl <'a, 'b, A: Pushable<'b> + 'static, R: VMType + Getable<'b, 'a> + 'static> Callable<'a, 'b, (A,), R> {
     pub fn call(&mut self, a: A) -> Result<R, Error> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
         a.push(self.vm, &mut stack);
-        stack = try!(self.vm.execute(stack, &[Call(1)], &BytecodeFunction::empty()));
+        for _ in 0..R::extra_args() {
+            0.push(self.vm, &mut stack);
+        }
+        let args = stack.len() - 1;
+        stack = try!(self.vm.execute(stack, &[Call(args)], &BytecodeFunction::empty()));
         match R::from_value(self.vm, stack.pop()) {
             Some(x) => Ok(x),
             None => Err(Error::Message("Wrong type".to_string()))
         }
     }
 }
-impl <'a, 'b, A: Pushable<'b> + 'static, B: Pushable<'b> + 'static, R: Getable<'b, 'a> + 'static> Callable<'a, 'b, (A, B), R> {
+impl <'a, 'b, A: Pushable<'b> + 'static, B: Pushable<'b> + 'static, R: VMType + Getable<'b, 'a> + 'static> Callable<'a, 'b, (A, B), R> {
     pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
         let mut stack = StackFrame::new_empty(self.vm);
         self.value.push(self.vm, &mut stack);
         a.push(self.vm, &mut stack);
         b.push(self.vm, &mut stack);
-        stack = try!(self.vm.execute(stack, &[Call(2)], &BytecodeFunction::empty()));
+        for _ in 0..R::extra_args() {
+            0.push(self.vm, &mut stack);
+        }
+        let args = stack.len() - 1;
+        stack = try!(self.vm.execute(stack, &[Call(args)], &BytecodeFunction::empty()));
         match R::from_value(self.vm, stack.pop()) {
             Some(x) => Ok(x),
             None => Err(Error::Message("Wrong type".to_string()))

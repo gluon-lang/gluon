@@ -652,19 +652,12 @@ impl <'a> VM<'a> {
     }
 
     fn add_types(&self) -> Result<(), (TypeId, TcType)> {
-        use api::{Generic, IO, VMType};
-        use api::generic::A;
         let ref ids = self.typeids;
         try!(ids.try_insert(TypeId::of::<()>(), Type::unit()));
         try!(ids.try_insert(TypeId::of::<bool>(), Type::bool()));
         try!(ids.try_insert(TypeId::of::<VMInt>(), Type::int()));
         try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
-        let io_str = self.intern("IO");
-        let io_type = IO::<Generic<A>>::make_type(self);
-        let io_args = vec![ast::Generic { kind: ast::Kind::star(), id: self.intern("a") }];
-        self.type_infos.borrow_mut()
-            .id_to_type.insert(io_str, (io_args, io_type));
         Ok(())
     }
 
@@ -1763,7 +1756,7 @@ Int(100)
 
 let text =
 r#"
-let { singleton, (++) } = map prelude.ord_String
+let { singleton, (++) } = map.make prelude.ord_String
 in singleton "test" 1 ++ singleton "asd" 2
 "#;
         run_expr(&vm, text);

@@ -1,10 +1,12 @@
 let map = import "std/map.hs"
+and { Map } = map
 in
 let { (>>=), return, (>>), join, map = fmap, lift2, forM_ } = prelude.make_Monad prelude.monad_IO
+and { Eq, Option, Result } = prelude
 and { (==) } = prelude.eq_String
 and (++) = string.append
 and { empty, singleton, find, insert, (++) = (<>), to_list }
-    = map prelude.ord_String
+    = map.make prelude.ord_String
 in
 let load_file filename: String -> IO String =
     let last_slash = (\_ -> case string.rfind filename "/" of
@@ -78,4 +80,4 @@ let loop x: () -> IO () = io.read_line >>= \line ->
             if continue
             then loop ()
             else return ()
-in loop ()
+in loop
