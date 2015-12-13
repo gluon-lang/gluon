@@ -16,7 +16,7 @@ pub enum Variable<'a> {
     Stack(VMIndex),
     Global(VMIndex, &'a TcType),
     Constructor(VMTag, VMIndex),
-    UpVar(VMIndex)
+    UpVar(VMIndex),
 }
 
 #[derive(Debug)]
@@ -26,7 +26,7 @@ pub struct CompiledFunction {
     pub typ: TcType,
     pub instructions: Vec<Instruction>,
     pub inner_functions: Vec<CompiledFunction>,
-    pub strings: Vec<InternedStr>
+    pub strings: Vec<InternedStr>,
 }
 
 struct FunctionEnv {
@@ -37,11 +37,11 @@ struct FunctionEnv {
     stack: Vec<(VMIndex, InternedStr)>,
     stack_constructors: Vec<(TcType, InternedStr)>,
     stack_types: ScopedMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
-    stack_size: VMIndex
+    stack_size: VMIndex,
 }
 
 struct FunctionEnvs {
-    envs: Vec<FunctionEnv>
+    envs: Vec<FunctionEnv>,
 }
 
 impl Deref for FunctionEnvs {
@@ -61,9 +61,14 @@ impl TypeEnv for FunctionEnvs {
     fn find_type(&self, _id: &InternedStr) -> Option<&TcType> {
         None
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
-        self.envs.iter()
-            .flat_map(|env| env.stack_types.find(&id).map(|&(ref generics, ref typ)| (&generics[..], Some(typ))))
+    fn find_type_info(&self,
+                      id: &InternedStr)
+                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
+        self.envs
+            .iter()
+            .flat_map(|env| {
+                env.stack_types.find(&id).map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
+            })
             .next()
     }
     fn find_record(&self, _fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
@@ -79,9 +84,7 @@ impl ::check::kindcheck::KindEnv for FunctionEnvs {
 
 impl FunctionEnvs {
     fn new() -> FunctionEnvs {
-        FunctionEnvs {
-            envs: vec![FunctionEnv::new()]
-        }
+        FunctionEnvs { envs: vec![FunctionEnv::new()] }
     }
 
     fn start_function(&mut self) {
@@ -103,7 +106,7 @@ impl FunctionEnv {
             stack: Vec::new(),
             stack_constructors: Vec::new(),
             stack_types: ScopedMap::new(),
-            stack_size: 0
+            stack_size: 0,
         }
     }
 
@@ -116,8 +119,7 @@ impl FunctionEnv {
     fn emit_call(&mut self, args: VMIndex, tail_position: bool) {
         let i = if tail_position {
             TailCall(args)
-        }
-        else {
+        } else {
             Call(args)
         };
         self.emit(i);
@@ -128,7 +130,7 @@ impl FunctionEnv {
             Some(i) => i,
             None => {
                 self.strings.push(s);
-                self.strings.len() - 1 
+                self.strings.len() - 1
             }
         };
         self.emit(PushString(index as VMIndex));
@@ -176,7 +178,10 @@ impl FunctionEnv {
                 });
                 fields.len() as VMIndex
             }
-            ast::Pattern::Identifier(_) => { self.pop_var(); 1 }
+            ast::Pattern::Identifier(_) => {
+                self.pop_var();
+                1
+            }
         }
     }
 }
@@ -187,26 +192,26 @@ pub trait CompilerEnv: TypeEnv {
     fn find_tag(&self, _: &InternedStr, _: &InternedStr) -> Option<VMTag>;
 }
 
-impl <T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
+impl<T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
         let &(ref outer, ref inner) = self;
         inner.find_var(s)
-            .or_else(|| outer.find_var(s))
+             .or_else(|| outer.find_var(s))
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
         let &(ref outer, ref inner) = self;
         inner.find_field(struct_, field)
-            .or_else(|| outer.find_field(struct_, field))
+             .or_else(|| outer.find_field(struct_, field))
     }
 
     fn find_tag(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMTag> {
         let &(ref outer, ref inner) = self;
         inner.find_tag(struct_, field)
-            .or_else(|| outer.find_tag(struct_, field))
+             .or_else(|| outer.find_tag(struct_, field))
     }
 }
 
-impl <'a, T: CompilerEnv> CompilerEnv for &'a T {
+impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_var(&self, s: &InternedStr) -> Option<Variable> {
         (**self).find_var(s)
     }
@@ -223,17 +228,20 @@ impl CompilerEnv for TypeInfos {
         fn count_function_args(typ: &TcType) -> VMIndex {
             match **typ {
                 Type::Function(_, ref rest) => 1 + count_function_args(rest),
-                _ => 0
+                _ => 0,
             }
         }
 
-        self.id_to_type.iter()
+        self.id_to_type
+            .iter()
             .filter_map(|(_, &(_, ref typ))| {
                 match **typ {
-                    Type::Variants(ref variants) => variants.iter()
-                                                        .enumerate()
-                                                        .find(|&(_, v)| v.0 == *id),
-                    _ => None
+                    Type::Variants(ref variants) => {
+                        variants.iter()
+                                .enumerate()
+                                .find(|&(_, v)| v.0 == *id)
+                    }
+                    _ => None,
                 }
             })
             .next()
@@ -242,26 +250,32 @@ impl CompilerEnv for TypeInfos {
             })
     }
     fn find_field(&self, struct_: &InternedStr, field: &InternedStr) -> Option<VMIndex> {
-        self.id_to_type.get(struct_)
+        self.id_to_type
+            .get(struct_)
             .and_then(|&(_, ref typ)| {
                 match **typ {
-                    Type::Record { ref fields, .. } => fields.iter()
-                        .position(|f| f.name == *field)
-                        .map(|i| i as VMIndex),
-                    _ => None
+                    Type::Record { ref fields, .. } => {
+                        fields.iter()
+                              .position(|f| f.name == *field)
+                              .map(|i| i as VMIndex)
+                    }
+                    _ => None,
                 }
             })
     }
 
     fn find_tag(&self, type_id: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
-        self.id_to_type.get(type_id)
+        self.id_to_type
+            .get(type_id)
             .and_then(|&(_, ref typ)| {
                 match **typ {
-                    Type::Variants(ref variants) => variants.iter()
-                                                        .enumerate()
-                                                        .find(|&(_, v)| v.0 == *ctor_name)
-                                                        .map(|t| t.0 as VMTag),
-                    _ => None
+                    Type::Variants(ref variants) => {
+                        variants.iter()
+                                .enumerate()
+                                .find(|&(_, v)| v.0 == *ctor_name)
+                                .map(|t| t.0 as VMTag)
+                    }
+                    _ => None,
                 }
             })
     }
@@ -269,18 +283,20 @@ impl CompilerEnv for TypeInfos {
 
 pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
-    //Stack which holds indexes for where each closure starts its stack variables
+    // Stack which holds indexes for where each closure starts its stack variables
     interner: &'a mut Interner,
-    gc: &'a mut Gc
+    gc: &'a mut Gc,
 }
 
-impl <'a> Compiler<'a> {
-
-    pub fn new(globals: &'a CompilerEnv, interner: &'a mut Interner, gc: &'a mut Gc) -> Compiler<'a> {
+impl<'a> Compiler<'a> {
+    pub fn new(globals: &'a CompilerEnv,
+               interner: &'a mut Interner,
+               gc: &'a mut Gc)
+               -> Compiler<'a> {
         Compiler {
             globals: globals,
             interner: interner,
-            gc: gc
+            gc: gc,
         }
     }
 
@@ -289,89 +305,110 @@ impl <'a> Compiler<'a> {
     }
 
     fn find(&self, id: InternedStr, current: &mut FunctionEnvs) -> Option<Variable> {
-        current.envs.iter()
-            .flat_map(|env| env.stack_constructors.iter())
-            .filter_map(|&(ref typ, _)| {
-                match **typ {
-                    Type::Variants(ref variants) => variants.iter()
-                                                        .enumerate()
-                                                        .find(|&(_, v)| v.0 == id),
-                    _ => None
-                }
-            })
-            .next()
-            .map(|(tag, &(_, ref typ))| {
-                Constructor(tag as VMIndex, ast::arg_iter(typ).count() as VMIndex)
-            })
-            .or_else(|| {
-                current.stack.iter().rev().cloned()
-                    .find(|&(_, var)| var == id)
-                    .map(|(index, _)| {
-                        Stack(index)
-                    })
-                    .or_else(|| {
-                        let i = current.envs.len() - 1;
-                        let (rest, current) = current.envs.split_at_mut(i);
-                        rest.iter().rev()
-                            .filter_map(|env| {
-                                env.stack.iter().rev().cloned()
-                                    .find(|&(_, var)| var == id)
-                                    .map(|_| {
-                                        UpVar(current[0].upvar(id))
-                                    })
-                            })
-                            .next()
-                    })
-            })
-            .or_else(|| self.globals.find_var(&id))
+        current.envs
+               .iter()
+               .flat_map(|env| env.stack_constructors.iter())
+               .filter_map(|&(ref typ, _)| {
+                   match **typ {
+                       Type::Variants(ref variants) => {
+                           variants.iter()
+                                   .enumerate()
+                                   .find(|&(_, v)| v.0 == id)
+                       }
+                       _ => None,
+                   }
+               })
+               .next()
+               .map(|(tag, &(_, ref typ))| {
+                   Constructor(tag as VMIndex, ast::arg_iter(typ).count() as VMIndex)
+               })
+               .or_else(|| {
+                   current.stack
+                          .iter()
+                          .rev()
+                          .cloned()
+                          .find(|&(_, var)| var == id)
+                          .map(|(index, _)| Stack(index))
+                          .or_else(|| {
+                              let i = current.envs.len() - 1;
+                              let (rest, current) = current.envs.split_at_mut(i);
+                              rest.iter()
+                                  .rev()
+                                  .filter_map(|env| {
+                                      env.stack
+                                         .iter()
+                                         .rev()
+                                         .cloned()
+                                         .find(|&(_, var)| var == id)
+                                         .map(|_| UpVar(current[0].upvar(id)))
+                                  })
+                                  .next()
+                          })
+               })
+               .or_else(|| self.globals.find_var(&id))
     }
 
-    fn find_type_info<'s>(&'s self, function: &'s mut FunctionEnvs, id: InternedStr) -> Option<(&'s [ast::Generic<InternedStr>], Option<&'s TcType>)> {
+    fn find_type_info<'s>(&'s self,
+                          function: &'s mut FunctionEnvs,
+                          id: InternedStr)
+                          -> Option<(&'s [ast::Generic<InternedStr>], Option<&'s TcType>)> {
         function.find_type_info(&id)
-            .or_else(|| self.globals.find_type_info(&id))
+                .or_else(|| self.globals.find_type_info(&id))
     }
 
-    fn find_field(&self, function: &mut FunctionEnvs, struct_: &ast::TypeConstructor<InternedStr>, field: &InternedStr) -> Option<VMIndex> {
+    fn find_field(&self,
+                  function: &mut FunctionEnvs,
+                  struct_: &ast::TypeConstructor<InternedStr>,
+                  field: &InternedStr)
+                  -> Option<VMIndex> {
         match *struct_ {
             ast::TypeConstructor::Data(ref struct_) => {
-                function.envs.iter()
-                    .flat_map(|env| env.stack_constructors.iter())
-                    .find(|& &(_, name)| name == *struct_)
-                    .and_then(|&(ref typ, _)| {
-                        match **typ {
-                            Type::Record { ref fields, ..} => fields.iter()
-                                                                .enumerate()
-                                                                .find(|&(_, v)| v.name == *field)
-                                                                .map(|(offset, _)| offset as VMIndex),
-                            _ => None
-                        }
-                    })
-                    .or_else(|| self.globals.find_field(struct_, field))
+                function.envs
+                        .iter()
+                        .flat_map(|env| env.stack_constructors.iter())
+                        .find(|&&(_, name)| name == *struct_)
+                        .and_then(|&(ref typ, _)| {
+                            match **typ {
+                                Type::Record { ref fields, ..} => {
+                                    fields.iter()
+                                          .enumerate()
+                                          .find(|&(_, v)| v.name == *field)
+                                          .map(|(offset, _)| offset as VMIndex)
+                                }
+                                _ => None,
+                            }
+                        })
+                        .or_else(|| self.globals.find_field(struct_, field))
             }
-            _ => None
+            _ => None,
         }
     }
 
-    fn find_tag(&self, function: &mut FunctionEnvs, enum_: &ast::TypeConstructor<InternedStr>, constructor: &InternedStr) -> Option<VMTag> {
+    fn find_tag(&self,
+                function: &mut FunctionEnvs,
+                enum_: &ast::TypeConstructor<InternedStr>,
+                constructor: &InternedStr)
+                -> Option<VMTag> {
         match *enum_ {
             ast::TypeConstructor::Data(ref enum_) => {
-                function.envs.iter()
-                    .flat_map(|env| env.stack_constructors.iter())
-                    .filter_map(|&(ref typ, _)| {
-                        match **typ {
-                            Type::Variants(ref variants) => variants.iter()
-                                                                .enumerate()
-                                                                .find(|&(_, v)| v.0 == *constructor),
-                            _ => None
-                        }
-                    })
-                    .next()
-                    .map(|(tag, _)| {
-                        tag as VMTag
-                    })
-                    .or_else(|| self.globals.find_tag(enum_, constructor))
+                function.envs
+                        .iter()
+                        .flat_map(|env| env.stack_constructors.iter())
+                        .filter_map(|&(ref typ, _)| {
+                            match **typ {
+                                Type::Variants(ref variants) => {
+                                    variants.iter()
+                                            .enumerate()
+                                            .find(|&(_, v)| v.0 == *constructor)
+                                }
+                                _ => None,
+                            }
+                        })
+                        .next()
+                        .map(|(tag, _)| tag as VMTag)
+                        .or_else(|| self.globals.find_tag(enum_, constructor))
             }
-            _ => None
+            _ => None,
         }
     }
 
@@ -384,10 +421,11 @@ impl <'a> Compiler<'a> {
         CompiledFunction {
             args: 0,
             id: self.intern(""),
-            typ: Type::function(vec![], TcType::from(expr.env_type_of(&self.globals).clone())),
+            typ: Type::function(vec![],
+                                TcType::from(expr.env_type_of(&self.globals).clone())),
             instructions: instructions,
             inner_functions: inner_functions,
-            strings: strings
+            strings: strings,
         }
     }
 
@@ -397,7 +435,7 @@ impl <'a> Compiler<'a> {
             UpVar(index) => function.emit(PushUpVar(index)),
             Global(index, _) => function.emit(PushGlobal(index)),
             Constructor(tag, 0) => function.emit(Construct(tag, 0)),
-            Constructor(..) => panic!("Constructor {:?} is not fully applied", id)
+            Constructor(..) => panic!("Constructor {:?} is not fully applied", id),
         }
     }
 
@@ -407,8 +445,14 @@ impl <'a> Compiler<'a> {
                 match *lit {
                     Integer(i) => function.emit(PushInt(i as isize)),
                     Float(f) => function.emit(PushFloat(f)),
-                    Bool(b) => function.emit(PushInt(if b { 1 } else { 0 })),
-                    String(s) => function.emit_string(s)
+                    Bool(b) => {
+                        function.emit(PushInt(if b {
+                            1
+                        } else {
+                            0
+                        }))
+                    }
+                    String(s) => function.emit_string(s),
                 }
             }
             Expr::Identifier(ref id) => self.load_identifier(*id.id(), function),
@@ -423,7 +467,8 @@ impl <'a> Compiler<'a> {
                 function.emit(Jump(0));
                 function.instructions[jump_index] = CJump(function.instructions.len() as VMIndex);
                 self.compile(&**if_true, function, tail_position);
-                function.instructions[false_jump_index] = Jump(function.instructions.len() as VMIndex);
+                function.instructions[false_jump_index] =
+                    Jump(function.instructions.len() as VMIndex);
             }
             Expr::BinOp(ref lhs, ref op, ref rhs) => {
                 if op.name == "&&" {
@@ -433,9 +478,9 @@ impl <'a> Compiler<'a> {
                     function.emit(PushInt(0));
                     function.emit(Jump(0));//lhs false, jump to after rhs
                     self.compile(&**rhs, function, tail_position);
-                    function.instructions[lhs_end + 2] = Jump(function.instructions.len() as VMIndex);//replace jump instruction
-                }
-                else if op.name == "||" {
+                    function.instructions[lhs_end + 2] =
+                        Jump(function.instructions.len() as VMIndex);//replace jump instruction
+                } else if op.name == "||" {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.instructions.len();
                     function.emit(CJump(0));
@@ -445,8 +490,7 @@ impl <'a> Compiler<'a> {
                     function.emit(PushInt(1));
                     let end = function.instructions.len();
                     function.instructions[end - 2] = Jump(end as VMIndex);
-                }
-                else {
+                } else {
                     let instr = match &op.name[..] {
                         "#Int+" => AddInt,
                         "#Int-" => SubtractInt,
@@ -470,19 +514,19 @@ impl <'a> Compiler<'a> {
             }
             Expr::Let(ref bindings, ref body) => {
                 let stack_start = function.stack_size;
-                //Index where the instruction to create the first closure should be at
+                // Index where the instruction to create the first closure should be at
                 let first_index = function.instructions.len();
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter() {
-                        //Add the NewClosure instruction before hand
-                        //it will be fixed later
+                        // Add the NewClosure instruction before hand
+                        // it will be fixed later
                         function.emit(NewClosure(0, 0));
                         match bind.name {
                             ast::Pattern::Identifier(ref name) => {
                                 function.new_stack_var(*name.id());
                             }
-                            _ => panic!("ICE: Unexpected non identifer pattern")
+                            _ => panic!("ICE: Unexpected non identifer pattern"),
                         }
                     }
                 }
@@ -492,16 +536,18 @@ impl <'a> Compiler<'a> {
                         function.emit(Push(stack_start + i as VMIndex));
                         let name = match bind.name {
                             ast::Pattern::Identifier(ref name) => name,
-                            _ => panic!("Lambda binds to non identifer pattern")
+                            _ => panic!("Lambda binds to non identifer pattern"),
                         };
-                        let (function_index, vars, cf) = self.compile_lambda(name, &bind.arguments, &bind.expression, function);
+                        let (function_index, vars, cf) = self.compile_lambda(name,
+                                                                             &bind.arguments,
+                                                                             &bind.expression,
+                                                                             function);
                         let offset = first_index + i;
                         function.instructions[offset] = NewClosure(function_index, vars);
                         function.emit(CloseClosure(vars));
                         function.stack_size -= vars;
                         function.inner_functions.push(cf);
-                    }
-                    else {
+                    } else {
                         self.compile(&bind.expression, function, false);
                         let typ = bind.expression.env_type_of(&(self.globals, &*function));
                         self.compile_let_pattern(&bind.name, &typ, function);
@@ -522,7 +568,7 @@ impl <'a> Compiler<'a> {
                             self.compile(arg, function, false);
                         }
                         function.emit(Construct(tag, num_args));
-                        return
+                        return;
                     }
                 }
                 self.compile(&**func, function, false);
@@ -538,16 +584,17 @@ impl <'a> Compiler<'a> {
                 let typ = typ.inner_app();
                 debug!("FieldAccess {}", typ);
                 let field_index = match *typ {
-                    Type::Data(ref id, _) => {
-                        self.find_field(function, id, field.id())
-                    }
-                    Type::Record { ref fields, .. } => {
-                        fields.iter()
-                            .position(|f| f.name == field.name)
-                            .map(|i| i as VMIndex)
-                    }
-                    ref typ => panic!("ICE: FieldAccess on {}", typ)
-                }.expect("ICE: Undefined field in field access");
+                                      Type::Data(ref id, _) => {
+                                          self.find_field(function, id, field.id())
+                                      }
+                                      Type::Record { ref fields, .. } => {
+                                          fields.iter()
+                                                .position(|f| f.name == field.name)
+                                                .map(|i| i as VMIndex)
+                                      }
+                                      ref typ => panic!("ICE: FieldAccess on {}", typ),
+                                  }
+                                  .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));
             }
             Expr::Match(ref expr, ref alts) => {
@@ -557,7 +604,7 @@ impl <'a> Compiler<'a> {
                 let typ = expr.env_type_of(&(self.globals, &*function));
                 let typename = match *typ {
                     Type::Data(ref id, _) => Some(id),
-                    _ => None
+                    _ => None,
                 };
                 let mut catch_all = false;
                 for alt in alts.iter() {
@@ -565,7 +612,11 @@ impl <'a> Compiler<'a> {
                         ast::Pattern::Constructor(ref id, _) => {
                             let typename = typename.expect("typename");
                             let tag = self.find_tag(function, typename, id.id())
-                                .unwrap_or_else(|| panic!("Could not find tag for {}::{}", typename, id.id()));
+                                          .unwrap_or_else(|| {
+                                              panic!("Could not find tag for {}::{}",
+                                                     typename,
+                                                     id.id())
+                                          });
                             function.emit(TestTag(tag));
                             start_jumps.push(function.instructions.len());
                             function.emit(CJump(0));
@@ -581,20 +632,21 @@ impl <'a> Compiler<'a> {
                         }
                     }
                 }
-                //Create a catch all to prevent us from running into undefined behaviour
+                // Create a catch all to prevent us from running into undefined behaviour
                 if !catch_all {
                     let error_fn = self.intern("#error");
                     self.load_identifier(error_fn, function);
                     function.emit_string(self.intern("Non-exhaustive pattern"));
                     function.emit(Call(1));
-                    //The stack has been increased by 1 here but it should not affect compiling the
-                    //alternatives
+                    // The stack has been increased by 1 here but it should not affect compiling the
+                    // alternatives
                     function.stack_size -= 1;
                 }
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     match alt.pattern {
                         ast::Pattern::Constructor(_, ref args) => {
-                            function.instructions[start_index] = CJump(function.instructions.len() as VMIndex);
+                            function.instructions[start_index] =
+                                CJump(function.instructions.len() as VMIndex);
                             function.emit(Split);
                             for arg in args.iter() {
                                 function.push_stack_var(arg.id().clone());
@@ -605,7 +657,8 @@ impl <'a> Compiler<'a> {
                             self.compile_let_pattern(&alt.pattern, typ, function);
                         }
                         ast::Pattern::Identifier(ref id) => {
-                            function.instructions[start_index] = Jump(function.instructions.len() as VMIndex);
+                            function.instructions[start_index] =
+                                Jump(function.instructions.len() as VMIndex);
                             function.new_stack_var(id.id().clone());
                         }
                     }
@@ -632,14 +685,18 @@ impl <'a> Compiler<'a> {
                 function.emit(GetIndex);
             }
             Expr::Lambda(ref lambda) => {
-                let (function_index, vars, cf) = self.compile_lambda(&lambda.id, &lambda.arguments, &lambda.body, function);
+                let (function_index, vars, cf) = self.compile_lambda(&lambda.id,
+                                                                     &lambda.arguments,
+                                                                     &lambda.body,
+                                                                     function);
                 function.emit(MakeClosure(function_index, vars));
                 function.stack_size -= vars;
                 function.inner_functions.push(cf);
             }
             Expr::Type(ref type_bindings, ref expr) => {
                 for type_binding in type_bindings {
-                    if let ast::Type::Data(ast::TypeConstructor::Data(name), ref args) = *type_binding.name {
+                    if let ast::Type::Data(ast::TypeConstructor::Data(name), ref args) =
+                           *type_binding.name {
                         let generic_args = extract_generics(args);
                         function.stack_types.insert(name, (generic_args, type_binding.typ.clone()));
                         function.stack_constructors.push((type_binding.typ.clone(), name));
@@ -651,7 +708,7 @@ impl <'a> Compiler<'a> {
                 for field in fields {
                     match field.1 {
                         Some(ref field_expr) => self.compile(field_expr, function, false),
-                        None => self.load_identifier(field.0, function)
+                        None => self.load_identifier(field.0, function),
                     }
                 }
                 function.emit(Construct(0, fields.len() as u32));
@@ -677,8 +734,8 @@ impl <'a> Compiler<'a> {
                 let mut typ = typ.clone();
                 if let Type::Data(ast::TypeConstructor::Data(id), _) = *typ {
                     typ = self.find_type_info(function, id)
-                        .and_then(|(_, typ)| typ.cloned())
-                        .unwrap_or(typ.clone());
+                              .and_then(|(_, typ)| typ.cloned())
+                              .unwrap_or(typ.clone());
                 }
                 // Insert all variant constructor into scope
                 with_pattern_types(types, &typ, |name, name_type, typ| {
@@ -694,17 +751,15 @@ impl <'a> Compiler<'a> {
                         for field in type_fields {
                             let name = match fields.iter().find(|tup| tup.0 == field.name) {
                                 Some(&(name, bind)) => bind.unwrap_or(name),
-                                None => self.intern("")
+                                None => self.intern(""),
                             };
                             function.push_stack_var(name);
                         }
                     }
-                    _ => panic!("Expected record, got {} at {:?}", typ, pattern)
+                    _ => panic!("Expected record, got {} at {:?}", typ, pattern),
                 }
             }
-            ast::Pattern::Constructor(..) => {
-                panic!("constructor pattern in let")
-            }
+            ast::Pattern::Constructor(..) => panic!("constructor pattern in let"),
         }
     }
 
@@ -712,8 +767,8 @@ impl <'a> Compiler<'a> {
                       id: &TcIdent,
                       arguments: &[TcIdent],
                       body: &LExpr<TcIdent>,
-                      function: &mut FunctionEnvs
-                     ) -> (VMIndex, VMIndex, CompiledFunction) {
+                      function: &mut FunctionEnvs)
+                      -> (VMIndex, VMIndex, CompiledFunction) {
         function.start_function();
         for arg in arguments {
             function.push_stack_var(*arg.id());
@@ -723,43 +778,47 @@ impl <'a> Compiler<'a> {
         for _ in 0..arguments.len() {
             function.pop_var();
         }
-        //Insert all free variables into the above globals free variables
-        //if they arent in that lambdas scope
+        // Insert all free variables into the above globals free variables
+        // if they arent in that lambdas scope
         let f = function.end_function();
         for &var in f.free_vars.iter() {
             match self.find(var, function).expect("free_vars: find") {
                 Stack(index) => function.emit(Push(index)),
                 UpVar(index) => function.emit(PushUpVar(index)),
-                _ => panic!("Free variables can only be on the stack or another upvar")
+                _ => panic!("Free variables can only be on the stack or another upvar"),
             }
         }
         let function_index = function.inner_functions.len() as VMIndex;
         let free_vars = f.free_vars.len() as VMIndex;
         let FunctionEnv { instructions, inner_functions, strings, .. } = f;
-        (function_index, free_vars, CompiledFunction {
+        (function_index,
+         free_vars,
+         CompiledFunction {
             args: arguments.len() as VMIndex,
             id: id.id().clone(),
             typ: id.typ.clone(),
             instructions: instructions,
             inner_functions: inner_functions,
-            strings: strings
+            strings: strings,
         })
     }
 }
 
 fn with_pattern_types<F>(types: &[(InternedStr, Option<InternedStr>)], typ: &TcType, mut f: F)
-    where F: FnMut(InternedStr, &TcType, &TcType) {
+    where F: FnMut(InternedStr, &TcType, &TcType)
+{
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
-            let associated_type = record_type_fields.iter()
-                .find(|type_field| {
-                    match *type_field.name {
-                        Type::Data(ast::TypeConstructor::Data(name), _)
-                            if name == field.0 => true,
-                        _ => false
-                    }
-                })
-                .expect("Associated type to exist in record");
+            let associated_type =
+                record_type_fields.iter()
+                                  .find(|type_field| {
+                                      match *type_field.name {
+                                          Type::Data(ast::TypeConstructor::Data(name), _)
+                                              if name == field.0 => true,
+                                          _ => false,
+                                      }
+                                  })
+                                  .expect("Associated type to exist in record");
             f(field.0, &associated_type.name, &associated_type.typ);
         }
     }
@@ -770,7 +829,10 @@ fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<InternedStr>> {
         .map(|arg| {
             match **arg {
                 Type::Generic(ref gen) => gen.clone(),
-                _ => panic!("The type on the lhs of a type binding did not have all generic arguments")
+                _ => {
+                    panic!("The type on the lhs of a type binding did not have all generic \
+                            arguments")
+                }
             }
         })
         .collect()

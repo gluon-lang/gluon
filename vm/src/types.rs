@@ -22,12 +22,12 @@ pub enum Instruction {
     Pop(VMIndex),
     Slide(VMIndex),
 
-    //Creates a closure with 'n' upvariables
-    //Pops the 'n' values on top of the stack and creates a closure
+    // Creates a closure with 'n' upvariables
+    // Pops the 'n' values on top of the stack and creates a closure
     MakeClosure(VMIndex, VMIndex),
-    //Creates a closure but does not fill its environment
+    // Creates a closure but does not fill its environment
     NewClosure(VMIndex, VMIndex),
-    //Fills the previously allocated closure with `n` upvariables
+    // Fills the previously allocated closure with `n` upvariables
     CloseClosure(VMIndex),
     PushUpVar(VMIndex),
 
@@ -56,7 +56,9 @@ impl Instruction {
             TailCall(n) => -(n as i32),
             Construct(_, n) => 1 - n as i32,
             GetField(_) => 0,
-            Split => -1,//The number of added stack slots are handled separately as the type is needed
+            // The number of added stack slots are handled separately as the type is needed to
+            // calculate the number of slots needed
+            Split => -1,
             TestTag(_) => 1,
             Jump(_) => 0,
             CJump(_) => -1,
@@ -68,8 +70,16 @@ impl Instruction {
             PushUpVar(_) => 1,
             GetIndex => 0,
             SetIndex => -1,
-            AddInt | SubtractInt | MultiplyInt | IntLT | IntEQ |
-            AddFloat | SubtractFloat | MultiplyFloat | FloatLT | FloatEQ => -1
+            AddInt |
+            SubtractInt |
+            MultiplyInt |
+            IntLT |
+            IntEQ |
+            AddFloat |
+            SubtractFloat |
+            MultiplyFloat |
+            FloatLT |
+            FloatEQ => -1,
         }
     }
 }

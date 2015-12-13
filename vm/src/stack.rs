@@ -10,19 +10,21 @@ pub struct Frame<'a> {
     pub offset: VMIndex,
     pub instruction_index: usize,
     pub upvars: Option<GcPtr<ClosureData<'a>>>,
-    pub excess: bool
+    pub excess: bool,
 }
 
 #[derive(Debug)]
 pub struct Stack<'a> {
     pub values: Vec<Value<'a>>,
-    pub frames: Vec<Frame<'a>>
+    pub frames: Vec<Frame<'a>>,
 }
 
-impl <'a> Stack<'a> {
-
+impl<'a> Stack<'a> {
     pub fn new() -> Stack<'a> {
-        Stack { values: Vec::new(), frames: Vec::new() }
+        Stack {
+            values: Vec::new(),
+            frames: Vec::new(),
+        }
     }
 
     pub fn get(&self, index: usize) -> Value<'a> {
@@ -68,14 +70,22 @@ impl <'a> Stack<'a> {
 #[derive(Debug)]
 pub struct StackFrame<'a: 'b, 'b> {
     pub stack: RefMut<'b, Stack<'a>>,
-    pub frame: Frame<'a>
+    pub frame: Frame<'a>,
 }
-impl <'a: 'b, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: RefMut<'b, Stack<'a>>, args: VMIndex, upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
+impl<'a: 'b, 'b> StackFrame<'a, 'b> {
+    pub fn new(v: RefMut<'b, Stack<'a>>,
+               args: VMIndex,
+               upvars: Option<GcPtr<ClosureData<'a>>>)
+               -> StackFrame<'a, 'b> {
         let offset = v.len() - args;
         StackFrame {
             stack: v,
-            frame: Frame { offset: offset, upvars: upvars, instruction_index: 0, excess: false }
+            frame: Frame {
+                offset: offset,
+                upvars: upvars,
+                instruction_index: 0,
+                excess: false,
+            },
         }
     }
 
@@ -120,29 +130,38 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 
     pub fn set_upvar(&self, index: VMIndex, v: Value<'a>) {
-        let upvars = self.frame.upvars.as_ref().expect("Attempted to access upvar in non closure function");
+        let upvars = self.frame
+                         .upvars
+                         .as_ref()
+                         .expect("Attempted to access upvar in non closure function");
         upvars.upvars[index as usize].set(v)
     }
 
     pub fn get_upvar(&self, index: VMIndex) -> Value<'a> {
-        let upvars = self.frame.upvars.as_ref().expect("Attempted to access upvar in non closure function");
+        let upvars = self.frame
+                         .upvars
+                         .as_ref()
+                         .expect("Attempted to access upvar in non closure function");
         upvars.upvars[index as usize].get()
     }
 
-    pub fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>
-            , args: VMIndex
-            , upvars: Option<GcPtr<ClosureData<'a>>>
-            , f: F) -> Result<StackFrame<'a, 'b>, E> 
-        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
+    pub fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>,
+                           args: VMIndex,
+                           upvars: Option<GcPtr<ClosureData<'a>>>,
+                           f: F)
+                           -> Result<StackFrame<'a, 'b>, E>
+        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E>
+    {
         let stack = StackFrame::frame(stack, args, upvars);
         let mut stack = try!(f(stack));
         stack.stack.frames.pop();
         Ok(stack)
     }
 
-    pub fn enter_scope(mut self
-            , args: VMIndex
-            , new_upvars: Option<GcPtr<ClosureData<'a>>>) -> StackFrame<'a, 'b> {
+    pub fn enter_scope(mut self,
+                       args: VMIndex,
+                       new_upvars: Option<GcPtr<ClosureData<'a>>>)
+                       -> StackFrame<'a, 'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
@@ -151,20 +170,30 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
 
     pub fn exit_scope(mut self) -> StackFrame<'a, 'b> {
         self.stack.frames.pop().expect("Expected frame");
-        let frame = self.stack.frames.last().cloned()
-            .unwrap_or(Frame { offset: 0, upvars: None, instruction_index: 0, excess: false });
+        let frame = self.stack
+                        .frames
+                        .last()
+                        .cloned()
+                        .unwrap_or(Frame {
+                            offset: 0,
+                            upvars: None,
+                            instruction_index: 0,
+                            excess: false,
+                        });
         debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
         StackFrame {
             stack: self.stack,
-            frame: frame
+            frame: frame,
         }
     }
 
-    pub fn scope<E, F>(self
-            , args: VMIndex
-            , upvars: Option<GcPtr<ClosureData<'a>>>
-            , f: F) -> Result<StackFrame<'a, 'b>, E>
-        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E> {
+    pub fn scope<E, F>(self,
+                       args: VMIndex,
+                       upvars: Option<GcPtr<ClosureData<'a>>>,
+                       f: F)
+                       -> Result<StackFrame<'a, 'b>, E>
+        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E>
+    {
         let mut stack = self.enter_scope(args, upvars);
         stack = try!(f(stack));
         stack = stack.exit_scope();
@@ -172,83 +201,96 @@ impl <'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 
     pub fn frame(mut stack: RefMut<'b, Stack<'a>>,
-             args: VMIndex,
-             upvars: Option<GcPtr<ClosureData<'a>>>
-            ) -> StackFrame<'a, 'b> {
+                 args: VMIndex,
+                 upvars: Option<GcPtr<ClosureData<'a>>>)
+                 -> StackFrame<'a, 'b> {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
         let offset = stack.len() - args;
-        let frame = Frame { offset: offset, instruction_index: 0, upvars: upvars, excess: false };
+        let frame = Frame {
+            offset: offset,
+            instruction_index: 0,
+            upvars: upvars,
+            excess: false,
+        };
         stack.frames.push(frame);
-        debug!("----> Store {} {:?}\n||| {:?}", stack.frames.len(), frame, prev);
-        StackFrame { stack: stack, frame: frame }
+        debug!("----> Store {} {:?}\n||| {:?}",
+               stack.frames.len(),
+               frame,
+               prev);
+        StackFrame {
+            stack: stack,
+            frame: frame,
+        }
     }
 }
 
-impl <'a, 'b> Deref for StackFrame<'a, 'b> {
+impl<'a, 'b> Deref for StackFrame<'a, 'b> {
     type Target = [Value<'a>];
     fn deref(&self) -> &[Value<'a>] {
         &self.stack.values[self.frame.offset as usize..]
     }
 }
 
-impl <'a, 'b> DerefMut for StackFrame<'a, 'b> {
+impl<'a, 'b> DerefMut for StackFrame<'a, 'b> {
     fn deref_mut(&mut self) -> &mut [Value<'a>] {
         &mut self.stack.values[self.frame.offset as usize..]
     }
 }
 
-impl <'a, 'b> Index<VMIndex> for StackFrame<'a, 'b> {
+impl<'a, 'b> Index<VMIndex> for StackFrame<'a, 'b> {
     type Output = Value<'a>;
     fn index(&self, index: VMIndex) -> &Value<'a> {
         &self.stack.values[(self.frame.offset + index) as usize]
     }
 }
-impl <'a, 'b> IndexMut<VMIndex> for StackFrame<'a, 'b> {
+impl<'a, 'b> IndexMut<VMIndex> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, index: VMIndex) -> &mut Value<'a> {
         &mut self.stack.values[(self.frame.offset + index) as usize]
     }
 }
-impl <'a, 'b> Index<RangeFull> for StackFrame<'a, 'b> {
+impl<'a, 'b> Index<RangeFull> for StackFrame<'a, 'b> {
     type Output = [Value<'a>];
     fn index(&self, _: RangeFull) -> &[Value<'a>] {
         &self.stack.values[self.frame.offset as usize..]
     }
 }
-impl <'a, 'b> IndexMut<RangeFull> for StackFrame<'a, 'b> {
+impl<'a, 'b> IndexMut<RangeFull> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, _: RangeFull) -> &mut [Value<'a>] {
         &mut self.stack.values[self.frame.offset as usize..]
     }
 }
-impl <'a, 'b> Index<Range<VMIndex>> for StackFrame<'a, 'b> {
+impl<'a, 'b> Index<Range<VMIndex>> for StackFrame<'a, 'b> {
     type Output = [Value<'a>];
     fn index(&self, range: Range<VMIndex>) -> &[Value<'a>] {
-        &self.stack.values[(range.start + self.frame.offset) as usize..(range.end + self.frame.offset) as usize]
+        let offset = self.frame.offset;
+        &self.stack.values[(range.start + offset) as usize..(range.end + offset) as usize]
     }
 }
-impl <'a, 'b> IndexMut<Range<VMIndex>> for StackFrame<'a, 'b> {
+impl<'a, 'b> IndexMut<Range<VMIndex>> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, range: Range<VMIndex>) -> &mut [Value<'a>] {
-        &mut self.stack.values[(range.start + self.frame.offset) as usize..(range.end + self.frame.offset) as usize]
+        let offset = self.frame.offset;
+        &mut self.stack.values[(range.start + offset) as usize..(range.end + offset) as usize]
     }
 }
-impl <'a, 'b> Index<RangeTo<VMIndex>> for StackFrame<'a, 'b> {
+impl<'a, 'b> Index<RangeTo<VMIndex>> for StackFrame<'a, 'b> {
     type Output = [Value<'a>];
     fn index(&self, range: RangeTo<VMIndex>) -> &[Value<'a>] {
         &self.stack.values[..(range.end + self.frame.offset) as usize]
     }
 }
-impl <'a, 'b> IndexMut<RangeTo<VMIndex>> for StackFrame<'a, 'b> {
+impl<'a, 'b> IndexMut<RangeTo<VMIndex>> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, range: RangeTo<VMIndex>) -> &mut [Value<'a>] {
         &mut self.stack.values[..(range.end + self.frame.offset) as usize]
     }
 }
-impl <'a, 'b> Index<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
+impl<'a, 'b> Index<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
     type Output = [Value<'a>];
     fn index(&self, range: RangeFrom<VMIndex>) -> &[Value<'a>] {
         &self.stack.values[(range.start + self.frame.offset) as usize..]
     }
 }
-impl <'a, 'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
+impl<'a, 'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
     fn index_mut(&mut self, range: RangeFrom<VMIndex>) -> &mut [Value<'a>] {
         &mut self.stack.values[(range.start + self.frame.offset) as usize..]
     }

@@ -6,17 +6,17 @@ use vm::{StackFrame, Status, Value, VM};
 
 #[derive(Clone, PartialEq)]
 pub struct Lazy<'a> {
-    value: Cell<Lazy_<'a>>
+    value: Cell<Lazy_<'a>>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum Lazy_<'a> {
     Blackhole,
     Thunk(Value<'a>),
-    Value(Value<'a>)
+    Value(Value<'a>),
 }
 
-impl <'a> Traverseable for Lazy<'a> {
+impl<'a> Traverseable for Lazy<'a> {
     fn traverse(&self, gc: &mut Gc) {
         match self.value.get() {
             Lazy_::Blackhole => (),
@@ -43,7 +43,10 @@ pub fn force(vm: &VM) -> Status {
                     let frame = stack.frame;
                     drop(stack);
                     let result = vm.execute_call(1);
-                    stack = StackFrame { stack: vm.stack.borrow_mut(), frame: frame };
+                    stack = StackFrame {
+                        stack: vm.stack.borrow_mut(),
+                        frame: frame,
+                    };
                     match result {
                         Ok(value) => {
                             while stack.len() > 1 {
@@ -66,7 +69,7 @@ pub fn force(vm: &VM) -> Status {
                 }
             }
         }
-        x => panic!("Expected lazy got {:?}", x)
+        x => panic!("Expected lazy got {:?}", x),
     }
 }
 

@@ -23,24 +23,15 @@ use lazy::Lazy;
 
 use self::Named::*;
 
-use self::Value::{
-    Int,
-    Float,
-    String,
-    Data,
-    Function,
-    PartialApplication,
-    Closure,
-    TraitObject,
-    Userdata,
-};
+use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure, TraitObject,
+                  Userdata};
 
 
 pub use stack::{Stack, StackFrame};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Userdata_ {
-    pub data: GcPtr<Box<Any>>
+    pub data: GcPtr<Box<Any>>,
 }
 
 impl Userdata_ {
@@ -62,16 +53,16 @@ impl PartialEq for Userdata_ {
 #[derive(Debug)]
 pub struct ClosureData<'a> {
     pub function: GcPtr<BytecodeFunction>,
-    pub upvars: [Cell<Value<'a>>]
+    pub upvars: [Cell<Value<'a>>],
 }
 
-impl <'a> PartialEq for ClosureData<'a> {
+impl<'a> PartialEq for ClosureData<'a> {
     fn eq(&self, _: &ClosureData<'a>) -> bool {
         false
     }
 }
 
-impl <'a> Traverseable for ClosureData<'a> {
+impl<'a> Traverseable for ClosureData<'a> {
     fn traverse(&self, gc: &mut Gc) {
         self.function.traverse(gc);
         self.upvars.traverse(gc);
@@ -79,14 +70,14 @@ impl <'a> Traverseable for ClosureData<'a> {
 }
 
 struct ClosureDataDef<'a: 'b, 'b>(GcPtr<BytecodeFunction>, &'b [Value<'a>]);
-impl <'a, 'b> Traverseable for ClosureDataDef<'a, 'b> {
+impl<'a, 'b> Traverseable for ClosureDataDef<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
         self.1.traverse(gc);
     }
 }
 
-unsafe impl <'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
+unsafe impl<'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
     type Value = ClosureData<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
@@ -115,25 +106,31 @@ pub struct BytecodeFunction {
     args: VMIndex,
     instructions: Vec<Instruction>,
     inner_functions: Vec<GcPtr<BytecodeFunction>>,
-    strings: Vec<InternedStr>
+    strings: Vec<InternedStr>,
 }
 
 impl BytecodeFunction {
     pub fn empty() -> BytecodeFunction {
-        BytecodeFunction { name: None, args: 0, instructions: Vec::new(), inner_functions: Vec::new(), strings: Vec::new() }
+        BytecodeFunction {
+            name: None,
+            args: 0,
+            instructions: Vec::new(),
+            inner_functions: Vec::new(),
+            strings: Vec::new(),
+        }
     }
 
     pub fn new(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
         let CompiledFunction { id, args, instructions, inner_functions, strings, .. } = f;
         let fs = inner_functions.into_iter()
-            .map(|inner| BytecodeFunction::new(gc, inner))
-            .collect();
+                                .map(|inner| BytecodeFunction::new(gc, inner))
+                                .collect();
         gc.alloc(Move(BytecodeFunction {
             name: Some(id),
             args: args,
             instructions: instructions,
             inner_functions: fs,
-            strings: strings
+            strings: strings,
         }))
     }
 }
@@ -146,16 +143,16 @@ impl Traverseable for BytecodeFunction {
 
 pub struct DataStruct<'a> {
     pub tag: VMTag,
-    pub fields: [Cell<Value<'a>>]
+    pub fields: [Cell<Value<'a>>],
 }
 
-impl <'a> Traverseable for DataStruct<'a> {
+impl<'a> Traverseable for DataStruct<'a> {
     fn traverse(&self, gc: &mut Gc) {
         self.fields.traverse(gc);
     }
 }
 
-impl <'a> PartialEq for DataStruct<'a> {
+impl<'a> PartialEq for DataStruct<'a> {
     fn eq(&self, other: &DataStruct<'a>) -> bool {
         self.tag == other.tag && self.fields == other.fields
     }
@@ -174,35 +171,35 @@ pub enum Value<'a> {
     PartialApplication(GcPtr<PartialApplicationData<'a>>),
     TraitObject(GcPtr<DataStruct<'a>>),
     Userdata(Userdata_),
-    Lazy(GcPtr<Lazy<'a>>)
+    Lazy(GcPtr<Lazy<'a>>),
 }
 
 #[derive(Copy, Clone, Debug)]
 enum Callable<'a> {
     Closure(GcPtr<ClosureData<'a>>),
-    Extern(GcPtr<ExternFunction<'a>>)
+    Extern(GcPtr<ExternFunction<'a>>),
 }
 
-impl <'a> Callable<'a> {
+impl<'a> Callable<'a> {
     fn args(&self) -> VMIndex {
         match *self {
             Callable::Closure(ref closure) => closure.function.args,
-            Callable::Extern(ref ext) => ext.args
+            Callable::Extern(ref ext) => ext.args,
         }
     }
 }
 
-impl <'a> PartialEq for Callable<'a> {
+impl<'a> PartialEq for Callable<'a> {
     fn eq(&self, _: &Callable<'a>) -> bool {
         false
     }
 }
 
-impl <'a> Traverseable for Callable<'a> {
+impl<'a> Traverseable for Callable<'a> {
     fn traverse(&self, gc: &mut Gc) {
         match *self {
             Callable::Closure(ref closure) => closure.traverse(gc),
-            Callable::Extern(_) => ()
+            Callable::Extern(_) => (),
         }
     }
 }
@@ -210,16 +207,16 @@ impl <'a> Traverseable for Callable<'a> {
 #[derive(Debug)]
 pub struct PartialApplicationData<'a> {
     function: Callable<'a>,
-    arguments: [Cell<Value<'a>>]
+    arguments: [Cell<Value<'a>>],
 }
 
-impl <'a> PartialEq for PartialApplicationData<'a> {
+impl<'a> PartialEq for PartialApplicationData<'a> {
     fn eq(&self, _: &PartialApplicationData<'a>) -> bool {
         false
     }
 }
 
-impl <'a> Traverseable for PartialApplicationData<'a> {
+impl<'a> Traverseable for PartialApplicationData<'a> {
     fn traverse(&self, gc: &mut Gc) {
         self.function.traverse(gc);
         self.arguments.traverse(gc);
@@ -227,19 +224,21 @@ impl <'a> Traverseable for PartialApplicationData<'a> {
 }
 
 struct PartialApplicationDataDef<'a: 'b, 'b>(Callable<'a>, &'b [Value<'a>]);
-impl <'a, 'b> Traverseable for PartialApplicationDataDef<'a, 'b> {
+impl<'a, 'b> Traverseable for PartialApplicationDataDef<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
         self.1.traverse(gc);
     }
 }
-unsafe impl <'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
+unsafe impl<'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
     type Value = PartialApplicationData<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
         size_of::<Callable<'a>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
     }
-    fn initialize<'w>(self, mut result: WriteOnly<'w, PartialApplicationData<'a>>) -> &'w mut PartialApplicationData<'a> {
+    fn initialize<'w>(self,
+                      mut result: WriteOnly<'w, PartialApplicationData<'a>>)
+                      -> &'w mut PartialApplicationData<'a> {
         let result = unsafe { &mut *result.as_mut_ptr() };
         result.function = self.0;
         for (field, value) in result.arguments.iter().zip(self.1.iter()) {
@@ -255,18 +254,18 @@ unsafe impl <'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
     }
 }
 
-impl <'a> PartialEq<Value<'a>> for Cell<Value<'a>> {
+impl<'a> PartialEq<Value<'a>> for Cell<Value<'a>> {
     fn eq(&self, other: &Value<'a>) -> bool {
         self.get() == *other
     }
 }
-impl <'a> PartialEq<Cell<Value<'a>>> for Value<'a> {
+impl<'a> PartialEq<Cell<Value<'a>>> for Value<'a> {
     fn eq(&self, other: &Cell<Value<'a>>) -> bool {
         *self == other.get()
     }
 }
 
-impl <'a> Traverseable for Value<'a> {
+impl<'a> Traverseable for Value<'a> {
     fn traverse(&self, gc: &mut Gc) {
         match *self {
             String(ref data) => data.traverse(gc),
@@ -277,56 +276,78 @@ impl <'a> Traverseable for Value<'a> {
             Userdata(ref data) => data.data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
             Value::Lazy(ref lazy) => lazy.traverse(gc),
-            Int(_) | Float(_) => ()
+            Int(_) | Float(_) => (),
         }
     }
 }
 
-impl <'a> fmt::Debug for Value<'a> {
+impl<'a> fmt::Debug for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         struct Level<'a: 'b, 'b>(i32, &'b Value<'a>);
         struct LevelSlice<'a: 'b, 'b>(i32, &'b [Cell<Value<'a>>]);
-        impl <'a, 'b> fmt::Debug for LevelSlice<'a, 'b> {
+        impl<'a, 'b> fmt::Debug for LevelSlice<'a, 'b> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let level = self.0;
-                if level <= 0 { return Ok(()) }
+                if level <= 0 {
+                    return Ok(());
+                }
                 for v in self.1 {
                     try!(write!(f, "{:?}", Level(level - 1, &v.get())));
                 }
                 Ok(())
             }
         }
-        impl <'a, 'b> fmt::Debug for Level<'a, 'b> {
+        impl<'a, 'b> fmt::Debug for Level<'a, 'b> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let level = self.0;
-                if level <= 0 { return Ok(()) }
+                if level <= 0 {
+                    return Ok(());
+                }
                 match *self.1 {
                     Int(i) => write!(f, "{:?}", i),
                     Float(x) => write!(f, "{:?}f", x),
                     String(x) => write!(f, "{:?}", &*x),
                     Data(ref data) => {
-                        write!(f, "{{{:?} {:?}}}", data.tag, LevelSlice(level - 1, &data.fields))
+                        write!(f,
+                               "{{{:?} {:?}}}",
+                               data.tag,
+                               LevelSlice(level - 1, &data.fields))
                     }
                     Function(ref func) => write!(f, "<{} {:?}>", func.id, &**func),
                     Closure(ref closure) => {
                         let p: *const _ = &*closure.function;
                         let name = match closure.function.name {
                             Some(ref name) => &name[..],
-                            None => ""
+                            None => "",
                         };
-                        write!(f, "<{:?} {:?} {:?}>", name, p, LevelSlice(level - 1, &closure.upvars))
+                        write!(f,
+                               "<{:?} {:?} {:?}>",
+                               name,
+                               p,
+                               LevelSlice(level - 1, &closure.upvars))
                     }
                     PartialApplication(ref app) => {
                         let name = match app.function {
                             Callable::Closure(ref closure) => {
-                                closure.function.name.as_ref().map(|n| &n[..])
-                                    .unwrap_or("")
+                                closure.function
+                                       .name
+                                       .as_ref()
+                                       .map(|n| &n[..])
+                                       .unwrap_or("")
                             }
                             Callable::Extern(ref func) => &func.id[..],
                         };
-                        write!(f, "<App {:?} {:?}>", name, LevelSlice(level - 1, &app.arguments))
+                        write!(f,
+                               "<App {:?} {:?}>",
+                               name,
+                               LevelSlice(level - 1, &app.arguments))
                     }
-                    TraitObject(ref object) => write!(f, "<{:?} {:?}>", object.tag, LevelSlice(level - 1, &object.fields)),
+                    TraitObject(ref object) => {
+                        write!(f,
+                               "<{:?} {:?}>",
+                               object.tag,
+                               LevelSlice(level - 1, &object.fields))
+                    }
                     Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
                     Value::Lazy(_) => write!(f, "<lazy>"),
                 }
@@ -347,23 +368,24 @@ macro_rules! get_global {
 #[derive(Clone)]
 pub struct RootedValue<'a: 'vm, 'vm> {
     vm: &'vm VM<'a>,
-    value: Value<'a>
+    value: Value<'a>,
 }
 
-impl <'a, 'vm> Drop for RootedValue<'a, 'vm> {
+impl<'a, 'vm> Drop for RootedValue<'a, 'vm> {
     fn drop(&mut self) {
-        self.vm.rooted_values.borrow_mut().pop();//TODO not safe if the root changes order of being dropped with another root
+        // TODO not safe if the root changes order of being dropped with another root
+        self.vm.rooted_values.borrow_mut().pop();
     }
 }
 
-impl <'a, 'vm> Deref for RootedValue<'a, 'vm> {
+impl<'a, 'vm> Deref for RootedValue<'a, 'vm> {
     type Target = Value<'a>;
     fn deref(&self) -> &Value<'a> {
         &self.value
     }
 }
 
-impl <'a, 'vm> RootedValue<'a, 'vm> {
+impl<'a, 'vm> RootedValue<'a, 'vm> {
     pub fn vm(&self) -> &'vm VM<'a> {
         self.vm
     }
@@ -371,16 +393,17 @@ impl <'a, 'vm> RootedValue<'a, 'vm> {
 
 pub struct Root<'a, T: ?Sized + 'a> {
     roots: &'a RefCell<Vec<GcPtr<Traverseable + 'static>>>,
-    ptr: *const T
+    ptr: *const T,
 }
 
-impl <'a, T: ?Sized> Drop for Root<'a, T> {
+impl<'a, T: ?Sized> Drop for Root<'a, T> {
     fn drop(&mut self) {
-        self.roots.borrow_mut().pop();//TODO not safe if the root changes order of being dropped with another root
+        // TODO not safe if the root changes order of being dropped with another root
+        self.roots.borrow_mut().pop();
     }
 }
 
-impl <'a, T: ?Sized> Deref for Root<'a, T> {
+impl<'a, T: ?Sized> Deref for Root<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
         unsafe { &*self.ptr }
@@ -389,7 +412,7 @@ impl <'a, T: ?Sized> Deref for Root<'a, T> {
 
 pub struct RootStr<'a>(Root<'a, str>);
 
-impl <'a> Deref for RootStr<'a> {
+impl<'a> Deref for RootStr<'a> {
     type Target = str;
     fn deref(&self) -> &str {
         &self.0
@@ -399,46 +422,48 @@ impl <'a> Deref for RootStr<'a> {
 #[derive(Eq, PartialEq)]
 pub enum Status {
     Ok,
-    Error
+    Error,
 }
 
 pub struct ExternFunction<'a> {
     pub id: InternedStr,
     pub args: VMIndex,
-    pub function: Box<Fn(&VM<'a>) -> Status + 'static>
+    pub function: Box<Fn(&VM<'a>) -> Status + 'static>,
 }
 
-impl <'a> PartialEq for ExternFunction<'a> {
-    fn eq(&self, _: &ExternFunction<'a>) -> bool { false }
+impl<'a> PartialEq for ExternFunction<'a> {
+    fn eq(&self, _: &ExternFunction<'a>) -> bool {
+        false
+    }
 }
 
-impl <'a> fmt::Debug for ExternFunction<'a> {
+impl<'a> fmt::Debug for ExternFunction<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        //read the v-table pointer of the Fn(..) type and print that
-        let p: *const () = unsafe { ::std::mem::transmute_copy(& &*self.function) };
+        // read the v-table pointer of the Fn(..) type and print that
+        let p: *const () = unsafe { ::std::mem::transmute_copy(&&*self.function) };
         write!(f, "{:?}", p)
     }
 }
 
-impl <'a> Traverseable for ExternFunction<'a> {
-    fn traverse(&self, _: &mut Gc) { }
+impl<'a> Traverseable for ExternFunction<'a> {
+    fn traverse(&self, _: &mut Gc) {}
 }
 
 #[derive(Debug)]
 pub struct Global<'a> {
     pub id: InternedStr,
     pub typ: TcType,
-    pub value: Cell<Value<'a>>
+    pub value: Cell<Value<'a>>,
 }
 
-impl <'a> Traverseable for Global<'a> {
+impl<'a> Traverseable for Global<'a> {
     fn traverse(&self, gc: &mut Gc) {
         self.id.traverse(gc);
         self.value.traverse(gc);
     }
 }
 
-impl <'a> Typed for Global<'a> {
+impl<'a> Typed for Global<'a> {
     type Id = InternedStr;
     fn env_type_of(&self, _: &TypeEnv) -> ASTType<InternedStr> {
         self.typ.clone()
@@ -447,7 +472,7 @@ impl <'a> Typed for Global<'a> {
 
 #[derive(Debug)]
 enum Named {
-    GlobalFn(usize)
+    GlobalFn(usize),
 }
 
 pub struct VM<'a> {
@@ -460,14 +485,14 @@ pub struct VM<'a> {
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value<'a>>>,
     pub stack: RefCell<Stack<'a>>,
-    macros: MacroEnv<VM<'a>>
+    macros: MacroEnv<VM<'a>>,
 }
 
 pub type VMResult<T> = Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    Message(::std::string::String)
+    Message(::std::string::String),
 }
 
 impl StdError for Error {
@@ -479,7 +504,7 @@ impl StdError for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::Message(ref msg) => msg.fmt(f)
+            Error::Message(ref msg) => msg.fmt(f),
         }
     }
 }
@@ -489,30 +514,32 @@ pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global<'a>>,
     names: Ref<'b, HashMap<InternedStr, Named>>,
-    io_arg: [ast::Generic<InternedStr>; 1]
+    io_arg: [ast::Generic<InternedStr>; 1],
 }
 
-impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
+impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     fn find_var(&self, id: &InternedStr) -> Option<Variable> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
                 Some(Variable::Global(index as VMIndex, &g.typ))
             }
-            _ => self.type_infos.find_var(id)
+            _ => self.type_infos.find_var(id),
         }
     }
     fn find_field(&self, data_name: &InternedStr, field_name: &InternedStr) -> Option<VMIndex> {
-        self.type_infos.id_to_type.get(data_name)
+        self.type_infos
+            .id_to_type
+            .get(data_name)
             .and_then(|&(_, ref typ)| {
                 match **typ {
                     ast::Type::Record { ref fields, .. } => {
                         fields.iter()
-                            .enumerate()
-                            .find(|&(_, f)| f.name == *field_name)
-                            .map(|(i, _)| i as VMIndex)
+                              .enumerate()
+                              .find(|&(_, f)| f.name == *field_name)
+                              .map(|(i, _)| i as VMIndex)
                     }
-                    _ => None
+                    _ => None,
                 }
             })
     }
@@ -521,18 +548,19 @@ impl <'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
         match self.type_infos.id_to_type.get(data_name).map(|&(_, ref typ)| &**typ) {
             Some(&Type::Variants(ref ctors)) => {
                 ctors.iter()
-                    .enumerate()
-                    .find(|&(_, c)| c.0 == *ctor_name)
-                    .map(|(i, _)| i as VMIndex)
+                     .enumerate()
+                     .find(|&(_, c)| c.0 == *ctor_name)
+                     .map(|(i, _)| i as VMIndex)
             }
-            _ => None
+            _ => None,
         }
     }
 }
 
-impl <'a, 'b> KindEnv for VMEnv<'a, 'b> {
+impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
     fn find_kind(&self, type_name: InternedStr) -> Option<Rc<ast::Kind>> {
-        self.type_infos.find_kind(type_name)
+        self.type_infos
+            .find_kind(type_name)
             .or_else(|| {
                 if &type_name[..] == "IO" {
                     Some(ast::Kind::function(ast::Kind::star(), ast::Kind::star()))
@@ -542,7 +570,7 @@ impl <'a, 'b> KindEnv for VMEnv<'a, 'b> {
             })
     }
 }
-impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
+impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
@@ -550,23 +578,31 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
                 Some(&g.typ)
             }
             _ => {
-                self.type_infos.id_to_type.values()
-                    .filter_map(|tuple| match *tuple.1 {
-                        Type::Variants(ref ctors) => ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1),
-                        _ => None
+                self.type_infos
+                    .id_to_type
+                    .values()
+                    .filter_map(|tuple| {
+                        match *tuple.1 {
+                            Type::Variants(ref ctors) => {
+                                ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1)
+                            }
+                            _ => None,
+                        }
                     })
                     .next()
                     .map(|ctor| ctor)
             }
         }
     }
-    fn find_type_info(&self, id: &InternedStr) -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
-        self.type_infos.find_type_info(id)
+    fn find_type_info(&self,
+                      id: &InternedStr)
+                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
+        self.type_infos
+            .find_type_info(id)
             .or_else(|| {
                 if &id[..] == "IO" {
                     Some((&self.io_arg, None))
-                }
-                else {
+                } else {
                     None
                 }
             })
@@ -576,11 +612,11 @@ impl <'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     }
 }
 
-struct Def<'a:'b, 'b> {
+struct Def<'a: 'b, 'b> {
     tag: VMTag,
-    elems: &'b [Value<'a>]
+    elems: &'b [Value<'a>],
 }
-unsafe impl <'a, 'b> DataDef for Def<'a, 'b> {
+unsafe impl<'a, 'b> DataDef for Def<'a, 'b> {
     type Value = DataStruct<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
@@ -602,7 +638,7 @@ unsafe impl <'a, 'b> DataDef for Def<'a, 'b> {
     }
 }
 
-impl <'a, 'b> Traverseable for Def<'a, 'b> {
+impl<'a, 'b> Traverseable for Def<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.elems.traverse(gc);
     }
@@ -613,23 +649,22 @@ struct Roots<'a: 'b, 'b> {
     stack: &'b mut [Value<'a>],
     interner: &'b mut Interner,
     roots: Ref<'b, Vec<GcPtr<Traverseable>>>,
-    rooted_values: Ref<'b, Vec<Value<'a>>>
+    rooted_values: Ref<'b, Vec<Value<'a>>>,
 }
-impl <'a, 'b> Traverseable for Roots<'a, 'b> {
+impl<'a, 'b> Traverseable for Roots<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
         for g in self.globals.borrow().iter() {
             g.traverse(gc);
         }
         self.stack.traverse(gc);
-        //Also need to check the interned string table
+        // Also need to check the interned string table
         self.interner.traverse(gc);
         self.roots.traverse(gc);
         self.rooted_values.traverse(gc);
     }
 }
 
-impl <'a> VM<'a> {
-    
+impl<'a> VM<'a> {
     pub fn new() -> VM<'a> {
         let vm = VM {
             globals: FixedVec::new(),
@@ -641,12 +676,11 @@ impl <'a> VM<'a> {
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new()),
             rooted_values: RefCell::new(Vec::new()),
-            macros: MacroEnv::new()
+            macros: MacroEnv::new(),
         };
         vm.add_types()
-            .unwrap();
-        ::primitives::load(&vm)
-            .unwrap();
+          .unwrap();
+        ::primitives::load(&vm).unwrap();
         vm.macros.insert(vm.intern("import"), ::import::Import::new());
         vm
     }
@@ -661,7 +695,12 @@ impl <'a> VM<'a> {
         Ok(())
     }
 
-    pub fn add_bytecode(&self, name: &str, typ: TcType, args: VMIndex, instructions: Vec<Instruction>) -> VMIndex {
+    pub fn add_bytecode(&self,
+                        name: &str,
+                        typ: TcType,
+                        args: VMIndex,
+                        instructions: Vec<Instruction>)
+                        -> VMIndex {
         let id = self.intern(name);
         let compiled_fn = CompiledFunction {
             args: args,
@@ -669,12 +708,16 @@ impl <'a> VM<'a> {
             typ: typ.clone(),
             instructions: instructions,
             inner_functions: vec![],
-            strings: vec![]
+            strings: vec![],
         };
         let f = self.new_function(compiled_fn);
         let closure = self.new_closure_and_collect(&mut self.stack.borrow_mut().values, f, &[]);
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
-        self.globals.push(Global { id: id, typ: typ, value: Cell::new(Closure(closure)) });
+        self.globals.push(Global {
+            id: id,
+            typ: typ,
+            value: Cell::new(Closure(closure)),
+        });
         self.globals.len() as VMIndex - 1
     }
 
@@ -683,7 +726,8 @@ impl <'a> VM<'a> {
     }
 
     pub fn pop(&self) -> Value<'a> {
-        self.stack.borrow_mut()
+        self.stack
+            .borrow_mut()
             .pop()
     }
 
@@ -698,7 +742,8 @@ impl <'a> VM<'a> {
 
     pub fn get_type<T: ?Sized + Any>(&self) -> &TcType {
         let id = TypeId::of::<T>();
-        self.typeids.get(&id)
+        self.typeids
+            .get(&id)
             .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call"))
     }
 
@@ -714,8 +759,7 @@ impl <'a> VM<'a> {
         frame.map(|mut frame| {
             if frame.len() > 0 {
                 frame.pop()
-            }
-            else {
+            } else {
                 Int(0)
             }
         })
@@ -730,31 +774,39 @@ impl <'a> VM<'a> {
         frame.map(|mut frame| {
             if frame.len() > 0 {
                 frame.pop()
-            }
-            else {
+            } else {
                 Int(0)
             }
         })
     }
 
-    pub fn extern_function(&self, name: &str, args: Vec<TcType>, return_type: TcType, f: Box<Fn(&VM<'a>) -> Status + 'static>) -> Result<(), Error> {
+    pub fn extern_function(&self,
+                           name: &str,
+                           args: Vec<TcType>,
+                           return_type: TcType,
+                           f: Box<Fn(&VM<'a>) -> Status + 'static>)
+                           -> Result<(), Error> {
         let num_args = args.len() as VMIndex;
         self.extern_function_io(name, num_args, Type::function(args, return_type), f)
     }
-    pub fn extern_function_io(&self, name: &str, num_args: VMIndex, typ: TcType, f: Box<Fn(&VM<'a>) -> Status + 'static>) -> Result<(), Error> {
+    pub fn extern_function_io(&self,
+                              name: &str,
+                              num_args: VMIndex,
+                              typ: TcType,
+                              f: Box<Fn(&VM<'a>) -> Status + 'static>)
+                              -> Result<(), Error> {
         let id = self.intern(name);
         if self.names.borrow().contains_key(&id) {
-            return Err(Error::Message(format!("{} is already defined", name)))
+            return Err(Error::Message(format!("{} is already defined", name)));
         }
         let global = Global {
             id: id,
             typ: typ,
-            value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(
-                ExternFunction {
-                    id: id,
-                    args: num_args,
-                    function: f
-                }))))
+            value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(ExternFunction {
+                id: id,
+                args: num_args,
+                function: f,
+            })))),
         };
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(global);
@@ -762,10 +814,11 @@ impl <'a> VM<'a> {
     }
 
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
-    where T: Pushable<'a> {
+        where T: Pushable<'a>
+    {
         let id = self.intern(name);
         if self.names.borrow().contains_key(&id) {
-            return Err(Error::Message(format!("{} is already defined", name)))
+            return Err(Error::Message(format!("{} is already defined", name)));
         }
         let (status, value) = {
             let mut stack = StackFrame::new(self.stack.borrow_mut(), 0, None);
@@ -790,8 +843,7 @@ impl <'a> VM<'a> {
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(&n) {
             Err(())
-        }
-        else {
+        } else {
             let id = TypeId::of::<T>();
             let typ = Type::data(ast::TypeConstructor::Data(n), Vec::new());
             try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
@@ -812,14 +864,19 @@ impl <'a> VM<'a> {
             type_infos: self.type_infos.borrow(),
             globals: &self.globals,
             names: self.names.borrow(),
-            io_arg: [ast::Generic { id: self.intern("a"), kind: Rc::new(ast::Kind::Star) }]
+            io_arg: [ast::Generic {
+                         id: self.intern("a"),
+                         kind: Rc::new(ast::Kind::Star),
+                     }],
         }
     }
 
     pub fn collect(&self) {
         let mut stack = self.stack.borrow_mut();
         self.with_roots(&mut stack.values, |gc, mut roots| {
-            unsafe { gc.collect(&mut roots); }
+            unsafe {
+                gc.collect(&mut roots);
+            }
         })
     }
 
@@ -827,42 +884,71 @@ impl <'a> VM<'a> {
         match v.downcast_ref::<T>().or_else(|| v.downcast_ref::<Box<T>>().map(|p| &**p)) {
             Some(ptr) => {
                 self.roots.borrow_mut().push(v.as_traverseable());
-                Some(Root { roots: &self.roots, ptr: ptr })
+                Some(Root {
+                    roots: &self.roots,
+                    ptr: ptr,
+                })
             }
-            None => None
+            None => None,
         }
     }
 
     pub fn root_string(&self, ptr: GcPtr<str>) -> RootStr {
         self.roots.borrow_mut().push(ptr.as_traverseable_string());
-        RootStr(Root { roots: &self.roots, ptr: &*ptr })
+        RootStr(Root {
+            roots: &self.roots,
+            ptr: &*ptr,
+        })
     }
 
     pub fn root_value<'vm>(&'vm self, value: Value<'a>) -> RootedValue<'a, 'vm> {
         self.rooted_values.borrow_mut().push(value);
-        RootedValue { vm: self, value: value }
+        RootedValue {
+            vm: self,
+            value: value,
+        }
     }
 
     pub fn new_data(&self, tag: VMTag, fields: &[Value<'a>]) -> Value<'a> {
-        Data(self.gc.borrow_mut().alloc(Def { tag: tag, elems: fields }))
+        Data(self.gc.borrow_mut().alloc(Def {
+            tag: tag,
+            elems: fields,
+        }))
     }
     pub fn new_def<D>(&self, def: D) -> GcPtr<D::Value>
-    where D: DataDef {
+        where D: DataDef
+    {
         self.gc.borrow_mut().alloc(def)
     }
 
-    pub fn new_data_and_collect(&self, stack: &mut [Value<'a>], tag: VMTag, fields: &mut [Value<'a>]) -> GcPtr<DataStruct<'a>> {
-       self.alloc(stack, Def { tag: tag, elems: fields })
+    pub fn new_data_and_collect(&self,
+                                stack: &mut [Value<'a>],
+                                tag: VMTag,
+                                fields: &mut [Value<'a>])
+                                -> GcPtr<DataStruct<'a>> {
+        self.alloc(stack,
+                   Def {
+                       tag: tag,
+                       elems: fields,
+                   })
     }
-    fn new_closure(&self, func: GcPtr<BytecodeFunction>, fields: &[Value<'a>]) -> GcPtr<ClosureData<'a>> {
+    fn new_closure(&self,
+                   func: GcPtr<BytecodeFunction>,
+                   fields: &[Value<'a>])
+                   -> GcPtr<ClosureData<'a>> {
         self.gc.borrow_mut().alloc(ClosureDataDef(func, fields))
     }
-    fn new_closure_and_collect(&self, stack: &mut [Value<'a>], func: GcPtr<BytecodeFunction>, fields: &[Value<'a>]) -> GcPtr<ClosureData<'a>> {
+    fn new_closure_and_collect(&self,
+                               stack: &mut [Value<'a>],
+                               func: GcPtr<BytecodeFunction>,
+                               fields: &[Value<'a>])
+                               -> GcPtr<ClosureData<'a>> {
         self.alloc(stack, ClosureDataDef(func, fields))
     }
 
     fn with_roots<F, R>(&self, stack: &mut [Value<'a>], f: F) -> R
-        where F: for<'b> FnOnce(&mut Gc, Roots<'a, 'b>) -> R {
+        where F: for<'b> FnOnce(&mut Gc, Roots<'a, 'b>) -> R
+    {
         let mut interner = self.interner.borrow_mut();
         let roots = Roots {
             globals: &self.globals,
@@ -876,27 +962,36 @@ impl <'a> VM<'a> {
     }
 
     pub fn alloc<T: ?Sized, D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<T>
-        where D: DataDef<Value=T> + Traverseable {
-        self.with_roots(stack, |gc, mut roots| {
-            unsafe { gc.alloc_and_collect(&mut roots, def) }
-        })
+        where D: DataDef<Value = T> + Traverseable
+    {
+        self.with_roots(stack,
+                        |gc, mut roots| unsafe { gc.alloc_and_collect(&mut roots, def) })
     }
 
-    pub fn call_function(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>>  {
+    pub fn call_function(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>> {
         debug!("Call function {:?}", global);
         match global.value.get() {
             Function(ptr) => {
                 let stack = StackFrame::frame(self.stack.borrow_mut(), args, None);
                 let stack = self.execute_function(stack, &ptr);
-                stack.map(|mut stack| { if stack.len() > 0 { stack.pop() } else { Int(0) } })
+                stack.map(|mut stack| {
+                    if stack.len() > 0 {
+                        stack.pop()
+                    } else {
+                        Int(0)
+                    }
+                })
             }
             Closure(closure) => self.call_bytecode(args, closure),
-            x => Err(Error::Message(format!("Tried to call a non function object: '{:?}'", x)))
+            x => Err(Error::Message(format!("Tried to call a non function object: '{:?}'", x))),
         }
     }
 
     ///Calls a module, allowed to to run IO expressions
-    pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData<'a>>) -> VMResult<Value<'a>> {
+    pub fn call_module(&self,
+                       typ: &TcType,
+                       closure: GcPtr<ClosureData<'a>>)
+                       -> VMResult<Value<'a>> {
         let value = try!(self.call_bytecode(0, closure));
         if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
             if id == "IO" {
@@ -916,16 +1011,26 @@ impl <'a> VM<'a> {
         Ok(value)
     }
 
-    pub fn call_bytecode(&self, args: VMIndex, closure: GcPtr<ClosureData<'a>>) -> VMResult<Value<'a>> {
+    pub fn call_bytecode(&self,
+                         args: VMIndex,
+                         closure: GcPtr<ClosureData<'a>>)
+                         -> VMResult<Value<'a>> {
         self.push(Closure(closure));
         let mut stack = StackFrame::frame(self.stack.borrow_mut(), args, Some(closure));
         stack = try!(self.execute(stack, &closure.function.instructions, &closure.function));
-        let x = if stack.len() > 0 { stack.pop() } else { Int(0) };
+        let x = if stack.len() > 0 {
+            stack.pop()
+        } else {
+            Int(0)
+        };
         Ok(x)
     }
 
-    fn execute_callable<'b>(&'b self, mut stack: StackFrame<'a, 'b>, function: &Callable<'a>, excess: bool)
-            -> Result<StackFrame<'a, 'b>, Error> {
+    fn execute_callable<'b>(&'b self,
+                            mut stack: StackFrame<'a, 'b>,
+                            function: &Callable<'a>,
+                            excess: bool)
+                            -> Result<StackFrame<'a, 'b>, Error> {
         match *function {
             Callable::Closure(closure) => {
                 stack = stack.enter_scope(closure.function.args, Some(closure));
@@ -933,13 +1038,16 @@ impl <'a> VM<'a> {
                 stack.stack.frames.last_mut().unwrap().excess = excess;
                 Ok(stack)
             }
-            Callable::Extern(ref ext) => self.execute_function(stack, ext)
+            Callable::Extern(ref ext) => self.execute_function(stack, ext),
         }
     }
 
-    fn execute_function<'b>(&'b self, mut stack: StackFrame<'a, 'b>, function: &ExternFunction<'a>) -> Result<StackFrame<'a, 'b>, Error> {
-        //Make sure that the stack is not borrowed during the external function call
-        //Necessary since we do not know what will happen during the function call
+    fn execute_function<'b>(&'b self,
+                            mut stack: StackFrame<'a, 'b>,
+                            function: &ExternFunction<'a>)
+                            -> Result<StackFrame<'a, 'b>, Error> {
+        // Make sure that the stack is not borrowed during the external function call
+        // Necessary since we do not know what will happen during the function call
         assert!(stack.len() >= function.args + 1);
         let function_index = stack.len() - function.args - 1;
         debug!("------- {} {:?}", function_index, &stack[..]);
@@ -947,7 +1055,10 @@ impl <'a> VM<'a> {
         let StackFrame { stack, frame } = stack;
         drop(stack);
         let status = (function.function)(self);
-        let mut stack = StackFrame { stack: self.stack.borrow_mut(), frame: frame };
+        let mut stack = StackFrame {
+            stack: self.stack.borrow_mut(),
+            frame: frame,
+        };
         stack = stack.exit_scope();
         let result = stack.pop();
         while stack.len() > function_index {
@@ -961,20 +1072,22 @@ impl <'a> VM<'a> {
             Status::Error => {
                 match stack.pop() {
                     String(s) => Err(Error::Message(s.to_string())),
-                    _ => Err(Error::Message("Unexpected panic in VM".to_string()))
+                    _ => Err(Error::Message("Unexpected panic in VM".to_string())),
                 }
             }
         }
     }
 
-    fn call_function_with_upvars<'b>(&'b self
-                                    , mut stack: StackFrame<'a, 'b>
-                                    , args: VMIndex
-                                    , required_args: VMIndex
-                                    , callable: Callable<'a>
-                                    ) -> Result<StackFrame<'a, 'b>, Error> {
-        debug!("cmp {} {} {:?} {:?}", args, required_args, callable,
-               { let function_index = stack.len() - 1 - args; &(*stack)[(function_index + 1) as usize..] });
+    fn call_function_with_upvars<'b>(&'b self,
+                                     mut stack: StackFrame<'a, 'b>,
+                                     args: VMIndex,
+                                     required_args: VMIndex,
+                                     callable: Callable<'a>)
+                                     -> Result<StackFrame<'a, 'b>, Error> {
+        debug!("cmp {} {} {:?} {:?}", args, required_args, callable, {
+            let function_index = stack.len() - 1 - args;
+            &(*stack)[(function_index + 1) as usize..]
+        });
         match args.cmp(&required_args) {
             Ordering::Equal => self.execute_callable(stack, &callable, false),
             Ordering::Less => {
@@ -985,7 +1098,7 @@ impl <'a> VM<'a> {
                     let def = PartialApplicationDataDef(callable, fields);
                     PartialApplication(self.alloc(pre_stack, def))
                 };
-                for _ in 0..(args+1) {
+                for _ in 0..(args + 1) {
                     stack.pop();
                 }
                 stack.push(app);
@@ -1002,8 +1115,8 @@ impl <'a> VM<'a> {
                 for _ in 0..excess_args {
                     stack.pop();
                 }
-                //Insert the excess args before the actual closure so it does not get
-                //collected
+                // Insert the excess args before the actual closure so it does not get
+                // collected
                 let offset = stack.len() - required_args - 1;
                 stack.insert_slice(offset, &[Cell::new(Data(d))]);
                 debug!("xxxxxx {:?}\n{:?}", &(*stack)[..], stack.stack.frames);
@@ -1012,9 +1125,14 @@ impl <'a> VM<'a> {
         }
     }
 
-    fn do_call<'b>(&'b self, mut stack: StackFrame<'a, 'b>, args: VMIndex) -> Result<StackFrame<'a, 'b>, Error> {
+    fn do_call<'b>(&'b self,
+                   mut stack: StackFrame<'a, 'b>,
+                   args: VMIndex)
+                   -> Result<StackFrame<'a, 'b>, Error> {
         let function_index = stack.len() - 1 - args;
-        debug!("Do call {:?} {:?}", stack[function_index], &(*stack)[(function_index + 1) as usize..]);
+        debug!("Do call {:?} {:?}",
+               stack[function_index],
+               &(*stack)[(function_index + 1) as usize..]);
         match stack[function_index].clone() {
             Function(ref f) => {
                 let callable = Callable::Extern(f.clone());
@@ -1030,39 +1148,53 @@ impl <'a> VM<'a> {
                 stack.insert_slice(offset, &app.arguments);
                 self.call_function_with_upvars(stack, total_args, app.function.args(), app.function)
             }
-            x => return Err(Error::Message(format!("Cannot call {:?}", x)))
+            x => return Err(Error::Message(format!("Cannot call {:?}", x))),
         }
     }
 
-    pub fn execute<'b>(&'b self, stack: StackFrame<'a, 'b>, instructions: &[Instruction], function: &BytecodeFunction) -> Result<StackFrame<'a, 'b>, Error> {
-        let  mut stack = try!(self.execute_(stack, 0, instructions, function));
+    pub fn execute<'b>(&'b self,
+                       stack: StackFrame<'a, 'b>,
+                       instructions: &[Instruction],
+                       function: &BytecodeFunction)
+                       -> Result<StackFrame<'a, 'b>, Error> {
+        let mut stack = try!(self.execute_(stack, 0, instructions, function));
         loop {
             let (closure, i) = match stack.frame.upvars {
                 None => break,
                 Some(closure) => {
-                    //Tail calls into extern functions at the top level will drop the last
-                    //stackframe so just return immedietly
+                    // Tail calls into extern functions at the top level will drop the last
+                    // stackframe so just return immedietly
                     if stack.stack.frames.len() == 0 {
-                        return Ok(stack)
+                        return Ok(stack);
                     }
                     (closure, stack.frame.instruction_index)
                 }
             };
             debug!("Continue with {:?}\nAt: {}/{}",
-                   closure.function.name, i, closure.function.instructions.len());
-            let new_stack = try!(self.execute_(stack, i, &closure.function.instructions, &closure.function));
-            debug!("Result {:?} {:?}", new_stack.frame.upvars, new_stack.stack.values);
+                   closure.function.name,
+                   i,
+                   closure.function.instructions.len());
+            let new_stack = try!(self.execute_(stack,
+                                               i,
+                                               &closure.function.instructions,
+                                               &closure.function));
+            debug!("Result {:?} {:?}",
+                   new_stack.frame.upvars,
+                   new_stack.stack.values);
             stack = new_stack;
         }
         Ok(stack)
     }
     fn execute_<'b>(&'b self,
-                        mut stack: StackFrame<'a, 'b>,
-                        mut index: usize,
-                        instructions: &[Instruction],
-                        function: &BytecodeFunction
-                       ) -> Result<StackFrame<'a, 'b>, Error> {
-        debug!(">>>\nEnter frame {:?}: {:?}\n{:?}", function.name, &stack[..], stack.frame);
+                    mut stack: StackFrame<'a, 'b>,
+                    mut index: usize,
+                    instructions: &[Instruction],
+                    function: &BytecodeFunction)
+                    -> Result<StackFrame<'a, 'b>, Error> {
+        debug!(">>>\nEnter frame {:?}: {:?}\n{:?}",
+               function.name,
+               &stack[..],
+               stack.frame);
         while let Some(&instr) = instructions.get(index) {
             debug_instruction(&stack, index, instr);
             match instr {
@@ -1098,7 +1230,7 @@ impl <'a> VM<'a> {
                                 }
                                 args += excess.fields.len() as VMIndex;
                             }
-                            _ => panic!("Expected excess args")
+                            _ => panic!("Expected excess args"),
                         }
                     }
                     stack = stack.exit_scope();
@@ -1117,7 +1249,7 @@ impl <'a> VM<'a> {
                     };
                     for _ in 0..args {
                         stack.pop();
-                    } 
+                    }
                     stack.push(Data(d));
                 }
                 GetField(i) => {
@@ -1126,13 +1258,22 @@ impl <'a> VM<'a> {
                             let v = data.fields[i as usize].get();
                             stack.push(v);
                         }
-                        x => return Err(Error::Message(format!("GetField on {:?}", x)))
+                        x => return Err(Error::Message(format!("GetField on {:?}", x))),
                     }
                 }
                 TestTag(tag) => {
                     let x = match *stack.top() {
-                        Data(ref data) => if data.tag == tag { 1 } else { 0 },
-                        _ => return Err(Error::Message("Op TestTag called on non data type".to_string()))
+                        Data(ref data) => {
+                            if data.tag == tag {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                        _ => {
+                            return Err(Error::Message("Op TestTag called on non data type"
+                                                          .to_string()))
+                        }
                     };
                     stack.push(Int(x));
                 }
@@ -1143,19 +1284,22 @@ impl <'a> VM<'a> {
                                 stack.push(field.clone());
                             }
                         }
-                        _ => return Err(Error::Message("Op Split called on non data type".to_string()))
+                        _ => {
+                            return Err(Error::Message("Op Split called on non data type"
+                                                          .to_string()))
+                        }
                     }
                 }
                 Jump(i) => {
                     index = i as usize;
-                    continue
+                    continue;
                 }
                 CJump(i) => {
                     match stack.pop() {
                         Int(0) => (),
                         _ => {
                             index = i as usize;
-                            continue
+                            continue;
                         }
                     }
                 }
@@ -1180,7 +1324,12 @@ impl <'a> VM<'a> {
                             let v = array.fields[index as usize].get();
                             stack.push(v);
                         }
-                        (x, y) => return Err(Error::Message(format!("Op GetIndex called on invalid types {:?} {:?}", x, y)))
+                        (x, y) => {
+                            return Err(Error::Message(format!("Op GetIndex called on invalid \
+                                                               types {:?} {:?}",
+                                                              x,
+                                                              y)))
+                        }
                     }
                 }
                 SetIndex => {
@@ -1191,7 +1340,12 @@ impl <'a> VM<'a> {
                         (Data(array), Int(index)) => {
                             array.fields[index as usize].set(value);
                         }
-                        (x, y) => return Err(Error::Message(format!("Op SetIndex called on invalid types {:?} {:?}", x, y)))
+                        (x, y) => {
+                            return Err(Error::Message(format!("Op SetIndex called on invalid \
+                                                               types {:?} {:?}",
+                                                              x,
+                                                              y)))
+                        }
                     }
                 }
                 MakeClosure(fi, n) => {
@@ -1208,10 +1362,12 @@ impl <'a> VM<'a> {
                 }
                 NewClosure(fi, n) => {
                     let closure = {
-                        //Use dummy variables until it is filled
+                        // Use dummy variables until it is filled
                         let mut args = [Int(0); 128];
                         let func = function.inner_functions[fi as usize];
-                        Closure(self.new_closure_and_collect(&mut stack.stack.values[..], func, &mut args[..n as usize]))
+                        Closure(self.new_closure_and_collect(&mut stack.stack.values[..],
+                                                             func,
+                                                             &mut args[..n as usize]))
                     };
                     stack.push(closure);
                 }
@@ -1224,7 +1380,7 @@ impl <'a> VM<'a> {
                             }
                             stack.pop();//Remove the closure
                         }
-                        x => panic!("Expected closure, got {:?}", x)
+                        x => panic!("Expected closure, got {:?}", x),
                     }
                 }
                 PushUpVar(i) => {
@@ -1234,31 +1390,62 @@ impl <'a> VM<'a> {
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
-                IntLT => binop_int(&mut stack, |l, r| if l < r { 1 } else { 0 }),
-                IntEQ => binop_int(&mut stack, |l, r| if l == r { 1 } else { 0 }),
+                IntLT => {
+                    binop_int(&mut stack, |l, r| {
+                        if l < r {
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                }
+                IntEQ => {
+                    binop_int(&mut stack, |l, r| {
+                        if l == r {
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                }
 
                 AddFloat => binop_float(&mut stack, |l, r| l + r),
                 SubtractFloat => binop_float(&mut stack, |l, r| l - r),
                 MultiplyFloat => binop_float(&mut stack, |l, r| l * r),
-                FloatLT => binop(&mut stack, |l, r| {
-                    match (l, r) {
-                        (Float(l), Float(r)) => Int(if l < r { 1 } else { 0 }),
-                        _ => panic!()
-                    }
-                }),
-                FloatEQ => binop(&mut stack, |l, r| {
-                    match (l, r) {
-                        (Float(l), Float(r)) => Int(if l == r { 1 } else { 0 }),
-                        _ => panic!()
-                    }
-                })
+                FloatLT => {
+                    binop(&mut stack, |l, r| {
+                        match (l, r) {
+                            (Float(l), Float(r)) => {
+                                Int(if l < r {
+                                    1
+                                } else {
+                                    0
+                                })
+                            }
+                            _ => panic!(),
+                        }
+                    })
+                }
+                FloatEQ => {
+                    binop(&mut stack, |l, r| {
+                        match (l, r) {
+                            (Float(l), Float(r)) => {
+                                Int(if l == r {
+                                    1
+                                } else {
+                                    0
+                                })
+                            }
+                            _ => panic!(),
+                        }
+                    })
+                }
             }
             index += 1;
         }
         if stack.len() != 0 {
             debug!("--> {:?}", stack.top());
-        }
-        else {
+        } else {
             debug!("--> ()");
         }
         let result = stack.pop();
@@ -1278,10 +1465,9 @@ impl <'a> VM<'a> {
                     stack = stack.exit_scope();
                     self.do_call(stack, excess.fields.len() as VMIndex)
                 }
-                x => panic!("Expected excess arguments found {:?}", x)
+                x => panic!("Expected excess arguments found {:?}", x),
             }
-        }
-        else {
+        } else {
             stack.push(result);
             Ok(stack.exit_scope())
         }
@@ -1290,39 +1476,45 @@ impl <'a> VM<'a> {
 
 #[inline]
 fn binop<'a, 'b, F>(stack: &mut StackFrame<'a, 'b>, f: F)
-    where F: FnOnce(Value<'a>, Value<'a>) -> Value<'a> {
+    where F: FnOnce(Value<'a>, Value<'a>) -> Value<'a>
+{
     let r = stack.pop();
     let l = stack.pop();
     stack.push(f(l, r));
 }
 #[inline]
 fn binop_int<F>(stack: &mut StackFrame, f: F)
-    where F: FnOnce(VMInt, VMInt) -> VMInt {
+    where F: FnOnce(VMInt, VMInt) -> VMInt
+{
     binop(stack, move |l, r| {
         match (l, r) {
             (Int(l), Int(r)) => Int(f(l, r)),
-            (l, r) => panic!("{:?} `intOp` {:?}", l, r)
+            (l, r) => panic!("{:?} `intOp` {:?}", l, r),
         }
     })
 }
 #[inline]
 fn binop_float<F>(stack: &mut StackFrame, f: F)
-    where F: FnOnce(f64, f64) -> f64 {
+    where F: FnOnce(f64, f64) -> f64
+{
     binop(stack, move |l, r| {
         match (l, r) {
             (Float(l), Float(r)) => Float(f(l, r)),
-            (l, r) => panic!("{:?} `floatOp` {:?}", l, r)
+            (l, r) => panic!("{:?} `floatOp` {:?}", l, r),
         }
     })
 }
 
 fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
-    debug!("{:?}: {:?} {:?}", index, instr, match instr {
-        Push(i) => stack.get(i as usize).cloned(),
-        NewClosure(..) => Some(Int(stack.len() as isize)),
-        MakeClosure(..) => Some(Int(stack.len() as isize)),
-        _ => None
-    });
+    debug!("{:?}: {:?} {:?}",
+           index,
+           instr,
+           match instr {
+               Push(i) => stack.get(i as usize).cloned(),
+               NewClosure(..) => Some(Int(stack.len() as isize)),
+               MakeClosure(..) => Some(Int(stack.len() as isize)),
+               _ => None,
+           });
 }
 
 fn macro_expand(vm: &VM, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Box<StdError>> {
@@ -1349,7 +1541,11 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>
     let value = try!(vm.call_module(&typ, closure));
     let id = vm.intern(name);
     vm.names.borrow_mut().insert(id, GlobalFn(vm.globals.len()));
-    vm.globals.push(Global { id: id, typ: typ, value: Cell::new(value) });
+    vm.globals.push(Global {
+        id: id,
+        typ: typ,
+        value: Cell::new(value),
+    });
     vm.type_infos.borrow_mut().extend(type_infos);
     Ok(())
 }
@@ -1372,7 +1568,9 @@ pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, Box<StdEr
     let mut gc = vm.gc.borrow_mut();
     Ok(try!(::parser::parse_tc(&mut gc, &mut interner, input)))
 }
-pub fn typecheck_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<(ast::LExpr<TcIdent>, TcType, TypeInfos), Box<StdError>> {
+pub fn typecheck_expr<'a>(vm: &VM<'a>,
+                          expr_str: &str)
+                          -> Result<(ast::LExpr<TcIdent>, TcType, TypeInfos), Box<StdError>> {
     let mut expr = try!(parse_expr(&expr_str, vm));
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
@@ -1404,7 +1602,7 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Box<StdErr
 pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a>> {
     let func = match vm.globals.find(|g| &*g.id == name) {
         Some((_, f)) => f,
-        None => return Err(Error::Message(format!("Undefined function {}", name)))
+        None => return Err(Error::Message(format!("Undefined function {}", name))),
     };
     vm.run_function(func)
 }
@@ -1419,8 +1617,7 @@ mod tests {
     use stack::StackFrame;
 
     fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
-        super::run_expr(vm, s)
-            .unwrap_or_else(|err| panic!("{}", err))
+        super::run_expr(vm, s).unwrap_or_else(|err| panic!("{}", err))
     }
 
     macro_rules! test_expr {
@@ -1443,7 +1640,7 @@ mod tests {
         }
     }
 
-test_expr!{ pass_function_value,
+    test_expr!{ pass_function_value,
 r"
 let lazy: () -> Int = \x -> 42 in
 let test: (() -> Int) -> Int = \f -> f () #Int+ 10
@@ -1452,7 +1649,7 @@ in test lazy
 Int(52)
 }
 
-test_expr!{ lambda,
+    test_expr!{ lambda,
 r"
 let y = 100 in
 let f = \x -> y #Int+ x #Int+ 1
@@ -1461,7 +1658,7 @@ in f(22)
 Int(123)
 }
 
-test_expr!{ add_operator,
+    test_expr!{ add_operator,
 r"
 let (+) = \x y -> x #Int+ y in 1 + 2 + 3
 ",
@@ -1470,8 +1667,7 @@ Int(6)
     #[test]
     fn record() {
         let _ = ::env_logger::init();
-        let text = 
-r"
+        let text = r"
 { x = 0, y = 1.0, z = {} }
 ";
         let mut vm = VM::new();
@@ -1483,8 +1679,7 @@ r"
     #[test]
     fn add_record() {
         let _ = ::env_logger::init();
-        let text = 
-r"
+        let text = r"
 type T = { x: Int, y: Int } in
 let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 add { x = 0, y = 1 } { x = 1, y = 1 }
@@ -1496,19 +1691,16 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
     #[test]
     fn script() {
         let _ = ::env_logger::init();
-        let text = 
-r"
+        let text = r"
 type T = { x: Int, y: Int } in
 let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 let sub = \l r -> { x = l.x #Int- r.x, y = l.y #Int- r.y } in
 { T, add, sub }
 ";
         let mut vm = VM::new();
-        load_script(&mut vm, "Vec", text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        load_script(&mut vm, "Vec", text).unwrap_or_else(|err| panic!("{}", err));
 
-let script =
-r#"
+        let script = r#"
 let { T, add, sub } = Vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
@@ -1518,8 +1710,7 @@ in add { x = 10, y = 5 } { x = 1, y = 2 }
     #[test]
     fn adt() {
         let _ = ::env_logger::init();
-        let text = 
-r"
+        let text = r"
 type Option a = | None | Some a
 in Some 1
 ";
@@ -1529,7 +1720,7 @@ in Some 1
     }
 
 
-test_expr!{ recursive_function,
+    test_expr!{ recursive_function,
 r"
 let fib x = if x #Int< 3
             then 1
@@ -1539,7 +1730,7 @@ in fib 7
 Int(13)
 }
 
-test_expr!{ mutually_recursive_function,
+    test_expr!{ mutually_recursive_function,
 r"
 let f x = if x #Int< 0
           then x
@@ -1550,7 +1741,7 @@ in g 3
 Int(-1)
 }
 
-test_expr!{ no_capture_self_function,
+    test_expr!{ no_capture_self_function,
 r"
 let x = 2 in
 let f y = x
@@ -1573,14 +1764,16 @@ Int(2)
                 assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
                 stack.insert_slice(1, &[]);
                 assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
-                stack.insert_slice(2, &[Cell::new(Int(4)), Cell::new(Int(5)), Cell::new(Int(6))]);
-                assert_eq!(&stack[..], [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
+                stack.insert_slice(2,
+                                   &[Cell::new(Int(4)), Cell::new(Int(5)), Cell::new(Int(6))]);
+                assert_eq!(&stack[..],
+                           [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
                 Ok(stack)
             })
         });
     }
 
-test_expr!{ partial_application,
+    test_expr!{ partial_application,
 r"
 let f x y = x #Int+ y in
 let g = f 10
@@ -1589,7 +1782,7 @@ in g 2 #Int+ g 3
 Int(25)
 }
 
-test_expr!{ partial_application2,
+    test_expr!{ partial_application2,
 r"
 let f x y z = x #Int+ y #Int+ z in
 let g = f 10 in
@@ -1599,7 +1792,7 @@ in h 2 #Int+ g 10 3
 Int(55)
 }
 
-test_expr!{ to_many_args_application,
+    test_expr!{ to_many_args_application,
 r"
 let f x = \y -> x #Int+ y in
 let g = f 20
@@ -1608,7 +1801,7 @@ in f 10 2 #Int+ g 3
 Int(35)
 }
 
-test_expr!{ to_many_args_partial_application_twice,
+    test_expr!{ to_many_args_partial_application_twice,
 r"
 let f x = \y z -> x #Int+ y #Int+ z in
 let g = f 20 5
@@ -1617,13 +1810,13 @@ in f 10 2 1 #Int+ g 2
 Int(40)
 }
 
-test_expr!{ print_int,
+    test_expr!{ print_int,
 r"
 io.print_int 123
 "
 }
 
-test_expr!{ no_io_eval,
+    test_expr!{ no_io_eval,
 r#"
 let x = io_bind (io.print_int 1) (\x -> error "NOOOOOOOO")
 in { x }
@@ -1633,8 +1826,7 @@ in { x }
     #[test]
     fn non_exhaustive_pattern() {
         let _ = ::env_logger::init();
-        let text = 
-r"
+        let text = r"
 type AB = | A | B in
 case A of
     | B -> True
@@ -1644,7 +1836,7 @@ case A of
         assert!(result.is_err());
     }
 
-test_expr!{ record_pattern,
+    test_expr!{ record_pattern,
 r#"
 case { x = 1, y = "abc" } of
     | { x, y = z } -> x #Int+ string.length z
@@ -1652,7 +1844,7 @@ case { x = 1, y = "abc" } of
 Int(4)
 }
 
-test_expr!{ let_record_pattern,
+    test_expr!{ let_record_pattern,
 r#"
 let (+) x y = x #Int+ y
 in
@@ -1664,7 +1856,7 @@ in x + string.length z
 Int(13)
 }
 
-test_expr!{ partial_record_pattern,
+    test_expr!{ partial_record_pattern,
 r#"
 type A = { x: Int, y: Float } in
 let x = { x = 1, y = 2.0 }
@@ -1674,7 +1866,7 @@ in case x of
 Float(2.0)
 }
 
-test_expr!{ record_let_adjust,
+    test_expr!{ record_let_adjust,
 r#"
 let x = \z -> let { x, y } = { x = 1, y = 2 } in z in
 let a = 3
@@ -1683,7 +1875,7 @@ in a
 Int(3)
 }
 
-test_expr!{ unit_expr,
+    test_expr!{ unit_expr,
 r#"
 let x = ()
 and y = 1
@@ -1692,23 +1884,23 @@ in y
 Int(1)
 }
 
-test_expr!{ let_not_in_tail_position,
+    test_expr!{ let_not_in_tail_position,
 r#"
 1 #Int+ let x = 2 in x
 "#,
 Int(3)
 }
 
-test_expr!{ module_function,
+    test_expr!{ module_function,
 r#"let x = string.length "test" in x"#,
 Int(4)
 }
 
-test_expr!{ io_print,
+    test_expr!{ io_print,
 r#"io.print "123" "#
 }
 
-test_expr!{ array,
+    test_expr!{ array,
 r#"
 let arr = [1,2,3]
 in array.index arr 0 #Int== 1
@@ -1720,14 +1912,13 @@ Int(1)
     #[test]
     fn run_expr_int() {
         let _ = ::env_logger::init();
-        let text = 
-r#"io.run_expr "123" "#;
+        let text = r#"io.run_expr "123" "#;
         let mut vm = VM::new();
         let result = run_expr(&mut vm, text);
         assert_eq!(result, Value::String(vm.gc.borrow_mut().alloc("123")));
     }
 
-test_expr!{ run_expr_io,
+    test_expr!{ run_expr_io,
 r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
 Int(100)
 }
@@ -1747,15 +1938,12 @@ Int(100)
         let mut vm = VM::new();
         let mut text = String::new();
         File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        load_script(&mut vm, "prelude", &text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        load_script(&mut vm, "prelude", &text).unwrap_or_else(|err| panic!("{}", err));
         text.clear();
         File::open("../std/map.hs").unwrap().read_to_string(&mut text).unwrap();
-        load_script(&mut vm, "map", &text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        load_script(&mut vm, "map", &text).unwrap_or_else(|err| panic!("{}", err));
 
-let text =
-r#"
+        let text = r#"
 let { singleton, (++) } = map.make prelude.ord_String
 in singleton "test" 1 ++ singleton "asd" 2
 "#;
@@ -1768,11 +1956,9 @@ in singleton "test" 1 ++ singleton "asd" 2
         let mut vm = VM::new();
         let mut text = String::new();
         File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        load_script(&mut vm, "prelude", &text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        load_script(&mut vm, "prelude", &text).unwrap_or_else(|err| panic!("{}", err));
         text.clear();
         File::open("../std/state.hs").unwrap().read_to_string(&mut text).unwrap();
         run_expr(&mut vm, &text);
     }
 }
-
