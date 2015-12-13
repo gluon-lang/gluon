@@ -242,7 +242,7 @@ pub type StringErrors = Errors<ast::Located<TypeError>>;
 impl <'a> kindcheck::KindEnv for Typecheck<'a> {
     fn find_kind(&self, type_name: InternedStr) -> Option<Rc<Kind>> {
         self.stack_types.find(&type_name)
-            .map(|&(_, ref args, ref typ)| {
+            .map(|&(_, ref args, _)| {
                 let mut kind = ast::Kind::star();
                 for arg in args.iter().rev() {
                     kind = Rc::new(Kind::Function(arg.kind.clone(), kind));
@@ -818,7 +818,7 @@ impl <'a> Typecheck<'a> {
                 let mut match_type = self.remove_alias(match_type);
                 let mut types = Vec::new();
                 let new_type = match *match_type {
-                    Type::Record { types: ref associated, fields: ref expected_fields } => {
+                    Type::Record { fields: ref expected_fields, .. } => {
                         for pattern_field in fields {
                             let expected_field = try!(expected_fields.iter()
                                 .find(|expected_field| pattern_field.0 == expected_field.name)
@@ -852,7 +852,7 @@ impl <'a> Typecheck<'a> {
                         actual_type = self.inst.instantiate_(&actual_type);
                         try!(self.unify(&match_type, typ));
                         match *actual_type {
-                            Type::Record { types: ref associated, fields: ref record_types } => {
+                            Type::Record { fields: ref record_types, .. } => {
                                 types.extend(record_types.iter().map(|f| f.typ.clone()));
                             }
                             _ => panic!("Expected record found {}", match_type)
@@ -983,8 +983,8 @@ impl <'a> Typecheck<'a> {
                 }
                 Ok(())
             }
-            (&Type::Record { types: ref l_types, fields: ref l_args },
-             &Type::Record { types: ref r_types, fields: ref r_args })
+            (&Type::Record { fields: ref l_args, .. },
+             &Type::Record { fields: ref r_args, .. })
                 if l_args.len() == r_args.len() => {
 
                 for (l, r) in l_args.iter().zip(r_args.iter()) {
@@ -1868,6 +1868,22 @@ in x
 "#;
         let result = typecheck(text);
         assert_err!(result, UndefinedType(..));
+    }
+
+    #[test]
+    fn record_type_out_of_scope() {
+        let _ = ::env_logger::init();
+        let text = 
+r#"
+let test = 
+    type Test = { x: Int }
+    in let y: Test = { x = 0 }
+    in y
+in case test of
+   | { x } -> x
+"#;
+        let result = typecheck(text);
+        assert_err!(result, Unification(..));
     }
 
     #[test]

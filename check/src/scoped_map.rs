@@ -147,8 +147,16 @@ impl <'a, K, V> Iterator for Iter<'a, K, V>
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<(&'a K, &'a V)> {
-        self.iter.next()
-            .map(|(k, vs)| (k, vs.last().unwrap()))
+        loop {
+            match self.iter.next() {
+                Some((k, vs)) => {
+                    if let Some(v) = vs.last() {
+                        return Some((k, v));
+                    }
+                }
+                None => return None
+            }
+        }
     }
 }
 
