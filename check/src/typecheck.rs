@@ -153,78 +153,32 @@ impl Substitutable for TcType {
     }
 }
 
-#[derive(Debug)]
-pub struct TypeInfos {
-    pub id_to_type: HashMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
-    pub type_to_id: HashMap<TcType, TcType>,
-}
-
-impl kindcheck::KindEnv for TypeInfos {
-    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<Kind>> {
-        self.id_to_type
-            .get(&type_name)
-            .and_then(|tup| self.type_to_id.get(&tup.1))
-            .map(|typ| typ.kind())
-    }
-}
-
-impl TypeEnv for TypeInfos {
-    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
-        self.id_to_type
-            .iter()
-            .filter_map(|(_, &(_, ref typ))| {
-                match **typ {
-                    Type::Variants(ref variants) => variants.iter().find(|v| v.0 == *id),
-                    _ => None,
-                }
-            })
-            .next()
-            .map(|x| &x.1)
-    }
-
-    fn find_type_info(&self,
-                      id: &InternedStr)
-                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
-        self.id_to_type
-            .get(id)
-            .map(|&(ref args, ref typ)| (&args[..], Some(typ)))
-    }
-    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
-        self.id_to_type
-            .iter()
-            .find(|&(_, &(_, ref typ))| {
-                match **typ {
-                    Type::Record { fields: ref record_fields, .. } => {
-                        fields.iter().all(|&name| record_fields.iter().any(|f| f.name == name))
-                    }
-                    _ => false,
-                }
-            })
-            .and_then(|t| self.type_to_id.get(&(t.1).1).map(|id_type| (id_type, &(t.1).1)))
-    }
-}
-
-impl TypeInfos {
-    pub fn new() -> TypeInfos {
-        TypeInfos {
-            id_to_type: HashMap::new(),
-            type_to_id: HashMap::new(),
-        }
-    }
-
-    pub fn extend(&mut self, other: TypeInfos) {
-        let TypeInfos { id_to_type, type_to_id } = other;
-        self.id_to_type.extend(id_to_type);
-        self.type_to_id.extend(type_to_id);
-    }
-}
-
 pub trait TypeEnv: kindcheck::KindEnv {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType>;
     fn find_type_info(&self,
                       id: &InternedStr)
                       -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)>;
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)>;
+}
+
+impl kindcheck::KindEnv for () {
+    fn find_kind(&self, _type_name: InternedStr) -> Option<Rc<Kind>> {
+        None
+    }
+}
+
+impl TypeEnv for () {
+    fn find_type(&self, _id: &InternedStr) -> Option<&TcType> {
+        None
+    }
+    fn find_type_info(&self,
+                      _id: &InternedStr)
+                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
+        None
+    }
+    fn find_record(&self, _fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+        None
+    }
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
@@ -265,7 +219,6 @@ pub struct Typecheck<'a> {
     environment: Option<&'a (TypeEnv + 'a)>,
     interner: &'a mut Interner,
     gc: &'a mut Gc,
-    pub type_infos: TypeInfos,
     stack: ScopedMap<InternedStr, TcType>,
     stack_types: ScopedMap<InternedStr, (TcType, Vec<ast::Generic<InternedStr>>, TcType)>,
     inst: Instantiator,
@@ -293,13 +246,9 @@ impl<'a> TypeEnv for Typecheck<'a> {
     fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
         let stack = &self.stack;
         let environment = &self.environment;
-        let type_infos = &self.type_infos;
         match stack.find(id) {
             Some(x) => Some(x),
-            None => {
-                type_infos.find_type(id)
-                          .or_else(|| environment.and_then(|e| e.find_type(id)))
-            }
+            None => environment.and_then(|e| e.find_type(id)),
         }
     }
     fn find_type_info(&self,
@@ -308,7 +257,6 @@ impl<'a> TypeEnv for Typecheck<'a> {
         self.stack_types
             .find(id)
             .map(|&(_, ref generics, ref typ)| (&generics[..], Some(typ)))
-            .or_else(|| self.type_infos.find_type_info(id))
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
     }
     fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
@@ -333,7 +281,6 @@ impl<'a> Typecheck<'a> {
             environment: None,
             interner: interner,
             gc: gc,
-            type_infos: TypeInfos::new(),
             stack: ScopedMap::new(),
             stack_types: ScopedMap::new(),
             inst: Instantiator::new(),
@@ -345,13 +292,9 @@ impl<'a> Typecheck<'a> {
         let t: Option<&TcType> = {
             let stack = &self.stack;
             let environment = &self.environment;
-            let type_infos = &self.type_infos;
             match stack.find(id) {
                 Some(x) => Some(x),
-                None => {
-                    type_infos.find_type(id)
-                              .or_else(|| environment.and_then(|e| e.find_type(id)))
-                }
+                None => environment.and_then(|e| e.find_type(id)),
             }
         };
         match t {
@@ -811,7 +754,6 @@ impl<'a> Typecheck<'a> {
                     match **name {
                         Type::Data(ast::TypeConstructor::Data(id), ref args) => {
                             let generic_args = extract_generics(args);
-                            self.type_infos.type_to_id.insert(typ.clone(), name.clone());
                             self.stack_type(id, name.clone(), generic_args, typ.clone());
                         }
                         _ => panic!("ICE: Unexpected lhs of type binding {}", name),

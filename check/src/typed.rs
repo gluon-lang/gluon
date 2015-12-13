@@ -2,14 +2,14 @@ use base::ast;
 use base::ast::{ASTType, Type};
 use base::interner::InternedStr;
 
-use typecheck::{TcType, TypeEnv, TypeInfos, instantiate};
+use typecheck::{TcType, TypeEnv, instantiate};
 
 ///Trait which abstracts over things that have a type.
 ///It is not guaranteed that the correct type is returned until after typechecking
 pub trait Typed {
     type Id;
     fn type_of(&self) -> ASTType<Self::Id> {
-        self.env_type_of(&TypeInfos::new())
+        self.env_type_of(&())
     }
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Self::Id>;
 }

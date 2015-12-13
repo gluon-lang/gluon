@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::slice;
 use base::ast;
 use base::ast::{Type, ASTType};
-use check::typecheck::{Typecheck, TypeEnv, TypeInfos, TcIdent, TcType};
+use check::typecheck::{Typecheck, TypeEnv, TcIdent, TcType};
 use check::kindcheck::KindEnv;
 use check::macros::{MacroEnv, MacroExpander};
 use check::Typed;
@@ -1524,17 +1524,17 @@ fn macro_expand(vm: &VM, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Box<StdEr
 }
 
 pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>> {
-    let (type_infos, function, typ) = {
-        let (expr, typ, type_infos) = try!(typecheck_expr(vm, input));
+    let (function, typ) = {
+        let (expr, typ) = try!(typecheck_expr(vm, input));
         let mut function = {
-            let env = (vm.env(), &type_infos);
+            let env = vm.env();
             let mut interner = vm.interner.borrow_mut();
             let mut gc = vm.gc.borrow_mut();
             let mut compiler = Compiler::new(&env, &mut interner, &mut gc);
             compiler.compile_expr(&expr)
         };
         function.id = vm.interner.borrow_mut().intern(&mut vm.gc.borrow_mut(), name);
-        (type_infos, function, typ)
+        (function, typ)
     };
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let closure = vm.new_closure(function, &[]);
@@ -1546,7 +1546,6 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>
         typ: typ,
         value: Cell::new(value),
     });
-    vm.type_infos.borrow_mut().extend(type_infos);
     Ok(())
 }
 
@@ -1570,7 +1569,7 @@ pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, Box<StdEr
 }
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           expr_str: &str)
-                          -> Result<(ast::LExpr<TcIdent>, TcType, TypeInfos), Box<StdError>> {
+                          -> Result<(ast::LExpr<TcIdent>, TcType), Box<StdError>> {
     let mut expr = try!(parse_expr(&expr_str, vm));
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
@@ -1579,13 +1578,13 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
     let mut tc = Typecheck::new(&mut interner, &mut gc);
     tc.add_environment(&env);
     let typ = try!(tc.typecheck_expr(&mut expr));
-    Ok((expr, typ, tc.type_infos))
+    Ok((expr, typ))
 }
 
 pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Box<StdError>> {
     let mut function = {
-        let (expr, _, type_infos) = try!(typecheck_expr(vm, expr_str));
-        let env = (vm.env(), &type_infos);
+        let (expr, _) = try!(typecheck_expr(vm, expr_str));
+        let env = vm.env();
         let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
         let mut compiler = Compiler::new(&env, &mut interner, &mut gc);

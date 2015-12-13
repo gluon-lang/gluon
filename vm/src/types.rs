@@ -1,3 +1,9 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+use base::interner::InternedStr;
+use base::ast;
+use check::kindcheck::KindEnv;
+use check::typecheck::{TypeEnv, TcType, Type};
 
 pub use self::Instruction::*;
 
@@ -81,5 +87,71 @@ impl Instruction {
             FloatLT |
             FloatEQ => -1,
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct TypeInfos {
+    pub id_to_type: HashMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
+    pub type_to_id: HashMap<TcType, TcType>,
+}
+
+impl KindEnv for TypeInfos {
+    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<ast::Kind>> {
+        self.id_to_type
+            .get(&type_name)
+            .and_then(|tup| self.type_to_id.get(&tup.1))
+            .map(|typ| typ.kind())
+    }
+}
+
+impl TypeEnv for TypeInfos {
+    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+        self.id_to_type
+            .iter()
+            .filter_map(|(_, &(_, ref typ))| {
+                match **typ {
+                    Type::Variants(ref variants) => variants.iter().find(|v| v.0 == *id),
+                    _ => None,
+                }
+            })
+            .next()
+            .map(|x| &x.1)
+    }
+
+    fn find_type_info(&self,
+                      id: &InternedStr)
+                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
+        self.id_to_type
+            .get(id)
+            .map(|&(ref args, ref typ)| (&args[..], Some(typ)))
+    }
+    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+        self.id_to_type
+            .iter()
+            .find(|&(_, &(_, ref typ))| {
+                match **typ {
+                    Type::Record { fields: ref record_fields, .. } => {
+                        fields.iter().all(|&name| record_fields.iter().any(|f| f.name == name))
+                    }
+                    _ => false,
+                }
+            })
+            .and_then(|t| self.type_to_id.get(&(t.1).1).map(|id_type| (id_type, &(t.1).1)))
+    }
+}
+
+impl TypeInfos {
+    pub fn new() -> TypeInfos {
+        TypeInfos {
+            id_to_type: HashMap::new(),
+            type_to_id: HashMap::new(),
+        }
+    }
+
+    pub fn extend(&mut self, other: TypeInfos) {
+        let TypeInfos { id_to_type, type_to_id } = other;
+        self.id_to_type.extend(id_to_type);
+        self.type_to_id.extend(type_to_id);
     }
 }

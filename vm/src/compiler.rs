@@ -3,7 +3,7 @@ use base::interner::*;
 use base::gc::Gc;
 use base::ast;
 use base::ast::{LExpr, Expr, Integer, Float, String, Bool};
-use check::typecheck::{TcIdent, TcType, Type, TypeInfos, TypeEnv};
+use check::typecheck::{TcIdent, TcType, Type, TypeEnv};
 use check::scoped_map::ScopedMap;
 use check::Typed;
 use types::*;
