@@ -35,8 +35,6 @@ struct FunctionEnv {
     inner_functions: Vec<CompiledFunction>,
     strings: Vec<InternedStr>,
     stack: Vec<(VMIndex, InternedStr)>,
-    stack_constructors: Vec<(TcType, InternedStr)>,
-    stack_types: ScopedMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
     stack_size: VMIndex,
 }
 
@@ -57,41 +55,20 @@ impl DerefMut for FunctionEnvs {
     }
 }
 
-impl TypeEnv for FunctionEnvs {
-    fn find_type(&self, _id: &InternedStr) -> Option<&TcType> {
-        None
-    }
-    fn find_type_info(&self,
-                      id: &InternedStr)
-                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
-        self.envs
-            .iter()
-            .flat_map(|env| {
-                env.stack_types.find(&id).map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
-            })
-            .next()
-    }
-    fn find_record(&self, _fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
-        None
-    }
-}
-
-impl ::check::kindcheck::KindEnv for FunctionEnvs {
-    fn find_kind(&self, _type_name: InternedStr) -> Option<::std::rc::Rc<::base::ast::Kind>> {
-        None
-    }
-}
-
 impl FunctionEnvs {
     fn new() -> FunctionEnvs {
         FunctionEnvs { envs: vec![FunctionEnv::new()] }
     }
 
-    fn start_function(&mut self) {
+    fn start_function(&mut self, compiler: &mut Compiler) {
+        compiler.stack_types.enter_scope();
+        compiler.stack_constructors.enter_scope();
         self.envs.push(FunctionEnv::new());
     }
 
-    fn end_function(&mut self) -> FunctionEnv {
+    fn end_function(&mut self, compiler: &mut Compiler) -> FunctionEnv {
+        compiler.stack_types.exit_scope();
+        compiler.stack_constructors.exit_scope();
         self.envs.pop().expect("FunctionEnv in scope")
     }
 }
@@ -104,8 +81,6 @@ impl FunctionEnv {
             inner_functions: Vec::new(),
             strings: Vec::new(),
             stack: Vec::new(),
-            stack_constructors: Vec::new(),
-            stack_types: ScopedMap::new(),
             stack_size: 0,
         }
     }
@@ -161,7 +136,7 @@ impl FunctionEnv {
         debug!("Pop var: {:?}", x);
     }
 
-    fn pop_pattern(&mut self, typ: &TcType, pattern: &ast::Pattern<TcIdent>) -> VMIndex {
+    fn pop_pattern(&mut self, pattern: &ast::Pattern<TcIdent>) -> VMIndex {
         match *pattern {
             ast::Pattern::Constructor(_, ref args) => {
                 for _ in 0..args.len() {
@@ -169,13 +144,10 @@ impl FunctionEnv {
                 }
                 args.len() as VMIndex
             }
-            ast::Pattern::Record { ref types, ref fields, .. } => {
+            ast::Pattern::Record { ref fields, .. } => {
                 for _ in fields {
                     self.pop_var();
                 }
-                with_pattern_types(types, typ, |_, _, _| {
-                    self.stack_constructors.pop();
-                });
                 fields.len() as VMIndex
             }
             ast::Pattern::Identifier(_) => {
@@ -286,6 +258,30 @@ pub struct Compiler<'a> {
     // Stack which holds indexes for where each closure starts its stack variables
     interner: &'a mut Interner,
     gc: &'a mut Gc,
+    stack_constructors: ScopedMap<InternedStr, TcType>,
+    stack_types: ScopedMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
+}
+
+impl <'a> ::check::kindcheck::KindEnv for Compiler<'a> {
+    fn find_kind(&self, _type_name: InternedStr) -> Option<::std::rc::Rc<::base::ast::Kind>> {
+        None
+    }
+}
+
+impl <'a> TypeEnv for Compiler<'a> {
+    fn find_type(&self, _id: &InternedStr) -> Option<&TcType> {
+        None
+    }
+    fn find_type_info(&self,
+                      id: &InternedStr)
+                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
+        self.stack_types
+            .find(id)
+            .map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
+    }
+    fn find_record(&self, _fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+        None
+    }
 }
 
 impl<'a> Compiler<'a> {
@@ -297,6 +293,8 @@ impl<'a> Compiler<'a> {
             globals: globals,
             interner: interner,
             gc: gc,
+            stack_constructors: ScopedMap::new(),
+            stack_types: ScopedMap::new(),
         }
     }
 
@@ -305,10 +303,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn find(&self, id: InternedStr, current: &mut FunctionEnvs) -> Option<Variable> {
-        current.envs
-               .iter()
-               .flat_map(|env| env.stack_constructors.iter())
-               .filter_map(|&(ref typ, _)| {
+        self.stack_constructors.iter()
+               .filter_map(|(_, typ)| {
                    match **typ {
                        Type::Variants(ref variants) => {
                            variants.iter()
@@ -348,26 +344,16 @@ impl<'a> Compiler<'a> {
                .or_else(|| self.globals.find_var(&id))
     }
 
-    fn find_type_info<'s>(&'s self,
-                          function: &'s mut FunctionEnvs,
-                          id: InternedStr)
-                          -> Option<(&'s [ast::Generic<InternedStr>], Option<&'s TcType>)> {
-        function.find_type_info(&id)
-                .or_else(|| self.globals.find_type_info(&id))
-    }
-
     fn find_field(&self,
-                  function: &mut FunctionEnvs,
                   struct_: &ast::TypeConstructor<InternedStr>,
                   field: &InternedStr)
                   -> Option<VMIndex> {
         match *struct_ {
             ast::TypeConstructor::Data(ref struct_) => {
-                function.envs
+                self.stack_constructors
                         .iter()
-                        .flat_map(|env| env.stack_constructors.iter())
-                        .find(|&&(_, name)| name == *struct_)
-                        .and_then(|&(ref typ, _)| {
+                        .find(|&(name, _)| name == struct_)
+                        .and_then(|(_, typ)| {
                             match **typ {
                                 Type::Record { ref fields, ..} => {
                                     fields.iter()
@@ -385,16 +371,14 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self,
-                function: &mut FunctionEnvs,
                 enum_: &ast::TypeConstructor<InternedStr>,
                 constructor: &InternedStr)
                 -> Option<VMTag> {
         match *enum_ {
             ast::TypeConstructor::Data(ref enum_) => {
-                function.envs
+                self.stack_constructors
                         .iter()
-                        .flat_map(|env| env.stack_constructors.iter())
-                        .filter_map(|&(ref typ, _)| {
+                        .filter_map(|(_, typ)| {
                             match **typ {
                                 Type::Variants(ref variants) => {
                                     variants.iter()
@@ -417,7 +401,7 @@ impl<'a> Compiler<'a> {
     pub fn compile_expr(&mut self, expr: &CExpr) -> CompiledFunction {
         let mut env = FunctionEnvs::new();
         self.compile(expr, &mut env, true);
-        let FunctionEnv { instructions, inner_functions, strings, .. } = env.end_function();
+        let FunctionEnv { instructions, inner_functions, strings, .. } = env.end_function(self);
         CompiledFunction {
             args: 0,
             id: self.intern(""),
@@ -513,6 +497,7 @@ impl<'a> Compiler<'a> {
                 }
             }
             Expr::Let(ref bindings, ref body) => {
+                self.stack_constructors.enter_scope();
                 let stack_start = function.stack_size;
                 // Index where the instruction to create the first closure should be at
                 let first_index = function.instructions.len();
@@ -549,16 +534,16 @@ impl<'a> Compiler<'a> {
                         function.inner_functions.push(cf);
                     } else {
                         self.compile(&bind.expression, function, false);
-                        let typ = bind.expression.env_type_of(&(self.globals, &*function));
+                        let typ = bind.expression.env_type_of(self);
                         self.compile_let_pattern(&bind.name, &typ, function);
                     }
                 }
                 self.compile(&body, function, tail_position);
                 let mut count = 0;
                 for binding in bindings {
-                    let t = binding.expression.env_type_of(&(self.globals, &*function));
-                    count += function.pop_pattern(&t, &binding.name);
+                    count += function.pop_pattern(&binding.name);
                 }
+                self.stack_constructors.exit_scope();
                 function.emit(Slide(count));
             }
             Expr::Call(ref func, ref args) => {
@@ -580,12 +565,12 @@ impl<'a> Compiler<'a> {
             Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function, tail_position);
                 debug!("{:?} {:?}", expr, field);
-                let typ = expr.env_type_of(&(self.globals, &*function));
+                let typ = expr.env_type_of(self);
                 let typ = typ.inner_app();
                 debug!("FieldAccess {}", typ);
                 let field_index = match *typ {
                                       Type::Data(ref id, _) => {
-                                          self.find_field(function, id, field.id())
+                                          self.find_field(id, field.id())
                                       }
                                       Type::Record { ref fields, .. } => {
                                           fields.iter()
@@ -601,7 +586,7 @@ impl<'a> Compiler<'a> {
                 self.compile(&**expr, function, false);
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
-                let typ = expr.env_type_of(&(self.globals, &*function));
+                let typ = expr.env_type_of(self);
                 let typename = match *typ {
                     Type::Data(ref id, _) => Some(id),
                     _ => None,
@@ -611,7 +596,7 @@ impl<'a> Compiler<'a> {
                     match alt.pattern {
                         ast::Pattern::Constructor(ref id, _) => {
                             let typename = typename.expect("typename");
-                            let tag = self.find_tag(function, typename, id.id())
+                            let tag = self.find_tag(typename, id.id())
                                           .unwrap_or_else(|| {
                                               panic!("Could not find tag for {}::{}",
                                                      typename,
@@ -643,6 +628,7 @@ impl<'a> Compiler<'a> {
                     function.stack_size -= 1;
                 }
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
+                    self.stack_constructors.enter_scope();
                     match alt.pattern {
                         ast::Pattern::Constructor(_, ref args) => {
                             function.instructions[start_index] =
@@ -653,7 +639,7 @@ impl<'a> Compiler<'a> {
                             }
                         }
                         ast::Pattern::Record { .. } => {
-                            let typ = &expr.env_type_of(&(self.globals, &*function));
+                            let typ = &expr.env_type_of(self);
                             self.compile_let_pattern(&alt.pattern, typ, function);
                         }
                         ast::Pattern::Identifier(ref id) => {
@@ -664,8 +650,8 @@ impl<'a> Compiler<'a> {
                     }
                     self.compile(&alt.expression, function, tail_position);
                     end_jumps.push(function.instructions.len());
-                    let t = expr.env_type_of(&(self.globals, &*function));
-                    let count = function.pop_pattern(&t, &alt.pattern);
+                    let count = function.pop_pattern(&alt.pattern);
+                    self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
                     function.emit(Jump(0));
                 }
@@ -698,8 +684,8 @@ impl<'a> Compiler<'a> {
                     if let ast::Type::Data(ast::TypeConstructor::Data(name), ref args) =
                            *type_binding.name {
                         let generic_args = extract_generics(args);
-                        function.stack_types.insert(name, (generic_args, type_binding.typ.clone()));
-                        function.stack_constructors.push((type_binding.typ.clone(), name));
+                        self.stack_types.insert(name, (generic_args, type_binding.typ.clone()));
+                        self.stack_constructors.insert(name, type_binding.typ.clone());
                     }
                 }
                 self.compile(&**expr, function, tail_position)
@@ -733,16 +719,16 @@ impl<'a> Compiler<'a> {
             ast::Pattern::Record { ref types, ref fields } => {
                 let mut typ = typ.clone();
                 if let Type::Data(ast::TypeConstructor::Data(id), _) = *typ {
-                    typ = self.find_type_info(function, id)
+                    typ = self.find_type_info(&id)
                               .and_then(|(_, typ)| typ.cloned())
-                              .unwrap_or(typ.clone());
+                              .unwrap_or(typ);
                 }
                 // Insert all variant constructor into scope
                 with_pattern_types(types, &typ, |name, name_type, typ| {
                     if let ast::Type::Data(_, ref args) = **name_type {
                         let generic_args = extract_generics(args);
-                        function.stack_types.insert(name, (generic_args, typ.clone()));
-                        function.stack_constructors.push((typ.clone(), name));
+                        self.stack_types.insert(name, (generic_args, typ.clone()));
+                        self.stack_constructors.insert(name, typ.clone());
                     }
                 });
                 match *typ {
@@ -769,7 +755,7 @@ impl<'a> Compiler<'a> {
                       body: &LExpr<TcIdent>,
                       function: &mut FunctionEnvs)
                       -> (VMIndex, VMIndex, CompiledFunction) {
-        function.start_function();
+        function.start_function(self);
         for arg in arguments {
             function.push_stack_var(*arg.id());
         }
@@ -780,7 +766,7 @@ impl<'a> Compiler<'a> {
         }
         // Insert all free variables into the above globals free variables
         // if they arent in that lambdas scope
-        let f = function.end_function();
+        let f = function.end_function(self);
         for &var in f.free_vars.iter() {
             match self.find(var, function).expect("free_vars: find") {
                 Stack(index) => function.emit(Push(index)),
