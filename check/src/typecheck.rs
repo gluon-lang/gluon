@@ -541,6 +541,7 @@ impl<'a> Typecheck<'a> {
                     match &*op_name {
                         "&&" | "||" => {
                             try!(self.unify(&lhs_type, rhs_type.clone()));
+                            op.typ = Type::function(vec![Type::bool(), Type::bool()], Type::bool());
                             self.unify(&Type::bool(), lhs_type)
                         }
                         _ => {
