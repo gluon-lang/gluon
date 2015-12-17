@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Deref;
 use std::slice;
-use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
+use base::ast::{AstId, DisplayEnv, IdentEnv, ASTType};
 
 use gc::{GcPtr, Gc, DataDef, Traverseable, WriteOnly};
 

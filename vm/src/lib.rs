@@ -12,6 +12,8 @@ pub mod api;
 pub mod compiler;
 pub mod types;
 pub mod vm;
+pub mod interner;
+pub mod gc;
 mod stack;
 mod primitives;
 mod lazy;

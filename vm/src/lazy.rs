@@ -1,4 +1,4 @@
-use base::gc::{Gc, Traverseable, Move};
+use gc::{Gc, Traverseable, Move};
 use std::cell::Cell;
 use api::Pushable;
 use vm::{StackFrame, Status, Value, VM};

@@ -4,7 +4,7 @@ use std::io::{Read, stdin};
 use std::slice;
 
 use api::{generic, Generic, Getable, Array, IO, MaybeError};
-use base::gc::{DataDef, WriteOnly};
+use gc::{DataDef, WriteOnly};
 use vm::{VM, BytecodeFunction, DataStruct, VMInt, Status, Value, RootStr, VMResult};
 use types::Instruction::Call;
 use stack::StackFrame;

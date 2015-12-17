@@ -1,5 +1,5 @@
 use base::ast;
-use base::gc::Move;
+use gc::Move;
 use base::symbol::Symbol;
 use vm::{VM, VMResult, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value,
          Userdata_, StackFrame, VMInt, Error, Root, RootStr};

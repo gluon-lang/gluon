@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefMut};
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
-use base::gc::GcPtr;
+use gc::GcPtr;
 use vm::{ClosureData, Value, VM};
 use types::VMIndex;
 

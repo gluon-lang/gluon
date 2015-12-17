@@ -669,28 +669,15 @@ fn static_error(e: Error<char, &str>) -> Error<char, &'static str> {
 pub mod tests {
     use super::parse_module;
     use base::ast::*;
-    use base::interner::*;
-
-    use std::rc::Rc;
-    use std::cell::RefCell;
-    use base::gc::Gc;
     use base::ast;
 
-    ///Returns a reference to the interner stored in TLD
-    pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
-        thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>>
-                      = Rc::new(RefCell::new((Interner::new(), Gc::new()))));
-        INTERNER.with(|interner| interner.clone())
+    use std::rc::Rc;
+
+    pub fn intern(s: &str) -> String {
+        String::from(s)
     }
 
-    pub fn intern(s: &str) -> InternedStr {
-        let i = get_local_interner();
-        let mut i = i.borrow_mut();
-        let &mut (ref mut i, ref mut gc) = &mut *i;
-        i.intern(gc, s)
-    }
-
-    type PExpr = LExpr<InternedStr>;
+    type PExpr = LExpr<String>;
 
     fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
         no_loc(Expr::BinOp(Box::new(l), intern(s), Box::new(r)))
@@ -713,13 +700,13 @@ pub mod tests {
     fn id(s: &str) -> PExpr {
         no_loc(Expr::Identifier(intern(s)))
     }
-    fn field(s: &str, typ: ASTType<InternedStr>) -> Field<InternedStr> {
+    fn field(s: &str, typ: ASTType<String>) -> Field<String> {
         Field {
             name: intern(s),
             typ: typ,
         }
     }
-    fn typ(s: &str) -> ASTType<InternedStr> {
+    fn typ(s: &str) -> ASTType<String> {
         assert!(s.len() != 0);
         let is_var = s.chars().next().unwrap().is_lowercase();
         match str_to_primitive_type(s) {
@@ -728,11 +715,11 @@ pub mod tests {
             None => Type::data(TypeConstructor::Data(intern(s)), Vec::new()),
         }
     }
-    fn typ_a(s: &str, args: Vec<ASTType<InternedStr>>) -> ASTType<InternedStr> {
+    fn typ_a(s: &str, args: Vec<ASTType<String>>) -> ASTType<String> {
         assert!(s.len() != 0);
         ASTType::new(ast::type_con(intern(s), args))
     }
-    fn generic(s: &str) -> ASTType<InternedStr> {
+    fn generic(s: &str) -> ASTType<String> {
         Type::generic(Generic {
             kind: Rc::new(Kind::Variable(0)),
             id: intern(s),
@@ -744,7 +731,7 @@ pub mod tests {
     fn if_else(p: PExpr, if_true: PExpr, if_false: PExpr) -> PExpr {
         no_loc(Expr::IfElse(Box::new(p), Box::new(if_true), Some(Box::new(if_false))))
     }
-    fn case(e: PExpr, alts: Vec<(Pattern<InternedStr>, PExpr)>) -> PExpr {
+    fn case(e: PExpr, alts: Vec<(Pattern<String>, PExpr)>) -> PExpr {
         no_loc(Expr::Match(Box::new(e),
                            alts.into_iter()
                                .map(|(p, e)| {
@@ -755,7 +742,7 @@ pub mod tests {
                                })
                                .collect()))
     }
-    fn lambda(name: &str, args: Vec<InternedStr>, body: PExpr) -> PExpr {
+    fn lambda(name: &str, args: Vec<String>, body: PExpr) -> PExpr {
         no_loc(Expr::Lambda(LambdaStruct {
             id: intern(name),
             free_vars: Vec::new(),
@@ -764,7 +751,7 @@ pub mod tests {
         }))
     }
 
-    fn type_decl(name: ASTType<InternedStr>, typ: ASTType<InternedStr>, body: PExpr) -> PExpr {
+    fn type_decl(name: ASTType<String>, typ: ASTType<String>, body: PExpr) -> PExpr {
         type_decls(vec![TypeBinding {
                             name: name,
                             typ: typ,
@@ -772,18 +759,18 @@ pub mod tests {
                    body)
     }
 
-    fn type_decls(binds: Vec<TypeBinding<InternedStr>>, body: PExpr) -> PExpr {
+    fn type_decls(binds: Vec<TypeBinding<String>>, body: PExpr) -> PExpr {
         no_loc(Expr::Type(binds, Box::new(body)))
     }
 
     fn bool(b: bool) -> PExpr {
         no_loc(Expr::Literal(Bool(b)))
     }
-    fn record(fields: Vec<(InternedStr, Option<PExpr>)>) -> PExpr {
+    fn record(fields: Vec<(String, Option<PExpr>)>) -> PExpr {
         record_a(Vec::new(), fields)
     }
-    fn record_a(types: Vec<(InternedStr, Option<ASTType<InternedStr>>)>,
-                fields: Vec<(InternedStr, Option<PExpr>)>)
+    fn record_a(types: Vec<(String, Option<ASTType<String>>)>,
+                fields: Vec<(String, Option<PExpr>)>)
                 -> PExpr {
         no_loc(Expr::Record {
             typ: intern(""),
@@ -801,13 +788,8 @@ pub mod tests {
         }))
     }
 
-    pub fn parse_new(input: &str) -> LExpr<InternedStr> {
-        let interner = get_local_interner();
-        let mut interner = interner.borrow_mut();
-        let &mut (ref mut interner, ref mut gc) = &mut *interner;
-        let x = interner.with_env(gc, |mut env| parse_module(&mut env, input))
-                        .unwrap_or_else(|err| panic!("{:?}", err));
-        x
+    pub fn parse_new(input: &str) -> LExpr<String> {
+        parse_module(&mut ast::EmptyEnv::new(), input).unwrap_or_else(|err| panic!("{:?}", err))
     }
 
     #[test]

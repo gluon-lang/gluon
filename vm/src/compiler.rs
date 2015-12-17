@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
-use base::interner::*;
-use base::gc::Gc;
+use interner::{Interner, InternedStr};
+use gc::Gc;
 use base::ast;
 use base::symbol::{Symbol, Symbols};
 use base::ast::{DisplayEnv, LExpr, Expr, Integer, Float, String, Bool};

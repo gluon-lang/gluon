@@ -24,6 +24,15 @@ pub trait AstId: Sized {
     fn set_type(&mut self, typ: ASTType<Self::Untyped>);
 }
 
+impl AstId for StdString {
+    type Untyped = StdString;
+
+    fn to_id(self) -> StdString {
+        self
+    }
+    fn set_type(&mut self, _typ: ASTType<Self::Untyped>) {}
+}
+
 pub trait DisplayEnv {
     type Ident;
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str;
@@ -33,7 +42,13 @@ pub trait IdentEnv: DisplayEnv {
     fn from_str(&mut self, s: &str) -> Self::Ident;
 }
 
-struct EmptyEnv<T>(::std::marker::PhantomData<T>);
+pub struct EmptyEnv<T>(::std::marker::PhantomData<T>);
+
+impl<T> EmptyEnv<T> {
+    pub fn new() -> EmptyEnv<T> {
+        EmptyEnv(::std::marker::PhantomData)
+    }
+}
 
 impl<T: Deref<Target = str>> DisplayEnv for EmptyEnv<T> {
     type Ident = T;
@@ -56,6 +71,13 @@ impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
         (**self).string(ident)
+    }
+}
+
+impl<T> IdentEnv for EmptyEnv<T> where T: Deref<Target = str> + for<'a> From<&'a str>
+{
+    fn from_str(&mut self, s: &str) -> Self::Ident {
+        T::from(s)
     }
 }
 
@@ -901,9 +923,7 @@ impl<I, T> fmt::Display for Type<I, T>
           T: Deref<Target = Type<I, T>>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-               "{}",
-               dt(&EmptyEnv(::std::marker::PhantomData), Prec::Top, self))
+        write!(f, "{}", dt(&EmptyEnv::new(), Prec::Top, self))
     }
 }
 
