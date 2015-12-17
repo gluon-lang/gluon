@@ -849,6 +849,9 @@ impl<'a> VM<'a> {
         }
     }
 
+    pub fn get_symbols(&self) -> Ref<Symbols> {
+        self.symbols.borrow()
+    }
     pub fn symbol_string(&self, s: Symbol) -> StdString {
         let symbols = self.symbols.borrow();
         StdString::from(symbols.string(&s))

@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use base::ast;
 use check::typecheck::TypeEnv;
 use check::Typed;
 use vm::vm::{VM, RootStr, Status, typecheck_expr, load_file};
@@ -9,7 +10,8 @@ fn type_of_expr(vm: &VM) -> Status {
         IO::Value(match typecheck_expr(vm, &args) {
             Ok((expr, _)) => {
                 let ref env = vm.env();
-                format!("{}", expr.env_type_of(env))
+                let symbols = vm.get_symbols();
+                format!("{}", ast::display_type(&*symbols, &expr.env_type_of(env)))
             }
             Err(msg) => format!("{}", msg),
         })
@@ -20,18 +22,21 @@ fn type_of_expr(vm: &VM) -> Status {
 fn find_type_info(vm: &VM) -> Status {
     let closure: &Fn(RootStr) -> IO<String> = &|args| {
         let args = args.trim();
-        IO::Value(match vm.env().find_type_info(&vm.intern(args)) {
+        IO::Value(match vm.env().find_type_info(&vm.symbol(args)) {
             Some((generic_args, typ)) => {
                 let fmt = || -> Result<String, ::std::fmt::Error> {
                     use std::fmt::Write;
                     let mut buffer = String::new();
                     try!(write!(&mut buffer, "type {}", args));
                     for g in generic_args {
-                        try!(write!(&mut buffer, " {}", g))
+                        try!(write!(&mut buffer, " {}", vm.symbol_string(g.id)))
                     }
                     try!(write!(&mut buffer, " = "));
                     match typ {
-                        Some(typ) => try!(write!(&mut buffer, "{}", typ)),
+                        Some(typ) => {
+                            let symbols = vm.get_symbols();
+                            try!(write!(&mut buffer, "{}", ast::display_type(&*symbols, typ)))
+                        }
                         None => try!(write!(&mut buffer, "<abstract>")),
                     }
                     Ok(buffer)
