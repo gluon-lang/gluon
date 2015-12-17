@@ -30,7 +30,7 @@ impl<F: ?Sized, Env> Macro<Env> for F
 }
 
 pub struct MacroEnv<Env> {
-    macros: RefCell<HashMap<String, Rc<Macro<Env>>>>,
+    macros: RefCell<HashMap<Symbol, Rc<Macro<Env>>>>,
 }
 
 impl<Env> MacroEnv<Env> {
@@ -38,7 +38,7 @@ impl<Env> MacroEnv<Env> {
         MacroEnv { macros: RefCell::new(HashMap::new()) }
     }
 
-    pub fn insert<M>(&self, name: String, mac: M)
+    pub fn insert<M>(&self, name: Symbol, mac: M)
         where M: Macro<Env> + 'static
     {
         self.macros.borrow_mut().insert(name, Rc::new(mac));
@@ -51,8 +51,7 @@ pub struct MacroExpander<'a, Env: 'a> {
     errors: Errors<Error>,
 }
 
-impl<'a, Env> MacroExpander<'a, Env> where Env: ast::IdentEnv<Ident = Symbol>
-{
+impl<'a, Env> MacroExpander<'a, Env> {
     pub fn new(env: &'a Env, macros: &'a MacroEnv<Env>) -> MacroExpander<'a, Env> {
         MacroExpander {
             env: env,
@@ -71,8 +70,7 @@ impl<'a, Env> MacroExpander<'a, Env> where Env: ast::IdentEnv<Ident = Symbol>
     }
 }
 
-impl<'a, Env> MutVisitor for MacroExpander<'a, Env> where Env: ast::IdentEnv<Ident = Symbol>
-{
+impl<'a, Env> MutVisitor for MacroExpander<'a, Env> {
     type T = TcIdent;
 
     fn visit_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) {
@@ -82,7 +80,7 @@ impl<'a, Env> MutVisitor for MacroExpander<'a, Env> where Env: ast::IdentEnv<Ide
                     ast::Expr::Identifier(ref id) => {
                         let mac = {
                             let macros = self.macros.macros.borrow();
-                            macros.get(self.env.string(&id.name)).cloned()
+                            macros.get(&id.name).cloned()
                         };
                         match mac {
                             Some(m) => {

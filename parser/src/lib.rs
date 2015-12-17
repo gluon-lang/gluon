@@ -355,9 +355,8 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                              None => loc(Expr::Tuple(vec![])),
                          }
                      })),
-                     &mut self.string_literal().map(|s| {
-                         loc(Expr::Literal(LiteralStruct::String(self.intern(&s).to_id())))
-                     }),
+                     &mut self.string_literal()
+                              .map(|s| loc(Expr::Literal(LiteralStruct::String(s)))),
                      &mut self.brackets(sep_by(self.expr(), self.lex(char(','))))
                               .map(|exprs| {
                                   loc(Expr::Array(ArrayStruct {

@@ -7,8 +7,10 @@ use std::cmp::Ordering;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::slice;
+use std::string::String as StdString;
 use base::ast;
-use base::ast::{Type, ASTType};
+use base::ast::{Type, ASTType, DisplayEnv};
+use base::symbol::{Symbol, Symbols};
 use check::typecheck::{Typecheck, TypeEnv, TcIdent, TcType};
 use check::kindcheck::KindEnv;
 use check::macros::{MacroEnv, MacroExpander};
@@ -102,7 +104,7 @@ unsafe impl<'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
 
 #[derive(Debug)]
 pub struct BytecodeFunction {
-    name: Option<InternedStr>,
+    name: Option<Symbol>,
     args: VMIndex,
     instructions: Vec<Instruction>,
     inner_functions: Vec<GcPtr<BytecodeFunction>>,
@@ -316,25 +318,15 @@ impl<'a> fmt::Debug for Value<'a> {
                     Function(ref func) => write!(f, "<{} {:?}>", func.id, &**func),
                     Closure(ref closure) => {
                         let p: *const _ = &*closure.function;
-                        let name = match closure.function.name {
-                            Some(ref name) => &name[..],
-                            None => "",
-                        };
                         write!(f,
                                "<{:?} {:?} {:?}>",
-                               name,
+                               closure.function.name,
                                p,
                                LevelSlice(level - 1, &closure.upvars))
                     }
                     PartialApplication(ref app) => {
                         let name = match app.function {
-                            Callable::Closure(ref closure) => {
-                                closure.function
-                                       .name
-                                       .as_ref()
-                                       .map(|n| &n[..])
-                                       .unwrap_or("")
-                            }
+                            Callable::Closure(_) => "<SYMBOL>",
                             Callable::Extern(ref func) => &func.id[..],
                         };
                         write!(f,
@@ -451,21 +443,20 @@ impl<'a> Traverseable for ExternFunction<'a> {
 
 #[derive(Debug)]
 pub struct Global<'a> {
-    pub id: InternedStr,
+    pub id: Symbol,
     pub typ: TcType,
     pub value: Cell<Value<'a>>,
 }
 
 impl<'a> Traverseable for Global<'a> {
     fn traverse(&self, gc: &mut Gc) {
-        self.id.traverse(gc);
         self.value.traverse(gc);
     }
 }
 
 impl<'a> Typed for Global<'a> {
-    type Id = InternedStr;
-    fn env_type_of(&self, _: &TypeEnv) -> ASTType<InternedStr> {
+    type Id = Symbol;
+    fn env_type_of(&self, _: &TypeEnv) -> ASTType<Symbol> {
         self.typ.clone()
     }
 }
@@ -480,7 +471,8 @@ pub struct VM<'a> {
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
     pub interner: RefCell<Interner>,
-    names: RefCell<HashMap<InternedStr, Named>>,
+    symbols: RefCell<Symbols>,
+    names: RefCell<HashMap<Symbol, Named>>,
     pub gc: RefCell<Gc>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value<'a>>>,
@@ -513,12 +505,13 @@ impl fmt::Display for Error {
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global<'a>>,
-    names: Ref<'b, HashMap<InternedStr, Named>>,
-    io_arg: [ast::Generic<InternedStr>; 1],
+    names: Ref<'b, HashMap<Symbol, Named>>,
+    io_symbol: Symbol,
+    io_arg: [ast::Generic<Symbol>; 1],
 }
 
 impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
-    fn find_var(&self, id: &InternedStr) -> Option<Variable> {
+    fn find_var(&self, id: &Symbol) -> Option<Variable> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
@@ -527,7 +520,7 @@ impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             _ => self.type_infos.find_var(id),
         }
     }
-    fn find_field(&self, data_name: &InternedStr, field_name: &InternedStr) -> Option<VMIndex> {
+    fn find_field(&self, data_name: &Symbol, field_name: &Symbol) -> Option<VMIndex> {
         self.type_infos
             .id_to_type
             .get(data_name)
@@ -544,7 +537,7 @@ impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             })
     }
 
-    fn find_tag(&self, data_name: &InternedStr, ctor_name: &InternedStr) -> Option<VMTag> {
+    fn find_tag(&self, data_name: &Symbol, ctor_name: &Symbol) -> Option<VMTag> {
         match self.type_infos.id_to_type.get(data_name).map(|&(_, ref typ)| &**typ) {
             Some(&Type::Variants(ref ctors)) => {
                 ctors.iter()
@@ -558,11 +551,11 @@ impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
 }
 
 impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
-    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<ast::Kind>> {
+    fn find_kind(&self, type_name: Symbol) -> Option<Rc<ast::Kind>> {
         self.type_infos
             .find_kind(type_name)
             .or_else(|| {
-                if &type_name[..] == "IO" {
+                if type_name == self.io_symbol {
                     Some(ast::Kind::function(ast::Kind::star(), ast::Kind::star()))
                 } else {
                     None
@@ -571,7 +564,7 @@ impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
     }
 }
 impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
-    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         match self.names.get(id) {
             Some(&GlobalFn(index)) if index < self.globals.len() => {
                 let g = &self.globals[index];
@@ -594,20 +587,18 @@ impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
             }
         }
     }
-    fn find_type_info(&self,
-                      id: &InternedStr)
-                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
         self.type_infos
             .find_type_info(id)
             .or_else(|| {
-                if &id[..] == "IO" {
+                if *id == self.io_symbol {
                     Some((&self.io_arg, None))
                 } else {
                     None
                 }
             })
     }
-    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         self.type_infos.find_record(fields)
     }
 }
@@ -670,6 +661,7 @@ impl<'a> VM<'a> {
             globals: FixedVec::new(),
             type_infos: RefCell::new(TypeInfos::new()),
             typeids: FixedMap::new(),
+            symbols: RefCell::new(Symbols::new()),
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: RefCell::new(Gc::new()),
@@ -681,7 +673,8 @@ impl<'a> VM<'a> {
         vm.add_types()
           .unwrap();
         ::primitives::load(&vm).unwrap();
-        vm.macros.insert(vm.intern("import"), ::import::Import::new());
+        vm.macros.insert(vm.make_symbol(StdString::from("import")),
+                         ::import::Import::new());
         vm
     }
 
@@ -701,7 +694,7 @@ impl<'a> VM<'a> {
                         args: VMIndex,
                         instructions: Vec<Instruction>)
                         -> VMIndex {
-        let id = self.intern(name);
+        let id = self.make_symbol(StdString::from(name));
         let compiled_fn = CompiledFunction {
             args: args,
             id: id,
@@ -736,7 +729,7 @@ impl<'a> VM<'a> {
     }
 
     pub fn get_global(&self, name: &str) -> Option<&Global<'a>> {
-        let n = self.intern(name);
+        let n = self.symbol(name);
         self.globals.find(|g| n == g.id).map(|tup| tup.1)
     }
 
@@ -795,15 +788,16 @@ impl<'a> VM<'a> {
                               typ: TcType,
                               f: Box<Fn(&VM<'a>) -> Status + 'static>)
                               -> Result<(), Error> {
-        let id = self.intern(name);
+        let id = self.make_symbol(StdString::from(name));
         if self.names.borrow().contains_key(&id) {
             return Err(Error::Message(format!("{} is already defined", name)));
         }
+        let interned_id = self.intern(name);
         let global = Global {
             id: id,
             typ: typ,
             value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(ExternFunction {
-                id: id,
+                id: interned_id,
                 args: num_args,
                 function: f,
             })))),
@@ -816,7 +810,7 @@ impl<'a> VM<'a> {
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
         where T: Pushable<'a>
     {
-        let id = self.intern(name);
+        let id = self.make_symbol(StdString::from(name));
         if self.names.borrow().contains_key(&id) {
             return Err(Error::Message(format!("{} is already defined", name)));
         }
@@ -839,7 +833,7 @@ impl<'a> VM<'a> {
     }
 
     pub fn register_type<T: ?Sized + Any>(&self, name: &str) -> Result<&TcType, ()> {
-        let n = self.intern(name);
+        let n = self.make_symbol(StdString::from(name));
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(&n) {
             Err(())
@@ -855,6 +849,21 @@ impl<'a> VM<'a> {
         }
     }
 
+    pub fn symbol_string(&self, s: Symbol) -> StdString {
+        let symbols = self.symbols.borrow();
+        StdString::from(symbols.string(&s))
+    }
+
+    pub fn make_symbol(&self, s: StdString) -> Symbol {
+        let mut symbols = self.symbols.borrow_mut();
+        symbols.make_symbol(s)
+    }
+
+    pub fn symbol(&self, s: &str) -> Symbol {
+        let mut symbols = self.symbols.borrow_mut();
+        symbols.symbol(s)
+    }
+
     pub fn intern(&self, s: &str) -> InternedStr {
         self.interner.borrow_mut().intern(&mut *self.gc.borrow_mut(), s)
     }
@@ -864,8 +873,9 @@ impl<'a> VM<'a> {
             type_infos: self.type_infos.borrow(),
             globals: &self.globals,
             names: self.names.borrow(),
+            io_symbol: self.symbol("IO"),
             io_arg: [ast::Generic {
-                         id: self.intern("a"),
+                         id: self.symbol("a"),
                          kind: Rc::new(ast::Kind::Star),
                      }],
         }
@@ -994,7 +1004,7 @@ impl<'a> VM<'a> {
                        -> VMResult<Value<'a>> {
         let value = try!(self.call_bytecode(0, closure));
         if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
-            if id == "IO" {
+            if id == self.symbol("IO") {
                 debug!("Run IO {:?}", value);
                 self.push(value);
                 self.push(Int(0));
@@ -1530,16 +1540,17 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>
             let env = vm.env();
             let mut interner = vm.interner.borrow_mut();
             let mut gc = vm.gc.borrow_mut();
-            let mut compiler = Compiler::new(&env, &mut interner, &mut gc);
+            let mut symbols = vm.symbols.borrow_mut();
+            let mut compiler = Compiler::new(&env, &mut interner, &mut gc, &mut symbols);
             compiler.compile_expr(&expr)
         };
-        function.id = vm.interner.borrow_mut().intern(&mut vm.gc.borrow_mut(), name);
+        function.id = vm.symbols.borrow_mut().symbol(name);
         (function, typ)
     };
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let closure = vm.new_closure(function, &[]);
     let value = try!(vm.call_module(&typ, closure));
-    let id = vm.intern(name);
+    let id = vm.make_symbol(StdString::from(name));
     vm.names.borrow_mut().insert(id, GlobalFn(vm.globals.len()));
     vm.globals.push(Global {
         id: id,
@@ -1563,9 +1574,8 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<(), Box<StdError>> {
 }
 
 pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, Box<StdError>> {
-    let mut interner = vm.interner.borrow_mut();
-    let mut gc = vm.gc.borrow_mut();
-    Ok(try!(::parser::parse_tc(&mut gc, &mut interner, input)))
+    let mut symbols = vm.symbols.borrow_mut();
+    Ok(try!(::parser::parse_tc(&mut symbols, input)))
 }
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           expr_str: &str)
@@ -1573,9 +1583,8 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
     let mut expr = try!(parse_expr(&expr_str, vm));
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
-    let mut interner = vm.interner.borrow_mut();
-    let mut gc = vm.gc.borrow_mut();
-    let mut tc = Typecheck::new(&mut interner, &mut gc);
+    let mut symbols = vm.symbols.borrow_mut();
+    let mut tc = Typecheck::new(&mut symbols);
     tc.add_environment(&env);
     let typ = try!(tc.typecheck_expr(&mut expr));
     Ok((expr, typ))
@@ -1587,10 +1596,11 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Box<StdErr
         let env = vm.env();
         let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
-        let mut compiler = Compiler::new(&env, &mut interner, &mut gc);
+        let mut symbols = vm.symbols.borrow_mut();
+        let mut compiler = Compiler::new(&env, &mut interner, &mut gc, &mut symbols);
         compiler.compile_expr(&expr)
     };
-    function.id = vm.interner.borrow_mut().intern(&mut vm.gc.borrow_mut(), "<top>");
+    function.id = vm.symbols.borrow_mut().symbol("<top>");
     let typ = function.typ.clone();
     let function = vm.new_function(function);
     let closure = vm.new_closure(function, &[]);
@@ -1599,7 +1609,7 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Box<StdErr
 }
 
 pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a>> {
-    let func = match vm.globals.find(|g| &*g.id == name) {
+    let func = match vm.globals.find(|g| g.id == vm.symbol(name)) {
         Some((_, f)) => f,
         None => return Err(Error::Message(format!("Undefined function {}", name))),
     };

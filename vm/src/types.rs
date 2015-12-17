@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
-use base::interner::InternedStr;
 use base::ast;
+use base::symbol::Symbol;
 use check::kindcheck::KindEnv;
 use check::typecheck::{TypeEnv, TcType, Type};
 
@@ -92,12 +92,12 @@ impl Instruction {
 
 #[derive(Debug)]
 pub struct TypeInfos {
-    pub id_to_type: HashMap<InternedStr, (Vec<ast::Generic<InternedStr>>, TcType)>,
+    pub id_to_type: HashMap<Symbol, (Vec<ast::Generic<Symbol>>, TcType)>,
     pub type_to_id: HashMap<TcType, TcType>,
 }
 
 impl KindEnv for TypeInfos {
-    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<ast::Kind>> {
+    fn find_kind(&self, type_name: Symbol) -> Option<Rc<ast::Kind>> {
         self.id_to_type
             .get(&type_name)
             .and_then(|tup| self.type_to_id.get(&tup.1))
@@ -106,7 +106,7 @@ impl KindEnv for TypeInfos {
 }
 
 impl TypeEnv for TypeInfos {
-    fn find_type(&self, id: &InternedStr) -> Option<&TcType> {
+    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         self.id_to_type
             .iter()
             .filter_map(|(_, &(_, ref typ))| {
@@ -119,14 +119,12 @@ impl TypeEnv for TypeInfos {
             .map(|x| &x.1)
     }
 
-    fn find_type_info(&self,
-                      id: &InternedStr)
-                      -> Option<(&[ast::Generic<InternedStr>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
         self.id_to_type
             .get(id)
             .map(|&(ref args, ref typ)| (&args[..], Some(typ)))
     }
-    fn find_record(&self, fields: &[InternedStr]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         self.id_to_type
             .iter()
             .find(|&(_, &(_, ref typ))| {

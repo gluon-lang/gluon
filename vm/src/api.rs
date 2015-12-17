@@ -1,6 +1,6 @@
 use base::ast;
 use base::gc::Move;
-use base::interner::InternedStr;
+use base::symbol::Symbol;
 use vm::{VM, VMResult, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value,
          Userdata_, StackFrame, VMInt, Error, Root, RootStr};
 use check::typecheck::{TcType, Type};
@@ -76,7 +76,7 @@ pub mod generic {
                     let lower  = [s.as_bytes()[0] + 32];
                     let lower_str = unsafe { ::std::str::from_utf8_unchecked(&lower) };
                     Type::generic(ast::Generic {
-                        id: vm.intern(lower_str),
+                        id: vm.symbol(lower_str),
                         kind: Rc::new(ast::Kind::Star)
                     })
                 }
@@ -244,7 +244,7 @@ impl<T: VMType> VMType for Option<T> where T::Type: Sized
 {
     type Type = Option<T::Type>;
     fn make_type(vm: &VM) -> TcType {
-        let ctor = ast::TypeConstructor::Data(vm.intern("Option"));
+        let ctor = ast::TypeConstructor::Data(vm.symbol("Option"));
         ast::Type::data(ctor, vec![T::make_type(vm)])
     }
 }
@@ -288,7 +288,7 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
 {
     type Type = Result<T::Type, E::Type>;
     fn make_type(vm: &VM) -> TcType {
-        let ctor = ast::TypeConstructor::Data(vm.intern("Result"));
+        let ctor = ast::TypeConstructor::Data(vm.symbol("Result"));
         ast::Type::data(ctor, vec![E::make_type(vm), T::make_type(vm)])
     }
 }
@@ -362,7 +362,7 @@ impl<T: VMType> VMType for IO<T> where T::Type: Sized
 {
     type Type = IO<T::Type>;
     fn make_type(vm: &VM) -> TcType {
-        ast::Type::data(ast::TypeConstructor::Data(vm.intern("IO")),
+        ast::Type::data(ast::TypeConstructor::Data(vm.symbol("IO")),
                         vec![T::make_type(vm)])
     }
     fn extra_args() -> VMIndex {
@@ -486,7 +486,7 @@ pub trait Field {
 pub trait FieldList {
     fn len() -> VMIndex;
 
-    fn field_types(vm: &VM, fields: &mut Vec<ast::Field<InternedStr, TcType>>);
+    fn field_types(vm: &VM, fields: &mut Vec<ast::Field<Symbol, TcType>>);
 }
 
 impl FieldList for () {
@@ -494,7 +494,7 @@ impl FieldList for () {
         0
     }
 
-    fn field_types(_: &VM, _: &mut Vec<ast::Field<InternedStr, TcType>>) {}
+    fn field_types(_: &VM, _: &mut Vec<ast::Field<Symbol, TcType>>) {}
 }
 
 impl<F: Field, H: VMType, T> FieldList for HList<(F, H), T> where T: FieldList
@@ -503,9 +503,9 @@ impl<F: Field, H: VMType, T> FieldList for HList<(F, H), T> where T: FieldList
         1 + T::len()
     }
 
-    fn field_types(vm: &VM, fields: &mut Vec<ast::Field<InternedStr, TcType>>) {
+    fn field_types(vm: &VM, fields: &mut Vec<ast::Field<Symbol, TcType>>) {
         fields.push(ast::Field {
-            name: vm.intern(F::name()),
+            name: vm.symbol(F::name()),
             typ: H::make_type(vm),
         });
         T::field_types(vm, fields);
@@ -621,7 +621,7 @@ impl<'a: 'vm, 'vm, F: FunctionType + VMType> Pushable<'a> for Primitive<F> {
     }
 }
 
-fn vm_type<'a, T: ?Sized + VMType>(vm: &'a VM) -> &'a Type<InternedStr> {
+fn vm_type<'a, T: ?Sized + VMType>(vm: &'a VM) -> &'a Type<Symbol> {
     vm.get_type::<T::Type>()
 }
 

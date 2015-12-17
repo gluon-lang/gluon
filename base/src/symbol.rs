@@ -5,6 +5,7 @@ use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Symbol(u32);
 
+#[derive(Debug)]
 pub struct Symbols {
     strings: Vec<String>,
     indexes: HashMap<String, Symbol>,

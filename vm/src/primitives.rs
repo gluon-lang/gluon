@@ -259,13 +259,15 @@ pub fn load(vm: &VM) -> VMResult<()> {
     }
     let a = Type::generic(ast::Generic {
         kind: ast::Kind::star(),
-        id: vm.intern("a"),
+        id: vm.make_symbol(String::from("a")),
     });
     let b = Type::generic(ast::Generic {
         kind: ast::Kind::star(),
-        id: vm.intern("b"),
+        id: vm.make_symbol(String::from("b")),
     });
-    let io = |t| ASTType::from(ast::type_con(vm.intern("IO"), vec![t]));
+    let io = |t| {
+        ASTType::from(ast::Type::Data(ast::TypeConstructor::Data(vm.symbol("IO")), vec![t]))
+    };
 
     try!(vm.define_global("array",
                           record!(
@@ -294,7 +296,9 @@ pub fn load(vm: &VM) -> VMResult<()> {
     try!(vm.define_global("#error", primitive::<fn(StdString) -> A>(prim::error)));
     try!(vm.define_global("error", primitive::<fn(StdString) -> A>(prim::error)));
     try!(vm.define_global("trace", primitive::<fn(A)>(prim::trace)));
-    let lazy = |t| ASTType::from(ast::type_con(vm.intern("Lazy"), vec![t]));
+    let lazy = |t| {
+        ASTType::from(ast::Type::data(ast::TypeConstructor::Data(vm.symbol("Lazy")), vec![t]))
+    };
     try!(vm.extern_function("lazy",
                             vec![Type::function(vec![Type::unit()], a.clone())],
                             lazy(a.clone()),

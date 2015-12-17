@@ -436,11 +436,11 @@ impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum LiteralStruct<Id> {
+#[derive(Clone, PartialEq, Debug)]
+pub enum LiteralStruct {
     Integer(i64),
     Float(f64),
-    String(Id),
+    String(StdString),
     Bool(bool),
 }
 
@@ -481,7 +481,7 @@ pub type LExpr<Id> = Located<Expr<Id>>;
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
     Identifier(Id),
-    Literal(LiteralStruct<Id::Untyped>),
+    Literal(LiteralStruct),
     Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
     IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
     Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
