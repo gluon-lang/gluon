@@ -4,18 +4,18 @@ use std::fmt;
 use base::ast::{Type, Kind};
 use typecheck::TcType;
 use base::ast;
-use base::interner::InternedStr;
+use base::symbol::Symbol;
 use substitution::{Substitution, Substitutable};
 
 #[derive(Debug, PartialEq)]
-pub enum Error {
+pub enum Error<I> {
     KindMismatch(Rc<Kind>, Rc<Kind>),
-    UndefinedType(InternedStr),
+    UndefinedType(I),
     StringError(&'static str),
 }
 use self::Error::*;
 
-impl fmt::Display for Error {
+impl<I: fmt::Display> fmt::Display for Error<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             KindMismatch(ref expected, ref actual) => {
@@ -24,13 +24,13 @@ impl fmt::Display for Error {
                        expected,
                        actual)
             }
-            UndefinedType(name) => write!(f, "Type '{}' is not defined", name),
+            UndefinedType(ref name) => write!(f, "Type '{}' is not defined", name),
             StringError(s) => write!(f, "{}", s),
         }
     }
 }
 
-pub type Result<T> = ::std::result::Result<T, Error>;
+pub type Result<T> = ::std::result::Result<T, Error<Symbol>>;
 
 impl Substitutable for Kind {
     type Variable = u32;
@@ -61,17 +61,17 @@ impl Substitutable for Kind {
 }
 
 pub trait KindEnv {
-    fn find_kind(&self, type_name: InternedStr) -> Option<Rc<Kind>>;
+    fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>>;
 }
 
 impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
-    fn find_kind(&self, id: InternedStr) -> Option<Rc<Kind>> {
+    fn find_kind(&self, id: Symbol) -> Option<Rc<Kind>> {
         (**self).find_kind(id)
     }
 }
 
 impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
-    fn find_kind(&self, id: InternedStr) -> Option<Rc<Kind>> {
+    fn find_kind(&self, id: Symbol) -> Option<Rc<Kind>> {
         let &(ref outer, ref inner) = self;
         inner.find_kind(id)
              .or_else(|| outer.find_kind(id))
@@ -81,8 +81,9 @@ impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
 pub struct KindCheck<'a> {
     variables: Vec<TcType>,
     ///Type bindings local to the current kindcheck invocation
-    locals: Vec<(InternedStr, Rc<Kind>)>,
+    locals: Vec<(Symbol, Rc<Kind>)>,
     info: &'a (KindEnv + 'a),
+    idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
     pub subs: Substitution<Kind>,
     star: Rc<Kind>,
 }
@@ -117,17 +118,21 @@ fn walk_move_kind2<F>(kind: &Rc<Kind>, f: &mut F) -> Option<Rc<Kind>>
 }
 
 impl<'a> KindCheck<'a> {
-    pub fn new(info: &'a (KindEnv + 'a), subs: Substitution<Kind>) -> KindCheck<'a> {
+    pub fn new(info: &'a (KindEnv + 'a),
+               idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
+               subs: Substitution<Kind>)
+               -> KindCheck<'a> {
         KindCheck {
             variables: Vec::new(),
             locals: Vec::new(),
             info: info,
+            idents: idents,
             subs: subs,
             star: Rc::new(Kind::Star),
         }
     }
 
-    pub fn add_local(&mut self, name: InternedStr, kind: Rc<Kind>) {
+    pub fn add_local(&mut self, name: Symbol, kind: Rc<Kind>) {
         self.locals.push((name, kind));
     }
 
@@ -140,7 +145,7 @@ impl<'a> KindCheck<'a> {
         self.star.clone()
     }
 
-    fn find(&mut self, id: InternedStr) -> Result<Rc<Kind>> {
+    fn find(&mut self, id: Symbol) -> Result<Rc<Kind>> {
         let kind = self.variables
                        .iter()
                        .find(|var| {
@@ -159,7 +164,8 @@ impl<'a> KindCheck<'a> {
                        .or_else(|| self.info.find_kind(id))
                        .map(|t| Ok(t))
                        .unwrap_or_else(|| {
-                           if id.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                           let id_str = self.idents.string(&id);
+                           if id_str.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
                                Err(UndefinedType(id))
                            } else {
                                // Create a new variable
@@ -167,13 +173,15 @@ impl<'a> KindCheck<'a> {
                                Ok(self.locals.last().unwrap().1.clone())
                            }
                        });
-        debug!("Find kind: {} => {}", id, kind.as_ref().unwrap());
+        debug!("Find kind: {} => {}",
+               self.idents.string(&id),
+               kind.as_ref().unwrap());
         kind
     }
 
     // Kindhecks `typ`, infering it to be of kind `*`
     pub fn kindcheck_type(&mut self, typ: &mut TcType) -> Result<Kind> {
-        debug!("Kindcheck {}", typ);
+        debug!("Kindcheck {:?}", typ);
         let (kind, t) = try!(self.kindcheck(typ));
         let star = self.star.clone();
         let kind = try!(self.unify(&star, kind));

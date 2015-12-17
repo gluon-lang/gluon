@@ -1,6 +1,6 @@
 use base::ast;
 use base::ast::{ASTType, Type};
-use base::interner::InternedStr;
+use base::symbol::Symbol;
 
 use typecheck::{TcType, TypeEnv, instantiate};
 
@@ -19,11 +19,10 @@ impl<Id: Clone> Typed for ast::TcIdent<Id> {
         self.typ.clone()
     }
 }
-impl<Id> Typed for ast::Expr<Id>
-    where Id: Typed<Id = InternedStr> + AsRef<str> + ast::AstId<Untyped = InternedStr>
+impl<Id> Typed for ast::Expr<Id> where Id: Typed<Id = Symbol> + ast::AstId<Untyped = Symbol>
 {
     type Id = Id::Id;
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<InternedStr> {
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         match *self {
             ast::Expr::Identifier(ref id) => id.env_type_of(env),
             ast::Expr::Literal(ref lit) => {
@@ -39,7 +38,7 @@ impl<Id> Typed for ast::Expr<Id>
                 assert!(exprs.len() == 0);
                 Type::unit()
             }
-            ast::Expr::BinOp(ref lhs, ref op, _) => {
+            ast::Expr::BinOp(_, ref op, _) => {
                 match *op.env_type_of(env) {
                     Type::Function(_, ref return_type) => {
                         match **return_type {
@@ -49,11 +48,7 @@ impl<Id> Typed for ast::Expr<Id>
                     }
                     _ => (),
                 }
-                match AsRef::<str>::as_ref(op) {
-                    "+" | "-" | "*" => lhs.env_type_of(env),
-                    "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" => Type::bool(),
-                    _ => panic!(),
-                }
+                panic!("Expected function type in binop")
             }
             ast::Expr::Let(_, ref expr) => expr.env_type_of(env),
             ast::Expr::Call(ref func, ref args) => {
@@ -76,9 +71,9 @@ impl<Id> Typed for ast::Expr<Id>
     }
 }
 
-impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<InternedStr>>>>> {
-    type Id = InternedStr;
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<InternedStr> {
+impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<Symbol>>>>> {
+    type Id = Symbol;
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         match *self {
             Some(ref t) => t.env_type_of(env),
             None => Type::unit(),
@@ -86,8 +81,7 @@ impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<InternedStr>>>>> {
     }
 }
 
-impl<T> Typed for ast::Binding<T>
-    where T: Typed<Id = InternedStr> + ast::AstId<Untyped = InternedStr>
+impl<T> Typed for ast::Binding<T> where T: Typed<Id = Symbol> + ast::AstId<Untyped = Symbol>
 {
     type Id = T::Untyped;
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<T::Untyped> {
@@ -112,10 +106,12 @@ fn get_return_type(env: &TypeEnv, alias_type: TcType, arg_count: usize) -> TcTyp
             Type::Data(ast::TypeConstructor::Data(id), ref arguments) => {
                 let (args, typ) = {
                     let (args, typ) = env.find_type_info(&id)
-                                         .unwrap_or_else(|| panic!("ICE: '{}' does not exist", id));
+                                         .unwrap_or_else(|| {
+                                             panic!("ICE: '{:?}' does not exist", id)
+                                         });
                     match typ {
                         Some(typ) => (args, typ.clone()),
-                        None => panic!("Unexpected type {} is not a function", alias_type),
+                        None => panic!("Unexpected type {:?} is not a function", alias_type),
                     }
                 };
                 let typ = instantiate(typ, |gen| {
@@ -130,7 +126,7 @@ fn get_return_type(env: &TypeEnv, alias_type: TcType, arg_count: usize) -> TcTyp
 
             }
             _ => {
-                panic!("Expected function with {} more arguments, found {}",
+                panic!("Expected function with {} more arguments, found {:?}",
                        arg_count,
                        alias_type)
             }
