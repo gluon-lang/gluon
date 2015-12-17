@@ -16,8 +16,7 @@ use std::rc::Rc;
 
 use base::ast;
 use base::ast::*;
-use base::gc::Gc;
-use base::interner::{Interner, InternedStr};
+use base::symbol::{Symbol, Symbols};
 
 use combine::primitives::{Consumed, Stream, Error, Info};
 use combine::combinator::EnvParser;
@@ -46,12 +45,12 @@ impl<'a, I, F> ::std::ops::Deref for ParserEnv<'a, I, F> where I: Stream<Item = 
 
 impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
     where I: Stream<Item = char> + 'a,
-          F: FnMut(&str) -> Id + 'a,
-          Id: AstId + AsRef<str> + Clone,
+          F: IdentEnv<Ident = Id>,
+          Id: AstId + Clone,
           I::Range: fmt::Debug + 's
 {
     fn intern(&self, s: &str) -> Id {
-        (&mut *self.make_ident.borrow_mut())(s)
+        self.make_ident.borrow_mut().from_str(s)
     }
 
     fn parser<T>(&'s self,
@@ -399,9 +398,13 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
         let term = self.parser(ParserEnv::parse_expr);
         let op = self.op()
                      .map(|op| {
-                         let assoc = Assoc {
-                             precedence: self.precedence(op.as_ref()),
-                             fixity: self.fixity(op.as_ref()),
+                         let assoc = {
+                             let ids = self.make_ident.borrow();
+                             let op_str = ids.string(&op);
+                             Assoc {
+                                 precedence: self.precedence(op_str),
+                                 fixity: self.fixity(op_str),
+                             }
                          };
                          (op, assoc)
                      });
@@ -586,25 +589,23 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
 
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
 ///type information. The type will just be a dummy value until the AST has passed typechecking
-pub fn parse_tc(gc: &mut Gc,
-                interner: &mut Interner,
+pub fn parse_tc(symbols: &mut Symbols,
                 input: &str)
-                -> Result<LExpr<TcIdent<InternedStr>>, Box<StdError>> {
-    interner.with_env(gc, |env| {
-        let mut env = ast::TcIdentEnv {
-            typ: Type::variable(ast::TypeVariable {
-                id: 0,
-                kind: Rc::new(ast::Kind::Star),
-            }),
-            env: env,
-        };
-        parse_module(|s| env.from_str(s), input)
-    })
+                -> Result<LExpr<TcIdent<Symbol>>, Box<StdError>> {
+    let mut env = ast::TcIdentEnv {
+        typ: Type::variable(ast::TypeVariable {
+            id: 0,
+            kind: Rc::new(ast::Kind::Star),
+        }),
+        env: symbols,
+    };
+    parse_module(&mut env, input)
 }
 
-fn parse_module<F, Id>(make_ident: F, input: &str) -> Result<LExpr<Id>, Box<StdError>>
-    where Id: AstId + AsRef<str> + Clone,
-          F: FnMut(&str) -> Id
+fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>,
+                    input: &str)
+                    -> Result<LExpr<Id>, Box<StdError>>
+    where Id: AstId + Clone
 {
 
     let ops = "+-*/&|=<>";
@@ -805,8 +806,7 @@ pub mod tests {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
         let &mut (ref mut interner, ref mut gc) = &mut *interner;
-        let x = interner.with_env(gc,
-                                  |mut env| parse_module(|s| AstId::from_str(&mut env, s), input))
+        let x = interner.with_env(gc, |mut env| parse_module(&mut env, input))
                         .unwrap_or_else(|err| panic!("{:?}", err));
         x
     }
@@ -848,10 +848,7 @@ pub mod tests {
     #[test]
     fn let_type_decl() {
         let _ = ::env_logger::init();
-        let interner = get_local_interner();
-        let mut interner = interner.borrow_mut();
-        let &mut (ref mut interner, ref mut gc) = &mut *interner;
-        let e = super::parse_tc(gc, interner, "let f: Int = \\x y -> x + y in f 1 2").unwrap();
+        let e = parse_new("let f: Int = \\x y -> x + y in f 1 2");
         match e.value {
             Expr::Let(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
             _ => assert!(false),
