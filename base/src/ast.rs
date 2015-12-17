@@ -1,6 +1,9 @@
 use std::ops::{Deref, DerefMut};
 use std::fmt;
 use std::rc::Rc;
+use std::string::String as StdString;
+use symbol::{Symbols, Symbol};
+
 pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType, FunctionType};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
 
@@ -21,9 +24,45 @@ pub trait AstId: Sized {
     fn set_type(&mut self, typ: ASTType<Self::Untyped>);
 }
 
-pub trait IdentEnv {
+pub trait DisplayEnv {
     type Ident;
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str;
+}
+
+pub trait IdentEnv: DisplayEnv {
     fn from_str(&mut self, s: &str) -> Self::Ident;
+}
+
+struct EmptyEnv<T>(::std::marker::PhantomData<T>);
+
+impl<T: Deref<Target = str>> DisplayEnv for EmptyEnv<T> {
+    type Ident = T;
+
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+        ident
+    }
+}
+
+impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t T {
+    type Ident = T::Ident;
+
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+        (**self).string(ident)
+    }
+}
+
+impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
+    type Ident = T::Ident;
+
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+        (**self).string(ident)
+    }
+}
+
+impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
+    fn from_str(&mut self, s: &str) -> Self::Ident {
+        (**self).from_str(s)
+    }
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -71,11 +110,19 @@ impl<Id> AstId for TcIdent<Id> where Id: Clone + PartialEq + Eq + fmt::Debug + A
     }
 }
 
+impl<Id, Env> DisplayEnv for TcIdentEnv<Id, Env> where Env: DisplayEnv<Ident = Id>
+{
+    type Ident = TcIdent<Id>;
+
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+        self.env.string(&ident.name)
+    }
+}
+
 impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
     where Id: Clone,
           Env: IdentEnv<Ident = Id>
 {
-    type Ident = TcIdent<Id>;
     fn from_str(&mut self, s: &str) -> TcIdent<Id> {
         TcIdent {
             typ: self.typ.clone(),
@@ -220,7 +267,7 @@ pub struct BoxType<Id> {
     typ: Box<Type<Id, BoxType<Id>>>,
 }
 
-impl<Id: fmt::Display> fmt::Display for BoxType<Id> {
+impl<Id: Deref<Target = str>> fmt::Display for BoxType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         (**self).fmt(f)
     }
@@ -258,7 +305,7 @@ pub struct RcType<Id> {
     typ: Rc<Type<Id, ASTType<Id>>>,
 }
 
-impl<Id: fmt::Display> fmt::Display for RcType<Id> {
+impl<Id: Deref<Target = str>> fmt::Display for RcType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         (**self).fmt(f)
     }
@@ -289,13 +336,88 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
     }
 }
 
-impl<Id> Type<Id> {
+impl ASTType<Symbol> {
+    pub fn clone_strings(&self, symbols: &Symbols) -> ASTType<StdString> {
+        self.map(|symbol| StdString::from(symbols.string(symbol)))
+    }
+}
+
+impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
+{
+    pub fn map<F, R, T2>(&self, mut f: F) -> T2
+        where F: FnMut(&Id) -> R,
+              T2: From<Type<R, T2>>
+    {
+        self.map_(&mut f)
+    }
+
+    fn map_<R, T2>(&self, f: &mut FnMut(&Id) -> R) -> T2
+        where T2: From<Type<R, T2>>
+    {
+        let typ = match *self {
+            Type::Data(ref ctor, ref args) => {
+                let ctor = match *ctor {
+                    TypeConstructor::Data(ref id) => TypeConstructor::Data(f(id)),
+                    TypeConstructor::Builtin(b) => TypeConstructor::Builtin(b),
+                };
+                Type::Data(ctor, args.iter().map(|t| t.map_(f)).collect())
+            }
+            Type::Array(ref inner) => Type::Array(inner.map_(f)),
+            Type::Function(ref args, ref ret) => {
+                Type::Function(args.iter().map(|t| t.map_(f)).collect(), ret.map_(f))
+            }
+            Type::Record { ref types, ref fields } => {
+                let types = types.iter()
+                                 .map(|field| {
+                                     Field {
+                                         name: field.name.map_(f),
+                                         typ: field.typ.map_(f),
+                                     }
+                                 })
+                                 .collect();
+                let fields = fields.iter()
+                                   .map(|field| {
+                                       Field {
+                                           name: f(&field.name),
+                                           typ: field.typ.map_(f),
+                                       }
+                                   })
+                                   .collect();
+                Type::Record {
+                    types: types,
+                    fields: fields,
+                }
+            }
+            Type::App(ref l, ref r) => Type::App(l.map_(f), r.map_(f)),
+            Type::Variants(ref variants) => {
+                Type::Variants(variants.iter()
+                                       .map(|t| (f(&t.0), t.1.map_(f)))
+                                       .collect())
+            }
+            Type::Builtin(x) => Type::Builtin(x),
+            Type::Variable(ref v) => {
+                Type::Variable(TypeVariable {
+                    kind: v.kind.clone(),
+                    id: v.id,
+                })
+            }
+            Type::Generic(ref g) => {
+                Type::Generic(Generic {
+                    id: f(&g.id),
+                    kind: g.kind.clone(),
+                })
+            }
+        };
+        T2::from(typ)
+    }
+
     pub fn is_uninitialized(&self) -> bool {
         match *self {
             Type::Variable(ref id) if id.id == 0 => true,
             _ => false,
         }
     }
+
     pub fn kind(&self) -> Rc<Kind> {
         use self::Type::*;
         match *self {
@@ -643,96 +765,121 @@ impl fmt::Display for BuiltinType {
     }
 }
 
-
-#[derive(PartialEq, Copy, Clone, PartialOrd)]
-enum Prec_ {
-    Top,
-    Function,
-    Constructor,
+fn dt<'a, I, T, E>(env: &'a E, prec: Prec, typ: &'a Type<I, T>) -> DisplayType<'a, I, T, E> {
+    DisplayType {
+        env: env,
+        prec: prec,
+        typ: typ,
+    }
 }
-#[derive(Copy, Clone)]
-struct Prec<'a, I: 'a, T: 'a>(Prec_, &'a Type<I, T>);
 
-impl<'a, I, T> fmt::Display for Prec<'a, I, T>
-    where I: fmt::Display,
-          T: fmt::Display + Deref<Target = Type<I, T>>
+fn top<'a, I, T, E>(env: &'a E, typ: &'a Type<I, T>) -> DisplayType<'a, I, T, E> {
+    dt(env, Prec::Top, typ)
+}
+
+pub fn display_type<'a, I, T, E>(env: &'a E, typ: &'a Type<I, T>) -> DisplayType<'a, I, T, E> {
+    top(env, typ)
+}
+
+pub struct DisplayType<'a, I: 'a, T: 'a, E: 'a> {
+    prec: Prec,
+    typ: &'a Type<I, T>,
+    env: &'a E,
+}
+
+impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
+    where E: DisplayEnv<Ident = I> + 'a,
+          T: Deref<Target = Type<I, T>> + 'a
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fn fmt_type<C, I, T>(f: &mut fmt::Formatter, t: &C, args: &[T]) -> fmt::Result
-            where C: fmt::Display,
-                  I: fmt::Display,
-                  T: fmt::Display + Deref<Target = Type<I, T>>
-        {
-            try!(write!(f, "{}", t));
-            for arg in args {
-                try!(write!(f, " {}", Prec(Prec_::Constructor, &arg)));
-            }
-            Ok(())
-        }
-        let Prec(p, t) = *self;
-        match *t {
+        let p = self.prec;
+        match *self.typ {
             Type::Variable(ref var) => write!(f, "{}", var),
-            Type::Generic(ref gen) => write!(f, "{}", gen),
+            Type::Generic(ref gen) => write!(f, "{}", self.env.string(&gen.id)),
             Type::Function(ref args, ref result) => {
-                if p >= Prec_::Function {
-                    write!(f, "({} -> {})", &args[0], result)
+                if p >= Prec::Function {
+                    write!(f,
+                           "({} -> {})",
+                           top(self.env, &*args[0]),
+                           top(self.env, &**result))
                 } else {
-                    write!(f, "{} -> {}", Prec(Prec_::Function, &args[0]), result)
+                    write!(f,
+                           "{} -> {}",
+                           dt(self.env, Prec::Function, &args[0]),
+                           top(self.env, &**result))
                 }
             }
             Type::App(ref lhs, ref rhs) => {
-                if p >= Prec_::Constructor {
+                if p >= Prec::Constructor {
                     write!(f,
                            "({} {})",
-                           Prec(Prec_::Function, &lhs),
-                           Prec(Prec_::Constructor, &rhs))
+                           dt(self.env, Prec::Function, &lhs),
+                           dt(self.env, Prec::Constructor, &rhs))
                 } else {
                     write!(f,
                            "{} {}",
-                           Prec(Prec_::Function, &lhs),
-                           Prec(Prec_::Constructor, &rhs))
+                           dt(self.env, Prec::Function, &lhs),
+                           dt(self.env, Prec::Constructor, &rhs))
                 }
             }
             Type::Data(ref t, ref args) => {
-                if p >= Prec_::Constructor {
+                if p >= Prec::Constructor {
                     try!(write!(f, "("));
                 }
-                try!(fmt_type(f, t, &args));
-                if p >= Prec_::Constructor {
+                match *t {
+                    TypeConstructor::Data(ref d) => try!(write!(f, "{}", self.env.string(d))),
+                    TypeConstructor::Builtin(ref b) => try!(write!(f, "{}", b)),
+                }
+                for arg in args {
+                    try!(write!(f, " {}", dt(self.env, Prec::Constructor, arg)));
+                }
+                if p >= Prec::Constructor {
                     try!(write!(f, ")"));
                 }
                 Ok(())
             }
             Type::Variants(ref variants) => {
-                if p >= Prec_::Constructor {
+                if p >= Prec::Constructor {
                     try!(write!(f, "("));
                 }
                 for variant in variants {
-                    try!(write!(f, "| {}", variant.0));
+                    try!(write!(f, "| {}", self.env.string(&variant.0)));
                     for arg in arg_iter(&variant.1) {
-                        try!(write!(f, " {}", Prec(Prec_::Constructor, &arg)));
+                        try!(write!(f, " {}", dt(self.env, Prec::Constructor, &arg)));
                     }
                 }
-                if p >= Prec_::Constructor {
+                if p >= Prec::Constructor {
                     try!(write!(f, ")"));
                 }
                 Ok(())
             }
             Type::Builtin(ref t) => t.fmt(f),
-            Type::Array(ref t) => write!(f, "[{}]", t),
+            Type::Array(ref t) => write!(f, "[{}]", top(self.env, &**t)),
             Type::Record { ref types, ref fields } => {
                 try!(write!(f, "{{"));
                 if types.len() > 0 {
-                    try!(write!(f, " {} = {}", types[0].name, types[0].typ));
+                    try!(write!(f,
+                                ", {} = {}",
+                                top(self.env, &*types[0].name),
+                                top(self.env, &*types[0].typ)));
                     for field in &types[1..] {
-                        try!(write!(f, ", {} = {}", field.name, field.typ));
+                        try!(write!(f,
+                                    ", {} = {}",
+                                    top(self.env, &*field.name),
+                                    top(self.env, &*field.typ)));
                     }
                     try!(write!(f, " "));
                 }
                 if fields.len() > 0 {
-                    try!(write!(f, " {}: {}", fields[0].name, fields[0].typ));
+                    try!(write!(f,
+                                ", {}: {}",
+                                self.env.string(&fields[0].name),
+                                top(self.env, &*fields[0].typ)));
                     for field in &fields[1..] {
-                        try!(write!(f, ", {}: {}", field.name, field.typ));
+                        try!(write!(f,
+                                    ", {}: {}",
+                                    self.env.string(&field.name),
+                                    top(self.env, &*field.typ)));
                     }
                     try!(write!(f, " "));
                 }
@@ -742,12 +889,21 @@ impl<'a, I, T> fmt::Display for Prec<'a, I, T>
     }
 }
 
+#[derive(PartialEq, Copy, Clone, PartialOrd)]
+enum Prec {
+    Top,
+    Function,
+    Constructor,
+}
+
 impl<I, T> fmt::Display for Type<I, T>
-    where I: fmt::Display,
-          T: fmt::Display + Deref<Target = Type<I, T>>
+    where I: Deref<Target = str>,
+          T: Deref<Target = Type<I, T>>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", Prec(Prec_::Top, self))
+        write!(f,
+               "{}",
+               dt(&EmptyEnv(::std::marker::PhantomData), Prec::Top, self))
     }
 }
 

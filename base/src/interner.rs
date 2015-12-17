@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ops::Deref;
 use std::slice;
-use ast::{AstId, IdentEnv, ASTType};
+use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
 
 use gc::{GcPtr, Gc, DataDef, Traverseable, WriteOnly};
 
@@ -130,9 +130,18 @@ impl<'a> InternerEnv<'a> {
     }
 }
 
-impl<'a> IdentEnv for InternerEnv<'a> {
+impl<'i> DisplayEnv for InternerEnv<'i> {
     type Ident = InternedStr;
 
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+        self.0
+            .indexes
+            .get(&**ident)
+            .map(|x| &**x)
+            .unwrap_or("<UNKNOWN>")
+    }
+}
+impl<'a> IdentEnv for InternerEnv<'a> {
     fn from_str(&mut self, s: &str) -> InternedStr {
         self.intern(s)
     }

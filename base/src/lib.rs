@@ -5,3 +5,4 @@ pub mod ast;
 pub mod fixed;
 pub mod gc;
 pub mod interner;
+pub mod symbol;
