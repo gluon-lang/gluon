@@ -483,6 +483,7 @@ impl<'a> Typecheck<'a> {
                     ast::Integer(_) => Type::int(),
                     ast::Float(_) => Type::float(),
                     ast::String(_) => Type::string(),
+                    ast::LiteralStruct::Char(_) => Type::char(),
                     ast::Bool(_) => Type::bool(),
                 })
             }
@@ -1644,6 +1645,17 @@ mod tests {
             }
             _ => assert!(false),
         }
+    }
+
+    #[test]
+    fn char_literal() {
+        let _ = ::env_logger::init();
+        let text = r"
+'a'
+";
+        let result = typecheck(text);
+        assert_eq!(result,
+                   Ok(Type::char()));
     }
 
     #[test]

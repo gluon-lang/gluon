@@ -213,6 +213,24 @@ impl<'a> Pushable<'a> for String {
     }
 }
 
+impl VMType for char {
+    type Type = Self;
+}
+impl<'a> Pushable<'a> for char {
+    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        stack.push(Value::Int(self as VMInt));
+        Status::Ok
+    }
+}
+impl<'a, 'vm> Getable<'a, 'vm> for char {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<char> {
+        match value {
+            Value::Int(x) => ::std::char::from_u32(x as u32),
+            _ => None,
+        }
+    }
+}
+
 impl<T: VMType> VMType for Box<T> {
     type Type = T::Type;
 }

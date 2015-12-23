@@ -333,7 +333,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                     },
                     expr)
         };
-        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 14],
+        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 15],
                  _>([&mut parser(|input| self.if_else(input)).map(&loc),
                      &mut self.parser(ParserEnv::let_in).map(&loc),
                      &mut self.parser(ParserEnv::case_of).map(&loc),
@@ -357,6 +357,8 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                      })),
                      &mut self.string_literal()
                               .map(|s| loc(Expr::Literal(LiteralStruct::String(s)))),
+                     &mut self.char_literal()
+                              .map(|s| loc(Expr::Literal(LiteralStruct::Char(s)))),
                      &mut self.brackets(sep_by(self.expr(), self.lex(char(','))))
                               .map(|exprs| {
                                   loc(Expr::Array(ArrayStruct {

@@ -685,6 +685,7 @@ impl<'a> VM<'a> {
         try!(ids.try_insert(TypeId::of::<VMInt>(), Type::int()));
         try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
+        try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
         Ok(())
     }
 
@@ -1833,6 +1834,13 @@ r#"
 let x = io_bind (io.print_int 1) (\x -> error "NOOOOOOOO")
 in { x }
 "#
+}
+
+    test_expr!{ char,
+r#"
+'a' 
+"#,
+Int('a' as isize)
 }
 
     #[test]

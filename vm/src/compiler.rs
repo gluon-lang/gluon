@@ -440,6 +440,7 @@ impl<'a> Compiler<'a> {
                         }))
                     }
                     String(ref s) => function.emit_string(self.intern(&s)),
+                    ast::LiteralStruct::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
             Expr::Identifier(ref id) => self.load_identifier(*id.id(), function),

@@ -144,6 +144,10 @@ pub fn show_float(f: f64) -> String {
     format!("{}", f)
 }
 
+pub fn show_char(c: char) -> String {
+    format!("{}", c)
+}
+
 pub fn error(_: &VM) -> Status {
     // We expect a string as an argument to this function but we only return Status::Error
     // and let the caller take care of printing the message
@@ -290,7 +294,8 @@ pub fn load(vm: &VM) -> VMResult<()> {
     try!(vm.define_global("prim",
                           record!(
         show_Int => f1(prim::show_int),
-        show_Float => f1(prim::show_float)
+        show_Float => f1(prim::show_float),
+        show_Char => f1(prim::show_char)
     )));
 
     try!(vm.define_global("#error", primitive::<fn(StdString) -> A>(prim::error)));

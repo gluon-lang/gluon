@@ -30,6 +30,7 @@ impl<Id> Typed for ast::Expr<Id> where Id: Typed<Id = Symbol> + ast::AstId<Untyp
                     ast::Integer(_) => Type::int(),
                     ast::Float(_) => Type::float(),
                     ast::String(_) => Type::string(),
+                    ast::LiteralStruct::Char(_) => Type::char(),
                     ast::Bool(_) => Type::bool(),
                 }
             }

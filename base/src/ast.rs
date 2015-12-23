@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::string::String as StdString;
 use symbol::{Symbols, Symbol};
 
-pub use self::BuiltinType::{StringType, IntType, FloatType, BoolType, UnitType, FunctionType};
+pub use self::BuiltinType::{StringType, CharType, IntType, FloatType, BoolType, UnitType, FunctionType};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
 
 pub type ASTType<Id> = RcType<Id>;
@@ -219,6 +219,7 @@ pub fn no_loc<T>(x: T) -> Located<T> {
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType {
     StringType,
+    CharType,
     IntType,
     FloatType,
     BoolType,
@@ -463,6 +464,7 @@ pub enum LiteralStruct {
     Integer(i64),
     Float(f64),
     String(StdString),
+    Char(char),
     Bool(bool),
 }
 
@@ -584,6 +586,7 @@ pub fn str_to_primitive_type(x: &str) -> Option<BuiltinType> {
         "Int" => IntType,
         "Float" => FloatType,
         "String" => StringType,
+        "Char" => CharType,
         "Bool" => BoolType,
         _ => return None,
     };
@@ -592,6 +595,7 @@ pub fn str_to_primitive_type(x: &str) -> Option<BuiltinType> {
 pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
     match t {
         StringType => "String",
+        CharType => "Char",
         IntType => "Int",
         FloatType => "Float",
         BoolType => "Bool",
@@ -674,6 +678,10 @@ impl<Id> Type<Id, ()> {
 
     pub fn string() -> ASTType<Id> {
         Type::builtin(BuiltinType::StringType)
+    }
+
+    pub fn char() -> ASTType<Id> {
+        Type::builtin(BuiltinType::CharType)
     }
 
     pub fn int() -> ASTType<Id> {
