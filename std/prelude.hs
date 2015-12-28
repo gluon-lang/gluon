@@ -65,7 +65,7 @@ let eq_List: Eq a -> Eq (List a) = \d -> {
             in f
 } in
 let eq_String: Eq String = {
-    (==) = string.eq
+    (==) = string_prim.eq
 } in
 
 type Ordering = | LT | EQ | GT
@@ -94,7 +94,7 @@ let ord_Float = {
 } in
 let ord_String: Ord String = {
     compare = \l r ->
-        let o = string.compare l r
+        let o = string_prim.compare l r
         in if o #Int== 0 then EQ else if o #Int== (0 #Int- 1) then LT else GT
 } in
 let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
@@ -289,10 +289,10 @@ let show_List: Show a -> Show (List a) = \d ->
     let show xs =
         let show2 ys = case ys of
             | Cons y ys2 -> case ys2 of
-                | Cons z zs -> string.append (d.show y) (string.append ", " (show2 ys2))
-                | Nil -> string.append (d.show y) "]"
+                | Cons z zs -> string_prim.append (d.show y) (string_prim.append ", " (show2 ys2))
+                | Nil -> string_prim.append (d.show y) "]"
             | Nil -> "]"
-        in string.append "[" (show2 xs)
+        in string_prim.append "[" (show2 xs)
     in { show }
 in
 {

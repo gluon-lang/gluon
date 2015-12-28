@@ -1,4 +1,5 @@
-let { Show, Num, Eq } = prelude
+let string = import "std/string.hs"
+and { Show, Num, Eq } = prelude
 in
 let (++) = string.append
 and { (>>=), return, (>>), join, map = fmap, lift2, forM_ }

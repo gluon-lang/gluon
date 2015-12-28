@@ -280,7 +280,7 @@ pub fn load(vm: &VM) -> VMResult<()> {
         append => f2(prim::array_append)
     )));
 
-    try!(vm.define_global("string",
+    try!(vm.define_global("string_prim",
                           record!(
         length => f1(prim::string_length),
         find => f2(prim::string_find),

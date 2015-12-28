@@ -1,4 +1,5 @@
 let map = import "std/map.hs"
+and string = import "std/string.hs"
 and { Map } = map
 in
 let { (>>=), return, (>>), join, map = fmap, lift2, forM_ } = prelude.make_Monad prelude.monad_IO
@@ -71,13 +72,12 @@ let store line: String -> IO Bool
         | None -> io.print "Expected binding in definition" >> return True
 in
 let loop x: () -> IO () = io.read_line >>= \line ->
-    let is_command = string.slice line 0 1 == ":"
-    in (if is_command
-        then do_command line
-        else if string.slice line 0 4 == "def "
-        then store (string.slice line 4 (string.length line))
-        else io.run_expr line >>= io.print >> return True) >>= \continue -> 
-            if continue
-            then loop ()
-            else return ()
+    (if string.starts_with line ":"
+    then do_command line
+    else if string.starts_with line "def "
+    then store (string.slice line 4 (string.length line))
+    else io.run_expr line >>= io.print >> return True) >>= \continue -> 
+        if continue
+        then loop ()
+        else return ()
 in loop

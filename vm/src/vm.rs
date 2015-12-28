@@ -1859,7 +1859,7 @@ case A of
     test_expr!{ record_pattern,
 r#"
 case { x = 1, y = "abc" } of
-    | { x, y = z } -> x #Int+ string.length z
+    | { x, y = z } -> x #Int+ string_prim.length z
 "#,
 Int(4)
 }
@@ -1871,7 +1871,7 @@ in
 let a = { x = 10, y = "abc" }
 in
 let {x, y = z} = a
-in x + string.length z
+in x + string_prim.length z
 "#,
 Int(13)
 }
@@ -1912,7 +1912,7 @@ Int(3)
 }
 
     test_expr!{ module_function,
-r#"let x = string.length "test" in x"#,
+r#"let x = string_prim.length "test" in x"#,
 Int(4)
 }
 
