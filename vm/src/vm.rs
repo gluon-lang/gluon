@@ -173,7 +173,7 @@ pub enum Value<'a> {
     PartialApplication(GcPtr<PartialApplicationData<'a>>),
     TraitObject(GcPtr<DataStruct<'a>>),
     Userdata(Userdata_),
-    Lazy(GcPtr<Lazy<'a>>),
+    Lazy(GcPtr<Lazy<'a, Value<'a>>>),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -679,6 +679,8 @@ impl<'a> VM<'a> {
     }
 
     fn add_types(&self) -> Result<(), (TypeId, TcType)> {
+        use api::generic::A;
+        use api::Generic;
         let ref ids = self.typeids;
         try!(ids.try_insert(TypeId::of::<()>(), Type::unit()));
         try!(ids.try_insert(TypeId::of::<bool>(), Type::bool()));
@@ -686,6 +688,11 @@ impl<'a> VM<'a> {
         try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
         try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
+        let args = vec![ast::Generic {
+            id: self.symbol("a"),
+            kind: ast::Kind::star(),
+        }];
+        let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
         Ok(())
     }
 
@@ -833,19 +840,21 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub fn register_type<T: ?Sized + Any>(&self, name: &str) -> Result<&TcType, ()> {
+    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: Vec<ast::Generic<Symbol>>) -> VMResult<&TcType> {
         let n = self.make_symbol(StdString::from(name));
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(&n) {
-            Err(())
+            Err(Error::Message(format!("Type '{}' has already been registered", name)))
         } else {
             let id = TypeId::of::<T>();
-            let typ = Type::data(ast::TypeConstructor::Data(n), Vec::new());
-            try!(self.typeids.try_insert(id, typ.clone()).map_err(|_| ()));
+            let arg_types = args.iter().map(|g| Type::generic(g.clone())).collect();
+            let typ = Type::data(ast::TypeConstructor::Data(n), arg_types);
+            self.typeids.try_insert(id, typ.clone())
+                .expect("Id not inserted");
             let t = self.typeids.get(&id).unwrap();
-            let ctor = Type::variants(vec![(n, typ)]);
-            type_infos.id_to_type.insert(n, (Vec::new(), ctor.clone()));
-            type_infos.type_to_id.insert(ctor, Type::data(ast::TypeConstructor::Data(n), vec![]));
+            let ctor = Type::variants(vec![(n, typ.clone())]);
+            type_infos.id_to_type.insert(n, (args, ctor.clone()));
+            type_infos.type_to_id.insert(ctor, typ);
             Ok(t)
         }
     }

@@ -1,12 +1,14 @@
+use std::marker::PhantomData;
 use gc::{Gc, Traverseable, Move};
 use std::cell::Cell;
-use api::Pushable;
+use api::{VMType, Pushable};
 use vm::{StackFrame, Status, Value, VM};
 
 
 #[derive(Clone, PartialEq)]
-pub struct Lazy<'a> {
+pub struct Lazy<'a, T> {
     value: Cell<Lazy_<'a>>,
+    _marker: PhantomData<T>
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -16,7 +18,7 @@ enum Lazy_<'a> {
     Value(Value<'a>),
 }
 
-impl<'a> Traverseable for Lazy<'a> {
+impl<'a, T> Traverseable for Lazy<'a, T> {
     fn traverse(&self, gc: &mut Gc) {
         match self.value.get() {
             Lazy_::Blackhole => (),
@@ -26,9 +28,14 @@ impl<'a> Traverseable for Lazy<'a> {
     }
 }
 
+impl <'a, T> VMType for Lazy<'a, T>
+where T: VMType,
+      T::Type: Sized {
+    type Type = Lazy<'static, T::Type>;
+}
+
 pub fn force(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
-    println!("{:?}", stack.stack.values);
     match stack[0] {
         Value::Lazy(lazy) => {
             match lazy.value.get() {
@@ -76,7 +83,10 @@ pub fn force(vm: &VM) -> Status {
 pub fn lazy(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
     let f = stack[0];
-    let lazy = vm.gc.borrow_mut().alloc(Move(Lazy { value: Cell::new(Lazy_::Thunk(f)) }));
+    let lazy = vm.gc.borrow_mut().alloc(Move(Lazy {
+        value: Cell::new(Lazy_::Thunk(f)),
+        _marker: PhantomData
+    }));
     stack.push(Value::Lazy(lazy));
     Status::Ok
 }

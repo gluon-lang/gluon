@@ -100,8 +100,13 @@ impl KindEnv for TypeInfos {
     fn find_kind(&self, type_name: Symbol) -> Option<Rc<ast::Kind>> {
         self.id_to_type
             .get(&type_name)
-            .and_then(|tup| self.type_to_id.get(&tup.1))
-            .map(|typ| typ.kind())
+            .map(|&(ref args, _)| {
+                let mut kind = ast::Kind::star();
+                for arg in args.iter().rev() {
+                    kind = Rc::new(ast::Kind::Function(arg.kind.clone(), kind));
+                }
+                kind
+            })
     }
 }
 
