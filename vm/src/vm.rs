@@ -1563,7 +1563,7 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let closure = vm.new_closure(function, &[]);
     let value = try!(vm.call_module(&typ, closure));
-    let id = vm.make_symbol(StdString::from(name));
+    let id = vm.symbol(name);
     vm.names.borrow_mut().insert(id, GlobalFn(vm.globals.len()));
     vm.globals.push(Global {
         id: id,

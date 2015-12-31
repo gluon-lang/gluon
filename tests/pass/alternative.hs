@@ -1,16 +1,9 @@
-let string = import "std/string.hs"
-and { Show, Num, Eq, Option, List, Functor, Applicative, Alternative } = prelude
+let { run, monad, assert_eq } = import "std/test.hs"
 in
-let (++) = string.append
-and { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
-    = prelude.make_Monad prelude.monad_IO
+let { Applicative } = prelude
 in
-let assert x = if x then return () else error "Assertion failed"
-and assert_eq show eq = \x y ->
-    if eq.(==) x y
-    then return ()
-    else error ("Assertion failed: "
-                ++ show.show x  ++ " != " ++ show.show y)
+let { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
+        = prelude.make_Monad monad
 in
 let test_alt show eq fun alt app = 
     let { (<|>), empty, many, some } = prelude.make_Alternative fun app alt

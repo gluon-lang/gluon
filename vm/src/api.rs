@@ -1025,7 +1025,7 @@ let id : Test -> Test = \x -> x in id
         struct Test {
             x: VMInt,
         }
-        vm.register_type::<Test>("Test")
+        vm.register_type::<Test>("Test", vec![])
           .unwrap_or_else(|_| panic!("Could not add type"));
         define_function(&vm, "test", test).unwrap_or_else(|err| panic!("{}", err));
         load_script(&mut vm, "id", &s).unwrap_or_else(|err| panic!("{}", err));
@@ -1060,7 +1060,7 @@ let id : Test -> Test = \x -> x in id
         fn test(r: Root<Test>, i: VMInt) -> VMInt {
             r.0 + i
         }
-        vm.register_type::<Test>("Test")
+        vm.register_type::<Test>("Test", vec![])
           .unwrap_or_else(|_| panic!("Could not add type"));
         define_function(&vm, "test", {
             let test: fn(_, _) -> _ = test;
