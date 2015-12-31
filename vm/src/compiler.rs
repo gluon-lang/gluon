@@ -350,26 +350,34 @@ impl<'a> Compiler<'a> {
                   struct_: &ast::TypeConstructor<Symbol>,
                   field: &Symbol)
                   -> Option<VMIndex> {
-        match *struct_ {
-            ast::TypeConstructor::Data(ref struct_) => {
-                self.stack_constructors
-                    .iter()
-                    .find(|&(name, _)| name == struct_)
-                    .and_then(|(_, typ)| {
-                        match **typ {
-                            Type::Record { ref fields, ..} => {
-                                fields.iter()
-                                      .enumerate()
-                                      .find(|&(_, v)| v.name == *field)
-                                      .map(|(offset, _)| offset as VMIndex)
-                            }
-                            _ => None,
-                        }
-                    })
-                    .or_else(|| self.globals.find_field(struct_, field))
+        let mut struct_ = match *struct_ {
+            ast::TypeConstructor::Data(struct_) => struct_,
+            _ => return None,
+        };
+        // Walk through all type aliases
+        while let Some((_, Some(typ))) = self.find_type_info(&struct_) {
+            match **typ {
+                ast::Type::Data(ast::TypeConstructor::Data(id), _) => {
+                    struct_ = id;
+                }
+                _ => break
             }
-            _ => None,
         }
+        self.stack_constructors
+            .iter()
+            .find(|&(name, _)| *name == struct_)
+            .and_then(|(_, typ)| {
+                match **typ {
+                    Type::Record { ref fields, ..} => {
+                        fields.iter()
+                              .enumerate()
+                              .find(|&(_, v)| v.name == *field)
+                              .map(|(offset, _)| offset as VMIndex)
+                    }
+                    _ => None,
+                }
+            })
+            .or_else(|| self.globals.find_field(&struct_, field))
     }
 
     fn find_tag(&self,

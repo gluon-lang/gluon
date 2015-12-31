@@ -10,6 +10,8 @@ let (++) = string.append
 in
 let monad = make Nil prelude.(++)
 in
+type Test a = Writer (List String) a
+in
 let { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
         = prelude.make_Monad monad
 in
@@ -23,7 +25,7 @@ in
 let assert_ieq = assert_eq prelude.show_Int prelude.eq_Int
 and assert_feq = assert_eq prelude.show_Float prelude.eq_Float
 in
-let run test: Writer (List String) a -> () =
+let run test: Test a -> () =
         case test.writer of
             | Cons _ _ -> error (prelude.foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
             | Nil -> ()

@@ -684,32 +684,7 @@ impl<'a> Typecheck<'a> {
                     let record_type = self.inst.instantiate(&record_type);
                     typ = try!(self.unify(&record_type, typ));
                 }
-                let record = match *typ {
-                    Type::Data(ast::TypeConstructor::Data(id), ref arguments) => {
-                        self.find_type_info(&id)
-                            .ok()
-                            .and_then(|t| t.1.map(|typ| (t.0, typ.clone())))
-                            .map(|(generic_args, typ)| {
-                                self.inst.instantiate_with(typ, arguments, generic_args)
-                            })
-                            .unwrap_or_else(|| typ.clone())
-                    }
-                    Type::App(ref f, _) => {
-                        match **f {
-                            Type::Data(ast::TypeConstructor::Data(id), ref arguments) => {
-                                self.find_type_info(&id)
-                                    .ok()
-                                    .and_then(|t| t.1.map(|typ| (t.0, typ.clone())))
-                                    .map(|(generic_args, typ)| {
-                                        self.inst.instantiate_with(typ, arguments, generic_args)
-                                    })
-                                    .unwrap_or_else(|| typ.clone())
-                            }
-                            _ => typ.clone(),
-                        }
-                    }
-                    _ => typ.clone(),
-                };
+                let record = self.remove_aliases(typ.clone());
                 match *record {
                     Type::Record { ref fields, .. } => {
                         let field_type = fields.iter()
@@ -1311,15 +1286,26 @@ impl<'a> Typecheck<'a> {
                             })
     }
 
+    /// Removes type aliases from `typ` until it is an actual type
+    fn remove_aliases(&self, mut typ: TcType) -> TcType {
+        while let Some(new) = self.maybe_remove_alias(&typ) {
+            typ = new;
+        }
+        typ
+    }
+
     fn remove_alias(&self, typ: TcType) -> TcType {
-        let x = match *typ {
+        self.maybe_remove_alias(&typ).unwrap_or(typ)
+    }
+
+    fn maybe_remove_alias(&self, typ: &TcType) -> Option<TcType> {
+        match **typ {
             Type::Data(ast::TypeConstructor::Data(id), ref args) => {
                 self.type_of_alias(id, args)
                     .unwrap_or_else(|_| None)
             }
             _ => None,
-        };
-        x.unwrap_or(typ)
+        }
     }
 
     fn type_of_alias(&self,
@@ -2132,6 +2118,20 @@ in 1
 "#;
         let result = typecheck(text);
         assert_err!(result, KindError(KindMismatch(..)));
+    }
+
+    #[test]
+    fn field_access_through_multiple_aliases() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type Test1 = { x: Int }
+and Test2 = Test1
+in
+let t: Test2 = { x = 1 }
+in t.x
+"#;
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ("Int")));
     }
 
     #[test]
