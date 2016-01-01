@@ -32,7 +32,7 @@ enum TypeError<I> {
     UndefinedField(ASTType<I>, I),
     IndexError(ASTType<I>),
     PatternError(ASTType<I>, usize),
-    Unification(ASTType<I>, ASTType<I>, UnificationError<I>),
+    Unification(ASTType<I>, ASTType<I>, Vec<UnificationError<I>>),
     KindError(kindcheck::Error<I>),
     StringError(&'static str),
 }
@@ -40,25 +40,37 @@ enum TypeError<I> {
 #[derive(Debug, PartialEq)]
 enum UnificationError<I> {
     TypeMismatch(ASTType<I>, ASTType<I>),
+    FieldMismatch(I, I),
     Occurs(TypeVariable, ASTType<I>),
     UndefinedType(I),
 }
 
-fn apply_subs(tc: &Typecheck, error: UnificationError<Symbol>) -> UnificationError<Symbol> {
-    match error {
-        UnificationError::TypeMismatch(expected, actual) => {
-            UnificationError::TypeMismatch(tc.set_type(expected), tc.set_type(actual))
-        }
-        UnificationError::Occurs(var, typ) => UnificationError::Occurs(var, tc.set_type(typ)),
-        UnificationError::UndefinedType(id) => UnificationError::UndefinedType(id),
-    }
+fn apply_subs(tc: &Typecheck,
+              error: Vec<UnificationError<Symbol>>)
+              -> Vec<UnificationError<Symbol>> {
+    error.into_iter()
+         .map(|error| {
+             match error {
+                 UnificationError::TypeMismatch(expected, actual) => {
+                     UnificationError::TypeMismatch(tc.set_type(expected), tc.set_type(actual))
+                 }
+                 UnificationError::FieldMismatch(expected, actual) => {
+                     UnificationError::FieldMismatch(expected, actual)
+                 }
+                 UnificationError::Occurs(var, typ) => {
+                     UnificationError::Occurs(var, tc.set_type(typ))
+                 }
+                 UnificationError::UndefinedType(id) => UnificationError::UndefinedType(id),
+             }
+         })
+         .collect()
 }
 
 fn map_symbol(symbols: &Symbols,
               err: &ast::Located<TypeError<Symbol>>)
               -> ast::Located<TypeError<String>> {
     use self::TypeError::*;
-    use self::UnificationError::{TypeMismatch, Occurs};
+    use self::UnificationError::{TypeMismatch, FieldMismatch, Occurs};
 
     let f = |symbol| String::from(symbols.string(symbol));
 
@@ -67,20 +79,27 @@ fn map_symbol(symbols: &Symbols,
         NotAFunction(ref typ) => NotAFunction(typ.clone_strings(symbols)),
         UndefinedType(ref name) => UndefinedType(f(name)),
         UndefinedField(ref typ, ref field) => UndefinedField(typ.clone_strings(symbols), f(field)),
-        Unification(ref expected, ref actual, TypeMismatch(ref l, ref r)) => {
+        Unification(ref expected, ref actual, ref errors) => {
+            let errors = errors.iter()
+                               .map(|error| {
+                                   match *error {
+                                       TypeMismatch(ref l, ref r) => {
+                                           TypeMismatch(l.clone_strings(symbols),
+                                                        r.clone_strings(symbols))
+                                       }
+                                       FieldMismatch(ref l, ref r) => FieldMismatch(f(l), f(r)),
+                                       Occurs(ref var, ref typ) => {
+                                           Occurs(var.clone(), typ.clone_strings(symbols))
+                                       }
+                                       UnificationError::UndefinedType(ref id) => {
+                                           UnificationError::UndefinedType(f(&id))
+                                       }
+                                   }
+                               })
+                               .collect();
             Unification(expected.clone_strings(symbols),
                         actual.clone_strings(symbols),
-                        TypeMismatch(l.clone_strings(symbols), r.clone_strings(symbols)))
-        }
-        Unification(ref expected, ref actual, Occurs(ref var, ref typ)) => {
-            Unification(expected.clone_strings(symbols),
-                        actual.clone_strings(symbols),
-                        Occurs(var.clone(), typ.clone_strings(symbols)))
-        }
-        Unification(ref expected, ref actual, UnificationError::UndefinedType(ref id)) => {
-            Unification(expected.clone_strings(symbols),
-                        actual.clone_strings(symbols),
-                        UnificationError::UndefinedType(f(&id)))
+                        errors)
         }
         IndexError(ref typ) => IndexError(typ.clone_strings(symbols)),
         PatternError(ref typ, expected_len) => {
@@ -127,7 +146,6 @@ impl<I> From<kindcheck::Error<I>> for TypeError<I> {
 impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeError<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::TypeError::*;
-        use self::UnificationError::{TypeMismatch, Occurs};
         match *self {
             UndefinedVariable(ref name) => write!(f, "Undefined variable `{}`", name),
             NotAFunction(ref typ) => write!(f, "`{}` is not a function", typ),
@@ -135,28 +153,20 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
             UndefinedField(ref typ, ref field) => {
                 write!(f, "Type `{}` does not have the field `{}`", typ, field)
             }
-            Unification(ref expected, ref actual, TypeMismatch(ref l, ref r)) => {
-                write!(f,
-                       "Expected: {}\nFound: {} does not unify\n(Expected: {}\nFound: {})",
-                       expected,
-                       actual,
-                       l,
-                       r)
-            }
-            Unification(ref expected, ref actual, Occurs(ref var, ref typ)) => {
-                write!(f,
-                       "Variable `{}` occurs in `{}`\n(Expected: {}\nFound: {})",
-                       var,
-                       typ,
-                       expected,
-                       actual)
-            }
-            Unification(ref expected, ref actual, UnificationError::UndefinedType(ref id)) => {
-                write!(f,
-                       "Type `{}` does not exist. \n(Expected: {}\nFound: {})",
-                       id,
-                       expected,
-                       actual)
+            Unification(ref expected, ref actual, ref errors) => {
+                try!(writeln!(f,
+                              "Expected the following types to be equal\nExpected: {}\nFound: \
+                               {}\n{} errors were found during unification:",
+                              expected,
+                              actual,
+                              errors.len()));
+                if errors.len() == 0 {
+                    return Ok(())
+                }
+                for error in &errors[..errors.len() - 1] {
+                    try!(writeln!(f, "{}", error));
+                }
+                write!(f, "{}", errors.last().unwrap())
             }
             IndexError(ref typ) => write!(f, "Type {} cannot be indexed", typ),
             PatternError(ref typ, expected_len) => {
@@ -168,8 +178,27 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
     }
 }
 
+impl<I> fmt::Display for UnificationError<I> where I: fmt::Display + ::std::ops::Deref<Target = str>
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::UnificationError::*;
+        match *self {
+            TypeMismatch(ref l, ref r) => {
+                write!(f, "Types do not match:\n\tExpected: {}\n\tFound: {}", l, r)
+            }
+            FieldMismatch(ref l, ref r) => {
+                write!(f,
+                       "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
+                       l,
+                       r)
+            }
+            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
+            UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
+        }
+    }
+}
+
 pub type TcResult<T = TcType> = Result<T, TypeError<Symbol>>;
-pub type UnificationResult = Result<(), UnificationError<Symbol>>;
 
 impl Variable for ast::TypeVariable {
     fn get_id(&self) -> u32 {
@@ -276,6 +305,7 @@ pub struct Typecheck<'a> {
     stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
     inst: Instantiator,
     errors: Errors<ast::Located<TypeError<Symbol>>>,
+    unification_errors: RefCell<Errors<UnificationError<Symbol>>>,
 }
 
 pub type StringErrors = Errors<ast::Located<TypeError<String>>>;
@@ -340,6 +370,7 @@ impl<'a> Typecheck<'a> {
             stack_types: ScopedMap::new(),
             inst: Instantiator::new(),
             errors: Errors::new(),
+            unification_errors: RefCell::new(Errors::new()),
         }
     }
 
@@ -1027,48 +1058,53 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
+    fn unification_error(&self, err: UnificationError<Symbol>) {
+        self.unification_errors.borrow_mut().error(err);
+    }
+
     fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult {
         debug!("Unify {} <=> {}",
                ast::display_type(&self.symbols, expected),
                ast::display_type(&self.symbols, &actual));
-        match self.unify_(expected, &actual) {
-            Ok(()) => {
-                // Return the `expected` type as that is what is passed in for type
-                // declarations
-                Ok(self.set_type(expected.clone()))
-            }
-            Err(err) => {
-                let mut expected = expected.clone();
-                expected = self.set_type(expected);
-                actual = self.set_type(actual);
-                debug!("Error '{:?}' between:\n>> {}\n>> {}",
-                       err,
-                       ast::display_type(&self.symbols, &expected),
-                       ast::display_type(&self.symbols, &actual));
-                Err(Unification(expected, actual, apply_subs(self, err)))
-            }
+        self.unify_(expected, &actual);
+        let has_errors = self.unification_errors.borrow().has_errors();
+        if has_errors {
+            let errors = mem::replace(&mut *self.unification_errors.borrow_mut(), Errors::new());
+            let mut expected = expected.clone();
+            expected = self.set_type(expected);
+            actual = self.set_type(actual);
+            debug!("Error '{:?}' between:\n>> {}\n>> {}",
+                   errors.errors,
+                   ast::display_type(&self.symbols, &expected),
+                   ast::display_type(&self.symbols, &actual));
+            Err(Unification(expected, actual, apply_subs(self, errors.errors)))
+        } else {
+            // Return the `expected` type as that is what is passed in for type
+            // declarations
+            Ok(self.set_type(expected.clone()))
         }
     }
 
-    fn unify_(&self, expected: &TcType, actual: &TcType) -> UnificationResult {
+    fn unify_(&self, expected: &TcType, actual: &TcType) {
         let expected = self.inst.subs.real(expected);
         let actual = self.inst.subs.real(actual);
         debug!("{} <=> {}",
                ast::display_type(&self.symbols, expected),
                ast::display_type(&self.symbols, actual));
         match (&**expected, &**actual) {
-            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(()),
+            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => (),
             (&Type::Variable(ref l), _) => self.union(l, actual),
             (_, &Type::Variable(ref r)) => self.union(r, expected),
             (&Type::Function(ref l_args, ref l_ret),
              &Type::Function(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
                     for (l, r) in l_args.iter().zip(r_args.iter()) {
-                        try!(self.unify_(l, r));
+                        self.unify_(l, r);
                     }
                     self.unify_(l_ret, r_ret)
                 } else {
-                    Err(UnificationError::TypeMismatch(expected.clone(), actual.clone()))
+                    self.unification_error(UnificationError::TypeMismatch(expected.clone(),
+                                                                          actual.clone()))
                 }
             }
             (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
@@ -1082,89 +1118,128 @@ impl<'a> Typecheck<'a> {
              &Type::Data(ref r, ref r_args))
                 if l == r && l_args.len() == r_args.len() => {
                 for (l, r) in l_args.iter().zip(r_args.iter()) {
-                    try!(self.unify_(l, r));
+                    self.unify_(l, r);
                 }
-                Ok(())
             }
             (&Type::Record { fields: ref l_args, .. },
              &Type::Record { fields: ref r_args, .. })
                 if l_args.len() == r_args.len() => {
-
                 for (l, r) in l_args.iter().zip(r_args.iter()) {
                     if l.name != r.name {
-                        return Err(UnificationError::TypeMismatch(l.typ.clone(), r.typ.clone()));
+                        self.unification_error(UnificationError::FieldMismatch(l.name, r.name));
                     } else {
-                        try!(self.unify_(&l.typ, &r.typ));
+                        self.unify_(&l.typ, &r.typ);
                     }
                 }
-                Ok(())
             }
             (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
-                self.unify_app(l, l_args, actual, &|last, r_arg| self.unify_(last, r_arg))
-                    .or_else(|err| {
-                        // Attempt to unify using the type that is aliased if that exists
-                        match *l {
-                            ast::TypeConstructor::Data(l) => {
-                                let l = try!(self.type_of_alias(l, l_args));
-                                match l {
-                                    Some(l) => self.unify_(&l, actual),
-                                    None => Err(err),
+                let error_count = self.unification_errors.borrow().errors.len();
+                self.unify_app(l, l_args, expected, &|last, r_arg| self.unify_(r_arg, last));
+                let range = error_count..self.unification_errors.borrow().errors.len();
+                if range.start != range.end {
+                    // Attempt to unify using the type that is aliased if that exists
+                    match *l {
+                        ast::TypeConstructor::Data(l) => {
+                            let l = match self.type_of_alias(l, l_args) {
+                                Ok(typ) => typ,
+                                Err(err) => return self.unification_error(err),
+                            };
+                            match l {
+                                Some(l) => {
+                                    self.unify_(&l, expected);
+                                    // No errors in this unification, remove the errors generated
+                                    // from the first attempt
+                                    if range.end == self.unification_errors.borrow().errors.len() {
+                                        let start = range.start;
+                                        for _ in range {
+                                            self.unification_errors
+                                                .borrow_mut()
+                                                .errors
+                                                .remove(start);
+                                        }
+                                    }
                                 }
+                                None => (),
                             }
-                            _ => Err(err),
                         }
-                    })
+                        _ => (),
+                    }
+                }
             }
             (&Type::App(_, _), &Type::Data(ref r, ref r_args)) => {
-                self.unify_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last))
-                    .or_else(|err| {
-                        match *r {
-                            ast::TypeConstructor::Data(r) => {
-                                let r = try!(self.type_of_alias(r, r_args));
-                                match r {
-                                    Some(r) => self.unify_(&r, expected),
-                                    None => Err(err),
+                let error_count = self.unification_errors.borrow().errors.len();
+                self.unify_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last));
+                let range = error_count..self.unification_errors.borrow().errors.len();
+                if range.start != range.end {
+                    match *r {
+                        ast::TypeConstructor::Data(r) => {
+                            let r = match self.type_of_alias(r, r_args) {
+                                Ok(typ) => typ,
+                                Err(err) => return self.unification_error(err),
+                            };
+                            match r {
+                                Some(r) => {
+                                    self.unify_(&r, expected);
+                                    // No errors in this unification, remove the errors generated
+                                    // from the first attempt
+                                    if range.end == self.unification_errors.borrow().errors.len() {
+                                        let start = range.start;
+                                        for _ in range {
+                                            self.unification_errors
+                                                .borrow_mut()
+                                                .errors
+                                                .remove(start);
+                                        }
+                                    }
                                 }
+                                None => (),
                             }
-                            _ => Err(err),
                         }
-                    })
+                        _ => (),
+                    }
+                }
             }
             (&Type::App(ref l1, ref l2), &Type::App(ref r1, ref r2)) => {
-                self.unify_(l1, r1)
-                    .and_then(|()| self.unify_(l2, r2))
+                self.unify_(l1, r1);
+                self.unify_(l2, r2);
             }
             (&Type::Data(ast::TypeConstructor::Data(l), ref l_args), _) => {
-                let l = try!(self.type_of_alias(l, l_args));
+                let l = match self.type_of_alias(l, l_args) {
+                    Ok(typ) => typ,
+                    Err(err) => return self.unification_error(err),
+                };
                 match l {
                     Some(l) => self.unify_(&l, actual),
-                    None => Err(UnificationError::TypeMismatch(expected.clone(), actual.clone())),
+                    None => {
+                        self.unification_error(UnificationError::TypeMismatch(expected.clone(),
+                                                                              actual.clone()));
+                    }
                 }
             }
             (_, &Type::Data(ast::TypeConstructor::Data(r), ref r_args)) => {
-                let r = try!(self.type_of_alias(r, r_args));
+                let r = match self.type_of_alias(r, r_args) {
+                    Ok(typ) => typ,
+                    Err(err) => return self.unification_error(err),
+                };
                 match r {
                     Some(r) => self.unify_(expected, &r),
-                    None => Err(UnificationError::TypeMismatch(expected.clone(), actual.clone())),
+                    None => {
+                        self.unification_error(UnificationError::TypeMismatch(expected.clone(),
+                                                                              actual.clone()));
+                    }
                 }
             }
             _ => {
-                if expected == actual {
-                    Ok(())
-                } else {
-                    Err(UnificationError::TypeMismatch(expected.clone(), actual.clone()))
+                if expected != actual {
+                    self.unification_error(UnificationError::TypeMismatch(expected.clone(),
+                                                                          actual.clone()));
                 }
             }
         }
     }
 
-    fn unify_app<F>(&self,
-                    l: &ast::TypeConstructor<Symbol>,
-                    l_args: &[TcType],
-                    r: &TcType,
-                    f: &F)
-                    -> UnificationResult
-        where F: Fn(&TcType, &TcType) -> UnificationResult
+    fn unify_app<F>(&self, l: &ast::TypeConstructor<Symbol>, l_args: &[TcType], r: &TcType, f: &F)
+        where F: Fn(&TcType, &TcType)
     {
         let r = self.inst.subs.real(r);
         debug!("{:?} {:?} <==> {}",
@@ -1175,42 +1250,40 @@ impl<'a> Typecheck<'a> {
             Type::App(ref r, ref r_arg) => {
                 match l_args.last() {
                     Some(last) => {
-                        f(last, r_arg)
-                            .and_then(|_| self.unify_app(l, &l_args[0..l_args.len() - 1], r, f))
+                        f(last, r_arg);
+                        self.unify_app(l, &l_args[0..l_args.len() - 1], r, f);
                     }
                     None => {
                         let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                        Err(UnificationError::TypeMismatch(l, r.clone()))
+                        self.unification_error(UnificationError::TypeMismatch(l, r.clone()));
                     }
                 }
             }
             Type::Data(ref r, ref r_args) if l == r && l_args.len() == r_args.len() => {
                 for (l, r) in l_args.iter().zip(r_args) {
-                    try!(self.unify_(l, r));
+                    self.unify_(l, r);
                 }
-                Ok(())
             }
             Type::Variable(ref r) => {
                 self.union(r, &Type::data(l.clone(), l_args.iter().cloned().collect()))
             }
             _ => {
                 let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                Err(UnificationError::TypeMismatch(l, r.clone()))
+                self.unification_error(UnificationError::TypeMismatch(l, r.clone()));
             }
         }
     }
 
-    fn union(&self, id: &ast::TypeVariable, typ: &TcType) -> UnificationResult {
-        self.inst
-            .subs
-            .union(id, typ)
-            .map_err(|()| UnificationError::Occurs(id.clone(), typ.clone()))
+    fn union(&self, id: &ast::TypeVariable, typ: &TcType) {
+        if let Err(()) = self.inst.subs.union(id, typ) {
+            self.unification_error(UnificationError::Occurs(id.clone(), typ.clone()));
+        }
     }
 
-    fn unify_function(&self, arg: &TcType, ret: &TcType, other: &TcType) -> UnificationResult {
+    fn unify_function(&self, arg: &TcType, ret: &TcType, other: &TcType) {
         let error = || {
             let func = Type::function(vec![arg.clone()], ret.clone());
-            Err(UnificationError::TypeMismatch(func, other.clone()))
+            self.unification_error(UnificationError::TypeMismatch(func, other.clone()));
         };
         let other = self.inst.subs.real(other);
         match **other {
@@ -1218,9 +1291,9 @@ impl<'a> Typecheck<'a> {
                 let other_f = self.inst.subs.real(other_f);
                 match **other_f {
                     Type::App(ref fn_prim, ref other_arg) => {
-                        self.unify_(fn_prim, &Type::builtin(ast::BuiltinType::FunctionType))
-                            .and_then(|()| self.unify_(arg, other_arg))
-                            .and_then(|()| self.unify_(ret, other_ret))
+                        self.unify_(fn_prim, &Type::builtin(ast::BuiltinType::FunctionType));
+                        self.unify_(arg, other_arg);
+                        self.unify_(ret, other_ret);
                     }
                     _ => error(),
                 }
@@ -1555,19 +1628,64 @@ mod tests {
         }}
     }
     macro_rules! assert_err {
-        ($e: expr, $id: pat) => {{
+        ($e: expr, $($id: pat),+) => {{
             use super::TypeError::*;
             #[allow(unused_imports)]
             use kindcheck::Error::KindMismatch;
             #[allow(unused_imports)]
-            use super::UnificationError::{TypeMismatch, Occurs};
+            use super::UnificationError::{TypeMismatch, FieldMismatch, Occurs};
             let symbols = get_local_interner();
             match $e {
-                Ok(x) => assert!(false, "Expected error, got {}", ast::display_type(&*symbols.borrow(), &x)),
-                Err(err) => assert!(err.errors.iter().any(|e| match *e {
-                                ast::Located { value: $id, .. } => true,
-                                _ => false
-                            }), "Found errors:\n{}\nbut expected {}", err, stringify!($id))
+                Ok(x) => assert!(false, "Expected error, got {}",
+                                 ast::display_type(&*symbols.borrow(), &x)),
+                Err(err) => {
+                    let mut iter = err.errors.iter();
+                    $(
+                    match iter.next() {
+                        Some(&ast::Located { value: $id, .. }) => (),
+                        _ => assert!(false, "Found errors:\n{}\nbut expected {}",
+                                            err, stringify!($id))
+                    }
+                    )+
+                    assert!(iter.count() == 0, "Found more errors than expected\n{}", err);
+                }
+            }
+        }}
+    }
+
+    macro_rules! assert_unify_err {
+        ($e: expr, $($id: pat),+) => {{
+            use super::TypeError::*;
+            #[allow(unused_imports)]
+            use kindcheck::Error::KindMismatch;
+            #[allow(unused_imports)]
+            use super::UnificationError::{TypeMismatch, FieldMismatch, Occurs};
+            let symbols = get_local_interner();
+            match $e {
+                Ok(x) => assert!(false, "Expected error, got {}",
+                                 ast::display_type(&*symbols.borrow(), &x)),
+                Err(err) => {
+                    for err in err.errors.iter() {
+                        match *err {
+                            ast::Located { value: Unification(_, _, ref errors), .. } => {
+                                let mut iter = errors.iter();
+                                $(
+                                match iter.next() {
+                                    Some(&$id) => (),
+                                    _ => assert!(false, "Found errors:\n{}\nbut expected {}",
+                                                        err, stringify!($id))
+                                }
+                                )+
+                                assert!(iter.count() == 0,
+                                        "Found more errors than expected\n{}",
+                                        err);
+                            }
+                            _ => assert!(false,
+                                         "Found errors:\n{}\nbut expected an unification error",
+                                         err)
+                        }
+                    }
+                }
             }
         }}
     }
@@ -1640,8 +1758,7 @@ mod tests {
 'a'
 ";
         let result = typecheck(text);
-        assert_eq!(result,
-                   Ok(Type::char()));
+        assert_eq!(result, Ok(Type::char()));
     }
 
     #[test]
@@ -1940,7 +2057,7 @@ let (<=) = (make_Ord ord_Int).(<=)
 in "" <= ""
 "#;
         let result = typecheck(text);
-        assert_err!(result, Unification(_, _, TypeMismatch(..)));
+        assert_unify_err!(result, TypeMismatch(..), TypeMismatch(..));
     }
 
     #[test]
@@ -2132,6 +2249,17 @@ in t.x
 "#;
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("Int")));
+    }
+
+    #[test]
+    fn detect_multiple_type_errors_in_single_type() {
+        let _ = ::env_logger::init();
+        let text = r#"
+let f x y = if True then x else y
+in f { x = 1, y = "" } { z = 1, w = "" }
+"#;
+        let result = typecheck(text);
+        assert_unify_err!(result, FieldMismatch(..), FieldMismatch(..));
     }
 
     #[test]
