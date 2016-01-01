@@ -2,6 +2,7 @@ use std::cell::{Cell, RefMut};
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
 use gc::GcPtr;
+use base::symbol::Symbol;
 use vm::{ClosureData, Value, VM};
 use types::VMIndex;
 
@@ -9,6 +10,7 @@ use types::VMIndex;
 pub struct Frame<'a> {
     pub offset: VMIndex,
     pub instruction_index: usize,
+    pub function_name: Option<Symbol>,
     pub upvars: Option<GcPtr<ClosureData<'a>>>,
     pub excess: bool,
 }
@@ -83,6 +85,7 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
             frame: Frame {
                 offset: offset,
                 upvars: upvars,
+                function_name: None,
                 instruction_index: 0,
                 excess: false,
             },
@@ -147,12 +150,13 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
 
     pub fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>,
                            args: VMIndex,
+                           function_name: Option<Symbol>,
                            upvars: Option<GcPtr<ClosureData<'a>>>,
                            f: F)
                            -> Result<StackFrame<'a, 'b>, E>
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E>
     {
-        let stack = StackFrame::frame(stack, args, upvars);
+        let stack = StackFrame::frame(stack, args, function_name, upvars);
         let mut stack = try!(f(stack));
         stack.stack.frames.pop();
         Ok(stack)
@@ -160,12 +164,13 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
 
     pub fn enter_scope(mut self,
                        args: VMIndex,
+                       function_name: Option<Symbol>,
                        new_upvars: Option<GcPtr<ClosureData<'a>>>)
                        -> StackFrame<'a, 'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
-        StackFrame::frame(self.stack, args, new_upvars)
+        StackFrame::frame(self.stack, args, function_name, new_upvars)
     }
 
     pub fn exit_scope(mut self) -> StackFrame<'a, 'b> {
@@ -177,6 +182,7 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
                         .unwrap_or(Frame {
                             offset: 0,
                             upvars: None,
+                            function_name: None,
                             instruction_index: 0,
                             excess: false,
                         });
@@ -189,12 +195,13 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
 
     pub fn scope<E, F>(self,
                        args: VMIndex,
+                       function_name: Option<Symbol>,
                        upvars: Option<GcPtr<ClosureData<'a>>>,
                        f: F)
                        -> Result<StackFrame<'a, 'b>, E>
         where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E>
     {
-        let mut stack = self.enter_scope(args, upvars);
+        let mut stack = self.enter_scope(args, function_name, upvars);
         stack = try!(f(stack));
         stack = stack.exit_scope();
         Ok(stack)
@@ -202,6 +209,7 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
 
     pub fn frame(mut stack: RefMut<'b, Stack<'a>>,
                  args: VMIndex,
+                 function_name: Option<Symbol>,
                  upvars: Option<GcPtr<ClosureData<'a>>>)
                  -> StackFrame<'a, 'b> {
         assert!(stack.len() >= args);
@@ -210,6 +218,7 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         let frame = Frame {
             offset: offset,
             instruction_index: 0,
+            function_name: function_name,
             upvars: upvars,
             excess: false,
         };
@@ -308,10 +317,10 @@ mod tests {
         let mut stack = stack.borrow_mut();
         stack.push(Int(0));
         stack.push(Int(1));
-        let mut frame = StackFrame::frame(stack, 2, None);
+        let mut frame = StackFrame::frame(stack, 2, None, None);
         frame.push(Int(2));
         frame.push(Int(3));
-        frame = frame.enter_scope(1, None);
+        frame = frame.enter_scope(1, None, None);
         frame.push(Int(4));
         frame.push(Int(5));
         frame.push(Int(6));

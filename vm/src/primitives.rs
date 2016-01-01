@@ -190,6 +190,7 @@ pub fn catch_io(vm: &VM) -> Status {
 
 pub fn run_expr(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
+    let frame_level = stack.stack.frames.len();
     let s = stack[0];
     match s {
         Value::String(s) => {
@@ -203,7 +204,11 @@ pub fn run_expr(vm: &VM) -> Status {
                     stack.push(Value::String(result));
                 }
                 Err(err) => {
-                    let fmt = format!("{}", err);
+                    let trace = backtrace(vm, frame_level, &stack);
+                    while stack.stack.frames.len() > frame_level {
+                        stack = stack.exit_scope();
+                    }
+                    let fmt = format!("{}\n{}", err, trace);
                     let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
                     stack.push(Value::String(result));
                 }
@@ -216,6 +221,7 @@ pub fn run_expr(vm: &VM) -> Status {
 
 pub fn load_script(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+    let frame_level = stack.stack.frames.len();
     match (stack[0], stack[1]) {
         (Value::String(name), Value::String(expr)) => {
             drop(stack);
@@ -228,7 +234,11 @@ pub fn load_script(vm: &VM) -> Status {
                     stack.push(Value::String(result));
                 }
                 Err(err) => {
-                    let fmt = format!("{}", err);
+                    let trace = backtrace(vm, frame_level, &stack);
+                    let fmt = format!("{}\n{}", err, trace);
+                    while stack.stack.frames.len() > frame_level {
+                        stack = stack.exit_scope();
+                    }
                     let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
                     stack.push(Value::String(result));
                 }
@@ -239,6 +249,22 @@ pub fn load_script(vm: &VM) -> Status {
     }
 }
 
+/// Creates a backtraces starting from `frame_level`
+fn backtrace(vm: &VM, frame_level: usize, stack: &StackFrame) -> String {
+    let mut buffer = String::from("Backtrace:\n");
+    for frame in &stack.stack.frames[frame_level..] {
+        match frame.function_name {
+            Some(name) => buffer.push_str(&vm.symbol_string(name)),
+            None => buffer.push_str("<unknown>")
+        }
+        buffer.push('\n');
+    }
+    if !stack.stack.frames.is_empty() {
+        // Remove last newline
+        buffer.pop();
+    }
+    buffer
+}
 
 pub fn load(vm: &VM) -> VMResult<()> {
     use std::string::String as StdString;

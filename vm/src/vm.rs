@@ -754,7 +754,7 @@ impl<'a> VM<'a> {
 
     pub fn execute_call(&self, args: VMIndex) -> VMResult<Value<'a>> {
         let stack = self.stack.borrow_mut();
-        let frame = StackFrame::new_scope(stack, args + 1, None, |frame| {
+        let frame = StackFrame::new_scope(stack, args + 1, None, None, |frame| {
             self.execute(frame, &[Call(args)], &BytecodeFunction::empty())
         });
         frame.map(|mut frame| {
@@ -769,7 +769,7 @@ impl<'a> VM<'a> {
 
     pub fn execute_instructions(&self, instructions: &[Instruction]) -> VMResult<Value<'a>> {
         let stack = self.stack.borrow_mut();
-        let frame = StackFrame::new_scope(stack, 0, None, |frame| {
+        let frame = StackFrame::new_scope(stack, 0, None, None, |frame| {
             self.execute(frame, instructions, &BytecodeFunction::empty())
         });
         frame.map(|mut frame| {
@@ -995,7 +995,8 @@ impl<'a> VM<'a> {
         debug!("Call function {:?}", global);
         match global.value.get() {
             Function(ptr) => {
-                let stack = StackFrame::frame(self.stack.borrow_mut(), args, None);
+                let name = self.symbol(&ptr.id);
+                let stack = StackFrame::frame(self.stack.borrow_mut(), args, Some(name), None);
                 let stack = self.execute_function(stack, &ptr);
                 stack.map(|mut stack| {
                     if stack.len() > 0 {
@@ -1021,7 +1022,7 @@ impl<'a> VM<'a> {
                 debug!("Run IO {:?}", value);
                 self.push(value);
                 self.push(Int(0));
-                let mut stack = StackFrame::frame(self.stack.borrow_mut(), 2, None);
+                let mut stack = StackFrame::frame(self.stack.borrow_mut(), 2, None, None);
                 stack = try!(self.execute(stack, &[Call(1)], &BytecodeFunction::empty()));
                 let result = stack.pop();
                 while stack.len() > 0 {
@@ -1039,7 +1040,7 @@ impl<'a> VM<'a> {
                          closure: GcPtr<ClosureData<'a>>)
                          -> VMResult<Value<'a>> {
         self.push(Closure(closure));
-        let mut stack = StackFrame::frame(self.stack.borrow_mut(), args, Some(closure));
+        let mut stack = StackFrame::frame(self.stack.borrow_mut(), args, closure.function.name, Some(closure));
         stack = try!(self.execute(stack, &closure.function.instructions, &closure.function));
         let x = if stack.len() > 0 {
             stack.pop()
@@ -1056,7 +1057,7 @@ impl<'a> VM<'a> {
                             -> Result<StackFrame<'a, 'b>, Error> {
         match *function {
             Callable::Closure(closure) => {
-                stack = stack.enter_scope(closure.function.args, Some(closure));
+                stack = stack.enter_scope(closure.function.args, closure.function.name, Some(closure));
                 stack.frame.excess = excess;
                 stack.stack.frames.last_mut().unwrap().excess = excess;
                 Ok(stack)
@@ -1074,7 +1075,8 @@ impl<'a> VM<'a> {
         assert!(stack.len() >= function.args + 1);
         let function_index = stack.len() - function.args - 1;
         debug!("------- {} {:?}", function_index, &stack[..]);
-        stack = stack.enter_scope(function.args, None);
+        let name = self.symbol(&function.id);
+        stack = stack.enter_scope(function.args, Some(name), None);
         let StackFrame { stack, frame } = stack;
         drop(stack);
         let status = (function.function)(self);
@@ -1777,11 +1779,11 @@ Int(2)
         use std::cell::Cell;
         let _ = ::env_logger::init();
         let vm = VM::new();
-        let _: Result<_, ()> = StackFrame::new_scope(vm.stack.borrow_mut(), 0, None, |mut stack| {
+        let _: Result<_, ()> = StackFrame::new_scope(vm.stack.borrow_mut(), 0, None, None, |mut stack| {
             stack.push(Int(0));
             stack.insert_slice(0, &[Cell::new(Int(2)), Cell::new(Int(1))]);
             assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
-            stack.scope(2, None, |mut stack| {
+            stack.scope(2, None, None, |mut stack| {
                 stack.insert_slice(1, &[Cell::new(Int(10))]);
                 assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
                 stack.insert_slice(1, &[]);

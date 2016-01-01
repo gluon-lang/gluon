@@ -231,6 +231,35 @@ impl<'a, 'vm> Getable<'a, 'vm> for char {
     }
 }
 
+impl <T> VMType for Vec<T>
+    where T: VMType,
+          T::Type: Sized {
+    type Type = Vec<T::Type>;
+}
+
+impl<'a, T> Pushable<'a> for Vec<T>
+where T: Pushable<'a>,
+      T::Type: Sized {
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        let len = self.len();
+        for v in self {
+            if v.push(vm, stack) == Status::Error {
+                return Status::Error
+            }
+        }
+        let result = {
+            let offset = stack.stack.values.len() - len;
+            let (rest, values) = stack.stack.values.split_at_mut(offset);
+            vm.new_data_and_collect(rest, 0, values)
+        };
+        for _ in 0..len {
+            stack.pop();
+        }
+        stack.push(Value::Data(result));
+        Status::Ok
+    }
+}
+
 impl<T: VMType> VMType for Box<T> {
     type Type = T::Type;
 }
