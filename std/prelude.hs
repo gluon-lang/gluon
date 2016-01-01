@@ -1,16 +1,62 @@
 type Option a = | None | Some a in
 type Result e t = | Err e | Ok t in
 type List a = | Nil | Cons a (List a) in
-
+type Monoid m = {
+    (<>): m -> m -> m,
+    empty: m
+}
+in
+let monoid_Function m: Monoid b -> (Monoid (a -> b)) = {
+    (<>) = \f g -> \x -> m.(<>) (f x) (g x),
+    empty = m.empty
+}
+in
+let monoid_List =
+    let (<>) xs ys = case xs of
+        | Cons x zs -> Cons x (zs <> ys)
+        | Nil -> ys
+    in {
+        (<>),
+        empty = Nil
+    }
+in
+let monoid_Option m: Monoid a -> Monoid (Option a) = {
+    (<>) = \l r ->
+        case l of
+            | Some x ->
+                (case r of
+                    | Some y -> Some (m.(<>) x y)
+                    | None -> l)
+            | None -> r,
+    empty = None
+}
+in
+let monoid_Int_Add = {
+    (<>) = \x y -> x #Int+ y,
+    empty = 0
+}
+in
+let monoid_Int_Mul = {
+    (<>) = \x y -> x #Int* y,
+    empty = 1
+}
+in
+let monoid_Float_Add = {
+    (<>) = \x y -> x #Float+ y,
+    empty = 0.0
+}
+in
+let monoid_Float_Mul = {
+    (<>) = \x y -> x #Float* y,
+    empty = 1.0
+}
+in
 let id x = x
 and const x = \_ -> x
 and flip f = \x y -> f y x
 and not x = if x then False else True
-and (++) xs ys = case xs of
-    | Cons x zs -> Cons x (zs ++ ys)
-    | Nil -> ys
 and concatMap f xs: (a -> List b) -> List a -> List b = case xs of
-    | Cons x ys -> f x ++ concatMap f ys
+    | Cons x ys -> monoid_List.(<>) (f x) (concatMap f ys)
     | Nil -> Nil
 and foldl f x xs = case xs of
     | Cons y ys -> foldl f (f x y) ys
@@ -19,7 +65,6 @@ and foldr f x xs = case xs of
     | Cons y ys -> f y (foldr f x ys)
     | Nil -> x
 in
-
 type Eq a = {
     (==) : a -> a -> Bool
 } in
@@ -69,6 +114,14 @@ let eq_String: Eq String = {
 } in
 
 type Ordering = | LT | EQ | GT
+in
+let monoid_Ordering = {
+    (<>) = \x y ->
+        case x of
+            | EQ -> y
+            | _ -> x,
+    empty = EQ
+}
 in
 
 type Ord a = {
@@ -150,15 +203,15 @@ type Num a = {
     negate: a -> a
 } in
 let num_Int: Num Int = {
-    (+) = \l r -> l #Int+ r,
+    (+) = monoid_Int_Add.(<>),
     (-) = \l r -> l #Int- r,
-    (*) = \l r -> l #Int* r,
+    (*) = monoid_Int_Mul.(<>),
     negate = \x -> 0 #Int- x
 } in
 let num_Float: Num Float = {
-    (+) = \l r -> l #Float+ r,
+    (+) = monoid_Float_Add.(<>),
     (-) = \l r -> l #Float- r,
-    (*) = \l r -> l #Float* r,
+    (*) = monoid_Float_Mul.(<>),
     negate = \x -> 0.0 #Float- x
 } in
 type Functor f = {
@@ -209,7 +262,7 @@ and applicative_List: Applicative List = {
         let (<*>) f xs =
                 case f of
                     | Cons g gs ->
-                        functor_List.map g xs ++ (gs <*> xs)
+                        monoid_List.(<>) (functor_List.map g xs) (gs <*> xs)
                     | Nil -> Nil
         in (<*>),
     pure = \x -> Cons x Nil
@@ -228,7 +281,7 @@ let alternative_Option: Alternative Option = {
     empty = None
 }
 and alternative_List: Alternative List = {
-    (<|>) = (++),
+    (<|>) = monoid_List.(<>),
     empty = Nil
 }
 in
@@ -322,28 +375,29 @@ let show_Float: Show Float = {
 let show_String: Show String = {
     show = \x -> x
 } in
-let (+++) = string_prim.append
+let (++) = string_prim.append
 in
 let show_List: Show a -> Show (List a) = \d ->
     let show xs =
         let show2 ys = case ys of
             | Cons y ys2 -> case ys2 of
-                | Cons z zs -> d.show y +++ ", " +++ show2 ys2
-                | Nil -> d.show y +++ "]"
+                | Cons z zs -> d.show y ++ ", " ++ show2 ys2
+                | Nil -> d.show y ++ "]"
             | Nil -> "]"
-        in "[" +++ show2 xs
+        in "[" ++ show2 xs
     in { show }
 in
 let show_Option: Show a -> Show (Option a) = \d ->
     let show o =
             case o of
-                | Some x -> "Some (" +++ d.show x +++ ")"
+                | Some x -> "Some (" ++ d.show x ++ ")"
                 | None -> "None"
     in { show }
 in
 {
     Eq,
     Ord,
+    Monoid,
     Ordering,
     Option,
     Result,
@@ -355,9 +409,11 @@ in
     Num,
     Show,
     id, const, flip, not,
-    (++), foldl, foldr,
+    foldl, foldr,
     ord_Option, ord_Result, ord_Float, ord_Int, ord_String, make_Ord,
     eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
+    monoid_Function, monoid_List, monoid_Option,
+    monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
     num_Int, num_Float,
     functor_Option, functor_Result, functor_List, functor_IO,
     applicative_Option, applicative_Result, applicative_List, applicative_IO,

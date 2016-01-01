@@ -1973,8 +1973,11 @@ Int(100)
         load_script(&mut vm, "map", &text).unwrap_or_else(|err| panic!("{}", err));
 
         let text = r#"
-let { singleton, (++) } = map.make prelude.ord_String
-in singleton "test" 1 ++ singleton "asd" 2
+let { Monoid } = prelude
+in
+let { singleton, monoid } = map.make prelude.ord_String
+and { (<>) } = monoid
+in singleton "test" 1 <> singleton "asd" 2
 "#;
         run_expr(&vm, text);
     }

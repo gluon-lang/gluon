@@ -3,11 +3,12 @@ and string = import "std/string.hs"
 and { Map } = map
 in
 let { (>>=), return, (>>), join, map = fmap, lift2, forM_ } = prelude.make_Monad prelude.monad_IO
-and { Eq, Option, Result } = prelude
+and { Eq, Option, Result, Monoid } = prelude
 and { (==) } = prelude.eq_String
-and (++) = string.append
-and { empty, singleton, find, insert, (++) = (<>), to_list }
+and (++) = string.monoid.(<>)
+and { singleton, find, insert, monoid, to_list }
     = map.make prelude.ord_String
+and { (<>), empty } = monoid
 in
 let load_file filename: String -> IO String =
     let last_slash = (\_ -> case string.rfind filename "/" of

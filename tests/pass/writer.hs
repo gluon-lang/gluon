@@ -2,7 +2,7 @@ let { Writer } = import "std/writer.hs"
 in
 let { run, monad, assert, assert_ieq, assert_feq } = import "std/test.hs"
 in
-let { Eq, Num, List, (++) } = prelude
+let { Eq, Num, List } = prelude
 in
 let { (+) } = prelude.num_Int
 in
