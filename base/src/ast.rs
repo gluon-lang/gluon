@@ -154,6 +154,7 @@ impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
     }
 }
 
+/// Representation of a location in a source file
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Location {
     pub column: i32,
@@ -169,6 +170,11 @@ impl Location {
             absolute: -1,
         }
     }
+
+    pub fn line_offset(mut self, offset: i32) -> Location {
+        self.column += offset;
+        self
+    }
 }
 
 impl fmt::Display for Location {
@@ -177,6 +183,7 @@ impl fmt::Display for Location {
     }
 }
 
+/// Struct which represents a span in a source file
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Span {
     pub start: Location,
@@ -542,6 +549,79 @@ pub struct Binding<Id: AstId> {
 pub struct Field<Id, T = ASTType<Id>> {
     pub name: Id,
     pub typ: T,
+}
+
+impl<Id> LExpr<Id> where Id: AstId
+{
+    /// Returns the an approximation of the span of the expression
+    pub fn span(&self, env: &DisplayEnv<Ident = Id>) -> Span {
+        use self::Expr::*;
+        let end = match self.value {
+            Identifier(ref id) => self.location.line_offset(env.string(id).len() as i32),
+            Literal(ref lit) => {
+                use self::LiteralStruct::*;
+                match *lit {
+                    Integer(i) => self.location.line_offset(format!("{}", i).len() as i32),
+                    Float(f) => self.location.line_offset(format!("{}", f).len() as i32),
+                    String(ref s) => self.location.line_offset(s.len() as i32 + 2),
+                    Char(_) => self.location.line_offset(3),
+                    Bool(b) => {
+                        self.location.line_offset(if b {
+                            4
+                        } else {
+                            5
+                        })
+                    }
+                }
+            }
+            Call(ref func, ref args) => {
+                args.last()
+                    .map(|e| e.span(env).end)
+                    .unwrap_or(func.span(env).end)
+            }
+            IfElse(_, ref if_true, ref if_false) => {
+                if_false.as_ref()
+                        .map(|e| e.span(env).end)
+                        .unwrap_or(if_true.span(env).end)
+            }
+            Match(_, ref alts) => {
+                alts.last()
+                    .map(|alt| alt.expression.span(env).end)
+                    .unwrap_or(self.location)
+            }
+            BinOp(_, _, ref r) => r.span(env).end,
+            Let(_, ref expr) => expr.span(env).end,
+            FieldAccess(ref expr, ref id) => {
+                let base = expr.span(env).end;
+                base.line_offset(1 + env.string(id).len() as i32)
+            }
+            Array(ref array) => {
+                array.expressions
+                     .last()
+                     .map(|expr| expr.span(env).end)
+                     .unwrap_or(self.location)
+                     .line_offset(1)
+            }
+            Record { ref exprs, .. } => {
+                exprs.last()
+                     .and_then(|tup| tup.1.as_ref().map(|expr| expr.span(env).end))
+                     .unwrap_or(self.location)
+                     .line_offset(2)
+            }
+            Lambda(ref lambda) => lambda.body.span(env).end,
+            Tuple(ref args) => {
+                args.last()
+                    .map(|expr| expr.span(env).end)
+                    .unwrap_or(self.location)
+                    .line_offset(2)
+            }
+            Type(_, ref expr) => expr.span(env).end,
+        };
+        Span {
+            start: self.location,
+            end: end,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]

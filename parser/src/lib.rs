@@ -988,4 +988,36 @@ pub mod tests {
         assert_eq!(e,
                    type_decl(typ_a("Test", vec![typ("a")]), test_type, record));
     }
+
+    #[test]
+    fn span() {
+        let _ = ::env_logger::init();
+        let loc = |r, c| Location { column: c, row: r, absolute: 0 };
+
+        let e = parse_new("test");
+        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(1, 1), end: loc(1, 5) });
+
+        let e = parse_new("1234");
+        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(1, 1), end: loc(1, 5) });
+
+        let e = parse_new(r#" f 123 "asd" "#);
+        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(1, 2), end: loc(1, 13) });
+
+        let e = parse_new(
+r#"
+case False of
+    | True -> "asd"
+    | False -> ""
+"#);
+        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(2, 1), end: loc(4, 18) });
+
+        let e = parse_new(
+r#"
+    if True
+            then 1
+else 
+    123.45
+"#);
+        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(2, 5), end: loc(5, 11) });
+    }
 }
