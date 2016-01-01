@@ -4,7 +4,8 @@ use std::rc::Rc;
 use std::string::String as StdString;
 use symbol::{Symbols, Symbol};
 
-pub use self::BuiltinType::{StringType, CharType, IntType, FloatType, BoolType, UnitType, FunctionType};
+pub use self::BuiltinType::{StringType, CharType, IntType, FloatType, BoolType, UnitType,
+                            FunctionType};
 pub use self::LiteralStruct::{Integer, Float, String, Bool};
 
 pub type ASTType<Id> = RcType<Id>;
@@ -889,7 +890,7 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                 try!(write!(f, "{{"));
                 if types.len() > 0 {
                     try!(write!(f,
-                                ", {} = {}",
+                                " {} = {}",
                                 top(self.env, &*types[0].name),
                                 top(self.env, &*types[0].typ)));
                     for field in &types[1..] {
@@ -898,11 +899,16 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                                     top(self.env, &*field.name),
                                     top(self.env, &*field.typ)));
                     }
-                    try!(write!(f, " "));
+                    if fields.len() == 0 {
+                        try!(write!(f, " "));
+                    }
                 }
                 if fields.len() > 0 {
+                    if types.len() > 0 {
+                        try!(write!(f, ","));
+                    }
                     try!(write!(f,
-                                ", {}: {}",
+                                " {}: {}",
                                 self.env.string(&fields[0].name),
                                 top(self.env, &*fields[0].typ)));
                     for field in &fields[1..] {
@@ -1252,5 +1258,55 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
             }
         }
         None => (),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn show_record() {
+        assert_eq!(format!("{}", Type::<&str, ()>::record(vec![], vec![])),
+                   "{}");
+        let typ = Type::record(vec![],
+                               vec![Field {
+                                        name: "x",
+                                        typ: Type::int(),
+                                    }]);
+        assert_eq!(format!("{}", typ), "{ x: Int }");
+
+        let data = |s, a| ASTType::from(type_con(s, a));
+        let f = Type::function(vec![data("a", vec![])], Type::string());
+        let test = data("Test", vec![data("a", vec![])]);
+        let typ = Type::record(vec![Field {
+                                        name: test.clone(),
+                                        typ: f.clone(),
+                                    }],
+                               vec![Field {
+                                        name: "x",
+                                        typ: Type::int(),
+                                    }]);
+        assert_eq!(format!("{}", typ), "{ Test a = a -> String, x: Int }");
+        let typ = Type::record(vec![Field {
+                                        name: test.clone(),
+                                        typ: f.clone(),
+                                    }],
+                               vec![Field {
+                                        name: "x",
+                                        typ: Type::int(),
+                                    },
+                                    Field {
+                                        name: "test",
+                                        typ: test.clone(),
+                                    }]);
+        assert_eq!(format!("{}", typ),
+                   "{ Test a = a -> String, x: Int, test: Test a }");
+        let typ = Type::record(vec![Field {
+                                        name: test.clone(),
+                                        typ: f.clone(),
+                                    }],
+                               vec![]);
+        assert_eq!(format!("{}", typ), "{ Test a = a -> String }");
     }
 }
