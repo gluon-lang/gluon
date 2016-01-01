@@ -30,7 +30,6 @@ enum TypeError<I> {
     NotAFunction(ASTType<I>),
     UndefinedType(I),
     UndefinedField(ASTType<I>, I),
-    IndexError(ASTType<I>),
     PatternError(ASTType<I>, usize),
     Unification(ASTType<I>, ASTType<I>, Vec<UnificationError<I>>),
     KindError(kindcheck::Error<I>),
@@ -101,7 +100,6 @@ fn map_symbol(symbols: &Symbols,
                         actual.clone_strings(symbols),
                         errors)
         }
-        IndexError(ref typ) => IndexError(typ.clone_strings(symbols)),
         PatternError(ref typ, expected_len) => {
             PatternError(typ.clone_strings(symbols), expected_len)
         }
@@ -168,7 +166,6 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
                 }
                 write!(f, "{}", errors.last().unwrap())
             }
-            IndexError(ref typ) => write!(f, "Type {} cannot be indexed", typ),
             PatternError(ref typ, expected_len) => {
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
@@ -751,18 +748,6 @@ impl<'a> Typecheck<'a> {
                 }
                 a.id.typ = Type::array(expected_type);
                 Ok(a.id.typ.clone())
-            }
-            ast::Expr::ArrayAccess(ref mut array, ref mut index) => {
-                let array_type = try!(self.typecheck(&mut **array));
-                let var = self.inst.subs.new_var();
-                let array_type = try!(self.unify(&Type::array(var), array_type));
-                let typ = match *array_type {
-                    Type::Array(ref typ) => typ.clone(),
-                    _ => return Err(IndexError(array_type.clone())),
-                };
-                let index_type = try!(self.typecheck(&mut **index));
-                try!(self.unify(&Type::int(), index_type));
-                Ok(typ)
             }
             ast::Expr::Lambda(ref mut lambda) => {
                 let loc = format!("lambda:{}", expr.location);

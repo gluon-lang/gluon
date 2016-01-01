@@ -514,7 +514,6 @@ pub enum Expr<Id: AstId> {
     Let(Vec<Binding<Id>>, Box<LExpr<Id>>),
     FieldAccess(Box<LExpr<Id>>, Id),
     Array(ArrayStruct<Id>),
-    ArrayAccess(Box<LExpr<Id>>, Box<LExpr<Id>>),
     Record {
         typ: Id,
         types: Vec<(Id::Untyped, Option<ASTType<Id::Untyped>>)>,
@@ -997,10 +996,6 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
             for expr in a.expressions.iter_mut() {
                 v.visit_expr(expr);
             }
-        }
-        Expr::ArrayAccess(ref mut array, ref mut index) => {
-            v.visit_expr(&mut **array);
-            v.visit_expr(&mut **index);
         }
         Expr::Record { ref mut typ, ref mut exprs, .. } => {
             v.visit_identifier(typ);

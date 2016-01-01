@@ -678,11 +678,6 @@ impl<'a> Compiler<'a> {
                 }
                 function.emit(Construct(0, a.expressions.len() as VMIndex));
             }
-            Expr::ArrayAccess(ref array, ref index) => {
-                self.compile(&**array, function, false);
-                self.compile(&**index, function, tail_position);
-                function.emit(GetIndex);
-            }
             Expr::Lambda(ref lambda) => {
                 let (function_index, vars, cf) = self.compile_lambda(&lambda.id,
                                                                      &lambda.arguments,

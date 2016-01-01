@@ -58,13 +58,6 @@ impl<Id> Typed for ast::Expr<Id> where Id: Typed<Id = Symbol> + ast::AstId<Untyp
             ast::Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),
             ast::Expr::FieldAccess(_, ref id) => id.env_type_of(env),
             ast::Expr::Array(ref a) => a.id.env_type_of(env),
-            ast::Expr::ArrayAccess(ref array, _) => {
-                let typ = array.env_type_of(env);
-                match *typ {
-                    Type::Array(ref t) => t.clone(),
-                    _ => panic!("Not an array type {:?}", typ),
-                }
-            }
             ast::Expr::Lambda(ref lambda) => lambda.id.env_type_of(env),
             ast::Expr::Type(_, ref expr) => expr.env_type_of(env),
             ast::Expr::Record { ref typ,  .. } => typ.env_type_of(env),
