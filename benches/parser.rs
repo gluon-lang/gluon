@@ -5,8 +5,7 @@ extern crate test;
 extern crate base;
 extern crate parser;
 
-use base::gc::Gc;
-use base::interner::Interner;
+use base::symbol::Symbols;
 
 #[bench]
 fn prelude(b: &mut ::test::Bencher) {
@@ -18,9 +17,8 @@ fn prelude(b: &mut ::test::Bencher) {
         .read_to_string(&mut text)
         .unwrap();
     b.iter(|| {
-        let mut interner = Interner::new();
-        let mut gc = Gc::new();
-        let expr = ::parser::parse_tc(&mut gc, &mut interner, &text)
+        let mut symbols = Symbols::new();
+        let expr = ::parser::parse_tc(&mut symbols, &text)
                        .unwrap_or_else(|err| panic!("{:?}", err));
         ::test::black_box(expr)
     })

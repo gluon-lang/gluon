@@ -16,14 +16,13 @@ use vm::vm::VM;
 fn prelude(b: &mut ::test::Bencher) {
     let vm = VM::new();
     let env = vm.env();
-    let mut interner = vm.interner.borrow_mut();
-    let mut gc = vm.gc.borrow_mut();
+    let mut symbols = vm.get_mut_symbols();
     let mut text = String::new();
     File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-    let expr = ::parser::parse_tc(&mut *gc, &mut *interner, &text)
+    let expr = ::parser::parse_tc(&mut symbols, &text)
                    .unwrap_or_else(|err| panic!("{:?}", err));
     b.iter(|| {
-        let mut tc = Typecheck::new(&mut *interner, &mut *gc);
+        let mut tc = Typecheck::new(&mut symbols);
         tc.add_environment(&env);
         let result = tc.typecheck_expr(&mut expr.clone());
         if let Err(ref err) = result {

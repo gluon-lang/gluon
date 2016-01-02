@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell, Ref};
+use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::error::Error as StdError;
 use std::fmt;
 use std::any::{Any, TypeId};
@@ -862,6 +862,11 @@ impl<'a> VM<'a> {
     pub fn get_symbols(&self) -> Ref<Symbols> {
         self.symbols.borrow()
     }
+
+    pub fn get_mut_symbols(&self) -> RefMut<Symbols> {
+        self.symbols.borrow_mut()
+    }
+
     pub fn symbol_string(&self, s: Symbol) -> StdString {
         let symbols = self.symbols.borrow();
         StdString::from(symbols.string(&s))
