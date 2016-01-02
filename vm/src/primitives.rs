@@ -255,7 +255,7 @@ fn backtrace(vm: &VM, frame_level: usize, stack: &StackFrame) -> String {
     for frame in &stack.stack.frames[frame_level..] {
         match frame.function_name {
             Some(name) => buffer.push_str(&vm.symbol_string(name)),
-            None => buffer.push_str("<unknown>")
+            None => buffer.push_str("<unknown>"),
         }
         buffer.push('\n');
     }
@@ -324,9 +324,11 @@ pub fn load(vm: &VM) -> VMResult<()> {
         show_Char => f1(prim::show_char)
     )));
 
-    try!(vm.define_global("#error", primitive::<fn(StdString) -> A>(prim::error)));
-    try!(vm.define_global("error", primitive::<fn(StdString) -> A>(prim::error)));
-    try!(vm.define_global("trace", primitive::<fn(A)>(prim::trace)));
+    try!(vm.define_global("#error",
+                          primitive::<fn(StdString) -> A>("#error", prim::error)));
+    try!(vm.define_global("error",
+                          primitive::<fn(StdString) -> A>("error", prim::error)));
+    try!(vm.define_global("trace", primitive::<fn(A)>("trace", prim::trace)));
     let lazy = |t| {
         ASTType::from(ast::Type::data(ast::TypeConstructor::Data(vm.symbol("Lazy")), vec![t]))
     };
@@ -346,9 +348,13 @@ pub fn load(vm: &VM) -> VMResult<()> {
         read_file => f1(prim::read_file),
         read_line => f0(prim::read_line),
         print => f1(prim::print),
-        catch => primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>(prim::catch_io),
-        run_expr => primitive::<fn (StdString) -> IO<StdString>>(prim::run_expr),
-        load_script => primitive::<fn (StdString, StdString) -> IO<StdString>>(prim::load_script)
+        catch =>
+            primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", prim::catch_io),
+        run_expr =>
+            primitive::<fn (StdString) -> IO<StdString>>("io.run_expr", prim::run_expr),
+        load_script =>
+            primitive::<fn (StdString, StdString) -> IO<StdString>>("io.load_script",
+                                                                    prim::load_script)
     )));
 
     // io_bind m f (): IO a -> (a -> IO b) -> IO b

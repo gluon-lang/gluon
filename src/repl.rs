@@ -52,8 +52,8 @@ fn find_type_info(vm: &VM) -> Status {
 fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
     try!(vm.define_global("repl_prim",
                           record!(
-        type_of_expr => primitive::<fn (String) -> IO<String>>(type_of_expr),
-        find_type_info => primitive::<fn (String) -> IO<String>>(find_type_info)
+        type_of_expr => primitive::<fn (String) -> IO<String>>("repl.type_of_expr", type_of_expr),
+        find_type_info => primitive::<fn (String) -> IO<String>>("repl.find_type_info", find_type_info)
     )));
     try!(load_file(vm, "std/prelude.hs"));
     try!(load_file(vm, "std/repl.hs"));

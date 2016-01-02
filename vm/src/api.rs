@@ -20,12 +20,14 @@ pub enum IO<T> {
 }
 
 pub struct Primitive<F> {
+    name: &'static str,
     function: fn(&VM) -> Status,
     _typ: PhantomData<F>,
 }
 
-pub fn primitive<F>(function: fn(&VM) -> Status) -> Primitive<F> {
+pub fn primitive<F>(name: &'static str, function: fn(&VM) -> Status) -> Primitive<F> {
     Primitive {
+        name: name,
         function: function,
         _typ: PhantomData,
     }
@@ -231,20 +233,22 @@ impl<'a, 'vm> Getable<'a, 'vm> for char {
     }
 }
 
-impl <T> VMType for Vec<T>
+impl<T> VMType for Vec<T>
     where T: VMType,
-          T::Type: Sized {
+          T::Type: Sized
+{
     type Type = Vec<T::Type>;
 }
 
 impl<'a, T> Pushable<'a> for Vec<T>
-where T: Pushable<'a>,
-      T::Type: Sized {
+    where T: Pushable<'a>,
+          T::Type: Sized
+{
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         let len = self.len();
         for v in self {
             if v.push(vm, stack) == Status::Error {
-                return Status::Error
+                return Status::Error;
             }
         }
         let result = {
@@ -657,7 +661,7 @@ impl<'a: 'vm, 'vm, F: FunctionType + VMType> Pushable<'a> for Primitive<F> {
             ::std::mem::transmute::<Box<Fn(&'vm VM<'a>) -> Status + 'static>,
                                       Box<Fn(&VM<'a>) -> Status + 'static>>(Box::new(self.function))
         };
-        let id = vm.intern("<extern>");
+        let id = vm.intern(self.name);
         let value = Value::Function(vm.gc.borrow_mut().alloc(Move(ExternFunction {
             id: id,
             args: F::arguments(),
