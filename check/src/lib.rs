@@ -5,6 +5,9 @@ extern crate env_logger;
 
 extern crate union_find;
 
+#[macro_use]
+extern crate mopa;
+
 extern crate base;
 
 #[cfg(test)]

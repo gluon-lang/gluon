@@ -109,9 +109,6 @@ let eq_List: Eq a -> Eq (List a) = \d -> {
                     | Cons y ys -> d.(==) x y && f xs ys
             in f
 } in
-let eq_String: Eq String = {
-    (==) = string_prim.eq
-} in
 
 type Ordering = | LT | EQ | GT
 in
@@ -144,11 +141,6 @@ let ord_Float = {
         else if l #Float== r
         then EQ
         else GT
-} in
-let ord_String: Ord String = {
-    compare = \l r ->
-        let o = string_prim.compare l r
-        in if o #Int== 0 then EQ else if o #Int== (0 #Int- 1) then LT else GT
 } in
 let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
     compare = \l r ->
@@ -372,9 +364,6 @@ let show_Int: Show Int = {
 let show_Float: Show Float = {
     show = prim.show_Float
 } in
-let show_String: Show String = {
-    show = \x -> x
-} in
 let (++) = string_prim.append
 in
 let show_List: Show a -> Show (List a) = \d ->
@@ -410,8 +399,8 @@ in
     Show,
     id, const, flip, not,
     foldl, foldr,
-    ord_Option, ord_Result, ord_Float, ord_Int, ord_String, make_Ord,
-    eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_String,
+    ord_Option, ord_Result, ord_Float, ord_Int, make_Ord,
+    eq_List, eq_Option, eq_Result, eq_Float, eq_Int,
     monoid_Function, monoid_List, monoid_Option,
     monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
     num_Int, num_Float,
@@ -421,6 +410,6 @@ in
     make_Alternative,
     monad_Option, monad_List, monad_IO,
     make_Monad,
-    show_Int, show_Float, show_String, show_List, show_Option
+    show_Int, show_Float, show_List, show_Option
 }
 

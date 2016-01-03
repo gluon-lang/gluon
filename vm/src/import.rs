@@ -3,7 +3,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use base::ast;
 use vm::{VM, load_script};
@@ -42,11 +42,19 @@ impl StdError for Error {
 
 pub struct Import {
     visited: RefCell<Vec<String>>,
+    paths: RefCell<Vec<PathBuf>>,
 }
 
 impl Import {
     pub fn new() -> Import {
-        Import { visited: RefCell::new(Vec::new()) }
+        Import {
+            visited: RefCell::new(Vec::new()),
+            paths: RefCell::new(vec![PathBuf::from(".")]),
+        }
+    }
+
+    pub fn add_path<P: Into<PathBuf>>(&self, path: P) {
+        self.paths.borrow_mut().push(path.into());
     }
 }
 
@@ -68,10 +76,19 @@ impl<'a> Macro<VM<'a>> for Import {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
                     self.visited.borrow_mut().push(filename.clone());
+                    let file = self.paths.borrow().iter()
+                            .filter_map(|p| {
+                                let mut base = p.clone();
+                                base.push(path);
+                                match File::open(&base) {
+                                    Ok(file) => Some(file),
+                                    Err(_) => None,
+                                }
+                            })
+                            .next();
+                    let mut file = try!(file.ok_or_else(|| Error::String("Could not find file")));
                     let mut buffer = String::new();
-                    try!(File::open(path)
-                             .and_then(|mut file| file.read_to_string(&mut buffer))
-                             .map_err(error));
+                    try!(file.read_to_string(&mut buffer).map_err(error));
                     try!(load_script(vm, &name, &buffer));
                     self.visited.borrow_mut().pop();
                 }

@@ -1638,9 +1638,6 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io::Read;
-
     use vm::{VM, Value, load_script};
     use vm::Value::{Float, Int};
     use stack::StackFrame;
@@ -1959,30 +1956,38 @@ r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
 Int(100)
 }
 
+    /// Creates a VM for testing which has the correct paths to import the std library properly
+    fn make_vm<'a>() -> VM<'a> {
+        let vm = VM::new();
+        let import_symbol = vm.symbol("import");
+        let import = vm.macros.get(import_symbol);
+        import.as_ref()
+            .and_then(|import| {
+                import.downcast_ref::<::import::Import>()
+            })
+            .expect("Import macro")
+            .add_path("..");
+        vm
+    }
+
     #[test]
     fn test_prelude() {
         let _ = ::env_logger::init();
-        let mut text = String::new();
-        File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        let mut vm = VM::new();
-        run_expr(&mut vm, &text);
+        let vm = make_vm();
+        run_expr(&vm, r#" import "std/prelude.hs" "#);
     }
 
     #[test]
     fn test_map() {
         let _ = ::env_logger::init();
-        let mut vm = VM::new();
-        let mut text = String::new();
-        File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        load_script(&mut vm, "prelude", &text).unwrap_or_else(|err| panic!("{}", err));
-        text.clear();
-        File::open("../std/map.hs").unwrap().read_to_string(&mut text).unwrap();
-        load_script(&mut vm, "map", &text).unwrap_or_else(|err| panic!("{}", err));
-
+        let vm = make_vm();
         let text = r#"
+let string = import "std/string.hs"
+and map = import "std/map.hs"
+in
 let { Monoid } = prelude
 in
-let { singleton, monoid } = map.make prelude.ord_String
+let { singleton, monoid } = map.make string.ord
 and { (<>) } = monoid
 in singleton "test" 1 <> singleton "asd" 2
 "#;
@@ -1992,12 +1997,10 @@ in singleton "test" 1 <> singleton "asd" 2
     #[test]
     fn test_state() {
         let _ = ::env_logger::init();
-        let mut vm = VM::new();
-        let mut text = String::new();
-        File::open("../std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        load_script(&mut vm, "prelude", &text).unwrap_or_else(|err| panic!("{}", err));
-        text.clear();
-        File::open("../std/state.hs").unwrap().read_to_string(&mut text).unwrap();
-        run_expr(&mut vm, &text);
+        let vm = make_vm();
+        let text = r#"
+import "std/state.hs"
+"#;
+        run_expr(&vm, text);
     }
 }

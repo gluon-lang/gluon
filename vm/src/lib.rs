@@ -17,4 +17,4 @@ pub mod gc;
 mod stack;
 mod primitives;
 mod lazy;
-mod import;
+pub mod import;

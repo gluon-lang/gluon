@@ -44,6 +44,7 @@ dependencies = [
  "base 0.1.0",
  "env_logger 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mopa 0.2.0 (git+https://github.com/Marwes/mopa.git)",
  "parser 0.1.0",
  "union-find 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -101,6 +102,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "libc 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "mopa"
+version = "0.2.0"
+source = "git+https://github.com/Marwes/mopa.git#9e4c0a0798020c48c3cb90d34af814336b857585"
 
 [[package]]
 name = "parser"

@@ -11,14 +11,15 @@ use error::Errors;
 
 pub type Error = Box<StdError>;
 
-pub trait Macro<Env> {
+pub trait Macro<Env>: ::mopa::Any {
     fn expand(&self,
               env: &Env,
               arguments: &mut [ast::LExpr<TcIdent>])
               -> Result<ast::LExpr<TcIdent>, Error>;
 }
+mopafy!(Macro<Env>);
 
-impl<F: ?Sized, Env> Macro<Env> for F
+impl<F: ::mopa::Any, Env> Macro<Env> for F
     where F: Fn(&Env, &mut [ast::LExpr<TcIdent>]) -> Result<ast::LExpr<TcIdent>, Error>
 {
     fn expand(&self,
@@ -42,6 +43,10 @@ impl<Env> MacroEnv<Env> {
         where M: Macro<Env> + 'static
     {
         self.macros.borrow_mut().insert(name, Rc::new(mac));
+    }
+
+    pub fn get(&self, name: Symbol) -> Option<Rc<Macro<Env>>> {
+        self.macros.borrow().get(&name).cloned()
     }
 }
 

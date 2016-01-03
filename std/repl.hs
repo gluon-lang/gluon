@@ -4,10 +4,10 @@ and { Map } = map
 in
 let { (>>=), return, (>>), join, map = fmap, lift2, forM_ } = prelude.make_Monad prelude.monad_IO
 and { Eq, Option, Result, Monoid } = prelude
-and { (==) } = prelude.eq_String
+and { (==) } = string.eq
 and (++) = string.monoid.(<>)
 and { singleton, find, insert, monoid, to_list }
-    = map.make prelude.ord_String
+    = map.make string.ord
 and { (<>), empty } = monoid
 in
 let load_file filename: String -> IO String =

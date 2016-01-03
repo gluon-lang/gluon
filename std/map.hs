@@ -1,4 +1,5 @@
-let { Ordering, Ord, Option, List, Monoid } = prelude
+let prelude = import "std/prelude.hs"
+and { Ordering, Ord, Option, List, Monoid } = prelude
 in
 type Map k a = | Bin k a (Map k a) (Map k a)
                | Tip

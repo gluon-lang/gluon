@@ -1,4 +1,4 @@
-let { Monad } = prelude
+let { Monad } = import "std/prelude.hs"
 in
 type State s a = s -> { value: a, state: s }
 in
