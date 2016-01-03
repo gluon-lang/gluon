@@ -2029,14 +2029,4 @@ in singleton "test" 1 <> singleton "asd" 2
 "#;
         run_expr(&vm, text);
     }
-
-    #[test]
-    fn test_state() {
-        let _ = ::env_logger::init();
-        let vm = make_vm();
-        let text = r#"
-import "std/state.hs"
-"#;
-        run_expr(&vm, text);
-    }
 }

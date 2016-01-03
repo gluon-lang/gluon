@@ -10,7 +10,7 @@ let (>>=) m f: State s a -> (a -> State s b) -> State s b =
 in
 let return value: a -> State s a = \state -> { value, state }
 in
-let monad_State: Monad (State s) = { (>>=), return }
+let monad: Monad (State s) = { (>>=), return }
 in
 let put value: s -> State s () = \state -> { value = (), state = value }
 in
@@ -25,4 +25,4 @@ in
 let evalState f state: State s a -> s -> a = (runState f state).value
 in
 let execState f state: State s a -> s -> s = (runState f state).state
-in { monad_State, put, get, modify, runState, evalState, execState }
+in { State, monad, put, get, modify, runState, evalState, execState }

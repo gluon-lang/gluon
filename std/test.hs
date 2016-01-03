@@ -24,9 +24,10 @@ and assert_eq show eq = \x y ->
 in
 let assert_ieq = assert_eq prelude.show_Int prelude.eq_Int
 and assert_feq = assert_eq prelude.show_Float prelude.eq_Float
+and assert_seq = assert_eq string.show string.eq
 in
-let run test: Test a -> () =
+let run test: Writer (List String) a -> () =
         case test.writer of
             | Cons _ _ -> error (prelude.foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
             | Nil -> ()
-in { monad, assert, assert_eq, assert_ieq, assert_feq, run }
+in { monad, assert, assert_eq, assert_ieq, assert_feq, assert_seq, run }
