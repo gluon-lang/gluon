@@ -689,9 +689,9 @@ impl<'a> VM<'a> {
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
         try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
         let args = vec![ast::Generic {
-            id: self.symbol("a"),
-            kind: ast::Kind::star(),
-        }];
+                            id: self.symbol("a"),
+                            kind: ast::Kind::star(),
+                        }];
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
         Ok(())
     }
@@ -840,7 +840,10 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: Vec<ast::Generic<Symbol>>) -> VMResult<&TcType> {
+    pub fn register_type<T: ?Sized + Any>(&self,
+                                          name: &str,
+                                          args: Vec<ast::Generic<Symbol>>)
+                                          -> VMResult<&TcType> {
         let n = self.make_symbol(StdString::from(name));
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(&n) {
@@ -849,7 +852,8 @@ impl<'a> VM<'a> {
             let id = TypeId::of::<T>();
             let arg_types = args.iter().map(|g| Type::generic(g.clone())).collect();
             let typ = Type::data(ast::TypeConstructor::Data(n), arg_types);
-            self.typeids.try_insert(id, typ.clone())
+            self.typeids
+                .try_insert(id, typ.clone())
                 .expect("Id not inserted");
             let t = self.typeids.get(&id).unwrap();
             let ctor = Type::variants(vec![(n, typ.clone())]);
@@ -1045,7 +1049,10 @@ impl<'a> VM<'a> {
                          closure: GcPtr<ClosureData<'a>>)
                          -> VMResult<Value<'a>> {
         self.push(Closure(closure));
-        let mut stack = StackFrame::frame(self.stack.borrow_mut(), args, closure.function.name, Some(closure));
+        let mut stack = StackFrame::frame(self.stack.borrow_mut(),
+                                          args,
+                                          closure.function.name,
+                                          Some(closure));
         stack = try!(self.execute(stack, &closure.function.instructions, &closure.function));
         let x = if stack.len() > 0 {
             stack.pop()
@@ -1062,7 +1069,9 @@ impl<'a> VM<'a> {
                             -> Result<StackFrame<'a, 'b>, Error> {
         match *function {
             Callable::Closure(closure) => {
-                stack = stack.enter_scope(closure.function.args, closure.function.name, Some(closure));
+                stack = stack.enter_scope(closure.function.args,
+                                          closure.function.name,
+                                          Some(closure));
                 stack.frame.excess = excess;
                 stack.stack.frames.last_mut().unwrap().excess = excess;
                 Ok(stack)
@@ -1200,10 +1209,17 @@ impl<'a> VM<'a> {
                     (closure, stack.frame.instruction_index)
                 }
             };
-            debug!("Continue with {:?}\nAt: {}/{}",
-                   closure.function.name,
-                   i,
-                   closure.function.instructions.len());
+            {
+                let symbols = self.symbols.borrow();
+                debug!("Continue with {}\nAt: {}/{}",
+                       closure.function
+                              .name
+                              .as_ref()
+                              .map(|s| symbols.string(s))
+                              .unwrap_or("<UNKNOWN>"),
+                       i,
+                       closure.function.instructions.len());
+            }
             let new_stack = try!(self.execute_(stack,
                                                i,
                                                &closure.function.instructions,
@@ -1221,10 +1237,17 @@ impl<'a> VM<'a> {
                     instructions: &[Instruction],
                     function: &BytecodeFunction)
                     -> Result<StackFrame<'a, 'b>, Error> {
-        debug!(">>>\nEnter frame {:?}: {:?}\n{:?}",
-               function.name,
-               &stack[..],
-               stack.frame);
+        {
+            let symbols = self.symbols.borrow();
+            debug!(">>>\nEnter frame {}: {:?}\n{:?}",
+                       function
+                              .name
+                              .as_ref()
+                              .map(|s| symbols.string(s))
+                              .unwrap_or("<UNKNOWN>"),
+                   &stack[..],
+                   stack.frame);
+        }
         while let Some(&instr) = instructions.get(index) {
             debug_instruction(&stack, index, instr);
             match instr {
@@ -1781,11 +1804,18 @@ Int(2)
         use std::cell::Cell;
         let _ = ::env_logger::init();
         let vm = VM::new();
-        let _: Result<_, ()> = StackFrame::new_scope(vm.stack.borrow_mut(), 0, None, None, |mut stack| {
-            stack.push(Int(0));
-            stack.insert_slice(0, &[Cell::new(Int(2)), Cell::new(Int(1))]);
-            assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
-            stack.scope(2, None, None, |mut stack| {
+        let _: Result<_, ()> = StackFrame::new_scope(vm.stack.borrow_mut(),
+                                                     0,
+                                                     None,
+                                                     None,
+                                                     |mut stack| {
+                                                         stack.push(Int(0));
+                                                         stack.insert_slice(0,
+                                                                            &[Cell::new(Int(2)),
+                                                                              Cell::new(Int(1))]);
+                                                         assert_eq!(&stack[..],
+                                                                    [Int(2), Int(1), Int(0)]);
+                                                         stack.scope(2, None, None, |mut stack| {
                 stack.insert_slice(1, &[Cell::new(Int(10))]);
                 assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
                 stack.insert_slice(1, &[]);
@@ -1796,7 +1826,7 @@ Int(2)
                            [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
                 Ok(stack)
             })
-        });
+                                                     });
     }
 
     test_expr!{ partial_application,
@@ -1851,7 +1881,7 @@ in { x }
 
     test_expr!{ char,
 r#"
-'a' 
+'a'
 "#,
 Int('a' as isize)
 }
@@ -1924,6 +1954,14 @@ r#"
 Int(3)
 }
 
+    test_expr!{ field_access_not_in_tail_position,
+r#"
+let id x = x
+in (id { x = 1 }).x
+"#,
+Int(1)
+}
+
     test_expr!{ module_function,
 r#"let x = string_prim.length "test" in x"#,
 Int(4)
@@ -1962,11 +2000,9 @@ Int(100)
         let import_symbol = vm.symbol("import");
         let import = vm.macros.get(import_symbol);
         import.as_ref()
-            .and_then(|import| {
-                import.downcast_ref::<::import::Import>()
-            })
-            .expect("Import macro")
-            .add_path("..");
+              .and_then(|import| import.downcast_ref::<::import::Import>())
+              .expect("Import macro")
+              .add_path("..");
         vm
     }
 

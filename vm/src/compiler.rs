@@ -575,7 +575,7 @@ impl<'a> Compiler<'a> {
                 function.emit_call(args.len() as VMIndex, tail_position);
             }
             Expr::FieldAccess(ref expr, ref field) => {
-                self.compile(&**expr, function, tail_position);
+                self.compile(&**expr, function, false);
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.env_type_of(self);
                 let typ = typ.inner_app();
