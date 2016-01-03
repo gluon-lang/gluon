@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::mem;
 use std::ops::Deref;
-use std::slice;
 use base::ast::{AstId, DisplayEnv, IdentEnv, ASTType};
 
-use gc::{GcPtr, Gc, DataDef, Traverseable, WriteOnly};
+use gc::{GcPtr, Gc, Traverseable};
+use array::Str;
 
 /// Interned strings which allow for fast equality checks and hashing
 #[derive(Copy, Clone, Eq)]
-pub struct InternedStr(GcPtr<str>);
+pub struct InternedStr(GcPtr<Str>);
 
 impl PartialEq<InternedStr> for InternedStr {
     fn eq(&self, other: &InternedStr) -> bool {
@@ -47,7 +46,7 @@ impl AsRef<str> for InternedStr {
 }
 
 impl InternedStr {
-    pub fn inner(&self) -> GcPtr<str> {
+    pub fn inner(&self) -> GcPtr<Str> {
         self.0
     }
 }
@@ -58,24 +57,6 @@ pub struct Interner {
     // have the keys as strings without any unsafety as the keys do not escape the interner and they
     // live as long as their values
     indexes: HashMap<&'static str, InternedStr>,
-}
-
-unsafe impl<'a> DataDef for &'a str {
-    type Value = str;
-    fn size(&self) -> usize {
-        self.len()
-    }
-
-    fn initialize(self, ptr: WriteOnly<str>) -> &mut str {
-        ptr.write_str(self)
-    }
-
-    fn make_ptr(&self, ptr: *mut ()) -> *mut str {
-        unsafe {
-            let x = slice::from_raw_parts_mut(ptr as *mut u8, self.len());
-            mem::transmute(x)
-        }
-    }
 }
 
 impl Traverseable for Interner {

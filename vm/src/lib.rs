@@ -18,3 +18,4 @@ mod stack;
 mod primitives;
 mod lazy;
 pub mod import;
+mod array;

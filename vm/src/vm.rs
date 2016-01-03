@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::Deref;
 use std::rc::Rc;
-use std::slice;
 use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType, DisplayEnv};
@@ -19,6 +18,7 @@ use types::*;
 use base::fixed::{FixedMap, FixedVec};
 use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
+use array::{Array, Str};
 use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
 use api::Pushable;
 use lazy::Lazy;
@@ -55,7 +55,7 @@ impl PartialEq for Userdata_ {
 #[derive(Debug)]
 pub struct ClosureData<'a> {
     pub function: GcPtr<BytecodeFunction>,
-    pub upvars: [Cell<Value<'a>>],
+    pub upvars: Array<Cell<Value<'a>>>,
 }
 
 impl<'a> PartialEq for ClosureData<'a> {
@@ -83,22 +83,18 @@ unsafe impl<'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
     type Value = ClosureData<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<GcPtr<BytecodeFunction>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
+        size_of::<GcPtr<BytecodeFunction>>() + Array::<Cell<Value<'a>>>::size_of(self.1.len())
     }
     fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData<'a>>) -> &'w mut ClosureData<'a> {
-        let result = unsafe { &mut *result.as_mut_ptr() };
-        result.function = self.0;
-        for (field, value) in result.upvars.iter().zip(self.1.iter()) {
-            field.set(value.clone());
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.function = self.0;
+            result.upvars.initialize(self.1.iter().map(|v| Cell::new(v.clone())));
+            result
         }
-        result
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut ClosureData<'a> {
-        let x = unsafe {
-            let x = slice::from_raw_parts_mut(&mut *ptr, self.1.len());
-            ::std::mem::transmute(x)
-        };
-        x
+        ptr as *mut ClosureData
     }
 }
 
@@ -145,7 +141,7 @@ impl Traverseable for BytecodeFunction {
 
 pub struct DataStruct<'a> {
     pub tag: VMTag,
-    pub fields: [Cell<Value<'a>>],
+    pub fields: Array<Cell<Value<'a>>>,
 }
 
 impl<'a> Traverseable for DataStruct<'a> {
@@ -166,7 +162,7 @@ pub type VMInt = isize;
 pub enum Value<'a> {
     Int(VMInt),
     Float(f64),
-    String(GcPtr<str>),
+    String(GcPtr<Str>),
     Data(GcPtr<DataStruct<'a>>),
     Function(GcPtr<ExternFunction<'a>>),
     Closure(GcPtr<ClosureData<'a>>),
@@ -209,7 +205,7 @@ impl<'a> Traverseable for Callable<'a> {
 #[derive(Debug)]
 pub struct PartialApplicationData<'a> {
     function: Callable<'a>,
-    arguments: [Cell<Value<'a>>],
+    arguments: Array<Cell<Value<'a>>>,
 }
 
 impl<'a> PartialEq for PartialApplicationData<'a> {
@@ -236,23 +232,20 @@ unsafe impl<'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
     type Value = PartialApplicationData<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<Callable<'a>>() + size_of::<Cell<Value<'a>>>() * self.1.len()
+        size_of::<Callable<'a>>() + Array::<Cell<Value<'a>>>::size_of(self.1.len())
     }
     fn initialize<'w>(self,
                       mut result: WriteOnly<'w, PartialApplicationData<'a>>)
                       -> &'w mut PartialApplicationData<'a> {
-        let result = unsafe { &mut *result.as_mut_ptr() };
-        result.function = self.0;
-        for (field, value) in result.arguments.iter().zip(self.1.iter()) {
-            field.set(value.clone());
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.function = self.0;
+            result.arguments.initialize(self.1.iter().map(|v| Cell::new(v.clone())));
+            result
         }
-        result
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut PartialApplicationData<'a> {
-        unsafe {
-            let x = slice::from_raw_parts_mut(&mut *ptr, self.1.len());
-            ::std::mem::transmute(x)
-        }
+        ptr as *mut PartialApplicationData
     }
 }
 
@@ -402,7 +395,7 @@ impl<'a, T: ?Sized> Deref for Root<'a, T> {
     }
 }
 
-pub struct RootStr<'a>(Root<'a, str>);
+pub struct RootStr<'a>(Root<'a, Str>);
 
 impl<'a> Deref for RootStr<'a> {
     type Target = str;
@@ -611,21 +604,18 @@ unsafe impl<'a, 'b> DataDef for Def<'a, 'b> {
     type Value = DataStruct<'a>;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<usize>() + size_of::<Value<'a>>() * self.elems.len()
+        size_of::<usize>() + Array::<Value<'a>>::size_of(self.elems.len())
     }
     fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct<'a>>) -> &'w mut DataStruct<'a> {
-        let result = unsafe { &mut *result.as_mut_ptr() };
-        result.tag = self.tag;
-        for (field, value) in result.fields.iter().zip(self.elems.iter()) {
-            field.set(value.clone());
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.tag = self.tag;
+            result.fields.initialize(self.elems.iter().map(|v| Cell::new(v.clone())));
+            result
         }
-        result
     }
     fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {
-        unsafe {
-            let x = slice::from_raw_parts_mut(&mut *ptr, self.elems.len());
-            ::std::mem::transmute(x)
-        }
+        ptr as *mut DataStruct<'a>
     }
 }
 
@@ -925,8 +915,8 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn root_string(&self, ptr: GcPtr<str>) -> RootStr {
-        self.roots.borrow_mut().push(ptr.as_traverseable_string());
+    pub fn root_string(&self, ptr: GcPtr<Str>) -> RootStr {
+        self.roots.borrow_mut().push(ptr.as_traverseable());
         RootStr(Root {
             roots: &self.roots,
             ptr: &*ptr,
@@ -1240,11 +1230,10 @@ impl<'a> VM<'a> {
         {
             let symbols = self.symbols.borrow();
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
-                       function
-                              .name
-                              .as_ref()
-                              .map(|s| symbols.string(s))
-                              .unwrap_or("<UNKNOWN>"),
+                   function.name
+                           .as_ref()
+                           .map(|s| symbols.string(s))
+                           .unwrap_or("<UNKNOWN>"),
                    &stack[..],
                    stack.frame);
         }
@@ -2011,5 +2000,10 @@ Int(100)
         let _ = ::env_logger::init();
         let vm = make_vm();
         run_expr(&vm, r#" import "std/prelude.hs" "#);
+    }
+
+    #[test]
+    fn value_size() {
+        assert!(::std::mem::size_of::<Value>() <= 16);
     }
 }
