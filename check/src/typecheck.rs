@@ -159,7 +159,7 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
                               actual,
                               errors.len()));
                 if errors.len() == 0 {
-                    return Ok(())
+                    return Ok(());
                 }
                 for error in &errors[..errors.len() - 1] {
                     try!(writeln!(f, "{}", error));
@@ -1132,17 +1132,7 @@ impl<'a> Typecheck<'a> {
                             match l {
                                 Some(l) => {
                                     self.unify_(&l, expected);
-                                    // No errors in this unification, remove the errors generated
-                                    // from the first attempt
-                                    if range.end == self.unification_errors.borrow().errors.len() {
-                                        let start = range.start;
-                                        for _ in range {
-                                            self.unification_errors
-                                                .borrow_mut()
-                                                .errors
-                                                .remove(start);
-                                        }
-                                    }
+                                    self.rollback_unification_errors(range);
                                 }
                                 None => (),
                             }
@@ -1165,17 +1155,7 @@ impl<'a> Typecheck<'a> {
                             match r {
                                 Some(r) => {
                                     self.unify_(&r, expected);
-                                    // No errors in this unification, remove the errors generated
-                                    // from the first attempt
-                                    if range.end == self.unification_errors.borrow().errors.len() {
-                                        let start = range.start;
-                                        for _ in range {
-                                            self.unification_errors
-                                                .borrow_mut()
-                                                .errors
-                                                .remove(start);
-                                        }
-                                    }
+                                    self.rollback_unification_errors(range);
                                 }
                                 None => (),
                             }
@@ -1188,38 +1168,75 @@ impl<'a> Typecheck<'a> {
                 self.unify_(l1, r1);
                 self.unify_(l2, r2);
             }
-            (&Type::Data(ast::TypeConstructor::Data(l), ref l_args), _) => {
-                let l = match self.type_of_alias(l, l_args) {
-                    Ok(typ) => typ,
-                    Err(err) => return self.unification_error(err),
-                };
-                match l {
-                    Some(l) => self.unify_(&l, actual),
-                    None => {
-                        self.unification_error(UnificationError::TypeMismatch(expected.clone(),
-                                                                              actual.clone()));
-                    }
+            _ => {
+                if expected == actual {
+                    // Successful unification
+                    return;
                 }
+                // Attempt to unify by replacing the right or left hand side with the type it
+                // aliases (if any)
+                let len = self.unification_errors.borrow().errors.len();
+                if self.unify_alias(expected, actual, len..len) {
+                    // Successful unification
+                    return;
+                }
+                let len2 = self.unification_errors.borrow().errors.len();
+                if self.unify_alias(actual, expected, len..len2) {
+                    // Successful unification
+                    return;
+                }
+                self.unification_error(UnificationError::TypeMismatch(expected.clone(),
+                                                                      actual.clone()));
             }
-            (_, &Type::Data(ast::TypeConstructor::Data(r), ref r_args)) => {
+        }
+    }
+
+    fn rollback_unification_errors(&self, range: ::std::ops::Range<usize>) -> bool {
+        // If there were no errors in this unification, remove the errors generatedfrom the
+        // first attempt
+        let errors = self.unification_errors.borrow().errors.len();
+        if range.end == errors {
+            // No errors found
+            let start = range.start;
+            for _ in range {
+                self.unification_errors
+                    .borrow_mut()
+                    .errors
+                    .remove(start);
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    fn unify_alias(&self,
+                   expected: &TcType,
+                   actual: &TcType,
+                   range: ::std::ops::Range<usize>)
+                   -> bool {
+        match **actual {
+            Type::Data(ast::TypeConstructor::Data(r), ref r_args) => {
                 let r = match self.type_of_alias(r, r_args) {
                     Ok(typ) => typ,
-                    Err(err) => return self.unification_error(err),
+                    Err(err) => {
+                        self.unification_error(err);
+                        return false;
+                    }
                 };
                 match r {
-                    Some(r) => self.unify_(expected, &r),
+                    Some(r) => {
+                        self.unify_(expected, &r);
+                        self.rollback_unification_errors(range)
+                    }
                     None => {
                         self.unification_error(UnificationError::TypeMismatch(expected.clone(),
                                                                               actual.clone()));
+                        false
                     }
                 }
             }
-            _ => {
-                if expected != actual {
-                    self.unification_error(UnificationError::TypeMismatch(expected.clone(),
-                                                                          actual.clone()));
-                }
-            }
+            _ => false,
         }
     }
 
@@ -1370,7 +1387,7 @@ impl<'a> Typecheck<'a> {
                      id: Symbol,
                      arguments: &[TcType])
                      -> Result<Option<TcType>, UnificationError<Symbol>> {
-        let (args, typ) = {
+        let (args, mut typ) = {
             let (args, typ) = try!(TypeEnv::find_type_info(self, &id)
                                        .map(|s| Ok(s))
                                        .unwrap_or_else(|| {
@@ -1385,7 +1402,43 @@ impl<'a> Typecheck<'a> {
                 None => return Ok(None),
             }
         };
-        if arguments.len() != args.len() {
+        // It is ok to take the aliased type only if the alias is fully applied or if it
+        // the missing argument only appear in order at the end of the alias
+        // i.e
+        // type Test a b c = Type (a Int) b c
+        //
+        // Test a b == Type (a Int) b
+        // Test a == Type (a Int)
+        // Test == ??? (Impossible to do a sane substitution)
+
+        let ok_substitution = match *typ.clone() {
+            Type::Data(ref d, ref arg_types) => {
+                let allowed_missing_args = arg_types.iter()
+                                                    .rev()
+                                                    .zip(args.iter().rev())
+                                                    .take_while(|&(l, r)| {
+                                                        match **l {
+                                                            Type::Generic(ref g) => g == r,
+                                                            _ => false,
+                                                        }
+                                                    })
+                                                    .count();
+                if args.len() - arguments.len() <= allowed_missing_args {
+                    // Remove the args at the end of the aliased type
+                    let arg_types: Vec<_> = arg_types.iter()
+                                                     .take(arg_types.len() -
+                                                           (args.len() - arguments.len()))
+                                                     .cloned()
+                                                     .collect();
+                    typ = Type::data(d.clone(), arg_types);
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => arguments.len() == args.len(),
+        };
+        if !ok_substitution {
             let expected = Type::data(ast::TypeConstructor::Data(id),
                                       arguments.iter().cloned().collect());
             return Err(UnificationError::TypeMismatch(expected, typ));
@@ -2231,6 +2284,23 @@ and Test2 = Test1
 in
 let t: Test2 = { x = 1 }
 in t.x
+"#;
+        let result = typecheck(text);
+        assert_eq!(result, Ok(typ("Int")));
+    }
+
+    #[test]
+    fn unify_equal_hkt_aliases() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type M a = | M a
+and M2 a = M a
+and HKT m = { x: m Int }
+in
+let eq: a -> a -> Int = \x y -> 1
+and t: HKT M = { x = M 1 }
+and u: HKT M2 = t
+in eq t u
 "#;
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("Int")));

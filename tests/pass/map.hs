@@ -1,7 +1,6 @@
 let { Monad, Monoid, Option, List, Eq, Show } = prelude
 and string = import "std/string.hs"
-and { Writer } = import "std/writer.hs"
-and { run, monad, assert, assert_eq } = import "std/test.hs"
+and { Test, run, monad, assert, assert_eq } = import "std/test.hs"
 and map = import "std/map.hs"
 and { (>>) } = prelude.make_Monad monad
 in
