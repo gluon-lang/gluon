@@ -2012,21 +2012,4 @@ Int(100)
         let vm = make_vm();
         run_expr(&vm, r#" import "std/prelude.hs" "#);
     }
-
-    #[test]
-    fn test_map() {
-        let _ = ::env_logger::init();
-        let vm = make_vm();
-        let text = r#"
-let string = import "std/string.hs"
-and map = import "std/map.hs"
-in
-let { Monoid } = prelude
-in
-let { singleton, monoid } = map.make string.ord
-and { (<>) } = monoid
-in singleton "test" 1 <> singleton "asd" 2
-"#;
-        run_expr(&vm, text);
-    }
 }
