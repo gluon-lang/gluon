@@ -171,7 +171,4 @@ unsafe impl<'a> DataDef for &'a str {
             result
         }
     }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut Str {
-        ptr as *mut Str
-    }
 }

@@ -92,11 +92,20 @@ pub struct Gc {
     collect_limit: usize,
 }
 
+pub unsafe trait FromPtr<D> {
+    fn make_ptr(data: D, ptr: *mut ()) -> *mut Self;
+}
+
+unsafe impl<D, T> FromPtr<D> for T {
+    fn make_ptr(_: D, ptr: *mut ()) -> *mut Self {
+        ptr as *mut Self
+    }
+}
+
 pub unsafe trait DataDef {
-    type Value: ?Sized;
+    type Value: ?Sized + for<'a> FromPtr<&'a Self>;
     fn size(&self) -> usize;
     fn initialize(self, ptr: WriteOnly<Self::Value>) -> &mut Self::Value;
-    fn make_ptr(&self, ptr: *mut ()) -> *mut Self::Value;
 }
 
 ///Datadefinition that moves its value directly into the pointer
@@ -110,9 +119,6 @@ unsafe impl<T> DataDef for Move<T> {
     }
     fn initialize(self, result: WriteOnly<T>) -> &mut T {
         result.write(self.0)
-    }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut T {
-        ptr as *mut T
     }
 }
 
@@ -362,12 +368,12 @@ impl Gc {
     }
 
     ///Unsafe since it calls collects if memory needs to be collected
-    pub unsafe fn alloc_and_collect<T: ?Sized, R: ?Sized, D>(&mut self,
-                                                             roots: &mut R,
-                                                             mut def: D)
-                                                             -> GcPtr<T>
+    pub unsafe fn alloc_and_collect<R: ?Sized, D>(&mut self,
+                                                  roots: &mut R,
+                                                  mut def: D)
+                                                  -> GcPtr<D::Value>
         where R: Traverseable,
-              D: DataDef<Value = T> + Traverseable
+              D: DataDef + Traverseable
     {
         if self.allocated_memory >= self.collect_limit {
             self.collect2(roots, &mut def);
@@ -375,16 +381,16 @@ impl Gc {
         self.alloc(def)
     }
 
-    pub fn alloc<T: ?Sized, D>(&mut self, def: D) -> GcPtr<T>
-        where D: DataDef<Value = T>
+    pub fn alloc<D>(&mut self, def: D) -> GcPtr<D::Value>
+        where D: DataDef
     {
         let size = def.size();
         let mut ptr = AllocPtr::new(size);
         ptr.next = self.values.take();
         self.allocated_memory += ptr.size();
         unsafe {
-            let p: *mut T = def.make_ptr(ptr.value());
-            let ret: *const T = &*def.initialize(WriteOnly::new(p));
+            let p: *mut D::Value = D::Value::make_ptr(&def, ptr.value());
+            let ret: *const D::Value = &*def.initialize(WriteOnly::new(p));
             // Check that the returned pointer is the same as the one we sent as an extra precaution
             // that the pointer was initialized
             assert!(ret == p);
@@ -515,9 +521,6 @@ mod tests {
         fn initialize(self, result: WriteOnly<Vec<Value>>) -> &mut Vec<Value> {
             let vec = self.elems.iter().map(|x| *x).collect();
             result.write(vec)
-        }
-        fn make_ptr(&self, ptr: *mut ()) -> *mut Vec<Value> {
-            ptr as *mut _
         }
     }
 

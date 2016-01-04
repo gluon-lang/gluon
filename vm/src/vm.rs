@@ -93,9 +93,6 @@ unsafe impl<'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
             result
         }
     }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut ClosureData<'a> {
-        ptr as *mut ClosureData
-    }
 }
 
 #[derive(Debug)]
@@ -243,9 +240,6 @@ unsafe impl<'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
             result.arguments.initialize(self.1.iter().map(|v| Cell::new(v.clone())));
             result
         }
-    }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut PartialApplicationData<'a> {
-        ptr as *mut PartialApplicationData
     }
 }
 
@@ -614,9 +608,6 @@ unsafe impl<'a, 'b> DataDef for Def<'a, 'b> {
             result
         }
     }
-    fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {
-        ptr as *mut DataStruct<'a>
-    }
 }
 
 impl<'a, 'b> Traverseable for Def<'a, 'b> {
@@ -983,8 +974,8 @@ impl<'a> VM<'a> {
         f(&mut gc, roots)
     }
 
-    pub fn alloc<T: ?Sized, D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<T>
-        where D: DataDef<Value = T> + Traverseable
+    pub fn alloc<D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<D::Value>
+        where D: DataDef + Traverseable
     {
         self.with_roots(stack,
                         |gc, mut roots| unsafe { gc.alloc_and_collect(&mut roots, def) })

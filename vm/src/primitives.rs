@@ -46,9 +46,6 @@ pub fn array_append<'a, 'vm>(lhs: Array<'a, 'vm, Generic<'a, generic::A>>,
                 result
             }
         }
-        fn make_ptr(&self, ptr: *mut ()) -> *mut DataStruct<'a> {
-            ptr as *mut DataStruct<'a>
-        }
     }
     Getable::from_value(lhs.vm(),
                         Value::Data(lhs.vm().new_def(Append {
