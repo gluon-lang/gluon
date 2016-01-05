@@ -295,6 +295,13 @@ pub trait Traverseable {
     fn traverse(&self, func: &mut Gc);
 }
 
+impl<T> Traverseable for Move<T> where T: Traverseable
+{
+    fn traverse(&self, gc: &mut Gc) {
+        self.0.traverse(gc)
+    }
+}
+
 impl<T: ?Sized> Traverseable for Box<T> where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
@@ -309,13 +316,42 @@ impl<'a, T: ?Sized> Traverseable for &'a T where T: Traverseable
     }
 }
 
-impl Traverseable for Any {
-    fn traverse(&self, _: &mut Gc) {}
+impl<'a, T: ?Sized> Traverseable for &'a mut T where T: Traverseable
+{
+    fn traverse(&self, gc: &mut Gc) {
+        (**self).traverse(gc);
+    }
 }
+
+macro_rules! tuple_traverse {
+    () => {};
+    ($first: ident $($id: ident)*) => {
+        tuple_traverse!($($id)*);
+        impl <$first $(,$id)*> Traverseable for ($first, $($id,)*)
+            where $first: Traverseable
+                  $(, $id: Traverseable)* {
+            #[allow(non_snake_case)]
+            fn traverse(&self, gc: &mut Gc) {
+                let (ref $first, $(ref $id,)*) = *self;
+                $first.traverse(gc);
+                $(
+                    $id.traverse(gc);
+                )*
+            }
+        }
+    }
+}
+
+tuple_traverse!(A B C D E F G H I J);
 
 impl Traverseable for () {
     fn traverse(&self, _: &mut Gc) {}
 }
+
+impl Traverseable for Any {
+    fn traverse(&self, _: &mut Gc) {}
+}
+
 impl Traverseable for u8 {
     fn traverse(&self, _: &mut Gc) {}
 }
@@ -368,15 +404,12 @@ impl Gc {
     }
 
     ///Unsafe since it calls collects if memory needs to be collected
-    pub unsafe fn alloc_and_collect<R: ?Sized, D>(&mut self,
-                                                  roots: &mut R,
-                                                  mut def: D)
-                                                  -> GcPtr<D::Value>
+    pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> GcPtr<D::Value>
         where R: Traverseable,
               D: DataDef + Traverseable
     {
         if self.allocated_memory >= self.collect_limit {
-            self.collect2(roots, &mut def);
+            self.collect((roots, &def));
         }
         self.alloc(def)
     }
@@ -401,10 +434,13 @@ impl Gc {
 
     ///Does a mark and sweep collection by walking from `roots`. This function is unsafe since
     ///roots need to cover all reachable object.
-    pub unsafe fn collect<R: ?Sized>(&mut self, roots: &mut R)
+    pub unsafe fn collect<R>(&mut self, roots: R)
         where R: Traverseable
     {
-        self.collect2(roots, &mut ());
+        debug!("Start collect");
+        roots.traverse(self);
+        self.sweep();
+        self.collect_limit = 2 * self.allocated_memory;
     }
 
 
@@ -424,18 +460,6 @@ impl Gc {
             }
         }
         count
-    }
-
-
-    unsafe fn collect2<R: ?Sized, D>(&mut self, roots: &mut R, def: &mut D)
-        where R: Traverseable,
-              D: Traverseable
-    {
-        debug!("Start collect");
-        roots.traverse(self);
-        def.traverse(self);
-        self.sweep();
-        self.collect_limit = 2 * self.allocated_memory;
     }
 
     ///Marks the GcPtr
