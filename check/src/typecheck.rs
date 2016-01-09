@@ -25,7 +25,7 @@ pub type TcType = ast::ASTType<Symbol>;
 type ErrType = ast::ASTType<String>;
 
 #[derive(Debug, PartialEq)]
-enum TypeError<I> {
+pub enum TypeError<I> {
     UndefinedVariable(I),
     NotAFunction(ASTType<I>),
     UndefinedType(I),
@@ -37,7 +37,7 @@ enum TypeError<I> {
 }
 
 #[derive(Debug, PartialEq)]
-enum UnificationError<I> {
+pub enum UnificationError<I> {
     TypeMismatch(ASTType<I>, ASTType<I>),
     FieldMismatch(I, I),
     Occurs(TypeVariable, ASTType<I>),
