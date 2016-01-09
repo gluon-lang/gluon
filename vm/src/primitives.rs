@@ -165,7 +165,7 @@ pub fn catch_io(vm: &VM) -> Status {
             let callback = stack[1];
             stack.push(callback);
             let fmt = format!("{}", err);
-            let result = Value::String(vm.alloc(&mut stack.stack.values, &fmt[..]));
+            let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
             stack.push(result);
             stack.push(Value::Int(0));
             match vm.execute(stack, &[Call(2)], &BytecodeFunction::empty()) {
@@ -173,7 +173,7 @@ pub fn catch_io(vm: &VM) -> Status {
                 Err(err) => {
                     stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
                     let fmt = format!("{}", err);
-                    let result = Value::String(vm.alloc(&mut stack.stack.values, &fmt[..]));
+                    let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
                     stack.push(result);
                     Status::Error
                 }
@@ -194,7 +194,7 @@ pub fn run_expr(vm: &VM) -> Status {
             match run_result {
                 Ok(value) => {
                     let fmt = format!("{:?}", value);
-                    let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
+                    let result = vm.alloc(&stack.stack, &fmt[..]);
                     stack.push(Value::String(result));
                 }
                 Err(err) => {
@@ -203,7 +203,7 @@ pub fn run_expr(vm: &VM) -> Status {
                         stack = stack.exit_scope();
                     }
                     let fmt = format!("{}\n{}", err, trace);
-                    let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
+                    let result = vm.alloc(&stack.stack, &fmt[..]);
                     stack.push(Value::String(result));
                 }
             }
@@ -224,7 +224,7 @@ pub fn load_script(vm: &VM) -> Status {
             match run_result {
                 Ok(()) => {
                     let fmt = format!("Loaded {}", name);
-                    let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
+                    let result = vm.alloc(&stack.stack, &fmt[..]);
                     stack.push(Value::String(result));
                 }
                 Err(err) => {
@@ -233,7 +233,7 @@ pub fn load_script(vm: &VM) -> Status {
                     while stack.stack.frames.len() > frame_level {
                         stack = stack.exit_scope();
                     }
-                    let result = vm.alloc(&mut stack.stack.values, &fmt[..]);
+                    let result = vm.alloc(&stack.stack, &fmt[..]);
                     stack.push(Value::String(result));
                 }
             }

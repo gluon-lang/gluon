@@ -194,7 +194,7 @@ impl VMType for String {
 }
 impl<'a, 's> Pushable<'a> for &'s str {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        let s = vm.alloc(&mut stack.stack.values, self);
+        let s = vm.alloc(&stack.stack, self);
         stack.push(Value::String(s));
         Status::Ok
     }
@@ -209,7 +209,7 @@ impl<'a, 'vm> Getable<'a, 'vm> for String {
 }
 impl<'a> Pushable<'a> for String {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        let s = vm.alloc(&mut stack.stack.values, &self[..]);
+        let s = vm.alloc(&stack.stack, &self[..]);
         stack.push(Value::String(s));
         Status::Ok
     }
@@ -252,9 +252,8 @@ impl<'a, T> Pushable<'a> for Vec<T>
             }
         }
         let result = {
-            let offset = stack.stack.values.len() - len;
-            let (rest, values) = stack.stack.values.split_at_mut(offset);
-            vm.new_data_and_collect(rest, 0, values)
+            let values = &stack[stack.len() - len as u32..];
+            vm.new_data_and_collect(&stack.stack, 0, values)
         };
         for _ in 0..len {
             stack.pop();
@@ -360,7 +359,7 @@ impl<'a, T: Pushable<'a>, E: Pushable<'a>> Pushable<'a> for Result<T, E>
             }
         };
         let value = stack.pop();
-        let data = vm.new_data_and_collect(&mut stack.stack.values, tag, &mut [value]);
+        let data = vm.new_data_and_collect(&stack.stack, tag, &[value]);
         stack.push(Value::Data(data));
         Status::Ok
     }
@@ -401,7 +400,7 @@ impl<'a, T: Pushable<'a>, E: fmt::Display> Pushable<'a> for MaybeError<T, E> {
             }
             MaybeError::Err(err) => {
                 let msg = format!("{}", err);
-                let s = vm.alloc(&mut stack.stack.values, &msg[..]);
+                let s = vm.alloc(&stack.stack, &msg[..]);
                 stack.push(Value::String(s));
                 Status::Error
             }

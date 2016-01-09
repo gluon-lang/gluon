@@ -618,7 +618,7 @@ impl<'a, 'b> Traverseable for Def<'a, 'b> {
 
 struct Roots<'a: 'b, 'b> {
     globals: &'b FixedVec<Global<'a>>,
-    stack: &'b mut [Value<'a>],
+    stack: &'b Stack<'a>,
     interner: &'b mut Interner,
     roots: Ref<'b, Vec<GcPtr<Traverseable>>>,
     rooted_values: Ref<'b, Vec<Value<'a>>>,
@@ -628,7 +628,7 @@ impl<'a, 'b> Traverseable for Roots<'a, 'b> {
         for g in self.globals.borrow().iter() {
             g.traverse(gc);
         }
-        self.stack.traverse(gc);
+        self.stack.values.traverse(gc);
         // Also need to check the interned string table
         self.interner.traverse(gc);
         self.roots.traverse(gc);
@@ -693,7 +693,7 @@ impl<'a> VM<'a> {
             strings: vec![],
         };
         let f = self.new_function(compiled_fn);
-        let closure = self.new_closure_and_collect(&mut self.stack.borrow_mut().values, f, &[]);
+        let closure = self.new_closure_and_collect(&self.stack.borrow(), f, &[]);
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(Global {
             id: id,
@@ -885,10 +885,10 @@ impl<'a> VM<'a> {
     }
 
     pub fn collect(&self) {
-        let mut stack = self.stack.borrow_mut();
-        self.with_roots(&mut stack.values, |gc, mut roots| {
+        let stack = self.stack.borrow();
+        self.with_roots(&stack, |gc, roots| {
             unsafe {
-                gc.collect(&mut roots);
+                gc.collect(roots);
             }
         })
     }
@@ -935,9 +935,9 @@ impl<'a> VM<'a> {
     }
 
     pub fn new_data_and_collect(&self,
-                                stack: &mut [Value<'a>],
+                                stack: &Stack<'a>,
                                 tag: VMTag,
-                                fields: &mut [Value<'a>])
+                                fields: &[Value<'a>])
                                 -> GcPtr<DataStruct<'a>> {
         self.alloc(stack,
                    Def {
@@ -952,16 +952,20 @@ impl<'a> VM<'a> {
         self.gc.borrow_mut().alloc(ClosureDataDef(func, fields))
     }
     fn new_closure_and_collect(&self,
-                               stack: &mut [Value<'a>],
+                               stack: &Stack<'a>,
                                func: GcPtr<BytecodeFunction>,
                                fields: &[Value<'a>])
                                -> GcPtr<ClosureData<'a>> {
         self.alloc(stack, ClosureDataDef(func, fields))
     }
 
-    fn with_roots<F, R>(&self, stack: &mut [Value<'a>], f: F) -> R
+    fn with_roots<F, R>(&self, stack: &Stack<'a>, f: F) -> R
         where F: for<'b> FnOnce(&mut Gc, Roots<'a, 'b>) -> R
     {
+        // For this to be safe we require that the received stack is the same one that is in this
+        // VM
+        assert!(unsafe { stack as *const _  as usize >= &self.stack as *const _ as usize &&
+                stack as *const _ as usize <= (&self.stack as *const _).offset(1) as usize });
         let mut interner = self.interner.borrow_mut();
         let roots = Roots {
             globals: &self.globals,
@@ -974,11 +978,10 @@ impl<'a> VM<'a> {
         f(&mut gc, roots)
     }
 
-    pub fn alloc<D>(&self, stack: &mut [Value<'a>], def: D) -> GcPtr<D::Value>
+    pub fn alloc<D>(&self, stack: &Stack<'a>, def: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable
     {
-        self.with_roots(stack,
-                        |gc, mut roots| unsafe { gc.alloc_and_collect(&mut roots, def) })
+        self.with_roots(stack, |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
     }
 
     pub fn call_function(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>> {
@@ -1112,11 +1115,9 @@ impl<'a> VM<'a> {
             Ordering::Equal => self.execute_callable(stack, &callable, false),
             Ordering::Less => {
                 let app = {
-                    let whole_stack = &mut stack.stack.values[..];
-                    let arg_start = whole_stack.len() - args as usize;
-                    let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
+                    let fields = &stack[stack.len() - args..];
                     let def = PartialApplicationDataDef(callable, fields);
-                    PartialApplication(self.alloc(pre_stack, def))
+                    PartialApplication(self.alloc(&stack.stack, def))
                 };
                 for _ in 0..(args + 1) {
                     stack.pop();
@@ -1127,10 +1128,8 @@ impl<'a> VM<'a> {
             Ordering::Greater => {
                 let excess_args = args - required_args;
                 let d = {
-                    let whole_stack = &mut stack.stack.values[..];
-                    let arg_start = whole_stack.len() - excess_args as usize;
-                    let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
-                    self.new_data_and_collect(pre_stack, 0, fields)
+                    let fields = &stack[stack.len() - excess_args..];
+                    self.new_data_and_collect(&stack.stack, 0, fields)
                 };
                 for _ in 0..excess_args {
                     stack.pop();
@@ -1275,10 +1274,8 @@ impl<'a> VM<'a> {
                 }
                 Construct(tag, args) => {
                     let d = {
-                        let whole_stack = &mut stack.stack.values[..];
-                        let arg_start = whole_stack.len() - args as usize;
-                        let (pre_stack, fields) = whole_stack.split_at_mut(arg_start);
-                        self.new_data_and_collect(pre_stack, tag, fields)
+                        let fields = &stack[stack.len() - args..];
+                        self.new_data_and_collect(&stack.stack, tag, fields)
                     };
                     for _ in 0..args {
                         stack.pop();
@@ -1383,10 +1380,9 @@ impl<'a> VM<'a> {
                 }
                 MakeClosure(fi, n) => {
                     let closure = {
-                        let i = stack.stack.len() - n;
-                        let (stack_after, args) = stack.stack.values.split_at_mut(i as usize);
+                        let args = &stack[stack.len() - n..];
                         let func = function.inner_functions[fi as usize];
-                        Closure(self.new_closure_and_collect(stack_after, func, args))
+                        Closure(self.new_closure_and_collect(&stack.stack, func, args))
                     };
                     for _ in 0..n {
                         stack.pop();
@@ -1396,11 +1392,11 @@ impl<'a> VM<'a> {
                 NewClosure(fi, n) => {
                     let closure = {
                         // Use dummy variables until it is filled
-                        let mut args = [Int(0); 128];
+                        let args = [Int(0); 128];
                         let func = function.inner_functions[fi as usize];
-                        Closure(self.new_closure_and_collect(&mut stack.stack.values[..],
+                        Closure(self.new_closure_and_collect(&stack.stack,
                                                              func,
-                                                             &mut args[..n as usize]))
+                                                             &args[..n as usize]))
                     };
                     stack.push(closure);
                 }
