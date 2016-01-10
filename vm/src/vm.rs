@@ -470,25 +470,6 @@ pub struct VM<'a> {
 pub type VMResult<T> = Result<T, Error>;
 
 #[derive(Debug)]
-pub enum Error {
-    Message(::std::string::String),
-}
-
-impl StdError for Error {
-    fn description(&self) -> &str {
-        "VM error"
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::Message(ref msg) => msg.fmt(f),
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global<'a>>,
@@ -1552,7 +1533,36 @@ fn macro_expand(vm: &VM, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Box<StdEr
     Ok(())
 }
 
-pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>> {
+quick_error! {
+    #[derive(Debug)]
+    pub enum Error {
+        Parse(err: ::parser::Error) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+        Typecheck(err: ::check::error::InFile<::check::typecheck::TypeError<StdString>>) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+        IO(err: ::std::io::Error) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+        Message(err: StdString) {
+            display("{}", err)
+        }
+        Macro(err: ::check::macros::Error) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+    }
+}
+
+pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Error> {
     let (function, typ) = {
         let (expr, typ) = try!(typecheck_expr(vm, name, input));
         let mut function = {
@@ -1579,7 +1589,7 @@ pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>
     Ok(())
 }
 
-pub fn load_file(vm: &VM, filename: &str) -> Result<(), Box<StdError>> {
+pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
     use std::fs::File;
     use std::io::Read;
     use std::path::Path;
@@ -1592,14 +1602,14 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<(), Box<StdError>> {
     load_script(vm, name, &buffer)
 }
 
-pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, Box<StdError>> {
+pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, ::parser::Error> {
     let mut symbols = vm.symbols.borrow_mut();
     Ok(try!(::parser::parse_tc(&mut symbols, input)))
 }
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           file: &str,
                           expr_str: &str)
-                          -> Result<(ast::LExpr<TcIdent>, TcType), Box<StdError>> {
+                          -> Result<(ast::LExpr<TcIdent>, TcType), Error> {
     use check::error;
     let mut expr = try!(parse_expr(&expr_str, vm));
     try!(macro_expand(vm, &mut expr));
@@ -1612,7 +1622,7 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
     Ok((expr, typ))
 }
 
-pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Box<StdError>> {
+pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Error> {
     let mut function = {
         let (expr, _) = try!(typecheck_expr(vm, "<top>", expr_str));
         let env = vm.env();

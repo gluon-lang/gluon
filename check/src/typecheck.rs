@@ -123,7 +123,7 @@ fn map_symbol(symbols: &Symbols,
 
 fn map_symbols(symbols: &Symbols,
                errors: &Errors<ast::Located<TypeError<Symbol>>>)
-               -> StringErrors {
+               -> Error {
     Errors {
         errors: errors.errors
                       .iter()
@@ -305,7 +305,7 @@ pub struct Typecheck<'a> {
     unification_errors: RefCell<Errors<UnificationError<Symbol>>>,
 }
 
-pub type StringErrors = Errors<ast::Located<TypeError<String>>>;
+pub type Error = Errors<ast::Located<TypeError<String>>>;
 
 impl<'a> kindcheck::KindEnv for Typecheck<'a> {
     fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>> {
@@ -464,7 +464,7 @@ impl<'a> Typecheck<'a> {
 
     pub fn typecheck_expr(&mut self,
                           expr: &mut ast::LExpr<TcIdent>)
-                          -> Result<TcType, StringErrors> {
+                          -> Result<TcType, Error> {
         self.inst.subs.clear();
         self.stack.clear();
 
@@ -1760,12 +1760,12 @@ mod tests {
         x
     }
 
-    pub fn typecheck(text: &str) -> Result<TcType, StringErrors> {
+    pub fn typecheck(text: &str) -> Result<TcType, Error> {
         let (_, t) = typecheck_expr(text);
         t
     }
 
-    pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, StringErrors>) {
+    pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>) {
         let mut expr = parse_new(text);
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();

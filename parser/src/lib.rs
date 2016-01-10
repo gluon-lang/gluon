@@ -9,7 +9,6 @@ extern crate combine;
 extern crate combine_language;
 
 use std::cell::RefCell;
-use std::error::Error as StdError;
 use std::fmt;
 use std::iter::FromIterator;
 use std::rc::Rc;
@@ -18,10 +17,12 @@ use base::ast;
 use base::ast::*;
 use base::symbol::{Symbol, Symbols};
 
-use combine::primitives::{Consumed, Stream, Error, Info};
+use combine::primitives::{Consumed, Stream, Error as CombineError, Info};
 use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
+
+pub type Error = ParseError<&'static str>;
 
 /// Parser passes the environment to each parser function
 type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<'a, I, F>, I, T>;
@@ -592,7 +593,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
 ///type information. The type will just be a dummy value until the AST has passed typechecking
 pub fn parse_tc(symbols: &mut Symbols,
                 input: &str)
-                -> Result<LExpr<TcIdent<Symbol>>, Box<StdError>> {
+                -> Result<LExpr<TcIdent<Symbol>>, Error> {
     let mut env = ast::TcIdentEnv {
         typ: Type::variable(ast::TypeVariable {
             id: 0,
@@ -605,7 +606,7 @@ pub fn parse_tc(symbols: &mut Symbols,
 
 fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>,
                     input: &str)
-                    -> Result<LExpr<Id>, Box<StdError>>
+                    -> Result<LExpr<Id>, Error>
     where Id: AstId + Clone
 {
 
@@ -650,7 +651,7 @@ fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>,
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
-fn static_error(e: Error<char, &str>) -> Error<char, &'static str> {
+fn static_error(e: CombineError<char, &str>) -> CombineError<char, &'static str> {
     fn static_info<I: fmt::Display>(i: Info<char, I>) -> Info<char, &'static str> {
         match i {
             Info::Token(t) => Info::Token(t),
@@ -660,10 +661,10 @@ fn static_error(e: Error<char, &str>) -> Error<char, &'static str> {
         }
     }
     match e {
-        Error::Unexpected(t) => Error::Unexpected(static_info(t)),
-        Error::Expected(t) => Error::Expected(static_info(t)),
-        Error::Message(t) => Error::Message(static_info(t)),
-        Error::Other(t) => Error::Other(t),
+        CombineError::Unexpected(t) => CombineError::Unexpected(static_info(t)),
+        CombineError::Expected(t) => CombineError::Expected(static_info(t)),
+        CombineError::Message(t) => CombineError::Message(static_info(t)),
+        CombineError::Other(t) => CombineError::Other(t),
     }
 }
 

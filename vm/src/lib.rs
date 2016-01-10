@@ -2,6 +2,8 @@
 extern crate log;
 #[cfg(test)]
 extern crate env_logger;
+#[macro_use]
+extern crate quick_error;
 
 extern crate base;
 extern crate parser;
