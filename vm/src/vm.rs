@@ -1554,7 +1554,7 @@ fn macro_expand(vm: &VM, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Box<StdEr
 
 pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Box<StdError>> {
     let (function, typ) = {
-        let (expr, typ) = try!(typecheck_expr(vm, input));
+        let (expr, typ) = try!(typecheck_expr(vm, name, input));
         let mut function = {
             let env = vm.env();
             let mut interner = vm.interner.borrow_mut();
@@ -1597,21 +1597,24 @@ pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, Box<StdEr
     Ok(try!(::parser::parse_tc(&mut symbols, input)))
 }
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
+                          file: &str,
                           expr_str: &str)
                           -> Result<(ast::LExpr<TcIdent>, TcType), Box<StdError>> {
+    use check::error;
     let mut expr = try!(parse_expr(&expr_str, vm));
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
     let mut symbols = vm.symbols.borrow_mut();
     let mut tc = Typecheck::new(&mut symbols);
     tc.add_environment(&env);
-    let typ = try!(tc.typecheck_expr(&mut expr));
+    let typ = try!(tc.typecheck_expr(&mut expr)
+                     .map_err(|err| error::in_file(StdString::from(file), expr_str, err)));
     Ok((expr, typ))
 }
 
 pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Box<StdError>> {
     let mut function = {
-        let (expr, _) = try!(typecheck_expr(vm, expr_str));
+        let (expr, _) = try!(typecheck_expr(vm, "<top>", expr_str));
         let env = vm.env();
         let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();

@@ -7,7 +7,7 @@ use vm::api::{VMFunction, IO, Get, Callable, primitive};
 
 fn type_of_expr(vm: &VM) -> Status {
     let closure: &Fn(_) -> _ = &|args: RootStr| -> IO<String> {
-        IO::Value(match typecheck_expr(vm, &args) {
+        IO::Value(match typecheck_expr(vm, "<repl>", &args) {
             Ok((expr, _)) => {
                 let ref env = vm.env();
                 let symbols = vm.get_symbols();

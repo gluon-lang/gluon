@@ -2,6 +2,8 @@ use std::any::Any;
 use std::error::Error as StdError;
 use std::fmt;
 
+use base::ast;
+
 #[derive(Debug, PartialEq)]
 pub struct Errors<T> {
     pub errors: Vec<T>,
@@ -35,22 +37,44 @@ impl<T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
 }
 
 #[derive(Debug)]
-pub struct InFile<E> {
-    file: String,
-    error: Errors<E>,
+pub struct SourceContext<E> {
+    context: String,
+    error: ast::Located<E>,
 }
 
-pub fn in_file<E>(file: String, error: Errors<E>) -> InFile<E> {
+#[derive(Debug)]
+pub struct InFile<E> {
+    file: String,
+    error: Errors<SourceContext<E>>,
+}
+
+fn extract_context<E>(lines: &[&str], error: ast::Located<E>) -> SourceContext<E> {
+    SourceContext {
+        context: String::from(lines.get((error.location.row - 1) as usize).cloned().unwrap_or("N/A")),
+        error: error,
+    }
+}
+
+pub fn in_file<E>(file: String, contents: &str, error: Errors<ast::Located<E>>) -> InFile<E> {
+    let lines: Vec<_> = contents.lines().collect();
     InFile {
         file: file,
-        error: error,
+        error: Errors {
+            errors: error.errors.into_iter()
+                                .map(|error| extract_context(&lines, error))
+                                .collect()
+        },
     }
 }
 
 impl<E: fmt::Display> fmt::Display for InFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for error in self.error.errors.iter() {
-            try!(write!(f, "{}:{}\n", self.file, error));
+            try!(write!(f, "{}:{}\n{}\n", self.file, error.error, error.context));
+            for _ in 1..error.error.location.column {
+                try!(write!(f, " "));
+            }
+            try!(write!(f, "^\n"));
         }
         Ok(())
     }
