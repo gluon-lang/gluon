@@ -8,10 +8,10 @@ use std::cell::RefCell;
 use scoped_map::ScopedMap;
 use base::ast;
 use base::ast::{ASTType, DisplayEnv, MutVisitor};
+use base::error::Errors;
 use base::symbol::{Symbol, Symbols};
 use kindcheck;
 use substitution::{Substitution, Substitutable, Variable};
-use error::Errors;
 use Typed;
 
 use self::TypeError::*;

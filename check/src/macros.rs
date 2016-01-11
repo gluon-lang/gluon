@@ -7,7 +7,7 @@ use base::ast;
 use base::ast::MutVisitor;
 use base::symbol::Symbol;
 use typecheck::TcIdent;
-use error::Errors;
+use base::error::Errors;
 
 pub type Error = Box<StdError>;
 

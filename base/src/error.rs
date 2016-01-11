@@ -2,7 +2,7 @@ use std::any::Any;
 use std::error::Error as StdError;
 use std::fmt;
 
-use base::ast;
+use ast;
 
 #[derive(Debug, PartialEq)]
 pub struct Errors<T> {

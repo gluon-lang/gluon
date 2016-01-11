@@ -18,7 +18,6 @@ pub use typed::Typed;
 
 pub mod typecheck;
 mod typed;
-pub mod error;
 pub mod kindcheck;
 pub mod macros;
 mod substitution;

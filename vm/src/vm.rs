@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType, DisplayEnv};
+use base::error;
 use base::symbol::{Symbol, Symbols};
 use check::typecheck::{Typecheck, TypeEnv, TcIdent, TcType};
 use check::kindcheck::KindEnv;
@@ -1541,7 +1542,7 @@ quick_error! {
             display("{}", err)
             from()
         }
-        Typecheck(err: ::check::error::InFile<::check::typecheck::TypeError<StdString>>) {
+        Typecheck(err: error::InFile<::check::typecheck::TypeError<StdString>>) {
             description(err.description())
             display("{}", err)
             from()
@@ -1610,7 +1611,6 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           file: &str,
                           expr_str: &str)
                           -> Result<(ast::LExpr<TcIdent>, TcType), Error> {
-    use check::error;
     let mut expr = try!(parse_expr(&expr_str, vm));
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
