@@ -300,6 +300,9 @@ pub struct Typecheck<'a> {
     symbols: &'a mut Symbols,
     stack: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
+    /// Mapping from the fresh symbol generated during typechecking to the symbol that was assigned
+    /// during typechecking
+    original_symbols: ScopedMap<Symbol, Symbol>,
     inst: Instantiator,
     errors: Errors<ast::Located<TypeError<Symbol>>>,
     unification_errors: RefCell<Errors<UnificationError<Symbol>>>,
@@ -365,6 +368,7 @@ impl<'a> Typecheck<'a> {
             symbols: symbols,
             stack: ScopedMap::new(),
             stack_types: ScopedMap::new(),
+            original_symbols: ScopedMap::new(),
             inst: Instantiator::new(),
             errors: Errors::new(),
             unification_errors: RefCell::new(Errors::new()),
@@ -425,11 +429,13 @@ impl<'a> Typecheck<'a> {
     fn enter_scope(&mut self) {
         self.stack.enter_scope();
         self.stack_types.enter_scope();
+        self.original_symbols.enter_scope();
     }
 
     fn exit_scope(&mut self) {
         self.stack.exit_scope();
         self.stack_types.exit_scope();
+        self.original_symbols.exit_scope();
     }
 
     pub fn add_environment(&mut self, env: &'a TypeEnv) {
@@ -489,6 +495,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult {
+        self.refresh_symbols(expr);
         match self.typecheck_(expr) {
             Ok(typ) => Ok(typ),
             Err(err) => {
@@ -784,7 +791,7 @@ impl<'a> Typecheck<'a> {
                                     *arg = TcType::from(a);
                                 }
                                 check.add_local(id, id_kind);
-                                Type::data(ast::TypeConstructor::Data(id), args.clone())
+                                Type::data(ast::TypeConstructor::Data(id), args)
                             }
                             _ => {
                                 panic!("ICE: Unexpected lhs of type binding {}",
@@ -1185,6 +1192,8 @@ impl<'a> Typecheck<'a> {
                     // Successful unification
                     return;
                 }
+                let len3 = self.unification_errors.borrow().errors.len();
+                self.rollback_unification_errors(len..len3);
                 self.unification_error(UnificationError::TypeMismatch(expected.clone(),
                                                                       actual.clone()));
             }
@@ -1446,6 +1455,82 @@ impl<'a> Typecheck<'a> {
         let typ = self.inst.instantiate_with(typ, arguments, &args);
         Ok(Some(typ))
     }
+
+    fn refresh_symbols(&mut self, expr: &mut ast::LExpr<TcIdent>) {
+        match expr.value {
+            ast::Expr::Identifier(ref mut id) => {
+                if let Some(&new) = self.original_symbols.find(&id.name) {
+                    id.name = new;
+                }
+            }
+            ast::Expr::Let(ref mut bindings, _) => {
+                for bind in bindings {
+                    if let Some(ref mut type_decl) = bind.typ {
+                        *type_decl = self.refresh_symbols_in_type(type_decl.clone());
+                    }
+                }
+            }
+            ast::Expr::Type(ref mut bindings, _) => {
+                for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
+                    *name = match (**name).clone() {
+                        Type::Data(ast::TypeConstructor::Data(original), args) => {
+                            // Create a new symbol for this binding so that this type will
+                            // differ from any other types which are named the same
+                            let s = String::from(self.symbols.string(&original));
+                            let new = self.symbols.make_symbol(s);
+                            self.original_symbols.insert(original, new);
+                            Type::data(ast::TypeConstructor::Data(new), args)
+                        }
+                        _ => {
+                            panic!("ICE: Unexpected lhs of type binding {}",
+                                   ast::display_type(&self.symbols, name))
+                        }
+                    };
+                }
+                for &mut ast::TypeBinding { ref mut typ, .. } in bindings.iter_mut() {
+                    *typ = self.refresh_symbols_in_type(typ.clone());
+                }
+            }
+            ast::Expr::Record { ref mut types, .. } => {
+                for &mut(ref mut symbol, ref mut typ) in types {
+                    if let Some(&new) = self.original_symbols.find(symbol) {
+                        *symbol = new;
+                    }
+                    if let Some(ref mut typ) = *typ {
+                        *typ = self.refresh_symbols_in_type(typ.clone());
+                    }
+                }
+            }
+            _ => ()
+        }
+    }
+
+    fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
+        ast::walk_move_type(typ, &mut |typ| {
+            match *typ {
+                Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+                    self.original_symbols.find(&id)
+                        .map(|current| Type::data(ast::TypeConstructor::Data(*current), args.clone()))
+                }
+                Type::Variants(ref variants) => {
+                    let iter = || variants.iter().map(|var| self.original_symbols.find(&var.0));
+                    if iter().any(|opt| opt.is_some()) {
+                        // If any of the variants requires a symbol replacement we create a new
+                        // type
+                        Some(Type::variants(iter().zip(variants.iter()).map(|(new, old)| {
+                            match new {
+                                Some(&new) => (new, old.1.clone()),
+                                None => old.clone(),
+                            }
+                        }).collect()))
+                    } else {
+                        None
+                    }
+                }
+                _ => None
+            }
+        })
+    }
 }
 
 fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<Symbol>> {
@@ -1634,7 +1719,6 @@ pub fn walk_real_type<F>(subs: &Substitution<TcType>, typ: &TcType, f: &mut F)
         Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => (),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -2315,6 +2399,23 @@ in f { x = 1, y = "" } { z = 1, w = "" }
 "#;
         let result = typecheck(text);
         assert_unify_err!(result, FieldMismatch(..), FieldMismatch(..));
+    }
+
+    #[test]
+    fn aliases_are_different() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type Test = Int
+in
+let f x: Test -> Test = x
+in
+type Test = Float
+in
+let y: Test = 1.0
+in f y
+"#;
+        let result = typecheck(text);
+        assert_unify_err!(result, TypeMismatch(..));
     }
 
     #[test]
