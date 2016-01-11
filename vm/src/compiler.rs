@@ -3,7 +3,7 @@ use interner::{Interner, InternedStr};
 use gc::Gc;
 use base::ast;
 use base::symbol::{Symbol, Symbols};
-use base::ast::{DisplayEnv, LExpr, Expr, Integer, Float, String, Bool};
+use base::ast::{DisplayEnv, LExpr, Expr};
 use check::typecheck::{TcIdent, TcType, Type, TypeEnv};
 use check::scoped_map::ScopedMap;
 use check::Typed;
@@ -438,17 +438,17 @@ impl<'a> Compiler<'a> {
         match expr.value {
             Expr::Literal(ref lit) => {
                 match *lit {
-                    Integer(i) => function.emit(PushInt(i as isize)),
-                    Float(f) => function.emit(PushFloat(f)),
-                    Bool(b) => {
+                    ast::LiteralEnum::Integer(i) => function.emit(PushInt(i as isize)),
+                    ast::LiteralEnum::Float(f) => function.emit(PushFloat(f)),
+                    ast::LiteralEnum::Bool(b) => {
                         function.emit(PushInt(if b {
                             1
                         } else {
                             0
                         }))
                     }
-                    String(ref s) => function.emit_string(self.intern(&s)),
-                    ast::LiteralStruct::Char(c) => function.emit(PushInt(c as isize)),
+                    ast::LiteralEnum::String(ref s) => function.emit_string(self.intern(&s)),
+                    ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
             Expr::Identifier(ref id) => self.load_identifier(*id.id(), function),

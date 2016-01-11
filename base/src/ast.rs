@@ -1,12 +1,10 @@
 use std::ops::{Deref, DerefMut};
 use std::fmt;
 use std::rc::Rc;
-use std::string::String as StdString;
 use symbol::{Symbols, Symbol};
 
 pub use self::BuiltinType::{StringType, CharType, IntType, FloatType, BoolType, UnitType,
                             FunctionType};
-pub use self::LiteralStruct::{Integer, Float, String, Bool};
 
 pub type ASTType<Id> = RcType<Id>;
 
@@ -25,10 +23,10 @@ pub trait AstId: Sized {
     fn set_type(&mut self, typ: ASTType<Self::Untyped>);
 }
 
-impl AstId for StdString {
-    type Untyped = StdString;
+impl AstId for String {
+    type Untyped = String;
 
-    fn to_id(self) -> StdString {
+    fn to_id(self) -> String {
         self
     }
     fn set_type(&mut self, _typ: ASTType<Self::Untyped>) {}
@@ -368,8 +366,8 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
 }
 
 impl ASTType<Symbol> {
-    pub fn clone_strings(&self, symbols: &Symbols) -> ASTType<StdString> {
-        self.map(|symbol| StdString::from(symbols.string(symbol)))
+    pub fn clone_strings(&self, symbols: &Symbols) -> ASTType<String> {
+        self.map(|symbol| String::from(symbols.string(symbol)))
     }
 }
 
@@ -468,10 +466,10 @@ impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum LiteralStruct {
+pub enum LiteralEnum {
     Integer(i64),
     Float(f64),
-    String(StdString),
+    String(String),
     Char(char),
     Bool(bool),
 }
@@ -513,7 +511,7 @@ pub type LExpr<Id> = Located<Expr<Id>>;
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
     Identifier(Id),
-    Literal(LiteralStruct),
+    Literal(LiteralEnum),
     Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
     IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
     Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
@@ -559,7 +557,7 @@ impl<Id> LExpr<Id> where Id: AstId
         let end = match self.value {
             Identifier(ref id) => self.location.line_offset(env.string(id).len() as i32),
             Literal(ref lit) => {
-                use self::LiteralStruct::*;
+                use self::LiteralEnum::*;
                 match *lit {
                     Integer(i) => self.location.line_offset(format!("{}", i).len() as i32),
                     Float(f) => self.location.line_offset(format!("{}", f).len() as i32),

@@ -27,11 +27,11 @@ impl<Id> Typed for ast::Expr<Id> where Id: Typed<Id = Symbol> + ast::AstId<Untyp
             ast::Expr::Identifier(ref id) => id.env_type_of(env),
             ast::Expr::Literal(ref lit) => {
                 match *lit {
-                    ast::Integer(_) => Type::int(),
-                    ast::Float(_) => Type::float(),
-                    ast::String(_) => Type::string(),
-                    ast::LiteralStruct::Char(_) => Type::char(),
-                    ast::Bool(_) => Type::bool(),
+                    ast::LiteralEnum::Integer(_) => Type::int(),
+                    ast::LiteralEnum::Float(_) => Type::float(),
+                    ast::LiteralEnum::String(_) => Type::string(),
+                    ast::LiteralEnum::Char(_) => Type::char(),
+                    ast::LiteralEnum::Bool(_) => Type::bool(),
                 }
             }
             ast::Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),

@@ -67,7 +67,7 @@ impl<'a> Macro<VM<'a>> for Import {
             return Err(Error::String("Expected import to get 1 argument").into());
         }
         match *arguments[0] {
-            ast::Expr::Literal(ast::String(ref filename)) => {
+            ast::Expr::Literal(ast::LiteralEnum::String(ref filename)) => {
                 let path = Path::new(&filename[..]);
                 let name = path.file_stem().and_then(|f| f.to_str()).expect("filename");
                 // Only load the script if it is not already loaded

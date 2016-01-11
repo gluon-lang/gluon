@@ -341,13 +341,13 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                      &mut self.parser(ParserEnv::lambda).map(&loc),
                      &mut self.parser(ParserEnv::type_decl).map(&loc),
                      &mut self.lex(try(self.integer().skip(not_followed_by(string(".")))))
-                              .map(|i| loc(Expr::Literal(LiteralStruct::Integer(i)))),
+                              .map(|i| loc(Expr::Literal(LiteralEnum::Integer(i)))),
                      &mut self.lex(try(self.float()))
-                              .map(|f| loc(Expr::Literal(LiteralStruct::Float(f)))),
+                              .map(|f| loc(Expr::Literal(LiteralEnum::Float(f)))),
                      &mut self.reserved("True")
-                              .map(|_| loc(Expr::Literal(LiteralStruct::Bool(true)))),
+                              .map(|_| loc(Expr::Literal(LiteralEnum::Bool(true)))),
                      &mut self.reserved("False")
-                              .map(|_| loc(Expr::Literal(LiteralStruct::Bool(false)))),
+                              .map(|_| loc(Expr::Literal(LiteralEnum::Bool(false)))),
                      &mut self.ident().map(Expr::Identifier).map(&loc),
                      &mut self.parser(ParserEnv::record).map(&loc),
                      &mut self.parens(optional(self.expr()).map(|expr| {
@@ -357,9 +357,9 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                          }
                      })),
                      &mut self.string_literal()
-                              .map(|s| loc(Expr::Literal(LiteralStruct::String(s)))),
+                              .map(|s| loc(Expr::Literal(LiteralEnum::String(s)))),
                      &mut self.char_literal()
-                              .map(|s| loc(Expr::Literal(LiteralStruct::Char(s)))),
+                              .map(|s| loc(Expr::Literal(LiteralEnum::Char(s)))),
                      &mut self.brackets(sep_by(self.expr(), self.lex(char(','))))
                               .map(|exprs| {
                                   loc(Expr::Array(ArrayStruct {
@@ -686,7 +686,7 @@ pub mod tests {
         no_loc(Expr::BinOp(Box::new(l), intern(s), Box::new(r)))
     }
     fn int(i: i64) -> PExpr {
-        no_loc(Expr::Literal(Integer(i)))
+        no_loc(Expr::Literal(LiteralEnum::Integer(i)))
     }
     fn let_(s: &str, e: PExpr, b: PExpr) -> PExpr {
         let_a(s, &[], e, b)
@@ -767,7 +767,7 @@ pub mod tests {
     }
 
     fn bool(b: bool) -> PExpr {
-        no_loc(Expr::Literal(Bool(b)))
+        no_loc(Expr::Literal(LiteralEnum::Bool(b)))
     }
     fn record(fields: Vec<(String, Option<PExpr>)>) -> PExpr {
         record_a(Vec::new(), fields)
