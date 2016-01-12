@@ -660,7 +660,7 @@ impl<'a: 'vm, 'vm, F: FunctionType + VMType> Pushable<'a> for Primitive<F> {
             ::std::mem::transmute::<Box<Fn(&'vm VM<'a>) -> Status + 'static>,
                                       Box<Fn(&VM<'a>) -> Status + 'static>>(Box::new(self.function))
         };
-        let id = vm.intern(self.name);
+        let id = vm.symbol(self.name);
         let value = Value::Function(vm.gc.borrow_mut().alloc(Move(ExternFunction {
             id: id,
             args: F::arguments(),
@@ -892,7 +892,7 @@ where $($args: Getable<'a, 'vm> + VMType + 'vm,)* R: Pushable<'a> + 'vm {
                     ::<Box<Fn(&'vm VM<'a>) -> Status>,
                        Box<Fn(&VM<'a>) -> Status>>(f)
         };
-        let id = vm.intern("<extern>");
+        let id = vm.symbol("<extern>");
         let value = Value::Function(vm.gc.borrow_mut().alloc(Move(
             ExternFunction {
                 id: id,

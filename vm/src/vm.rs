@@ -10,7 +10,7 @@ use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType, DisplayEnv};
 use base::error;
-use base::symbol::{Symbol, Symbols};
+use base::symbol::{Name, NameBuf, Symbol, SymbolModule, Symbols};
 use check::typecheck::{Typecheck, TypeEnv, TcIdent, TcType};
 use check::kindcheck::KindEnv;
 use check::macros::{MacroEnv, MacroExpander};
@@ -303,7 +303,7 @@ impl<'a> fmt::Debug for Value<'a> {
                                data.tag,
                                LevelSlice(level - 1, &data.fields))
                     }
-                    Function(ref func) => write!(f, "<{} {:?}>", func.id, &**func),
+                    Function(ref func) => write!(f, "<EXTERN {:?}>", &**func),
                     Closure(ref closure) => {
                         let p: *const _ = &*closure.function;
                         write!(f,
@@ -314,8 +314,8 @@ impl<'a> fmt::Debug for Value<'a> {
                     }
                     PartialApplication(ref app) => {
                         let name = match app.function {
-                            Callable::Closure(_) => "<SYMBOL>",
-                            Callable::Extern(ref func) => &func.id[..],
+                            Callable::Closure(_) => "<CLOSURE>",
+                            Callable::Extern(_) => "<EXTERN>",
                         };
                         write!(f,
                                "<App {:?} {:?}>",
@@ -406,7 +406,7 @@ pub enum Status {
 }
 
 pub struct ExternFunction<'a> {
-    pub id: InternedStr,
+    pub id: Symbol,
     pub args: VMIndex,
     pub function: Box<Fn(&VM<'a>) -> Status + 'static>,
 }
@@ -636,7 +636,7 @@ impl<'a> VM<'a> {
         vm.add_types()
           .unwrap();
         ::primitives::load(&vm).unwrap();
-        vm.macros.insert(vm.make_symbol(StdString::from("import")),
+        vm.macros.insert(vm.make_symbol(Name::new("import")),
                          ::import::Import::new());
         vm
     }
@@ -665,7 +665,7 @@ impl<'a> VM<'a> {
                         args: VMIndex,
                         instructions: Vec<Instruction>)
                         -> VMIndex {
-        let id = self.make_symbol(StdString::from(name));
+        let id = self.make_symbol(name);
         let compiled_fn = CompiledFunction {
             args: args,
             id: id,
@@ -759,16 +759,15 @@ impl<'a> VM<'a> {
                               typ: TcType,
                               f: Box<Fn(&VM<'a>) -> Status + 'static>)
                               -> Result<(), Error> {
-        let id = self.make_symbol(StdString::from(name));
+        let id = self.make_symbol(name);
         if self.names.borrow().contains_key(&id) {
             return Err(Error::Message(format!("{} is already defined", name)));
         }
-        let interned_id = self.intern(name);
         let global = Global {
             id: id,
             typ: typ,
             value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(ExternFunction {
-                id: interned_id,
+                id: id,
                 args: num_args,
                 function: f,
             })))),
@@ -781,7 +780,7 @@ impl<'a> VM<'a> {
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
         where T: Pushable<'a>
     {
-        let id = self.make_symbol(StdString::from(name));
+        let id = self.make_symbol(name);
         if self.names.borrow().contains_key(&id) {
             return Err(Error::Message(format!("{} is already defined", name)));
         }
@@ -807,7 +806,7 @@ impl<'a> VM<'a> {
                                           name: &str,
                                           args: Vec<ast::Generic<Symbol>>)
                                           -> VMResult<&TcType> {
-        let n = self.make_symbol(StdString::from(name));
+        let n = self.make_symbol(name);
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(&n) {
             Err(Error::Message(format!("Type '{}' has already been registered", name)))
@@ -839,14 +838,18 @@ impl<'a> VM<'a> {
         StdString::from(symbols.string(&s))
     }
 
-    pub fn make_symbol(&self, s: StdString) -> Symbol {
+    pub fn make_symbol<N>(&self, s: N) -> Symbol
+        where N: Into<NameBuf>
+    {
         let mut symbols = self.symbols.borrow_mut();
-        symbols.make_symbol(s)
+        symbols.make_symbol(s.into())
     }
 
-    pub fn symbol(&self, s: &str) -> Symbol {
+    pub fn symbol<N>(&self, name: N) -> Symbol
+        where N: Into<NameBuf> + AsRef<Name>
+    {
         let mut symbols = self.symbols.borrow_mut();
-        symbols.symbol(s)
+        symbols.symbol(name)
     }
 
     pub fn intern(&self, s: &str) -> InternedStr {
@@ -970,7 +973,7 @@ impl<'a> VM<'a> {
         debug!("Call function {:?}", global);
         match global.value.get() {
             Function(ptr) => {
-                let name = self.symbol(&ptr.id);
+                let name = ptr.id;
                 let stack = StackFrame::frame(self.stack.borrow_mut(), args, Some(name), None);
                 let stack = self.execute_function(stack, &ptr);
                 stack.map(|mut stack| {
@@ -1055,8 +1058,7 @@ impl<'a> VM<'a> {
         assert!(stack.len() >= function.args + 1);
         let function_index = stack.len() - function.args - 1;
         debug!("------- {} {:?}", function_index, &stack[..]);
-        let name = self.symbol(&function.id);
-        stack = stack.enter_scope(function.args, Some(name), None);
+        stack = stack.enter_scope(function.args, Some(function.id), None);
         let StackFrame { stack, frame } = stack;
         drop(stack);
         let status = (function.function)(self);
@@ -1563,27 +1565,29 @@ quick_error! {
     }
 }
 
-pub fn load_script(vm: &VM, name: &str, input: &str) -> Result<(), Error> {
+pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
     let (function, typ) = {
-        let (expr, typ) = try!(typecheck_expr(vm, name, input));
+        let (expr, typ) = try!(typecheck_expr(vm, filename, input));
         let mut function = {
             let env = vm.env();
             let mut interner = vm.interner.borrow_mut();
             let mut gc = vm.gc.borrow_mut();
             let mut symbols = vm.symbols.borrow_mut();
-            let mut compiler = Compiler::new(&env, &mut interner, &mut gc, &mut symbols);
+            let name = Name::new(filename);
+            let name = NameBuf::from(name.module());
+            let symbols = SymbolModule::new(StdString::from(name.as_ref()), &mut symbols);
+            let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
             compiler.compile_expr(&expr)
         };
-        function.id = vm.symbols.borrow_mut().symbol(name);
+        function.id = vm.symbols.borrow_mut().symbol(filename);
         (function, typ)
     };
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let closure = vm.new_closure(function, &[]);
     let value = try!(vm.call_module(&typ, closure));
-    let id = vm.symbol(name);
-    vm.names.borrow_mut().insert(id, GlobalFn(vm.globals.len()));
+    vm.names.borrow_mut().insert(function.name.unwrap(), GlobalFn(vm.globals.len()));
     vm.globals.push(Global {
-        id: id,
+        id: function.name.unwrap(),
         typ: typ,
         value: Cell::new(value),
     });
@@ -1603,19 +1607,19 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
     load_script(vm, name, &buffer)
 }
 
-pub fn parse_expr(input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, ::parser::Error> {
+pub fn parse_expr(file: &str, input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, ::parser::Error> {
     let mut symbols = vm.symbols.borrow_mut();
-    Ok(try!(::parser::parse_tc(&mut symbols, input)))
+    Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut symbols), input)))
 }
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           file: &str,
                           expr_str: &str)
                           -> Result<(ast::LExpr<TcIdent>, TcType), Error> {
-    let mut expr = try!(parse_expr(&expr_str, vm));
+    let mut expr = try!(parse_expr(file, expr_str, vm));
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
     let mut symbols = vm.symbols.borrow_mut();
-    let mut tc = Typecheck::new(&mut symbols);
+    let mut tc = Typecheck::new(file.into(), &mut symbols);
     tc.add_environment(&env);
     let typ = try!(tc.typecheck_expr(&mut expr)
                      .map_err(|err| error::in_file(StdString::from(file), expr_str, err)));
@@ -1629,10 +1633,11 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Error> {
         let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
         let mut symbols = vm.symbols.borrow_mut();
-        let mut compiler = Compiler::new(&env, &mut interner, &mut gc, &mut symbols);
+        let symbols = SymbolModule::new(StdString::from("<top>"), &mut symbols);
+        let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
         compiler.compile_expr(&expr)
     };
-    function.id = vm.symbols.borrow_mut().symbol("<top>");
+    function.id = vm.symbols.borrow_mut().make_symbol(NameBuf::from("<top>.main"));
     let typ = function.typ.clone();
     let function = vm.new_function(function);
     let closure = vm.new_closure(function, &[]);

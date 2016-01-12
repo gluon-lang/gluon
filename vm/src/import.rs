@@ -69,9 +69,9 @@ impl<'a> Macro<VM<'a>> for Import {
         match *arguments[0] {
             ast::Expr::Literal(ast::LiteralEnum::String(ref filename)) => {
                 let path = Path::new(&filename[..]);
-                let name = path.file_stem().and_then(|f| f.to_str()).expect("filename");
                 // Only load the script if it is not already loaded
-                if vm.get_global(&name).is_none() {
+                let name = vm.symbol(&**filename);
+                if vm.get_global(filename).is_none() {
                     if self.visited.borrow().iter().any(|m| **m == **filename) {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
@@ -89,12 +89,12 @@ impl<'a> Macro<VM<'a>> for Import {
                     let mut file = try!(file.ok_or_else(|| Error::String("Could not find file")));
                     let mut buffer = String::new();
                     try!(file.read_to_string(&mut buffer).map_err(error));
-                    try!(load_script(vm, &name, &buffer));
+                    try!(load_script(vm, filename, &buffer));
                     self.visited.borrow_mut().pop();
                 }
                 // FIXME Does not handle shadowing
                 Ok(ast::located(arguments[0].location,
-                                ast::Expr::Identifier(TcIdent::new(vm.symbol(&name)))))
+                                ast::Expr::Identifier(TcIdent::new(name))))
             }
             _ => return Err(Error::String("Expected a string literal to import").into()),
         }

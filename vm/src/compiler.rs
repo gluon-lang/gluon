@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 use interner::{Interner, InternedStr};
 use gc::Gc;
 use base::ast;
-use base::symbol::{Symbol, Symbols};
+use base::symbol::{Symbol, SymbolModule};
 use base::ast::{DisplayEnv, LExpr, Expr};
 use check::typecheck::{TcIdent, TcType, Type, TypeEnv};
 use check::scoped_map::ScopedMap;
@@ -258,7 +258,7 @@ pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
     interner: &'a mut Interner,
     gc: &'a mut Gc,
-    symbols: &'a mut Symbols,
+    symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, (Vec<ast::Generic<Symbol>>, TcType)>,
 }
@@ -287,7 +287,7 @@ impl<'a> Compiler<'a> {
     pub fn new(globals: &'a CompilerEnv,
                interner: &'a mut Interner,
                gc: &'a mut Gc,
-               symbols: &'a mut Symbols)
+               symbols: SymbolModule<'a>)
                -> Compiler<'a> {
         Compiler {
             globals: globals,
@@ -579,7 +579,7 @@ impl<'a> Compiler<'a> {
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.env_type_of(self);
                 let typ = typ.inner_app();
-                debug!("FieldAccess {}", ast::display_type(self.symbols, typ));
+                debug!("FieldAccess {}", ast::display_type(&self.symbols, typ));
                 let field_index = match *typ {
                                       Type::Data(ref id, _) => self.find_field(id, field.id()),
                                       Type::Record { ref fields, .. } => {
@@ -589,7 +589,7 @@ impl<'a> Compiler<'a> {
                                       }
                                       ref typ => {
                                           panic!("ICE: FieldAccess on {}",
-                                                 ast::display_type(self.symbols, typ))
+                                                 ast::display_type(&self.symbols, typ))
                                       }
                                   }
                                   .expect("ICE: Undefined field in field access");
@@ -752,7 +752,7 @@ impl<'a> Compiler<'a> {
                     }
                     _ => {
                         panic!("Expected record, got {} at {:?}",
-                               ast::display_type(self.symbols, &typ),
+                               ast::display_type(&self.symbols, &typ),
                                pattern)
                     }
                 }

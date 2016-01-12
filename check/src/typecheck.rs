@@ -9,7 +9,7 @@ use scoped_map::ScopedMap;
 use base::ast;
 use base::ast::{ASTType, DisplayEnv, MutVisitor};
 use base::error::Errors;
-use base::symbol::{Symbol, Symbols};
+use base::symbol::{Symbol, SymbolModule, Symbols};
 use kindcheck;
 use substitution::{Substitution, Substitutable, Variable};
 use Typed;
@@ -65,7 +65,7 @@ fn apply_subs(tc: &Typecheck,
          .collect()
 }
 
-fn map_symbol(symbols: &Symbols,
+fn map_symbol(symbols: &SymbolModule,
               err: &ast::Located<TypeError<Symbol>>)
               -> ast::Located<TypeError<String>> {
     use self::TypeError::*;
@@ -121,7 +121,7 @@ fn map_symbol(symbols: &Symbols,
     }
 }
 
-fn map_symbols(symbols: &Symbols,
+fn map_symbols(symbols: &SymbolModule,
                errors: &Errors<ast::Located<TypeError<Symbol>>>)
                -> Error {
     Errors {
@@ -297,7 +297,7 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
 
 pub struct Typecheck<'a> {
     environment: Option<&'a (TypeEnv + 'a)>,
-    symbols: &'a mut Symbols,
+    symbols: SymbolModule<'a>,
     stack: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
     /// Mapping from the fresh symbol generated during typechecking to the symbol that was assigned
@@ -357,7 +357,8 @@ impl<'a> TypeEnv for Typecheck<'a> {
 }
 
 impl<'a> Typecheck<'a> {
-    pub fn new(symbols: &'a mut Symbols) -> Typecheck<'a> {
+    pub fn new(module: String, symbols: &'a mut Symbols) -> Typecheck<'a> {
+        let mut symbols = SymbolModule::new(module, symbols);
         for t in ["Int", "Float"].iter() {
             for op in "+-*/".chars() {
                 symbols.make_symbol(format!("#{}{}", t, op));
@@ -767,7 +768,7 @@ impl<'a> Typecheck<'a> {
                 Ok(typ)
             }
             ast::Expr::Type(ref mut bindings, ref mut expr) => {
-                self.enter_scope();
+                // enter_scope is called in refresh_symbols
                 {
                     let subs = Substitution::new();
                     let mut check = super::kindcheck::KindCheck::new(self, &self.symbols, subs);
@@ -923,7 +924,7 @@ impl<'a> Typecheck<'a> {
                 let return_type = try!(self.typecheck_pattern_rec(args, ctor_type));
                 self.unify(&match_type, return_type)
             }
-            ast::Pattern::Record { types: ref associated_types, ref fields } => {
+            ast::Pattern::Record { types: ref mut associated_types, ref fields } => {
                 let mut match_type = self.remove_alias(match_type);
                 let mut types = Vec::new();
                 let new_type = match *match_type {
@@ -984,7 +985,7 @@ impl<'a> Typecheck<'a> {
                 }
                 match *match_type {
                     Type::Record { ref types, .. } => {
-                        for field in associated_types.iter() {
+                        for field in associated_types.iter_mut() {
                             let (mut name, ref bind) = *field;
                             if let Some(bind_name) = *bind {
                                 name = bind_name;
@@ -1471,13 +1472,14 @@ impl<'a> Typecheck<'a> {
                 }
             }
             ast::Expr::Type(ref mut bindings, _) => {
+                self.enter_scope();
                 for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
                     *name = match (**name).clone() {
                         Type::Data(ast::TypeConstructor::Data(original), args) => {
                             // Create a new symbol for this binding so that this type will
                             // differ from any other types which are named the same
                             let s = String::from(self.symbols.string(&original));
-                            let new = self.symbols.make_symbol(s);
+                            let new = self.symbols.make_scoped_symbol(s);
                             self.original_symbols.insert(original, new);
                             Type::data(ast::TypeConstructor::Data(new), args)
                         }
@@ -1726,7 +1728,7 @@ mod tests {
     use std::rc::Rc;
     use super::*;
     use base::ast;
-    use base::symbol::{Symbols, Symbol};
+    use base::symbol::{Symbols, SymbolModule, Symbol};
     use Typed;
 
     ///Returns a reference to the interner stored in TLD
@@ -1739,7 +1741,11 @@ mod tests {
     pub fn intern(s: &str) -> Symbol {
         let i = get_local_interner();
         let mut i = i.borrow_mut();
-        i.symbol(s)
+        if s.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+            i.symbol(s)
+        } else {
+            SymbolModule::new("test".into(), &mut i).scoped_symbol(s)
+        }
     }
 
     macro_rules! assert_pass {
@@ -1838,9 +1844,10 @@ mod tests {
     }
 
     pub fn parse_new(s: &str) -> ast::LExpr<TcIdent> {
-        let interner = get_local_interner();
-        let mut interner = interner.borrow_mut();
-        let x = ::parser::parse_tc(&mut interner, s).unwrap_or_else(|err| panic!("{:?}", err));
+        let symbols = get_local_interner();
+        let mut symbols = symbols.borrow_mut();
+        let mut module = SymbolModule::new("test".into(), &mut symbols);
+        let x = ::parser::parse_tc(&mut module, s).unwrap_or_else(|err| panic!("{:?}", err));
         x
     }
 
@@ -1853,7 +1860,7 @@ mod tests {
         let mut expr = parse_new(text);
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
-        let mut tc = Typecheck::new(&mut interner);
+        let mut tc = Typecheck::new("test".into(), &mut interner);
         let result = tc.typecheck_expr(&mut expr);
         (expr, result)
     }

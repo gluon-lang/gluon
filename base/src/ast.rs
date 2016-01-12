@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use std::fmt;
 use std::rc::Rc;
-use symbol::{Symbols, Symbol};
+use symbol::Symbol;
 
 pub use self::BuiltinType::{StringType, CharType, IntType, FloatType, BoolType, UnitType,
                             FunctionType};
@@ -153,20 +153,19 @@ impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
 }
 
 /// Representation of a location in a source file
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Location {
     pub column: i32,
     pub row: i32,
     pub absolute: i32,
 }
 
+pub static START: Location = Location { column: 1, row: 1, absolute: 1, };
+pub static EOF: Location = Location { column: -1, row: -1, absolute: -1, };
+
 impl Location {
     pub fn eof() -> Location {
-        Location {
-            column: -1,
-            row: -1,
-            absolute: -1,
-        }
+        EOF
     }
 
     pub fn line_offset(mut self, offset: i32) -> Location {
@@ -366,7 +365,8 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
 }
 
 impl ASTType<Symbol> {
-    pub fn clone_strings(&self, symbols: &Symbols) -> ASTType<String> {
+    pub fn clone_strings<E>(&self, symbols: &E) -> ASTType<String>
+        where E: DisplayEnv<Ident = Symbol> {
         self.map(|symbol| String::from(symbols.string(symbol)))
     }
 }

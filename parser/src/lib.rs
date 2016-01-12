@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use base::ast;
 use base::ast::*;
-use base::symbol::{Symbol, Symbols};
+use base::symbol::{Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, Error as CombineError, Info};
 use combine::combinator::EnvParser;
@@ -591,7 +591,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
 
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
 ///type information. The type will just be a dummy value until the AST has passed typechecking
-pub fn parse_tc(symbols: &mut Symbols,
+pub fn parse_tc(symbols: &mut SymbolModule,
                 input: &str)
                 -> Result<LExpr<TcIdent<Symbol>>, Error> {
     let mut env = ast::TcIdentEnv {

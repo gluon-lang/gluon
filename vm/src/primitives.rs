@@ -219,7 +219,7 @@ pub fn load_script(vm: &VM) -> Status {
     match (stack[0], stack[1]) {
         (Value::String(name), Value::String(expr)) => {
             drop(stack);
-            let run_result = ::vm::load_script(vm, &name, &expr);
+            let run_result = ::vm::load_script(vm, &name[..], &expr);
             stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
             match run_result {
                 Ok(()) => {
@@ -283,11 +283,11 @@ pub fn load(vm: &VM) -> VMResult<()> {
     }
     let a = Type::generic(ast::Generic {
         kind: ast::Kind::star(),
-        id: vm.make_symbol(String::from("a")),
+        id: vm.make_symbol("a"),
     });
     let b = Type::generic(ast::Generic {
         kind: ast::Kind::star(),
-        id: vm.make_symbol(String::from("b")),
+        id: vm.make_symbol("b"),
     });
     let io = |t| {
         ASTType::from(ast::Type::Data(ast::TypeConstructor::Data(vm.symbol("IO")), vec![t]))
