@@ -636,8 +636,7 @@ impl<'a> VM<'a> {
         vm.add_types()
           .unwrap();
         ::primitives::load(&vm).unwrap();
-        vm.macros.insert(vm.symbol("import"),
-                         ::import::Import::new());
+        vm.macros.insert(vm.symbol("import"), ::import::Import::new());
         vm
     }
 
@@ -942,8 +941,10 @@ impl<'a> VM<'a> {
     {
         // For this to be safe we require that the received stack is the same one that is in this
         // VM
-        assert!(unsafe { stack as *const _  as usize >= &self.stack as *const _ as usize &&
-                stack as *const _ as usize <= (&self.stack as *const _).offset(1) as usize });
+        assert!(unsafe {
+            stack as *const _ as usize >= &self.stack as *const _ as usize &&
+            stack as *const _ as usize <= (&self.stack as *const _).offset(1) as usize
+        });
         let mut interner = self.interner.borrow_mut();
         let roots = Roots {
             globals: &self.globals,
@@ -959,7 +960,8 @@ impl<'a> VM<'a> {
     pub fn alloc<D>(&self, stack: &Stack<'a>, def: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable
     {
-        self.with_roots(stack, |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
+        self.with_roots(stack,
+                        |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
     }
 
     pub fn call_function(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>> {
@@ -1587,19 +1589,35 @@ pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
     Ok(())
 }
 
+pub fn filename_to_module(filename: &str) -> StdString {
+    use std::path::Path;
+    let path = Path::new(filename);
+    let name = path.extension()
+                   .map(|ext| {
+                       ext.to_str()
+                          .map(|ext| &filename[..filename.len() - ext.len() - 1])
+                          .unwrap_or(filename)
+                   })
+                   .expect("filename");
+
+    name.replace("/", ".")
+}
+
 pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
     use std::fs::File;
     use std::io::Read;
-    use std::path::Path;
-    let path = Path::new(filename);
-    let mut file = try!(File::open(path));
+    let mut file = try!(File::open(filename));
     let mut buffer = ::std::string::String::new();
     try!(file.read_to_string(&mut buffer));
     drop(file);
-    load_script(vm, filename, &buffer)
+    let name = filename_to_module(filename);
+    load_script(vm, &name, &buffer)
 }
 
-pub fn parse_expr(file: &str, input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, ::parser::Error> {
+pub fn parse_expr(file: &str,
+                  input: &str,
+                  vm: &VM)
+                  -> Result<ast::LExpr<TcIdent>, ::parser::Error> {
     let mut symbols = vm.symbols.borrow_mut();
     Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut symbols), input)))
 }
