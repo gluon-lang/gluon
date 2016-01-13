@@ -636,7 +636,7 @@ impl<'a> VM<'a> {
         vm.add_types()
           .unwrap();
         ::primitives::load(&vm).unwrap();
-        vm.macros.insert(vm.make_symbol(Name::new("import")),
+        vm.macros.insert(vm.symbol("import"),
                          ::import::Import::new());
         vm
     }
@@ -665,7 +665,7 @@ impl<'a> VM<'a> {
                         args: VMIndex,
                         instructions: Vec<Instruction>)
                         -> VMIndex {
-        let id = self.make_symbol(name);
+        let id = self.symbol(name);
         let compiled_fn = CompiledFunction {
             args: args,
             id: id,
@@ -759,7 +759,7 @@ impl<'a> VM<'a> {
                               typ: TcType,
                               f: Box<Fn(&VM<'a>) -> Status + 'static>)
                               -> Result<(), Error> {
-        let id = self.make_symbol(name);
+        let id = self.symbol(name);
         if self.names.borrow().contains_key(&id) {
             return Err(Error::Message(format!("{} is already defined", name)));
         }
@@ -780,7 +780,7 @@ impl<'a> VM<'a> {
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
         where T: Pushable<'a>
     {
-        let id = self.make_symbol(name);
+        let id = self.symbol(name);
         if self.names.borrow().contains_key(&id) {
             return Err(Error::Message(format!("{} is already defined", name)));
         }
@@ -806,7 +806,7 @@ impl<'a> VM<'a> {
                                           name: &str,
                                           args: Vec<ast::Generic<Symbol>>)
                                           -> VMResult<&TcType> {
-        let n = self.make_symbol(name);
+        let n = self.symbol(name);
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(&n) {
             Err(Error::Message(format!("Type '{}' has already been registered", name)))
@@ -836,13 +836,6 @@ impl<'a> VM<'a> {
     pub fn symbol_string(&self, s: Symbol) -> StdString {
         let symbols = self.symbols.borrow();
         StdString::from(symbols.string(&s))
-    }
-
-    pub fn make_symbol<N>(&self, s: N) -> Symbol
-        where N: Into<NameBuf>
-    {
-        let mut symbols = self.symbols.borrow_mut();
-        symbols.make_symbol(s.into())
     }
 
     pub fn symbol<N>(&self, name: N) -> Symbol
@@ -1603,8 +1596,7 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
     let mut buffer = ::std::string::String::new();
     try!(file.read_to_string(&mut buffer));
     drop(file);
-    let name = path.file_stem().and_then(|f| f.to_str()).expect("filename");
-    load_script(vm, name, &buffer)
+    load_script(vm, filename, &buffer)
 }
 
 pub fn parse_expr(file: &str, input: &str, vm: &VM) -> Result<ast::LExpr<TcIdent>, ::parser::Error> {
@@ -1637,7 +1629,7 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Error> {
         let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
         compiler.compile_expr(&expr)
     };
-    function.id = vm.symbols.borrow_mut().make_symbol(NameBuf::from("<top>.main"));
+    function.id = vm.symbols.borrow_mut().symbol(NameBuf::from("<top>.main"));
     let typ = function.typ.clone();
     let function = vm.new_function(function);
     let closure = vm.new_closure(function, &[]);

@@ -1,4 +1,5 @@
-let { run, monad, assert_eq, assert_ieq } = import "std/test.hs"
+let prelude = import "std/prelude.hs"
+and { run, monad, assert_eq, assert_ieq } = import "std/test.hs"
 and stream = import "std/stream.hs"
 in
 let { Ord, Num, List, Option } = prelude

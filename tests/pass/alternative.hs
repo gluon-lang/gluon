@@ -1,6 +1,7 @@
 let { run, monad, assert_eq } = import "std/test.hs"
 in
-let { Applicative } = prelude
+let prelude = import "std/prelude.hs"
+and { Applicative } = prelude
 in
 let { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
         = prelude.make_Monad monad

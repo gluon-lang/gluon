@@ -1,4 +1,4 @@
-let { Monad, Monoid } = prelude
+let { Monad, Monoid } = import "std/prelude.hs"
 in
 type Writer w a = { value: a, writer: w }
 in

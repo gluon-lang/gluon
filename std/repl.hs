@@ -1,4 +1,5 @@
-let map = import "std/map.hs"
+let prelude = import "std/prelude.hs"
+and map = import "std/map.hs"
 and string = import "std/string.hs"
 and { Map } = map
 in

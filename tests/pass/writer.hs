@@ -1,6 +1,6 @@
-let { Writer } = import "std/writer.hs"
-in
-let { Test, run, monad, assert, assert_ieq, assert_feq } = import "std/test.hs"
+let prelude = import "std/prelude.hs"
+and { Writer } = import "std/writer.hs"
+and { Test, run, monad, assert, assert_ieq, assert_feq } = import "std/test.hs"
 in
 let { Eq, Num, List } = prelude
 in

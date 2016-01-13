@@ -1,7 +1,8 @@
 let string = import "std/string.hs"
 and writer = import "std/writer.hs"
 and { Writer, make, tell } = writer
-and { Show, Num, Eq, Option, List, Monad, Monoid } = prelude
+and prelude = import "std/prelude.hs"
+and { Show, Num, Eq, Option, List, Monad, Monoid, foldl } = prelude
 and { (+) } = prelude.num_Int
 and { (==) } = prelude.eq_Int
 and { (<) } = prelude.make_Ord prelude.ord_Int

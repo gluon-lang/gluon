@@ -77,6 +77,11 @@ impl AsRef<Name> for str {
         Name::new(self)
     }
 }
+impl AsRef<Name> for String {
+    fn as_ref(&self) -> &Name {
+        Name::new(self)
+    }
+}
 impl AsRef<Name> for Name {
     fn as_ref(&self) -> &Name {
         self
@@ -114,6 +119,12 @@ impl <'a> From<&'a str> for NameBuf {
     }
 }
 
+impl From<String> for NameBuf {
+    fn from(name: String) -> NameBuf {
+        NameBuf(name)
+    }
+}
+
 impl <'a> From<&'a Name> for NameBuf {
     fn from(name: &'a Name) -> NameBuf {
         NameBuf::from(&name.0)
@@ -134,7 +145,7 @@ impl Symbols {
         }
     }
 
-    pub fn make_symbol(&mut self, name: NameBuf) -> Symbol {
+    fn make_symbol(&mut self, name: NameBuf) -> Symbol {
         let s = Symbol(self.strings.len() as u32);
         self.indexes.insert(name.clone(), s);
         self.strings.push(name);
@@ -166,22 +177,10 @@ impl<'a> SymbolModule<'a> {
         }
     }
 
-    pub fn make_symbol(&mut self, name: String) -> Symbol {
-        self.symbols.make_symbol(NameBuf::new(name))
-    }
-
-    pub fn symbol(&mut self, name: &str) -> Symbol {
+    pub fn symbol<N>(&mut self, name: N) -> Symbol
+        where N: Into<NameBuf> + AsRef<Name>
+    {
         self.symbols.symbol(name)
-    }
-
-    pub fn make_scoped_symbol(&mut self, mut name: String) -> Symbol {
-        let len = self.module.0.len();
-        self.module.0.push('.');
-        self.module.0.push_str(&name);
-        name.clear();
-        name.push_str(&self.module.0[..len]);
-        ::std::mem::swap(&mut name, &mut self.module.0);
-        self.symbols.make_symbol(NameBuf::new(name))
     }
 
     pub fn scoped_symbol(&mut self, name: &str) -> Symbol {

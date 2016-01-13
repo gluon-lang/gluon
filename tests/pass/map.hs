@@ -1,4 +1,5 @@
-let { Monad, Monoid, Option, List, Eq, Show } = prelude
+let prelude = import "std/prelude.hs"
+and { Monad, Monoid, Option, List, Eq, Show } = prelude
 and string = import "std/string.hs"
 and { Test, run, monad, assert, assert_eq } = import "std/test.hs"
 and map = import "std/map.hs"

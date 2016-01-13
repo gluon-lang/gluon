@@ -33,6 +33,8 @@ pub enum TypeError<I> {
     PatternError(ASTType<I>, usize),
     Unification(ASTType<I>, ASTType<I>, Vec<UnificationError<I>>),
     KindError(kindcheck::Error<I>),
+    DuplicateTypeDefinition(I),
+    InvalidFieldAccess(ASTType<I>),
     StringError(&'static str),
 }
 
@@ -113,6 +115,8 @@ fn map_symbol(symbols: &SymbolModule,
 
             })
         }
+        DuplicateTypeDefinition(ref id) => DuplicateTypeDefinition(f(id)),
+        InvalidFieldAccess(ref typ) => InvalidFieldAccess(typ.clone_strings(symbols)),
         StringError(name) => StringError(name),
     };
     ast::Located {
@@ -168,6 +172,8 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
             KindError(ref err) => write!(f, "{}", err),
+            DuplicateTypeDefinition(ref id) => write!(f, "Type '{}' has been already been defined in this module", id),
+            InvalidFieldAccess(ref typ) => write!(f, "Type '{}' is not a type which allows field accesses", typ),
             StringError(ref name) => write!(f, "{}", name),
         }
     }
@@ -359,7 +365,7 @@ impl<'a> Typecheck<'a> {
         let mut symbols = SymbolModule::new(module, symbols);
         for t in ["Int", "Float"].iter() {
             for op in "+-*/".chars() {
-                symbols.make_symbol(format!("#{}{}", t, op));
+                symbols.symbol(format!("#{}{}", t, op));
             }
         }
         Typecheck {
@@ -421,6 +427,11 @@ impl<'a> Typecheck<'a> {
             for &(name, ref typ) in variants {
                 self.stack_var(name, typ.clone());
             }
+        }
+        if let Type::Data(ast::TypeConstructor::Data(id), _) = *typ {
+            // FIXME: Workaround so that both the types name in this module and its global
+            // name are imported. Without this aliases may not be traversed properly
+            self.stack_types.insert(id, (typ.clone(), generics.clone(), real_type.clone()));
         }
         self.stack_types.insert(id, (typ, generics, real_type));
     }
@@ -730,18 +741,9 @@ impl<'a> Typecheck<'a> {
                         };
                         Ok(field_access.typ.clone())
                     }
-                    Type::Data(ast::TypeConstructor::Data(_), _) => {
-                        Err(StringError("Field access on data"))
+                    _ => {
+                        Err(InvalidFieldAccess(record.clone()))
                     }
-                    Type::Data(ast::TypeConstructor::Builtin(..), _) | Type::Builtin(..) => {
-                        Err(StringError("Field access on builtin type"))
-                    }
-                    Type::Function(..) => Err(StringError("Field access on function")),
-                    Type::Generic(..) => Err(StringError("Field acces on generic")),
-                    Type::Variable(..) => Err(StringError("Field access on variable")),
-                    Type::Array(..) => Err(StringError("Field access on array")),
-                    Type::App(..) => Err(StringError("Field access on type application")),
-                    Type::Variants(..) => Err(StringError("Field access on variant")),
                 }
             }
             ast::Expr::Array(ref mut a) => {
@@ -755,7 +757,7 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::Lambda(ref mut lambda) => {
                 let loc = format!("lambda:{}", expr.location);
-                lambda.id.name = self.symbols.make_symbol(loc);
+                lambda.id.name = self.symbols.symbol(loc);
                 let function_type = self.inst.subs.new_var();
                 let typ = try!(self.typecheck_lambda(function_type,
                                                      &mut lambda.arguments,
@@ -823,8 +825,15 @@ impl<'a> Typecheck<'a> {
                 for &mut ast::TypeBinding { ref name, ref typ } in bindings {
                     match **name {
                         Type::Data(ast::TypeConstructor::Data(id), ref args) => {
-                            let generic_args = extract_generics(args);
-                            self.stack_type(id, name.clone(), generic_args, typ.clone());
+                            if self.stack_types.find(&id).is_some() {
+                                self.errors.error(ast::Located {
+                                    location: expr.location,
+                                    value: DuplicateTypeDefinition(id),
+                                });
+                            } else {
+                                let generic_args = extract_generics(args);
+                                self.stack_type(id, name.clone(), generic_args, typ.clone());
+                            }
                         }
                         _ => {
                             panic!("ICE: Unexpected lhs of type binding {}",
@@ -862,7 +871,7 @@ impl<'a> Typecheck<'a> {
                                                                    .name()
                                                                    .as_str());
                                           Ok(ast::Field {
-                                              name: self.symbols.symbol(&n),
+                                              name: self.symbols.symbol(n),
                                               typ: ast::Alias {
                                                   name: tup.0,
                                                   args: generics,
@@ -1018,6 +1027,9 @@ impl<'a> Typecheck<'a> {
                                         ast::TypeConstructor::Data(field_type.typ.name.clone()),
                                         args
                                     );
+                                    // This forces refresh_type to remap the name a type was given
+                                    // in this module to its actual name
+                                    self.original_symbols.insert(field_type.name, field_type.typ.name);
                                     self.stack_type(name,
                                                     alias_type,
                                                     field_type.typ.args.clone(),
@@ -1364,7 +1376,7 @@ impl<'a> Typecheck<'a> {
                                                                level => {
                                         let generic = format!("{}{}", generic, i);
                                         i += 1;
-                                        let id = self.symbols.symbol(&generic);
+                                        let id = self.symbols.symbol(generic);
                                         let gen = Type::generic(ast::Generic {
                                             kind: var.kind.clone(),
                                             id: id,
@@ -1489,7 +1501,7 @@ impl<'a> Typecheck<'a> {
                             // Create a new symbol for this binding so that this type will
                             // differ from any other types which are named the same
                             let s = String::from(self.symbols.string(&original));
-                            let new = self.symbols.make_scoped_symbol(s);
+                            let new = self.symbols.scoped_symbol(&s);
                             self.original_symbols.insert(original, new);
                             Type::data(ast::TypeConstructor::Data(new), args)
                         }
@@ -2442,20 +2454,16 @@ in f { x = 1, y = "" } { z = 1, w = "" }
     }
 
     #[test]
-    fn aliases_are_different() {
+    fn duplicate_type_definition() {
         let _ = ::env_logger::init();
         let text = r#"
 type Test = Int
 in
-let f x: Test -> Test = x
-in
 type Test = Float
-in
-let y: Test = 1.0
-in f y
+in 1
 "#;
         let result = typecheck(text);
-        assert_unify_err!(result, TypeMismatch(..));
+        assert_err!(result, DuplicateTypeDefinition(..));
     }
 
     #[test]

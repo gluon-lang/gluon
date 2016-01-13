@@ -1,4 +1,5 @@
-let { Option, Num } = prelude
+let prelude = import "std/prelude.hs"
+and { Option, Num } = prelude
 and { (+) } = prelude.num_Int
 in
 type Stream a =

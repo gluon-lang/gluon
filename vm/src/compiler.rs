@@ -733,6 +733,10 @@ impl<'a> Compiler<'a> {
                 }
                 // Insert all variant constructor into scope
                 with_pattern_types(types, &typ, |name, alias| {
+                    // FIXME: Workaround so that both the types name in this module and its global
+                    // name are imported. Without this aliases may not be traversed properly
+                    self.stack_types.insert(alias.name, (alias.args.clone(), alias.typ.clone()));
+                    self.stack_constructors.insert(alias.name, alias.typ.clone());
                     self.stack_types.insert(name, (alias.args.clone(), alias.typ.clone()));
                     self.stack_constructors.insert(name, alias.typ.clone());
                 });

@@ -1,4 +1,5 @@
-let { Monad, Num } = prelude
+let prelude = import "std/prelude.hs"
+and { Monad, Num } = prelude
 and { Test, run, monad = monad_Test, assert, assert_ieq, assert_feq, assert_seq } = import "std/test.hs"
 and { State, monad = monad_State, put, get, modify, runState, evalState, execState } = import "std/state.hs"
 and { (>>) = (>>>) } = prelude.make_Monad monad_Test

@@ -294,7 +294,7 @@ impl<T: VMType> VMType for Option<T> where T::Type: Sized
 {
     type Type = Option<T::Type>;
     fn make_type(vm: &VM) -> TcType {
-        let ctor = ast::TypeConstructor::Data(vm.symbol("Option"));
+        let ctor = ast::TypeConstructor::Data(vm.symbol("std/prelude.hs.Option"));
         ast::Type::data(ctor, vec![T::make_type(vm)])
     }
 }
@@ -338,7 +338,7 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
 {
     type Type = Result<T::Type, E::Type>;
     fn make_type(vm: &VM) -> TcType {
-        let ctor = ast::TypeConstructor::Data(vm.symbol("Result"));
+        let ctor = ast::TypeConstructor::Data(vm.symbol("std/prelude.hs.Result"));
         ast::Type::data(ctor, vec![E::make_type(vm), T::make_type(vm)])
     }
 }

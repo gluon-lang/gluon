@@ -283,11 +283,11 @@ pub fn load(vm: &VM) -> VMResult<()> {
     }
     let a = Type::generic(ast::Generic {
         kind: ast::Kind::star(),
-        id: vm.make_symbol("a"),
+        id: vm.symbol("a"),
     });
     let b = Type::generic(ast::Generic {
         kind: ast::Kind::star(),
-        id: vm.make_symbol("b"),
+        id: vm.symbol("b"),
     });
     let io = |t| {
         ASTType::from(ast::Type::Data(ast::TypeConstructor::Data(vm.symbol("IO")), vec![t]))
