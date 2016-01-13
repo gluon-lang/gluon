@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use base::ast;
 use base::ast::*;
-use base::symbol::{Symbol, SymbolModule};
+use base::symbol::{Name, Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, Error as CombineError, Info};
 use combine::combinator::EnvParser;
@@ -201,32 +201,39 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                         .then(|(id, is_ctor)| {
                             parser(move |input| {
                                 if is_ctor {
-                                    value((id.clone().to_id(), None)).parse_state(input)
+                                    value((id.clone(), None)).parse_state(input)
                                 } else {
                                     self.reserved_op(":")
                                         .with(self.typ())
-                                        .map(|typ| (id.clone().to_id(), Some(typ)))
+                                        .map(|typ| (id.clone(), Some(typ)))
                                         .parse_state(input)
                                 }
                             })
                         });
         self.braces(sep_by(field, self.lex(char(','))))
-            .map(|fields: Vec<_>| {
-                let mut associated = Vec::new();
+            .map(|fields: Vec<(Id, _)>| {
+                let mut associated  = Vec::new();
                 let mut types = Vec::new();
+                let mut ids = self.make_ident.borrow_mut();
                 for (id, field) in fields {
+                    let untyped_id = id.clone().to_id();
                     match field {
                         Some(typ) => {
                             types.push(Field {
-                                name: id,
+                                name: untyped_id,
                                 typ: typ,
                             })
                         }
                         None => {
-                            let typ = Type::data(TypeConstructor::Data(id), Vec::new());
+                            let typ = Type::data(TypeConstructor::Data(untyped_id.clone()), Vec::new());
+                            let short_name = String::from(Name::new(ids.string(&id)).name().as_str());
                             associated.push(Field {
-                                name: typ.clone(),
-                                typ: typ,
+                                name: ids.from_str(&short_name).to_id(),
+                                typ: Alias {
+                                    name: untyped_id,
+                                    args: vec![],
+                                    typ: typ,
+                                },
                             });
                         }
                     }
@@ -976,8 +983,12 @@ pub mod tests {
         let e = parse_new("type Test a = { Fn, x: a } in { Fn = Int -> Array Int, Test, x = 1 }");
 
         let test_type = Type::record(vec![Field {
-                                              name: typ("Fn"),
-                                              typ: typ("Fn"),
+                                              name: String::from("Fn"),
+                                              typ: Alias {
+                                                  name: String::from("Fn"),
+                                                  args: vec![],
+                                                  typ: typ("Fn"),
+                                              },
                                           }],
                                      vec![Field {
                                               name: intern("x"),

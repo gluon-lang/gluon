@@ -732,12 +732,9 @@ impl<'a> Compiler<'a> {
                               .unwrap_or(typ);
                 }
                 // Insert all variant constructor into scope
-                with_pattern_types(types, &typ, |name, name_type, typ| {
-                    if let ast::Type::Data(_, ref args) = **name_type {
-                        let generic_args = extract_generics(args);
-                        self.stack_types.insert(name, (generic_args, typ.clone()));
-                        self.stack_constructors.insert(name, typ.clone());
-                    }
+                with_pattern_types(types, &typ, |name, alias| {
+                    self.stack_types.insert(name, (alias.args.clone(), alias.typ.clone()));
+                    self.stack_constructors.insert(name, alias.typ.clone());
                 });
                 match *typ {
                     Type::Record { fields: ref type_fields, .. } => {
@@ -803,21 +800,15 @@ impl<'a> Compiler<'a> {
 }
 
 fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(Symbol, &TcType, &TcType)
+    where F: FnMut(Symbol, &ast::Alias<Symbol, TcType>)
 {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
             let associated_type =
                 record_type_fields.iter()
-                                  .find(|type_field| {
-                                      match *type_field.name {
-                                          Type::Data(ast::TypeConstructor::Data(name), _)
-                                              if name == field.0 => true,
-                                          _ => false,
-                                      }
-                                  })
+                                  .find(|type_field| type_field.name == field.0)
                                   .expect("Associated type to exist in record");
-            f(field.0, &associated_type.name, &associated_type.typ);
+            f(field.0, &associated_type.typ);
         }
     }
 }

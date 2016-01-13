@@ -31,6 +31,10 @@ impl Name {
         unsafe { ::std::mem::transmute::<&str, &Name>(n.as_ref()) }
     }
 
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     pub fn components(&self) -> Components {
         Components(self.0.split('.'))
     }
@@ -38,6 +42,12 @@ impl Name {
     pub fn module(&self) -> &Name {
         let s = self.0.trim_right_matches(|c| c != '.');
         Name::new(s.trim_right_matches("."))
+    }
+
+    pub fn name(&self) -> &Name {
+        self.0.rfind('.')
+            .map(|i| Name::new(&self.0[i+1..]))
+            .unwrap_or(self)
     }
 }
 

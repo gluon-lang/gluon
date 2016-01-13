@@ -9,7 +9,7 @@ use scoped_map::ScopedMap;
 use base::ast;
 use base::ast::{ASTType, DisplayEnv, MutVisitor};
 use base::error::Errors;
-use base::symbol::{Symbol, SymbolModule, Symbols};
+use base::symbol::{Name, Symbol, SymbolModule, Symbols};
 use kindcheck;
 use substitution::{Substitution, Substitutable, Variable};
 use Typed;
@@ -121,9 +121,7 @@ fn map_symbol(symbols: &SymbolModule,
     }
 }
 
-fn map_symbols(symbols: &SymbolModule,
-               errors: &Errors<ast::Located<TypeError<Symbol>>>)
-               -> Error {
+fn map_symbols(symbols: &SymbolModule, errors: &Errors<ast::Located<TypeError<Symbol>>>) -> Error {
     Errors {
         errors: errors.errors
                       .iter()
@@ -469,9 +467,7 @@ impl<'a> Typecheck<'a> {
         .visit_expr(expr);
     }
 
-    pub fn typecheck_expr(&mut self,
-                          expr: &mut ast::LExpr<TcIdent>)
-                          -> Result<TcType, Error> {
+    pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, Error> {
         self.inst.subs.clear();
         self.stack.clear();
 
@@ -843,19 +839,35 @@ impl<'a> Typecheck<'a> {
             ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
                                       .map(|tup| {
-                                          let (generics, typ) = try!(self.find_type_info(&tup.0));
-                                          let gs = generics.iter()
-                                                           .map(|g| Type::generic(g.clone()))
-                                                           .collect();
+                                          let (generics, typ) = {
+                                              let (generics, typ) =
+                                                  try!(self.find_type_info(&tup.0));
+                                              let generics: Vec<_> = generics.iter()
+                                                                             .cloned()
+                                                                             .collect();
+                                              (generics, typ.cloned())
+                                          };
+
                                           let name = Type::data(ast::TypeConstructor::Data(tup.0),
-                                                                gs);
+                                                                generics.iter()
+                                                                        .cloned()
+                                                                        .map(Type::generic)
+                                                                        .collect());
                                           let typ = match typ {
                                               Some(typ) => typ.clone(),
                                               None => name.clone(),
                                           };
+                                          let n = String::from(Name::new(self.symbols
+                                                                             .string(&tup.0))
+                                                                   .name()
+                                                                   .as_str());
                                           Ok(ast::Field {
-                                              name: name,
-                                              typ: typ.clone(),
+                                              name: self.symbols.symbol(&n),
+                                              typ: ast::Alias {
+                                                  name: tup.0,
+                                                  args: generics,
+                                                  typ: typ,
+                                              },
                                           })
                                       })
                                       .collect::<TcResult<Vec<_>>>());
@@ -992,26 +1004,24 @@ impl<'a> Typecheck<'a> {
                             }
                             // The `types` in the record type should have a type matching the
                             // `name`
-                            let field_type =
-                                types.iter()
-                                     .find(|field| {
-                                         match *field.name {
-                                             ast::Type::Data(ast::TypeConstructor::Data(id), _)
-                                                 if name == id => true,
-                                             _ => false,
-                                         }
-                                     });
+                            let field_type = types.iter()
+                                                  .find(|field| field.name == name);
                             match field_type {
                                 Some(field_type) => {
-                                    match *field_type.name {
-                                        ast::Type::Data(_, ref args) => {
-                                            self.stack_type(name,
-                                                            field_type.name.clone(),
-                                                            extract_generics(args),
-                                                            field_type.typ.clone());
-                                        }
-                                        _ => panic!(),
-                                    }
+                                    let args = field_type.typ
+                                                         .args
+                                                         .iter()
+                                                         .cloned()
+                                                         .map(Type::generic)
+                                                         .collect();
+                                    let alias_type = ast::Type::data(
+                                        ast::TypeConstructor::Data(field_type.typ.name.clone()),
+                                        args
+                                    );
+                                    self.stack_type(name,
+                                                    alias_type,
+                                                    field_type.typ.args.clone(),
+                                                    field_type.typ.typ.clone());
                                 }
                                 None => return Err(UndefinedField(match_type.clone(), name)),
                             }
@@ -1494,7 +1504,7 @@ impl<'a> Typecheck<'a> {
                 }
             }
             ast::Expr::Record { ref mut types, .. } => {
-                for &mut(ref mut symbol, ref mut typ) in types {
+                for &mut (ref mut symbol, ref mut typ) in types {
                     if let Some(&new) = self.original_symbols.find(symbol) {
                         *symbol = new;
                     }
@@ -1503,35 +1513,48 @@ impl<'a> Typecheck<'a> {
                     }
                 }
             }
-            _ => ()
+            _ => (),
         }
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
-        ast::walk_move_type(typ, &mut |typ| {
-            match *typ {
-                Type::Data(ast::TypeConstructor::Data(id), ref args) => {
-                    self.original_symbols.find(&id)
-                        .map(|current| Type::data(ast::TypeConstructor::Data(*current), args.clone()))
-                }
-                Type::Variants(ref variants) => {
-                    let iter = || variants.iter().map(|var| self.original_symbols.find(&var.0));
-                    if iter().any(|opt| opt.is_some()) {
-                        // If any of the variants requires a symbol replacement we create a new
-                        // type
-                        Some(Type::variants(iter().zip(variants.iter()).map(|(new, old)| {
-                            match new {
-                                Some(&new) => (new, old.1.clone()),
-                                None => old.clone(),
-                            }
-                        }).collect()))
-                    } else {
-                        None
-                    }
-                }
-                _ => None
-            }
-        })
+        ast::walk_move_type(typ,
+                            &mut |typ| {
+                                match *typ {
+                                    Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+                                        self.original_symbols
+                                            .find(&id)
+                                            .map(|current| {
+                                                Type::data(ast::TypeConstructor::Data(*current),
+                                                           args.clone())
+                                            })
+                                    }
+                                    Type::Variants(ref variants) => {
+                                        let iter = || {
+                                            variants.iter()
+                                                    .map(|var| self.original_symbols.find(&var.0))
+                                        };
+                                        if iter().any(|opt| opt.is_some()) {
+                                            // If any of the variants requires a symbol replacement
+                                            // we create a new type
+                                            Some(Type::variants(iter()
+                                                                    .zip(variants.iter())
+                                                                    .map(|(new, old)| {
+                                                                        match new {
+                                                                            Some(&new) => {
+                                                                                (new, old.1.clone())
+                                                                            }
+                                                                            None => old.clone(),
+                                                                        }
+                                                                    })
+                                                                    .collect()))
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            })
     }
 }
 
@@ -1702,8 +1725,7 @@ pub fn walk_real_type<F>(subs: &Substitution<TcType>, typ: &TcType, f: &mut F)
         }
         Type::Record { ref types, ref fields } => {
             for field in types {
-                walk_real_type(subs, &field.name, f);
-                walk_real_type(subs, &field.typ, f);
+                walk_real_type(subs, &field.typ.typ, f);
             }
             for field in fields {
                 walk_real_type(subs, &field.typ, f);
@@ -1736,6 +1758,12 @@ mod tests {
         thread_local!(static INTERNER: Rc<RefCell<Symbols>>
                       = Rc::new(RefCell::new(Symbols::new())));
         INTERNER.with(|interner| interner.clone())
+    }
+
+    pub fn intern_unscoped(s: &str) -> Symbol {
+        let i = get_local_interner();
+        let mut i = i.borrow_mut();
+        i.symbol(s)
     }
 
     pub fn intern(s: &str) -> Symbol {
@@ -2234,10 +2262,15 @@ type Test = | Test String Int in { Test, x = 1 }
 "#;
         let result = typecheck(text);
         let variant = Type::function(vec![typ("String"), typ("Int")], typ("Test"));
+        let test = Type::variants(vec![(intern("Test"), variant)]);
         assert_eq!(result,
                    Ok(Type::record(vec![ast::Field {
-                                            name: typ("Test"),
-                                            typ: Type::variants(vec![(intern("Test"), variant)]),
+                                            name: intern_unscoped("Test"),
+                                            typ: ast::Alias {
+                                                name: intern("Test"),
+                                                args: vec![],
+                                                typ: test,
+                                            },
                                         }],
                                    vec![ast::Field {
                                             name: intern("x"),

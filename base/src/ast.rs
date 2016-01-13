@@ -160,8 +160,16 @@ pub struct Location {
     pub absolute: i32,
 }
 
-pub static START: Location = Location { column: 1, row: 1, absolute: 1, };
-pub static EOF: Location = Location { column: -1, row: -1, absolute: -1, };
+pub static START: Location = Location {
+    column: 1,
+    row: 1,
+    absolute: 1,
+};
+pub static EOF: Location = Location {
+    column: -1,
+    row: -1,
+    absolute: -1,
+};
 
 impl Location {
     pub fn eof() -> Location {
@@ -275,6 +283,13 @@ pub struct Generic<Id> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Alias<Id, T> {
+    pub name: Id,
+    pub args: Vec<Generic<Id>>,
+    pub typ: T,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id, T = ASTType<Id>> {
     App(T, T),
     Data(TypeConstructor<Id>, Vec<T>),
@@ -285,7 +300,7 @@ pub enum Type<Id, T = ASTType<Id>> {
     Builtin(BuiltinType),
     Array(T),
     Record {
-        types: Vec<Field<T, T>>,
+        types: Vec<Field<Id, Alias<Id, T>>>,
         fields: Vec<Field<Id, T>>,
     },
 }
@@ -366,7 +381,8 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
 
 impl ASTType<Symbol> {
     pub fn clone_strings<E>(&self, symbols: &E) -> ASTType<String>
-        where E: DisplayEnv<Ident = Symbol> {
+        where E: DisplayEnv<Ident = Symbol>
+    {
         self.map(|symbol| String::from(symbols.string(symbol)))
     }
 }
@@ -399,8 +415,20 @@ impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
                 let types = types.iter()
                                  .map(|field| {
                                      Field {
-                                         name: field.name.map_(f),
-                                         typ: field.typ.map_(f),
+                                         name: f(&field.name),
+                                         typ: Alias::<R, T2> {
+                                             name: f(&field.typ.name),
+                                             args: field.typ.args
+                                                        .iter()
+                                                        .map(|g| {
+                                                            Generic {
+                                                                id: f(&g.id),
+                                                                kind: g.kind.clone(),
+                                                            }
+                                                        })
+                                                        .collect(),
+                                             typ: field.typ.typ.map_(f),
+                                         },
                                      }
                                  })
                                  .collect();
@@ -726,7 +754,7 @@ impl<Id> Type<Id, ()> {
         ASTType::from(Type::Variants(vs))
     }
 
-    pub fn record(types: Vec<Field<ASTType<Id>, ASTType<Id>>>,
+    pub fn record(types: Vec<Field<Id, Alias<Id, ASTType<Id>>>>,
                   fields: Vec<Field<Id>>)
                   -> ASTType<Id> {
         ASTType::from(Type::Record {
@@ -967,14 +995,24 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                 try!(write!(f, "{{"));
                 if types.len() > 0 {
                     try!(write!(f,
-                                " {} = {}",
-                                top(self.env, &*types[0].name),
-                                top(self.env, &*types[0].typ)));
+                                " {} ",
+                                self.env.string(&types[0].name)));
+                    for arg in &types[0].typ.args {
+                        try!(write!(f, "{} ", self.env.string(&arg.id)));
+                    }
+                    try!(write!(f,
+                                "= {}",
+                                top(self.env, &*types[0].typ.typ)));
                     for field in &types[1..] {
                         try!(write!(f,
-                                    ", {} = {}",
-                                    top(self.env, &*field.name),
-                                    top(self.env, &*field.typ)));
+                                    " {} ",
+                                    self.env.string(&field.name)));
+                        for arg in &field.typ.args {
+                            try!(write!(f, "{} ", self.env.string(&arg.id)));
+                        }
+                        try!(write!(f,
+                                    "= {}",
+                                    top(self.env, &*field.typ.typ)));
                     }
                     if fields.len() == 0 {
                         try!(write!(f, " "));
@@ -1133,8 +1171,7 @@ pub fn walk_type<I, T, F>(typ: &Type<I, T>, f: &mut F)
         }
         Type::Record { ref types, ref fields } => {
             for field in types {
-                walk_type(&field.name, f);
-                walk_type(&field.typ, f);
+                walk_type(&field.typ.typ, f);
             }
             for field in fields {
                 walk_type(&field.typ, f);
@@ -1194,8 +1231,7 @@ pub fn walk_mut_type2<F, G, I, T>(typ: &mut Type<I, T>, f: &mut F, g: &mut G)
         }
         Type::Record { ref mut types, ref mut fields } => {
             for field in types {
-                walk_mut_type2(&mut field.name, f, g);
-                walk_mut_type2(&mut field.typ, f, g);
+                walk_mut_type2(&mut field.typ.typ, f, g);
             }
             for field in fields {
                 walk_mut_type2(&mut field.typ, f, g);
@@ -1353,8 +1389,12 @@ mod test {
         let f = Type::function(vec![data("a", vec![])], Type::string());
         let test = data("Test", vec![data("a", vec![])]);
         let typ = Type::record(vec![Field {
-                                        name: test.clone(),
-                                        typ: f.clone(),
+                                        name: "Test",
+                                        typ: Alias {
+                                            name: "Test",
+                                            args: vec![Generic { kind: Kind::star(), id: "a" }],
+                                            typ: f.clone(),
+                                        },
                                     }],
                                vec![Field {
                                         name: "x",
@@ -1362,8 +1402,12 @@ mod test {
                                     }]);
         assert_eq!(format!("{}", typ), "{ Test a = a -> String, x: Int }");
         let typ = Type::record(vec![Field {
-                                        name: test.clone(),
-                                        typ: f.clone(),
+                                        name: "Test",
+                                        typ: Alias {
+                                            name: "Test",
+                                            args: vec![Generic { kind: Kind::star(), id: "a" }],
+                                            typ: f.clone(),
+                                        },
                                     }],
                                vec![Field {
                                         name: "x",
@@ -1376,8 +1420,12 @@ mod test {
         assert_eq!(format!("{}", typ),
                    "{ Test a = a -> String, x: Int, test: Test a }");
         let typ = Type::record(vec![Field {
-                                        name: test.clone(),
-                                        typ: f.clone(),
+                                        name: "Test",
+                                        typ: Alias {
+                                            name: "Test",
+                                            args: vec![Generic { kind: Kind::star(), id: "a" }],
+                                            typ: f.clone(),
+                                        },
                                     }],
                                vec![]);
         assert_eq!(format!("{}", typ), "{ Test a = a -> String }");
