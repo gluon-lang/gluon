@@ -68,8 +68,8 @@ fn apply_subs(tc: &Typecheck,
 }
 
 fn map_symbol(symbols: &SymbolModule,
-              err: &ast::Located<TypeError<Symbol>>)
-              -> ast::Located<TypeError<String>> {
+              err: &ast::Spanned<TypeError<Symbol>>)
+              -> ast::Spanned<TypeError<String>> {
     use self::TypeError::*;
     use self::UnificationError::{TypeMismatch, FieldMismatch, Occurs};
 
@@ -119,13 +119,13 @@ fn map_symbol(symbols: &SymbolModule,
         InvalidFieldAccess(ref typ) => InvalidFieldAccess(typ.clone_strings(symbols)),
         StringError(name) => StringError(name),
     };
-    ast::Located {
-        location: err.location,
+    ast::Spanned {
+        span: err.span,
         value: result,
     }
 }
 
-fn map_symbols(symbols: &SymbolModule, errors: &Errors<ast::Located<TypeError<Symbol>>>) -> Error {
+fn map_symbols(symbols: &SymbolModule, errors: &Errors<ast::Spanned<TypeError<Symbol>>>) -> Error {
     Errors {
         errors: errors.errors
                       .iter()
@@ -308,11 +308,11 @@ pub struct Typecheck<'a> {
     /// during typechecking
     original_symbols: ScopedMap<Symbol, Symbol>,
     inst: Instantiator,
-    errors: Errors<ast::Located<TypeError<Symbol>>>,
+    errors: Errors<ast::Spanned<TypeError<Symbol>>>,
     unification_errors: RefCell<Errors<UnificationError<Symbol>>>,
 }
 
-pub type Error = Errors<ast::Located<TypeError<String>>>;
+pub type Error = Errors<ast::Spanned<TypeError<String>>>;
 
 impl<'a> kindcheck::KindEnv for Typecheck<'a> {
     fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>> {
@@ -482,16 +482,7 @@ impl<'a> Typecheck<'a> {
         self.inst.subs.clear();
         self.stack.clear();
 
-        let mut typ = match self.typecheck(expr) {
-            Ok(typ) => typ,
-            Err(err) => {
-                self.errors.error(ast::Located {
-                    location: expr.location,
-                    value: err,
-                });
-                return Err(map_symbols(&self.symbols, &self.errors));
-            }
-        };
+        let mut typ = self.typecheck(expr).unwrap();
         if self.errors.has_errors() {
             Err(map_symbols(&self.symbols, &self.errors))
         } else {
@@ -507,8 +498,8 @@ impl<'a> Typecheck<'a> {
         match self.typecheck_(expr) {
             Ok(typ) => Ok(typ),
             Err(err) => {
-                self.errors.error(ast::Located {
-                    location: expr.location,
+                self.errors.error(ast::Spanned {
+                    span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
                     value: err,
                 });
                 Ok(self.inst.subs.new_var())
@@ -826,8 +817,8 @@ impl<'a> Typecheck<'a> {
                     match **name {
                         Type::Data(ast::TypeConstructor::Data(id), ref args) => {
                             if self.stack_types.find(&id).is_some() {
-                                self.errors.error(ast::Located {
-                                    location: expr.location,
+                                self.errors.error(ast::Spanned {
+                                    span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
                                     value: DuplicateTypeDefinition(id),
                                 });
                             } else {
@@ -1810,7 +1801,7 @@ mod tests {
                     let mut iter = err.errors.iter();
                     $(
                     match iter.next() {
-                        Some(&ast::Located { value: $id, .. }) => (),
+                        Some(&ast::Spanned { value: $id, .. }) => (),
                         _ => assert!(false, "Found errors:\n{}\nbut expected {}",
                                             err, stringify!($id))
                     }
@@ -1835,7 +1826,7 @@ mod tests {
                 Err(err) => {
                     for err in err.errors.iter() {
                         match *err {
-                            ast::Located { value: Unification(_, _, ref errors), .. } => {
+                            ast::Spanned { value: Unification(_, _, ref errors), .. } => {
                                 let mut iter = errors.iter();
                                 $(
                                 match iter.next() {

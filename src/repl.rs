@@ -64,7 +64,7 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
 pub fn run() -> Result<(), Box<StdError>> {
     let vm = VM::new();
     try!(compile_repl(&vm));
-    let mut repl: Callable<((),), IO<()>> = Get::get_function(&vm, "repl").expect("repl function");
+    let mut repl: Callable<((),), IO<()>> = Get::get_function(&vm, "std.repl").expect("repl function");
     try!(repl.call(()));
     Ok(())
 }

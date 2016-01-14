@@ -41,6 +41,18 @@ pub trait IdentEnv: DisplayEnv {
     fn from_str(&mut self, s: &str) -> Self::Ident;
 }
 
+
+/// Newtype wrapper which allows `DisplayEnv<Ident = I>` to be used where
+/// `DisplayEnv<Ident = TcIdent<Ident = I>` is expected
+pub struct TcIdentEnvWrapper<T>(pub T);
+
+impl <I, T: DisplayEnv<Ident = I>> DisplayEnv for TcIdentEnvWrapper<T> {
+    type Ident = TcIdent<I>;
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+        self.0.string(&ident.name)
+    }
+}
+
 pub struct EmptyEnv<T>(::std::marker::PhantomData<T>);
 
 impl<T> EmptyEnv<T> {
@@ -193,6 +205,18 @@ impl fmt::Display for Location {
 pub struct Span {
     pub start: Location,
     pub end: Location,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Spanned<T> {
+    pub span: Span,
+    pub value: T,
+}
+
+impl<T: fmt::Display> fmt::Display for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.span.start, self.value)
+    }
 }
 
 #[derive(Clone, Debug)]
