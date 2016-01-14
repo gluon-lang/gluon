@@ -172,8 +172,16 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
             KindError(ref err) => write!(f, "{}", err),
-            DuplicateTypeDefinition(ref id) => write!(f, "Type '{}' has been already been defined in this module", id),
-            InvalidFieldAccess(ref typ) => write!(f, "Type '{}' is not a type which allows field accesses", typ),
+            DuplicateTypeDefinition(ref id) => {
+                write!(f,
+                       "Type '{}' has been already been defined in this module",
+                       id)
+            }
+            InvalidFieldAccess(ref typ) => {
+                write!(f,
+                       "Type '{}' is not a type which allows field accesses",
+                       typ)
+            }
             StringError(ref name) => write!(f, "{}", name),
         }
     }
@@ -299,22 +307,13 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
     }
 }
 
-pub struct Typecheck<'a> {
+struct Environment<'a> {
     environment: Option<&'a (TypeEnv + 'a)>,
-    symbols: SymbolModule<'a>,
     stack: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
-    /// Mapping from the fresh symbol generated during typechecking to the symbol that was assigned
-    /// during typechecking
-    original_symbols: ScopedMap<Symbol, Symbol>,
-    inst: Instantiator,
-    errors: Errors<ast::Spanned<TypeError<Symbol>>>,
-    unification_errors: RefCell<Errors<UnificationError<Symbol>>>,
 }
 
-pub type Error = Errors<ast::Spanned<TypeError<String>>>;
-
-impl<'a> kindcheck::KindEnv for Typecheck<'a> {
+impl<'a> kindcheck::KindEnv for Environment<'a> {
     fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>> {
         self.stack_types
             .find(&type_name)
@@ -329,7 +328,7 @@ impl<'a> kindcheck::KindEnv for Typecheck<'a> {
     }
 }
 
-impl<'a> TypeEnv for Typecheck<'a> {
+impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         let stack = &self.stack;
         let environment = &self.environment;
@@ -360,6 +359,19 @@ impl<'a> TypeEnv for Typecheck<'a> {
     }
 }
 
+pub struct Typecheck<'a> {
+    environment: Environment<'a>,
+    symbols: SymbolModule<'a>,
+    /// Mapping from the fresh symbol generated during typechecking to the symbol that was assigned
+    /// during typechecking
+    original_symbols: ScopedMap<Symbol, Symbol>,
+    inst: Instantiator,
+    errors: Errors<ast::Spanned<TypeError<Symbol>>>,
+    unification_errors: RefCell<Errors<UnificationError<Symbol>>>,
+}
+
+pub type Error = Errors<ast::Spanned<TypeError<String>>>;
+
 impl<'a> Typecheck<'a> {
     pub fn new(module: String, symbols: &'a mut Symbols) -> Typecheck<'a> {
         let mut symbols = SymbolModule::new(module, symbols);
@@ -369,10 +381,12 @@ impl<'a> Typecheck<'a> {
             }
         }
         Typecheck {
-            environment: None,
+            environment: Environment {
+                environment: None,
+                stack: ScopedMap::new(),
+                stack_types: ScopedMap::new(),
+            },
             symbols: symbols,
-            stack: ScopedMap::new(),
-            stack_types: ScopedMap::new(),
             original_symbols: ScopedMap::new(),
             inst: Instantiator::new(),
             errors: Errors::new(),
@@ -382,11 +396,9 @@ impl<'a> Typecheck<'a> {
 
     fn find(&mut self, id: &Symbol) -> TcResult {
         let t: Option<&TcType> = {
-            let stack = &self.stack;
-            let environment = &self.environment;
-            match stack.find(id) {
+            match self.environment.stack.find(id) {
                 Some(x) => Some(x),
-                None => environment.and_then(|e| e.find_type(id)),
+                None => self.environment.environment.and_then(|e| e.find_type(id)),
             }
         };
         match t {
@@ -402,19 +414,19 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find_record(&self, fields: &[Symbol]) -> Result<(&TcType, &TcType), TypeError<Symbol>> {
-        TypeEnv::find_record(self, fields)
+        self.environment.find_record(fields)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(StringError("Expected fields")))
     }
 
     fn find_type_info(&self, id: &Symbol) -> TcResult<(&[ast::Generic<Symbol>], Option<&TcType>)> {
-        TypeEnv::find_type_info(self, id)
+        self.environment.find_type_info(id)
             .map(|s| Ok(s))
             .unwrap_or_else(|| Err(UndefinedType(id.clone())))
     }
 
     fn stack_var(&mut self, id: Symbol, typ: TcType) {
-        self.stack.insert(id, typ);
+        self.environment.stack.insert(id, typ);
     }
 
     fn stack_type(&mut self,
@@ -431,25 +443,25 @@ impl<'a> Typecheck<'a> {
         if let Type::Data(ast::TypeConstructor::Data(id), _) = *typ {
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
-            self.stack_types.insert(id, (typ.clone(), generics.clone(), real_type.clone()));
+            self.environment.stack_types.insert(id, (typ.clone(), generics.clone(), real_type.clone()));
         }
-        self.stack_types.insert(id, (typ, generics, real_type));
+        self.environment.stack_types.insert(id, (typ, generics, real_type));
     }
 
     fn enter_scope(&mut self) {
-        self.stack.enter_scope();
-        self.stack_types.enter_scope();
+        self.environment.stack.enter_scope();
+        self.environment.stack_types.enter_scope();
         self.original_symbols.enter_scope();
     }
 
     fn exit_scope(&mut self) {
-        self.stack.exit_scope();
-        self.stack_types.exit_scope();
+        self.environment.stack.exit_scope();
+        self.environment.stack_types.exit_scope();
         self.original_symbols.exit_scope();
     }
 
     pub fn add_environment(&mut self, env: &'a TypeEnv) {
-        self.environment = Some(env);
+        self.environment.environment = Some(env);
     }
 
     fn generalize_variables(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
@@ -464,13 +476,13 @@ impl<'a> Typecheck<'a> {
                 id.typ = self.tc.finish_type(self.level, id.typ.clone());
             }
         }
-        let mut stack = mem::replace(&mut self.stack, ScopedMap::new());
+        let mut stack = mem::replace(&mut self.environment.stack, ScopedMap::new());
         for (_, vec) in stack.iter_mut() {
             for typ in vec {
                 *typ = self.finish_type(level, typ.clone());
             }
         }
-        mem::swap(&mut self.stack, &mut stack);
+        mem::swap(&mut self.environment.stack, &mut stack);
         ReplaceVisitor {
             level: level,
             tc: self,
@@ -480,7 +492,7 @@ impl<'a> Typecheck<'a> {
 
     pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, Error> {
         self.inst.subs.clear();
-        self.stack.clear();
+        self.environment.stack.clear();
 
         let mut typ = self.typecheck(expr).unwrap();
         if self.errors.has_errors() {
@@ -691,13 +703,15 @@ impl<'a> Typecheck<'a> {
                         ast::Pattern::Record { .. } => {
                             debug!("{{ .. }}: {}",
                                    ast::display_type(&self.symbols,
-                                                     &bind.expression.env_type_of(self)));
+                                                     &bind.expression
+                                                          .env_type_of(&self.environment)));
                         }
                         ast::Pattern::Constructor(ref _id, _) => {
                             debug!("{}: {}",
                                    self.symbols.string(&_id.name),
                                    ast::display_type(&self.symbols,
-                                                     &bind.expression.env_type_of(self)));
+                                                     &bind.expression
+                                                          .env_type_of(&self.environment)));
                         }
                     }
                 }
@@ -732,9 +746,7 @@ impl<'a> Typecheck<'a> {
                         };
                         Ok(field_access.typ.clone())
                     }
-                    _ => {
-                        Err(InvalidFieldAccess(record.clone()))
-                    }
+                    _ => Err(InvalidFieldAccess(record.clone())),
                 }
             }
             ast::Expr::Array(ref mut a) => {
@@ -760,7 +772,9 @@ impl<'a> Typecheck<'a> {
                 // enter_scope is called in refresh_symbols
                 {
                     let subs = Substitution::new();
-                    let mut check = super::kindcheck::KindCheck::new(self, &self.symbols, subs);
+                    let mut check = super::kindcheck::KindCheck::new(&self.environment,
+                                                                     &self.symbols,
+                                                                     subs);
                     // Setup kind variables for all type variables and insert the types in the
                     // this type expression into the kindcheck environment
                     for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
@@ -816,7 +830,7 @@ impl<'a> Typecheck<'a> {
                 for &mut ast::TypeBinding { ref name, ref typ } in bindings {
                     match **name {
                         Type::Data(ast::TypeConstructor::Data(id), ref args) => {
-                            if self.stack_types.find(&id).is_some() {
+                            if self.environment.stack_types.find(&id).is_some() {
                                 self.errors.error(ast::Spanned {
                                     span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
                                     value: DuplicateTypeDefinition(id),
@@ -1020,7 +1034,8 @@ impl<'a> Typecheck<'a> {
                                     );
                                     // This forces refresh_type to remap the name a type was given
                                     // in this module to its actual name
-                                    self.original_symbols.insert(field_type.name, field_type.typ.name);
+                                    self.original_symbols
+                                        .insert(field_type.name, field_type.typ.name);
                                     self.stack_type(name,
                                                     alias_type,
                                                     field_type.typ.args.clone(),
@@ -1058,7 +1073,7 @@ impl<'a> Typecheck<'a> {
 
     fn kindcheck(&self, typ: &mut TcType, args: &mut [TcType]) -> Result<(), TypeError<Symbol>> {
         let subs = Substitution::new();
-        let mut check = super::kindcheck::KindCheck::new(self, &self.symbols, subs);
+        let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
         check.set_variables(args);
         try!(check.kindcheck_type(typ));
         Ok(())
@@ -1411,7 +1426,8 @@ impl<'a> Typecheck<'a> {
                      arguments: &[TcType])
                      -> Result<Option<TcType>, UnificationError<Symbol>> {
         let (args, mut typ) = {
-            let (args, typ) = try!(TypeEnv::find_type_info(self, &id)
+            let (args, typ) = try!(self.environment
+                                       .find_type_info(&id)
                                        .map(|s| Ok(s))
                                        .unwrap_or_else(|| {
                                            Err(UnificationError::UndefinedType(id.clone()))
