@@ -1,9 +1,82 @@
-use base::ast;
-use base::ast::{ASTType, Type};
-use base::symbol::Symbol;
+use std::rc::Rc;
+use ast;
+use ast::{ASTType, Type, Kind};
+use symbol::Symbol;
 
-use typecheck::{TcType, TypeEnv};
-use instantiate::instantiate;
+pub type TcType = ast::ASTType<Symbol>;
+pub type TcIdent = ast::TcIdent<Symbol>;
+
+pub trait KindEnv {
+    fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>>;
+}
+
+impl KindEnv for () {
+    fn find_kind(&self, _type_name: Symbol) -> Option<Rc<Kind>> {
+        None
+    }
+}
+
+impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
+    fn find_kind(&self, id: Symbol) -> Option<Rc<Kind>> {
+        (**self).find_kind(id)
+    }
+}
+
+impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
+    fn find_kind(&self, id: Symbol) -> Option<Rc<Kind>> {
+        let &(ref outer, ref inner) = self;
+        inner.find_kind(id)
+             .or_else(|| outer.find_kind(id))
+    }
+}
+
+pub trait TypeEnv: KindEnv {
+    fn find_type(&self, id: &Symbol) -> Option<&TcType>;
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)>;
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
+}
+
+impl TypeEnv for () {
+    fn find_type(&self, _id: &Symbol) -> Option<&TcType> {
+        None
+    }
+    fn find_type_info(&self, _id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
+        None
+    }
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+        None
+    }
+}
+
+impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
+    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+        (**self).find_type(id)
+    }
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
+        (**self).find_type_info(id)
+    }
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+        (**self).find_record(fields)
+    }
+}
+
+impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
+    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+        let &(ref outer, ref inner) = self;
+        inner.find_type(id)
+             .or_else(|| outer.find_type(id))
+    }
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
+        let &(ref outer, ref inner) = self;
+        inner.find_type_info(id)
+             .or_else(|| outer.find_type_info(id))
+    }
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+        let &(ref outer, ref inner) = self;
+        inner.find_record(fields)
+             .or_else(|| outer.find_record(fields))
+    }
+}
 
 ///Trait which abstracts over things that have a type.
 ///It is not guaranteed that the correct type is returned until after typechecking
@@ -127,4 +200,16 @@ fn get_return_type(env: &TypeEnv, alias_type: TcType, arg_count: usize) -> TcTyp
             }
         }
     }
+}
+
+pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
+    where F: FnMut(&ast::Generic<Symbol>) -> Option<TcType>
+{
+    ast::walk_move_type(typ,
+                        &mut |typ| {
+                            match *typ {
+                                Type::Generic(ref x) => f(x),
+                                _ => None,
+                            }
+                        })
 }

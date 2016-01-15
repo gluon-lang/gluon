@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::rc::Rc;
 
-use base::ast;
-use base::ast::MutVisitor;
-use base::symbol::Symbol;
-use typecheck::TcIdent;
-use base::error::Errors;
+use ast;
+use ast::MutVisitor;
+use symbol::Symbol;
+use types::TcIdent;
+use error::Errors;
 
 pub type Error = Box<StdError>;
 

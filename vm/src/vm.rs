@@ -10,17 +10,16 @@ use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType, DisplayEnv};
 use base::error;
-use base::symbol::{Name, NameBuf, Symbol, SymbolModule, Symbols};
-use check::typecheck::{Typecheck, TypeEnv, TcIdent, TcType};
-use check::kindcheck::KindEnv;
-use check::macros::{MacroEnv, MacroExpander};
-use check::Typed;
+use base::symbol::{Name, NameBuf, Symbol, Symbols};
+use base::types::{KindEnv, TypeEnv, TcIdent, TcType};
+use base::macros::{MacroEnv, MacroExpander};
+use base::types::Typed;
 use types::*;
 use base::fixed::{FixedMap, FixedVec};
 use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use array::{Array, Str};
-use compiler::{Compiler, CompiledFunction, Variable, CompilerEnv};
+use compiler::{CompiledFunction, Variable, CompilerEnv};
 use api::Pushable;
 use lazy::Lazy;
 
@@ -635,9 +634,19 @@ impl<'a> VM<'a> {
         };
         vm.add_types()
           .unwrap();
+        vm.add_import();
         ::primitives::load(&vm).unwrap();
-        vm.macros.insert(vm.symbol("import"), ::import::Import::new());
         vm
+    }
+
+    #[cfg(all(feature = "check", feature = "parser"))]
+    fn add_import(&self) {
+        self.macros.insert(self.symbol("import"), ::import::Import::new());
+    }
+
+    #[cfg(not(all(feature = "check", feature = "parser")))]
+    fn add_import(&self) {
+        let _ = &self.macros;
     }
 
     fn add_types(&self) -> Result<(), (TypeId, TcType)> {
@@ -1531,6 +1540,27 @@ fn macro_expand(vm: &VM, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Box<StdEr
     Ok(())
 }
 
+#[cfg(not(all(feature = "check", feature = "parser")))]
+quick_error! {
+    #[derive(Debug)]
+    pub enum Error {
+        IO(err: ::std::io::Error) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+        Message(err: StdString) {
+            display("{}", err)
+        }
+        Macro(err: ::base::macros::Error) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+    }
+}
+
+#[cfg(all(feature = "check", feature = "parser"))]
 quick_error! {
     #[derive(Debug)]
     pub enum Error {
@@ -1552,7 +1582,7 @@ quick_error! {
         Message(err: StdString) {
             display("{}", err)
         }
-        Macro(err: ::check::macros::Error) {
+        Macro(err: ::base::macros::Error) {
             description(err.description())
             display("{}", err)
             from()
@@ -1560,7 +1590,10 @@ quick_error! {
     }
 }
 
+#[cfg(all(feature = "check", feature = "parser"))]
 pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
+    use base::symbol::SymbolModule;
+    use compiler::Compiler;
     let (function, typ) = {
         let (expr, typ) = try!(typecheck_expr(vm, filename, input));
         let mut function = {
@@ -1603,6 +1636,7 @@ pub fn filename_to_module(filename: &str) -> StdString {
     name.replace("/", ".")
 }
 
+#[cfg(all(feature = "check", feature = "parser"))]
 pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
     use std::fs::File;
     use std::io::Read;
@@ -1614,17 +1648,22 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
     load_script(vm, &name, &buffer)
 }
 
+#[cfg(feature = "parser")]
 pub fn parse_expr(file: &str,
                   input: &str,
                   vm: &VM)
                   -> Result<ast::LExpr<TcIdent>, ::parser::Error> {
+    use base::symbol::SymbolModule;
     let mut symbols = vm.symbols.borrow_mut();
     Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut symbols), input)))
 }
+
+#[cfg(all(feature = "check", feature = "parser"))]
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           file: &str,
                           expr_str: &str)
                           -> Result<(ast::LExpr<TcIdent>, TcType), Error> {
+    use check::typecheck::Typecheck;
     let mut expr = try!(parse_expr(file, expr_str, vm));
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
@@ -1636,7 +1675,10 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
     Ok((expr, typ))
 }
 
+#[cfg(all(feature = "check", feature = "parser"))]
 pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Error> {
+    use base::symbol::SymbolModule;
+    use compiler::Compiler;
     let mut function = {
         let (expr, _) = try!(typecheck_expr(vm, "<top>", expr_str));
         let env = vm.env();
@@ -1663,7 +1705,7 @@ pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a
     vm.run_function(func)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "check", feature = "parser"))]
 mod tests {
     use vm::{VM, Value, load_script};
     use vm::Value::{Float, Int};

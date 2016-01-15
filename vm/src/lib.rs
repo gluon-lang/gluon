@@ -6,7 +6,9 @@ extern crate env_logger;
 extern crate quick_error;
 
 extern crate base;
+#[cfg(feature = "parser")]
 extern crate parser;
+#[cfg(feature = "check")]
 extern crate check;
 
 #[macro_use]
@@ -19,5 +21,6 @@ pub mod gc;
 mod stack;
 mod primitives;
 mod lazy;
+#[cfg(all(feature = "check", feature = "parser"))]
 pub mod import;
 mod array;

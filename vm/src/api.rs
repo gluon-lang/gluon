@@ -1,10 +1,10 @@
-use base::ast;
 use gc::Move;
 use base::symbol::Symbol;
 use vm::{VM, VMResult, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value,
          Userdata_, StackFrame, VMInt, Error, Root, RootStr};
-use check::typecheck::{TcType, Type};
-use check::Typed;
+use base::ast;
+use base::ast::Type;
+use base::types::{TcType, Typed};
 use types::Instruction::Call;
 use types::VMIndex;
 use std::any::Any;
@@ -62,7 +62,7 @@ impl<'a, 'vm, T> Getable<'a, 'vm> for Generic<'a, T> {
 pub mod generic {
     use super::VMType;
     use base::ast;
-    use check::typecheck::{TcType, Type};
+    use base::types::TcType;
     use vm::VM;
     use std::rc::Rc;
 
@@ -77,7 +77,7 @@ pub mod generic {
                     let s = stringify!($i);
                     let lower  = [s.as_bytes()[0] + 32];
                     let lower_str = unsafe { ::std::str::from_utf8_unchecked(&lower) };
-                    Type::generic(ast::Generic {
+                    ast::Type::generic(ast::Generic {
                         id: vm.symbol(lower_str),
                         kind: Rc::new(ast::Kind::Star)
                     })
@@ -1008,7 +1008,7 @@ pub fn define_function<'a: 'vm, 'vm, F>(vm: &VM<'a>, name: &str, f: F) -> VMResu
         vm.extern_function_io(name, args, typ, extern_fn)
     }
 }
-#[cfg(test)]
+#[cfg(all(test, feature = "check", feature = "parser"))]
 mod tests {
     use super::{VMType, Get, Callable, define_function};
 

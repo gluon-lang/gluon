@@ -3,10 +3,9 @@ use interner::{Interner, InternedStr};
 use gc::Gc;
 use base::ast;
 use base::symbol::{Symbol, SymbolModule};
-use base::ast::{DisplayEnv, LExpr, Expr};
-use check::typecheck::{TcIdent, TcType, Type, TypeEnv};
-use check::scoped_map::ScopedMap;
-use check::Typed;
+use base::ast::{DisplayEnv, LExpr, Expr, Type};
+use base::types::{Typed, TcIdent, TcType, TypeEnv};
+use base::scoped_map::ScopedMap;
 use types::*;
 use self::Variable::*;
 
@@ -263,7 +262,7 @@ pub struct Compiler<'a> {
     stack_types: ScopedMap<Symbol, (Vec<ast::Generic<Symbol>>, TcType)>,
 }
 
-impl<'a> ::check::kindcheck::KindEnv for Compiler<'a> {
+impl<'a> ::base::types::KindEnv for Compiler<'a> {
     fn find_kind(&self, _type_name: Symbol) -> Option<::std::rc::Rc<::base::ast::Kind>> {
         None
     }

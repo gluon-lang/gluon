@@ -2,38 +2,39 @@ use std::fmt;
 use std::mem;
 use std::rc::Rc;
 
-use scoped_map::ScopedMap;
+use base::scoped_map::ScopedMap;
 use base::ast;
-use base::ast::{ASTType, DisplayEnv, MutVisitor};
+use base::ast::{DisplayEnv, MutVisitor};
 use base::error::Errors;
 use base::symbol::{Name, Symbol, SymbolModule, Symbols};
+use base::types::{KindEnv, TypeEnv};
 use instantiate::{AliasInstantiator, Instantiator};
 use kindcheck;
 use substitution::{Substitution, Substitutable, Variable};
 use unify;
-use Typed;
+use base::types::Typed;
 
 use self::TypeError::*;
 
 pub use base::ast::{TypeVariable, Type, Kind};
 
-pub type TcIdent = ::ast::TcIdent<Symbol>;
+pub use base::types::TcType;
 
-pub type TcType = ast::ASTType<Symbol>;
+pub type TcIdent = ast::TcIdent<Symbol>;
 
 type ErrType = ast::ASTType<String>;
 
 #[derive(Debug, PartialEq)]
 pub enum TypeError<I> {
     UndefinedVariable(I),
-    NotAFunction(ASTType<I>),
+    NotAFunction(ast::ASTType<I>),
     UndefinedType(I),
-    UndefinedField(ASTType<I>, I),
-    PatternError(ASTType<I>, usize),
-    Unification(ASTType<I>, ASTType<I>, Vec<unify::Error<I>>),
+    UndefinedField(ast::ASTType<I>, I),
+    PatternError(ast::ASTType<I>, usize),
+    Unification(ast::ASTType<I>, ast::ASTType<I>, Vec<unify::Error<I>>),
     KindError(kindcheck::Error<I>),
     DuplicateTypeDefinition(I),
-    InvalidFieldAccess(ASTType<I>),
+    InvalidFieldAccess(ast::ASTType<I>),
     StringError(&'static str),
 }
 
@@ -203,67 +204,13 @@ impl Substitutable for TcType {
     }
 }
 
-pub trait TypeEnv: kindcheck::KindEnv {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType>;
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)>;
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
-}
-
-impl kindcheck::KindEnv for () {
-    fn find_kind(&self, _type_name: Symbol) -> Option<Rc<Kind>> {
-        None
-    }
-}
-
-impl TypeEnv for () {
-    fn find_type(&self, _id: &Symbol) -> Option<&TcType> {
-        None
-    }
-    fn find_type_info(&self, _id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
-        None
-    }
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
-        None
-    }
-}
-
-impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
-        (**self).find_type(id)
-    }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
-        (**self).find_type_info(id)
-    }
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
-        (**self).find_record(fields)
-    }
-}
-
-impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
-        let &(ref outer, ref inner) = self;
-        inner.find_type(id)
-             .or_else(|| outer.find_type(id))
-    }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
-        let &(ref outer, ref inner) = self;
-        inner.find_type_info(id)
-             .or_else(|| outer.find_type_info(id))
-    }
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
-        let &(ref outer, ref inner) = self;
-        inner.find_record(fields)
-             .or_else(|| outer.find_record(fields))
-    }
-}
-
 struct Environment<'a> {
     environment: Option<&'a (TypeEnv + 'a)>,
     stack: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
 }
 
-impl<'a> kindcheck::KindEnv for Environment<'a> {
+impl<'a> KindEnv for Environment<'a> {
     fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>> {
         self.stack_types
             .find(&type_name)
@@ -1294,7 +1241,7 @@ pub mod tests {
     use super::*;
     use base::ast;
     use base::symbol::{Symbols, SymbolModule, Symbol};
-    use Typed;
+    use base::types::Typed;
 
     ///Returns a reference to the interner stored in TLD
     pub fn get_local_interner() -> Rc<RefCell<Symbols>> {

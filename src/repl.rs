@@ -1,7 +1,6 @@
 use std::error::Error as StdError;
 use base::ast;
-use check::typecheck::TypeEnv;
-use check::Typed;
+use base::types::{TypeEnv, Typed};
 use vm::vm::{VM, RootStr, Status, typecheck_expr, load_file};
 use vm::api::{VMFunction, IO, Get, Callable, primitive};
 

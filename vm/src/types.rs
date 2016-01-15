@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use base::ast;
+use base::ast::Type;
 use base::symbol::Symbol;
-use check::kindcheck::KindEnv;
-use check::typecheck::{TypeEnv, TcType, Type};
+use base::types::{KindEnv, TypeEnv, TcType};
 
 pub use self::Instruction::*;
 

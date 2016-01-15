@@ -5,6 +5,7 @@ use base::ast::{Type, Kind};
 use typecheck::TcType;
 use base::ast;
 use base::symbol::Symbol;
+use base::types::KindEnv;
 use substitution::{Substitution, Substitutable};
 
 #[derive(Debug, PartialEq)]
@@ -57,24 +58,6 @@ impl Substitutable for Kind {
             Kind::Function(ref a, ref r) => a.occurs(subs, var) || r.occurs(subs, var),
             Kind::Star => false,
         }
-    }
-}
-
-pub trait KindEnv {
-    fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>>;
-}
-
-impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
-    fn find_kind(&self, id: Symbol) -> Option<Rc<Kind>> {
-        (**self).find_kind(id)
-    }
-}
-
-impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
-    fn find_kind(&self, id: Symbol) -> Option<Rc<Kind>> {
-        let &(ref outer, ref inner) = self;
-        inner.find_kind(id)
-             .or_else(|| outer.find_kind(id))
     }
 }
 

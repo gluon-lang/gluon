@@ -5,8 +5,9 @@ use std::collections::hash_map::Entry;
 use base::ast;
 use base::ast::Type;
 use base::symbol::Symbol;
+use base::types::TypeEnv;
 use substitution::Substitution;
-use typecheck::{TcType, TypeEnv, unroll_app};
+use typecheck::{TcType, unroll_app};
 use unify;
 
 pub struct AliasInstantiator<'a> {

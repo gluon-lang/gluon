@@ -9,11 +9,12 @@ authors = ["Markus <marwes91@gmail.com>"]
 [dependencies]
 union-find = "0.2.2"
 
-[dependencies.mopa]
-git = "https://github.com/Marwes/mopa.git"
-
 [dependencies.base]
 path = "../base"
+
 [dependencies.parser]
 path = "../parser"
+optional = true
 
+[features]
+test = ["parser"]

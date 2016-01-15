@@ -7,9 +7,8 @@ use std::path::{Path, PathBuf};
 
 use base::ast;
 use vm::{VM, filename_to_module, load_script};
-use check::macros::Macro;
-use check::macros::Error as MacroError;
-use check::typecheck::TcIdent;
+use base::macros::{Macro, Error as MacroError};
+use base::types::TcIdent;
 
 #[derive(Debug)]
 pub enum Error {

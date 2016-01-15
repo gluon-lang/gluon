@@ -27,3 +27,6 @@ path = "parser"
 path = "check"
 [dependencies.vm]
 path = "vm"
+
+[features]
+test = ["check/test"]

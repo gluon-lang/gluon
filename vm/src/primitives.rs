@@ -1,11 +1,16 @@
 use std::cell::Cell;
 use std::fs::File;
 use std::io::{Read, stdin};
+use std::string::String as StdString;
 
-use api::{generic, Generic, Getable, Array, IO, MaybeError};
+use base::ast;
+use base::ast::{Type, ASTType};
+use primitives as prim;
+use types::*;
+use api::{generic, Generic, Getable, Array, IO, MaybeError, primitive};
+use api::generic::A;
 use gc::{DataDef, WriteOnly};
 use vm::{VM, BytecodeFunction, DataStruct, VMInt, Status, Value, RootStr, VMResult};
-use types::Instruction::Call;
 use stack::StackFrame;
 
 
@@ -182,6 +187,7 @@ pub fn catch_io(vm: &VM) -> Status {
     }
 }
 
+#[cfg(all(feature = "check", feature = "parser"))]
 pub fn run_expr(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
     let frame_level = stack.stack.frames.len();
@@ -213,6 +219,7 @@ pub fn run_expr(vm: &VM) -> Status {
     }
 }
 
+#[cfg(all(feature = "check", feature = "parser"))]
 pub fn load_script(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
     let frame_level = stack.stack.frames.len();
@@ -260,27 +267,21 @@ fn backtrace(vm: &VM, frame_level: usize, stack: &StackFrame) -> String {
     buffer
 }
 
-pub fn load(vm: &VM) -> VMResult<()> {
-    use std::string::String as StdString;
-    use base::ast;
-    use base::ast::{Type, ASTType};
-    use primitives as prim;
-    use api::generic::A;
-    use api::{primitive, IO};
-    use types::*;
+fn f0<R>(f: fn() -> R) -> fn() -> R {
+    f
+}
+fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
+    f
+}
+fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
+    f
+}
+fn f3<A, B, C, R>(f: fn(A, B, C) -> R) -> fn(A, B, C) -> R {
+    f
+}
 
-    fn f0<R>(f: fn() -> R) -> fn() -> R {
-        f
-    }
-    fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
-        f
-    }
-    fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
-        f
-    }
-    fn f3<A, B, C, R>(f: fn(A, B, C) -> R) -> fn(A, B, C) -> R {
-        f
-    }
+pub fn load(vm: &VM) -> VMResult<()> {
+
     let a = Type::generic(ast::Generic {
         kind: ast::Kind::star(),
         id: vm.symbol("a"),
@@ -335,6 +336,25 @@ pub fn load(vm: &VM) -> VMResult<()> {
                             a.clone(),
                             Box::new(::lazy::force)));
 
+    try!(load_io(vm));
+
+    // io_bind m f (): IO a -> (a -> IO b) -> IO b
+    //     = f (m ())
+    let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), PushInt(0), TailCall(2)];
+    let f = Type::function(vec![a.clone()], io(b.clone()));
+    let io_bind_type = Type::function(vec![io(a.clone()), f], io(b.clone()));
+    vm.add_bytecode("io_bind", io_bind_type, 3, io_bind);
+
+
+    vm.add_bytecode("io_return",
+                    Type::function(vec![a.clone()], io(a.clone())),
+                    2,
+                    vec![Pop(1)]);
+    Ok(())
+}
+
+#[cfg(all(feature = "check", feature = "parser"))]
+fn load_io(vm: &VM) -> VMResult<()> {
     // IO functions
     try!(vm.define_global("io",
                           record!(
@@ -350,18 +370,20 @@ pub fn load(vm: &VM) -> VMResult<()> {
             primitive::<fn (StdString, StdString) -> IO<StdString>>("io.load_script",
                                                                     prim::load_script)
     )));
+    Ok(())
+}
 
-    // io_bind m f (): IO a -> (a -> IO b) -> IO b
-    //     = f (m ())
-    let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), PushInt(0), TailCall(2)];
-    let f = Type::function(vec![a.clone()], io(b.clone()));
-    let io_bind_type = Type::function(vec![io(a.clone()), f], io(b.clone()));
-    vm.add_bytecode("io_bind", io_bind_type, 3, io_bind);
-
-
-    vm.add_bytecode("io_return",
-                    Type::function(vec![a.clone()], io(a.clone())),
-                    2,
-                    vec![Pop(1)]);
+#[cfg(not(all(feature = "check", feature = "parser")))]
+fn load_io(vm: &VM) -> VMResult<()> {
+    // IO functions
+    try!(vm.define_global("io",
+                          record!(
+        print_int => f1(prim::print_int),
+        read_file => f1(prim::read_file),
+        read_line => f0(prim::read_line),
+        print => f1(prim::print),
+        catch =>
+            primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", prim::catch_io)
+    )));
     Ok(())
 }

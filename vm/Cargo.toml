@@ -11,7 +11,14 @@ version = "0.2.1"
 
 [dependencies.base]
 path = "../base"
+
 [dependencies.parser]
 path = "../parser"
+optional = true
+
 [dependencies.check]
 path = "../check"
+optional = true
+
+[features]
+default = ["check", "parser"]
