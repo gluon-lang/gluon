@@ -12,6 +12,7 @@ use base::error::Errors;
 use base::symbol::{Name, Symbol, SymbolModule, Symbols};
 use kindcheck;
 use substitution::{Substitution, Substitutable, Variable};
+use unify;
 use Typed;
 
 use self::TypeError::*;
@@ -31,47 +32,18 @@ pub enum TypeError<I> {
     UndefinedType(I),
     UndefinedField(ASTType<I>, I),
     PatternError(ASTType<I>, usize),
-    Unification(ASTType<I>, ASTType<I>, Vec<UnificationError<I>>),
+    Unification(ASTType<I>, ASTType<I>, Vec<unify::Error<I>>),
     KindError(kindcheck::Error<I>),
     DuplicateTypeDefinition(I),
     InvalidFieldAccess(ASTType<I>),
     StringError(&'static str),
 }
 
-#[derive(Debug, PartialEq)]
-pub enum UnificationError<I> {
-    TypeMismatch(ASTType<I>, ASTType<I>),
-    FieldMismatch(I, I),
-    Occurs(TypeVariable, ASTType<I>),
-    UndefinedType(I),
-}
-
-fn apply_subs(tc: &Typecheck,
-              error: Vec<UnificationError<Symbol>>)
-              -> Vec<UnificationError<Symbol>> {
-    error.into_iter()
-         .map(|error| {
-             match error {
-                 UnificationError::TypeMismatch(expected, actual) => {
-                     UnificationError::TypeMismatch(tc.set_type(expected), tc.set_type(actual))
-                 }
-                 UnificationError::FieldMismatch(expected, actual) => {
-                     UnificationError::FieldMismatch(expected, actual)
-                 }
-                 UnificationError::Occurs(var, typ) => {
-                     UnificationError::Occurs(var, tc.set_type(typ))
-                 }
-                 UnificationError::UndefinedType(id) => UnificationError::UndefinedType(id),
-             }
-         })
-         .collect()
-}
-
 fn map_symbol(symbols: &SymbolModule,
               err: &ast::Spanned<TypeError<Symbol>>)
               -> ast::Spanned<TypeError<String>> {
     use self::TypeError::*;
-    use self::UnificationError::{TypeMismatch, FieldMismatch, Occurs};
+    use unify::Error::{TypeMismatch, FieldMismatch, Occurs};
 
     let f = |symbol| String::from(symbols.string(symbol));
 
@@ -92,8 +64,8 @@ fn map_symbol(symbols: &SymbolModule,
                                        Occurs(ref var, ref typ) => {
                                            Occurs(var.clone(), typ.clone_strings(symbols))
                                        }
-                                       UnificationError::UndefinedType(ref id) => {
-                                           UnificationError::UndefinedType(f(&id))
+                                       unify::Error::UndefinedType(ref id) => {
+                                           unify::Error::UndefinedType(f(&id))
                                        }
                                    }
                                })
@@ -183,26 +155,6 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
                        typ)
             }
             StringError(ref name) => write!(f, "{}", name),
-        }
-    }
-}
-
-impl<I> fmt::Display for UnificationError<I> where I: fmt::Display + ::std::ops::Deref<Target = str>
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::UnificationError::*;
-        match *self {
-            TypeMismatch(ref l, ref r) => {
-                write!(f, "Types do not match:\n\tExpected: {}\n\tFound: {}", l, r)
-            }
-            FieldMismatch(ref l, ref r) => {
-                write!(f,
-                       "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
-                       l,
-                       r)
-            }
-            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
-            UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
         }
     }
 }
@@ -367,7 +319,6 @@ pub struct Typecheck<'a> {
     original_symbols: ScopedMap<Symbol, Symbol>,
     inst: Instantiator,
     errors: Errors<ast::Spanned<TypeError<Symbol>>>,
-    unification_errors: RefCell<Errors<UnificationError<Symbol>>>,
 }
 
 pub type Error = Errors<ast::Spanned<TypeError<String>>>;
@@ -390,7 +341,6 @@ impl<'a> Typecheck<'a> {
             original_symbols: ScopedMap::new(),
             inst: Instantiator::new(),
             errors: Errors::new(),
-            unification_errors: RefCell::new(Errors::new()),
         }
     }
 
@@ -1079,284 +1029,6 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn unification_error(&self, err: UnificationError<Symbol>) {
-        self.unification_errors.borrow_mut().error(err);
-    }
-
-    fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult {
-        debug!("Unify {} <=> {}",
-               ast::display_type(&self.symbols, expected),
-               ast::display_type(&self.symbols, &actual));
-        self.unify_(expected, &actual);
-        let has_errors = self.unification_errors.borrow().has_errors();
-        if has_errors {
-            let errors = mem::replace(&mut *self.unification_errors.borrow_mut(), Errors::new());
-            let mut expected = expected.clone();
-            expected = self.set_type(expected);
-            actual = self.set_type(actual);
-            debug!("Error '{:?}' between:\n>> {}\n>> {}",
-                   errors.errors,
-                   ast::display_type(&self.symbols, &expected),
-                   ast::display_type(&self.symbols, &actual));
-            Err(Unification(expected, actual, apply_subs(self, errors.errors)))
-        } else {
-            // Return the `expected` type as that is what is passed in for type
-            // declarations
-            Ok(self.set_type(expected.clone()))
-        }
-    }
-
-    fn unify_(&self, expected: &TcType, actual: &TcType) {
-        let expected = self.inst.subs.real(expected);
-        let actual = self.inst.subs.real(actual);
-        debug!("{} <=> {}",
-               ast::display_type(&self.symbols, expected),
-               ast::display_type(&self.symbols, actual));
-        match (&**expected, &**actual) {
-            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => (),
-            (&Type::Variable(ref l), _) => self.union(l, actual),
-            (_, &Type::Variable(ref r)) => self.union(r, expected),
-            (&Type::Function(ref l_args, ref l_ret),
-             &Type::Function(ref r_args, ref r_ret)) => {
-                if l_args.len() == r_args.len() {
-                    for (l, r) in l_args.iter().zip(r_args.iter()) {
-                        self.unify_(l, r);
-                    }
-                    self.unify_(l_ret, r_ret)
-                } else {
-                    self.unification_error(UnificationError::TypeMismatch(expected.clone(),
-                                                                          actual.clone()))
-                }
-            }
-            (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
-                self.unify_function(&l_args[0], l_ret, actual)
-            }
-            (&Type::App(..), &Type::Function(ref l_args, ref l_ret)) => {
-                self.unify_function(&l_args[0], l_ret, expected)
-            }
-            (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(l, r),
-            (&Type::Data(ref l, ref l_args),
-             &Type::Data(ref r, ref r_args))
-                if l == r && l_args.len() == r_args.len() => {
-                for (l, r) in l_args.iter().zip(r_args.iter()) {
-                    self.unify_(l, r);
-                }
-            }
-            (&Type::Record { fields: ref l_args, .. },
-             &Type::Record { fields: ref r_args, .. })
-                if l_args.len() == r_args.len() => {
-                for (l, r) in l_args.iter().zip(r_args.iter()) {
-                    if l.name != r.name {
-                        self.unification_error(UnificationError::FieldMismatch(l.name, r.name));
-                    } else {
-                        self.unify_(&l.typ, &r.typ);
-                    }
-                }
-            }
-            (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
-                let error_count = self.unification_errors.borrow().errors.len();
-                self.unify_app(l, l_args, expected, &|last, r_arg| self.unify_(r_arg, last));
-                let range = error_count..self.unification_errors.borrow().errors.len();
-                if range.start != range.end {
-                    // Attempt to unify using the type that is aliased if that exists
-                    match *l {
-                        ast::TypeConstructor::Data(l) => {
-                            let l = match self.type_of_alias(l, l_args) {
-                                Ok(typ) => typ,
-                                Err(err) => return self.unification_error(err),
-                            };
-                            match l {
-                                Some(l) => {
-                                    self.unify_(&l, expected);
-                                    self.rollback_unification_errors(range);
-                                }
-                                None => (),
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            (&Type::App(_, _), &Type::Data(ref r, ref r_args)) => {
-                let error_count = self.unification_errors.borrow().errors.len();
-                self.unify_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last));
-                let range = error_count..self.unification_errors.borrow().errors.len();
-                if range.start != range.end {
-                    match *r {
-                        ast::TypeConstructor::Data(r) => {
-                            let r = match self.type_of_alias(r, r_args) {
-                                Ok(typ) => typ,
-                                Err(err) => return self.unification_error(err),
-                            };
-                            match r {
-                                Some(r) => {
-                                    self.unify_(&r, expected);
-                                    self.rollback_unification_errors(range);
-                                }
-                                None => (),
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            (&Type::App(ref l1, ref l2), &Type::App(ref r1, ref r2)) => {
-                self.unify_(l1, r1);
-                self.unify_(l2, r2);
-            }
-            _ => {
-                if expected == actual {
-                    // Successful unification
-                    return;
-                }
-                // Attempt to unify by replacing the right or left hand side with the type it
-                // aliases (if any)
-                let len = self.unification_errors.borrow().errors.len();
-                if self.unify_alias(expected, actual, len..len) {
-                    // Successful unification
-                    return;
-                }
-                let len2 = self.unification_errors.borrow().errors.len();
-                if self.unify_alias(actual, expected, len..len2) {
-                    // Successful unification
-                    return;
-                }
-                let len3 = self.unification_errors.borrow().errors.len();
-                self.rollback_unification_errors(len..len3);
-                self.unification_error(UnificationError::TypeMismatch(expected.clone(),
-                                                                      actual.clone()));
-            }
-        }
-    }
-
-    fn rollback_unification_errors(&self, range: ::std::ops::Range<usize>) -> bool {
-        // If there were no errors in this unification, remove the errors generatedfrom the
-        // first attempt
-        let errors = self.unification_errors.borrow().errors.len();
-        if range.end == errors {
-            // No errors found
-            let start = range.start;
-            for _ in range {
-                self.unification_errors
-                    .borrow_mut()
-                    .errors
-                    .remove(start);
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    fn unify_alias(&self,
-                   expected: &TcType,
-                   actual: &TcType,
-                   range: ::std::ops::Range<usize>)
-                   -> bool {
-        match **actual {
-            Type::Data(ast::TypeConstructor::Data(r), ref r_args) => {
-                let r = match self.type_of_alias(r, r_args) {
-                    Ok(typ) => typ,
-                    Err(err) => {
-                        self.unification_error(err);
-                        return false;
-                    }
-                };
-                match r {
-                    Some(r) => {
-                        self.unify_(expected, &r);
-                        self.rollback_unification_errors(range)
-                    }
-                    None => {
-                        self.unification_error(UnificationError::TypeMismatch(expected.clone(),
-                                                                              actual.clone()));
-                        false
-                    }
-                }
-            }
-            _ => false,
-        }
-    }
-
-    fn unify_app<F>(&self, l: &ast::TypeConstructor<Symbol>, l_args: &[TcType], r: &TcType, f: &F)
-        where F: Fn(&TcType, &TcType)
-    {
-        let r = self.inst.subs.real(r);
-        debug!("{:?} {:?} <==> {}",
-               l,
-               l_args,
-               ast::display_type(&self.symbols, r));
-        match **r {
-            Type::App(ref r, ref r_arg) => {
-                match l_args.last() {
-                    Some(last) => {
-                        f(last, r_arg);
-                        self.unify_app(l, &l_args[0..l_args.len() - 1], r, f);
-                    }
-                    None => {
-                        let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                        self.unification_error(UnificationError::TypeMismatch(l, r.clone()));
-                    }
-                }
-            }
-            Type::Data(ref r, ref r_args) if l == r && l_args.len() == r_args.len() => {
-                for (l, r) in l_args.iter().zip(r_args) {
-                    self.unify_(l, r);
-                }
-            }
-            Type::Variable(ref r) => {
-                self.union(r, &Type::data(l.clone(), l_args.iter().cloned().collect()))
-            }
-            _ => {
-                let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                self.unification_error(UnificationError::TypeMismatch(l, r.clone()));
-            }
-        }
-    }
-
-    fn union(&self, id: &ast::TypeVariable, typ: &TcType) {
-        if let Err(()) = self.inst.subs.union(id, typ) {
-            self.unification_error(UnificationError::Occurs(id.clone(), typ.clone()));
-        }
-    }
-
-    fn unify_function(&self, arg: &TcType, ret: &TcType, other: &TcType) {
-        let error = || {
-            let func = Type::function(vec![arg.clone()], ret.clone());
-            self.unification_error(UnificationError::TypeMismatch(func, other.clone()));
-        };
-        let other = self.inst.subs.real(other);
-        match **other {
-            Type::App(ref other_f, ref other_ret) => {
-                let other_f = self.inst.subs.real(other_f);
-                match **other_f {
-                    Type::App(ref fn_prim, ref other_arg) => {
-                        self.unify_(fn_prim, &Type::builtin(ast::BuiltinType::FunctionType));
-                        self.unify_(arg, other_arg);
-                        self.unify_(ret, other_ret);
-                    }
-                    _ => error(),
-                }
-            }
-            _ => error(),
-        }
-    }
-
-    fn set_type(&self, t: TcType) -> TcType {
-        ast::walk_move_type(t,
-                            &mut |typ| {
-                                let replacement = self.inst.replace_variable(typ);
-                                let result = {
-                                    let mut typ = typ;
-                                    if let Some(ref t) = replacement {
-                                        typ = &**t;
-                                    }
-                                    unroll_app(typ)
-                                };
-                                result.or(replacement)
-                            })
-    }
-
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
         let generic = {
             let vars = self.inst.named_variables.borrow();
@@ -1397,93 +1069,6 @@ impl<'a> Typecheck<'a> {
                                     _ => unroll_app(typ).or(replacement.clone()),
                                 }
                             })
-    }
-
-    /// Removes type aliases from `typ` until it is an actual type
-    fn remove_aliases(&self, mut typ: TcType) -> TcType {
-        while let Some(new) = self.maybe_remove_alias(&typ) {
-            typ = new;
-        }
-        typ
-    }
-
-    fn remove_alias(&self, typ: TcType) -> TcType {
-        self.maybe_remove_alias(&typ).unwrap_or(typ)
-    }
-
-    fn maybe_remove_alias(&self, typ: &TcType) -> Option<TcType> {
-        match **typ {
-            Type::Data(ast::TypeConstructor::Data(id), ref args) => {
-                self.type_of_alias(id, args)
-                    .unwrap_or_else(|_| None)
-            }
-            _ => None,
-        }
-    }
-
-    fn type_of_alias(&self,
-                     id: Symbol,
-                     arguments: &[TcType])
-                     -> Result<Option<TcType>, UnificationError<Symbol>> {
-        let (args, mut typ) = {
-            let (args, typ) = try!(self.environment
-                                       .find_type_info(&id)
-                                       .map(|s| Ok(s))
-                                       .unwrap_or_else(|| {
-                                           Err(UnificationError::UndefinedType(id.clone()))
-                                       }));
-            match typ {
-                Some(typ) => {
-                    // TODO avoid clones here
-                    let args: Vec<_> = args.iter().cloned().collect();
-                    (args, typ.clone())
-                }
-                None => return Ok(None),
-            }
-        };
-        // It is ok to take the aliased type only if the alias is fully applied or if it
-        // the missing argument only appear in order at the end of the alias
-        // i.e
-        // type Test a b c = Type (a Int) b c
-        //
-        // Test a b == Type (a Int) b
-        // Test a == Type (a Int)
-        // Test == ??? (Impossible to do a sane substitution)
-
-        let ok_substitution = match *typ.clone() {
-            Type::Data(ref d, ref arg_types) => {
-                let allowed_missing_args = arg_types.iter()
-                                                    .rev()
-                                                    .zip(args.iter().rev())
-                                                    .take_while(|&(l, r)| {
-                                                        match **l {
-                                                            Type::Generic(ref g) => g == r,
-                                                            _ => false,
-                                                        }
-                                                    })
-                                                    .count();
-                if args.len() - arguments.len() <= allowed_missing_args {
-                    // Remove the args at the end of the aliased type
-                    let arg_types: Vec<_> = arg_types.iter()
-                                                     .take(arg_types.len() -
-                                                           (args.len() - arguments.len()))
-                                                     .cloned()
-                                                     .collect();
-                    typ = Type::data(d.clone(), arg_types);
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => arguments.len() == args.len(),
-        };
-        if !ok_substitution {
-            let expected = Type::data(ast::TypeConstructor::Data(id),
-                                      arguments.iter().cloned().collect());
-            return Err(UnificationError::TypeMismatch(expected, typ));
-        }
-        let typ = self.inst.instantiate_with(typ, arguments, &args);
-        Ok(Some(typ))
     }
 
     fn refresh_symbols(&mut self, expr: &mut ast::LExpr<TcIdent>) {
@@ -1575,6 +1160,127 @@ impl<'a> Typecheck<'a> {
                                 }
                             })
     }
+
+    fn unify(&self, expected: &TcType, actual: TcType) -> TcResult {
+        unify::Unifier::new(AliasInstantiator::new(&self.inst, &self.environment), &self.symbols)
+            .unify(expected, actual)
+    }
+
+    fn remove_alias(&self, typ: TcType) -> TcType {
+        AliasInstantiator::new(&self.inst, &self.environment).remove_alias(typ)
+    }
+
+    fn remove_aliases(&self, typ: TcType) -> TcType {
+        AliasInstantiator::new(&self.inst, &self.environment).remove_aliases(typ)
+    }
+
+    fn type_of_alias(&self,
+                     id: Symbol,
+                     arguments: &[TcType])
+                     -> Result<Option<TcType>, unify::Error<Symbol>> {
+        AliasInstantiator::new(&self.inst, &self.environment).type_of_alias(id, arguments)
+    }
+}
+
+pub struct AliasInstantiator<'a> {
+    pub inst: &'a Instantiator,
+    pub env: &'a TypeEnv
+}
+
+impl<'a> AliasInstantiator<'a> {
+    fn new(inst: &'a Instantiator, env: &'a TypeEnv) -> AliasInstantiator<'a> {
+        AliasInstantiator {
+            inst: inst,
+            env: env,
+        }
+    }
+
+    /// Removes type aliases from `typ` until it is an actual type
+    pub fn remove_aliases(&self, mut typ: TcType) -> TcType {
+        while let Some(new) = self.maybe_remove_alias(&typ) {
+            typ = new;
+        }
+        typ
+    }
+
+    pub fn remove_alias(&self, typ: TcType) -> TcType {
+        self.maybe_remove_alias(&typ).unwrap_or(typ)
+    }
+
+    pub fn maybe_remove_alias(&self, typ: &TcType) -> Option<TcType> {
+        match **typ {
+            Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+                self.type_of_alias(id, args)
+                    .unwrap_or_else(|_| None)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn type_of_alias(&self,
+                     id: Symbol,
+                     arguments: &[TcType])
+                     -> Result<Option<TcType>, unify::Error<Symbol>> {
+        let (args, mut typ) = {
+            let (args, typ) = try!(self.env
+                                       .find_type_info(&id)
+                                       .map(|s| Ok(s))
+                                       .unwrap_or_else(|| {
+                                           Err(unify::Error::UndefinedType(id.clone()))
+                                       }));
+            match typ {
+                Some(typ) => {
+                    // TODO avoid clones here
+                    let args: Vec<_> = args.iter().cloned().collect();
+                    (args, typ.clone())
+                }
+                None => return Ok(None),
+            }
+        };
+        // It is ok to take the aliased type only if the alias is fully applied or if it
+        // the missing argument only appear in order at the end of the alias
+        // i.e
+        // type Test a b c = Type (a Int) b c
+        //
+        // Test a b == Type (a Int) b
+        // Test a == Type (a Int)
+        // Test == ??? (Impossible to do a sane substitution)
+
+        let ok_substitution = match *typ.clone() {
+            Type::Data(ref d, ref arg_types) => {
+                let allowed_missing_args = arg_types.iter()
+                                                    .rev()
+                                                    .zip(args.iter().rev())
+                                                    .take_while(|&(l, r)| {
+                                                        match **l {
+                                                            Type::Generic(ref g) => g == r,
+                                                            _ => false,
+                                                        }
+                                                    })
+                                                    .count();
+                if args.len() - arguments.len() <= allowed_missing_args {
+                    // Remove the args at the end of the aliased type
+                    let arg_types: Vec<_> = arg_types.iter()
+                                                     .take(arg_types.len() -
+                                                           (args.len() - arguments.len()))
+                                                     .cloned()
+                                                     .collect();
+                    typ = Type::data(d.clone(), arg_types);
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => arguments.len() == args.len(),
+        };
+        if !ok_substitution {
+            let expected = Type::data(ast::TypeConstructor::Data(id),
+                                      arguments.iter().cloned().collect());
+            return Err(unify::Error::TypeMismatch(expected, typ));
+        }
+        let typ = self.inst.instantiate_with(typ, arguments, &args);
+        Ok(Some(typ))
+    }
 }
 
 fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<Symbol>> {
@@ -1591,9 +1297,9 @@ fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<Symbol>> {
         .collect()
 }
 
-struct Instantiator {
-    subs: Substitution<TcType>,
-    named_variables: RefCell<HashMap<Symbol, TcType>>,
+pub struct Instantiator {
+    pub subs: Substitution<TcType>,
+    pub named_variables: RefCell<HashMap<Symbol, TcType>>,
 }
 
 impl Instantiator {
@@ -1655,6 +1361,21 @@ impl Instantiator {
             }
             _ => None,
         }
+    }
+
+    pub fn set_type(&self, t: TcType) -> TcType {
+        ast::walk_move_type(t,
+                            &mut |typ| {
+                                let replacement = self.replace_variable(typ);
+                                let result = {
+                                    let mut typ = typ;
+                                    if let Some(ref t) = replacement {
+                                        typ = &**t;
+                                    }
+                                    unroll_app(typ)
+                                };
+                                result.or(replacement)
+                            })
     }
 }
 
@@ -1808,7 +1529,7 @@ mod tests {
             #[allow(unused_imports)]
             use kindcheck::Error::KindMismatch;
             #[allow(unused_imports)]
-            use super::UnificationError::{TypeMismatch, FieldMismatch, Occurs};
+            use unify::Error::{TypeMismatch, FieldMismatch, Occurs};
             let symbols = get_local_interner();
             match $e {
                 Ok(x) => assert!(false, "Expected error, got {}",
@@ -1834,7 +1555,7 @@ mod tests {
             #[allow(unused_imports)]
             use kindcheck::Error::KindMismatch;
             #[allow(unused_imports)]
-            use super::UnificationError::{TypeMismatch, FieldMismatch, Occurs};
+            use unify::Error::{TypeMismatch, FieldMismatch, Occurs};
             let symbols = get_local_interner();
             match $e {
                 Ok(x) => assert!(false, "Expected error, got {}",

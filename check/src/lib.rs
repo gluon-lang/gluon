@@ -17,6 +17,7 @@ pub use base::ast;
 pub use typed::Typed;
 
 pub mod typecheck;
+mod unify;
 mod typed;
 pub mod kindcheck;
 pub mod macros;
