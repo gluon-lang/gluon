@@ -6,7 +6,8 @@ use base::ast;
 use base::ast::{ASTType, Type, TypeVariable};
 use base::error::Errors;
 use base::symbol::Symbol;
-use typecheck::{AliasInstantiator, Instantiator, TcResult, TcType, TypeError};
+use instantiate::{AliasInstantiator, Instantiator};
+use typecheck::{TcResult, TcType, TypeError};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<I> {
@@ -337,7 +338,8 @@ impl<'a> Unifier<'a> {
 mod tests {
     use super::*;
     use super::Error::*;
-    use typecheck::{AliasInstantiator, Instantiator, TypeError};
+    use instantiate::{AliasInstantiator, Instantiator};
+    use typecheck::TypeError;
     use base::ast;
     use base::ast::Type;
     use typecheck::tests::*;

@@ -16,6 +16,7 @@ extern crate parser;
 pub use base::ast;
 pub use typed::Typed;
 
+mod instantiate;
 pub mod typecheck;
 mod unify;
 mod typed;

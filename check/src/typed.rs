@@ -2,7 +2,8 @@ use base::ast;
 use base::ast::{ASTType, Type};
 use base::symbol::Symbol;
 
-use typecheck::{TcType, TypeEnv, instantiate};
+use typecheck::{TcType, TypeEnv};
+use instantiate::instantiate;
 
 ///Trait which abstracts over things that have a type.
 ///It is not guaranteed that the correct type is returned until after typechecking
