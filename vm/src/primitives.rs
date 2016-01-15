@@ -251,6 +251,7 @@ pub fn load_script(vm: &VM) -> Status {
 }
 
 /// Creates a backtraces starting from `frame_level`
+#[cfg(all(feature = "check", feature = "parser"))]
 fn backtrace(vm: &VM, frame_level: usize, stack: &StackFrame) -> String {
     let mut buffer = String::from("Backtrace:\n");
     for frame in &stack.stack.frames[frame_level..] {
@@ -279,7 +280,6 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
 fn f3<A, B, C, R>(f: fn(A, B, C) -> R) -> fn(A, B, C) -> R {
     f
 }
-
 pub fn load(vm: &VM) -> VMResult<()> {
 
     let a = Type::generic(ast::Generic {

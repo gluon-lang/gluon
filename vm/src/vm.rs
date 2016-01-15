@@ -9,10 +9,9 @@ use std::rc::Rc;
 use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType, DisplayEnv};
-use base::error;
 use base::symbol::{Name, NameBuf, Symbol, Symbols};
-use base::types::{KindEnv, TypeEnv, TcIdent, TcType};
-use base::macros::{MacroEnv, MacroExpander};
+use base::types::{KindEnv, TypeEnv, TcType};
+use base::macros::MacroEnv;
 use base::types::Typed;
 use types::*;
 use base::fixed::{FixedMap, FixedVec};
@@ -931,12 +930,6 @@ impl<'a> VM<'a> {
                        elems: fields,
                    })
     }
-    fn new_closure(&self,
-                   func: GcPtr<BytecodeFunction>,
-                   fields: &[Value<'a>])
-                   -> GcPtr<ClosureData<'a>> {
-        self.gc.borrow_mut().alloc(ClosureDataDef(func, fields))
-    }
     fn new_closure_and_collect(&self,
                                stack: &Stack<'a>,
                                func: GcPtr<BytecodeFunction>,
@@ -1534,8 +1527,9 @@ fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
            });
 }
 
-fn macro_expand(vm: &VM, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Box<StdError>> {
-    let macros = MacroExpander::new(vm, &vm.macros);
+#[cfg(all(feature = "check", feature = "parser"))]
+fn macro_expand(vm: &VM, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) -> Result<(), Box<StdError>> {
+    let macros = ::base::macros::MacroExpander::new(vm, &vm.macros);
     try!(macros.run(expr));
     Ok(())
 }
@@ -1569,7 +1563,7 @@ quick_error! {
             display("{}", err)
             from()
         }
-        Typecheck(err: error::InFile<::check::typecheck::TypeError<StdString>>) {
+        Typecheck(err: ::base::error::InFile<::check::typecheck::TypeError<StdString>>) {
             description(err.description())
             display("{}", err)
             from()
@@ -1611,7 +1605,7 @@ pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
         (function, typ)
     };
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
-    let closure = vm.new_closure(function, &[]);
+    let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
     let value = try!(vm.call_module(&typ, closure));
     vm.names.borrow_mut().insert(function.name.unwrap(), GlobalFn(vm.globals.len()));
     vm.globals.push(Global {
@@ -1652,7 +1646,7 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
 pub fn parse_expr(file: &str,
                   input: &str,
                   vm: &VM)
-                  -> Result<ast::LExpr<TcIdent>, ::parser::Error> {
+                  -> Result<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
     use base::symbol::SymbolModule;
     let mut symbols = vm.symbols.borrow_mut();
     Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut symbols), input)))
@@ -1662,8 +1656,9 @@ pub fn parse_expr(file: &str,
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           file: &str,
                           expr_str: &str)
-                          -> Result<(ast::LExpr<TcIdent>, TcType), Error> {
+                          -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType), Error> {
     use check::typecheck::Typecheck;
+    use base::error;
     let mut expr = try!(parse_expr(file, expr_str, vm));
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
@@ -1692,7 +1687,7 @@ pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Error> {
     function.id = vm.symbols.borrow_mut().symbol(NameBuf::from("<top>.main"));
     let typ = function.typ.clone();
     let function = vm.new_function(function);
-    let closure = vm.new_closure(function, &[]);
+    let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
     let value = try!(vm.call_module(&typ, closure));
     Ok(value)
 }
