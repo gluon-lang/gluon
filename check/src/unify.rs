@@ -5,7 +5,7 @@ use std::mem;
 use base::ast;
 use base::ast::{ASTType, Type, TypeVariable};
 use base::error::Errors;
-use base::symbol::{SymbolModule, Symbol};
+use base::symbol::Symbol;
 use typecheck::{AliasInstantiator, Instantiator, TcResult, TcType, TypeError};
 
 #[derive(Debug, PartialEq)]
@@ -16,21 +16,15 @@ pub enum Error<I> {
     UndefinedType(I),
 }
 
-fn apply_subs(inst: &Instantiator,
-              error: Vec<Error<Symbol>>)
-              -> Vec<Error<Symbol>> {
+fn apply_subs(inst: &Instantiator, error: Vec<Error<Symbol>>) -> Vec<Error<Symbol>> {
     error.into_iter()
          .map(|error| {
              match error {
                  Error::TypeMismatch(expected, actual) => {
                      Error::TypeMismatch(inst.set_type(expected), inst.set_type(actual))
                  }
-                 Error::FieldMismatch(expected, actual) => {
-                     Error::FieldMismatch(expected, actual)
-                 }
-                 Error::Occurs(var, typ) => {
-                     Error::Occurs(var, inst.set_type(typ))
-                 }
+                 Error::FieldMismatch(expected, actual) => Error::FieldMismatch(expected, actual),
+                 Error::Occurs(var, typ) => Error::Occurs(var, inst.set_type(typ)),
                  Error::UndefinedType(id) => Error::UndefinedType(id),
              }
          })
@@ -60,13 +54,14 @@ impl<I> fmt::Display for Error<I> where I: fmt::Display + ::std::ops::Deref<Targ
 
 pub struct Unifier<'a> {
     alias: AliasInstantiator<'a>,
-    symbols: &'a SymbolModule<'a>,
+    symbols: &'a ast::DisplayEnv<Ident = Symbol>,
     unification_errors: RefCell<Errors<Error<Symbol>>>,
 }
 
 impl<'a> Unifier<'a> {
-
-    pub fn new(alias: AliasInstantiator<'a>, symbols: &'a SymbolModule<'a>) -> Unifier<'a> {
+    pub fn new(alias: AliasInstantiator<'a>,
+               symbols: &'a ast::DisplayEnv<Ident = Symbol>)
+               -> Unifier<'a> {
         Unifier {
             alias: alias,
             symbols: symbols,
@@ -93,7 +88,9 @@ impl<'a> Unifier<'a> {
                    errors.errors,
                    ast::display_type(&self.symbols, &expected),
                    ast::display_type(&self.symbols, &actual));
-            Err(TypeError::Unification(expected, actual, apply_subs(&self.alias.inst, errors.errors)))
+            Err(TypeError::Unification(expected,
+                                       actual,
+                                       apply_subs(&self.alias.inst, errors.errors)))
         } else {
             // Return the `expected` type as that is what is passed in for type
             // declarations
@@ -119,8 +116,7 @@ impl<'a> Unifier<'a> {
                     }
                     self.unify_(l_ret, r_ret)
                 } else {
-                    self.unification_error(Error::TypeMismatch(expected.clone(),
-                                                                          actual.clone()))
+                    self.unification_error(Error::TypeMismatch(expected.clone(), actual.clone()))
                 }
             }
             (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
@@ -218,8 +214,7 @@ impl<'a> Unifier<'a> {
                 }
                 let len3 = self.unification_errors.borrow().errors.len();
                 self.rollback_unification_errors(len..len3);
-                self.unification_error(Error::TypeMismatch(expected.clone(),
-                                                                      actual.clone()));
+                self.unification_error(Error::TypeMismatch(expected.clone(), actual.clone()));
             }
         }
     }
@@ -264,7 +259,7 @@ impl<'a> Unifier<'a> {
                     }
                     None => {
                         self.unification_error(Error::TypeMismatch(expected.clone(),
-                                                                              actual.clone()));
+                                                                   actual.clone()));
                         false
                     }
                 }
@@ -335,5 +330,48 @@ impl<'a> Unifier<'a> {
             }
             _ => error(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::Error::*;
+    use typecheck::{AliasInstantiator, Instantiator, TypeError};
+    use base::ast;
+    use base::ast::Type;
+    use typecheck::tests::*;
+
+    #[test]
+    fn detect_multiple_type_errors_in_single_type() {
+        let _ = ::env_logger::init();
+        let (x, y, z, w) = (intern("x"), intern("y"), intern("z"), intern("w"));
+        let l = Type::record(vec![],
+                             vec![ast::Field {
+                                      name: x,
+                                      typ: Type::int(),
+                                  },
+                                  ast::Field {
+                                      name: y,
+                                      typ: Type::string(),
+                                  }]);
+        let r = Type::record(vec![],
+                             vec![ast::Field {
+                                      name: z,
+                                      typ: Type::int(),
+                                  },
+                                  ast::Field {
+                                      name: w,
+                                      typ: Type::string(),
+                                  }]);
+        let inst = Instantiator::new();
+        let i = get_local_interner();
+        let symbols = i.borrow();
+        let result = Unifier::new(AliasInstantiator::new(&inst, &()), &*symbols)
+                         .unify(&l, r.clone());
+        assert_eq!(result,
+                   Err(TypeError::Unification(l.clone(),
+                                              r.clone(),
+                                              vec![FieldMismatch(x, z), FieldMismatch(y, w)])));
     }
 }

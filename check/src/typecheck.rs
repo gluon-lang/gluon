@@ -1188,7 +1188,7 @@ pub struct AliasInstantiator<'a> {
 }
 
 impl<'a> AliasInstantiator<'a> {
-    fn new(inst: &'a Instantiator, env: &'a TypeEnv) -> AliasInstantiator<'a> {
+    pub fn new(inst: &'a Instantiator, env: &'a TypeEnv) -> AliasInstantiator<'a> {
         AliasInstantiator {
             inst: inst,
             env: env,
@@ -1303,7 +1303,7 @@ pub struct Instantiator {
 }
 
 impl Instantiator {
-    fn new() -> Instantiator {
+    pub fn new() -> Instantiator {
         Instantiator {
             subs: Substitution::new(),
             named_variables: RefCell::new(HashMap::new()),
@@ -1485,7 +1485,7 @@ pub fn walk_real_type<F>(subs: &Substitution<TcType>, typ: &TcType, f: &mut F)
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
     use super::*;
@@ -2168,17 +2168,6 @@ in eq t u
 "#;
         let result = typecheck(text);
         assert_eq!(result, Ok(typ("Int")));
-    }
-
-    #[test]
-    fn detect_multiple_type_errors_in_single_type() {
-        let _ = ::env_logger::init();
-        let text = r#"
-let f x y = if True then x else y
-in f { x = 1, y = "" } { z = 1, w = "" }
-"#;
-        let result = typecheck(text);
-        assert_unify_err!(result, FieldMismatch(..), FieldMismatch(..));
     }
 
     #[test]
