@@ -7,7 +7,7 @@ authors = ["Markus <marwes91@gmail.com>"]
 [dependencies.log]
 [dependencies.env_logger]
 [dependencies.quick-error]
-version = "0.2.1"
+version = "0.2.2"
 
 [dependencies.base]
 path = "../base"
