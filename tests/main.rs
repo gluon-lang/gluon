@@ -58,15 +58,17 @@ fn main_() -> Result<(), Box<Error>> {
         let mut file = try!(File::open(&filename));
         text.clear();
         try!(file.read_to_string(&mut text));
-        println!("test {}", filename.to_str().unwrap_or("<unknown>"));
-        try!(run_expr(&vm, &text));
+        let name = filename.to_str().unwrap_or("<unknown>");
+        println!("test {}", name);
+        try!(run_expr(&vm, name, &text));
     }
     for filename in try!(test_files("tests/fail")) {
         let mut file = try!(File::open(&filename));
         text.clear();
         try!(file.read_to_string(&mut text));
-        println!("test {}", filename.to_str().unwrap_or("<unknown>"));
-        match run_expr(&vm, &text) {
+        let name = filename.to_str().unwrap_or("<unknown>");
+        println!("test {}", name);
+        match run_expr(&vm, name, &text) {
             Ok(x) => {
                 return Err(StringError(format!("Expected test '{}' to fail got {:?}",
                                                filename.to_str().unwrap(),

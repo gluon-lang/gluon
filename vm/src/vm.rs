@@ -1585,25 +1585,28 @@ quick_error! {
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]
-pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
+fn compile_script(vm: &VM, filename: &str, expr: &ast::LExpr<ast::TcIdent<Symbol>>) -> CompiledFunction {
     use base::symbol::SymbolModule;
     use compiler::Compiler;
-    let (function, typ) = {
-        let (expr, typ) = try!(typecheck_expr(vm, filename, input));
-        let mut function = {
-            let env = vm.env();
-            let mut interner = vm.interner.borrow_mut();
-            let mut gc = vm.gc.borrow_mut();
-            let mut symbols = vm.symbols.borrow_mut();
-            let name = Name::new(filename);
-            let name = NameBuf::from(name.module());
-            let symbols = SymbolModule::new(StdString::from(name.as_ref()), &mut symbols);
-            let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
-            compiler.compile_expr(&expr)
-        };
-        function.id = vm.symbols.borrow_mut().symbol(filename);
-        (function, typ)
+    let mut function = {
+        let env = vm.env();
+        let mut interner = vm.interner.borrow_mut();
+        let mut gc = vm.gc.borrow_mut();
+        let mut symbols = vm.symbols.borrow_mut();
+        let name = Name::new(filename);
+        let name = NameBuf::from(name.module());
+        let symbols = SymbolModule::new(StdString::from(name.as_ref()), &mut symbols);
+        let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
+        compiler.compile_expr(&expr)
     };
+    function.id = vm.symbols.borrow_mut().symbol(filename);
+    function
+}
+
+#[cfg(all(feature = "check", feature = "parser"))]
+pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
+    let (expr, typ) = try!(typecheck_expr(vm, filename, input));
+    let function = compile_script(vm, filename, &expr);
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
     let value = try!(vm.call_module(&typ, closure));
@@ -1671,21 +1674,10 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]
-pub fn run_expr<'a>(vm: &VM<'a>, expr_str: &str) -> Result<Value<'a>, Error> {
-    use base::symbol::SymbolModule;
-    use compiler::Compiler;
-    let mut function = {
-        let (expr, _) = try!(typecheck_expr(vm, "<top>", expr_str));
-        let env = vm.env();
-        let mut interner = vm.interner.borrow_mut();
-        let mut gc = vm.gc.borrow_mut();
-        let mut symbols = vm.symbols.borrow_mut();
-        let symbols = SymbolModule::new(StdString::from("<top>"), &mut symbols);
-        let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
-        compiler.compile_expr(&expr)
-    };
-    function.id = vm.symbols.borrow_mut().symbol(NameBuf::from("<top>.main"));
-    let typ = function.typ.clone();
+pub fn run_expr<'a>(vm: &VM<'a>, name: &str, expr_str: &str) -> Result<Value<'a>, Error> {
+    let (expr, typ) = try!(typecheck_expr(vm, name, expr_str));
+    let mut function = compile_script(vm, name, &expr);
+    function.id = vm.symbols.borrow_mut().symbol(name);
     let function = vm.new_function(function);
     let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
     let value = try!(vm.call_module(&typ, closure));
@@ -1707,7 +1699,7 @@ mod tests {
     use stack::StackFrame;
 
     fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
-        super::run_expr(vm, s).unwrap_or_else(|err| panic!("{}", err))
+        super::run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
     }
 
     macro_rules! test_expr {
@@ -1936,7 +1928,7 @@ case A of
     | B -> True
 ";
         let mut vm = VM::new();
-        let result = super::run_expr(&mut vm, text);
+        let result = super::run_expr(&mut vm, "<top>", text);
         assert!(result.is_err());
     }
 

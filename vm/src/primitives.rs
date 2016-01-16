@@ -195,7 +195,7 @@ pub fn run_expr(vm: &VM) -> Status {
     match s {
         Value::String(s) => {
             drop(stack);
-            let run_result = ::vm::run_expr(vm, &s);
+            let run_result = ::vm::run_expr(vm, "<top>", &s);
             stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
             match run_result {
                 Ok(value) => {

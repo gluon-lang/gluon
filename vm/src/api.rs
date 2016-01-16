@@ -1123,7 +1123,7 @@ test "hello"
             test
         })
             .unwrap();
-        let result = run_expr(&mut vm, expr).unwrap_or_else(|err| panic!("{}", err));
+        let result = run_expr(&mut vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
         match result {
             Value::String(s) => assert_eq!(&s[..], "hello world"),
             x => panic!("Expected string {:?}", x),
