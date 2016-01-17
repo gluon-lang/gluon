@@ -479,34 +479,6 @@ impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
             _ => self.type_infos.find_var(id),
         }
     }
-    fn find_field(&self, data_name: &Symbol, field_name: &Symbol) -> Option<VMIndex> {
-        self.type_infos
-            .id_to_type
-            .get(data_name)
-            .and_then(|&(_, ref typ)| {
-                match **typ {
-                    ast::Type::Record { ref fields, .. } => {
-                        fields.iter()
-                              .enumerate()
-                              .find(|&(_, f)| f.name == *field_name)
-                              .map(|(i, _)| i as VMIndex)
-                    }
-                    _ => None,
-                }
-            })
-    }
-
-    fn find_tag(&self, data_name: &Symbol, ctor_name: &Symbol) -> Option<VMTag> {
-        match self.type_infos.id_to_type.get(data_name).map(|&(_, ref typ)| &**typ) {
-            Some(&Type::Variants(ref ctors)) => {
-                ctors.iter()
-                     .enumerate()
-                     .find(|&(_, c)| c.0 == *ctor_name)
-                     .map(|(i, _)| i as VMIndex)
-            }
-            _ => None,
-        }
-    }
 }
 
 impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {

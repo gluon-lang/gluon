@@ -160,8 +160,6 @@ impl FunctionEnv {
 
 pub trait CompilerEnv: TypeEnv {
     fn find_var(&self, id: &Symbol) -> Option<Variable>;
-    fn find_field(&self, _struct: &Symbol, _field: &Symbol) -> Option<VMIndex>;
-    fn find_tag(&self, _: &Symbol, _: &Symbol) -> Option<VMTag>;
 }
 
 impl<T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
@@ -170,29 +168,11 @@ impl<T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
         inner.find_var(s)
              .or_else(|| outer.find_var(s))
     }
-    fn find_field(&self, struct_: &Symbol, field: &Symbol) -> Option<VMIndex> {
-        let &(ref outer, ref inner) = self;
-        inner.find_field(struct_, field)
-             .or_else(|| outer.find_field(struct_, field))
-    }
-
-    fn find_tag(&self, struct_: &Symbol, field: &Symbol) -> Option<VMTag> {
-        let &(ref outer, ref inner) = self;
-        inner.find_tag(struct_, field)
-             .or_else(|| outer.find_tag(struct_, field))
-    }
 }
 
 impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
     fn find_var(&self, s: &Symbol) -> Option<Variable> {
         (**self).find_var(s)
-    }
-    fn find_field(&self, struct_: &Symbol, field: &Symbol) -> Option<VMIndex> {
-        (**self).find_field(struct_, field)
-    }
-
-    fn find_tag(&self, enum_: &Symbol, ctor_name: &Symbol) -> Option<VMTag> {
-        (**self).find_tag(enum_, ctor_name)
     }
 }
 impl CompilerEnv for TypeInfos {
@@ -219,36 +199,6 @@ impl CompilerEnv for TypeInfos {
             .next()
             .map(|(tag, &(_, ref typ))| {
                 Variable::Constructor(tag as VMTag, count_function_args(&typ))
-            })
-    }
-    fn find_field(&self, struct_: &Symbol, field: &Symbol) -> Option<VMIndex> {
-        self.id_to_type
-            .get(struct_)
-            .and_then(|&(_, ref typ)| {
-                match **typ {
-                    Type::Record { ref fields, .. } => {
-                        fields.iter()
-                              .position(|f| f.name == *field)
-                              .map(|i| i as VMIndex)
-                    }
-                    _ => None,
-                }
-            })
-    }
-
-    fn find_tag(&self, type_id: &Symbol, ctor_name: &Symbol) -> Option<VMTag> {
-        self.id_to_type
-            .get(type_id)
-            .and_then(|&(_, ref typ)| {
-                match **typ {
-                    Type::Variants(ref variants) => {
-                        variants.iter()
-                                .enumerate()
-                                .find(|&(_, v)| v.0 == *ctor_name)
-                                .map(|t| t.0 as VMTag)
-                    }
-                    _ => None,
-                }
             })
     }
 }
@@ -345,61 +295,49 @@ impl<'a> Compiler<'a> {
             .or_else(|| self.globals.find_var(&id))
     }
 
-    fn find_field(&self,
-                  struct_: &ast::TypeConstructor<Symbol>,
-                  field: &Symbol)
-                  -> Option<VMIndex> {
-        let mut struct_ = match *struct_ {
-            ast::TypeConstructor::Data(struct_) => struct_,
-            _ => return None,
-        };
-        // Walk through all type aliases
-        while let Some((_, Some(typ))) = self.find_type_info(&struct_) {
-            match **typ {
+
+    fn remove_aliases<'s>(&'s self, typ: &'s Type<Symbol, TcType>) -> &'s Type<Symbol, TcType> {
+        let mut typ = typ;
+        loop {
+            match *typ {
                 ast::Type::Data(ast::TypeConstructor::Data(id), _) => {
-                    struct_ = id;
+                    match self.find_type_info(&id) {
+                        Some((_, Some(real_type))) => {
+                            typ = real_type;
+                        }
+                        _ => break,
+                    }
                 }
-                _ => break
+                _ => break,
             }
         }
-        self.stack_constructors
-            .iter()
-            .find(|&(name, _)| *name == struct_)
-            .and_then(|(_, typ)| {
-                match **typ {
-                    Type::Record { ref fields, ..} => {
-                        fields.iter()
-                              .enumerate()
-                              .find(|&(_, v)| v.name == *field)
-                              .map(|(offset, _)| offset as VMIndex)
-                    }
-                    _ => None,
-                }
-            })
-            .or_else(|| self.globals.find_field(&struct_, field))
+        typ
+    }
+    fn find_field(&self, typ: &Type<Symbol, TcType>, field: &Symbol) -> Option<VMIndex> {
+        // Walk through all type aliases
+        match *self.remove_aliases(typ) {
+            Type::Record { ref fields, .. } => {
+                fields.iter()
+                      .position(|f| f.name == *field)
+                      .map(|i| i as VMIndex)
+            }
+            ref typ => {
+                panic!("ICE: FieldAccess on {}",
+                       ast::display_type(&self.symbols, typ))
+            }
+        }
     }
 
     fn find_tag(&self,
-                enum_: &ast::TypeConstructor<Symbol>,
+                typ: &TcType,
                 constructor: &Symbol)
                 -> Option<VMTag> {
-        match *enum_ {
-            ast::TypeConstructor::Data(ref enum_) => {
-                self.stack_constructors
-                    .iter()
-                    .filter_map(|(_, typ)| {
-                        match **typ {
-                            Type::Variants(ref variants) => {
-                                variants.iter()
-                                        .enumerate()
-                                        .find(|&(_, v)| v.0 == *constructor)
-                            }
-                            _ => None,
-                        }
-                    })
-                    .next()
-                    .map(|(tag, _)| tag as VMTag)
-                    .or_else(|| self.globals.find_tag(enum_, constructor))
+        match *self.remove_aliases(typ) {
+            Type::Variants(ref variants) => {
+                variants.iter()
+                        .enumerate()
+                        .find(|&(_, v)| v.0 == *constructor)
+                        .map(|(tag, _)| tag as VMTag)
             }
             _ => None,
         }
@@ -579,19 +517,8 @@ impl<'a> Compiler<'a> {
                 let typ = expr.env_type_of(self);
                 let typ = typ.inner_app();
                 debug!("FieldAccess {}", ast::display_type(&self.symbols, typ));
-                let field_index = match *typ {
-                                      Type::Data(ref id, _) => self.find_field(id, field.id()),
-                                      Type::Record { ref fields, .. } => {
-                                          fields.iter()
-                                                .position(|f| f.name == field.name)
-                                                .map(|i| i as VMIndex)
-                                      }
-                                      ref typ => {
-                                          panic!("ICE: FieldAccess on {}",
-                                                 ast::display_type(&self.symbols, typ))
-                                      }
-                                  }
-                                  .expect("ICE: Undefined field in field access");
+                let field_index = self.find_field(typ, field.id())
+                                      .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));
             }
             Expr::Match(ref expr, ref alts) => {
@@ -599,19 +526,14 @@ impl<'a> Compiler<'a> {
                 let mut start_jumps = Vec::new();
                 let mut end_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
-                let typename = match *typ {
-                    Type::Data(ref id, _) => Some(id),
-                    _ => None,
-                };
                 let mut catch_all = false;
                 for alt in alts.iter() {
                     match alt.pattern {
                         ast::Pattern::Constructor(ref id, _) => {
-                            let typename = typename.expect("typename");
-                            let tag = self.find_tag(typename, id.id())
+                            let tag = self.find_tag(&typ, id.id())
                                           .unwrap_or_else(|| {
-                                              panic!("Could not find tag for {:?}::{}",
-                                                     typename,
+                                              panic!("Could not find tag for {}::{}",
+                                                     ast::display_type(&self.symbols, &typ),
                                                      self.symbols.string(id.id()))
                                           });
                             function.emit(TestTag(tag));
@@ -807,10 +729,9 @@ fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f
 {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
-            let associated_type =
-                record_type_fields.iter()
-                                  .find(|type_field| type_field.name == field.0)
-                                  .expect("Associated type to exist in record");
+            let associated_type = record_type_fields.iter()
+                                                    .find(|type_field| type_field.name == field.0)
+                                                    .expect("Associated type to exist in record");
             f(field.0, &associated_type.typ);
         }
     }
