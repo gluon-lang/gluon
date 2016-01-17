@@ -1402,13 +1402,6 @@ fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
            });
 }
 
-#[cfg(all(feature = "check", feature = "parser"))]
-fn macro_expand(vm: &VM, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) -> Result<(), Box<StdError>> {
-    let macros = ::base::macros::MacroExpander::new(vm, &vm.macros);
-    try!(macros.run(expr));
-    Ok(())
-}
-
 #[cfg(not(all(feature = "check", feature = "parser")))]
 quick_error! {
     #[derive(Debug)]
@@ -1451,7 +1444,7 @@ quick_error! {
         Message(err: StdString) {
             display("{}", err)
         }
-        Macro(err: ::base::macros::Error) {
+        Macro(err: ::base::error::Errors<::base::macros::Error>) {
             description(err.description())
             display("{}", err)
             from()
@@ -1460,12 +1453,41 @@ quick_error! {
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]
-fn compile_script(vm: &VM,
-                  filename: &str,
-                  expr: &ast::LExpr<ast::TcIdent<Symbol>>)
-                  -> CompiledFunction {
+fn include_implicit_prelude(vm: &VM, name: &str, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) {
+    use std::mem;
+    if name == "std.prelude" {
+        return;
+    }
+
+    let prelude_import =
+r#"
+let __implicit_prelude = import "std/prelude.hs"
+and { Num, Eq, Ord, Show, Functor, Monad, Option, Result, not } = __implicit_prelude
+and { (+), (-), (*) } = __implicit_prelude.num_Float
+in 0
+"#;
+    let prelude_expr = parse_expr(vm, "", prelude_import).unwrap();
+    let original_expr = mem::replace(expr, prelude_expr);
+    match expr.value {
+        ast::Expr::Let(_, ref mut e) => {
+            **e = original_expr;
+        }
+        _ => panic!("Failed to parse implicit prelude"),
+    }
+}
+
+#[cfg(all(feature = "check", feature = "parser"))]
+fn macro_expand(vm: &VM, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) -> VMResult<()> {
+    let macros = ::base::macros::MacroExpander::new(vm, &vm.macros);
+    try!(macros.run(expr));
+    Ok(())
+}
+
+#[cfg(all(feature = "check", feature = "parser"))]
+fn compile_script(vm: &VM, filename: &str, expr: &ast::LExpr<ast::TcIdent<Symbol>>) -> CompiledFunction {
     use base::symbol::SymbolModule;
     use compiler::Compiler;
+    debug!("Compile `{}`", filename);
     let mut function = {
         let env = vm.env();
         let mut interner = vm.interner.borrow_mut();
@@ -1483,7 +1505,12 @@ fn compile_script(vm: &VM,
 
 #[cfg(all(feature = "check", feature = "parser"))]
 pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
-    let (expr, typ) = try!(typecheck_expr(vm, filename, input));
+    load_script2(vm, filename, input, true)
+}
+
+#[cfg(all(feature = "check", feature = "parser"))]
+fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool) -> Result<(), Error> {
+    let (expr, typ) = try!(typecheck_expr(vm, filename, input, implicit_prelude));
     let function = compile_script(vm, filename, &expr);
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
@@ -1524,9 +1551,9 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
 }
 
 #[cfg(feature = "parser")]
-pub fn parse_expr(file: &str,
-                  input: &str,
-                  vm: &VM)
+pub fn parse_expr(vm: &VM,
+                  file: &str,
+                  input: &str)
                   -> Result<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
     use base::symbol::SymbolModule;
     let mut symbols = vm.symbols.borrow_mut();
@@ -1536,11 +1563,15 @@ pub fn parse_expr(file: &str,
 #[cfg(all(feature = "check", feature = "parser"))]
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           file: &str,
-                          expr_str: &str)
+                          expr_str: &str,
+                          implicit_prelude: bool)
                           -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType), Error> {
     use check::typecheck::Typecheck;
     use base::error;
-    let mut expr = try!(parse_expr(file, expr_str, vm));
+    let mut expr = try!(parse_expr(vm, file, expr_str));
+    if implicit_prelude {
+        include_implicit_prelude(vm, file, &mut expr);
+    }
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
     let mut symbols = vm.symbols.borrow_mut();
@@ -1553,7 +1584,11 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
 
 #[cfg(all(feature = "check", feature = "parser"))]
 pub fn run_expr<'a>(vm: &VM<'a>, name: &str, expr_str: &str) -> Result<Value<'a>, Error> {
-    let (expr, typ) = try!(typecheck_expr(vm, name, expr_str));
+    run_expr2(vm, name, expr_str, true)
+}
+#[cfg(all(feature = "check", feature = "parser"))]
+fn run_expr2<'a>(vm: &VM<'a>, name: &str, expr_str: &str, implicit_prelude: bool) -> Result<Value<'a>, Error> {
+    let (expr, typ) = try!(typecheck_expr(vm, name, expr_str, implicit_prelude));
     let mut function = compile_script(vm, name, &expr);
     function.id = vm.symbols.borrow_mut().symbol(name);
     let function = vm.new_function(function);
@@ -1563,13 +1598,17 @@ pub fn run_expr<'a>(vm: &VM<'a>, name: &str, expr_str: &str) -> Result<Value<'a>
 }
 
 #[cfg(all(test, feature = "check", feature = "parser"))]
-mod tests {
-    use vm::{VM, Value, load_script};
+pub mod tests {
+    use vm::{VM, Value};
     use vm::Value::{Float, Int};
     use stack::StackFrame;
 
-    fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
-        super::run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
+    pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), super::Error> {
+        super::load_script2(vm, filename, input, false)
+    }
+
+    pub fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
+        super::run_expr2(vm, "<top>", s, false).unwrap_or_else(|err| panic!("{}", err))
     }
 
     macro_rules! test_expr {
@@ -1901,7 +1940,7 @@ in
     fn run_expr_int() {
         let _ = ::env_logger::init();
         let text = r#"io.run_expr "123" "#;
-        let mut vm = VM::new();
+        let mut vm = make_vm();
         let result = run_expr(&mut vm, text);
         assert_eq!(result, Value::String(vm.gc.borrow_mut().alloc("123")));
     }
@@ -1910,6 +1949,15 @@ in
 r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
 Int(100)
 }
+
+    #[test]
+    fn test_implicit_prelude() {
+        let _ = ::env_logger::init();
+        let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
+        let mut vm = make_vm();
+        super::run_expr(&mut vm, "<top>", text)
+            .unwrap_or_else(|err| panic!("{}", err));
+    }
 
     /// Creates a VM for testing which has the correct paths to import the std library properly
     fn make_vm<'a>() -> VM<'a> {

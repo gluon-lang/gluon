@@ -1016,7 +1016,8 @@ macro_rules! vm_function {
 mod tests {
     use super::{VMType, Get, Callable};
 
-    use vm::{VM, VMInt, Value, Root, RootStr, load_script, run_expr};
+    use vm::{VM, VMInt, Value, Root, RootStr};
+    use vm::tests::{load_script, run_expr};
 
     #[test]
     fn call_function() {
@@ -1127,7 +1128,7 @@ test "hello"
               test
           })
           .unwrap();
-        let result = run_expr(&mut vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
+        let result = run_expr(&mut vm, expr);
         match result {
             Value::String(s) => assert_eq!(&s[..], "hello world"),
             x => panic!("Expected string {:?}", x),
