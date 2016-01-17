@@ -570,9 +570,9 @@ impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     }
 }
 
-struct Def<'a: 'b, 'b> {
-    tag: VMTag,
-    elems: &'b [Value<'a>],
+pub struct Def<'a: 'b, 'b> {
+    pub tag: VMTag,
+    pub elems: &'b [Value<'a>],
 }
 unsafe impl<'a, 'b> DataDef for Def<'a, 'b> {
     type Value = DataStruct<'a>;
@@ -682,7 +682,7 @@ impl<'a> VM<'a> {
             strings: vec![],
         };
         let f = self.new_function(compiled_fn);
-        let closure = self.new_closure_and_collect(&self.stack.borrow(), f, &[]);
+        let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(Global {
             id: id,
@@ -718,10 +718,6 @@ impl<'a> VM<'a> {
             .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call"))
     }
 
-    pub fn run_function(&self, cf: &Global<'a>) -> VMResult<Value<'a>> {
-        self.call_function(0, cf)
-    }
-
     pub fn execute_call(&self, args: VMIndex) -> VMResult<Value<'a>> {
         let stack = self.stack.borrow_mut();
         let frame = StackFrame::new_scope(stack, args + 1, None, None, |frame| {
@@ -735,53 +731,6 @@ impl<'a> VM<'a> {
             }
         })
 
-    }
-
-    pub fn execute_instructions(&self, instructions: &[Instruction]) -> VMResult<Value<'a>> {
-        let stack = self.stack.borrow_mut();
-        let frame = StackFrame::new_scope(stack, 0, None, None, |frame| {
-            self.execute(frame, instructions, &BytecodeFunction::empty())
-        });
-        frame.map(|mut frame| {
-            if frame.len() > 0 {
-                frame.pop()
-            } else {
-                Int(0)
-            }
-        })
-    }
-
-    pub fn extern_function(&self,
-                           name: &str,
-                           args: Vec<TcType>,
-                           return_type: TcType,
-                           f: Box<Fn(&VM<'a>) -> Status + 'static>)
-                           -> Result<(), Error> {
-        let num_args = args.len() as VMIndex;
-        self.extern_function_io(name, num_args, Type::function(args, return_type), f)
-    }
-    pub fn extern_function_io(&self,
-                              name: &str,
-                              num_args: VMIndex,
-                              typ: TcType,
-                              f: Box<Fn(&VM<'a>) -> Status + 'static>)
-                              -> Result<(), Error> {
-        let id = self.symbol(name);
-        if self.names.borrow().contains_key(&id) {
-            return Err(Error::Message(format!("{} is already defined", name)));
-        }
-        let global = Global {
-            id: id,
-            typ: typ,
-            value: Cell::new(Function(self.gc.borrow_mut().alloc(Move(ExternFunction {
-                id: id,
-                args: num_args,
-                function: f,
-            })))),
-        };
-        self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
-        self.globals.push(global);
-        Ok(())
     }
 
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
@@ -913,30 +862,6 @@ impl<'a> VM<'a> {
             elems: fields,
         }))
     }
-    pub fn new_def<D>(&self, def: D) -> GcPtr<D::Value>
-        where D: DataDef
-    {
-        self.gc.borrow_mut().alloc(def)
-    }
-
-    pub fn new_data_and_collect(&self,
-                                stack: &Stack<'a>,
-                                tag: VMTag,
-                                fields: &[Value<'a>])
-                                -> GcPtr<DataStruct<'a>> {
-        self.alloc(stack,
-                   Def {
-                       tag: tag,
-                       elems: fields,
-                   })
-    }
-    fn new_closure_and_collect(&self,
-                               stack: &Stack<'a>,
-                               func: GcPtr<BytecodeFunction>,
-                               fields: &[Value<'a>])
-                               -> GcPtr<ClosureData<'a>> {
-        self.alloc(stack, ClosureDataDef(func, fields))
-    }
 
     fn with_roots<F, R>(&self, stack: &Stack<'a>, f: F) -> R
         where F: for<'b> FnOnce(&mut Gc, Roots<'a, 'b>) -> R
@@ -964,26 +889,6 @@ impl<'a> VM<'a> {
     {
         self.with_roots(stack,
                         |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
-    }
-
-    pub fn call_function(&self, args: VMIndex, global: &Global<'a>) -> VMResult<Value<'a>> {
-        debug!("Call function {:?}", global);
-        match global.value.get() {
-            Function(ptr) => {
-                let name = ptr.id;
-                let stack = StackFrame::frame(self.stack.borrow_mut(), args, Some(name), None);
-                let stack = self.execute_function(stack, &ptr);
-                stack.map(|mut stack| {
-                    if stack.len() > 0 {
-                        stack.pop()
-                    } else {
-                        Int(0)
-                    }
-                })
-            }
-            Closure(closure) => self.call_bytecode(args, closure),
-            x => Err(Error::Message(format!("Tried to call a non function object: '{:?}'", x))),
-        }
     }
 
     ///Calls a module, allowed to to run IO expressions
@@ -1110,7 +1015,11 @@ impl<'a> VM<'a> {
                 let excess_args = args - required_args;
                 let d = {
                     let fields = &stack[stack.len() - excess_args..];
-                    self.new_data_and_collect(&stack.stack, 0, fields)
+                    self.alloc(&stack.stack,
+                               Def {
+                                   tag: 0,
+                                   elems: fields,
+                               })
                 };
                 for _ in 0..excess_args {
                     stack.pop();
@@ -1192,6 +1101,7 @@ impl<'a> VM<'a> {
         }
         Ok(stack)
     }
+
     fn execute_<'b>(&'b self,
                     mut stack: StackFrame<'a, 'b>,
                     mut index: usize,
@@ -1256,7 +1166,11 @@ impl<'a> VM<'a> {
                 Construct(tag, args) => {
                     let d = {
                         let fields = &stack[stack.len() - args..];
-                        self.new_data_and_collect(&stack.stack, tag, fields)
+                        self.alloc(&stack.stack,
+                                   Def {
+                                       tag: tag,
+                                       elems: fields,
+                                   })
                     };
                     for _ in 0..args {
                         stack.pop();
@@ -1363,7 +1277,7 @@ impl<'a> VM<'a> {
                     let closure = {
                         let args = &stack[stack.len() - n..];
                         let func = function.inner_functions[fi as usize];
-                        Closure(self.new_closure_and_collect(&stack.stack, func, args))
+                        Closure(self.alloc(&stack.stack, ClosureDataDef(func, args)))
                     };
                     for _ in 0..n {
                         stack.pop();
@@ -1375,9 +1289,7 @@ impl<'a> VM<'a> {
                         // Use dummy variables until it is filled
                         let args = [Int(0); 128];
                         let func = function.inner_functions[fi as usize];
-                        Closure(self.new_closure_and_collect(&stack.stack,
-                                                             func,
-                                                             &args[..n as usize]))
+                        Closure(self.alloc(&stack.stack, ClosureDataDef(func, &args[..n as usize])))
                     };
                     stack.push(closure);
                 }
@@ -1585,7 +1497,10 @@ quick_error! {
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]
-fn compile_script(vm: &VM, filename: &str, expr: &ast::LExpr<ast::TcIdent<Symbol>>) -> CompiledFunction {
+fn compile_script(vm: &VM,
+                  filename: &str,
+                  expr: &ast::LExpr<ast::TcIdent<Symbol>>)
+                  -> CompiledFunction {
     use base::symbol::SymbolModule;
     use compiler::Compiler;
     let mut function = {
@@ -1682,14 +1597,6 @@ pub fn run_expr<'a>(vm: &VM<'a>, name: &str, expr_str: &str) -> Result<Value<'a>
     let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
     let value = try!(vm.call_module(&typ, closure));
     Ok(value)
-}
-
-pub fn run_function<'a: 'b, 'b>(vm: &'b VM<'a>, name: &str) -> VMResult<Value<'a>> {
-    let func = match vm.globals.find(|g| g.id == vm.symbol(name)) {
-        Some((_, f)) => f,
-        None => return Err(Error::Message(format!("Undefined function {}", name))),
-    };
-    vm.run_function(func)
 }
 
 #[cfg(all(test, feature = "check", feature = "parser"))]

@@ -1,6 +1,6 @@
 use gc::Move;
 use base::symbol::Symbol;
-use vm::{VM, VMResult, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value,
+use vm::{VM, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value, Def,
          Userdata_, StackFrame, VMInt, Error, Root, RootStr};
 use base::ast;
 use base::ast::Type;
@@ -253,7 +253,11 @@ impl<'a, T> Pushable<'a> for Vec<T>
         }
         let result = {
             let values = &stack[stack.len() - len as u32..];
-            vm.new_data_and_collect(&stack.stack, 0, values)
+            vm.alloc(&stack.stack,
+                     Def {
+                         tag: 0,
+                         elems: values,
+                     })
         };
         for _ in 0..len {
             stack.pop();
@@ -359,7 +363,11 @@ impl<'a, T: Pushable<'a>, E: Pushable<'a>> Pushable<'a> for Result<T, E>
             }
         };
         let value = stack.pop();
-        let data = vm.new_data_and_collect(&stack.stack, tag, &[value]);
+        let data = vm.alloc(&stack.stack,
+                            Def {
+                                tag: tag,
+                                elems: &[value],
+                            });
         stack.push(Value::Data(data));
         Status::Ok
     }
@@ -922,7 +930,13 @@ where $($args: Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm {
             i += 1;
             x
         });*;
+        let StackFrame { stack, frame } = stack;
+        drop(stack);
         let r = (*self)($($args),*);
+        let mut stack = StackFrame {
+            stack: vm.stack.borrow_mut(),
+            frame: frame,
+        };
         r.push(vm, &mut stack)
     }
 }
@@ -954,7 +968,13 @@ where $($args: Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm {
             i += 1;
             x
         });*;
+        let StackFrame { stack, frame } = stack;
+        drop(stack);
         let r = (*self)($($args),*);
+        let mut stack = StackFrame {
+            stack: vm.stack.borrow_mut(),
+            frame: frame,
+        };
         r.push(vm, &mut stack)
     }
 }
@@ -993,24 +1013,9 @@ macro_rules! vm_function {
     })
 }
 
-
-pub fn define_function<'a: 'vm, 'vm, F>(vm: &VM<'a>, name: &str, f: F) -> VMResult<()>
-    where F: VMFunction<'a, 'vm> + VMType + FunctionType + 'vm
-{
-    let typ = make_type::<F>(vm);
-    let args = F::arguments();
-    let f = Box::new(move |vm: &'vm VM<'a>| f.unpack_and_call(vm));
-    unsafe {
-        // The VM guarantess that it only ever calls this function with itself which should
-        // make sure that ignoring the lifetime is safe
-        let extern_fn = ::std::mem::transmute::<Box<Fn(&'vm VM<'a>) -> Status + 'vm>,
-                                                  Box<Fn(&VM<'a>) -> Status + 'static>>(f);
-        vm.extern_function_io(name, args, typ, extern_fn)
-    }
-}
 #[cfg(all(test, feature = "check", feature = "parser"))]
 mod tests {
-    use super::{VMType, Get, Callable, define_function};
+    use super::{VMType, Get, Callable};
 
     use vm::{VM, VMInt, Value, Root, RootStr, load_script, run_expr};
 
@@ -1059,7 +1064,7 @@ let id : Test -> Test = \x -> x in id
         }
         vm.register_type::<Test>("Test", vec![])
           .unwrap_or_else(|_| panic!("Could not add type"));
-        define_function(&vm, "test", test).unwrap_or_else(|err| panic!("{}", err));
+        vm.define_global("test", test).unwrap_or_else(|err| panic!("{}", err));
         load_script(&mut vm, "id", &s).unwrap_or_else(|err| panic!("{}", err));
 
         let mut test = Test { x: 123 };
@@ -1094,11 +1099,11 @@ let id : Test -> Test = \x -> x in id
         }
         vm.register_type::<Test>("Test", vec![])
           .unwrap_or_else(|_| panic!("Could not add type"));
-        define_function(&vm, "test", {
-            let test: fn(_, _) -> _ = test;
-            test
-        })
-            .unwrap();
+        vm.define_global("test", {
+              let test: fn(_, _) -> _ = test;
+              test
+          })
+          .unwrap();
         load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
         let mut script_fn: Callable<(Box<Test>,), VMInt> = Get::get_function(&vm, "script_fn")
                                                                .expect("No function script_fn");
@@ -1118,11 +1123,11 @@ test "hello"
             result.push_str(" world");
             result
         }
-        define_function(&vm, "test", {
-            let test: fn(_) -> _ = test;
-            test
-        })
-            .unwrap();
+        vm.define_global("test", {
+              let test: fn(_) -> _ = test;
+              test
+          })
+          .unwrap();
         let result = run_expr(&mut vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
         match result {
             Value::String(s) => assert_eq!(&s[..], "hello world"),

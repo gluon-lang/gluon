@@ -1,14 +1,16 @@
+use base::ast;
+use base::types::TcType;
 use std::marker::PhantomData;
 use gc::{Gc, Traverseable, Move};
 use std::cell::Cell;
 use api::{VMType, Pushable};
-use vm::{StackFrame, Status, Value, VM};
+use vm::{StackFrame, Status, Value, VM, VMResult};
 
 
 #[derive(Clone, PartialEq)]
 pub struct Lazy<'a, T> {
     value: Cell<Lazy_<'a>>,
-    _marker: PhantomData<T>
+    _marker: PhantomData<T>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -28,13 +30,19 @@ impl<'a, T> Traverseable for Lazy<'a, T> {
     }
 }
 
-impl <'a, T> VMType for Lazy<'a, T>
-where T: VMType,
-      T::Type: Sized {
+impl<'a, T> VMType for Lazy<'a, T>
+    where T: VMType,
+          T::Type: Sized
+{
     type Type = Lazy<'static, T::Type>;
+
+    fn make_type(vm: &VM) -> TcType {
+        ast::Type::data(ast::TypeConstructor::Data(vm.symbol("Lazy")),
+                        vec![T::make_type(vm)])
+    }
 }
 
-pub fn force(vm: &VM) -> Status {
+fn force(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
     match stack[0] {
         Value::Lazy(lazy) => {
@@ -80,13 +88,23 @@ pub fn force(vm: &VM) -> Status {
     }
 }
 
-pub fn lazy(vm: &VM) -> Status {
+fn lazy(vm: &VM) -> Status {
     let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
     let f = stack[0];
     let lazy = vm.gc.borrow_mut().alloc(Move(Lazy {
         value: Cell::new(Lazy_::Thunk(f)),
-        _marker: PhantomData
+        _marker: PhantomData,
     }));
     stack.push(Value::Lazy(lazy));
     Status::Ok
+}
+
+pub fn load(vm: &VM) -> VMResult<()> {
+    use api::generic::A;
+    use api::primitive;
+    try!(vm.define_global("lazy",
+                          primitive::<fn(fn(()) -> A) -> Lazy<'static, A>>("lazy", ::lazy::lazy)));
+    try!(vm.define_global("force",
+                          primitive::<fn(Lazy<'static, A>) -> A>("force", ::lazy::force)));
+    Ok(())
 }

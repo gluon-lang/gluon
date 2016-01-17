@@ -9,7 +9,7 @@ use primitives as prim;
 use types::*;
 use api::{generic, Generic, Getable, Array, IO, MaybeError, primitive};
 use api::generic::A;
-use gc::{DataDef, WriteOnly};
+use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use vm::{VM, BytecodeFunction, DataStruct, VMInt, Status, Value, RootStr, VMResult};
 use stack::StackFrame;
 
@@ -34,6 +34,14 @@ pub fn array_append<'a, 'vm>(lhs: Array<'a, 'vm, Generic<'a, generic::A>>,
         lhs: &'b [Cell<Value<'a>>],
         rhs: &'b [Cell<Value<'a>>],
     }
+
+    impl<'a, 'b> Traverseable for Append<'a, 'b> {
+        fn traverse(&self, gc: &mut Gc) {
+            self.lhs.traverse(gc);
+            self.rhs.traverse(gc);
+        }
+    }
+
     unsafe impl<'a, 'b> DataDef for Append<'a, 'b> {
         type Value = DataStruct<'a>;
         fn size(&self) -> usize {
@@ -52,12 +60,16 @@ pub fn array_append<'a, 'vm>(lhs: Array<'a, 'vm, Generic<'a, generic::A>>,
             }
         }
     }
-    Getable::from_value(lhs.vm(),
-                        Value::Data(lhs.vm().new_def(Append {
-                            lhs: &lhs.fields,
-                            rhs: &rhs.fields,
-                        })))
-        .expect("Array")
+    let vm = lhs.vm();
+    let value = {
+        let stack = vm.stack.borrow();
+        vm.alloc(&stack,
+                 Append {
+                     lhs: &lhs.fields,
+                     rhs: &rhs.fields,
+                 })
+    };
+    Getable::from_value(lhs.vm(), Value::Data(value)).expect("Array")
 }
 
 pub fn string_length(s: RootStr) -> VMInt {
@@ -324,18 +336,8 @@ pub fn load(vm: &VM) -> VMResult<()> {
     try!(vm.define_global("error",
                           primitive::<fn(StdString) -> A>("error", prim::error)));
     try!(vm.define_global("trace", primitive::<fn(A)>("trace", prim::trace)));
-    let lazy = |t| {
-        ASTType::from(ast::Type::data(ast::TypeConstructor::Data(vm.symbol("Lazy")), vec![t]))
-    };
-    try!(vm.extern_function("lazy",
-                            vec![Type::function(vec![Type::unit()], a.clone())],
-                            lazy(a.clone()),
-                            Box::new(::lazy::lazy)));
-    try!(vm.extern_function("force",
-                            vec![lazy(a.clone())],
-                            a.clone(),
-                            Box::new(::lazy::force)));
 
+    try!(::lazy::load(vm));
     try!(load_io(vm));
 
     // io_bind m f (): IO a -> (a -> IO b) -> IO b
