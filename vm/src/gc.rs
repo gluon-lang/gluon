@@ -40,19 +40,25 @@ unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
     Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
 }
 
+/// Pointer type which can only be written to.
 pub struct WriteOnly<'s, T: ?Sized + 's>(*mut T, PhantomData<&'s mut T>);
 
 impl<'s, T: ?Sized> WriteOnly<'s, T> {
+    /// Unsafe as the lifetime must not be longer than the liftime of `t`
     unsafe fn new(t: *mut T) -> WriteOnly<'s, T> {
         WriteOnly(t, PhantomData)
     }
 
+    /// Retrieves the pointer allowing it to be manipulated freely.
+    /// As it points to uninitialized data care must be taken so to not read it before it has been
+    /// initialized
     pub fn as_mut_ptr(&mut self) -> *mut T {
         self.0
     }
 }
 
 impl<'s, T> WriteOnly<'s, T> {
+    /// Writes a value to the pointer and returns a pointer to the now initialized value.
     pub fn write(self, t: T) -> &'s mut T {
         unsafe {
             ptr::write(self.0, t);
@@ -85,13 +91,19 @@ impl<'s> WriteOnly<'s, str> {
     }
 }
 
+/// A mark and sweep garbage collector.
 #[derive(Debug)]
 pub struct Gc {
+    /// Linked list of all objects allocted by this garbage collector.
     values: Option<AllocPtr>,
     allocated_memory: usize,
     collect_limit: usize,
 }
 
+
+/// Trait which creates a typed pointer from a *mut () pointer.
+/// For `Sized` types this is just a cast but for unsized types some more metadata must be taken
+/// from the provided `D` value to make it initialize correctly.
 pub unsafe trait FromPtr<D> {
     fn make_ptr(data: D, ptr: *mut ()) -> *mut Self;
 }
@@ -102,14 +114,19 @@ unsafe impl<D, T> FromPtr<D> for T {
     }
 }
 
+/// A definition of some data which may be allocated by the garbage collector.
 pub unsafe trait DataDef {
+    /// The type of the value allocated.
     type Value: ?Sized + for<'a> FromPtr<&'a Self>;
+    /// Returns how many bytes need to be allocted for this `DataDef`
     fn size(&self) -> usize;
-    fn initialize(self, ptr: WriteOnly<Self::Value>) -> &mut Self::Value;
+    /// Consumes `self` to initialize the allocated value.
+    /// Returns the initialized pointer.
+    fn initialize<'w>(self, ptr: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value;
 }
 
-///Datadefinition that moves its value directly into the pointer
-///useful for sized types
+/// `DataDef` that moves its value directly into the pointer
+/// useful for sized types
 pub struct Move<T>(pub T);
 
 unsafe impl<T> DataDef for Move<T> {
@@ -198,8 +215,12 @@ impl GcHeader {
     }
 }
 
-
+/// A pointer to a garbage collected value.
+/// 
+/// It is only safe to access data through a `GcPtr` if the value is rooted (stored in a place
+/// where the garbage collector will find it during the mark phase).
 pub struct GcPtr<T: ?Sized> {
+    // TODO Use NonZero to allow for better optimizing
     ptr: *const T,
 }
 
@@ -276,11 +297,13 @@ impl<T: ?Sized> GcPtr<T> {
 }
 
 impl<'a, T: Traverseable + 'a> GcPtr<T> {
+    /// Coerces `self` to a `Traverseable` trait object
     pub fn as_traverseable(self) -> GcPtr<Traverseable + 'a> {
         GcPtr { ptr: self.ptr as *const Traverseable }
     }
 }
 impl GcPtr<str> {
+    /// Coerces `self` to a `Traverseable` trait object
     pub fn as_traverseable_string(self) -> GcPtr<Traverseable> {
         // As there is nothing to traverse in a str we can safely cast it to *const u8 and use
         // u8's Traverseable impl
@@ -288,9 +311,9 @@ impl GcPtr<str> {
     }
 }
 
-///Trait which must be implemented on all root types which contain GcPtr
-///The type implementing Traverseable must call traverse on each of its fields
-///which in turn contains GcPtr
+/// Trait which must be implemented on all root types which contain `GcPtr`
+/// A type implementing Traverseable must call traverse on each of its fields
+/// which in turn contains `GcPtr`
 pub trait Traverseable {
     fn traverse(&self, func: &mut Gc);
 }
@@ -395,6 +418,7 @@ impl<T: ?Sized> Traverseable for GcPtr<T> where T: Traverseable
 }
 
 impl Gc {
+    /// Constructs a new garbage collector
     pub fn new() -> Gc {
         Gc {
             values: None,
@@ -403,7 +427,10 @@ impl Gc {
         }
     }
 
-    ///Unsafe since it calls collects if memory needs to be collected
+    /// Allocates a new object. If the garbage collector has hit the collection limit a collection
+    /// will occur.
+    ///
+    /// Unsafe since `roots` must be able to traverse all accesible `GcPtr` values.
     pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> GcPtr<D::Value>
         where R: Traverseable,
               D: DataDef + Traverseable
@@ -414,6 +441,7 @@ impl Gc {
         self.alloc(def)
     }
 
+    /// Allocates a new object.
     pub fn alloc<D>(&mut self, def: D) -> GcPtr<D::Value>
         where D: DataDef
     {
@@ -441,25 +469,6 @@ impl Gc {
         roots.traverse(self);
         self.sweep();
         self.collect_limit = 2 * self.allocated_memory;
-    }
-
-
-    pub fn object_count(&self) -> usize {
-        let mut header: &GcHeader = match self.values {
-            Some(ref x) => &**x,
-            None => return 0,
-        };
-        let mut count = 1;
-        loop {
-            match header.next {
-                Some(ref ptr) => {
-                    count += 1;
-                    header = &**ptr;
-                }
-                None => break,
-            }
-        }
-        count
     }
 
     ///Marks the GcPtr
@@ -512,11 +521,30 @@ impl Gc {
 
 #[cfg(test)]
 mod tests {
-    use super::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};
+    use super::{Gc, GcPtr, GcHeader, Traverseable, DataDef, WriteOnly};
     use std::fmt;
     use std::mem;
 
     use self::Value::*;
+
+    fn object_count(gc: &Gc) -> usize {
+        let mut header: &GcHeader = match gc.values {
+            Some(ref x) => &**x,
+            None => return 0,
+        };
+        let mut count = 1;
+        loop {
+            match header.next {
+                Some(ref ptr) => {
+                    count += 1;
+                    header = &**ptr;
+                }
+                None => break,
+            }
+        }
+        count
+    }
+
 
     #[derive(Copy, Clone)]
     struct Data_ {
@@ -583,11 +611,11 @@ mod tests {
         stack.push(new_data(gc.alloc(Def { elems: &[Int(1)] })));
         let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }));
         stack.push(d2);
-        assert_eq!(gc.object_count(), 2);
+        assert_eq!(object_count(&gc), 2);
         unsafe {
             gc.collect(&mut *stack);
         }
-        assert_eq!(gc.object_count(), 2);
+        assert_eq!(object_count(&gc), 2);
         match stack[0] {
             Data(ref data) => assert_eq!(data.fields[0], Int(1)),
             _ => panic!(),
@@ -601,6 +629,6 @@ mod tests {
         unsafe {
             gc.collect(&mut *stack);
         }
-        assert_eq!(gc.object_count(), 0);
+        assert_eq!(object_count(&gc), 0);
     }
 }
