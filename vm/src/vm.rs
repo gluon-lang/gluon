@@ -24,7 +24,7 @@ use lazy::Lazy;
 
 use self::Named::*;
 
-use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure, TraitObject,
+use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure,
                   Userdata};
 
 
@@ -163,7 +163,6 @@ pub enum Value<'a> {
     Function(GcPtr<ExternFunction<'a>>),
     Closure(GcPtr<ClosureData<'a>>),
     PartialApplication(GcPtr<PartialApplicationData<'a>>),
-    TraitObject(GcPtr<DataStruct<'a>>),
     Userdata(Userdata_),
     Lazy(GcPtr<Lazy<'a, Value<'a>>>),
 }
@@ -260,7 +259,6 @@ impl<'a> Traverseable for Value<'a> {
             Data(ref data) => data.traverse(gc),
             Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
-            TraitObject(ref data) => data.traverse(gc),
             Userdata(ref data) => data.data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
             Value::Lazy(ref lazy) => lazy.traverse(gc),
@@ -319,12 +317,6 @@ impl<'a> fmt::Debug for Value<'a> {
                                "<App {:?} {:?}>",
                                name,
                                LevelSlice(level - 1, &app.arguments))
-                    }
-                    TraitObject(ref object) => {
-                        write!(f,
-                               "<{:?} {:?}>",
-                               object.tag,
-                               LevelSlice(level - 1, &object.fields))
                     }
                     Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
                     Value::Lazy(_) => write!(f, "<lazy>"),
