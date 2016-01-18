@@ -224,7 +224,7 @@ impl<'a> TypeEnv for Compiler<'a> {
     }
     fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
         self.stack_types
-            .find(id)
+            .get(id)
             .map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
     }
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {

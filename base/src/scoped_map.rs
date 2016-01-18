@@ -10,7 +10,7 @@ use std::hash::Hash;
 #[derive(Debug)]
 pub struct ScopedMap<K: Eq + Hash + Clone, V> {
     ///A hashmap storing a key -> value mapping
-    ///Stores a vector of values in which the value at the top is value returned from 'find'
+    ///Stores a vector of values in which the value at the top is value returned from 'get'
     map: HashMap<K, Vec<V>>,
     ///A vector of scopes, when entering a scope, None is added as a marker
     ///when later exiting a scope, values are removed from the map until the marker is found
@@ -75,8 +75,13 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     }
 
     ///Returns a reference to the last inserted value corresponding to the key
-    pub fn find<'a>(&'a self, k: &K) -> Option<&'a V> {
+    pub fn get<'a>(&'a self, k: &K) -> Option<&'a V> {
         self.map.get(k).and_then(|x| x.last())
+    }
+
+    ///Returns a reference to the all inserted value corresponding to the key
+    pub fn get_all<'a>(&'a self, k: &K) -> Option<&'a [V]> {
+        self.map.get(k).map(|x| &x[..])
     }
 
     ///Returns the number of elements in the container.
@@ -179,15 +184,15 @@ mod tests {
         map.insert("a", 0);
         map.insert("b", 1);
         map.enter_scope();
-        assert_eq!(map.find(&"a"), Some(&0));
-        assert_eq!(map.find(&"b"), Some(&1));
-        assert_eq!(map.find(&"c"), None);
+        assert_eq!(map.get(&"a"), Some(&0));
+        assert_eq!(map.get(&"b"), Some(&1));
+        assert_eq!(map.get(&"c"), None);
         map.insert("a", 1);
         map.insert("c", 2);
-        assert_eq!(map.find(&"a"), Some(&1));
-        assert_eq!(map.find(&"c"), Some(&2));
+        assert_eq!(map.get(&"a"), Some(&1));
+        assert_eq!(map.get(&"c"), Some(&2));
         map.exit_scope();
-        assert_eq!(map.find(&"a"), Some(&0));
-        assert_eq!(map.find(&"c"), None);
+        assert_eq!(map.get(&"a"), Some(&0));
+        assert_eq!(map.get(&"c"), None);
     }
 }

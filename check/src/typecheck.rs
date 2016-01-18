@@ -213,7 +213,7 @@ struct Environment<'a> {
 impl<'a> KindEnv for Environment<'a> {
     fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>> {
         self.stack_types
-            .find(&type_name)
+            .get(&type_name)
             .map(|&(_, ref args, _)| {
                 let mut kind = ast::Kind::star();
                 for arg in args.iter().rev() {
@@ -229,14 +229,14 @@ impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         let stack = &self.stack;
         let environment = &self.environment;
-        match stack.find(id) {
+        match stack.get(id) {
             Some(x) => Some(x),
             None => environment.and_then(|e| e.find_type(id)),
         }
     }
     fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
         self.stack_types
-            .find(id)
+            .get(id)
             .map(|&(_, ref generics, ref typ)| (&generics[..], Some(typ)))
             .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
     }
@@ -291,7 +291,7 @@ impl<'a> Typecheck<'a> {
 
     fn find(&mut self, id: &Symbol) -> TcResult {
         let t: Option<&TcType> = {
-            match self.environment.stack.find(id) {
+            match self.environment.stack.get(id) {
                 Some(x) => Some(x),
                 None => self.environment.environment.and_then(|e| e.find_type(id)),
             }
@@ -725,7 +725,7 @@ impl<'a> Typecheck<'a> {
                 for &mut ast::TypeBinding { ref name, ref typ } in bindings {
                     match **name {
                         Type::Data(ast::TypeConstructor::Data(id), ref args) => {
-                            if self.environment.stack_types.find(&id).is_some() {
+                            if self.environment.stack_types.get(&id).is_some() {
                                 self.errors.error(ast::Spanned {
                                     span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
                                     value: DuplicateTypeDefinition(id),
@@ -1019,7 +1019,7 @@ impl<'a> Typecheck<'a> {
     fn refresh_symbols(&mut self, expr: &mut ast::LExpr<TcIdent>) {
         match expr.value {
             ast::Expr::Identifier(ref mut id) => {
-                if let Some(&new) = self.original_symbols.find(&id.name) {
+                if let Some(&new) = self.original_symbols.get(&id.name) {
                     id.name = new;
                 }
             }
@@ -1054,7 +1054,7 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::Record { ref mut types, .. } => {
                 for &mut (ref mut symbol, ref mut typ) in types {
-                    if let Some(&new) = self.original_symbols.find(symbol) {
+                    if let Some(&new) = self.original_symbols.get(symbol) {
                         *symbol = new;
                     }
                     if let Some(ref mut typ) = *typ {
@@ -1072,7 +1072,7 @@ impl<'a> Typecheck<'a> {
                                 match *typ {
                                     Type::Data(ast::TypeConstructor::Data(id), ref args) => {
                                         self.original_symbols
-                                            .find(&id)
+                                            .get(&id)
                                             .map(|current| {
                                                 Type::data(ast::TypeConstructor::Data(*current),
                                                            args.clone())
@@ -1081,7 +1081,7 @@ impl<'a> Typecheck<'a> {
                                     Type::Variants(ref variants) => {
                                         let iter = || {
                                             variants.iter()
-                                                    .map(|var| self.original_symbols.find(&var.0))
+                                                    .map(|var| self.original_symbols.get(&var.0))
                                         };
                                         if iter().any(|opt| opt.is_some()) {
                                             // If any of the variants requires a symbol replacement
