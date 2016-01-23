@@ -5,9 +5,9 @@ use std::collections::hash_map::Entry;
 use base::ast;
 use base::ast::Type;
 use base::symbol::Symbol;
-use base::types::TypeEnv;
+use base::types::{TcType, TypeEnv};
+use unify_type::TypeError::UndefinedType;
 use substitution::Substitution;
-use typecheck::{TcType, unroll_app};
 use unify;
 
 pub struct AliasInstantiator<'a> {
@@ -48,13 +48,13 @@ impl<'a> AliasInstantiator<'a> {
     pub fn type_of_alias(&self,
                      id: Symbol,
                      arguments: &[TcType])
-                     -> Result<Option<TcType>, unify::Error<Symbol>> {
+                     -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
         let (args, mut typ) = {
             let (args, typ) = try!(self.env
                                        .find_type_info(&id)
                                        .map(|s| Ok(s))
                                        .unwrap_or_else(|| {
-                                           Err(unify::Error::UndefinedType(id.clone()))
+                                           Err(unify::Error::Other(UndefinedType(id.clone())))
                                        }));
             match typ {
                 Some(typ) => {
@@ -203,4 +203,24 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
                                 _ => None,
                             }
                         })
+}
+
+
+fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
+    let mut args = Vec::new();
+    let mut current = typ;
+    loop {
+        match *current {
+            Type::App(ref l, ref r) => {
+                args.push(r.clone());
+                current = &**l;
+            }
+            Type::Data(ref l, ref rest) => {
+                args.extend(rest.iter().rev().cloned());
+                args.reverse();
+                return Some(Type::data(l.clone(), args));
+            }
+            _ => return None,
+        }
+    }
 }

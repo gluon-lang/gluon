@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::rc::Rc;
 use base::ast;
 use base::ast::Type;
 use base::symbol::Symbol;
@@ -97,13 +96,13 @@ pub struct TypeInfos {
 }
 
 impl KindEnv for TypeInfos {
-    fn find_kind(&self, type_name: Symbol) -> Option<Rc<ast::Kind>> {
+    fn find_kind(&self, type_name: Symbol) -> Option<ast::RcKind> {
         self.id_to_type
             .get(&type_name)
             .map(|&(ref args, _)| {
                 let mut kind = ast::Kind::star();
                 for arg in args.iter().rev() {
-                    kind = Rc::new(ast::Kind::Function(arg.kind.clone(), kind));
+                    kind = ast::Kind::function(arg.kind.clone(), kind);
                 }
                 kind
             })

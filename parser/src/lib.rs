@@ -11,7 +11,6 @@ extern crate combine_language;
 use std::cell::RefCell;
 use std::fmt;
 use std::iter::FromIterator;
-use std::rc::Rc;
 
 use base::ast;
 use base::ast::*;
@@ -137,7 +136,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                     .map(|c| c.is_lowercase())
                     .unwrap_or(false) {
                     Type::generic(Generic {
-                        kind: Rc::new(Kind::Variable(0)),
+                        kind: Kind::variable(0),
                         id: self.intern(&s).to_id(),
                     })
                 } else {
@@ -289,7 +288,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                 let args = args.into_iter()
                                .map(|id| {
                                    Type::generic(Generic {
-                                       kind: Rc::new(Kind::Variable(0)),
+                                       kind: Kind::variable(0),
                                        id: id,
                                    })
                                })
@@ -604,7 +603,7 @@ pub fn parse_tc(symbols: &mut SymbolModule,
     let mut env = ast::TcIdentEnv {
         typ: Type::variable(ast::TypeVariable {
             id: 0,
-            kind: Rc::new(ast::Kind::Star),
+            kind: Kind::star(),
         }),
         env: symbols,
     };
@@ -681,8 +680,6 @@ pub mod tests {
     use base::ast::*;
     use base::ast;
 
-    use std::rc::Rc;
-
     pub fn intern(s: &str) -> String {
         String::from(s)
     }
@@ -731,7 +728,7 @@ pub mod tests {
     }
     fn generic(s: &str) -> ASTType<String> {
         Type::generic(Generic {
-            kind: Rc::new(Kind::Variable(0)),
+            kind: Kind::variable(0),
             id: intern(s),
         })
     }

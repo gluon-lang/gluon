@@ -1,29 +1,28 @@
-use std::rc::Rc;
 use ast;
-use ast::{ASTType, Type, Kind};
+use ast::{ASTType, RcKind, Type};
 use symbol::Symbol;
 
 pub type TcType = ast::ASTType<Symbol>;
 pub type TcIdent = ast::TcIdent<Symbol>;
 
 pub trait KindEnv {
-    fn find_kind(&self, type_name: Symbol) -> Option<Rc<Kind>>;
+    fn find_kind(&self, type_name: Symbol) -> Option<RcKind>;
 }
 
 impl KindEnv for () {
-    fn find_kind(&self, _type_name: Symbol) -> Option<Rc<Kind>> {
+    fn find_kind(&self, _type_name: Symbol) -> Option<RcKind> {
         None
     }
 }
 
 impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
-    fn find_kind(&self, id: Symbol) -> Option<Rc<Kind>> {
+    fn find_kind(&self, id: Symbol) -> Option<RcKind> {
         (**self).find_kind(id)
     }
 }
 
 impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
-    fn find_kind(&self, id: Symbol) -> Option<Rc<Kind>> {
+    fn find_kind(&self, id: Symbol) -> Option<RcKind> {
         let &(ref outer, ref inner) = self;
         inner.find_kind(id)
              .or_else(|| outer.find_kind(id))
@@ -213,3 +212,4 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
                             }
                         })
 }
+

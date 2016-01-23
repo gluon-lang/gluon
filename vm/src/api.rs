@@ -64,7 +64,6 @@ pub mod generic {
     use base::ast;
     use base::types::TcType;
     use vm::VM;
-    use std::rc::Rc;
 
     macro_rules! make_generics {
         ($($i: ident)+) => {
@@ -79,7 +78,7 @@ pub mod generic {
                     let lower_str = unsafe { ::std::str::from_utf8_unchecked(&lower) };
                     ast::Type::generic(ast::Generic {
                         id: vm.symbol(lower_str),
-                        kind: Rc::new(ast::Kind::Star)
+                        kind: ast::Kind::star(),
                     })
                 }
             }

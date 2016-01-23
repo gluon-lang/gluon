@@ -10,6 +10,7 @@ extern crate parser;
 
 mod instantiate;
 pub mod typecheck;
+mod unify_type;
 mod unify;
 pub mod kindcheck;
 mod substitution;

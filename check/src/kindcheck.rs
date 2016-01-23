@@ -1,96 +1,51 @@
-use std::rc::Rc;
 use std::fmt;
 
-use base::ast::{Type, Kind};
-use typecheck::TcType;
+use base::ast::{RcKind, Type, Kind};
 use base::ast;
 use base::symbol::Symbol;
 use base::types::KindEnv;
+
+use typecheck::TcType;
 use substitution::{Substitution, Substitutable};
+use unify;
+use unify::merge;
 
-#[derive(Debug, PartialEq)]
-pub enum Error<I> {
-    KindMismatch(Rc<Kind>, Rc<Kind>),
-    UndefinedType(I),
-    StringError(&'static str),
-}
-use self::Error::*;
+use unify::Error as UnifyError;
 
-impl<I: fmt::Display> fmt::Display for Error<I> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            KindMismatch(ref expected, ref actual) => {
-                write!(f,
-                       "Kind mismatch\nExpected: {}\nFound: {}",
-                       expected,
-                       actual)
-            }
-            UndefinedType(ref name) => write!(f, "Type '{}' is not defined", name),
-            StringError(s) => write!(f, "{}", s),
-        }
-    }
-}
+pub type Error<I> = UnifyError<RcKind, KindError<I>>;
 
 pub type Result<T> = ::std::result::Result<T, Error<Symbol>>;
-
-impl Substitutable for Kind {
-    type Variable = u32;
-
-    fn new(x: u32) -> Kind {
-        Kind::Variable(x)
-    }
-
-    fn from_variable(x: u32) -> Kind {
-        Kind::Variable(x)
-    }
-
-    fn get_var(&self) -> Option<&u32> {
-        match *self {
-            Kind::Variable(ref var) => Some(var),
-            _ => None,
-        }
-    }
-
-    fn occurs(&self, subs: &Substitution<Kind>, var: &u32) -> bool {
-        let kind = subs.real(self);
-        match *kind {
-            Kind::Variable(other) => *var == other,
-            Kind::Function(ref a, ref r) => a.occurs(subs, var) || r.occurs(subs, var),
-            Kind::Star => false,
-        }
-    }
-}
 
 pub struct KindCheck<'a> {
     variables: Vec<TcType>,
     ///Type bindings local to the current kindcheck invocation
-    locals: Vec<(Symbol, Rc<Kind>)>,
+    locals: Vec<(Symbol, RcKind)>,
     info: &'a (KindEnv + 'a),
     idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
-    pub subs: Substitution<Kind>,
-    star: Rc<Kind>,
+    pub subs: Substitution<RcKind>,
+    star: RcKind,
 }
 
-fn walk_move_kind<F>(kind: Rc<Kind>, f: &mut F) -> Rc<Kind>
-    where F: FnMut(&Kind) -> Option<Rc<Kind>>
+fn walk_move_kind<F>(kind: RcKind, f: &mut F) -> RcKind
+    where F: FnMut(&Kind) -> Option<RcKind>
 {
     match walk_move_kind2(&kind, f) {
         Some(kind) => kind,
         None => kind,
     }
 }
-fn walk_move_kind2<F>(kind: &Rc<Kind>, f: &mut F) -> Option<Rc<Kind>>
-    where F: FnMut(&Kind) -> Option<Rc<Kind>>
+fn walk_move_kind2<F>(kind: &RcKind, f: &mut F) -> Option<RcKind>
+    where F: FnMut(&Kind) -> Option<RcKind>
 {
     let new = f(kind);
     let new2 = {
-        let kind = new.as_ref().map(|k| &**k).unwrap_or(kind);
-        match *kind {
+        let kind = new.as_ref().unwrap_or(kind);
+        match **kind {
             Kind::Function(ref a, ref r) => {
                 match (walk_move_kind2(a, f), walk_move_kind2(r, f)) {
-                    (Some(a), Some(r)) => Some(Rc::new(Kind::Function(a, r))),
-                    (Some(a), None) => Some(Rc::new(Kind::Function(a, r.clone()))),
-                    (None, Some(r)) => Some(Rc::new(Kind::Function(a.clone(), r))),
+                    (Some(a), Some(r)) => Some(Kind::function(a, r)),
+                    (Some(a), None) => Some(Kind::function(a, r.clone())),
+                    (None, Some(r)) => Some(Kind::function(a.clone(), r)),
                     (None, None) => None,
                 }
             }
@@ -103,7 +58,7 @@ fn walk_move_kind2<F>(kind: &Rc<Kind>, f: &mut F) -> Option<Rc<Kind>>
 impl<'a> KindCheck<'a> {
     pub fn new(info: &'a (KindEnv + 'a),
                idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
-               subs: Substitution<Kind>)
+               subs: Substitution<RcKind>)
                -> KindCheck<'a> {
         KindCheck {
             variables: Vec::new(),
@@ -111,11 +66,11 @@ impl<'a> KindCheck<'a> {
             info: info,
             idents: idents,
             subs: subs,
-            star: Rc::new(Kind::Star),
+            star: Kind::star(),
         }
     }
 
-    pub fn add_local(&mut self, name: Symbol, kind: Rc<Kind>) {
+    pub fn add_local(&mut self, name: Symbol, kind: RcKind) {
         self.locals.push((name, kind));
     }
 
@@ -124,11 +79,11 @@ impl<'a> KindCheck<'a> {
         self.variables.extend(variables.iter().cloned());
     }
 
-    pub fn star(&self) -> Rc<Kind> {
+    pub fn star(&self) -> RcKind {
         self.star.clone()
     }
 
-    fn find(&mut self, id: Symbol) -> Result<Rc<Kind>> {
+    fn find(&mut self, id: Symbol) -> Result<RcKind> {
         let kind = self.variables
                        .iter()
                        .find(|var| {
@@ -149,10 +104,10 @@ impl<'a> KindCheck<'a> {
                        .unwrap_or_else(|| {
                            let id_str = self.idents.string(&id);
                            if id_str.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
-                               Err(UndefinedType(id))
+                               Err(UnifyError::Other(KindError::UndefinedType(id)))
                            } else {
                                // Create a new variable
-                               self.locals.push((id, Rc::new(self.subs.new_var())));
+                               self.locals.push((id, self.subs.new_var()));
                                Ok(self.locals.last().unwrap().1.clone())
                            }
                        });
@@ -163,17 +118,17 @@ impl<'a> KindCheck<'a> {
     }
 
     // Kindhecks `typ`, infering it to be of kind `*`
-    pub fn kindcheck_type(&mut self, typ: &mut TcType) -> Result<Kind> {
+    pub fn kindcheck_type(&mut self, typ: &mut TcType) -> Result<RcKind> {
         debug!("Kindcheck {:?}", typ);
         let (kind, t) = try!(self.kindcheck(typ));
         let star = self.star.clone();
         let kind = try!(self.unify(&star, kind));
         *typ = self.finalize_type(t);
         debug!("Done {:?}", typ);
-        Ok((*kind).clone())
+        Ok(kind)
     }
 
-    fn kindcheck(&mut self, typ: &TcType) -> Result<(Rc<Kind>, TcType)> {
+    fn kindcheck(&mut self, typ: &TcType) -> Result<(RcKind, TcType)> {
         match **typ {
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
@@ -190,7 +145,7 @@ impl<'a> KindCheck<'a> {
             }
             Type::App(ref f, ref r) => {
                 let (kind, f) = try!(self.kindcheck(f));
-                let kind_fn = Rc::new(Kind::Function(self.subs.new_kind(), self.subs.new_kind()));
+                let kind_fn = Kind::function(self.subs.new_var(), self.subs.new_var());
                 let kind = try!(self.unify(&kind_fn, kind));
                 match *kind {
                     Kind::Function(ref arg, ref ret) => {
@@ -206,7 +161,7 @@ impl<'a> KindCheck<'a> {
                 let mut kind = try!(self.find(ctor));
                 let mut new_args = Vec::new();
                 for arg in args {
-                    let f = Rc::new(Kind::Function(self.subs.new_kind(), self.subs.new_kind()));
+                    let f = Kind::function(self.subs.new_var(), self.subs.new_var());
                     kind = try!(self.unify(&f, kind));
                     kind = match *kind {
                         Kind::Function(ref arg_kind, ref ret) => {
@@ -215,7 +170,7 @@ impl<'a> KindCheck<'a> {
                             try!(self.unify(arg_kind, actual));
                             ret.clone()
                         }
-                        _ => return Err(StringError("Expected kind: a -> a")),
+                        _ => return Err(UnifyError::TypeMismatch(Kind::function(self.star(), self.star()), kind.clone())),
                     };
                 }
                 Ok((kind, Type::data(ast::TypeConstructor::Data(ctor), new_args)))
@@ -257,43 +212,28 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    fn unify(&mut self, expected: &Rc<Kind>, mut actual: Rc<Kind>) -> Result<Rc<Kind>> {
+    fn unify(&mut self, expected: &RcKind, mut actual: RcKind) -> Result<RcKind> {
         debug!("Unify {:?} <=> {:?}", expected, actual);
-        if self.unify_(expected, &actual) {
-            Ok(self.subs.update_kind(actual))
-        } else {
-            let mut expected = expected.clone();
-            expected = self.subs.update_kind(expected);
-            actual = self.subs.update_kind(actual);
-            Err(KindMismatch(expected, actual))
-        }
-    }
-    fn unify_(&self, expected: &Kind, actual: &Kind) -> bool {
-        match (self.subs.real(expected), self.subs.real(actual)) {
-            (&Kind::Variable(l), &Kind::Variable(r)) if l == r => true,
-            (&Kind::Variable(ref l), r) => {
-                self.subs
-                    .union(l, r)
-                    .is_ok()
+        let result = unify::unify(&self.subs, &mut (), expected, &actual);
+        match result {
+            Ok(k) => Ok(k),
+            Err(errors) => {
+                let mut expected = expected.clone();
+                expected = update_kind(&self.subs, expected, None);
+                actual = update_kind(&self.subs, actual, None);
+                Err(UnifyError::TypeMismatch(expected, actual))
             }
-            (l, &Kind::Variable(ref r)) => {
-                self.subs
-                    .union(r, l)
-                    .is_ok()
-            }
-            (&Kind::Function(ref l1, ref l2),
-             &Kind::Function(ref r1, ref r2)) => self.unify_(l1, r1) && self.unify_(l2, r2),
-            (l, r) => l == r,
         }
     }
 
     pub fn finalize_type(&self, typ: TcType) -> TcType {
+        let default = Some(&self.star);
         ast::walk_move_type(typ,
                             &mut |typ| {
                                 match *typ {
                                     Type::Variable(ref var) => {
                                         let mut kind = var.kind.clone();
-                                        kind = self.subs.update_kind(kind);
+                                        kind = update_kind(&self.subs, kind, default);
                                         Some(Type::variable(ast::TypeVariable {
                                             id: var.id,
                                             kind: kind,
@@ -301,7 +241,7 @@ impl<'a> KindCheck<'a> {
                                     }
                                     Type::Generic(ref var) => {
                                         let mut kind = var.kind.clone();
-                                        kind = self.subs.update_kind(kind);
+                                        kind = update_kind(&self.subs, kind, default);
                                         Some(Type::generic(ast::Generic {
                                             id: var.id,
                                             kind: kind,
@@ -313,20 +253,106 @@ impl<'a> KindCheck<'a> {
     }
 }
 
-impl Substitution<Kind> {
-    pub fn new_kind(&mut self) -> Rc<ast::Kind> {
-        Rc::new(self.new_var())
-    }
-
-    fn update_kind(&self, kind: Rc<Kind>) -> Rc<Kind> {
-        walk_move_kind(kind,
-                       &mut |kind| {
-                           match *kind {
-                               Kind::Variable(id) => {
-                                   self.find_type_for_var(id).map(|t| Rc::new(t.clone()))
-                               }
-                               _ => None,
+fn update_kind(subs: &Substitution<RcKind>, kind: RcKind, default: Option<&RcKind>) -> RcKind {
+    walk_move_kind(kind,
+                   &mut |kind| {
+                       match *kind {
+                           Kind::Variable(id) => {
+                               subs.find_type_for_var(id).cloned().or_else(|| default.cloned())
                            }
-                       })
+                           _ => None,
+                       }
+                   })
+}
+
+#[derive(Debug, PartialEq)]
+pub enum KindError<I> {
+    UndefinedType(I),
+}
+
+pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
+    where I: fmt::Display
+{
+    use unify::Error::*;
+    match *error {
+        TypeMismatch(ref expected, ref actual) => {
+            write!(f,
+                   "Kind mismatch\nExpected: {}\nFound: {}",
+                   expected,
+                   actual)
+        }
+        Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
+        Other(KindError::UndefinedType(ref name)) => write!(f, "Type '{}' is not defined", name),
     }
 }
+
+impl Substitutable for RcKind {
+    type Variable = u32;
+
+    fn new(x: u32) -> RcKind {
+        Kind::variable(x)
+    }
+
+    fn from_variable(x: u32) -> RcKind {
+        Kind::variable(x)
+    }
+
+    fn get_var(&self) -> Option<&u32> {
+        match **self {
+            Kind::Variable(ref var) => Some(var),
+            _ => None,
+        }
+    }
+
+    fn occurs(&self, subs: &Substitution<RcKind>, var: &u32) -> bool {
+        let kind = subs.real(self);
+        match **kind {
+            Kind::Variable(other) => *var == other,
+            Kind::Function(ref a, ref r) => a.occurs(subs, var) || r.occurs(subs, var),
+            Kind::Star => false,
+        }
+    }
+}
+
+impl<S> unify::Unifiable<S> for RcKind {
+    type Error = KindError<Symbol>;
+
+    fn traverse<'s, F>(&'s self, mut f: F)
+        where F: FnMut(&'s RcKind) -> &'s RcKind
+    {
+        fn walk_kind<'s>(k: &'s RcKind, f: &mut FnMut(&'s RcKind) -> &'s RcKind) {
+            let k = f(k);
+            match **k {
+                Kind::Function(ref a, ref r) => {
+                    walk_kind(a, f);
+                    walk_kind(r, f);
+                }
+                Kind::Variable(_) | Kind::Star => (),
+            }
+        }
+        walk_kind(self, &mut f)
+    }
+    fn zip_match<'s, U>(&self,
+                        other: &Self,
+                        mut unifier: unify::UnifierState<S, Self, U>)
+                        -> ::std::result::Result<Option<Self>, Error<Symbol>>
+        where U: unify::Unifier<S, Self>
+    {
+        match (&**unifier.subs.real(self), &**unifier.subs.real(other)) {
+            (&Kind::Function(ref l1, ref l2),
+             &Kind::Function(ref r1, ref r2)) => {
+                let a = unifier.try_match(l1, r1);
+                let r = unifier.try_match(l2, r2);
+                Ok(merge(l1, a, l2, r, Kind::function))
+            }
+            (l, r) => {
+                if l == r {
+                    Ok(None)
+                } else {
+                    Err(UnifyError::TypeMismatch(self.clone(), other.clone()))
+                }
+            }
+        }
+    }
+}
+

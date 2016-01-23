@@ -213,7 +213,7 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> ::base::types::KindEnv for Compiler<'a> {
-    fn find_kind(&self, _type_name: Symbol) -> Option<::std::rc::Rc<::base::ast::Kind>> {
+    fn find_kind(&self, _type_name: Symbol) -> Option<ast::RcKind> {
         None
     }
 }

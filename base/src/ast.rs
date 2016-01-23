@@ -108,7 +108,7 @@ impl<Id> TcIdent<Id> {
         TcIdent {
             typ: Type::variable(TypeVariable {
                 id: 0,
-                kind: Rc::new(Kind::Variable(0)),
+                kind: Kind::variable(0),
             }),
             name: name,
         }
@@ -283,26 +283,57 @@ impl<I: fmt::Display> fmt::Display for TypeConstructor<I> {
 pub enum Kind {
     Variable(u32),
     Star,
-    Function(Rc<Kind>, Rc<Kind>),
+    Function(RcKind, RcKind),
 }
 
 impl Kind {
-    pub fn star() -> Rc<Kind> {
-        Rc::new(Kind::Star)
+    pub fn variable(v: u32) -> RcKind {
+        RcKind::new(Kind::Variable(v))
     }
-    pub fn function(l: Rc<Kind>, r: Rc<Kind>) -> Rc<Kind> {
-        Rc::new(Kind::Function(l, r))
+    pub fn star() -> RcKind {
+        RcKind(Rc::new(Kind::Star))
+    }
+    pub fn function(l: RcKind, r: RcKind) -> RcKind {
+        RcKind(Rc::new(Kind::Function(l, r)))
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct RcKind(Rc<Kind>);
+
+impl Deref for RcKind {
+    type Target = Kind;
+    fn deref(&self) -> &Kind {
+        &self.0
+    }
+}
+
+impl fmt::Debug for RcKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::Display for RcKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl RcKind {
+    pub fn new(k: Kind) -> RcKind {
+        RcKind(Rc::new(k))
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable {
-    pub kind: Rc<Kind>,
+    pub kind: RcKind,
     pub id: u32,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Generic<Id> {
-    pub kind: Rc<Kind>,
+    pub kind: RcKind,
     pub id: Id,
 }
 
@@ -367,9 +398,15 @@ impl<Id> BoxType<Id> {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct RcType<Id> {
     typ: Rc<Type<Id, ASTType<Id>>>,
+}
+
+impl <Id: fmt::Debug> fmt::Debug for RcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
 }
 
 impl<Id: Deref<Target = str>> fmt::Display for RcType<Id> {
@@ -499,7 +536,7 @@ impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
         }
     }
 
-    pub fn kind(&self) -> Rc<Kind> {
+    pub fn kind(&self) -> RcKind {
         use self::Type::*;
         match *self {
             App(ref arg, _) => {
@@ -511,7 +548,7 @@ impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
             Variable(ref var) => var.kind.clone(),
             Generic(ref gen) => gen.kind.clone(),
             Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) | Record { .. } => {
-                Rc::new(Kind::Star)
+                RcKind::new(Kind::Star)
             }
         }
     }
@@ -753,7 +790,7 @@ pub fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
         Some(b) => Type::Builtin(b),
         None if is_var => {
             Type::Generic(Generic {
-                kind: Rc::new(Kind::Star),
+                kind: RcKind::new(Kind::Star),
                 id: s,
             })
         }
@@ -891,7 +928,7 @@ impl TypeVariable {
     }
     pub fn with_kind(kind: Kind, var: u32) -> TypeVariable {
         TypeVariable {
-            kind: Rc::new(kind),
+            kind: RcKind::new(kind),
             id: var,
         }
     }

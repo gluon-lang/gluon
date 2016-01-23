@@ -30,11 +30,13 @@ impl Variable for u32 {
 }
 
 ///Trait implemented on types which may contain substitutable variables
-pub trait Substitutable: PartialEq + Clone {
+pub trait Substitutable: Sized {
     type Variable: Variable;
     fn new(x: u32) -> Self;
     ///Constructs a new object from its variable type
-    fn from_variable(x: Self::Variable) -> Self;
+    fn from_variable(x: Self::Variable) -> Self {
+        Self::new(x.get_id())
+    }
     ///Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
     ///Returns whether `var` occurs somewhere in `self`
@@ -170,10 +172,6 @@ impl<T: Substitutable> Substitution<T> {
         }
     }
 
-    pub fn make_real(&self, typ: &mut T) {
-        *typ = self.real(typ).clone();
-    }
-
     pub fn find_type_for_var(&self, var: u32) -> Option<&T> {
         let index = self.union.borrow_mut().find(var as usize) as u32;
         self.types
@@ -203,7 +201,15 @@ impl<T: Substitutable> Substitution<T> {
         *level = ::std::cmp::min(*level, var);
         *level
     }
+}
 
+impl<T: Substitutable + Clone> Substitution<T> {
+
+    pub fn make_real(&self, typ: &mut T) {
+        *typ = self.real(typ).clone();
+    }
+}
+impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     ///Takes `id` and updates the substitution to say that it should have the same type as `typ`
     pub fn union(&self, id: &T::Variable, typ: &T) -> Result<(), ()>
         where T::Variable: Clone

@@ -5,7 +5,6 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::Deref;
-use std::rc::Rc;
 use std::string::String as StdString;
 use base::ast;
 use base::ast::{Type, ASTType, DisplayEnv};
@@ -482,7 +481,7 @@ impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
 }
 
 impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
-    fn find_kind(&self, type_name: Symbol) -> Option<Rc<ast::Kind>> {
+    fn find_kind(&self, type_name: Symbol) -> Option<ast::RcKind> {
         self.type_infos
             .find_kind(type_name)
             .or_else(|| {
@@ -777,7 +776,7 @@ impl<'a> VM<'a> {
             io_symbol: self.symbol("IO"),
             io_arg: [ast::Generic {
                          id: self.symbol("a"),
-                         kind: Rc::new(ast::Kind::Star),
+                         kind: ast::Kind::star(),
                      }],
         }
     }

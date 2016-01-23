@@ -1,379 +1,410 @@
-use std::cell::RefCell;
-use std::fmt;
-use std::mem;
-
-use base::ast;
-use base::ast::{ASTType, Type, TypeVariable};
-use base::error::Errors;
-use base::symbol::Symbol;
-use instantiate::{AliasInstantiator, Instantiator};
-use typecheck::{TcResult, TcType, TypeError};
+use std::collections::HashMap;
+use std::hash::Hash;
+use substitution::{Substitution, Substitutable, Variable};
 
 #[derive(Debug, PartialEq)]
-pub enum Error<I> {
-    TypeMismatch(ASTType<I>, ASTType<I>),
-    FieldMismatch(I, I),
-    Occurs(TypeVariable, ASTType<I>),
-    UndefinedType(I),
+pub enum Error<T: Substitutable, E> {
+    TypeMismatch(T, T),
+    Occurs(T::Variable, T),
+    Other(E),
 }
 
-fn apply_subs(inst: &Instantiator, error: Vec<Error<Symbol>>) -> Vec<Error<Symbol>> {
-    error.into_iter()
-         .map(|error| {
-             match error {
-                 Error::TypeMismatch(expected, actual) => {
-                     Error::TypeMismatch(inst.set_type(expected), inst.set_type(actual))
-                 }
-                 Error::FieldMismatch(expected, actual) => Error::FieldMismatch(expected, actual),
-                 Error::Occurs(var, typ) => Error::Occurs(var, inst.set_type(typ)),
-                 Error::UndefinedType(id) => Error::UndefinedType(id),
-             }
-         })
-         .collect()
+pub struct UnifierState<'s, S: ?Sized + 's, T: 's, U> {
+    pub state: &'s mut S,
+    pub subs: &'s Substitution<T>,
+    unifier: U,
 }
 
-impl<I> fmt::Display for Error<I> where I: fmt::Display + ::std::ops::Deref<Target = str>
+impl<'s, S: ?Sized, Type, U> UnifierState<'s, S, Type, U>
+    where U: Unifier<S, Type>,
+          Type: Unifiable<S>
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::Error::*;
-        match *self {
-            TypeMismatch(ref l, ref r) => {
-                write!(f, "Types do not match:\n\tExpected: {}\n\tFound: {}", l, r)
-            }
-            FieldMismatch(ref l, ref r) => {
-                write!(f,
-                       "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
-                       l,
-                       r)
-            }
-            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
-            UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
-        }
-    }
-}
-
-
-pub struct Unifier<'a> {
-    alias: AliasInstantiator<'a>,
-    symbols: &'a ast::DisplayEnv<Ident = Symbol>,
-    unification_errors: RefCell<Errors<Error<Symbol>>>,
-}
-
-impl<'a> Unifier<'a> {
-    pub fn new(alias: AliasInstantiator<'a>,
-               symbols: &'a ast::DisplayEnv<Ident = Symbol>)
-               -> Unifier<'a> {
-        Unifier {
-            alias: alias,
-            symbols: symbols,
-            unification_errors: RefCell::new(Errors::new()),
-        }
+    pub fn report_error(&mut self, error: Error<Type, Type::Error>) {
+        Unifier::report_error(self, error)
     }
 
-    fn unification_error(&self, err: Error<Symbol>) {
-        self.unification_errors.borrow_mut().error(err);
+    pub fn try_match(&mut self, l: &Type, r: &Type) -> Option<Type> {
+        Unifier::try_match(self, l, r)
     }
 
-    pub fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult {
-        debug!("Unify {} <=> {}",
-               ast::display_type(&self.symbols, expected),
-               ast::display_type(&self.symbols, &actual));
-        self.unify_(expected, &actual);
-        let has_errors = self.unification_errors.borrow().has_errors();
-        if has_errors {
-            let errors = mem::replace(&mut *self.unification_errors.borrow_mut(), Errors::new());
-            let mut expected = expected.clone();
-            expected = self.alias.inst.set_type(expected);
-            actual = self.alias.inst.set_type(actual);
-            debug!("Error '{:?}' between:\n>> {}\n>> {}",
-                   errors.errors,
-                   ast::display_type(&self.symbols, &expected),
-                   ast::display_type(&self.symbols, &actual));
-            Err(TypeError::Unification(expected,
-                                       actual,
-                                       apply_subs(&self.alias.inst, errors.errors)))
-        } else {
-            // Return the `expected` type as that is what is passed in for type
-            // declarations
-            Ok(self.alias.inst.set_type(expected.clone()))
-        }
-    }
-
-    fn unify_(&self, expected: &TcType, actual: &TcType) {
-        let expected = self.alias.inst.subs.real(expected);
-        let actual = self.alias.inst.subs.real(actual);
-        debug!("{} <=> {}",
-               ast::display_type(&self.symbols, expected),
-               ast::display_type(&self.symbols, actual));
-        match (&**expected, &**actual) {
-            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => (),
-            (&Type::Variable(ref l), _) => self.union(l, actual),
-            (_, &Type::Variable(ref r)) => self.union(r, expected),
-            (&Type::Function(ref l_args, ref l_ret),
-             &Type::Function(ref r_args, ref r_ret)) => {
-                if l_args.len() == r_args.len() {
-                    for (l, r) in l_args.iter().zip(r_args.iter()) {
-                        self.unify_(l, r);
-                    }
-                    self.unify_(l_ret, r_ret)
-                } else {
-                    self.unification_error(Error::TypeMismatch(expected.clone(), actual.clone()))
-                }
-            }
-            (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
-                self.unify_function(&l_args[0], l_ret, actual)
-            }
-            (&Type::App(..), &Type::Function(ref l_args, ref l_ret)) => {
-                self.unify_function(&l_args[0], l_ret, expected)
-            }
-            (&Type::Array(ref l), &Type::Array(ref r)) => self.unify_(l, r),
-            (&Type::Data(ref l, ref l_args),
-             &Type::Data(ref r, ref r_args))
-                if l == r && l_args.len() == r_args.len() => {
-                for (l, r) in l_args.iter().zip(r_args.iter()) {
-                    self.unify_(l, r);
-                }
-            }
-            (&Type::Record { fields: ref l_args, .. },
-             &Type::Record { fields: ref r_args, .. })
-                if l_args.len() == r_args.len() => {
-                for (l, r) in l_args.iter().zip(r_args.iter()) {
-                    if l.name != r.name {
-                        self.unification_error(Error::FieldMismatch(l.name, r.name));
-                    } else {
-                        self.unify_(&l.typ, &r.typ);
-                    }
-                }
-            }
-            (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
-                let error_count = self.unification_errors.borrow().errors.len();
-                self.unify_app(l, l_args, expected, &|last, r_arg| self.unify_(r_arg, last));
-                let range = error_count..self.unification_errors.borrow().errors.len();
-                if range.start != range.end {
-                    // Attempt to unify using the type that is aliased if that exists
-                    match *l {
-                        ast::TypeConstructor::Data(l) => {
-                            let l = match self.alias.type_of_alias(l, l_args) {
-                                Ok(typ) => typ,
-                                Err(err) => return self.unification_error(err),
-                            };
-                            match l {
-                                Some(l) => {
-                                    self.unify_(&l, expected);
-                                    self.rollback_unification_errors(range);
-                                }
-                                None => (),
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            (&Type::App(_, _), &Type::Data(ref r, ref r_args)) => {
-                let error_count = self.unification_errors.borrow().errors.len();
-                self.unify_app(r, r_args, expected, &|last, l_arg| self.unify_(l_arg, last));
-                let range = error_count..self.unification_errors.borrow().errors.len();
-                if range.start != range.end {
-                    match *r {
-                        ast::TypeConstructor::Data(r) => {
-                            let r = match self.alias.type_of_alias(r, r_args) {
-                                Ok(typ) => typ,
-                                Err(err) => return self.unification_error(err),
-                            };
-                            match r {
-                                Some(r) => {
-                                    self.unify_(&r, expected);
-                                    self.rollback_unification_errors(range);
-                                }
-                                None => (),
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-            }
-            (&Type::App(ref l1, ref l2), &Type::App(ref r1, ref r2)) => {
-                self.unify_(l1, r1);
-                self.unify_(l2, r2);
-            }
-            _ => {
-                if expected == actual {
-                    // Successful unification
-                    return;
-                }
-                // Attempt to unify by replacing the right or left hand side with the type it
-                // aliases (if any)
-                let len = self.unification_errors.borrow().errors.len();
-                if self.unify_alias(expected, actual, len..len) {
-                    // Successful unification
-                    return;
-                }
-                let len2 = self.unification_errors.borrow().errors.len();
-                if self.unify_alias(actual, expected, len..len2) {
-                    // Successful unification
-                    return;
-                }
-                let len3 = self.unification_errors.borrow().errors.len();
-                self.rollback_unification_errors(len..len3);
-                self.unification_error(Error::TypeMismatch(expected.clone(), actual.clone()));
-            }
-        }
-    }
-
-    fn rollback_unification_errors(&self, range: ::std::ops::Range<usize>) -> bool {
-        // If there were no errors in this unification, remove the errors generatedfrom the
-        // first attempt
-        let errors = self.unification_errors.borrow().errors.len();
-        if range.end == errors {
-            // No errors found
-            let start = range.start;
-            for _ in range {
-                self.unification_errors
-                    .borrow_mut()
-                    .errors
-                    .remove(start);
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    fn unify_alias(&self,
-                   expected: &TcType,
-                   actual: &TcType,
-                   range: ::std::ops::Range<usize>)
-                   -> bool {
-        match **actual {
-            Type::Data(ast::TypeConstructor::Data(r), ref r_args) => {
-                let r = match self.alias.type_of_alias(r, r_args) {
-                    Ok(typ) => typ,
-                    Err(err) => {
-                        self.unification_error(err);
-                        return false;
-                    }
-                };
-                match r {
-                    Some(r) => {
-                        self.unify_(expected, &r);
-                        self.rollback_unification_errors(range)
-                    }
-                    None => {
-                        self.unification_error(Error::TypeMismatch(expected.clone(),
-                                                                   actual.clone()));
-                        false
-                    }
-                }
-            }
-            _ => false,
-        }
-    }
-
-    fn unify_app<F>(&self, l: &ast::TypeConstructor<Symbol>, l_args: &[TcType], r: &TcType, f: &F)
-        where F: Fn(&TcType, &TcType)
+    pub fn match_either<F, G>(&mut self, f: F, g: G) -> Result<Option<Type>, ()>
+        where F: FnMut(&mut UnifierState<S, Type, U>) -> Result<Option<Type>, ()>,
+              G: FnMut(&mut UnifierState<S, Type, U>) -> Result<Option<Type>, ()>
     {
-        let r = self.alias.inst.subs.real(r);
-        debug!("{:?} {:?} <==> {}",
-               l,
-               l_args,
-               ast::display_type(&self.symbols, r));
-        match **r {
-            Type::App(ref r, ref r_arg) => {
-                match l_args.last() {
-                    Some(last) => {
-                        f(last, r_arg);
-                        self.unify_app(l, &l_args[0..l_args.len() - 1], r, f);
-                    }
-                    None => {
-                        let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                        self.unification_error(Error::TypeMismatch(l, r.clone()));
+        Unifier::match_either(self, f, g)
+    }
+}
+
+pub trait Unifier<S: ?Sized, Type>: Sized
+where Type: Unifiable<S> {
+    fn report_error(unifier: &mut UnifierState<S, Type, Self>, error: Error<Type, Type::Error>);
+    fn try_match(unifier: &mut UnifierState<S, Type, Self>, l: &Type, r: &Type) -> Option<Type>;
+    fn match_either<F, G>(unifier: &mut UnifierState<S, Type, Self>,
+                          mut f: F,
+                          mut g: G)
+                          -> Result<Option<Type>, ()>
+        where F: FnMut(&mut UnifierState<S, Type, Self>) -> Result<Option<Type>, ()>,
+              G: FnMut(&mut UnifierState<S, Type, Self>) -> Result<Option<Type>, ()>
+    {
+        match f(unifier) {
+            Ok(typ) => Ok(typ),
+            Err(()) => g(unifier),
+        }
+    }
+}
+
+pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
+    type Error;
+
+    fn traverse<'s, F>(&'s self, f: F) where F: FnMut(&'s Self) -> &'s Self;
+    fn zip_match<U>(&self,
+                    other: &Self,
+                    unifier: UnifierState<S, Self, U>)
+                    -> Result<Option<Self>, Error<Self, Self::Error>> where U: Unifier<S, Self>;
+}
+
+pub fn unify<S, T>(subs: &Substitution<T>, state: &mut S, l: &T, r: &T) -> Result<T, Vec<Error<T, T::Error>>>
+    where T: Unifiable<S> + PartialEq + Clone,
+          T::Variable: Clone
+{
+    let mut errors = Vec::new();
+    let typ = UnifierState {
+                  state: state,
+                  subs: subs,
+                  unifier: Unify { errors: &mut errors },
+              }
+              .try_match(l, r);
+    if errors.is_empty() {
+        Ok(typ.unwrap_or_else(|| l.clone()))
+    } else {
+        Err(errors)
+    }
+}
+
+struct Unify<'e, T, E: 'e> where T: Substitutable + 'e {
+    errors: &'e mut Vec<Error<T, E>>,
+}
+
+impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
+    where T: Unifiable<S> + PartialEq + Clone + 'e,
+          T::Variable: Clone
+{
+    fn report_error(unifier: &mut UnifierState<S, T, Self>, error: Error<T, T::Error>) {
+        unifier.unifier.errors.push(error);
+    }
+
+    fn match_either<F, G>(unifier: &mut UnifierState<S, T, Self>, mut f: F, mut g: G) -> Result<Option<T>, ()>
+        where F: FnMut(&mut UnifierState<S, T, Self>) -> Result<Option<T>, ()>,
+              G: FnMut(&mut UnifierState<S, T, Self>) -> Result<Option<T>, ()>
+    {
+        let original_errors = unifier.unifier.errors.len();
+        let result = f(unifier);
+        let first_errors = unifier.unifier.errors.len();
+        // If there has been no error added the unification succeded
+        if result.is_ok() && original_errors == first_errors {
+            return result;
+        }
+        let result = g(unifier);
+        let last_errors = unifier.unifier.errors.len();
+        if result.is_ok() && first_errors == last_errors {
+            // Remove any errors found from the first attempt to unify
+            for _ in original_errors..first_errors {
+                unifier.unifier
+                       .errors
+                       .remove(original_errors);
+            }
+            return result;
+        }
+        for _ in first_errors..last_errors {
+            // Remove the errors from the second attempt (keeping the first attempt)
+            unifier.unifier
+                   .errors
+                   .remove(first_errors);
+        }
+        Err(())
+    }
+
+    fn try_match(unifier: &mut UnifierState<S, T, Self>, l: &T, r: &T) -> Option<T> {
+        let subs = unifier.subs;
+        let ref mut errors = unifier.unifier.errors;
+        let l = subs.real(l);
+        let r = subs.real(r);
+        match (l.get_var(), r.get_var()) {
+            (Some(l), Some(r)) if l.get_id() == r.get_id() => None,
+            (_, Some(r)) => {
+                match subs.union(r, l) {
+                    Ok(()) => Some(l.clone()),
+                    Err(()) => {
+                        errors.push(Error::Occurs(r.clone(), l.clone()));
+                        Some(subs.new_var())
                     }
                 }
             }
-            Type::Data(ref r, ref r_args) if l == r && l_args.len() == r_args.len() => {
-                for (l, r) in l_args.iter().zip(r_args) {
-                    self.unify_(l, r);
+            (Some(l), _) => {
+                match subs.union(l, r) {
+                    Ok(()) => Some(r.clone()),
+                    Err(()) => {
+                        errors.push(Error::Occurs(l.clone(), r.clone()));
+                        Some(subs.new_var())
+                    }
                 }
             }
-            Type::Variable(ref r) => {
-                self.union(r, &Type::data(l.clone(), l_args.iter().cloned().collect()))
+            (None, None) => {
+                let result = {
+                    let next_unifier = UnifierState {
+                        state: unifier.state,
+                        subs: subs,
+                        unifier: Unify { errors: errors },
+                    };
+                    l.zip_match(r, next_unifier)
+                };
+                match result {
+                    Ok(typ) => typ,
+                    Err(error) => {
+                        errors.push(error);
+                        Some(subs.new_var())
+                    }
+                }
             }
+        }
+    }
+}
+
+pub fn intersection<S, T>(subs: &Substitution<T>, state: &mut S, l: &T, r: &T) -> T
+    where T: Unifiable<S> + Eq + Clone + Hash,
+          T::Variable: Clone
+{
+    let mut map = HashMap::new();
+    let mut unifier = UnifierState {
+        state: state,
+        subs: subs,
+        unifier: Intersect { mismatch_map: &mut map },
+    };
+    unifier.try_match(l, r).unwrap_or_else(|| l.clone())
+}
+
+struct Intersect<'m, T: 'm> {
+    mismatch_map: &'m mut HashMap<(T, T), T>,
+}
+
+impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
+    where T: Unifiable<S> + Eq + Hash + Clone,
+          T::Variable: Clone
+{
+    fn report_error(_unifier: &mut UnifierState<S, T, Self>, _error: Error<T, T::Error>) {
+    }
+
+    fn try_match(unifier: &mut UnifierState<S, T, Self>, l: &T, r: &T) -> Option<T> {
+        let subs = unifier.subs;
+        let l = subs.real(l);
+        let r = subs.real(r);
+        match (l.get_var(), r.get_var()) {
+            (Some(l), Some(r)) if l.get_id() == r.get_id() => None,
             _ => {
-                let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                self.unification_error(Error::TypeMismatch(l, r.clone()));
-            }
-        }
-    }
-
-    fn union(&self, id: &ast::TypeVariable, typ: &TcType) {
-        if let Err(()) = self.alias.inst.subs.union(id, typ) {
-            self.unification_error(Error::Occurs(id.clone(), typ.clone()));
-        }
-    }
-
-    fn unify_function(&self, arg: &TcType, ret: &TcType, other: &TcType) {
-        let error = || {
-            let func = Type::function(vec![arg.clone()], ret.clone());
-            self.unification_error(Error::TypeMismatch(func, other.clone()));
-        };
-        let other = self.alias.inst.subs.real(other);
-        match **other {
-            Type::App(ref other_f, ref other_ret) => {
-                let other_f = self.alias.inst.subs.real(other_f);
-                match **other_f {
-                    Type::App(ref fn_prim, ref other_arg) => {
-                        self.unify_(fn_prim, &Type::builtin(ast::BuiltinType::FunctionType));
-                        self.unify_(arg, other_arg);
-                        self.unify_(ret, other_ret);
+                let result = {
+                    let next_unifier = UnifierState {
+                        state: unifier.state,
+                        subs: subs,
+                        unifier: Intersect { mismatch_map: unifier.unifier.mismatch_map },
+                    };
+                    l.zip_match(r, next_unifier)
+                };
+                match result {
+                    Ok(typ) => typ,
+                    Err(_) => {
+                        Some(unifier.unifier
+                                    .mismatch_map
+                                    .entry((l.clone(), r.clone()))
+                                    .or_insert_with(|| subs.new_var())
+                                    .clone())
                     }
-                    _ => error(),
                 }
             }
-            _ => error(),
         }
+    }
+}
+
+pub fn merge<F, A, B, R>(a_original: &A,
+                         a: Option<A>,
+                         b_original: &B,
+                         b: Option<B>,
+                         f: F)
+                         -> Option<R>
+    where A: Clone,
+          B: Clone,
+          F: FnOnce(A, B) -> R
+{
+    match (a, b) {
+        (Some(a), Some(b)) => Some(f(a, b)),
+        (Some(a), None) => Some(f(a, b_original.clone())),
+        (None, Some(b)) => Some(f(a_original.clone(), b)),
+        (None, None) => None,
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use super::Error::*;
-    use instantiate::{AliasInstantiator, Instantiator};
-    use typecheck::TypeError;
-    use base::ast;
-    use base::ast::Type;
-    use typecheck::tests::*;
+mod test {
+    use super::{Error, Unifier, Unifiable, UnifierState, merge};
+    use substitution::{Substitution, Substitutable};
+
+    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+    pub struct TType(Box<Type<TType>>);
+
+    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+    pub enum Type<T> {
+        Variable(u32),
+        Id(String),
+        Arrow(T, T),
+    }
+
+
+    impl Substitutable for TType {
+        type Variable = u32;
+        fn new(var: u32) -> TType {
+            TType(Box::new(Type::Variable(var)))
+        }
+        fn get_var(&self) -> Option<&u32> {
+            match *self.0 {
+                Type::Variable(ref var) => Some(var),
+                _ => None,
+            }
+        }
+        fn occurs(&self, subs: &Substitution<TType>, var: &u32) -> bool {
+            let mut occurs = false;
+            self.traverse(|t| {
+                let t = subs.real(t);
+                if let Type::Variable(v) = *t.0 {
+                    if *var == v {
+                        occurs = true;
+                    }
+                }
+                t
+            });
+            occurs
+        }
+    }
+
+    impl Unifiable<()> for TType {
+        type Error = ();
+        fn traverse<'s, F>(&'s self, mut f: F)
+            where F: FnMut(&'s Self) -> &'s Self
+        {
+            fn traverse_<'s>(typ: &'s TType, f: &mut FnMut(&'s TType) -> &'s TType) {
+                match *f(typ).0 {
+                    Type::Arrow(ref a, ref r) => {
+                        traverse_(a, f);
+                        traverse_(r, f);
+                    }
+                    Type::Variable(_) | Type::Id(_) => (),
+                }
+            }
+            traverse_(self, &mut f)
+        }
+        fn zip_match<F>(&self,
+                        other: &Self,
+                        mut f: UnifierState<(), Self, F>)
+                        -> Result<Option<Self>, Error<Self, Self::Error>>
+            where F: Unifier<(), Self>
+        {
+            match (&*self.0, &*other.0) {
+                (&Type::Id(ref l), &Type::Id(ref r)) if l == r => Ok(None),
+                (&Type::Arrow(ref l1, ref l2), &Type::Arrow(ref r1, ref r2)) => {
+                    let arg = f.try_match(l1, r1);
+                    let ret = f.try_match(l2, r2);
+                    Ok(merge(l1, arg, l2, ret, |a, r| TType(Box::new(Type::Arrow(a, r)))))
+                }
+                _ => Err(Error::TypeMismatch(self.clone(), other.clone())),
+            }
+        }
+    }
+
+    fn mk_fn(a: &TType, r: &TType) -> TType {
+        TType(Box::new(Type::Arrow(a.clone(), r.clone())))
+    }
+
+    fn unify(subs: &Substitution<TType>, l: &TType, r: &TType) -> Result<TType, Vec<Error<TType, ()>>> {
+        super::unify(subs, &mut (), l, r)
+    }
 
     #[test]
-    fn detect_multiple_type_errors_in_single_type() {
-        let _ = ::env_logger::init();
-        let (x, y, z, w) = (intern("x"), intern("y"), intern("z"), intern("w"));
-        let l = Type::record(vec![],
-                             vec![ast::Field {
-                                      name: x,
-                                      typ: Type::int(),
-                                  },
-                                  ast::Field {
-                                      name: y,
-                                      typ: Type::string(),
-                                  }]);
-        let r = Type::record(vec![],
-                             vec![ast::Field {
-                                      name: z,
-                                      typ: Type::int(),
-                                  },
-                                  ast::Field {
-                                      name: w,
-                                      typ: Type::string(),
-                                  }]);
-        let inst = Instantiator::new();
-        let i = get_local_interner();
-        let symbols = i.borrow();
-        let result = Unifier::new(AliasInstantiator::new(&inst, &()), &*symbols)
-                         .unify(&l, r.clone());
+    fn unify_test() {
+        let subs = Substitution::new();
+        let var1 = subs.new_var();
+        let var2 = subs.new_var();
+
+        let result = unify(&subs, &var1, &var2);
+        assert!(result.is_ok());
+
+        let string = TType(Box::new(Type::Id("String".into())));
+        let result = unify(&subs, &var1, &string);
+        assert!(result.is_ok());
+
+        let int = TType(Box::new(Type::Id("Int".into())));
+        let result = unify(&subs, &int, &string);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn unify_function() {
+        let subs = Substitution::<TType>::new();
+        let var1 = subs.new_var();
+
+        let string = TType(Box::new(Type::Id("String".into())));
+        let fun = TType(Box::new(Type::Arrow(string.clone(), var1.clone())));
+        let result = unify(&subs, &fun, &string);
+        assert!(result.is_err());
+
+        let fun2 = TType(Box::new(Type::Arrow(string.clone(), string.clone())));
+        let result = unify(&subs, &fun, &fun2);
+        assert!(result.is_ok());
+        assert_eq!(subs.real(&var1), &string);
+    }
+
+    #[test]
+    fn unify_real_type() {
+        let subs = Substitution::<TType>::new();
+        let var1 = subs.new_var();
+
+        let string = TType(Box::new(Type::Id("String".into())));
+        let result = unify(&subs, &var1, &string);
+        assert_eq!(result, Ok(string.clone()));
+
+        let int = TType(Box::new(Type::Id("Int".into())));
+        // Check that var1 does not unify with int as it should already be a string
+        let result = unify(&subs, &var1, &int);
         assert_eq!(result,
-                   Err(TypeError::Unification(l.clone(),
-                                              r.clone(),
-                                              vec![FieldMismatch(x, z), FieldMismatch(y, w)])));
+                   Err(vec![Error::TypeMismatch(string.clone(), int.clone())]));
+    }
+
+    #[test]
+    fn occurs() {
+        let subs = Substitution::<TType>::new();
+        let var1 = subs.new_var();
+
+        let string = TType(Box::new(Type::Id("String".into())));
+        let fun = TType(Box::new(Type::Arrow(string.clone(), var1.clone())));
+        let result = unify(&subs, &fun, &var1);
+        assert_eq!(result,
+                   Err(vec![Error::Occurs(*var1.get_var().unwrap(), fun.clone())]));
+    }
+
+    fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {
+        super::intersection(subs, &mut (), l, r)
+    }
+    #[test]
+    fn intersection_test() {
+        let subs = Substitution::<TType>::new();
+        let var1 = subs.new_var();
+        let string = TType(Box::new(Type::Id("String".into())));
+        let int = TType(Box::new(Type::Id("Int".into())));
+
+        let string_fun = mk_fn(&string, &string);
+        let int_fun = mk_fn(&int, &int);
+        let result = intersection(&subs, &int_fun, &string_fun);
+        assert_eq!(result, mk_fn(&TType::new(2), &TType::new(2)));
+
+        let var_fun = mk_fn(&var1, &var1);
+        let result = intersection(&subs, &int_fun, &var_fun);
+        assert_eq!(result, mk_fn(&TType::new(3), &TType::new(3)));
     }
 }

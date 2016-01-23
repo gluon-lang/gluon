@@ -9,6 +9,9 @@ authors = ["Markus <marwes91@gmail.com>"]
 [dependencies]
 union-find = "0.2.2"
 
+[dependencies.unify]
+path = "../../unify"
+
 [dependencies.base]
 path = "../base"
 
