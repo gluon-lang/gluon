@@ -8,7 +8,7 @@ use base::symbol::Symbol;
 use unify;
 use unify::{Error as UnifyError, Unifier, Unifiable, merge};
 use instantiate::AliasInstantiator;
-use substitution::{Variable, Substitutable, Substitution};
+use substitution::{Variable, Substitutable};
 
 pub type Error<I> = UnifyError<ASTType<I>, TypeError<I>>;
 
@@ -67,35 +67,16 @@ impl<I> Substitutable for ASTType<I> {
         }
     }
 
-    fn occurs(&self, subs: &Substitution<ASTType<I>>, var: &ast::TypeVariable) -> bool {
-        let mut occurs = false;
-        walk_type(self,
-                  &mut |typ| {
-                      if occurs {
-                          return typ;
-                      }
-                      let typ = subs.real(typ);
-                      if let Type::Variable(ref other) = **typ {
-                          if var == other {
-                              occurs = true;
-                              return typ;
-                          }
-                          subs.update_level(var.id, other.id);
-                      }
-                      typ
-                  });
-        occurs
+    fn traverse<'s, F>(&'s self, mut f: F)
+        where F: FnMut(&'s ASTType<I>) -> &'s ASTType<I>
+    {
+        walk_type(self, &mut f)
     }
 }
 
 impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
     type Error = TypeError<Symbol>;
 
-    fn traverse<'s, F>(&'s self, mut f: F)
-        where F: FnMut(&'s TcType) -> &'s TcType
-    {
-        walk_type(self, &mut f)
-    }
     fn zip_match<'s, U>(&self,
                         other: &Self,
                         mut unifier: UnifierState<'a, 's, U>)

@@ -56,7 +56,6 @@ where Type: Unifiable<S> {
 pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
     type Error;
 
-    fn traverse<'s, F>(&'s self, f: F) where F: FnMut(&'s Self) -> &'s Self;
     fn zip_match<U>(&self,
                     other: &Self,
                     unifier: UnifierState<S, Self, U>)
@@ -269,23 +268,6 @@ mod test {
                 _ => None,
             }
         }
-        fn occurs(&self, subs: &Substitution<TType>, var: &u32) -> bool {
-            let mut occurs = false;
-            self.traverse(|t| {
-                let t = subs.real(t);
-                if let Type::Variable(v) = *t.0 {
-                    if *var == v {
-                        occurs = true;
-                    }
-                }
-                t
-            });
-            occurs
-        }
-    }
-
-    impl Unifiable<()> for TType {
-        type Error = ();
         fn traverse<'s, F>(&'s self, mut f: F)
             where F: FnMut(&'s Self) -> &'s Self
         {
@@ -300,6 +282,10 @@ mod test {
             }
             traverse_(self, &mut f)
         }
+    }
+
+    impl Unifiable<()> for TType {
+        type Error = ();
         fn zip_match<F>(&self,
                         other: &Self,
                         mut f: UnifierState<(), Self, F>)

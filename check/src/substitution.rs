@@ -39,8 +39,28 @@ pub trait Substitutable: Sized {
     }
     ///Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
-    ///Returns whether `var` occurs somewhere in `self`
-    fn occurs(&self, subs: &Substitution<Self>, var: &Self::Variable) -> bool;
+    fn traverse<'s, F>(&'s self, f: F) where F: FnMut(&'s Self) -> &'s Self;
+}
+
+fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
+    where T: Substitutable
+{
+    let mut occurs = false;
+    typ.traverse(|typ| {
+                  if occurs {
+                      return typ;
+                  }
+                  let typ = subs.real(typ);
+                  if let Some(other) = typ.get_var() {
+                      if var.get_id() == other.get_id() {
+                          occurs = true;
+                          return typ;
+                      }
+                      subs.update_level(var.get_id(), other.get_id());
+                  }
+                  typ
+              });
+    occurs
 }
 
 #[derive(Debug)]
@@ -214,7 +234,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     pub fn union(&self, id: &T::Variable, typ: &T) -> Result<(), ()>
         where T::Variable: Clone
     {
-        if typ.occurs(self, id) {
+        if occurs(typ, self, id) {
             return Err(());
         }
         {

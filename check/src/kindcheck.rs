@@ -217,7 +217,7 @@ impl<'a> KindCheck<'a> {
         let result = unify::unify(&self.subs, &mut (), expected, &actual);
         match result {
             Ok(k) => Ok(k),
-            Err(errors) => {
+            Err(_errors) => {
                 let mut expected = expected.clone();
                 expected = update_kind(&self.subs, expected, None);
                 actual = update_kind(&self.subs, actual, None);
@@ -304,19 +304,6 @@ impl Substitutable for RcKind {
         }
     }
 
-    fn occurs(&self, subs: &Substitution<RcKind>, var: &u32) -> bool {
-        let kind = subs.real(self);
-        match **kind {
-            Kind::Variable(other) => *var == other,
-            Kind::Function(ref a, ref r) => a.occurs(subs, var) || r.occurs(subs, var),
-            Kind::Star => false,
-        }
-    }
-}
-
-impl<S> unify::Unifiable<S> for RcKind {
-    type Error = KindError<Symbol>;
-
     fn traverse<'s, F>(&'s self, mut f: F)
         where F: FnMut(&'s RcKind) -> &'s RcKind
     {
@@ -332,6 +319,11 @@ impl<S> unify::Unifiable<S> for RcKind {
         }
         walk_kind(self, &mut f)
     }
+}
+
+impl<S> unify::Unifiable<S> for RcKind {
+    type Error = KindError<Symbol>;
+
     fn zip_match<'s, U>(&self,
                         other: &Self,
                         mut unifier: unify::UnifierState<S, Self, U>)
