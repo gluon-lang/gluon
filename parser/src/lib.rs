@@ -460,12 +460,17 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
             .parse_state(input)
     }
 
-    fn pattern(&'s self) -> LanguageParser<'a, 's, I, F, Pattern<Id>> {
+    fn pattern(&'s self) -> LanguageParser<'a, 's, I, F, LPattern<Id>> {
         self.parser(ParserEnv::parse_pattern)
     }
 
-    fn parse_pattern(&self, input: State<I>) -> ParseResult<Pattern<Id>, I> {
+    fn parse_pattern(&self, input: State<I>) -> ParseResult<LPattern<Id>, I> {
         self.record_parser(self.ident_u(), self.ident_u(), |record| {
+            let location = Location {
+                column: input.position.column,
+                row: input.position.line,
+                absolute: 0,
+            };
             self.parser(ParserEnv::parse_ident2)
                 .then(|(id, is_ctor)| {
                     parser(move |input| {
@@ -494,6 +499,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                         fields: patterns,
                     }
                 }))
+                .map(|p| located(location, p))
                 .or(self.parens(self.pattern()))
                 .parse_state(input)
         })
@@ -528,7 +534,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
     fn binding(&self, input: State<I>) -> ParseResult<Binding<Id>, I> {
         let type_sig = self.reserved_op(":").with(self.typ());
         let (name, input) = try!(self.pattern().parse_state(input));
-        let (arguments, input) = match name {
+        let (arguments, input) = match name.value {
             Pattern::Identifier(_) => {
                 try!(input.combine(|input| many(self.ident()).parse_state(input)))
             }
@@ -697,7 +703,7 @@ pub mod tests {
     }
     fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
         no_loc(Expr::Let(vec![Binding {
-                                  name: Pattern::Identifier(intern(s)),
+                                  name: no_loc(Pattern::Identifier(intern(s))),
                                   typ: None,
                                   arguments: args.iter().map(|i| intern(i)).collect(),
                                   expression: e,
@@ -743,7 +749,7 @@ pub mod tests {
                            alts.into_iter()
                                .map(|(p, e)| {
                                    Alternative {
-                                       pattern: p,
+                                       pattern: no_loc(p),
                                        expression: e,
                                    }
                                })
@@ -962,11 +968,11 @@ pub mod tests {
         let e = parse_new("let {x, y} = test in x");
         assert_eq!(e,
                    no_loc(Expr::Let(vec![Binding {
-                                             name: Pattern::Record {
+                                             name: no_loc(Pattern::Record {
                                                  types: Vec::new(),
                                                  fields: vec![(intern("x"), None),
                                                               (intern("y"), None)],
-                                             },
+                                             }),
                                              typ: None,
                                              arguments: vec![],
                                              expression: id("test"),

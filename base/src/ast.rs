@@ -563,6 +563,8 @@ pub enum LiteralEnum {
     Bool(bool),
 }
 
+pub type LPattern<Id> = Located<Pattern<Id>>;
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id: AstId> {
     Constructor(Id, Vec<Id>),
@@ -575,7 +577,7 @@ pub enum Pattern<Id: AstId> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Alternative<Id: AstId> {
-    pub pattern: Pattern<Id>,
+    pub pattern: LPattern<Id>,
     pub expression: LExpr<Id>,
 }
 
@@ -626,7 +628,7 @@ pub struct TypeBinding<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Binding<Id: AstId> {
-    pub name: Pattern<Id>,
+    pub name: LPattern<Id>,
     pub typ: Option<ASTType<Id::Untyped>>,
     pub arguments: Vec<Id>,
     pub expression: LExpr<Id>,
@@ -1123,8 +1125,8 @@ pub trait MutVisitor {
     fn visit_expr(&mut self, e: &mut LExpr<Self::T>) {
         walk_mut_expr(self, e);
     }
-    fn visit_pattern(&mut self, e: &mut Pattern<Self::T>) {
-        walk_mut_pattern(self, e);
+    fn visit_pattern(&mut self, e: &mut LPattern<Self::T>) {
+        walk_mut_pattern(self, &mut e.value);
     }
     fn visit_identifier(&mut self, _: &mut Self::T) {}
 }

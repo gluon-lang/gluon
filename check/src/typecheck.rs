@@ -502,7 +502,7 @@ impl<'a> Typecheck<'a> {
                         }
                         try!(self.typecheck_pattern(&mut bind.name, typ));
                         if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
-                            if let ast::Pattern::Identifier(ref name) = bind.name {
+                            if let ast::Pattern::Identifier(ref name) = bind.name.value {
                                 lambda.id.name = name.name;
                             }
                         }
@@ -778,10 +778,10 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_pattern(&mut self,
-                         pattern: &mut ast::Pattern<TcIdent>,
+                         pattern: &mut ast::LPattern<TcIdent>,
                          match_type: TcType)
                          -> TcResult {
-        match *pattern {
+        match pattern.value {
             ast::Pattern::Constructor(ref id, ref mut args) => {
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = try!(self.find(&id.name));
@@ -918,7 +918,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn finish_binding(&mut self, level: u32, bind: &mut ast::Binding<TcIdent>) {
-        match bind.name {
+        match bind.name.value {
             ast::Pattern::Identifier(ref mut id) => {
                 id.typ = self.finish_type(level, id.typ.clone());
                 debug!("{}: {}",

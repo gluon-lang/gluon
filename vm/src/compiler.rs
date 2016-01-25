@@ -456,7 +456,7 @@ impl<'a> Compiler<'a> {
                         // Add the NewClosure instruction before hand
                         // it will be fixed later
                         function.emit(NewClosure(0, 0));
-                        match bind.name {
+                        match bind.name.value {
                             ast::Pattern::Identifier(ref name) => {
                                 function.new_stack_var(*name.id());
                             }
@@ -468,7 +468,7 @@ impl<'a> Compiler<'a> {
 
                     if is_recursive {
                         function.emit(Push(stack_start + i as VMIndex));
-                        let name = match bind.name {
+                        let name = match bind.name.value {
                             ast::Pattern::Identifier(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
@@ -528,7 +528,7 @@ impl<'a> Compiler<'a> {
                 let typ = expr.env_type_of(self);
                 let mut catch_all = false;
                 for alt in alts.iter() {
-                    match alt.pattern {
+                    match alt.pattern.value {
                         ast::Pattern::Constructor(ref id, _) => {
                             let tag = self.find_tag(&typ, id.id())
                                           .unwrap_or_else(|| {
@@ -563,7 +563,7 @@ impl<'a> Compiler<'a> {
                 }
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     self.stack_constructors.enter_scope();
-                    match alt.pattern {
+                    match alt.pattern.value {
                         ast::Pattern::Constructor(_, ref args) => {
                             function.instructions[start_index] =
                                 CJump(function.instructions.len() as VMIndex);

@@ -155,7 +155,7 @@ impl<T> Typed for ast::Binding<T> where T: Typed<Id = Symbol> + ast::AstId<Untyp
         match self.typ {
             Some(ref typ) => typ.clone(),
             None => {
-                match self.name {
+                match self.name.value {
                     ast::Pattern::Identifier(ref name) => name.env_type_of(env),
                     _ => panic!("Not implemented"),
                 }
