@@ -551,27 +551,7 @@ impl<'a> Typecheck<'a> {
                 debug!("Generalize {}", level);
                 for bind in bindings {
                     self.generalize_variables(level, &mut bind.expression);
-                    match bind.name {
-                        ast::Pattern::Identifier(ref mut _id) => {
-                            _id.typ = self.finish_type(level, _id.typ.clone());
-                            debug!("{}: {}",
-                                   self.symbols.string(&_id.name),
-                                   ast::display_type(&self.symbols, &_id.typ));
-                        }
-                        ast::Pattern::Record { .. } => {
-                            debug!("{{ .. }}: {}",
-                                   ast::display_type(&self.symbols,
-                                                     &bind.expression
-                                                          .env_type_of(&self.environment)));
-                        }
-                        ast::Pattern::Constructor(ref _id, _) => {
-                            debug!("{}: {}",
-                                   self.symbols.string(&_id.name),
-                                   ast::display_type(&self.symbols,
-                                                     &bind.expression
-                                                          .env_type_of(&self.environment)));
-                        }
-                    }
+                    self.finish_binding(level, bind);
                 }
                 debug!("Typecheck `in`");
                 let result = self.typecheck(body);
@@ -935,6 +915,44 @@ impl<'a> Typecheck<'a> {
         check.set_variables(args);
         try!(check.kindcheck_type(typ));
         Ok(())
+    }
+
+    fn finish_binding(&mut self, level: u32, bind: &mut ast::Binding<TcIdent>) {
+        match bind.name {
+            ast::Pattern::Identifier(ref mut id) => {
+                id.typ = self.finish_type(level, id.typ.clone());
+                debug!("{}: {}",
+                       self.symbols.string(&id.name),
+                       ast::display_type(&self.symbols, &id.typ));
+
+                let mut typ = None;
+                if let Some(existing_types) = self.environment.stack.get_all(&id.name) {
+                    if existing_types.len() >= 2 {
+                        let existing_type = &existing_types[existing_types.len() - 2];
+                        let mut alias = AliasInstantiator::new(&self.inst, &self.environment);
+                        debug!("Intersect\n{} <> {}", ast::display_type(&self.symbols, existing_type),
+                                                      ast::display_type(&self.symbols, &id.typ));
+                        typ = Some(unify::intersection(&self.inst.subs, &mut alias, existing_type, &id.typ));
+                    }
+                }
+                if let Some(typ) = typ {
+                    *self.environment.stack.get_mut(&id.name).unwrap() = self.finish_type(level, typ);
+                }
+            }
+            ast::Pattern::Record { .. } => {
+                debug!("{{ .. }}: {}",
+                       ast::display_type(&self.symbols,
+                                         &bind.expression
+                                              .env_type_of(&self.environment)));
+            }
+            ast::Pattern::Constructor(ref id, _) => {
+                debug!("{}: {}",
+                       self.symbols.string(&id.name),
+                       ast::display_type(&self.symbols,
+                                         &bind.expression
+                                              .env_type_of(&self.environment)));
+            }
+        }
     }
 
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
@@ -1933,6 +1951,29 @@ in 1
 "#;
         let result = typecheck(text);
         assert_err!(result, DuplicateTypeDefinition(..));
+    }
+
+    #[test]
+    fn overloaded_bindings() {
+        let _ = ::env_logger::init();
+        let text = r#"
+let (+) x y = x #Int+ y
+in
+let (+) x y = x #Float+ y
+in
+{ x = 1 + 2, y = 1.0 + 2.0 }
+"#;
+        let result = typecheck(text);
+        assert_eq!(result,
+                   Ok(Type::record(vec![],
+                                   vec![ast::Field {
+                                            name: intern("x"),
+                                            typ: typ("Int"),
+                                        },
+                                        ast::Field {
+                                            name: intern("y"),
+                                            typ: typ("Float"),
+                                        }])));
     }
 
     #[test]
