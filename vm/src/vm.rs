@@ -1463,17 +1463,25 @@ fn include_implicit_prelude(vm: &VM, name: &str, expr: &mut ast::LExpr<ast::TcId
 r#"
 let __implicit_prelude = import "std/prelude.hs"
 and { Num, Eq, Ord, Show, Functor, Monad, Option, Result, not } = __implicit_prelude
-and { (+), (-), (*) } = __implicit_prelude.num_Float
+in
+let { (+), (-), (*) } = __implicit_prelude.num_Int
+and { (==) } = __implicit_prelude.eq_Int
+in
+let { (+), (-), (*) } = __implicit_prelude.num_Float
+and { (==) } = __implicit_prelude.eq_Float
 in 0
 "#;
     let prelude_expr = parse_expr(vm, "", prelude_import).unwrap();
     let original_expr = mem::replace(expr, prelude_expr);
-    match expr.value {
-        ast::Expr::Let(_, ref mut e) => {
-            **e = original_expr;
+    fn assign_last_body(l: &mut ast::LExpr<ast::TcIdent<Symbol>>, original_expr: ast::LExpr<ast::TcIdent<Symbol>>) {
+        match l.value {
+            ast::Expr::Let(_, ref mut e) => {
+                assign_last_body(e, original_expr);
+            }
+            _ => *l = original_expr,
         }
-        _ => panic!("Failed to parse implicit prelude"),
     }
+    assign_last_body(expr, original_expr);
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]

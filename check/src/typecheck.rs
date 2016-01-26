@@ -942,34 +942,44 @@ impl<'a> Typecheck<'a> {
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
                        ast::display_type(&self.symbols, &id.typ));
-
-                let mut typ = None;
-                if let Some(existing_types) = self.environment.stack.get_all(&id.name) {
-                    if existing_types.len() >= 2 {
-                        let existing_type = &existing_types[existing_types.len() - 2];
-                        let mut alias = AliasInstantiator::new(&self.inst, &self.environment);
-                        debug!("Intersect\n{} <> {}", ast::display_type(&self.symbols, existing_type),
-                                                      ast::display_type(&self.symbols, &id.typ));
-                        typ = Some(unify::intersection(&self.inst.subs, &mut alias, existing_type, &id.typ));
-                    }
-                }
-                if let Some(typ) = typ {
-                    *self.environment.stack.get_mut(&id.name).unwrap() = self.finish_type(level, typ);
-                }
+                self.intersect_type(level, id.name, &id.typ);
             }
-            ast::Pattern::Record { .. } => {
+            ast::Pattern::Record { ref id, ref mut fields, .. } => {
                 debug!("{{ .. }}: {}",
                        ast::display_type(&self.symbols,
                                          &bind.expression
                                               .env_type_of(&self.environment)));
+                let record_type = self.remove_alias(id.typ.clone());
+                with_pattern_types(fields, &record_type, |field_name, field_type| {
+                    self.intersect_type(level, field_name, field_type);
+                });
             }
-            ast::Pattern::Constructor(ref id, _) => {
+            ast::Pattern::Constructor(ref id, ref arguments) => {
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
                        ast::display_type(&self.symbols,
                                          &bind.expression
                                               .env_type_of(&self.environment)));
+                for arg in arguments {
+                    self.intersect_type(level, arg.name, &arg.typ);
+                }
             }
+        }
+    }
+
+    fn intersect_type(&mut self, level: u32, symbol: Symbol, symbol_type: &TcType) {
+        let mut typ = None;
+        if let Some(existing_types) = self.environment.stack.get_all(&symbol) {
+            if existing_types.len() >= 2 {
+                let existing_type = &existing_types[existing_types.len() - 2];
+                let mut alias = AliasInstantiator::new(&self.inst, &self.environment);
+                debug!("Intersect\n{} <> {}", ast::display_type(&self.symbols, existing_type),
+                                              ast::display_type(&self.symbols, symbol_type));
+                typ = Some(unify::intersection(&self.inst.subs, &mut alias, existing_type, symbol_type));
+            }
+        }
+        if let Some(typ) = typ {
+            *self.environment.stack.get_mut(&symbol).unwrap() = self.finish_type(level, typ);
         }
     }
 
@@ -1138,6 +1148,19 @@ impl<'a> Typecheck<'a> {
                      arguments: &[TcType])
                      -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
         AliasInstantiator::new(&self.inst, &self.environment).type_of_alias(id, arguments)
+    }
+}
+
+fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
+    where F: FnMut(Symbol, &TcType)
+{
+    if let Type::Record { fields: ref field_types, .. } = **typ {
+        for field in fields {
+            let associated_type = field_types.iter()
+                                             .find(|type_field| type_field.name == field.0)
+                                             .expect("Associated type to exist in record");
+            f(field.0, &associated_type.typ);
+        }
     }
 }
 
@@ -1980,6 +2003,29 @@ in
 let (+) x y = x #Float+ y
 in
 { x = 1 + 2, y = 1.0 + 2.0 }
+"#;
+        let result = typecheck(text);
+        assert_eq!(result,
+                   Ok(Type::record(vec![],
+                                   vec![ast::Field {
+                                            name: intern("x"),
+                                            typ: typ("Int"),
+                                        },
+                                        ast::Field {
+                                            name: intern("y"),
+                                            typ: typ("Float"),
+                                        }])));
+    }
+
+    #[test]
+    fn overloaded_record_binding() {
+        let _ = ::env_logger::init();
+        let text = r#"
+let { f } = { f = \x -> x #Int+ 1 }
+in
+let { f } = { f = \x -> x #Float+ 1.0 }
+in
+{ x = f 1, y = f 1.0 }
 "#;
         let result = typecheck(text);
         assert_eq!(result,

@@ -1,7 +1,6 @@
 let prelude = import "std/prelude.hs"
 and { Num, Option, Eq, Ord, Ordering, Monoid, Show } = prelude
 and (==) = prelude.eq_Int.(==)
-and { (+), (-), (*) } = prelude.num_Int
 and monoid = {
     (<>) = string_prim.append,
     empty = ""
@@ -19,7 +18,7 @@ in
 let ord: Ord String = {
     compare = \l r ->
         let o = string_prim.compare l r
-        in if o #Int== 0 then EQ else if o #Int== (0 #Int- 1) then LT else GT
+        in if o #Int== 0 then EQ else if o #Int== 1 then GT else LT
 }
 in
 let show: Show String = {

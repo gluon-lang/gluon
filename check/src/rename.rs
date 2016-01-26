@@ -110,6 +110,9 @@ pub fn rename(symbols: &mut SymbolModule,
                                                     .typ
                                                     .clone();
                         let id = field.1.unwrap_or(field.0);
+                        debug!("Rename pattern `{}` = `{}`",
+                               self.symbols.string(&field.0),
+                               self.symbols.string(&id));
                         field.1 = Some(self.stack_var(id, pattern.location, field_type));
                     }
                     let record_type = self.remove_aliases(typ).clone();
@@ -212,6 +215,9 @@ pub fn rename(symbols: &mut SymbolModule,
                                                 .collect(),
                         });
                     }
+                    debug!("Rename identifier {} = {}",
+                           self.symbols.string(&id.name),
+                           self.symbols.string(&new_id.unwrap_or(id.name)));
                     id.name = new_id.unwrap_or(id.name);
                 }
                 ast::Expr::Record { ref mut typ, ref mut exprs, .. } => {
@@ -247,19 +253,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 ast::Expr::BinOp(ref mut l, ref mut id, ref mut r) => {
-                    let new_id = self.env
-                                     .stack
-                                     .get_all(id.id())
-                                     .and_then(|bindings| {
-                                         if bindings.len() == 1 {
-                                             Some(bindings[0].0)
-                                         } else {
-                                             bindings.iter()
-                                                     .rev()
-                                                     .find(|bind| bind.1 == id.typ)
-                                                     .map(|bind| bind.0)
-                                         }
-                                     });
+                    let new_id = self.rename(*id.id(), &id.typ);
                     debug!("Rename {} = {}",
                            self.symbols.string(&id.name),
                            self.symbols.string(&new_id.unwrap_or(id.name)));
