@@ -402,7 +402,7 @@ mod tests {
     use instantiate::{AliasInstantiator, Instantiator};
     use base::ast;
     use base::ast::Type;
-    use typecheck::tests::*;
+    use tests::*;
 
 
     #[test]

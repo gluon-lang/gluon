@@ -10,8 +10,39 @@ extern crate parser;
 
 mod instantiate;
 pub mod typecheck;
-mod unify_type;
-mod unify;
+pub mod unify_type;
+pub mod unify;
 pub mod kindcheck;
 mod substitution;
 mod rename;
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    
+    use base::symbol::{Symbols, SymbolModule, Symbol};
+
+    ///Returns a reference to the interner stored in TLD
+    pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
+        thread_local!(static INTERNER: Rc<RefCell<Symbols>>
+                      = Rc::new(RefCell::new(Symbols::new())));
+        INTERNER.with(|interner| interner.clone())
+    }
+
+    pub fn intern_unscoped(s: &str) -> Symbol {
+        let i = get_local_interner();
+        let mut i = i.borrow_mut();
+        i.symbol(s)
+    }
+
+    pub fn intern(s: &str) -> Symbol {
+        let i = get_local_interner();
+        let mut i = i.borrow_mut();
+        if s.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+            i.symbol(s)
+        } else {
+            SymbolModule::new("test".into(), &mut i).scoped_symbol(s)
+        }
+    }
+}
