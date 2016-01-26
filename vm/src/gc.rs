@@ -180,6 +180,12 @@ impl fmt::Debug for AllocPtr {
 impl Drop for AllocPtr {
     fn drop(&mut self) {
         unsafe {
+            // Avoid stack overflow by looping through all next pointers instead of doing it
+            // recursively
+            let mut current = self.next.take();
+            while let Some(mut next) = current {
+                current = next.next.take();
+            }
             let size = self.size();
             ptr::read(&*self.ptr);
             deallocate(self.ptr as *mut u8, size);
