@@ -3,8 +3,6 @@ extern crate log;
 #[macro_use]
 extern crate mopa;
 
-extern crate unify;
-
 pub mod ast;
 pub mod fixed;
 pub mod symbol;
