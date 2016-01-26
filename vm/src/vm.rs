@@ -1945,6 +1945,26 @@ in
     }
 
     #[test]
+    fn through_overloaded_alias() {
+        let _ = ::env_logger::init();
+        let text = r#"
+type Test a = { id : a -> a }
+in
+let test_Int: Test Int = { id = \x -> 0 }
+in
+let test_String: Test String = { id = \x -> "" }
+in
+let { id } = test_Int
+in
+let { id } = test_String
+in id 1
+"#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert_eq!(result, Int(0));
+    }
+
+    #[test]
     fn run_expr_int() {
         let _ = ::env_logger::init();
         let text = r#"io.run_expr "123" "#;

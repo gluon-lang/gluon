@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::ops::Deref;
 
 use base::ast;
 use base::ast::Type;
@@ -12,7 +13,7 @@ use unify;
 
 pub struct AliasInstantiator<'a> {
     pub inst: &'a Instantiator,
-    pub env: &'a TypeEnv
+    pub env: &'a TypeEnv,
 }
 
 impl<'a> AliasInstantiator<'a> {
@@ -46,9 +47,9 @@ impl<'a> AliasInstantiator<'a> {
     }
 
     pub fn type_of_alias(&self,
-                     id: Symbol,
-                     arguments: &[TcType])
-                     -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
+                         id: Symbol,
+                         arguments: &[TcType])
+                         -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
         let (args, mut typ) = {
             let (args, typ) = try!(self.env
                                        .find_type_info(&id)
@@ -196,13 +197,13 @@ impl Instantiator {
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
     where F: FnMut(&ast::Generic<Symbol>) -> Option<TcType>
 {
-    ast::walk_move_type(typ,
-                        &mut |typ| {
-                            match *typ {
-                                Type::Generic(ref x) => f(x),
-                                _ => None,
-                            }
-                        })
+    walk_move_type_no_recurse(typ,
+                              &mut |typ| {
+                                  match *typ {
+                                      Type::Generic(ref x) => f(x),
+                                      _ => None,
+                                  }
+                              })
 }
 
 
@@ -222,5 +223,131 @@ fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
             }
             _ => return None,
         }
+    }
+}
+
+
+/// Walks through a type replacing some types
+/// If a type is replaced the new type will not be traversed
+fn walk_move_type_no_recurse<F, I, T>(typ: T, f: &mut F) -> T
+    where F: FnMut(&Type<I, T>) -> Option<T>,
+          T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+          I: Clone
+{
+    walk_move_type2(&typ, f).unwrap_or(typ)
+}
+
+///Create a new instance of `R` if one or both values are `Some`
+fn merge<F, A, B, R>(a_original: &A, a: Option<A>, b_original: &B, b: Option<B>, f: F) -> Option<R>
+    where A: Clone,
+          B: Clone,
+          F: FnOnce(A, B) -> R
+{
+    match (a, b) {
+        (Some(a), Some(b)) => Some(f(a, b)),
+        (Some(a), None) => Some(f(a, b_original.clone())),
+        (None, Some(b)) => Some(f(a_original.clone(), b)),
+        (None, None) => None,
+    }
+}
+
+fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
+    where F: FnMut(&Type<I, T>) -> Option<T>,
+          T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+          I: Clone
+{
+    let new = f(typ);
+    let result = match new {
+        Some(new_type) => return Some(new_type),
+        None => {
+            let typ = new.as_ref().map(|t| &**t).unwrap_or(typ);
+            match *typ {
+                Type::Data(ref id, ref args) => {
+                    walk_move_types(args.iter(), |t| walk_move_type2(t, f))
+                        .map(|args| Type::Data(id.clone(), args))
+                        .map(From::from)
+                }
+                Type::Array(ref inner) => {
+                    walk_move_type2(&**inner, f)
+                        .map(Type::Array)
+                        .map(From::from)
+                }
+                Type::Function(ref args, ref ret) => {
+                    let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
+                    merge(args, new_args, ret, walk_move_type2(ret, f), Type::Function)
+                        .map(From::from)
+                }
+                Type::Record { ref types, ref fields } => {
+                    let new_types = None;
+                    let new_fields = walk_move_types(fields.iter(), |field| {
+                        walk_move_type2(&field.typ, f).map(|typ| {
+                            ast::Field {
+                                name: field.name.clone(),
+                                typ: typ,
+                            }
+                        })
+                    });
+                    merge(types, new_types, fields, new_fields, |types, fields| {
+                        Type::Record {
+                            types: types,
+                            fields: fields,
+                        }
+                    })
+                        .map(From::from)
+                }
+                Type::App(ref l, ref r) => {
+                    merge(l,
+                          walk_move_type2(l, f),
+                          r,
+                          walk_move_type2(r, f),
+                          Type::App)
+                        .map(From::from)
+                }
+                Type::Variants(ref variants) => {
+                    walk_move_types(variants.iter(),
+                                    |v| walk_move_type2(&v.1, f).map(|t| (v.0.clone(), t)))
+                        .map(Type::Variants)
+                        .map(From::from)
+                }
+                Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => None,
+            }
+        }
+    };
+    result.or(new)
+}
+fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
+    where I: Iterator<Item = &'a T>,
+          F: FnMut(&'a T) -> Option<T>,
+          T: Clone + 'a
+{
+    let mut out = Vec::new();
+    walk_move_types2(types, false, &mut out, &mut f);
+    if out.len() == 0 {
+        None
+    } else {
+        out.reverse();
+        Some(out)
+    }
+}
+fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<T>, f: &mut F)
+    where I: Iterator<Item = &'a T>,
+          F: FnMut(&'a T) -> Option<T>,
+          T: Clone + 'a
+{
+    match types.next() {
+        Some(typ) => {
+            let new = f(typ);
+            walk_move_types2(types, replaced || new.is_some(), output, f);
+            match new {
+                Some(typ) => {
+                    output.push(typ);
+                }
+                None if replaced || output.len() > 0 => {
+                    output.push(typ.clone());
+                }
+                None => (),
+            }
+        }
+        None => (),
     }
 }

@@ -30,12 +30,6 @@ mod tests {
         INTERNER.with(|interner| interner.clone())
     }
 
-    pub fn intern_unscoped(s: &str) -> Symbol {
-        let i = get_local_interner();
-        let mut i = i.borrow_mut();
-        i.symbol(s)
-    }
-
     pub fn intern(s: &str) -> Symbol {
         let i = get_local_interner();
         let mut i = i.borrow_mut();

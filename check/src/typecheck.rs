@@ -1187,7 +1187,7 @@ fn apply_subs(inst: &Instantiator,
 }
 
 
-fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<Symbol>> {
+pub fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<Symbol>> {
     args.iter()
         .map(|arg| {
             match **arg {

@@ -7,6 +7,8 @@ use base::symbol::{Symbol, SymbolModule};
 use base::types::{Typed, TcType, TcIdent, KindEnv, TypeEnv};
 use base::error::Errors;
 
+use typecheck::extract_generics;
+
 pub type Error = Errors<ast::Spanned<RenameError>>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,7 +41,7 @@ impl fmt::Display for RenameError {
 struct Environment<'b> {
     env: &'b TypeEnv,
     stack: ScopedMap<Symbol, (Symbol, TcType)>,
-    stack_types: ScopedMap<Symbol, TcType>,
+    stack_types: ScopedMap<Symbol, (Vec<ast::Generic<Symbol>>, TcType)>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -55,7 +57,7 @@ impl<'a> TypeEnv for Environment<'a> {
     fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
         self.stack_types
             .get(id)
-            .map(|typ| (&[][..], Some(typ)))
+            .map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
             .or_else(|| self.env.find_type_info(id))
     }
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
@@ -70,39 +72,26 @@ pub fn rename(symbols: &mut SymbolModule,
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
         env: Environment<'b>,
+        inst: Instantiator,
         errors: Error,
     }
     impl<'a, 'b> RenameVisitor<'a, 'b> {
-        fn find_fields<'s>(&'s self, typ: &'s TcType) -> Option<&'s [ast::Field<Symbol, TcType>]> {
+        fn find_fields(&self, typ: &TcType) -> Option<Vec<ast::Field<Symbol, TcType>>> {
             // Walk through all type aliases
-            match **self.remove_aliases(typ) {
-                Type::Record { ref fields, .. } => Some(fields),
+            match *self.remove_aliases(typ) {
+                Type::Record { ref fields, .. } => Some(fields.to_owned()),
                 _ => None,
             }
         }
 
-        fn remove_aliases<'s>(&'s self, typ: &'s TcType) -> &'s TcType {
-            let mut typ = typ;
-            loop {
-                match **typ {
-                    ast::Type::Data(ast::TypeConstructor::Data(id), _) => {
-                        match self.env.find_type_info(&id) {
-                            Some((_, Some(real_type))) => {
-                                typ = real_type;
-                            }
-                            _ => break,
-                        }
-                    }
-                    _ => break,
-                }
-            }
-            typ
+        fn remove_aliases(&self, typ: &TcType) -> TcType {
+            AliasInstantiator::new(&self.inst, &self.env).remove_aliases(typ.clone())
         }
 
         fn new_pattern(&mut self, typ: &TcType, pattern: &mut ast::LPattern<TcIdent>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
-                    let field_types = self.find_fields(typ).expect("field_types").to_owned();
+                    let field_types = self.find_fields(typ).expect("field_types");
                     for field in fields.iter_mut() {
                         let field_type = field_types.iter()
                                                     .find(|field_type| field_type.name == field.0)
@@ -110,9 +99,6 @@ pub fn rename(symbols: &mut SymbolModule,
                                                     .typ
                                                     .clone();
                         let id = field.1.unwrap_or(field.0);
-                        debug!("Rename pattern `{}` = `{}`",
-                               self.symbols.string(&field.0),
-                               self.symbols.string(&id));
                         field.1 = Some(self.stack_var(id, pattern.location, field_type));
                     }
                     let record_type = self.remove_aliases(typ).clone();
@@ -124,14 +110,11 @@ pub fn rename(symbols: &mut SymbolModule,
                         let field_type = imported_types.iter()
                                                        .find(|field| field.name == name)
                                                        .expect("field_type");
-                        self.stack_type(name, field_type.typ.name, field_type.typ.typ.clone());
+                        self.stack_type(name, field_type.typ.name, field_type.typ.args.clone(), field_type.typ.typ.clone());
                     }
                 }
                 ast::Pattern::Identifier(ref mut id) => {
                     let new_name = self.stack_var(id.name, pattern.location, id.typ.clone());
-                    debug!("Rename pattern `{}` = `{}`",
-                           self.symbols.string(&id.name),
-                           self.symbols.string(&new_name));
                     id.name = new_name;
                 }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
@@ -150,12 +133,16 @@ pub fn rename(symbols: &mut SymbolModule,
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
             let new_id = self.symbols.symbol(format!("{}:{}", name, location));
+            debug!("Rename binding `{}` = `{}` `{}`",
+                   self.symbols.string(&old_id),
+                   self.symbols.string(&new_id),
+                   ast::display_type(&self.symbols, &typ));
             self.env.stack.insert(old_id, (new_id, typ));
             new_id
 
         }
 
-        fn stack_type(&mut self, id: Symbol, scoped_id: Symbol, real_type: TcType) {
+        fn stack_type(&mut self, id: Symbol, scoped_id: Symbol, generics: Vec<ast::Generic<Symbol>>, real_type: TcType) {
             // Insert variant constructors into the local scope
             if let Type::Variants(ref variants) = *real_type {
                 for &(name, ref typ) in variants {
@@ -166,8 +153,8 @@ pub fn rename(symbols: &mut SymbolModule,
             // name are imported. Without this aliases may not be traversed properly
             self.env
                 .stack_types
-                .insert(scoped_id, real_type.clone());
-            self.env.stack_types.insert(id, real_type);
+                .insert(scoped_id, (generics.clone(), real_type.clone()));
+            self.env.stack_types.insert(id, (generics, real_type));
         }
 
         fn rename(&self, id: Symbol, expected: &TcType) -> Option<Symbol> {
@@ -221,28 +208,12 @@ pub fn rename(symbols: &mut SymbolModule,
                     id.name = new_id.unwrap_or(id.name);
                 }
                 ast::Expr::Record { ref mut typ, ref mut exprs, .. } => {
-                    let field_types = self.find_fields(&typ.typ).expect("field_types").to_owned();
+                    let field_types = self.find_fields(&typ.typ).expect("field_types");
                     for (field, &mut (id, ref mut maybe_expr)) in field_types.iter().zip(exprs) {
                         match *maybe_expr {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
-                                let new_id = self.env
-                                                 .stack
-                                                 .get_all(&id)
-                                                 .and_then(|bindings| {
-                                                     if bindings.len() == 1 {
-                                                         Some(bindings[0].0)
-                                                     } else {
-                                                         bindings.iter()
-                                                                 .rev()
-                                                                 .find(|bind| {
-                                                                     equivalent(&self.env,
-                                                                                &bind.1,
-                                                                                &field.typ)
-                                                                 })
-                                                                 .map(|bind| bind.0)
-                                                     }
-                                                 });
+                                let new_id = self.rename(id, &field.typ);
                                 *maybe_expr =
                                     Some(ast::no_loc(ast::Expr::Identifier(ast::TcIdent {
                                         name: new_id.unwrap_or(id),
@@ -264,14 +235,17 @@ pub fn rename(symbols: &mut SymbolModule,
                 ast::Expr::Match(ref mut expr, ref mut alts) => {
                     self.visit_expr(expr);
                     for alt in alts {
+                        self.env.stack_types.enter_scope();
                         self.env.stack.enter_scope();
                         let typ = expr.env_type_of(&self.env);
                         self.new_pattern(&typ, &mut alt.pattern);
                         self.visit_expr(&mut alt.expression);
                         self.env.stack.exit_scope();
+                        self.env.stack_types.exit_scope();
                     }
                 }
                 ast::Expr::Let(ref mut bindings, ref mut expr) => {
+                    self.env.stack_types.enter_scope();
                     self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                     for bind in bindings.iter_mut() {
@@ -294,6 +268,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                     self.visit_expr(expr);
                     self.env.stack.exit_scope();
+                    self.env.stack_types.exit_scope();
                 }
                 ast::Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
@@ -307,8 +282,9 @@ pub fn rename(symbols: &mut SymbolModule,
                     self.env.stack_types.enter_scope();
                     for &ast::TypeBinding { ref name, ref typ } in bindings {
                         match **name {
-                            Type::Data(ast::TypeConstructor::Data(id), _) => {
-                                self.stack_type(id, id, typ.clone());
+                            Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+                                let generic_args = extract_generics(args);
+                                self.stack_type(id, id, generic_args, typ.clone());
                             }
                             _ => panic!(),
                         }
@@ -336,6 +312,7 @@ pub fn rename(symbols: &mut SymbolModule,
     let mut visitor = RenameVisitor {
         symbols: symbols,
         errors: Errors::new(),
+        inst: Instantiator::new(),
         env: Environment {
             env: env,
             stack: ScopedMap::new(),
