@@ -1882,6 +1882,20 @@ in array.index arr 0 #Int== 1
 && array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
 Int(1)
 }
+    #[test]
+    fn overloaded_bindings() {
+        let _ = ::env_logger::init();
+        let text = r#"
+let (+) x y = x #Int+ y
+in
+let (+) x y = x #Float+ y
+in
+{ x = 1 + 2, y = 1.0 + 2.0 }
+"#;
+        let mut vm = VM::new();
+        let result = run_expr(&mut vm, text);
+        assert_eq!(result, vm.new_data(0, &mut [Int(3), Float(3.0)]));
+    }
 
     #[test]
     fn run_expr_int() {

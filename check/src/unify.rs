@@ -12,7 +12,7 @@ pub enum Error<T: Substitutable, E> {
 pub struct UnifierState<'s, S: ?Sized + 's, T: 's, U> {
     pub state: &'s mut S,
     pub subs: &'s Substitution<T>,
-    unifier: U,
+    pub unifier: U,
 }
 
 impl<'s, S: ?Sized, Type, U> UnifierState<'s, S, Type, U>

@@ -33,6 +33,7 @@ pub enum TypeError<I> {
     PatternError(ast::ASTType<I>, usize),
     Unification(ast::ASTType<I>, ast::ASTType<I>, Vec<::unify_type::Error<I>>),
     KindError(kindcheck::Error<I>),
+    Rename(::rename::RenameError),
     DuplicateTypeDefinition(I),
     InvalidFieldAccess(ast::ASTType<I>),
     StringError(&'static str),
@@ -88,6 +89,7 @@ fn map_symbol(symbols: &SymbolModule,
                 }
             })
         }
+        Rename(ref err) => Rename(err.clone()),
         DuplicateTypeDefinition(ref id) => DuplicateTypeDefinition(f(id)),
         InvalidFieldAccess(ref typ) => InvalidFieldAccess(typ.clone_strings(symbols)),
         StringError(name) => StringError(name),
@@ -114,6 +116,12 @@ impl<I> From<kindcheck::Error<I>> for TypeError<I> where I: PartialEq + Clone
             UnifyError::Other(::kindcheck::KindError::UndefinedType(name)) => UndefinedType(name),
             e => KindError(e),
         }
+    }
+}
+
+impl <I> From<::rename::RenameError> for TypeError<I> {
+    fn from(e: ::rename::RenameError) -> TypeError<I> {
+        TypeError::Rename(e)
     }
 }
 
@@ -146,6 +154,7 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
             KindError(ref err) => ::kindcheck::fmt_kind_error(err, f),
+            Rename(ref err) => write!(f, "{}", err),
             DuplicateTypeDefinition(ref id) => {
                 write!(f,
                        "Type '{}' has been already been defined in this module",
@@ -163,10 +172,10 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
 
 pub type TcResult<T = TcType> = Result<T, TypeError<Symbol>>;
 
-struct Environment<'a> {
-    environment: Option<&'a (TypeEnv + 'a)>,
-    stack: ScopedMap<Symbol, TcType>,
-    stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
+pub struct Environment<'a> {
+    pub environment: Option<&'a (TypeEnv + 'a)>,
+    pub stack: ScopedMap<Symbol, TcType>,
+    pub stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -359,6 +368,11 @@ impl<'a> Typecheck<'a> {
             typ = self.finish_type(0, typ);
             typ = ast::walk_move_type(typ, &mut unroll_app);
             self.generalize_variables(0, expr);
+            if let Err(errors) = ::rename::rename(&mut self.symbols, &self.environment, expr) {
+                for ast::Spanned { span, value } in errors.errors {
+                    self.errors.error(ast::Spanned { span: span, value: value.into() });
+                }
+            }
             Ok(typ)
         }
     }
@@ -788,7 +802,8 @@ impl<'a> Typecheck<'a> {
                 let return_type = try!(self.typecheck_pattern_rec(args, ctor_type));
                 self.unify(&match_type, return_type)
             }
-            ast::Pattern::Record { types: ref mut associated_types, ref fields } => {
+            ast::Pattern::Record { ref mut id, types: ref mut associated_types, ref fields } => {
+                id.typ = match_type.clone();
                 let mut match_type = self.remove_alias(match_type);
                 let mut types = Vec::new();
                 let new_type = match *match_type {

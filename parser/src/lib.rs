@@ -495,6 +495,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                         }
                     }
                     Pattern::Record {
+                        id: self.intern(""),
                         types: types,
                         fields: patterns,
                     }
@@ -957,6 +958,7 @@ pub mod tests {
         let _ = ::env_logger::init();
         let e = parse_new("case x of | { y, x = z } -> z");
         let pattern = Pattern::Record {
+            id: String::new(),
             types: Vec::new(),
             fields: vec![(intern("y"), None), (intern("x"), Some(intern("z")))],
         };
@@ -969,6 +971,7 @@ pub mod tests {
         assert_eq!(e,
                    no_loc(Expr::Let(vec![Binding {
                                              name: no_loc(Pattern::Record {
+                                                 id: String::new(),
                                                  types: Vec::new(),
                                                  fields: vec![(intern("x"), None),
                                                               (intern("y"), None)],

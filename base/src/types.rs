@@ -138,6 +138,13 @@ impl<Id> Typed for ast::Expr<Id> where Id: Typed<Id = Symbol> + ast::AstId<Untyp
     }
 }
 
+impl <T: Typed> Typed for ast::Located<T> {
+    type Id = T::Id;
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<T::Id> {
+        self.value.env_type_of(env)
+    }
+}
+
 impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<Symbol>>>>> {
     type Id = Symbol;
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
@@ -147,19 +154,24 @@ impl Typed for Option<Box<ast::Located<ast::Expr<ast::TcIdent<Symbol>>>>> {
         }
     }
 }
+impl Typed for ast::Pattern<TcIdent> {
+    type Id = Symbol;
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
+        // Identifier patterns might be a function so use the identifier's type instead
+        match *self {
+            ast::Pattern::Identifier(ref name) => name.env_type_of(env),
+            ast::Pattern::Record { ref id, .. } => id.env_type_of(env),
+            ast::Pattern::Constructor(ref id, ref args) => get_return_type(env, id.typ.clone(), args.len()),
+        }
+    }
+}
 
-impl<T> Typed for ast::Binding<T> where T: Typed<Id = Symbol> + ast::AstId<Untyped = Symbol>
-{
-    type Id = T::Untyped;
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<T::Untyped> {
+impl Typed for ast::Binding<TcIdent> {
+    type Id = Symbol;
+    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         match self.typ {
             Some(ref typ) => typ.clone(),
-            None => {
-                match self.name.value {
-                    ast::Pattern::Identifier(ref name) => name.env_type_of(env),
-                    _ => panic!("Not implemented"),
-                }
-            }
+            None => self.name.env_type_of(env),
         }
     }
 }

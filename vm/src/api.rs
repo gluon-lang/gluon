@@ -700,9 +700,9 @@ where $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a> {
                 let typ = global.type_of();
                 let mut arg_iter = ast::arg_iter(&typ);
                 let ok = $({
-                    arg_iter.next().expect("Arg iter") == &*$args::make_type(vm)
+                    arg_iter.next().expect("Arg iter") == &$args::make_type(vm)
                     } &&)* true;
-                if arg_iter.next().is_none() && ok && arg_iter.typ == &*R::make_type(vm) {
+                if arg_iter.next().is_none() && ok && arg_iter.typ == &R::make_type(vm) {
                     Some(FunctionRef { value: global.value.get(), _marker: PhantomData })
                 }
                 else {

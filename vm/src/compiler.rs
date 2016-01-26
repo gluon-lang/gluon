@@ -645,7 +645,7 @@ impl<'a> Compiler<'a> {
             ast::Pattern::Identifier(ref name) => {
                 function.new_stack_var(*name.id());
             }
-            ast::Pattern::Record { ref types, ref fields } => {
+            ast::Pattern::Record { ref types, ref fields, .. } => {
                 let mut typ = typ.clone();
                 if let Type::Data(ast::TypeConstructor::Data(id), _) = *typ {
                     typ = self.find_type_info(&id)

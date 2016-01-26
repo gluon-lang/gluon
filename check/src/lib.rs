@@ -14,3 +14,4 @@ mod unify_type;
 mod unify;
 pub mod kindcheck;
 mod substitution;
+mod rename;
