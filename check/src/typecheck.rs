@@ -368,12 +368,15 @@ impl<'a> Typecheck<'a> {
             typ = self.finish_type(0, typ);
             typ = ast::walk_move_type(typ, &mut unroll_app);
             self.generalize_variables(0, expr);
-            if let Err(errors) = ::rename::rename(&mut self.symbols, &self.environment, expr) {
-                for ast::Spanned { span, value } in errors.errors {
-                    self.errors.error(ast::Spanned { span: span, value: value.into() });
+            match ::rename::rename(&mut self.symbols, &self.environment, expr) {
+                Ok(()) => Ok(typ),
+                Err(errors) => {
+                    for ast::Spanned { span, value } in errors.errors {
+                        self.errors.error(ast::Spanned { span: span, value: value.into() });
+                    }
+                    Err(map_symbols(&self.symbols, &self.errors))
                 }
             }
-            Ok(typ)
         }
     }
 
@@ -1989,6 +1992,19 @@ in
                                             name: intern("y"),
                                             typ: typ("Float"),
                                         }])));
+    }
+
+    #[test]
+    fn no_matching_overloaded_binding() {
+        let _ = ::env_logger::init();
+        let text = r#"
+let f x = x #Int+ 1
+in
+let f x = x #Float+ 1.0
+in f ""
+"#;
+        let result = typecheck(text);
+        assert_err!(result, Rename(..));
     }
 
     #[test]
