@@ -38,10 +38,7 @@ pub fn fmt_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
 }
 
 
-pub type UnifierState<'a, 's, U> = unify::UnifierState<'s,
-                                                                  AliasInstantiator<'a>,
-                                                                  TcType,
-                                                                  U>;
+pub type UnifierState<'a, 's, U> = unify::UnifierState<'s, AliasInstantiator<'a>, TcType, U>;
 
 impl Variable for ast::TypeVariable {
     fn get_id(&self) -> u32 {
@@ -123,7 +120,8 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
                 // FIXME Take associated types into account when unifying
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
                     let opt_type = if l.name != r.name {
-                        unifier.report_error(UnifyError::Other(TypeError::FieldMismatch(l.name, r.name)));
+                        unifier.report_error(UnifyError::Other(TypeError::FieldMismatch(l.name,
+                                                                                        r.name)));
                         Some(unifier.subs.new_var())
                     } else {
                         unifier.try_match(&l.typ, &r.typ)
@@ -396,6 +394,8 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
 
 #[cfg(test)]
 mod tests {
+    use base::error::Errors;
+
     use super::TypeError::FieldMismatch;
     use unify::Error::*;
     use unify::unify;
@@ -432,6 +432,6 @@ mod tests {
         let mut alias = AliasInstantiator::new(&inst, &unit);
         let result = unify(&inst.subs, &mut alias, &l, &r);
         assert_eq!(result,
-                   Err(vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))]));
+                   Err(Errors { errors: vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))] }));
     }
 }

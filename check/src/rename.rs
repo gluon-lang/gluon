@@ -110,7 +110,10 @@ pub fn rename(symbols: &mut SymbolModule,
                         let field_type = imported_types.iter()
                                                        .find(|field| field.name == name)
                                                        .expect("field_type");
-                        self.stack_type(name, field_type.typ.name, field_type.typ.args.clone(), field_type.typ.typ.clone());
+                        self.stack_type(name,
+                                        field_type.typ.name,
+                                        field_type.typ.args.clone(),
+                                        field_type.typ.typ.clone());
                     }
                 }
                 ast::Pattern::Identifier(ref mut id) => {
@@ -142,7 +145,11 @@ pub fn rename(symbols: &mut SymbolModule,
 
         }
 
-        fn stack_type(&mut self, id: Symbol, scoped_id: Symbol, generics: Vec<ast::Generic<Symbol>>, real_type: TcType) {
+        fn stack_type(&mut self,
+                      id: Symbol,
+                      scoped_id: Symbol,
+                      generics: Vec<ast::Generic<Symbol>>,
+                      real_type: TcType) {
             // Insert variant constructors into the local scope
             if let Type::Variants(ref variants) = *real_type {
                 for &(name, ref typ) in variants {

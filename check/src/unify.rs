@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 use std::hash::Hash;
+
+use base::error::Errors;
+
 use substitution::{Substitution, Substitutable, Variable};
 
 #[derive(Debug, PartialEq)]
@@ -62,26 +65,35 @@ pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
                     -> Result<Option<Self>, Error<Self, Self::Error>> where U: Unifier<S, Self>;
 }
 
-pub fn unify<S, T>(subs: &Substitution<T>, state: &mut S, l: &T, r: &T) -> Result<T, Vec<Error<T, T::Error>>>
+/// Unify `l` and `r` taking into account and updating the substitution `subs`
+/// If the unification is successful the returned type is the unified type with as much sharing as
+/// possible which lets further computions be more efficient.
+pub fn unify<S, T>(subs: &Substitution<T>,
+                   state: &mut S,
+                   l: &T,
+                   r: &T)
+                   -> Result<T, Errors<Error<T, T::Error>>>
     where T: Unifiable<S> + PartialEq + Clone,
           T::Variable: Clone
 {
-    let mut errors = Vec::new();
+    let mut errors = Errors::new();
     let typ = UnifierState {
                   state: state,
                   subs: subs,
                   unifier: Unify { errors: &mut errors },
               }
               .try_match(l, r);
-    if errors.is_empty() {
-        Ok(typ.unwrap_or_else(|| l.clone()))
-    } else {
+    if errors.has_errors() {
         Err(errors)
+    } else {
+        Ok(typ.unwrap_or_else(|| l.clone()))
     }
 }
 
-struct Unify<'e, T, E: 'e> where T: Substitutable + 'e {
-    errors: &'e mut Vec<Error<T, E>>,
+struct Unify<'e, T, E: 'e>
+    where T: Substitutable + 'e
+{
+    errors: &'e mut Errors<Error<T, E>>,
 }
 
 impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
@@ -89,26 +101,30 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
           T::Variable: Clone
 {
     fn report_error(unifier: &mut UnifierState<S, T, Self>, error: Error<T, T::Error>) {
-        unifier.unifier.errors.push(error);
+        unifier.unifier.errors.error(error);
     }
 
-    fn match_either<F, G>(unifier: &mut UnifierState<S, T, Self>, mut f: F, mut g: G) -> Result<Option<T>, ()>
+    fn match_either<F, G>(unifier: &mut UnifierState<S, T, Self>,
+                          mut f: F,
+                          mut g: G)
+                          -> Result<Option<T>, ()>
         where F: FnMut(&mut UnifierState<S, T, Self>) -> Result<Option<T>, ()>,
               G: FnMut(&mut UnifierState<S, T, Self>) -> Result<Option<T>, ()>
     {
-        let original_errors = unifier.unifier.errors.len();
+        let original_errors = unifier.unifier.errors.errors.len();
         let result = f(unifier);
-        let first_errors = unifier.unifier.errors.len();
+        let first_errors = unifier.unifier.errors.errors.len();
         // If there has been no error added the unification succeded
         if result.is_ok() && original_errors == first_errors {
             return result;
         }
         let result = g(unifier);
-        let last_errors = unifier.unifier.errors.len();
+        let last_errors = unifier.unifier.errors.errors.len();
         if result.is_ok() && first_errors == last_errors {
             // Remove any errors found from the first attempt to unify
             for _ in original_errors..first_errors {
                 unifier.unifier
+                       .errors
                        .errors
                        .remove(original_errors);
             }
@@ -117,6 +133,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
         for _ in first_errors..last_errors {
             // Remove the errors from the second attempt (keeping the first attempt)
             unifier.unifier
+                   .errors
                    .errors
                    .remove(first_errors);
         }
@@ -134,7 +151,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
                 match subs.union(r, l) {
                     Ok(()) => Some(l.clone()),
                     Err(()) => {
-                        errors.push(Error::Occurs(r.clone(), l.clone()));
+                        errors.error(Error::Occurs(r.clone(), l.clone()));
                         Some(subs.new_var())
                     }
                 }
@@ -143,7 +160,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
                 match subs.union(l, r) {
                     Ok(()) => Some(r.clone()),
                     Err(()) => {
-                        errors.push(Error::Occurs(l.clone(), r.clone()));
+                        errors.error(Error::Occurs(l.clone(), r.clone()));
                         Some(subs.new_var())
                     }
                 }
@@ -160,7 +177,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
                 match result {
                     Ok(typ) => typ,
                     Err(error) => {
-                        errors.push(error);
+                        errors.error(error);
                         Some(subs.new_var())
                     }
                 }
@@ -169,6 +186,11 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
     }
 }
 
+/// Calculates the intersection between two types. The intersection between two types is the most
+/// specialized type which both types can sucessfully unify to.
+///
+/// # Example
+/// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
 pub fn intersection<S, T>(subs: &Substitution<T>, state: &mut S, l: &T, r: &T) -> T
     where T: Unifiable<S> + Eq + Clone + Hash,
           T::Variable: Clone
@@ -190,8 +212,7 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
     where T: Unifiable<S> + Eq + Hash + Clone,
           T::Variable: Clone
 {
-    fn report_error(_unifier: &mut UnifierState<S, T, Self>, _error: Error<T, T::Error>) {
-    }
+    fn report_error(_unifier: &mut UnifierState<S, T, Self>, _error: Error<T, T::Error>) {}
 
     fn try_match(unifier: &mut UnifierState<S, T, Self>, l: &T, r: &T) -> Option<T> {
         let subs = unifier.subs;
@@ -223,6 +244,9 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
     }
 }
 
+
+/// Merges two values using `f` if either or both them is `Some(..)`.
+/// If both are `None`, `None` is returned as well.
 pub fn merge<F, A, B, R>(a_original: &A,
                          a: Option<A>,
                          b_original: &B,
@@ -243,6 +267,8 @@ pub fn merge<F, A, B, R>(a_original: &A,
 
 #[cfg(test)]
 mod test {
+    use base::error::Errors;
+
     use super::{Error, Unifier, Unifiable, UnifierState, merge};
     use substitution::{Substitution, Substitutable};
 
@@ -308,7 +334,10 @@ mod test {
         TType(Box::new(Type::Arrow(a.clone(), r.clone())))
     }
 
-    fn unify(subs: &Substitution<TType>, l: &TType, r: &TType) -> Result<TType, Vec<Error<TType, ()>>> {
+    fn unify(subs: &Substitution<TType>,
+             l: &TType,
+             r: &TType)
+             -> Result<TType, Errors<Error<TType, ()>>> {
         super::unify(subs, &mut (), l, r)
     }
 
@@ -359,7 +388,7 @@ mod test {
         // Check that var1 does not unify with int as it should already be a string
         let result = unify(&subs, &var1, &int);
         assert_eq!(result,
-                   Err(vec![Error::TypeMismatch(string.clone(), int.clone())]));
+                   Err(Errors { errors: vec![Error::TypeMismatch(string.clone(), int.clone())] }));
     }
 
     #[test]
@@ -371,7 +400,9 @@ mod test {
         let fun = TType(Box::new(Type::Arrow(string.clone(), var1.clone())));
         let result = unify(&subs, &fun, &var1);
         assert_eq!(result,
-                   Err(vec![Error::Occurs(*var1.get_var().unwrap(), fun.clone())]));
+                   Err(Errors {
+                       errors: vec![Error::Occurs(*var1.get_var().unwrap(), fun.clone())],
+                   }));
     }
 
     fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {

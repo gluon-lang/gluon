@@ -5,7 +5,7 @@ use base::ast;
 use base::symbol::Symbol;
 use base::types::KindEnv;
 
-use typecheck::TcType;
+use base::types::TcType;
 use substitution::{Substitution, Substitutable};
 use unify;
 use unify::merge;
@@ -170,7 +170,11 @@ impl<'a> KindCheck<'a> {
                             try!(self.unify(arg_kind, actual));
                             ret.clone()
                         }
-                        _ => return Err(UnifyError::TypeMismatch(Kind::function(self.star(), self.star()), kind.clone())),
+                        _ => {
+                            return Err(UnifyError::TypeMismatch(Kind::function(self.star(),
+                                                                               self.star()),
+                                                                kind.clone()))
+                        }
                     };
                 }
                 Ok((kind, Type::data(ast::TypeConstructor::Data(ctor), new_args)))
@@ -347,4 +351,3 @@ impl<S> unify::Unifiable<S> for RcKind {
         }
     }
 }
-

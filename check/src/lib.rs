@@ -1,3 +1,7 @@
+//! The `check` crate does all checking on a successfully parsed AST to determine if it is a valid
+//! program. If an AST passes the checks in `Typecheck::typecheck_expr` the `AST` is expected to
+//! sucessfully compile as well.
+
 #[macro_use]
 extern crate log;
 #[cfg(test)]
@@ -20,7 +24,7 @@ mod rename;
 mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
-    
+
     use base::symbol::{Symbols, SymbolModule, Symbol};
 
     ///Returns a reference to the interner stored in TLD

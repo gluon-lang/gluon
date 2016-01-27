@@ -1585,8 +1585,7 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
     try!(macro_expand(vm, &mut expr));
     let env = vm.env();
     let mut symbols = vm.symbols.borrow_mut();
-    let mut tc = Typecheck::new(file.into(), &mut symbols);
-    tc.add_environment(&env);
+    let mut tc = Typecheck::new(file.into(), &mut symbols, &env);
     let typ = try!(tc.typecheck_expr(&mut expr)
                      .map_err(|err| error::in_file(StdString::from(file), expr_str, err)));
     Ok((expr, typ))

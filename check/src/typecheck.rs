@@ -3,10 +3,10 @@ use std::mem;
 
 use base::scoped_map::ScopedMap;
 use base::ast;
-use base::ast::{DisplayEnv, MutVisitor, RcKind};
+use base::ast::{DisplayEnv, MutVisitor, RcKind, Type, Kind};
 use base::error::Errors;
 use base::symbol::{Name, Symbol, SymbolModule, Symbols};
-use base::types::{KindEnv, TypeEnv};
+use base::types::{KindEnv, TypeEnv, TcIdent, TcType};
 use instantiate::{AliasInstantiator, Instantiator};
 use kindcheck;
 use substitution::Substitution;
@@ -16,28 +16,36 @@ use base::types::Typed;
 
 use self::TypeError::*;
 
-pub use base::ast::{TypeVariable, Type, Kind};
-
-pub use base::types::TcType;
-
-pub type TcIdent = ast::TcIdent<Symbol>;
-
 type ErrType = ast::ASTType<String>;
 
+
+/// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
 pub enum TypeError<I> {
+    /// Variable has not been defined before it was used
     UndefinedVariable(I),
+    /// Attempt to call a type which is not a function
     NotAFunction(ast::ASTType<I>),
+    /// Type has not been defined before it was used
     UndefinedType(I),
+    /// Type were expected to have a certain field
     UndefinedField(ast::ASTType<I>, I),
+    /// Constructor type was found in a pattern but did not have the expected number of arguments
     PatternError(ast::ASTType<I>, usize),
+    /// Errors found when trying to unify two types
     Unification(ast::ASTType<I>, ast::ASTType<I>, Vec<::unify_type::Error<I>>),
+    /// Error were found when trying to unify the kinds of two types
     KindError(kindcheck::Error<I>),
+    /// Errors found during renaming (overload resolution)
     Rename(::rename::RenameError),
+    /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
+    /// Type is not a type which has any fields
     InvalidFieldAccess(ast::ASTType<I>),
     StringError(&'static str),
 }
+
+
 
 fn map_symbol(symbols: &SymbolModule,
               err: &ast::Spanned<TypeError<Symbol>>)
@@ -119,7 +127,7 @@ impl<I> From<kindcheck::Error<I>> for TypeError<I> where I: PartialEq + Clone
     }
 }
 
-impl <I> From<::rename::RenameError> for TypeError<I> {
+impl<I> From<::rename::RenameError> for TypeError<I> {
     fn from(e: ::rename::RenameError) -> TypeError<I> {
         TypeError::Rename(e)
     }
@@ -173,10 +181,10 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
 
 pub type TcResult<T = TcType> = Result<T, TypeError<Symbol>>;
 
-pub struct Environment<'a> {
-    pub environment: Option<&'a (TypeEnv + 'a)>,
-    pub stack: ScopedMap<Symbol, TcType>,
-    pub stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
+struct Environment<'a> {
+    environment: &'a (TypeEnv + 'a),
+    stack: ScopedMap<Symbol, TcType>,
+    stack_types: ScopedMap<Symbol, (TcType, Vec<ast::Generic<Symbol>>, TcType)>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -190,25 +198,22 @@ impl<'a> KindEnv for Environment<'a> {
                 }
                 kind
             })
-            .or_else(|| self.environment.and_then(|env| env.find_kind(type_name)))
+            .or_else(|| self.environment.find_kind(type_name))
     }
 }
 
 impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
-        let stack = &self.stack;
-        let environment = &self.environment;
-        match stack.get(id) {
-            Some(x) => Some(x),
-            None => environment.and_then(|e| e.find_type(id)),
-        }
+        self.stack.get(id).or_else(|| self.environment.find_type(id))
     }
+
     fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
         self.stack_types
             .get(id)
             .map(|&(_, ref generics, ref typ)| (&generics[..], Some(typ)))
-            .or_else(|| self.environment.and_then(|e| e.find_type_info(id)))
+            .or_else(|| self.environment.find_type_info(id))
     }
+
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         self.stack_types
             .iter()
@@ -221,10 +226,11 @@ impl<'a> TypeEnv for Environment<'a> {
                 }
             })
             .map(|t| (&(t.1).0, &(t.1).2))
-            .or_else(|| self.environment.and_then(|e| e.find_record(fields)))
+            .or_else(|| self.environment.find_record(fields))
     }
 }
 
+/// Type which can typecheck expressions.
 pub struct Typecheck<'a> {
     environment: Environment<'a>,
     symbols: SymbolModule<'a>,
@@ -235,10 +241,15 @@ pub struct Typecheck<'a> {
     errors: Errors<ast::Spanned<TypeError<Symbol>>>,
 }
 
+/// Error returned when unsuccessfully typechecking an expression
 pub type Error = Errors<ast::Spanned<TypeError<String>>>;
 
 impl<'a> Typecheck<'a> {
-    pub fn new(module: String, symbols: &'a mut Symbols) -> Typecheck<'a> {
+    /// Create a new typechecker which typechecks expressions in `module`
+    pub fn new(module: String,
+               symbols: &'a mut Symbols,
+               environment: &'a (TypeEnv + 'a))
+               -> Typecheck<'a> {
         let mut symbols = SymbolModule::new(module, symbols);
         for t in ["Int", "Float"].iter() {
             for op in "+-*/".chars() {
@@ -247,7 +258,7 @@ impl<'a> Typecheck<'a> {
         }
         Typecheck {
             environment: Environment {
-                environment: None,
+                environment: environment,
                 stack: ScopedMap::new(),
                 stack_types: ScopedMap::new(),
             },
@@ -259,36 +270,30 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find(&mut self, id: &Symbol) -> TcResult {
-        let t: Option<&TcType> = {
-            match self.environment.stack.get(id) {
-                Some(x) => Some(x),
-                None => self.environment.environment.and_then(|e| e.find_type(id)),
-            }
-        };
-        match t {
-            Some(typ) => {
-                let x = self.inst.instantiate(typ);
+        let symbols = &mut self.symbols;
+        let inst = &mut self.inst;
+        self.environment
+            .find_type(&id)
+            .ok_or_else(|| UndefinedVariable(id.clone()))
+            .map(|typ| {
+                let x = inst.instantiate(typ);
                 debug!("Find {} : {}",
-                       self.symbols.string(id),
-                       ast::display_type(&self.symbols, &x));
-                Ok(x)
-            }
-            None => Err(UndefinedVariable(id.clone())),
-        }
+                       symbols.string(id),
+                       ast::display_type(symbols, &x));
+                x
+            })
     }
 
     fn find_record(&self, fields: &[Symbol]) -> Result<(&TcType, &TcType), TypeError<Symbol>> {
         self.environment
             .find_record(fields)
-            .map(|s| Ok(s))
-            .unwrap_or_else(|| Err(StringError("Expected fields")))
+            .ok_or(StringError("Expected fields"))
     }
 
     fn find_type_info(&self, id: &Symbol) -> TcResult<(&[ast::Generic<Symbol>], Option<&TcType>)> {
         self.environment
             .find_type_info(id)
-            .map(|s| Ok(s))
-            .unwrap_or_else(|| Err(UndefinedType(id.clone())))
+            .ok_or(UndefinedType(*id))
     }
 
     fn stack_var(&mut self, id: Symbol, typ: TcType) {
@@ -328,10 +333,6 @@ impl<'a> Typecheck<'a> {
         self.original_symbols.exit_scope();
     }
 
-    pub fn add_environment(&mut self, env: &'a TypeEnv) {
-        self.environment.environment = Some(env);
-    }
-
     fn generalize_variables(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
         // Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b: 'a> {
@@ -358,6 +359,8 @@ impl<'a> Typecheck<'a> {
         .visit_expr(expr);
     }
 
+    /// Typecheck `expr`. If successful the type of the expression will be returned and all
+    /// identifiers in `expr` will be filled with the inferred type
     pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, Error> {
         self.inst.subs.clear();
         self.environment.stack.clear();
@@ -373,7 +376,10 @@ impl<'a> Typecheck<'a> {
                 Ok(()) => Ok(typ),
                 Err(errors) => {
                     for ast::Spanned { span, value } in errors.errors {
-                        self.errors.error(ast::Spanned { span: span, value: value.into() });
+                        self.errors.error(ast::Spanned {
+                            span: span,
+                            value: value.into(),
+                        });
                     }
                     Err(map_symbols(&self.symbols, &self.errors))
                 }
@@ -974,9 +980,13 @@ impl<'a> Typecheck<'a> {
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
                 let mut alias = AliasInstantiator::new(&self.inst, &self.environment);
-                debug!("Intersect\n{} <> {}", ast::display_type(&self.symbols, existing_type),
-                                              ast::display_type(&self.symbols, symbol_type));
-                typ = Some(unify::intersection(&self.inst.subs, &mut alias, existing_type, symbol_type));
+                debug!("Intersect\n{} <> {}",
+                       ast::display_type(&self.symbols, existing_type),
+                       ast::display_type(&self.symbols, symbol_type));
+                typ = Some(unify::intersection(&self.inst.subs,
+                                               &mut alias,
+                                               existing_type,
+                                               symbol_type));
             }
         }
         if let Some(typ) = typ {
@@ -1131,7 +1141,7 @@ impl<'a> Typecheck<'a> {
                        errors,
                        ast::display_type(&self.symbols, &expected),
                        ast::display_type(&self.symbols, &actual));
-                Err(TypeError::Unification(expected, actual, apply_subs(&self.inst, errors)))
+                Err(TypeError::Unification(expected, actual, apply_subs(&self.inst, errors.errors)))
             }
         }
     }

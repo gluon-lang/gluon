@@ -47,19 +47,19 @@ fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
 {
     let mut occurs = false;
     typ.traverse(|typ| {
-                  if occurs {
-                      return typ;
-                  }
-                  let typ = subs.real(typ);
-                  if let Some(other) = typ.get_var() {
-                      if var.get_id() == other.get_id() {
-                          occurs = true;
-                          return typ;
-                      }
-                      subs.update_level(var.get_id(), other.get_id());
-                  }
-                  typ
-              });
+        if occurs {
+            return typ;
+        }
+        let typ = subs.real(typ);
+        if let Some(other) = typ.get_var() {
+            if var.get_id() == other.get_id() {
+                occurs = true;
+                return typ;
+            }
+            subs.update_level(var.get_id(), other.get_id());
+        }
+        typ
+    });
     occurs
 }
 
@@ -224,7 +224,6 @@ impl<T: Substitutable> Substitution<T> {
 }
 
 impl<T: Substitutable + Clone> Substitution<T> {
-
     pub fn make_real(&self, typ: &mut T) {
         *typ = self.real(typ).clone();
     }

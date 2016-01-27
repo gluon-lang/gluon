@@ -5,8 +5,9 @@ extern crate parser;
 extern crate check;
 
 use base::ast;
+use base::ast::Type;
 use base::symbol::{Symbols, SymbolModule, Symbol};
-use base::types::Typed;
+use base::types::{Typed, TcIdent, TcType};
 
 use check::typecheck::*;
 
@@ -118,7 +119,7 @@ fn type_con2<T>(s: &str, args: Vec<T>) -> Type<Symbol, T> {
         Some(b) => Type::Builtin(b),
         None if is_var => {
             Type::Generic(ast::Generic {
-                kind: Kind::star(),
+                kind: ast::Kind::star(),
                 id: intern(s),
             })
         }
@@ -148,7 +149,8 @@ pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>
     let mut expr = parse_new(text);
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
-    let mut tc = Typecheck::new("test".into(), &mut interner);
+    let env = ();
+    let mut tc = Typecheck::new("test".into(), &mut interner, &env);
     let result = tc.typecheck_expr(&mut expr);
     (expr, result)
 }
