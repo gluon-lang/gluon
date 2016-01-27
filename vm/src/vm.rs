@@ -1466,9 +1466,11 @@ and { Num, Eq, Ord, Show, Functor, Monad, Option, Result, not } = __implicit_pre
 in
 let { (+), (-), (*) } = __implicit_prelude.num_Int
 and { (==) } = __implicit_prelude.eq_Int
+and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Int
 in
 let { (+), (-), (*) } = __implicit_prelude.num_Float
 and { (==) } = __implicit_prelude.eq_Float
+and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
 in 0
 "#;
     let prelude_expr = parse_expr(vm, "", prelude_import).unwrap();
