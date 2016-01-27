@@ -4,10 +4,11 @@ version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
 
 
-[dependencies.log]
-[dependencies.env_logger]
 [dependencies]
+log = "0.3.5"
+env_logger = "0.3.2"
 combine = "^1.1.1"
 combine-language = "0.9.0"
+
 [dependencies.base]
 path = "../base"

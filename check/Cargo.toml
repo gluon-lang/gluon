@@ -3,10 +3,9 @@ name = "check"
 version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
 
-[dependencies.log]
-[dependencies.env_logger]
-
 [dependencies]
+log = "0.3.5"
+env_logger = "0.3.2"
 union-find = "0.2.2"
 
 [dependencies.base]

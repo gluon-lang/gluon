@@ -16,9 +16,11 @@ path = "src/lib.rs"
 name = "repl"
 path = "src/main.rs"
 
-[dependencies.log]
-[dependencies.env_logger]
-[dependencies.clap]
+[dependencies]
+log = "0.3.5"
+env_logger = "0.3.2"
+clap = "1.5.5"
+
 [dependencies.base]
 path = "base"
 [dependencies.parser]
