@@ -1,4 +1,5 @@
 # embed_lang (working title)
+[![Build Status](https://travis-ci.org/Marwes/embed_lang.svg?branch=master)](https://travis-ci.org/Marwes/embed_lang)
 
 This library is a complete compiler and virtual machine for an embeddable langauge implemented in pure [Rust][Rust]. This is currently very unstable as neither the semantics of syntax is nailed down yet.
 
