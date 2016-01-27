@@ -27,8 +27,7 @@ fn prelude(b: &mut ::test::Bencher) {
                        .unwrap_or_else(|err| panic!("{:?}", err))
     };
     b.iter(|| {
-        let mut tc = Typecheck::new("".into(), &mut symbols);
-        tc.add_environment(&env);
+        let mut tc = Typecheck::new("".into(), &mut symbols, &env);
         let result = tc.typecheck_expr(&mut expr.clone());
         if let Err(ref err) = result {
             println!("{}", err);
