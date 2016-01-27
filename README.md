@@ -14,6 +14,10 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 
 As a warning, the standard math operators (+, -, * etc) are not exported in the global scope, as such the expression `2 + 2` will not compile. To use these operators they need to explicitly be brought into scope `let { (+), (-), (*) } = prelude.num_Int in 2 + 2`. See the reason for this in issue [#10][]
 
+## Documentation
+
+[Rustdoc](https://marwes.github.io/embed_lang/embed_lang/index.html)
+
 ## Examples
 
 ## Hello world
