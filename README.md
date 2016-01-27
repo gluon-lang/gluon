@@ -14,6 +14,79 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 
 As a warning, the standard math operators (+, -, * etc) are not exported in the global scope, as such the expression `2 + 2` will not compile. To use these operators they need to explicitly be brought into scope `let { (+), (-), (*) } = prelude.num_Int in 2 + 2`. See the reason for this in issue [#10][]
 
+## Examples
+
+## Hello world
+
+```haskell
+io.print "Hello world!"
+```
+
+## Factorial
+
+```haskell
+let factorial n : Int -> Int =
+        if n < 2
+        then 1
+        else n * factorial (n - 1)
+in factorial 10
+```
+
+### Syntax
+
+Larger example which display most if not all of the syntactical elements in the language.
+
+```haskell
+// `type` is used to declare a new type.
+// In this case we declare `Eq` to be a record with a single field (`==`) which is a function
+// which takes two arguments of the same type and returns a boolean
+type Eq a = { (==) : a -> a -> Bool }
+in
+// `let` declares new variables.
+let id x = x
+in
+let list_module =
+        // Declare a new type which only exists in the current scope
+        type List a = | Cons a (List a) | Nil
+        in
+        let map f xs =
+                case xs of
+                    | Cons y ys -> Cons (f y) (map f ys)
+                    | Nil -> Nil
+        in
+        let eq eq_a: Eq a -> Eq (List a) =
+                let { (==) } = eq_a in
+                let (===) l r =
+                        case l of
+                            | Cons la lxs ->
+                                (case r of
+                                    | Cons ra rxs -> la == ra && lxs === rxs
+                                    | Nil -> False)
+                            | Nil ->
+                                (case r of
+                                    | Cons _ _ -> False
+                                    | Nil -> True)
+                in { (==) = (===) }
+        in {
+            // Since `List` is local we export it so its constructors can be used
+            // outside the current scope
+            List,
+            eq,
+            map
+        }
+in
+// Bring the `List` type and its constructors into scope
+let { List, eq = list_Eq } = list_module
+in
+// Create `==` for `List Int`
+let { (==) }: Eq (List Int) = list_Eq { (==) }
+in
+if Cons 1 Nil == Nil then
+    error "This branch is not executed"
+else
+    io.print "Hello world!"
+```
+
 ## Contributing
 
 If you are interested in contributing to this project there are a few issues open marked as [beginner][] which should be possible to for someone unfamiliar with the code. If you find something that looks interesting leave a comment on the issue so I know about it annd can give some assistance if needed.

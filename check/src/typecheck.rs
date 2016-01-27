@@ -147,6 +147,7 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
                 }
                 for error in &errors[..errors.len() - 1] {
                     try!(::unify_type::fmt_error(error, f));
+                    try!(writeln!(f, ""));
                 }
                 ::unify_type::fmt_error(errors.last().unwrap(), f)
             }
