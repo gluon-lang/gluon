@@ -4,9 +4,9 @@
 //! ```rust
 //! # extern crate env_logger;
 //! # extern crate embed_lang;
-//! 
+//!
 //! use embed_lang::vm::vm::{VM, run_expr};
-//! 
+//!
 //! # fn main() {
 //!
 //! let text = r#"

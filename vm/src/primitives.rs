@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io::{Read, stdin};
 use std::string::String as StdString;
 
-use base::ast;
-use base::ast::{Type, ASTType};
+use base::types;
+use base::types::Type;
 use primitives as prim;
 use types::*;
 use api::{generic, Generic, Getable, Array, IO, MaybeError, primitive};
@@ -294,17 +294,15 @@ fn f3<A, B, C, R>(f: fn(A, B, C) -> R) -> fn(A, B, C) -> R {
 }
 pub fn load(vm: &VM) -> VMResult<()> {
 
-    let a = Type::generic(ast::Generic {
-        kind: ast::Kind::star(),
+    let a = Type::generic(types::Generic {
+        kind: types::Kind::star(),
         id: vm.symbol("a"),
     });
-    let b = Type::generic(ast::Generic {
-        kind: ast::Kind::star(),
+    let b = Type::generic(types::Generic {
+        kind: types::Kind::star(),
         id: vm.symbol("b"),
     });
-    let io = |t| {
-        ASTType::from(ast::Type::Data(ast::TypeConstructor::Data(vm.symbol("IO")), vec![t]))
-    };
+    let io = |t| types::Type::data(types::TypeConstructor::Data(vm.symbol("IO")), vec![t]);
 
     try!(vm.define_global("array",
                           record!(

@@ -50,7 +50,9 @@ pub struct InFile<E> {
 
 fn extract_context<E>(lines: &[&str], error: ast::Spanned<E>) -> SourceContext<E> {
     SourceContext {
-        context: String::from(lines.get((error.span.start.row - 1) as usize).cloned().unwrap_or("N/A")),
+        context: String::from(lines.get((error.span.start.row - 1) as usize)
+                                   .cloned()
+                                   .unwrap_or("N/A")),
         error: error,
     }
 }
@@ -60,9 +62,10 @@ pub fn in_file<E>(file: String, contents: &str, error: Errors<ast::Spanned<E>>) 
     InFile {
         file: file,
         error: Errors {
-            errors: error.errors.into_iter()
-                                .map(|error| extract_context(&lines, error))
-                                .collect()
+            errors: error.errors
+                         .into_iter()
+                         .map(|error| extract_context(&lines, error))
+                         .collect(),
         },
     }
 }

@@ -246,7 +246,7 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
 
 #[cfg(test)]
 mod test {
-    use base::ast::merge;
+    use base::types::merge;
     use base::error::Errors;
 
     use super::{Error, Unifier, Unifiable, UnifierState};

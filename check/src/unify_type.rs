@@ -1,8 +1,9 @@
 use std::fmt;
 
-use base::ast::{ASTType, Type, merge};
-use base::ast;
-use base::types::TcType;
+use base::types;
+use base::types::{Type, merge};
+use base::ast::ASTType;
+use base::types::{TcType, TypeVariable};
 use base::symbol::Symbol;
 
 use unify;
@@ -40,24 +41,24 @@ pub fn fmt_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
 
 pub type UnifierState<'a, 's, U> = unify::UnifierState<'s, AliasInstantiator<'a>, TcType, U>;
 
-impl Variable for ast::TypeVariable {
+impl Variable for TypeVariable {
     fn get_id(&self) -> u32 {
         self.id
     }
 }
 
 impl<I> Substitutable for ASTType<I> {
-    type Variable = ast::TypeVariable;
+    type Variable = TypeVariable;
 
     fn new(id: u32) -> ASTType<I> {
-        Type::variable(ast::TypeVariable::new(id))
+        Type::variable(TypeVariable::new(id))
     }
 
-    fn from_variable(var: ast::TypeVariable) -> ASTType<I> {
+    fn from_variable(var: TypeVariable) -> ASTType<I> {
         Type::variable(var)
     }
 
-    fn get_var(&self) -> Option<&ast::TypeVariable> {
+    fn get_var(&self) -> Option<&TypeVariable> {
         match **self {
             Type::Variable(ref var) => Some(var),
             _ => None,
@@ -67,7 +68,7 @@ impl<I> Substitutable for ASTType<I> {
     fn traverse<'s, F>(&'s self, mut f: F)
         where F: FnMut(&'s ASTType<I>) -> &'s ASTType<I>
     {
-        ast::walk_type(self, &mut f)
+        types::walk_type(self, &mut f)
     }
 }
 
@@ -127,7 +128,7 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
                         unifier.try_match(&l.typ, &r.typ)
                     };
                     opt_type.map(|typ| {
-                        ast::Field {
+                        types::Field {
                             name: l.name,
                             typ: typ,
                         }
@@ -186,7 +187,7 @@ fn zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
     match **actual {
-        Type::Data(ast::TypeConstructor::Data(r), ref r_args) => {
+        Type::Data(types::TypeConstructor::Data(r), ref r_args) => {
             debug!("Attempt alias {:?} {:?}", r, r_args);
             let r = match unifier.state.type_of_alias(r, r_args) {
                 Ok(typ) => typ,
@@ -209,7 +210,7 @@ fn zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
 }
 
 fn unify_app<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
-                           l: &ast::TypeConstructor<Symbol>,
+                           l: &types::TypeConstructor<Symbol>,
                            l_args: &[TcType],
                            r: &TcType,
                            f: &F)
@@ -227,7 +228,7 @@ fn unify_app<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
 }
 
 fn unify_app_<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
-                            l: &ast::TypeConstructor<Symbol>,
+                            l: &types::TypeConstructor<Symbol>,
                             l_args: &[TcType],
                             r: &TcType,
                             replaced: bool,
@@ -301,7 +302,7 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
             let other_f = subs.real(other_f);
             match **other_f {
                 Type::App(ref fn_prim, ref other_arg) => {
-                    unifier.try_match(fn_prim, &Type::builtin(ast::BuiltinType::FunctionType));
+                    unifier.try_match(fn_prim, &Type::builtin(types::BuiltinType::FunctionType));
                     let new_arg = unifier.try_match(arg, other_arg);
                     let new_ret = unifier.try_match(ret, other_ret);
                     Ok(merge(arg,
@@ -363,7 +364,8 @@ mod tests {
     use unify::unify;
     use instantiate::{AliasInstantiator, Instantiator};
     use base::ast;
-    use base::ast::Type;
+    use base::types;
+    use base::types::Type;
     use tests::*;
 
 
@@ -372,20 +374,20 @@ mod tests {
         let _ = ::env_logger::init();
         let (x, y, z, w) = (intern("x"), intern("y"), intern("z"), intern("w"));
         let l = Type::record(vec![],
-                             vec![ast::Field {
+                             vec![types::Field {
                                       name: x,
                                       typ: Type::int(),
                                   },
-                                  ast::Field {
+                                  types::Field {
                                       name: y,
                                       typ: Type::string(),
                                   }]);
         let r = Type::record(vec![],
-                             vec![ast::Field {
+                             vec![types::Field {
                                       name: z,
                                       typ: Type::int(),
                                   },
-                                  ast::Field {
+                                  types::Field {
                                       name: w,
                                       typ: Type::string(),
                                   }]);
@@ -394,6 +396,8 @@ mod tests {
         let mut alias = AliasInstantiator::new(&inst, &unit);
         let result = unify(&inst.subs, &mut alias, &l, &r);
         assert_eq!(result,
-                   Err(Errors { errors: vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))] }));
+                   Err(Errors {
+                       errors: vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))],
+                   }));
     }
 }

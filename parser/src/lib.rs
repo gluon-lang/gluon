@@ -14,6 +14,7 @@ use std::iter::FromIterator;
 
 use base::ast;
 use base::ast::*;
+use base::types::{Type, TypeConstructor, BuiltinType, Generic, Alias, Field, TypeVariable, Kind};
 use base::symbol::{Name, Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, Error as CombineError, Info};
@@ -211,7 +212,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                         });
         self.braces(sep_by(field, self.lex(char(','))))
             .map(|fields: Vec<(Id, _)>| {
-                let mut associated  = Vec::new();
+                let mut associated = Vec::new();
                 let mut types = Vec::new();
                 let mut ids = self.make_ident.borrow_mut();
                 for (id, field) in fields {
@@ -224,8 +225,11 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                             })
                         }
                         None => {
-                            let typ = Type::data(TypeConstructor::Data(untyped_id.clone()), Vec::new());
-                            let short_name = String::from(Name::new(ids.string(&id)).name().as_str());
+                            let typ = Type::data(TypeConstructor::Data(untyped_id.clone()),
+                                                 Vec::new());
+                            let short_name = String::from(Name::new(ids.string(&id))
+                                                              .name()
+                                                              .as_str());
                             associated.push(Field {
                                 name: ids.from_str(&short_name).to_id(),
                                 typ: Alias {
@@ -604,11 +608,9 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
 
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
 ///type information. The type will just be a dummy value until the AST has passed typechecking
-pub fn parse_tc(symbols: &mut SymbolModule,
-                input: &str)
-                -> Result<LExpr<TcIdent<Symbol>>, Error> {
+pub fn parse_tc(symbols: &mut SymbolModule, input: &str) -> Result<LExpr<TcIdent<Symbol>>, Error> {
     let mut env = ast::TcIdentEnv {
-        typ: Type::variable(ast::TypeVariable {
+        typ: Type::variable(TypeVariable {
             id: 0,
             kind: Kind::star(),
         }),
@@ -617,9 +619,7 @@ pub fn parse_tc(symbols: &mut SymbolModule,
     parse_module(&mut env, input)
 }
 
-fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>,
-                    input: &str)
-                    -> Result<LExpr<Id>, Error>
+fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>, input: &str) -> Result<LExpr<Id>, Error>
     where Id: AstId + Clone
 {
 
@@ -686,6 +686,8 @@ pub mod tests {
     use super::parse_module;
     use base::ast::*;
     use base::ast;
+    use base::types;
+    use base::types::{Type, TypeConstructor, Generic, Alias, Field, Kind};
 
     pub fn intern(s: &str) -> String {
         String::from(s)
@@ -731,7 +733,7 @@ pub mod tests {
     }
     fn typ_a(s: &str, args: Vec<ASTType<String>>) -> ASTType<String> {
         assert!(s.len() != 0);
-        ASTType::new(ast::type_con(intern(s), args))
+        ASTType::new(types::type_con(intern(s), args))
     }
     fn generic(s: &str) -> ASTType<String> {
         Type::generic(Generic {
@@ -1010,32 +1012,56 @@ pub mod tests {
     #[test]
     fn span() {
         let _ = ::env_logger::init();
-        let loc = |r, c| Location { column: c, row: r, absolute: 0 };
+        let loc = |r, c| {
+            Location {
+                column: c,
+                row: r,
+                absolute: 0,
+            }
+        };
 
         let e = parse_new("test");
-        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(1, 1), end: loc(1, 5) });
+        assert_eq!(e.span(&EmptyEnv::new()),
+                   Span {
+                       start: loc(1, 1),
+                       end: loc(1, 5),
+                   });
 
         let e = parse_new("1234");
-        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(1, 1), end: loc(1, 5) });
+        assert_eq!(e.span(&EmptyEnv::new()),
+                   Span {
+                       start: loc(1, 1),
+                       end: loc(1, 5),
+                   });
 
         let e = parse_new(r#" f 123 "asd" "#);
-        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(1, 2), end: loc(1, 13) });
+        assert_eq!(e.span(&EmptyEnv::new()),
+                   Span {
+                       start: loc(1, 2),
+                       end: loc(1, 13),
+                   });
 
-        let e = parse_new(
-r#"
+        let e = parse_new(r#"
 case False of
     | True -> "asd"
     | False -> ""
 "#);
-        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(2, 1), end: loc(4, 18) });
+        assert_eq!(e.span(&EmptyEnv::new()),
+                   Span {
+                       start: loc(2, 1),
+                       end: loc(4, 18),
+                   });
 
-        let e = parse_new(
-r#"
+        let e = parse_new(r#"
     if True
             then 1
 else 
     123.45
 "#);
-        assert_eq!(e.span(&EmptyEnv::new()), Span { start: loc(2, 5), end: loc(5, 11) });
+        assert_eq!(e.span(&EmptyEnv::new()),
+                   Span {
+                       start: loc(2, 5),
+                       end: loc(5, 11),
+                   });
     }
 }

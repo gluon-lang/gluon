@@ -1,10 +1,11 @@
 use std::fmt;
 
 use base::ast;
-use base::ast::{DisplayEnv, Type, RcKind, MutVisitor};
+use base::ast::{Typed, DisplayEnv, MutVisitor};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule};
-use base::types::{Typed, TcType, TcIdent, KindEnv, TypeEnv};
+use base::types;
+use base::types::{TcType, Type, Generic, TcIdent, RcKind, KindEnv, TypeEnv};
 use base::error::Errors;
 
 use typecheck::extract_generics;
@@ -41,7 +42,7 @@ impl fmt::Display for RenameError {
 struct Environment<'b> {
     env: &'b TypeEnv,
     stack: ScopedMap<Symbol, (Symbol, TcType)>,
-    stack_types: ScopedMap<Symbol, (Vec<ast::Generic<Symbol>>, TcType)>,
+    stack_types: ScopedMap<Symbol, (Vec<Generic<Symbol>>, TcType)>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -54,7 +55,7 @@ impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         self.stack.get(id).map(|t| &t.1).or_else(|| self.env.find_type(id))
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[Generic<Symbol>], Option<&TcType>)> {
         self.stack_types
             .get(id)
             .map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
@@ -76,7 +77,7 @@ pub fn rename(symbols: &mut SymbolModule,
         errors: Error,
     }
     impl<'a, 'b> RenameVisitor<'a, 'b> {
-        fn find_fields(&self, typ: &TcType) -> Option<Vec<ast::Field<Symbol, TcType>>> {
+        fn find_fields(&self, typ: &TcType) -> Option<Vec<types::Field<Symbol, TcType>>> {
             // Walk through all type aliases
             match *self.remove_aliases(typ) {
                 Type::Record { ref fields, .. } => Some(fields.to_owned()),
@@ -125,7 +126,7 @@ pub fn rename(symbols: &mut SymbolModule,
                                   .find_type(id.id())
                                   .expect("ICE: Expected constructor")
                                   .clone();
-                    for (arg_type, arg) in ast::arg_iter(&typ).zip(args) {
+                    for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
                         arg.name = self.stack_var(arg.name, pattern.location, arg_type.clone());
                     }
                 }
@@ -139,7 +140,7 @@ pub fn rename(symbols: &mut SymbolModule,
             debug!("Rename binding `{}` = `{}` `{}`",
                    self.symbols.string(&old_id),
                    self.symbols.string(&new_id),
-                   ast::display_type(&self.symbols, &typ));
+                   types::display_type(&self.symbols, &typ));
             self.env.stack.insert(old_id, (new_id, typ));
             new_id
 
@@ -148,7 +149,7 @@ pub fn rename(symbols: &mut SymbolModule,
         fn stack_type(&mut self,
                       id: Symbol,
                       scoped_id: Symbol,
-                      generics: Vec<ast::Generic<Symbol>>,
+                      generics: Vec<Generic<Symbol>>,
                       real_type: TcType) {
             // Insert variant constructors into the local scope
             if let Type::Variants(ref variants) = *real_type {
@@ -265,7 +266,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in ast::arg_iter(&bind.type_of())
+                            for (typ, arg) in types::arg_iter(&bind.type_of())
                                                   .zip(&mut bind.arguments) {
                                 arg.name = self.stack_var(arg.name, expr.location, typ.clone());
                             }
@@ -279,7 +280,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 ast::Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
-                    for (typ, arg) in ast::arg_iter(&lambda.id.typ).zip(&mut lambda.arguments) {
+                    for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.arguments) {
                         arg.name = self.stack_var(arg.name, expr.location, typ.clone());
                     }
                     self.visit_expr(&mut lambda.body);
@@ -289,7 +290,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     self.env.stack_types.enter_scope();
                     for &ast::TypeBinding { ref name, ref typ } in bindings {
                         match **name {
-                            Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+                            Type::Data(types::TypeConstructor::Data(id), ref args) => {
                                 let generic_args = extract_generics(args);
                                 self.stack_type(id, id, generic_args, typ.clone());
                             }

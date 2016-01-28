@@ -1,7 +1,8 @@
 use std::fmt;
 
-use base::ast::{RcKind, Type, Kind, merge};
 use base::ast;
+use base::types;
+use base::types::{RcKind, Type, Kind, merge};
 use base::symbol::Symbol;
 use base::types::KindEnv;
 
@@ -157,8 +158,8 @@ impl<'a> KindCheck<'a> {
                     _ => panic!("Expected kind function"),
                 }
             }
-            Type::Data(ast::TypeConstructor::Builtin(_), _) => panic!("Builtin with arguments"),
-            Type::Data(ast::TypeConstructor::Data(ctor), ref args) => {
+            Type::Data(types::TypeConstructor::Builtin(_), _) => panic!("Builtin with arguments"),
+            Type::Data(types::TypeConstructor::Data(ctor), ref args) => {
                 let mut kind = try!(self.find(ctor));
                 let mut new_args = Vec::new();
                 for arg in args {
@@ -178,7 +179,8 @@ impl<'a> KindCheck<'a> {
                         }
                     };
                 }
-                Ok((kind, Type::data(ast::TypeConstructor::Data(ctor), new_args)))
+                Ok((kind,
+                    Type::data(types::TypeConstructor::Data(ctor), new_args)))
             }
             Type::Function(ref args, ref ret) => {
                 let (kind, arg) = try!(self.kindcheck(&args[0]));
@@ -206,7 +208,7 @@ impl<'a> KindCheck<'a> {
                                             let (kind, typ) = try!(self.kindcheck(&field.typ));
                                             let star = self.star.clone();
                                             try!(self.unify(&star, kind));
-                                            Ok(ast::Field {
+                                            Ok(types::Field {
                                                 name: field.name,
                                                 typ: typ,
                                             })
@@ -233,28 +235,28 @@ impl<'a> KindCheck<'a> {
 
     pub fn finalize_type(&self, typ: TcType) -> TcType {
         let default = Some(&self.star);
-        ast::walk_move_type(typ,
-                            &mut |typ| {
-                                match *typ {
-                                    Type::Variable(ref var) => {
-                                        let mut kind = var.kind.clone();
-                                        kind = update_kind(&self.subs, kind, default);
-                                        Some(Type::variable(ast::TypeVariable {
-                                            id: var.id,
-                                            kind: kind,
-                                        }))
-                                    }
-                                    Type::Generic(ref var) => {
-                                        let mut kind = var.kind.clone();
-                                        kind = update_kind(&self.subs, kind, default);
-                                        Some(Type::generic(ast::Generic {
-                                            id: var.id,
-                                            kind: kind,
-                                        }))
-                                    }
-                                    _ => None,
-                                }
-                            })
+        types::walk_move_type(typ,
+                              &mut |typ| {
+                                  match *typ {
+                                      Type::Variable(ref var) => {
+                                          let mut kind = var.kind.clone();
+                                          kind = update_kind(&self.subs, kind, default);
+                                          Some(Type::variable(types::TypeVariable {
+                                              id: var.id,
+                                              kind: kind,
+                                          }))
+                                      }
+                                      Type::Generic(ref var) => {
+                                          let mut kind = var.kind.clone();
+                                          kind = update_kind(&self.subs, kind, default);
+                                          Some(Type::generic(types::Generic {
+                                              id: var.id,
+                                              kind: kind,
+                                          }))
+                                      }
+                                      _ => None,
+                                  }
+                              })
     }
 }
 

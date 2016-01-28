@@ -5,9 +5,10 @@ extern crate parser;
 extern crate check;
 
 use base::ast;
-use base::ast::Type;
+use base::ast::Typed;
 use base::symbol::{Symbols, SymbolModule, Symbol};
-use base::types::{Typed, TcIdent, TcType};
+use base::types::{Type, TcIdent, TcType};
+use base::types;
 
 use check::typecheck::*;
 
@@ -54,7 +55,7 @@ macro_rules! assert_err {
         let symbols = get_local_interner();
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}",
-                             ast::display_type(&*symbols.borrow(), &x)),
+                             types::display_type(&*symbols.borrow(), &x)),
             Err(err) => {
                 let mut iter = err.errors.iter();
                 $(
@@ -80,7 +81,7 @@ macro_rules! assert_unify_err {
         let symbols = get_local_interner();
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}",
-                             ast::display_type(&*symbols.borrow(), &x)),
+                             types::display_type(&*symbols.borrow(), &x)),
             Err(err) => {
                 for err in err.errors.iter() {
                     match *err {
@@ -118,12 +119,12 @@ fn type_con2<T>(s: &str, args: Vec<T>) -> Type<Symbol, T> {
     match s.parse() {
         Ok(b) => Type::Builtin(b),
         Err(()) if is_var => {
-            Type::Generic(ast::Generic {
-                kind: ast::Kind::star(),
+            Type::Generic(types::Generic {
+                kind: types::Kind::star(),
                 id: intern(s),
             })
         }
-        Err(()) => Type::Data(ast::TypeConstructor::Data(intern(s)), args),
+        Err(()) => Type::Data(types::TypeConstructor::Data(intern(s)), args),
     }
 }
 
@@ -283,11 +284,11 @@ in test2 1";
     assert_eq!(result, Ok(typ("Int")));
     assert_m!(expr.value, ast::Expr::Let(ref binds, _) => {
         assert_eq!(binds.len(), 2);
-        assert_m!(*binds[0].type_of(), ast::Type::Function(ref args, _) => {
-            assert_m!(*args[0], ast::Type::Generic(_) => ())
+        assert_m!(*binds[0].type_of(), Type::Function(ref args, _) => {
+            assert_m!(*args[0], Type::Generic(_) => ())
         });
-        assert_m!(*binds[1].type_of(), ast::Type::Function(ref args, _) => {
-            assert_m!(*args[0], ast::Type::Generic(_) => ())
+        assert_m!(*binds[1].type_of(), Type::Function(ref args, _) => {
+            assert_m!(*args[0], Type::Generic(_) => ())
         });
     });
 }
@@ -526,15 +527,15 @@ type Test = | Test String Int in { Test, x = 1 }
     let variant = Type::function(vec![typ("String"), typ("Int")], typ("Test"));
     let test = Type::variants(vec![(intern("Test"), variant)]);
     assert_eq!(result,
-               Ok(Type::record(vec![ast::Field {
+               Ok(Type::record(vec![types::Field {
                                         name: intern_unscoped("Test"),
-                                        typ: ast::Alias {
+                                        typ: types::Alias {
                                             name: intern("Test"),
                                             args: vec![],
                                             typ: test,
                                         },
                                     }],
-                               vec![ast::Field {
+                               vec![types::Field {
                                         name: intern("x"),
                                         typ: typ("Int"),
                                     }])));
@@ -719,11 +720,11 @@ in
     let result = typecheck(text);
     assert_eq!(result,
                Ok(Type::record(vec![],
-                               vec![ast::Field {
+                               vec![types::Field {
                                         name: intern("x"),
                                         typ: typ("Int"),
                                     },
-                                    ast::Field {
+                                    types::Field {
                                         name: intern("y"),
                                         typ: typ("Float"),
                                     }])));
@@ -742,11 +743,11 @@ in
     let result = typecheck(text);
     assert_eq!(result,
                Ok(Type::record(vec![],
-                               vec![ast::Field {
+                               vec![types::Field {
                                         name: intern("x"),
                                         typ: typ("Int"),
                                     },
-                                    ast::Field {
+                                    types::Field {
                                         name: intern("y"),
                                         typ: typ("Float"),
                                     }])));

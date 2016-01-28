@@ -7,11 +7,12 @@ use std::cmp::Ordering;
 use std::ops::Deref;
 use std::string::String as StdString;
 use base::ast;
-use base::ast::{Type, ASTType, DisplayEnv};
+use base::ast::{Typed, ASTType, DisplayEnv};
 use base::symbol::{Name, NameBuf, Symbol, Symbols};
-use base::types::{KindEnv, TypeEnv, TcType};
+use base::types::{KindEnv, TypeEnv, TcType, RcKind};
 use base::macros::MacroEnv;
-use base::types::Typed;
+use base::types;
+use base::types::Type;
 use types::*;
 use base::fixed::{FixedMap, FixedVec};
 use interner::{Interner, InternedStr};
@@ -23,8 +24,7 @@ use lazy::Lazy;
 
 use self::Named::*;
 
-use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure,
-                  Userdata};
+use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure, Userdata};
 
 
 pub use stack::{Stack, StackFrame};
@@ -465,7 +465,7 @@ pub struct VMEnv<'a: 'b, 'b> {
     globals: &'b FixedVec<Global<'a>>,
     names: Ref<'b, HashMap<Symbol, Named>>,
     io_symbol: Symbol,
-    io_arg: [ast::Generic<Symbol>; 1],
+    io_arg: [types::Generic<Symbol>; 1],
 }
 
 impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
@@ -481,12 +481,12 @@ impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
 }
 
 impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
-    fn find_kind(&self, type_name: Symbol) -> Option<ast::RcKind> {
+    fn find_kind(&self, type_name: Symbol) -> Option<RcKind> {
         self.type_infos
             .find_kind(type_name)
             .or_else(|| {
                 if type_name == self.io_symbol {
-                    Some(ast::Kind::function(ast::Kind::star(), ast::Kind::star()))
+                    Some(types::Kind::function(types::Kind::star(), types::Kind::star()))
                 } else {
                     None
                 }
@@ -517,7 +517,7 @@ impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
             }
         }
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[types::Generic<Symbol>], Option<&TcType>)> {
         self.type_infos
             .find_type_info(id)
             .or_else(|| {
@@ -621,9 +621,9 @@ impl<'a> VM<'a> {
         try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
         try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
-        let args = vec![ast::Generic {
+        let args = vec![types::Generic {
                             id: self.symbol("a"),
-                            kind: ast::Kind::star(),
+                            kind: types::Kind::star(),
                         }];
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
         Ok(())
@@ -723,7 +723,7 @@ impl<'a> VM<'a> {
 
     pub fn register_type<T: ?Sized + Any>(&self,
                                           name: &str,
-                                          args: Vec<ast::Generic<Symbol>>)
+                                          args: Vec<types::Generic<Symbol>>)
                                           -> VMResult<&TcType> {
         let n = self.symbol(name);
         let mut type_infos = self.type_infos.borrow_mut();
@@ -732,7 +732,7 @@ impl<'a> VM<'a> {
         } else {
             let id = TypeId::of::<T>();
             let arg_types = args.iter().map(|g| Type::generic(g.clone())).collect();
-            let typ = Type::data(ast::TypeConstructor::Data(n), arg_types);
+            let typ = Type::data(types::TypeConstructor::Data(n), arg_types);
             self.typeids
                 .try_insert(id, typ.clone())
                 .expect("Id not inserted");
@@ -774,9 +774,9 @@ impl<'a> VM<'a> {
             globals: &self.globals,
             names: self.names.borrow(),
             io_symbol: self.symbol("IO"),
-            io_arg: [ast::Generic {
+            io_arg: [types::Generic {
                          id: self.symbol("a"),
-                         kind: ast::Kind::star(),
+                         kind: types::Kind::star(),
                      }],
         }
     }
@@ -860,7 +860,7 @@ impl<'a> VM<'a> {
                        closure: GcPtr<ClosureData<'a>>)
                        -> VMResult<Value<'a>> {
         let value = try!(self.call_bytecode(0, closure));
-        if let Type::Data(ast::TypeConstructor::Data(id), _) = **typ {
+        if let Type::Data(types::TypeConstructor::Data(id), _) = **typ {
             if id == self.symbol("IO") {
                 debug!("Run IO {:?}", value);
                 self.push(value);
@@ -1459,8 +1459,7 @@ fn include_implicit_prelude(vm: &VM, name: &str, expr: &mut ast::LExpr<ast::TcId
         return;
     }
 
-    let prelude_import =
-r#"
+    let prelude_import = r#"
 let __implicit_prelude = import "std/prelude.hs"
 and { Num, Eq, Ord, Show, Functor, Monad, Option, Result, not } = __implicit_prelude
 in
@@ -1475,7 +1474,8 @@ in 0
 "#;
     let prelude_expr = parse_expr(vm, "", prelude_import).unwrap();
     let original_expr = mem::replace(expr, prelude_expr);
-    fn assign_last_body(l: &mut ast::LExpr<ast::TcIdent<Symbol>>, original_expr: ast::LExpr<ast::TcIdent<Symbol>>) {
+    fn assign_last_body(l: &mut ast::LExpr<ast::TcIdent<Symbol>>,
+                        original_expr: ast::LExpr<ast::TcIdent<Symbol>>) {
         match l.value {
             ast::Expr::Let(_, ref mut e) => {
                 assign_last_body(e, original_expr);
@@ -1494,7 +1494,10 @@ fn macro_expand(vm: &VM, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) -> VMResul
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]
-fn compile_script(vm: &VM, filename: &str, expr: &ast::LExpr<ast::TcIdent<Symbol>>) -> CompiledFunction {
+fn compile_script(vm: &VM,
+                  filename: &str,
+                  expr: &ast::LExpr<ast::TcIdent<Symbol>>)
+                  -> CompiledFunction {
     use base::symbol::SymbolModule;
     use compiler::Compiler;
     debug!("Compile `{}`", filename);
@@ -1596,7 +1599,11 @@ pub fn run_expr<'a>(vm: &VM<'a>, name: &str, expr_str: &str) -> Result<Value<'a>
     run_expr2(vm, name, expr_str, true)
 }
 #[cfg(all(feature = "check", feature = "parser"))]
-fn run_expr2<'a>(vm: &VM<'a>, name: &str, expr_str: &str, implicit_prelude: bool) -> Result<Value<'a>, Error> {
+fn run_expr2<'a>(vm: &VM<'a>,
+                 name: &str,
+                 expr_str: &str,
+                 implicit_prelude: bool)
+                 -> Result<Value<'a>, Error> {
     let (expr, typ) = try!(typecheck_expr(vm, name, expr_str, implicit_prelude));
     let mut function = compile_script(vm, name, &expr);
     function.id = vm.symbols.borrow_mut().symbol(name);
@@ -1984,8 +1991,7 @@ Int(100)
         let _ = ::env_logger::init();
         let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
         let mut vm = make_vm();
-        super::run_expr(&mut vm, "<top>", text)
-            .unwrap_or_else(|err| panic!("{}", err));
+        super::run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
     }
 
     /// Creates a VM for testing which has the correct paths to import the std library properly

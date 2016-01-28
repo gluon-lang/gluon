@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use base::ast;
-use base::ast::Type;
 use base::symbol::Symbol;
-use base::types::{KindEnv, TypeEnv, TcType};
+use base::types;
+use base::types::{KindEnv, TypeEnv, TcType, Type};
 
 pub use self::Instruction::*;
 
@@ -91,18 +90,18 @@ impl Instruction {
 
 #[derive(Debug)]
 pub struct TypeInfos {
-    pub id_to_type: HashMap<Symbol, (Vec<ast::Generic<Symbol>>, TcType)>,
+    pub id_to_type: HashMap<Symbol, (Vec<types::Generic<Symbol>>, TcType)>,
     pub type_to_id: HashMap<TcType, TcType>,
 }
 
 impl KindEnv for TypeInfos {
-    fn find_kind(&self, type_name: Symbol) -> Option<ast::RcKind> {
+    fn find_kind(&self, type_name: Symbol) -> Option<types::RcKind> {
         self.id_to_type
             .get(&type_name)
             .map(|&(ref args, _)| {
-                let mut kind = ast::Kind::star();
+                let mut kind = types::Kind::star();
                 for arg in args.iter().rev() {
-                    kind = ast::Kind::function(arg.kind.clone(), kind);
+                    kind = types::Kind::function(arg.kind.clone(), kind);
                 }
                 kind
             })
@@ -123,7 +122,7 @@ impl TypeEnv for TypeInfos {
             .map(|x| &x.1)
     }
 
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[types::Generic<Symbol>], Option<&TcType>)> {
         self.id_to_type
             .get(id)
             .map(|&(ref args, ref typ)| (&args[..], Some(typ)))

@@ -3,8 +3,9 @@ use interner::{Interner, InternedStr};
 use gc::Gc;
 use base::ast;
 use base::symbol::{Symbol, SymbolModule};
-use base::ast::{DisplayEnv, LExpr, Expr, Type};
-use base::types::{Typed, TcIdent, TcType, TypeEnv};
+use base::ast::{Typed, DisplayEnv, LExpr, Expr};
+use base::types;
+use base::types::{Type, TcIdent, TcType, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
 use self::Variable::*;
@@ -209,11 +210,11 @@ pub struct Compiler<'a> {
     gc: &'a mut Gc,
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, TcType>,
-    stack_types: ScopedMap<Symbol, (Vec<ast::Generic<Symbol>>, TcType)>,
+    stack_types: ScopedMap<Symbol, (Vec<types::Generic<Symbol>>, TcType)>,
 }
 
 impl<'a> ::base::types::KindEnv for Compiler<'a> {
-    fn find_kind(&self, _type_name: Symbol) -> Option<ast::RcKind> {
+    fn find_kind(&self, _type_name: Symbol) -> Option<types::RcKind> {
         None
     }
 }
@@ -222,7 +223,7 @@ impl<'a> TypeEnv for Compiler<'a> {
     fn find_type(&self, _id: &Symbol) -> Option<&TcType> {
         None
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[ast::Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<(&[types::Generic<Symbol>], Option<&TcType>)> {
         self.stack_types
             .get(id)
             .map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
@@ -267,7 +268,7 @@ impl<'a> Compiler<'a> {
             })
             .next()
             .map(|(tag, &(_, ref typ))| {
-                Constructor(tag as VMIndex, ast::arg_iter(typ).count() as VMIndex)
+                Constructor(tag as VMIndex, types::arg_iter(typ).count() as VMIndex)
             })
             .or_else(|| {
                 current.stack
@@ -300,7 +301,7 @@ impl<'a> Compiler<'a> {
         let mut typ = typ;
         loop {
             match *typ {
-                ast::Type::Data(ast::TypeConstructor::Data(id), _) => {
+                Type::Data(types::TypeConstructor::Data(id), _) => {
                     match self.find_type_info(&id) {
                         Some((_, Some(real_type))) => {
                             typ = real_type;
@@ -323,15 +324,12 @@ impl<'a> Compiler<'a> {
             }
             ref typ => {
                 panic!("ICE: FieldAccess on {}",
-                       ast::display_type(&self.symbols, typ))
+                       types::display_type(&self.symbols, typ))
             }
         }
     }
 
-    fn find_tag(&self,
-                typ: &TcType,
-                constructor: &Symbol)
-                -> Option<VMTag> {
+    fn find_tag(&self, typ: &TcType, constructor: &Symbol) -> Option<VMTag> {
         match *self.remove_aliases(typ) {
             Type::Variants(ref variants) => {
                 variants.iter()
@@ -516,7 +514,7 @@ impl<'a> Compiler<'a> {
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.env_type_of(self);
                 let typ = typ.inner_app();
-                debug!("FieldAccess {}", ast::display_type(&self.symbols, typ));
+                debug!("FieldAccess {}", types::display_type(&self.symbols, typ));
                 let field_index = self.find_field(typ, field.id())
                                       .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));
@@ -533,7 +531,7 @@ impl<'a> Compiler<'a> {
                             let tag = self.find_tag(&typ, id.id())
                                           .unwrap_or_else(|| {
                                               panic!("Could not find tag for {}::{}",
-                                                     ast::display_type(&self.symbols, &typ),
+                                                     types::display_type(&self.symbols, &typ),
                                                      self.symbols.string(id.id()))
                                           });
                             function.emit(TestTag(tag));
@@ -610,7 +608,7 @@ impl<'a> Compiler<'a> {
             }
             Expr::Type(ref type_bindings, ref expr) => {
                 for type_binding in type_bindings {
-                    if let ast::Type::Data(ast::TypeConstructor::Data(name), ref args) =
+                    if let Type::Data(types::TypeConstructor::Data(name), ref args) =
                            *type_binding.name {
                         let generic_args = extract_generics(args);
                         self.stack_types.insert(name, (generic_args, type_binding.typ.clone()));
@@ -647,7 +645,7 @@ impl<'a> Compiler<'a> {
             }
             ast::Pattern::Record { ref types, ref fields, .. } => {
                 let mut typ = typ.clone();
-                if let Type::Data(ast::TypeConstructor::Data(id), _) = *typ {
+                if let Type::Data(types::TypeConstructor::Data(id), _) = *typ {
                     typ = self.find_type_info(&id)
                               .and_then(|(_, typ)| typ.cloned())
                               .unwrap_or(typ);
@@ -674,7 +672,7 @@ impl<'a> Compiler<'a> {
                     }
                     _ => {
                         panic!("Expected record, got {} at {:?}",
-                               ast::display_type(&self.symbols, &typ),
+                               types::display_type(&self.symbols, &typ),
                                pattern)
                     }
                 }
@@ -725,7 +723,7 @@ impl<'a> Compiler<'a> {
 }
 
 fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(Symbol, &ast::Alias<Symbol, TcType>)
+    where F: FnMut(Symbol, &types::Alias<Symbol, TcType>)
 {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
@@ -737,7 +735,7 @@ fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f
     }
 }
 
-fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<Symbol>> {
+fn extract_generics(args: &[TcType]) -> Vec<types::Generic<Symbol>> {
     args.iter()
         .map(|arg| {
             match **arg {

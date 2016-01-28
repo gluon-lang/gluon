@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::ops::Deref;
 
-use base::ast;
-use base::ast::{Type, merge};
+use base::types;
+use base::types::{Type, Generic, TypeConstructor, merge};
 use base::symbol::Symbol;
 use base::types::{TcType, TypeEnv};
 use unify_type::TypeError::UndefinedType;
@@ -38,7 +38,7 @@ impl<'a> AliasInstantiator<'a> {
 
     pub fn maybe_remove_alias(&self, typ: &TcType) -> Option<TcType> {
         match **typ {
-            Type::Data(ast::TypeConstructor::Data(id), ref args) => {
+            Type::Data(TypeConstructor::Data(id), ref args) => {
                 self.type_of_alias(id, args)
                     .unwrap_or_else(|_| None)
             }
@@ -103,7 +103,7 @@ impl<'a> AliasInstantiator<'a> {
             _ => arguments.len() == args.len(),
         };
         if !ok_substitution {
-            let expected = Type::data(ast::TypeConstructor::Data(id),
+            let expected = Type::data(TypeConstructor::Data(id),
                                       arguments.iter().cloned().collect());
             return Err(unify::Error::TypeMismatch(expected, typ));
         }
@@ -125,7 +125,7 @@ impl Instantiator {
         }
     }
 
-    fn variable_for(&self, generic: &ast::Generic<Symbol>) -> TcType {
+    fn variable_for(&self, generic: &Generic<Symbol>) -> TcType {
         let mut variables = self.named_variables.borrow_mut();
         let var = match variables.entry(generic.id) {
             Entry::Vacant(entry) => {
@@ -154,7 +154,7 @@ impl Instantiator {
     fn instantiate_with(&self,
                         typ: TcType,
                         arguments: &[TcType],
-                        args: &[ast::Generic<Symbol>])
+                        args: &[Generic<Symbol>])
                         -> TcType {
         self.named_variables.borrow_mut().clear();
         instantiate(typ, |gen| {
@@ -179,23 +179,23 @@ impl Instantiator {
     }
 
     pub fn set_type(&self, t: TcType) -> TcType {
-        ast::walk_move_type(t,
-                            &mut |typ| {
-                                let replacement = self.replace_variable(typ);
-                                let result = {
-                                    let mut typ = typ;
-                                    if let Some(ref t) = replacement {
-                                        typ = &**t;
-                                    }
-                                    unroll_app(typ)
-                                };
-                                result.or(replacement)
-                            })
+        types::walk_move_type(t,
+                              &mut |typ| {
+                                  let replacement = self.replace_variable(typ);
+                                  let result = {
+                                      let mut typ = typ;
+                                      if let Some(ref t) = replacement {
+                                          typ = &**t;
+                                      }
+                                      unroll_app(typ)
+                                  };
+                                  result.or(replacement)
+                              })
     }
 }
 
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-    where F: FnMut(&ast::Generic<Symbol>) -> Option<TcType>
+    where F: FnMut(&Generic<Symbol>) -> Option<TcType>
 {
     walk_move_type_no_recurse(typ,
                               &mut |typ| {
@@ -267,7 +267,7 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                     let new_types = None;
                     let new_fields = walk_move_types(fields.iter(), |field| {
                         walk_move_type2(&field.typ, f).map(|typ| {
-                            ast::Field {
+                            types::Field {
                                 name: field.name.clone(),
                                 typ: typ,
                             }

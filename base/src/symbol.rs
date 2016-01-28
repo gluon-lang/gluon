@@ -45,8 +45,9 @@ impl Name {
     }
 
     pub fn name(&self) -> &Name {
-        self.0.rfind('.')
-            .map(|i| Name::new(&self.0[i+1..]))
+        self.0
+            .rfind('.')
+            .map(|i| Name::new(&self.0[i + 1..]))
             .unwrap_or(self)
     }
 }
@@ -113,7 +114,7 @@ impl Deref for NameBuf {
     }
 }
 
-impl <'a> From<&'a str> for NameBuf {
+impl<'a> From<&'a str> for NameBuf {
     fn from(name: &'a str) -> NameBuf {
         NameBuf(String::from(name))
     }
@@ -125,7 +126,7 @@ impl From<String> for NameBuf {
     }
 }
 
-impl <'a> From<&'a Name> for NameBuf {
+impl<'a> From<&'a Name> for NameBuf {
     fn from(name: &'a Name) -> NameBuf {
         NameBuf::from(&name.0)
     }

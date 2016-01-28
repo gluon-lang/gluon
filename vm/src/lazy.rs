@@ -1,4 +1,4 @@
-use base::ast;
+use base::types;
 use base::types::TcType;
 use std::marker::PhantomData;
 use gc::{Gc, Traverseable, Move};
@@ -37,8 +37,8 @@ impl<'a, T> VMType for Lazy<'a, T>
     type Type = Lazy<'static, T::Type>;
 
     fn make_type(vm: &VM) -> TcType {
-        ast::Type::data(ast::TypeConstructor::Data(vm.symbol("Lazy")),
-                        vec![T::make_type(vm)])
+        types::Type::data(types::TypeConstructor::Data(vm.symbol("Lazy")),
+                          vec![T::make_type(vm)])
     }
 }
 

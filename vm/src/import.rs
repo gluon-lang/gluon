@@ -76,16 +76,18 @@ impl<'a> Macro<VM<'a>> for Import {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
                     self.visited.borrow_mut().push(filename.clone());
-                    let file = self.paths.borrow().iter()
-                            .filter_map(|p| {
-                                let mut base = p.clone();
-                                base.push(path);
-                                match File::open(&base) {
-                                    Ok(file) => Some(file),
-                                    Err(_) => None,
-                                }
-                            })
-                            .next();
+                    let file = self.paths
+                                   .borrow()
+                                   .iter()
+                                   .filter_map(|p| {
+                                       let mut base = p.clone();
+                                       base.push(path);
+                                       match File::open(&base) {
+                                           Ok(file) => Some(file),
+                                           Err(_) => None,
+                                       }
+                                   })
+                                   .next();
                     let mut file = try!(file.ok_or_else(|| Error::String("Could not find file")));
                     let mut buffer = String::new();
                     try!(file.read_to_string(&mut buffer).map_err(error));

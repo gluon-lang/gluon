@@ -1,6 +1,6 @@
 use std::error::Error as StdError;
-use base::ast;
-use base::types::{TypeEnv, Typed};
+use base::ast::Typed;
+use base::types::{TypeEnv, display_type};
 use vm::vm::{VM, RootStr, Status, typecheck_expr, load_file};
 use vm::api::{VMFunction, IO, Get, Callable, primitive};
 
@@ -10,7 +10,7 @@ fn type_of_expr(vm: &VM) -> Status {
             Ok((expr, _)) => {
                 let ref env = vm.env();
                 let symbols = vm.get_symbols();
-                format!("{}", ast::display_type(&*symbols, &expr.env_type_of(env)))
+                format!("{}", display_type(&*symbols, &expr.env_type_of(env)))
             }
             Err(msg) => format!("{}", msg),
         })
@@ -34,7 +34,7 @@ fn find_type_info(vm: &VM) -> Status {
                     match typ {
                         Some(typ) => {
                             let symbols = vm.get_symbols();
-                            try!(write!(&mut buffer, "{}", ast::display_type(&*symbols, typ)))
+                            try!(write!(&mut buffer, "{}", display_type(&*symbols, typ)))
                         }
                         None => try!(write!(&mut buffer, "<abstract>")),
                     }
@@ -63,7 +63,8 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
 pub fn run() -> Result<(), Box<StdError>> {
     let vm = VM::new();
     try!(compile_repl(&vm));
-    let mut repl: Callable<((),), IO<()>> = Get::get_function(&vm, "std.repl").expect("repl function");
+    let mut repl: Callable<((),), IO<()>> = Get::get_function(&vm, "std.repl")
+                                                .expect("repl function");
     try!(repl.call(()));
     Ok(())
 }

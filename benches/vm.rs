@@ -23,8 +23,7 @@ fn prelude(b: &mut ::test::Bencher) {
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
         let mut text = String::new();
         File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        ::parser::parse_tc(&mut symbols, &text)
-                       .unwrap_or_else(|err| panic!("{:?}", err))
+        ::parser::parse_tc(&mut symbols, &text).unwrap_or_else(|err| panic!("{:?}", err))
     };
     b.iter(|| {
         let mut tc = Typecheck::new("".into(), &mut symbols, &env);
