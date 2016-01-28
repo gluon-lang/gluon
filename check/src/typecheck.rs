@@ -7,7 +7,7 @@ use base::ast::{DisplayEnv, MutVisitor, RcKind, Type, Kind};
 use base::error::Errors;
 use base::symbol::{Name, Symbol, SymbolModule, Symbols};
 use base::types::{KindEnv, TypeEnv, TcIdent, TcType};
-use instantiate::{AliasInstantiator, Instantiator};
+use instantiate::{AliasInstantiator, Instantiator, unroll_app};
 use kindcheck;
 use substitution::Substitution;
 use unify::Error as UnifyError;
@@ -179,7 +179,7 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
     }
 }
 
-pub type TcResult<T = TcType> = Result<T, TypeError<Symbol>>;
+type TcResult<T> = Result<T, TypeError<Symbol>>;
 
 struct Environment<'a> {
     environment: &'a (TypeEnv + 'a),
@@ -230,7 +230,7 @@ impl<'a> TypeEnv for Environment<'a> {
     }
 }
 
-/// Type which can typecheck expressions.
+/// Struct which provides methods to typecheck expressions.
 pub struct Typecheck<'a> {
     environment: Environment<'a>,
     symbols: SymbolModule<'a>,
@@ -269,7 +269,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn find(&mut self, id: &Symbol) -> TcResult {
+    fn find(&mut self, id: &Symbol) -> TcResult<TcType> {
         let symbols = &mut self.symbols;
         let inst = &mut self.inst;
         self.environment
@@ -284,7 +284,7 @@ impl<'a> Typecheck<'a> {
             })
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Result<(&TcType, &TcType), TypeError<Symbol>> {
+    fn find_record(&self, fields: &[Symbol]) -> TcResult<(&TcType, &TcType)> {
         self.environment
             .find_record(fields)
             .ok_or(StringError("Expected fields"))
@@ -387,7 +387,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult {
+    fn typecheck(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
         self.refresh_symbols(expr);
         match self.typecheck_(expr) {
             Ok(typ) => Ok(typ),
@@ -400,7 +400,7 @@ impl<'a> Typecheck<'a> {
             }
         }
     }
-    fn typecheck_(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult {
+    fn typecheck_(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
         match expr.value {
             ast::Expr::Identifier(ref mut id) => {
                 id.typ = try!(self.find(id.id()));
@@ -784,7 +784,7 @@ impl<'a> Typecheck<'a> {
                         function_type: TcType,
                         arguments: &mut [TcIdent],
                         body: &mut ast::LExpr<TcIdent>)
-                        -> TcResult {
+                        -> TcResult<TcType> {
         self.enter_scope();
         let mut arg_types = Vec::new();
         {
@@ -804,7 +804,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_pattern(&mut self,
                          pattern: &mut ast::LPattern<TcIdent>,
                          match_type: TcType)
-                         -> TcResult {
+                         -> TcResult<TcType> {
         match pattern.value {
             ast::Pattern::Constructor(ref id, ref mut args) => {
                 // Find the enum constructor and return the types for its arguments
@@ -920,7 +920,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_pattern_rec(&mut self, args: &[TcIdent], typ: TcType) -> TcResult {
+    fn typecheck_pattern_rec(&mut self, args: &[TcIdent], typ: TcType) -> TcResult<TcType> {
         if args.len() == 0 {
             return Ok(typ);
         }
@@ -934,7 +934,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn kindcheck(&self, typ: &mut TcType, args: &mut [TcType]) -> Result<(), TypeError<Symbol>> {
+    fn kindcheck(&self, typ: &mut TcType, args: &mut [TcType]) -> TcResult<()> {
         let subs = Substitution::new();
         let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
         check.set_variables(args);
@@ -1126,7 +1126,7 @@ impl<'a> Typecheck<'a> {
                             })
     }
 
-    fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult {
+    fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult<TcType> {
         debug!("Unify {} <=> {}",
                ast::display_type(&self.symbols, expected),
                ast::display_type(&self.symbols, &actual));
@@ -1212,25 +1212,6 @@ pub fn extract_generics(args: &[TcType]) -> Vec<ast::Generic<Symbol>> {
         .collect()
 }
 
-pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
-    let mut args = Vec::new();
-    let mut current = typ;
-    loop {
-        match *current {
-            Type::App(ref l, ref r) => {
-                args.push(r.clone());
-                current = &**l;
-            }
-            Type::Data(ref l, ref rest) => {
-                args.extend(rest.iter().rev().cloned());
-                args.reverse();
-                return Some(Type::data(l.clone(), args));
-            }
-            _ => return None,
-        }
-    }
-}
-
 struct FunctionArgIter<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
     typ: TcType,
@@ -1261,46 +1242,4 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
 
 fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: TcType) -> FunctionArgIter<'a, 'b> {
     FunctionArgIter { tc: tc, typ: typ }
-}
-
-
-pub fn walk_real_type<F>(subs: &Substitution<TcType>, typ: &TcType, f: &mut F)
-    where F: FnMut(&Type<Symbol>)
-{
-    let typ = subs.real(typ);
-    f(typ);
-    match **typ {
-        Type::Data(_, ref args) => {
-            for a in args {
-                walk_real_type(subs, a, f);
-            }
-        }
-        Type::Array(ref inner) => {
-            walk_real_type(subs, inner, f);
-        }
-        Type::Function(ref args, ref ret) => {
-            for a in args {
-                walk_real_type(subs, a, f);
-            }
-            walk_real_type(subs, ret, f);
-        }
-        Type::Record { ref types, ref fields } => {
-            for field in types {
-                walk_real_type(subs, &field.typ.typ, f);
-            }
-            for field in fields {
-                walk_real_type(subs, &field.typ, f);
-            }
-        }
-        Type::App(ref l, ref r) => {
-            walk_real_type(subs, l, f);
-            walk_real_type(subs, r, f);
-        }
-        Type::Variants(ref variants) => {
-            for variant in variants {
-                walk_real_type(subs, &variant.1, f);
-            }
-        }
-        Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => (),
-    }
 }

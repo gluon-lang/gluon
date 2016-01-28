@@ -4,7 +4,7 @@ use std::collections::hash_map::Entry;
 use std::ops::Deref;
 
 use base::ast;
-use base::ast::Type;
+use base::ast::{Type, merge};
 use base::symbol::Symbol;
 use base::types::{TcType, TypeEnv};
 use unify_type::TypeError::UndefinedType;
@@ -207,7 +207,7 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 }
 
 
-fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
+pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
     let mut args = Vec::new();
     let mut current = typ;
     loop {
@@ -235,20 +235,6 @@ fn walk_move_type_no_recurse<F, I, T>(typ: T, f: &mut F) -> T
           I: Clone
 {
     walk_move_type2(&typ, f).unwrap_or(typ)
-}
-
-///Create a new instance of `R` if one or both values are `Some`
-fn merge<F, A, B, R>(a_original: &A, a: Option<A>, b_original: &B, b: Option<B>, f: F) -> Option<R>
-    where A: Clone,
-          B: Clone,
-          F: FnOnce(A, B) -> R
-{
-    match (a, b) {
-        (Some(a), Some(b)) => Some(f(a, b)),
-        (Some(a), None) => Some(f(a, b_original.clone())),
-        (None, Some(b)) => Some(f(a_original.clone(), b)),
-        (None, None) => None,
-    }
 }
 
 fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>

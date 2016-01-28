@@ -1,12 +1,12 @@
 use std::fmt;
 
-use base::ast::{ASTType, Type};
+use base::ast::{ASTType, Type, merge};
 use base::ast;
 use base::types::TcType;
 use base::symbol::Symbol;
 
 use unify;
-use unify::{Error as UnifyError, Unifier, Unifiable, merge};
+use unify::{Error as UnifyError, Unifier, Unifiable};
 use instantiate::AliasInstantiator;
 use substitution::{Variable, Substitutable};
 
@@ -67,7 +67,7 @@ impl<I> Substitutable for ASTType<I> {
     fn traverse<'s, F>(&'s self, mut f: F)
         where F: FnMut(&'s ASTType<I>) -> &'s ASTType<I>
     {
-        walk_type(self, &mut f)
+        ast::walk_type(self, &mut f)
     }
 }
 
@@ -314,44 +314,6 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
             }
         }
         _ => error(),
-    }
-}
-
-fn walk_type<'s, I>(typ: &'s ASTType<I>, f: &mut FnMut(&'s ASTType<I>) -> &'s ASTType<I>) {
-    let typ = f(typ);
-    match **typ {
-        Type::Data(_, ref args) => {
-            for a in args {
-                walk_type(a, f);
-            }
-        }
-        Type::Array(ref inner) => {
-            walk_type(inner, f);
-        }
-        Type::Function(ref args, ref ret) => {
-            for a in args {
-                walk_type(a, f);
-            }
-            walk_type(ret, f);
-        }
-        Type::Record { ref types, ref fields } => {
-            for field in types {
-                walk_type(&field.typ.typ, f);
-            }
-            for field in fields {
-                walk_type(&field.typ, f);
-            }
-        }
-        Type::App(ref l, ref r) => {
-            walk_type(l, f);
-            walk_type(r, f);
-        }
-        Type::Variants(ref variants) => {
-            for variant in variants {
-                walk_type(&variant.1, f);
-            }
-        }
-        Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => (),
     }
 }
 

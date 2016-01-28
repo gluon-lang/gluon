@@ -244,32 +244,12 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
     }
 }
 
-
-/// Merges two values using `f` if either or both them is `Some(..)`.
-/// If both are `None`, `None` is returned as well.
-pub fn merge<F, A, B, R>(a_original: &A,
-                         a: Option<A>,
-                         b_original: &B,
-                         b: Option<B>,
-                         f: F)
-                         -> Option<R>
-    where A: Clone,
-          B: Clone,
-          F: FnOnce(A, B) -> R
-{
-    match (a, b) {
-        (Some(a), Some(b)) => Some(f(a, b)),
-        (Some(a), None) => Some(f(a, b_original.clone())),
-        (None, Some(b)) => Some(f(a_original.clone(), b)),
-        (None, None) => None,
-    }
-}
-
 #[cfg(test)]
 mod test {
+    use base::ast::merge;
     use base::error::Errors;
 
-    use super::{Error, Unifier, Unifiable, UnifierState, merge};
+    use super::{Error, Unifier, Unifiable, UnifierState};
     use substitution::{Substitution, Substitutable};
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]

@@ -264,6 +264,35 @@ pub enum BuiltinType {
     FunctionType,
 }
 
+impl ::std::str::FromStr for BuiltinType {
+    type Err = ();
+    fn from_str(x: &str) -> Result<BuiltinType, ()> {
+        let t = match x {
+            "Int" => IntType,
+            "Float" => FloatType,
+            "String" => StringType,
+            "Char" => CharType,
+            "Bool" => BoolType,
+            _ => return Err(()),
+        };
+        Ok(t)
+    }
+}
+
+impl BuiltinType {
+    pub fn to_str(self) -> &'static str {
+        match self {
+            StringType => "String",
+            CharType => "Char",
+            IntType => "Int",
+            FloatType => "Float",
+            BoolType => "Bool",
+            UnitType => "()",
+            FunctionType => "->",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum TypeConstructor<Id> {
     Data(Id),
@@ -751,53 +780,20 @@ impl<Id> ConstructorType<Id> {
     }
 }
 
-pub fn str_to_primitive_type(x: &str) -> Option<BuiltinType> {
-    let t = match x {
-        "Int" => IntType,
-        "Float" => FloatType,
-        "String" => StringType,
-        "Char" => CharType,
-        "Bool" => BoolType,
-        _ => return None,
-    };
-    Some(t)
-}
-pub fn primitive_type_to_str(t: BuiltinType) -> &'static str {
-    match t {
-        StringType => "String",
-        CharType => "Char",
-        IntType => "Int",
-        FloatType => "Float",
-        BoolType => "Bool",
-        UnitType => "()",
-        FunctionType => "->",
-    }
-}
-
-pub fn fn_type<I, Id, T>(args: I, return_type: Type<Id, T>) -> Type<Id, T>
-    where I: IntoIterator<Item = T>,
-          I::IntoIter: DoubleEndedIterator,
-          T: From<Type<Id, T>>
-{
-    args.into_iter()
-        .rev()
-        .fold(return_type,
-              |body, arg| Type::Function(vec![arg], T::from(body)))
-}
 pub fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
     where I: Deref<Target = str>
 {
     assert!(s.len() != 0);
     let is_var = s.chars().next().unwrap().is_lowercase();
-    match str_to_primitive_type(&s) {
-        Some(b) => Type::Builtin(b),
-        None if is_var => {
+    match s.parse() {
+        Ok(b) => Type::Builtin(b),
+        Err(()) if is_var => {
             Type::Generic(Generic {
                 kind: RcKind::new(Kind::Star),
                 id: s,
             })
         }
-        None => Type::Data(TypeConstructor::Data(s), args),
+        Err(()) => Type::Data(TypeConstructor::Data(s), args),
     }
 }
 
@@ -870,27 +866,6 @@ impl<Id> Type<Id, ()> {
         Type::builtin(BuiltinType::UnitType)
     }
 }
-impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
-{
-    ///Returns the inner most application of a type application
-    pub fn inner_app(&self) -> &Type<Id, T> {
-        match *self {
-            Type::App(ref a, _) => a.inner_app(),
-            _ => self,
-        }
-    }
-    pub fn level(&self) -> u32 {
-        use std::cmp::min;
-        fold_type(self,
-                  |typ, level| {
-                      match *typ {
-                          Type::Variable(ref var) => min(var.id, level),
-                          _ => level,
-                      }
-                  },
-                  u32::max_value())
-    }
-}
 
 pub struct ArgIterator<'a, T: 'a> {
     pub typ: &'a T,
@@ -922,6 +897,26 @@ impl<Id> ASTType<Id> {
             Type::Function(_, ref return_type) => return_type.return_type(),
             _ => self,
         }
+    }
+
+    ///Returns the inner most application of a type application
+    pub fn inner_app(&self) -> &ASTType<Id> {
+        match **self {
+            Type::App(ref a, _) => a.inner_app(),
+            _ => self,
+        }
+    }
+
+    pub fn level(&self) -> u32 {
+        use std::cmp::min;
+        fold_type(self,
+                  |typ, level| {
+                      match **typ {
+                          Type::Variable(ref var) => min(var.id, level),
+                          _ => level,
+                      }
+                  },
+                  u32::max_value())
     }
 }
 
@@ -961,7 +956,7 @@ impl<Id: fmt::Display> fmt::Display for Generic<Id> {
 
 impl fmt::Display for BuiltinType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        primitive_type_to_str(*self).fmt(f)
+        self.to_str().fmt(f)
     }
 }
 
@@ -1215,25 +1210,25 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
     }
 }
 
-pub fn walk_type<I, T, F>(typ: &Type<I, T>, f: &mut F)
-    where F: FnMut(&Type<I, T>),
+pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
+    where F: FnMut(&'t T) -> &'t T,
           T: Deref<Target = Type<I, T>>
 {
-    f(typ);
-    match *typ {
+    let typ = f(typ);
+    match **typ {
         Type::Data(_, ref args) => {
             for a in args {
                 walk_type(a, f);
             }
         }
         Type::Array(ref inner) => {
-            walk_type(&**inner, f);
+            walk_type(inner, f);
         }
         Type::Function(ref args, ref ret) => {
             for a in args {
                 walk_type(a, f);
             }
-            walk_type(&**ret, f);
+            walk_type(ret, f);
         }
         Type::Record { ref types, ref fields } => {
             for field in types {
@@ -1256,65 +1251,17 @@ pub fn walk_type<I, T, F>(typ: &Type<I, T>, f: &mut F)
     }
 }
 
-pub fn fold_type<I, T, F, A>(typ: &Type<I, T>, mut f: F, a: A) -> A
-    where F: FnMut(&Type<I, T>, A) -> A,
+pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
+    where F: FnMut(&T, A) -> A,
           T: Deref<Target = Type<I, T>>
 {
     let mut a = Some(a);
     walk_type(typ,
               &mut |t| {
                   a = Some(f(t, a.take().expect("None in fold_type")));
+                  t
               });
     a.expect("fold_type")
-}
-
-pub fn walk_mut_type<F, I, T>(typ: &mut Type<I, T>, f: &mut F)
-    where F: FnMut(&mut Type<I, T>),
-          T: DerefMut<Target = Type<I, T>>
-{
-    walk_mut_type2(typ, f, &mut |_| ())
-}
-pub fn walk_mut_type2<F, G, I, T>(typ: &mut Type<I, T>, f: &mut F, g: &mut G)
-    where F: FnMut(&mut Type<I, T>),
-          G: FnMut(&mut Type<I, T>),
-          T: DerefMut<Target = Type<I, T>>
-{
-    f(typ);
-    match *typ {
-        Type::Data(_, ref mut args) => {
-            for a in args {
-                walk_mut_type2(a, f, g);
-            }
-        }
-        Type::Array(ref mut inner) => {
-            walk_mut_type2(&mut **inner, f, g);
-        }
-        Type::Function(ref mut args, ref mut ret) => {
-            for a in args {
-                walk_mut_type2(a, f, g);
-            }
-            walk_mut_type2(&mut **ret, f, g);
-        }
-        Type::Record { ref mut types, ref mut fields } => {
-            for field in types {
-                walk_mut_type2(&mut field.typ.typ, f, g);
-            }
-            for field in fields {
-                walk_mut_type2(&mut field.typ, f, g);
-            }
-        }
-        Type::App(ref mut l, ref mut r) => {
-            walk_mut_type2(l, f, g);
-            walk_mut_type2(r, f, g);
-        }
-        Type::Variants(ref mut variants) => {
-            for variant in variants {
-                walk_mut_type2(&mut variant.1, f, g);
-            }
-        }
-        Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => (),
-    }
-    g(typ);
 }
 
 pub fn walk_move_type<F, I, T>(typ: T, f: &mut F) -> T
@@ -1325,8 +1272,14 @@ pub fn walk_move_type<F, I, T>(typ: T, f: &mut F) -> T
     walk_move_type2(&typ, f).unwrap_or(typ)
 }
 
-///Create a new instance of `R` if one or both values are `Some`
-fn merge<F, A, B, R>(a_original: &A, a: Option<A>, b_original: &B, b: Option<B>, f: F) -> Option<R>
+/// Merges two values using `f` if either or both them is `Some(..)`.
+/// If both are `None`, `None` is returned.
+pub fn merge<F, A, B, R>(a_original: &A,
+                         a: Option<A>,
+                         b_original: &B,
+                         b: Option<B>,
+                         f: F)
+                         -> Option<R>
     where A: Clone,
           B: Clone,
           F: FnOnce(A, B) -> R

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use base::ast::{RcKind, Type, Kind};
+use base::ast::{RcKind, Type, Kind, merge};
 use base::ast;
 use base::symbol::Symbol;
 use base::types::KindEnv;
@@ -8,7 +8,6 @@ use base::types::KindEnv;
 use base::types::TcType;
 use substitution::{Substitution, Substitutable};
 use unify;
-use unify::merge;
 
 use unify::Error as UnifyError;
 
@@ -16,6 +15,8 @@ pub type Error<I> = UnifyError<RcKind, KindError<I>>;
 
 pub type Result<T> = ::std::result::Result<T, Error<Symbol>>;
 
+
+/// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
     variables: Vec<TcType>,
     ///Type bindings local to the current kindcheck invocation
@@ -269,8 +270,10 @@ fn update_kind(subs: &Substitution<RcKind>, kind: RcKind, default: Option<&RcKin
                    })
 }
 
+/// Enumeration possible errors other than mismatch and occurs when kindchecking
 #[derive(Debug, PartialEq)]
 pub enum KindError<I> {
+    /// The type is not defined in the current scope
     UndefinedType(I),
 }
 

@@ -115,15 +115,15 @@ fn typ(s: &str) -> TcType {
 fn type_con2<T>(s: &str, args: Vec<T>) -> Type<Symbol, T> {
     assert!(s.len() != 0);
     let is_var = s.chars().next().unwrap().is_lowercase();
-    match ast::str_to_primitive_type(&s) {
-        Some(b) => Type::Builtin(b),
-        None if is_var => {
+    match s.parse() {
+        Ok(b) => Type::Builtin(b),
+        Err(()) if is_var => {
             Type::Generic(ast::Generic {
                 kind: ast::Kind::star(),
                 id: intern(s),
             })
         }
-        None => Type::Data(ast::TypeConstructor::Data(intern(s)), args),
+        Err(()) => Type::Data(ast::TypeConstructor::Data(intern(s)), args),
     }
 }
 

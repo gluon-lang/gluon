@@ -140,9 +140,9 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                         id: self.intern(&s).to_id(),
                     })
                 } else {
-                    match str_to_primitive_type(&s) {
-                        Some(prim) => Type::builtin(prim),
-                        None => {
+                    match s.parse() {
+                        Ok(prim) => Type::builtin(prim),
+                        Err(()) => {
                             Type::data(TypeConstructor::Data(self.intern(&s).to_id()), Vec::new())
                         }
                     }
@@ -723,10 +723,10 @@ pub mod tests {
     fn typ(s: &str) -> ASTType<String> {
         assert!(s.len() != 0);
         let is_var = s.chars().next().unwrap().is_lowercase();
-        match str_to_primitive_type(s) {
-            Some(b) => Type::builtin(b),
-            None if is_var => generic(s),
-            None => Type::data(TypeConstructor::Data(intern(s)), Vec::new()),
+        match s.parse() {
+            Ok(b) => Type::builtin(b),
+            Err(()) if is_var => generic(s),
+            Err(()) => Type::data(TypeConstructor::Data(intern(s)), Vec::new()),
         }
     }
     fn typ_a(s: &str, args: Vec<ASTType<String>>) -> ASTType<String> {

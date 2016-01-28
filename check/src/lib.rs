@@ -1,6 +1,8 @@
-//! The `check` crate does all checking on a successfully parsed AST to determine if it is a valid
-//! program. If an AST passes the checks in `Typecheck::typecheck_expr` the `AST` is expected to
-//! sucessfully compile as well.
+//! The `check` is responsible for ensuring that an AST expression is actually a valid program.
+//! This currently consits of three larger parts, typechecking, kindchecking and renaming.
+//! If an AST passes the checks in `Typecheck::typecheck_expr` (which runs all of theses checks
+//! the expression is expected to compile succesfully (if it does not it should be considered an
+//! internal compiler error.
 
 #[macro_use]
 extern crate log;
