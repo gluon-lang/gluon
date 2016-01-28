@@ -363,7 +363,6 @@ mod tests {
     use unify::Error::*;
     use unify::unify;
     use instantiate::{AliasInstantiator, Instantiator};
-    use base::ast;
     use base::types;
     use base::types::Type;
     use tests::*;

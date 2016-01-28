@@ -4,18 +4,24 @@ use std::fmt;
 
 use ast;
 
+/// An error type which can represent multiple errors.
 #[derive(Debug, PartialEq)]
 pub struct Errors<T> {
     pub errors: Vec<T>,
 }
 
 impl<T> Errors<T> {
+    /// Creates a new, empty `Errors` instance.
     pub fn new() -> Errors<T> {
         Errors { errors: Vec::new() }
     }
+
+    /// Returns true if `self` contains any errors
     pub fn has_errors(&self) -> bool {
         self.errors.len() != 0
     }
+
+    /// Adds an error to `self`
     pub fn error(&mut self, t: T) {
         self.errors.push(t);
     }
@@ -36,16 +42,11 @@ impl<T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
     }
 }
 
-#[derive(Debug)]
-pub struct SourceContext<E> {
-    context: String,
-    error: ast::Spanned<E>,
-}
 
 #[derive(Debug)]
-pub struct InFile<E> {
-    file: String,
-    error: Errors<SourceContext<E>>,
+struct SourceContext<E> {
+    context: String,
+    error: ast::Spanned<E>,
 }
 
 fn extract_context<E>(lines: &[&str], error: ast::Spanned<E>) -> SourceContext<E> {
@@ -57,16 +58,27 @@ fn extract_context<E>(lines: &[&str], error: ast::Spanned<E>) -> SourceContext<E
     }
 }
 
-pub fn in_file<E>(file: String, contents: &str, error: Errors<ast::Spanned<E>>) -> InFile<E> {
-    let lines: Vec<_> = contents.lines().collect();
-    InFile {
-        file: file,
-        error: Errors {
-            errors: error.errors
-                         .into_iter()
-                         .map(|error| extract_context(&lines, error))
-                         .collect(),
-        },
+/// Error type which contains information of which file and where in the file the error occured
+#[derive(Debug)]
+pub struct InFile<E> {
+    file: String,
+    error: Errors<SourceContext<E>>,
+}
+
+impl <E> InFile<E> {
+    /// Creates a new `InFile` error which states that the error occured in `file` using the file
+    /// contents in `contents` to provide a context to the span.
+    pub fn new(file: String, contents: &str, error: Errors<ast::Spanned<E>>) -> InFile<E> {
+        let lines: Vec<_> = contents.lines().collect();
+        InFile {
+            file: file,
+            error: Errors {
+                errors: error.errors
+                             .into_iter()
+                             .map(|error| extract_context(&lines, error))
+                             .collect(),
+            },
+        }
     }
 }
 

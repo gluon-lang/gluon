@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::Deref;
 use std::string::String as StdString;
+#[cfg(feature = "parser")]
 use base::ast;
 use base::ast::{Typed, ASTType, DisplayEnv};
 use base::symbol::{Name, NameBuf, Symbol, Symbols};
@@ -1487,13 +1488,6 @@ in 0
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]
-fn macro_expand(vm: &VM, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) -> VMResult<()> {
-    let macros = ::base::macros::MacroExpander::new(vm, &vm.macros);
-    try!(macros.run(expr));
-    Ok(())
-}
-
-#[cfg(all(feature = "check", feature = "parser"))]
 fn compile_script(vm: &VM,
                   filename: &str,
                   expr: &ast::LExpr<ast::TcIdent<Symbol>>)
@@ -1585,12 +1579,12 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
     if implicit_prelude {
         include_implicit_prelude(vm, file, &mut expr);
     }
-    try!(macro_expand(vm, &mut expr));
+    try!(vm.macros.run(vm, &mut expr));
     let env = vm.env();
     let mut symbols = vm.symbols.borrow_mut();
     let mut tc = Typecheck::new(file.into(), &mut symbols, &env);
     let typ = try!(tc.typecheck_expr(&mut expr)
-                     .map_err(|err| error::in_file(StdString::from(file), expr_str, err)));
+                     .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
     Ok((expr, typ))
 }
 
