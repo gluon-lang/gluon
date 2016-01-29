@@ -1785,17 +1785,22 @@ Int(2)
                                                                               Cell::new(Int(1))]);
                                                          assert_eq!(&stack[..],
                                                                     [Int(2), Int(1), Int(0)]);
-                                                         stack.scope(2, None, None, |mut stack| {
-                stack.insert_slice(1, &[Cell::new(Int(10))]);
-                assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
-                stack.insert_slice(1, &[]);
-                assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
-                stack.insert_slice(2,
-                                   &[Cell::new(Int(4)), Cell::new(Int(5)), Cell::new(Int(6))]);
-                assert_eq!(&stack[..],
-                           [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
-                Ok(stack)
-            })
+                                                         stack = stack.enter_scope(2, None, None);
+                                                         stack.insert_slice(1,
+                                                                            &[Cell::new(Int(10))]);
+                                                         assert_eq!(&stack[..],
+                                                                    [Int(1), Int(10), Int(0)]);
+                                                         stack.insert_slice(1, &[]);
+                                                         assert_eq!(&stack[..],
+                                                                    [Int(1), Int(10), Int(0)]);
+                                                         stack.insert_slice(2,
+                                                                            &[Cell::new(Int(4)),
+                                                                              Cell::new(Int(5)),
+                                                                              Cell::new(Int(6))]);
+                                                         assert_eq!(&stack[..],
+                                                                    [Int(1), Int(10), Int(4),
+                                                                     Int(5), Int(6), Int(0)]);
+                                                         Ok(stack)
                                                      });
     }
 
