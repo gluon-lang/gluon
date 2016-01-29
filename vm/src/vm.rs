@@ -348,6 +348,12 @@ impl<'a, 'vm> Drop for RootedValue<'a, 'vm> {
     }
 }
 
+impl<'a, 'vm> fmt::Debug for RootedValue<'a, 'vm> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
+
 impl<'a, 'vm> Deref for RootedValue<'a, 'vm> {
     type Target = Value<'a>;
     fn deref(&self) -> &Value<'a> {
@@ -1510,6 +1516,11 @@ fn compile_script(vm: &VM,
     function
 }
 
+/// Compiles `input` and if it is successful runs the resulting code and stores the resulting value
+/// in the global variable named by running `filename_to_module` on `filename`.
+///
+/// If at any point the function fails the resulting error is returned and nothing is added to the
+/// VM.
 #[cfg(all(feature = "check", feature = "parser"))]
 pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
     load_script2(vm, filename, input, true)
@@ -1545,6 +1556,7 @@ pub fn filename_to_module(filename: &str) -> StdString {
     name.replace("/", ".")
 }
 
+/// Loads `filename` and compiles and runs its input by calling `load_script`
 #[cfg(all(feature = "check", feature = "parser"))]
 pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
     use std::fs::File;
@@ -1588,23 +1600,29 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
     Ok((expr, typ))
 }
 
+/// Compiles and runs the expression in `expr_str`. If successful the value from running the
+/// expression is returned
 #[cfg(all(feature = "check", feature = "parser"))]
-pub fn run_expr<'a>(vm: &VM<'a>, name: &str, expr_str: &str) -> Result<Value<'a>, Error> {
+pub fn run_expr<'a, 'vm>(vm: &'vm VM<'a>,
+                         name: &str,
+                         expr_str: &str)
+                         -> Result<RootedValue<'a, 'vm>, Error> {
     run_expr2(vm, name, expr_str, true)
 }
+
 #[cfg(all(feature = "check", feature = "parser"))]
-fn run_expr2<'a>(vm: &VM<'a>,
-                 name: &str,
-                 expr_str: &str,
-                 implicit_prelude: bool)
-                 -> Result<Value<'a>, Error> {
+fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
+                      name: &str,
+                      expr_str: &str,
+                      implicit_prelude: bool)
+                      -> Result<RootedValue<'a, 'vm>, Error> {
     let (expr, typ) = try!(typecheck_expr(vm, name, expr_str, implicit_prelude));
     let mut function = compile_script(vm, name, &expr);
     function.id = vm.symbols.borrow_mut().symbol(name);
     let function = vm.new_function(function);
     let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
     let value = try!(vm.call_module(&typ, closure));
-    Ok(value)
+    Ok(vm.root_value(value))
 }
 
 #[cfg(all(test, feature = "check", feature = "parser"))]
@@ -1618,7 +1636,7 @@ pub mod tests {
     }
 
     pub fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
-        super::run_expr2(vm, "<top>", s, false).unwrap_or_else(|err| panic!("{}", err))
+        super::run_expr2(vm, "<top>", s, false).unwrap_or_else(|err| panic!("{}", err)).value
     }
 
     macro_rules! test_expr {

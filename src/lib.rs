@@ -8,6 +8,7 @@
 //! use embed_lang::vm::vm::{VM, run_expr};
 //!
 //! # fn main() {
+//! # let _ = ::env_logger::init();
 //!
 //! let text = r#"
 //! // `type` is used to declare a new type.
@@ -63,11 +64,17 @@
 //! else
 //!     io.print "Hello world!"
 //! "#;
-//! # let _ = ::env_logger::init();
+//!
 //! let vm = VM::new();
-//! if let Err(err) = run_expr(&vm, "example", text) {
-//!     panic!("{}", err);
+//! match run_expr(&vm, "example", text) {
+//!     Ok(value) => {
+//!         println!("{:?}", value);
+//!     }
+//!     Err(err) => {
+//!         panic!("{}", err);
+//!     }
 //! }
+//! return;
 //!
 //! # }
 //! ```
