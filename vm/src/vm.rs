@@ -28,7 +28,7 @@ use self::Named::*;
 use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure, Userdata};
 
 
-pub use stack::{Stack, StackFrame};
+use stack::{Stack, StackFrame};
 
 #[derive(Copy, Clone, Debug)]
 pub struct Userdata_ {

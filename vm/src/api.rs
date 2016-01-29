@@ -1,7 +1,8 @@
 use gc::Move;
 use base::symbol::Symbol;
+use stack::StackFrame;
 use vm::{VM, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value, Def,
-         Userdata_, StackFrame, VMInt, Error, Root, RootStr};
+         Userdata_, VMInt, Error, Root, RootStr};
 use base::ast::Typed;
 use base::types;
 use base::types::{TcType, Type, TypeConstructor};

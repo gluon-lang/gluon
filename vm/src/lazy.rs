@@ -4,7 +4,8 @@ use std::marker::PhantomData;
 use gc::{Gc, Traverseable, Move};
 use std::cell::Cell;
 use api::{VMType, Pushable};
-use vm::{StackFrame, Status, Value, VM, VMResult};
+use stack::StackFrame;
+use vm::{Status, Value, VM, VMResult};
 
 
 #[derive(Clone, PartialEq)]

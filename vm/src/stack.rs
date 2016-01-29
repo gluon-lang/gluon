@@ -29,18 +29,10 @@ impl<'a> Stack<'a> {
         }
     }
 
-    pub fn get(&self, index: usize) -> Value<'a> {
-        self.values[index].clone()
-    }
-
     pub fn pop(&mut self) -> Value<'a> {
         self.values
             .pop()
             .expect("pop on empty stack")
-    }
-
-    pub fn set(&mut self, index: usize, v: Value<'a>) {
-        self.values[index] = v;
     }
 
     pub fn push(&mut self, v: Value<'a>) {
@@ -132,14 +124,6 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.remove_range(self.frame.offset + from, self.frame.offset + to);
     }
 
-    pub fn set_upvar(&self, index: VMIndex, v: Value<'a>) {
-        let upvars = self.frame
-                         .upvars
-                         .as_ref()
-                         .expect("Attempted to access upvar in non closure function");
-        upvars.upvars[index as usize].set(v)
-    }
-
     pub fn get_upvar(&self, index: VMIndex) -> Value<'a> {
         let upvars = self.frame
                          .upvars
@@ -191,20 +175,6 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
             stack: self.stack,
             frame: frame,
         }
-    }
-
-    pub fn scope<E, F>(self,
-                       args: VMIndex,
-                       function_name: Option<Symbol>,
-                       upvars: Option<GcPtr<ClosureData<'a>>>,
-                       f: F)
-                       -> Result<StackFrame<'a, 'b>, E>
-        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E>
-    {
-        let mut stack = self.enter_scope(args, function_name, upvars);
-        stack = try!(f(stack));
-        stack = stack.exit_scope();
-        Ok(stack)
     }
 
     pub fn frame(mut stack: RefMut<'b, Stack<'a>>,
