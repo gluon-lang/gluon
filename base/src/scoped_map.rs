@@ -1,3 +1,4 @@
+//! A map data type which allows the same key to exist at multiple scope levels
 use std::collections::HashMap;
 use std::collections::hash_map;
 use std::collections::hash_map::{Entry, IterMut};

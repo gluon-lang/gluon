@@ -1,3 +1,4 @@
+//! Module providing the building blocks to create macros and expand them.
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error as StdError;

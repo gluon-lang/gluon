@@ -1,3 +1,5 @@
+//! Module containing a few common error wrappers which allows more information to be saved for
+//! later display to the user
 use std::any::Any;
 use std::error::Error as StdError;
 use std::fmt;

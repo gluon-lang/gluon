@@ -1,3 +1,4 @@
+//! Module containing types representing embed_lang's type system
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;

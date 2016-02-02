@@ -1,10 +1,10 @@
+//! Module which contains types working with symbols
 use std::collections::HashMap;
 use std::fmt;
 use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
 
 use std::borrow::Borrow;
 use std::ops::Deref;
-
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Symbol(u32);

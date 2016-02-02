@@ -1,3 +1,4 @@
+//! Module containing the types which make up embed_lang's AST (Abstract Syntax Tree)
 use std::fmt;
 use std::ops::Deref;
 use symbol::Symbol;
