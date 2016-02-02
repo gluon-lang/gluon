@@ -302,7 +302,7 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
             let other_f = subs.real(other_f);
             match **other_f {
                 Type::App(ref fn_prim, ref other_arg) => {
-                    unifier.try_match(fn_prim, &Type::builtin(types::BuiltinType::FunctionType));
+                    unifier.try_match(fn_prim, &Type::builtin(types::BuiltinType::Function));
                     let new_arg = unifier.try_match(arg, other_arg);
                     let new_ret = unifier.try_match(ret, other_ret);
                     Ok(merge(arg,

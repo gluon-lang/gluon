@@ -14,7 +14,7 @@ use std::iter::FromIterator;
 
 use base::ast;
 use base::ast::*;
-use base::types::{Type, TypeConstructor, BuiltinType, Generic, Alias, Field, TypeVariable, Kind};
+use base::types::{Type, TypeConstructor, Generic, Alias, Field, TypeVariable, Kind};
 use base::symbol::{Name, Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, Error as CombineError, Info};
@@ -254,7 +254,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                           .map(|typ| {
                               match typ {
                                   Some(typ) => typ,
-                                  None => Type::builtin(BuiltinType::UnitType),
+                                  None => Type::unit(),
                               }
                           }))
                   .or(self.ident_type())

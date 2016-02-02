@@ -6,9 +6,6 @@ use ast;
 use ast::{ASTType, DisplayEnv};
 use symbol::Symbol;
 
-pub use self::BuiltinType::{StringType, CharType, IntType, FloatType, BoolType, UnitType,
-                            FunctionType};
-
 pub type TcType = ast::ASTType<Symbol>;
 pub type TcIdent = ast::TcIdent<Symbol>;
 
@@ -263,24 +260,24 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType {
-    StringType,
-    CharType,
-    IntType,
-    FloatType,
-    BoolType,
-    UnitType,
-    FunctionType,
+    String,
+    Char,
+    Int,
+    Float,
+    Bool,
+    Unit,
+    Function,
 }
 
 impl ::std::str::FromStr for BuiltinType {
     type Err = ();
     fn from_str(x: &str) -> Result<BuiltinType, ()> {
         let t = match x {
-            "Int" => IntType,
-            "Float" => FloatType,
-            "String" => StringType,
-            "Char" => CharType,
-            "Bool" => BoolType,
+            "Int" => BuiltinType::Int,
+            "Float" => BuiltinType::Float,
+            "String" => BuiltinType::String,
+            "Char" => BuiltinType::Char,
+            "Bool" => BuiltinType::Bool,
             _ => return Err(()),
         };
         Ok(t)
@@ -290,13 +287,13 @@ impl ::std::str::FromStr for BuiltinType {
 impl BuiltinType {
     pub fn to_str(self) -> &'static str {
         match self {
-            StringType => "String",
-            CharType => "Char",
-            IntType => "Int",
-            FloatType => "Float",
-            BoolType => "Bool",
-            UnitType => "()",
-            FunctionType => "->",
+            BuiltinType::String => "String",
+            BuiltinType::Char => "Char",
+            BuiltinType::Int => "Int",
+            BuiltinType::Float => "Float",
+            BuiltinType::Bool => "Bool",
+            BuiltinType::Unit => "()",
+            BuiltinType::Function => "->",
         }
     }
 }
@@ -481,27 +478,27 @@ impl<Id> Type<Id, ()> {
     }
 
     pub fn string() -> ASTType<Id> {
-        Type::builtin(BuiltinType::StringType)
+        Type::builtin(BuiltinType::String)
     }
 
     pub fn char() -> ASTType<Id> {
-        Type::builtin(BuiltinType::CharType)
+        Type::builtin(BuiltinType::Char)
     }
 
     pub fn int() -> ASTType<Id> {
-        Type::builtin(BuiltinType::IntType)
+        Type::builtin(BuiltinType::Int)
     }
 
     pub fn float() -> ASTType<Id> {
-        Type::builtin(BuiltinType::FloatType)
+        Type::builtin(BuiltinType::Float)
     }
 
     pub fn bool() -> ASTType<Id> {
-        Type::builtin(BuiltinType::BoolType)
+        Type::builtin(BuiltinType::Bool)
     }
 
     pub fn unit() -> ASTType<Id> {
-        Type::builtin(BuiltinType::UnitType)
+        Type::builtin(BuiltinType::Unit)
     }
 }
 
