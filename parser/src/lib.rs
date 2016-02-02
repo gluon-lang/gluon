@@ -372,7 +372,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                               .map(|s| loc(Expr::Literal(LiteralEnum::Char(s)))),
                      &mut self.brackets(sep_by(self.expr(), self.lex(char(','))))
                               .map(|exprs| {
-                                  loc(Expr::Array(ArrayStruct {
+                                  loc(Expr::Array(Array {
                                       id: self.intern(""),
                                       expressions: exprs,
                                   }))
@@ -435,7 +435,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
          self.symbol("->"),
          self.expr())
             .map(|(_, args, _, expr)| {
-                Expr::Lambda(LambdaStruct {
+                Expr::Lambda(Lambda {
                     id: self.intern(""),
                     free_vars: Vec::new(),
                     arguments: args,
@@ -759,7 +759,7 @@ pub mod tests {
                                .collect()))
     }
     fn lambda(name: &str, args: Vec<String>, body: PExpr) -> PExpr {
-        no_loc(Expr::Lambda(LambdaStruct {
+        no_loc(Expr::Lambda(Lambda {
             id: intern(name),
             free_vars: Vec::new(),
             arguments: args,
@@ -798,7 +798,7 @@ pub mod tests {
         no_loc(Expr::FieldAccess(Box::new(expr), intern(field)))
     }
     fn array(fields: Vec<PExpr>) -> PExpr {
-        no_loc(Expr::Array(ArrayStruct {
+        no_loc(Expr::Array(Array {
             id: intern(""),
             expressions: fields,
         }))

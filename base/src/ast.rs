@@ -169,20 +169,13 @@ pub struct Location {
     pub absolute: i32,
 }
 
-pub static START: Location = Location {
-    column: 1,
-    row: 1,
-    absolute: 1,
-};
-pub static EOF: Location = Location {
-    column: -1,
-    row: -1,
-    absolute: -1,
-};
-
 impl Location {
     pub fn eof() -> Location {
-        EOF
+        Location {
+            column: -1,
+            row: -1,
+            absolute: -1,
+        }
     }
 
     pub fn line_offset(mut self, offset: i32) -> Location {
@@ -267,6 +260,7 @@ pub enum LiteralEnum {
     Bool(bool),
 }
 
+/// Pattern which contains a location
 pub type LPattern<Id> = Located<Pattern<Id>>;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -287,14 +281,14 @@ pub struct Alternative<Id: AstId> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct ArrayStruct<Id: AstId> {
+pub struct Array<Id: AstId> {
     // Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub expressions: Vec<LExpr<Id>>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct LambdaStruct<Id: AstId> {
+pub struct Lambda<Id: AstId> {
     // Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub free_vars: Vec<Id>,
@@ -302,6 +296,7 @@ pub struct LambdaStruct<Id: AstId> {
     pub body: Box<LExpr<Id>>,
 }
 
+/// Expression which contains a location
 pub type LExpr<Id> = Located<Expr<Id>>;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -314,13 +309,13 @@ pub enum Expr<Id: AstId> {
     BinOp(Box<LExpr<Id>>, Id, Box<LExpr<Id>>),
     Let(Vec<Binding<Id>>, Box<LExpr<Id>>),
     FieldAccess(Box<LExpr<Id>>, Id),
-    Array(ArrayStruct<Id>),
+    Array(Array<Id>),
     Record {
         typ: Id,
         types: Vec<(Id::Untyped, Option<ASTType<Id::Untyped>>)>,
         exprs: Vec<(Id::Untyped, Option<LExpr<Id>>)>,
     },
-    Lambda(LambdaStruct<Id>),
+    Lambda(Lambda<Id>),
     Tuple(Vec<LExpr<Id>>),
     Type(Vec<TypeBinding<Id::Untyped>>, Box<LExpr<Id>>),
 }
