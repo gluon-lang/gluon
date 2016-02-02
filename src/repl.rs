@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use base::ast::Typed;
 use base::types::{TypeEnv, display_type};
 use vm::vm::{VM, RootStr, Status, typecheck_expr, load_file};
-use vm::api::{VMFunction, IO, Get, Callable, primitive};
+use vm::api::{VMFunction, IO, Function, get_function, primitive};
 
 fn type_of_expr(vm: &VM) -> Status {
     let closure: &Fn(_) -> _ = &|args: RootStr| -> IO<String> {
@@ -63,7 +63,7 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
 pub fn run() -> Result<(), Box<StdError>> {
     let vm = VM::new();
     try!(compile_repl(&vm));
-    let mut repl: Callable<fn (()) -> IO<()>> = Get::get_function(&vm, "std.repl")
+    let mut repl: Function<fn (()) -> IO<()>> = get_function(&vm, "std.repl")
                                                 .expect("repl function");
     try!(repl.call(()));
     Ok(())

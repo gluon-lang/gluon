@@ -13,7 +13,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-
+/// Type representing embed_lang's IO type
 #[derive(Debug)]
 pub enum IO<T> {
     Value(T),
@@ -60,6 +60,7 @@ impl<'a, 'vm, T> Getable<'a, 'vm> for Generic<'a, T> {
     }
 }
 
+/// Module containing types which represent generic variables in embed_lang's type system
 pub mod generic {
     use super::VMType;
     use base::types::{Type, TcType, Generic, Kind};
@@ -69,7 +70,7 @@ pub mod generic {
         ($($i: ident)+) => {
             $(
             #[derive(Clone, Copy)]
-            pub struct $i;
+            pub enum $i { }
             impl VMType for $i {
                 type Type = $i;
                 fn make_type(vm: &VM) -> TcType {
@@ -88,28 +89,34 @@ pub mod generic {
     make_generics!{A B C D E F G H I J K L M N O P Q R X Y Z}
 }
 
+/// Trait which maps a type in rust to a type in embed_lang
 pub trait VMType {
+    /// A version of `Self` which implements `Any` allowing a `TypeId` to be retrieved
     type Type: ?Sized + Any;
 
+    /// Creates an embed_lang type which maps to `Self` in rust
     fn make_type(vm: &VM) -> TcType {
         TcType::from(vm_type::<Self>(vm).clone())
     }
 
-    // How many extra arguments a function returning this type requires
+    /// How many extra arguments a function returning this type requires.
+    /// Used for abstract types which when used in return position should act like they still need
+    /// more arguments before they are called
     fn extra_args() -> VMIndex {
         0
     }
 }
 
+
+/// Trait which allows a rust value to be pushed to the virtual machine
 pub trait Pushable<'a> : VMType {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status;
 }
+
+/// Trait which allows rust values to be retrieved from the virtual machine
 pub trait Getable<'a, 'vm>: Sized {
     fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Self>;
 }
-pub trait VMValue<'a, 'vm> : Pushable<'a> + Getable<'a, 'vm> { }
-impl<'a, 'vm, T> VMValue<'a, 'vm> for T where T: Pushable<'a> + Getable<'a, 'vm>
-{}
 
 impl VMType for () {
     type Type = Self;
@@ -449,6 +456,7 @@ impl<'a, T: Pushable<'a>> Pushable<'a> for IO<T> where T::Type: Sized
     }
 }
 
+/// Type which represents an array in embed_lang
 pub struct Array<'a: 'vm, 'vm, T: 'a>(RootedValue<'a, 'vm>, PhantomData<T>);
 
 impl<'a, 'vm, T> Deref for Array<'a, 'vm, T> {
@@ -531,86 +539,100 @@ impl<'a, 'vm> Getable<'a, 'vm> for RootStr<'vm> {
     }
 }
 
-pub struct Record<T> {
-    pub fields: T,
-}
-pub struct HList<H, T>(pub H, pub T);
+pub use self::record::Record;
 
-pub trait Field {
-    fn name() -> &'static str;
-}
+pub mod record {
+    use base::types;
+    use base::types::{Type, TcType};
+    use base::symbol::Symbol;
 
-pub trait FieldList {
-    fn len() -> VMIndex;
+    use stack::StackFrame;
+    use types::VMIndex;
+    use vm::{VM, Status};
+    use super::{VMType, Pushable};
 
-    fn field_types(vm: &VM, fields: &mut Vec<types::Field<Symbol, TcType>>);
-}
-
-impl FieldList for () {
-    fn len() -> VMIndex {
-        0
+    pub struct Record<T> {
+        pub fields: T,
     }
 
-    fn field_types(_: &VM, _: &mut Vec<types::Field<Symbol, TcType>>) {}
-}
+    pub struct HList<H, T>(pub H, pub T);
 
-impl<F: Field, H: VMType, T> FieldList for HList<(F, H), T> where T: FieldList
-{
-    fn len() -> VMIndex {
-        1 + T::len()
+    pub trait Field {
+        fn name() -> &'static str;
     }
 
-    fn field_types(vm: &VM, fields: &mut Vec<types::Field<Symbol, TcType>>) {
-        fields.push(types::Field {
-            name: vm.symbol(F::name()),
-            typ: H::make_type(vm),
-        });
-        T::field_types(vm, fields);
+    pub trait FieldList {
+        fn len() -> VMIndex;
+
+        fn field_types(vm: &VM, fields: &mut Vec<types::Field<Symbol, TcType>>);
     }
-}
 
-pub trait PushableFieldList<'a>: FieldList {
-    fn push<'b>(self, vm: &VM<'a>, fields: &mut StackFrame<'a, 'b>);
-}
-
-impl<'a> PushableFieldList<'a> for () {
-    fn push<'b>(self, _: &VM<'a>, _: &mut StackFrame<'a, 'b>) {}
-}
-
-impl<'a, F: Field, H: Pushable<'a>, T> PushableFieldList<'a> for HList<(F, H), T>
-    where T: PushableFieldList<'a>
-{
-    fn push<'b>(self, vm: &VM<'a>, fields: &mut StackFrame<'a, 'b>) {
-        let HList((_, head), tail) = self;
-        head.push(vm, fields);
-        tail.push(vm, fields);
-    }
-}
-
-impl<A: VMType, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>> where A::Type: Sized
-{
-    type Type = Record<((&'static str, A::Type),)>;
-    fn make_type(vm: &VM) -> TcType {
-        let len = HList::<(F, A), T>::len() as usize;
-        let mut fields = Vec::with_capacity(len);
-        HList::<(F, A), T>::field_types(vm, &mut fields);
-        Type::record(Vec::new(), fields)
-    }
-}
-impl<'a, A: Pushable<'a>, F: Field, T: PushableFieldList<'a>> Pushable<'a> for Record<HList<(F, A),
-                                                                                            T>>
-    where A::Type: Sized
-{
-    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        self.fields.push(vm, stack);
-        let len = HList::<(F, A), T>::len();
-        let offset = stack.len() - len;
-        let value = vm.new_data(0, &stack[offset..]);
-        for _ in 0..len {
-            stack.pop();
+    impl FieldList for () {
+        fn len() -> VMIndex {
+            0
         }
-        stack.push(value);
-        Status::Ok
+
+        fn field_types(_: &VM, _: &mut Vec<types::Field<Symbol, TcType>>) {}
+    }
+
+    impl<F: Field, H: VMType, T> FieldList for HList<(F, H), T> where T: FieldList
+    {
+        fn len() -> VMIndex {
+            1 + T::len()
+        }
+
+        fn field_types(vm: &VM, fields: &mut Vec<types::Field<Symbol, TcType>>) {
+            fields.push(types::Field {
+                name: vm.symbol(F::name()),
+                typ: H::make_type(vm),
+            });
+            T::field_types(vm, fields);
+        }
+    }
+
+    pub trait PushableFieldList<'a>: FieldList {
+        fn push<'b>(self, vm: &VM<'a>, fields: &mut StackFrame<'a, 'b>);
+    }
+
+    impl<'a> PushableFieldList<'a> for () {
+        fn push<'b>(self, _: &VM<'a>, _: &mut StackFrame<'a, 'b>) {}
+    }
+
+    impl<'a, F: Field, H: Pushable<'a>, T> PushableFieldList<'a> for HList<(F, H), T>
+        where T: PushableFieldList<'a>
+    {
+        fn push<'b>(self, vm: &VM<'a>, fields: &mut StackFrame<'a, 'b>) {
+            let HList((_, head), tail) = self;
+            head.push(vm, fields);
+            tail.push(vm, fields);
+        }
+    }
+
+    impl<A: VMType, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>> where A::Type: Sized
+    {
+        type Type = Record<((&'static str, A::Type),)>;
+        fn make_type(vm: &VM) -> TcType {
+            let len = HList::<(F, A), T>::len() as usize;
+            let mut fields = Vec::with_capacity(len);
+            HList::<(F, A), T>::field_types(vm, &mut fields);
+            Type::record(Vec::new(), fields)
+        }
+    }
+    impl<'a, A: Pushable<'a>, F: Field, T: PushableFieldList<'a>> Pushable<'a> for Record<HList<(F, A),
+                                                                                                T>>
+        where A::Type: Sized
+    {
+        fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+            self.fields.push(vm, stack);
+            let len = HList::<(F, A), T>::len();
+            let offset = stack.len() - len;
+            let value = vm.new_data(0, &stack[offset..]);
+            for _ in 0..len {
+                stack.pop();
+            }
+            stack.push(value);
+            Status::Ok
+        }
     }
 }
 
@@ -620,7 +642,7 @@ macro_rules! types {
         $(
         #[allow(non_camel_case_types)]
         pub struct $field;
-        impl $crate::api::Field for $field {
+        impl $crate::api::record::Field for $field {
             fn name() -> &'static str {
                 stringify!($field)
             }
@@ -633,10 +655,10 @@ macro_rules! types {
 macro_rules! hlist {
     () => { () };
     ($field: ident => $value: expr) => {
-        $crate::api::HList((_field::$field, $value), ())
+        $crate::api::record::HList((_field::$field, $value), ())
     };
     ($field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
-        $crate::api::HList((_field::$field, $value), hlist!($($field_tail => $value_tail),*))
+        $crate::api::record::HList((_field::$field, $value), hlist!($($field_tail => $value_tail),*))
     }
 }
 
@@ -686,15 +708,15 @@ fn make_type<T: ?Sized + VMType>(vm: &VM) -> TcType {
     <T as VMType>::make_type(vm)
 }
 
-pub trait Get<'a, 'vm>: Sized {
+pub trait GetFunction<'a, 'vm>: Sized {
     fn get_function(vm: &'vm VM<'a>, name: &str) -> Option<Self>;
 }
 
 macro_rules! make_get {
     ($($args:ident),*) => (
-impl <'a, 'vm, $($args,)* R> Get<'a, 'vm> for Callable<'a, 'vm, fn ($($args,)*) -> R>
+impl <'a, 'vm, $($args,)* R> GetFunction<'a, 'vm> for Function<'a, 'vm, fn ($($args,)*) -> R>
 where $($args : VMType + Pushable<'a>,)* R: VMType + Getable<'a, 'vm> {
-    fn get_function(vm: &'vm VM<'a>, name: &str) -> Option<Callable<'a, 'vm, fn ($($args,)*) -> R>> {
+    fn get_function(vm: &'vm VM<'a>, name: &str) -> Option<Function<'a, 'vm, fn ($($args,)*) -> R>> {
         let value = match vm.get_global(name) {
             Some(global) => {
                 let typ = global.type_of();
@@ -712,7 +734,7 @@ where $($args : VMType + Pushable<'a>,)* R: VMType + Getable<'a, 'vm> {
             None => None
         };
         match value {
-            Some(value) => Some(Callable { value: value, _marker: PhantomData }),
+            Some(value) => Some(Function { value: value, _marker: PhantomData }),
             None => None
         }
     }
@@ -728,31 +750,32 @@ make_get!(A, B, C, D, E);
 make_get!(A, B, C, D, E, F);
 make_get!(A, B, C, D, E, F, G);
 
-pub struct Callable<'a: 'vm, 'vm, F> {
+/// Type which represents an function in embed_lang
+pub struct Function<'a: 'vm, 'vm, F> {
     value: RootedValue<'a, 'vm>,
     _marker: PhantomData<F>,
 }
 
-impl<'vm, 'b, F: Any> VMType for Callable<'b, 'vm, F> {
+impl<'vm, 'b, F: Any> VMType for Function<'b, 'vm, F> {
     type Type = F;
 }
 
-impl<'vm, 'a, F: Any> Pushable<'a> for Callable<'a, 'vm, F> {
+impl<'vm, 'a, F: Any> Pushable<'a> for Function<'a, 'vm, F> {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         stack.push(*self.value);
         Status::Ok
     }
 }
-impl<'a, 'vm, F> Getable<'a, 'vm> for Callable<'a, 'vm, F> {
-    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Callable<'a, 'vm, F>> {
-        Some(Callable {
+impl<'a, 'vm, F> Getable<'a, 'vm> for Function<'a, 'vm, F> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Function<'a, 'vm, F>> {
+        Some(Function {
             value: vm.root_value(value),
             _marker: PhantomData,
         })//TODO not type safe
     }
 }
 
-impl<'a, 'vm, A, R> Callable<'a, 'vm, fn (A) -> R>
+impl<'a, 'vm, A, R> Function<'a, 'vm, fn (A) -> R>
     where A: Pushable<'a> + 'static,
           R: VMType + Getable<'a, 'vm> + 'static
 {
@@ -772,7 +795,7 @@ impl<'a, 'vm, A, R> Callable<'a, 'vm, fn (A) -> R>
         }
     }
 }
-impl<'a, 'vm, A, B, R> Callable<'a, 'vm, fn (A, B) -> R>
+impl<'a, 'vm, A, B, R> Function<'a, 'vm, fn (A, B) -> R>
     where A: Pushable<'a> + 'static,
           B: Pushable<'a> + 'static,
           R: VMType + Getable<'a, 'vm> + 'static
@@ -795,14 +818,18 @@ impl<'a, 'vm, A, B, R> Callable<'a, 'vm, fn (A, B) -> R>
     }
 }
 
-pub fn get_function<'a, 'vm, T: Get<'a, 'vm>>(vm: &'vm VM<'a>, name: &str) -> Option<T> {
-    Get::get_function(vm, name)
+pub fn get_function<'a, 'vm, T: GetFunction<'a, 'vm>>(vm: &'vm VM<'a>, name: &str) -> Option<T> {
+    GetFunction::get_function(vm, name)
 }
 
+/// Trait which represents a function
 pub trait FunctionType {
+    /// Returns how many arguments the function needs to be provided to call it
     fn arguments() -> VMIndex;
 }
 
+/// Trait which abstracts over types which can be called by being pulling the arguments it needs
+/// from the virtual machine's stack
 pub trait VMFunction<'a: 'vm, 'vm> {
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status;
 }
@@ -964,7 +991,7 @@ macro_rules! vm_function {
 
 #[cfg(all(test, feature = "check", feature = "parser"))]
 mod tests {
-    use super::{VMType, Get, Callable};
+    use super::{VMType, Function, get_function};
 
     use vm::{VM, VMInt, Value, Root, RootStr};
     use vm::tests::{load_script, run_expr};
@@ -982,12 +1009,12 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
         load_script(&mut vm, "add10", &add10).unwrap_or_else(|err| panic!("{}", err));
         load_script(&mut vm, "mul", &mul).unwrap_or_else(|err| panic!("{}", err));
         {
-            let mut f: Callable<fn (VMInt) -> VMInt> = Get::get_function(&vm, "add10")
+            let mut f: Function<fn (VMInt) -> VMInt> = get_function(&vm, "add10")
                                                        .expect("No function");
             let result = f.call(2).unwrap();
             assert_eq!(result, 12);
         }
-        let mut f: Callable<fn (f64, f64) -> f64> = Get::get_function(&vm, "mul").expect("No function");
+        let mut f: Function<fn (f64, f64) -> f64> = get_function(&vm, "mul").expect("No function");
         let result = f.call2(4., 5.).unwrap();
         assert_eq!(result, 20.);
     }
@@ -1019,13 +1046,13 @@ let id : Test -> Test = \x -> x in id
 
         let mut test = Test { x: 123 };
         {
-            let mut f: Callable<fn (*mut Test) -> *mut Test> = Get::get_function(&vm, "id")
+            let mut f: Function<fn (*mut Test) -> *mut Test> = get_function(&vm, "id")
                                                                .expect("No function id");
             let result = f.call(&mut test).unwrap();
             let p: *mut _ = &mut test;
             assert!(result == p);
         }
-        let mut f: Callable<fn (*mut Test) -> bool> = Get::get_function(&vm, "test")
+        let mut f: Function<fn (*mut Test) -> bool> = get_function(&vm, "test")
                                                       .expect("No function test");
         let result = f.call(&mut test).unwrap();
         assert!(result);
@@ -1055,7 +1082,7 @@ let id : Test -> Test = \x -> x in id
           })
           .unwrap();
         load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
-        let mut script_fn: Callable<fn (Box<Test>) -> VMInt> = Get::get_function(&vm, "script_fn")
+        let mut script_fn: Function<fn (Box<Test>) -> VMInt> = get_function(&vm, "script_fn")
                                                                .expect("No function script_fn");
         let result = script_fn.call(Box::new(Test(123)))
                               .unwrap();
