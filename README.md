@@ -82,9 +82,8 @@ let list_module =
 in
 // Bring the `List` type and its constructors into scope
 let { List, eq = list_Eq } = list_module
-in
 // Create `==` for `List Int`
-let { (==) }: Eq (List Int) = list_Eq { (==) }
+and { (==) }: Eq (List Int) = list_Eq { (==) }
 in
 if Cons 1 Nil == Nil then
     error "This branch is not executed"

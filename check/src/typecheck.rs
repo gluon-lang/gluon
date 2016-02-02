@@ -277,11 +277,12 @@ impl<'a> Typecheck<'a> {
             .find_type(&id)
             .ok_or_else(|| UndefinedVariable(id.clone()))
             .map(|typ| {
-                let x = inst.instantiate(typ);
+                let typ = inst.set_type(typ.clone());
+                let typ = inst.instantiate(&typ);
                 debug!("Find {} : {}",
                        symbols.string(id),
-                       types::display_type(symbols, &x));
-                x
+                       types::display_type(symbols, &typ));
+                typ
             })
     }
 
@@ -389,7 +390,6 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
-        self.refresh_symbols(expr);
         match self.typecheck_(expr) {
             Ok(typ) => Ok(typ),
             Err(err) => {
@@ -404,6 +404,9 @@ impl<'a> Typecheck<'a> {
     fn typecheck_(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
         match expr.value {
             ast::Expr::Identifier(ref mut id) => {
+                if let Some(&new) = self.original_symbols.get(&id.name) {
+                    id.name = new;
+                }
                 id.typ = try!(self.find(id.id()));
                 Ok(id.typ.clone())
             }
@@ -521,6 +524,7 @@ impl<'a> Typecheck<'a> {
                     for bind in bindings.iter_mut() {
                         let mut typ = self.inst.subs.new_var();
                         if let Some(ref mut type_decl) = bind.typ {
+                            *type_decl = self.refresh_symbols_in_type(type_decl.clone());
                             try!(self.kindcheck(type_decl, &mut []));
                             let decl = self.inst.instantiate(type_decl);
                             typ = try!(self.unify(&decl, typ));
@@ -547,6 +551,7 @@ impl<'a> Typecheck<'a> {
                                                    &mut bind.expression))
                     } else {
                         if let Some(ref mut type_decl) = bind.typ {
+                            *type_decl = self.refresh_symbols_in_type(type_decl.clone());
                             try!(self.kindcheck(type_decl, &mut []));
                         }
                         try!(self.typecheck(&mut bind.expression))
@@ -632,7 +637,26 @@ impl<'a> Typecheck<'a> {
                 Ok(typ)
             }
             ast::Expr::Type(ref mut bindings, ref mut expr) => {
-                // enter_scope is called in refresh_symbols
+                self.enter_scope();
+                for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
+                    *name = match (**name).clone() {
+                        Type::Data(types::TypeConstructor::Data(original), args) => {
+                            // Create a new symbol for this binding so that this type will
+                            // differ from any other types which are named the same
+                            let s = String::from(self.symbols.string(&original));
+                            let new = self.symbols.scoped_symbol(&s);
+                            self.original_symbols.insert(original, new);
+                            Type::data(types::TypeConstructor::Data(new), args)
+                        }
+                        _ => {
+                            panic!("ICE: Unexpected lhs of type binding {}",
+                                   types::display_type(&self.symbols, name))
+                        }
+                    }
+                }
+                for &mut ast::TypeBinding { ref mut typ, .. } in bindings.iter_mut() {
+                    *typ = self.refresh_symbols_in_type(typ.clone());
+                }
                 {
                     let subs = Substitution::new();
                     let mut check = super::kindcheck::KindCheck::new(&self.environment,
@@ -715,10 +739,16 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
-                                      .map(|tup| {
+                                      .map(|&mut (ref mut symbol, ref mut typ)| {
+                                          if let Some(&new) = self.original_symbols.get(symbol) {
+                                              *symbol = new;
+                                          }
+                                          if let Some(ref mut typ) = *typ {
+                                              *typ = self.refresh_symbols_in_type(typ.clone());
+                                          }
                                           let (generics, typ) = {
                                               let (generics, typ) =
-                                                  try!(self.find_type_info(&tup.0));
+                                                  try!(self.find_type_info(symbol));
                                               let generics: Vec<_> = generics.iter()
                                                                              .cloned()
                                                                              .collect();
@@ -726,7 +756,7 @@ impl<'a> Typecheck<'a> {
                                           };
 
                                           let name =
-                                              Type::data(types::TypeConstructor::Data(tup.0),
+                                              Type::data(types::TypeConstructor::Data(*symbol),
                                                          generics.iter()
                                                                  .cloned()
                                                                  .map(Type::generic)
@@ -736,13 +766,13 @@ impl<'a> Typecheck<'a> {
                                               None => name.clone(),
                                           };
                                           let n = String::from(Name::new(self.symbols
-                                                                             .string(&tup.0))
+                                                                             .string(symbol))
                                                                    .name()
                                                                    .as_str());
                                           Ok(types::Field {
                                               name: self.symbols.symbol(n),
                                               typ: Alias {
-                                                  name: tup.0,
+                                                  name: *symbol,
                                                   args: generics,
                                                   typ: typ,
                                               },
@@ -1036,56 +1066,6 @@ impl<'a> Typecheck<'a> {
                                       _ => unroll_app(typ).or(replacement.clone()),
                                   }
                               })
-    }
-
-    fn refresh_symbols(&mut self, expr: &mut ast::LExpr<TcIdent>) {
-        match expr.value {
-            ast::Expr::Identifier(ref mut id) => {
-                if let Some(&new) = self.original_symbols.get(&id.name) {
-                    id.name = new;
-                }
-            }
-            ast::Expr::Let(ref mut bindings, _) => {
-                for bind in bindings {
-                    if let Some(ref mut type_decl) = bind.typ {
-                        *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                    }
-                }
-            }
-            ast::Expr::Type(ref mut bindings, _) => {
-                self.enter_scope();
-                for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
-                    *name = match (**name).clone() {
-                        Type::Data(types::TypeConstructor::Data(original), args) => {
-                            // Create a new symbol for this binding so that this type will
-                            // differ from any other types which are named the same
-                            let s = String::from(self.symbols.string(&original));
-                            let new = self.symbols.scoped_symbol(&s);
-                            self.original_symbols.insert(original, new);
-                            Type::data(types::TypeConstructor::Data(new), args)
-                        }
-                        _ => {
-                            panic!("ICE: Unexpected lhs of type binding {}",
-                                   types::display_type(&self.symbols, name))
-                        }
-                    };
-                }
-                for &mut ast::TypeBinding { ref mut typ, .. } in bindings.iter_mut() {
-                    *typ = self.refresh_symbols_in_type(typ.clone());
-                }
-            }
-            ast::Expr::Record { ref mut types, .. } => {
-                for &mut (ref mut symbol, ref mut typ) in types {
-                    if let Some(&new) = self.original_symbols.get(symbol) {
-                        *symbol = new;
-                    }
-                    if let Some(ref mut typ) = *typ {
-                        *typ = self.refresh_symbols_in_type(typ.clone());
-                    }
-                }
-            }
-            _ => (),
-        }
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {

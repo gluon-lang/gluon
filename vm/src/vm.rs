@@ -2004,6 +2004,21 @@ Int(100)
 }
 
     #[test]
+    fn rename_types_after_binding() {
+        let _ = ::env_logger::init();
+        let text = r#"
+let prelude = import "std/prelude.hs"
+in
+let { List } = prelude
+and { (==) }: Eq (List Int) = prelude.eq_List { (==) }
+in Cons 1 Nil == Nil
+"#;
+        let mut vm = make_vm();
+        let value = super::run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(value.value, Int(0));
+    }
+
+    #[test]
     fn test_implicit_prelude() {
         let _ = ::env_logger::init();
         let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
