@@ -3,7 +3,6 @@ use base::symbol::Symbol;
 use stack::StackFrame;
 use vm::{VM, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value, Def,
          Userdata_, VMInt, Error, Root, RootStr};
-use base::ast::Typed;
 use base::types;
 use base::types::{TcType, Type, TypeConstructor};
 use types::Instruction::Call;
@@ -576,7 +575,7 @@ pub mod record {
     }
 
     impl<F: Field, H: VMType, T> FieldList for HList<(F, H), T> where T: FieldList
-    {
+{
         fn len() -> VMIndex {
             1 + T::len()
         }
@@ -600,7 +599,7 @@ pub mod record {
 
     impl<'a, F: Field, H: Pushable<'a>, T> PushableFieldList<'a> for HList<(F, H), T>
         where T: PushableFieldList<'a>
-    {
+{
         fn push<'b>(self, vm: &VM<'a>, fields: &mut StackFrame<'a, 'b>) {
             let HList((_, head), tail) = self;
             head.push(vm, fields);
@@ -609,7 +608,7 @@ pub mod record {
     }
 
     impl<A: VMType, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>> where A::Type: Sized
-    {
+{
         type Type = Record<((&'static str, A::Type),)>;
         fn make_type(vm: &VM) -> TcType {
             let len = HList::<(F, A), T>::len() as usize;
@@ -621,7 +620,7 @@ pub mod record {
     impl<'a, A: Pushable<'a>, F: Field, T: PushableFieldList<'a>> Pushable<'a> for Record<HList<(F, A),
                                                                                                 T>>
         where A::Type: Sized
-    {
+{
         fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
             self.fields.push(vm, stack);
             let len = HList::<(F, A), T>::len();
@@ -708,59 +707,22 @@ fn make_type<T: ?Sized + VMType>(vm: &VM) -> TcType {
     <T as VMType>::make_type(vm)
 }
 
-pub trait GetFunction<'a, 'vm>: Sized {
-    fn get_function(vm: &'vm VM<'a>, name: &str) -> Option<Self>;
-}
-
-macro_rules! make_get {
-    ($($args:ident),*) => (
-impl <'a, 'vm, $($args,)* R> GetFunction<'a, 'vm> for Function<'a, 'vm, fn ($($args,)*) -> R>
-where $($args : VMType + Pushable<'a>,)* R: VMType + Getable<'a, 'vm> {
-    fn get_function(vm: &'vm VM<'a>, name: &str) -> Option<Function<'a, 'vm, fn ($($args,)*) -> R>> {
-        let value = match vm.get_global(name) {
-            Some(global) => {
-                let typ = global.type_of();
-                let mut arg_iter = types::arg_iter(&typ);
-                let ok = $({
-                    arg_iter.next().expect("Arg iter") == &$args::make_type(vm)
-                    } &&)* true;
-                if arg_iter.next().is_none() && ok && arg_iter.typ == &R::make_type(vm) {
-                    Some(vm.root_value(global.value.get()))
-                }
-                else {
-                    None
-                }
-            }
-            None => None
-        };
-        match value {
-            Some(value) => Some(Function { value: value, _marker: PhantomData }),
-            None => None
-        }
-    }
-}
-)}
-
-make_get!();
-make_get!(A);
-make_get!(A, B);
-make_get!(A, B, C);
-make_get!(A, B, C, D);
-make_get!(A, B, C, D, E);
-make_get!(A, B, C, D, E, F);
-make_get!(A, B, C, D, E, F, G);
-
 /// Type which represents an function in embed_lang
 pub struct Function<'a: 'vm, 'vm, F> {
     value: RootedValue<'a, 'vm>,
     _marker: PhantomData<F>,
 }
 
-impl<'vm, 'b, F: Any> VMType for Function<'b, 'vm, F> {
-    type Type = F;
+impl<'vm, 'b, F> VMType for Function<'b, 'vm, F> where F: VMType
+{
+    type Type = F::Type;
+    fn make_type(vm: &VM) -> TcType {
+        F::make_type(vm)
+    }
 }
 
-impl<'vm, 'a, F: Any> Pushable<'a> for Function<'a, 'vm, F> {
+impl<'vm, 'a, F: Any> Pushable<'a> for Function<'a, 'vm, F> where F: VMType
+{
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
         stack.push(*self.value);
         Status::Ok
@@ -775,7 +737,7 @@ impl<'a, 'vm, F> Getable<'a, 'vm> for Function<'a, 'vm, F> {
     }
 }
 
-impl<'a, 'vm, A, R> Function<'a, 'vm, fn (A) -> R>
+impl<'a, 'vm, A, R> Function<'a, 'vm, fn(A) -> R>
     where A: Pushable<'a> + 'static,
           R: VMType + Getable<'a, 'vm> + 'static
 {
@@ -795,7 +757,7 @@ impl<'a, 'vm, A, R> Function<'a, 'vm, fn (A) -> R>
         }
     }
 }
-impl<'a, 'vm, A, B, R> Function<'a, 'vm, fn (A, B) -> R>
+impl<'a, 'vm, A, B, R> Function<'a, 'vm, fn(A, B) -> R>
     where A: Pushable<'a> + 'static,
           B: Pushable<'a> + 'static,
           R: VMType + Getable<'a, 'vm> + 'static
@@ -816,10 +778,6 @@ impl<'a, 'vm, A, B, R> Function<'a, 'vm, fn (A, B) -> R>
             None => Err(Error::Message("Wrong type".to_string())),
         }
     }
-}
-
-pub fn get_function<'a, 'vm, T: GetFunction<'a, 'vm>>(vm: &'vm VM<'a>, name: &str) -> Option<T> {
-    GetFunction::get_function(vm, name)
 }
 
 /// Trait which represents a function
@@ -991,7 +949,7 @@ macro_rules! vm_function {
 
 #[cfg(all(test, feature = "check", feature = "parser"))]
 mod tests {
-    use super::{VMType, Function, get_function};
+    use super::{VMType, Function};
 
     use vm::{VM, VMInt, Value, Root, RootStr};
     use vm::tests::{load_script, run_expr};
@@ -1009,12 +967,12 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
         load_script(&mut vm, "add10", &add10).unwrap_or_else(|err| panic!("{}", err));
         load_script(&mut vm, "mul", &mul).unwrap_or_else(|err| panic!("{}", err));
         {
-            let mut f: Function<fn (VMInt) -> VMInt> = get_function(&vm, "add10")
-                                                       .expect("No function");
+            let mut f: Function<fn(VMInt) -> VMInt> = vm.get_global("add10")
+                                                        .unwrap();
             let result = f.call(2).unwrap();
             assert_eq!(result, 12);
         }
-        let mut f: Function<fn (f64, f64) -> f64> = get_function(&vm, "mul").expect("No function");
+        let mut f: Function<fn(f64, f64) -> f64> = vm.get_global("mul").unwrap();
         let result = f.call2(4., 5.).unwrap();
         assert_eq!(result, 20.);
     }
@@ -1046,14 +1004,12 @@ let id : Test -> Test = \x -> x in id
 
         let mut test = Test { x: 123 };
         {
-            let mut f: Function<fn (*mut Test) -> *mut Test> = get_function(&vm, "id")
-                                                               .expect("No function id");
+            let mut f: Function<fn(*mut Test) -> *mut Test> = vm.get_global("id").unwrap();
             let result = f.call(&mut test).unwrap();
             let p: *mut _ = &mut test;
             assert!(result == p);
         }
-        let mut f: Function<fn (*mut Test) -> bool> = get_function(&vm, "test")
-                                                      .expect("No function test");
+        let mut f: Function<fn(*mut Test) -> bool> = vm.get_global("test").unwrap();
         let result = f.call(&mut test).unwrap();
         assert!(result);
         assert_eq!(test.x, 123 * 2);
@@ -1082,8 +1038,7 @@ let id : Test -> Test = \x -> x in id
           })
           .unwrap();
         load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
-        let mut script_fn: Function<fn (Box<Test>) -> VMInt> = get_function(&vm, "script_fn")
-                                                               .expect("No function script_fn");
+        let mut script_fn: Function<fn(Box<Test>) -> VMInt> = vm.get_global("script_fn").unwrap();
         let result = script_fn.call(Box::new(Test(123)))
                               .unwrap();
         assert_eq!(result, 124);

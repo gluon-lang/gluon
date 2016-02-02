@@ -20,7 +20,7 @@ use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use array::{Array, Str};
 use compiler::{CompiledFunction, Variable, CompilerEnv};
-use api::Pushable;
+use api::{Getable, Pushable, VMType};
 use lazy::Lazy;
 
 use self::Named::*;
@@ -676,11 +676,6 @@ impl<'a> VM<'a> {
         BytecodeFunction::new(&mut self.gc.borrow_mut(), f)
     }
 
-    pub fn get_global(&self, name: &str) -> Option<&Global<'a>> {
-        let n = self.symbol(name);
-        self.globals.find(|g| n == g.id).map(|tup| tup.1)
-    }
-
     pub fn get_type<T: ?Sized + Any>(&self) -> &TcType {
         let id = TypeId::of::<T>();
         self.typeids
@@ -701,6 +696,11 @@ impl<'a> VM<'a> {
             }
         })
 
+    }
+
+    pub fn global_exists(&self, name: &str) -> bool {
+        let n = self.symbol(name);
+        self.names.borrow().get(&n).is_some()
     }
 
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
@@ -726,6 +726,33 @@ impl<'a> VM<'a> {
         self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
         self.globals.push(global);
         Ok(())
+    }
+
+    pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T, Error>
+        where T: Getable<'a, 'vm> + VMType
+    {
+        let id = self.symbol(name);
+        self.names
+            .borrow()
+            .get(&id)
+            .map(|g| {
+                match *g {
+                    GlobalFn(i) => i,
+                }
+            })
+            .ok_or_else(|| Error::Message(format!("Could not retrieve global `{}`", name)))
+            .and_then(|i| {
+                let global = &self.globals[i];
+                if global.type_of() == T::make_type(self) {
+                    T::from_value(self, global.value.get()).ok_or_else(|| {
+                        Error::Message(format!("Could not retrieve global `{}`", name))
+                    })
+                } else {
+                    Err(Error::Message(format!("Could not retrieve global `{}` as the types did \
+                                                not match",
+                                               name)))
+                }
+            })
     }
 
     pub fn register_type<T: ?Sized + Any>(&self,

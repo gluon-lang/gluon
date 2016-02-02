@@ -71,7 +71,7 @@ impl<'a> Macro<VM<'a>> for Import {
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
                 let name = vm.symbol(&*modulename);
-                if vm.get_global(&modulename).is_none() {
+                if !vm.global_exists(&modulename) {
                     if self.visited.borrow().iter().any(|m| **m == **filename) {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
