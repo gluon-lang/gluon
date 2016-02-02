@@ -1,3 +1,5 @@
+//! Crate which contain the virtual machine which executes embed_lang programs
+
 #[macro_use]
 extern crate log;
 #[cfg(test)]
