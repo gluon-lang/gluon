@@ -686,15 +686,15 @@ fn make_type<T: ?Sized + VMType>(vm: &VM) -> TcType {
     <T as VMType>::make_type(vm)
 }
 
-pub trait Get<'a, 'b>: Sized {
-    fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Self>;
+pub trait Get<'a, 'vm>: Sized {
+    fn get_function(vm: &'vm VM<'a>, name: &str) -> Option<Self>;
 }
 
 macro_rules! make_get {
     ($($args:ident),*) => (
-impl <'a, 'b, $($args,)* R> Get<'a, 'b> for Callable<'a, 'b, ($($args,)*), R>
-where $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a> {
-    fn get_function(vm: &'a VM<'b>, name: &str) -> Option<Callable<'a, 'b, ($($args,)*), R>> {
+impl <'a, 'vm, $($args,)* R> Get<'a, 'vm> for Callable<'a, 'vm, fn ($($args,)*) -> R>
+where $($args : VMType + Pushable<'a>,)* R: VMType + Getable<'a, 'vm> {
+    fn get_function(vm: &'vm VM<'a>, name: &str) -> Option<Callable<'a, 'vm, fn ($($args,)*) -> R>> {
         let value = match vm.get_global(name) {
             Some(global) => {
                 let typ = global.type_of();
@@ -703,7 +703,7 @@ where $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a> {
                     arg_iter.next().expect("Arg iter") == &$args::make_type(vm)
                     } &&)* true;
                 if arg_iter.next().is_none() && ok && arg_iter.typ == &R::make_type(vm) {
-                    Some(FunctionRef { value: global.value.get(), _marker: PhantomData })
+                    Some(vm.root_value(global.value.get()))
                 }
                 else {
                     None
@@ -712,7 +712,7 @@ where $($args : VMType + Pushable<'b>,)* R: VMType + Getable<'b, 'a> {
             None => None
         };
         match value {
-            Some(value) => Some(Callable { vm: vm, value: value }),
+            Some(value) => Some(Callable { value: value, _marker: PhantomData }),
             None => None
         }
     }
@@ -728,124 +728,74 @@ make_get!(A, B, C, D, E);
 make_get!(A, B, C, D, E, F);
 make_get!(A, B, C, D, E, F, G);
 
-pub struct Callable<'a, 'b: 'a, Args, R> {
-    vm: &'a VM<'b>,
-    value: FunctionRef<'b, Args, R>,
-}
-struct FunctionRef<'a, Args, R> {
-    value: Value<'a>,
-    _marker: PhantomData<fn(Args) -> R>,
+pub struct Callable<'a: 'vm, 'vm, F> {
+    value: RootedValue<'a, 'vm>,
+    _marker: PhantomData<F>,
 }
 
-impl<'a, Args, R> Copy for FunctionRef<'a, Args, R> {}
-impl<'a, Args, R> Clone for FunctionRef<'a, Args, R> {
-    fn clone(&self) -> FunctionRef<'a, Args, R> {
-        *self
-    }
+impl<'vm, 'b, F: Any> VMType for Callable<'b, 'vm, F> {
+    type Type = F;
 }
 
-impl<'vm, 'b, Args: 'static, R: 'static> VMType for Callable<'vm, 'b, Args, R> {
-    type Type = fn (Args) -> R;
-}
-
-impl<'vm, 'a, Args: 'static, R: 'static> Pushable<'a> for Callable<'vm, 'a, Args, R> {
+impl<'vm, 'a, F: Any> Pushable<'a> for Callable<'a, 'vm, F> {
     fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        stack.push(self.value.value);
+        stack.push(*self.value);
         Status::Ok
     }
 }
-impl<'a, 'vm, Args, R> Getable<'a, 'vm> for Callable<'vm, 'a, Args, R> {
-    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Callable<'vm, 'a, Args, R>> {
+impl<'a, 'vm, F> Getable<'a, 'vm> for Callable<'a, 'vm, F> {
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Callable<'a, 'vm, F>> {
         Some(Callable {
-            vm: vm,
-            value: FunctionRef {
-                value: value,
-                _marker: PhantomData,
-            },
-        })//TODO not type safe
-    }
-}
-
-impl<'b, A: 'static, R: 'static> VMType for FunctionRef<'b, (A,), R> {
-    type Type = fn (A) -> R;
-}
-
-impl<'a, A: 'static, R: 'static> Pushable<'a> for FunctionRef<'a, (A,), R> {
-    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        stack.push(self.value);
-        Status::Ok
-    }
-}
-impl<'a, 'vm, A, R> Getable<'a, 'vm> for FunctionRef<'a, (A,), R> {
-    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<FunctionRef<'a, (A,), R>> {
-        Some(FunctionRef {
-            value: value,
+            value: vm.root_value(value),
             _marker: PhantomData,
         })//TODO not type safe
     }
 }
 
-impl<'b, A: 'static, B: 'static, R: 'static> VMType for FunctionRef<'b, (A, B), R> {
-    type Type = fn (A, R) -> R;
-}
-
-impl<'a, A: 'static, B: 'static, R: 'static> Pushable<'a> for FunctionRef<'a, (A, B), R> {
-    fn push<'b>(self, _: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        stack.push(self.value);
-        Status::Ok
-    }
-}
-impl<'a, 'vm, A, B, R> Getable<'a, 'vm> for FunctionRef<'a, (A, B), R> {
-    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<FunctionRef<'a, (A, B), R>> {
-        Some(FunctionRef {
-            value: value,
-            _marker: PhantomData,
-        })//TODO not type safe
-    }
-}
-
-impl<'a, 'b, A, R> Callable<'a, 'b, (A,), R>
-    where A: Pushable<'b> + 'static,
-          R: VMType + Getable<'b, 'a> + 'static
+impl<'a, 'vm, A, R> Callable<'a, 'vm, fn (A) -> R>
+    where A: Pushable<'a> + 'static,
+          R: VMType + Getable<'a, 'vm> + 'static
 {
     pub fn call(&mut self, a: A) -> Result<R, Error> {
-        let mut stack = StackFrame::new_empty(self.vm);
-        self.value.push(self.vm, &mut stack);
-        a.push(self.vm, &mut stack);
+        let vm = self.value.vm();
+        let mut stack = StackFrame::new_empty(vm);
+        stack.push(*self.value);
+        a.push(vm, &mut stack);
         for _ in 0..R::extra_args() {
-            0.push(self.vm, &mut stack);
+            0.push(vm, &mut stack);
         }
         let args = stack.len() - 1;
-        stack = try!(self.vm.execute(stack, &[Call(args)], &BytecodeFunction::empty()));
-        match R::from_value(self.vm, stack.pop()) {
+        stack = try!(vm.execute(stack, &[Call(args)], &BytecodeFunction::empty()));
+        match R::from_value(vm, stack.pop()) {
             Some(x) => Ok(x),
             None => Err(Error::Message("Wrong type".to_string())),
         }
     }
 }
-impl<'a, 'b, A, B, R> Callable<'a, 'b, (A, B), R>
-    where A: Pushable<'b> + 'static,
-          B: Pushable<'b> + 'static,
-          R: VMType + Getable<'b, 'a> + 'static
+impl<'a, 'vm, A, B, R> Callable<'a, 'vm, fn (A, B) -> R>
+    where A: Pushable<'a> + 'static,
+          B: Pushable<'a> + 'static,
+          R: VMType + Getable<'a, 'vm> + 'static
 {
     pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
-        let mut stack = StackFrame::new_empty(self.vm);
-        self.value.push(self.vm, &mut stack);
-        a.push(self.vm, &mut stack);
-        b.push(self.vm, &mut stack);
+        let vm = self.value.vm();
+        let mut stack = StackFrame::new_empty(vm);
+        stack.push(*self.value);
+        a.push(vm, &mut stack);
+        b.push(vm, &mut stack);
         for _ in 0..R::extra_args() {
-            0.push(self.vm, &mut stack);
+            0.push(vm, &mut stack);
         }
         let args = stack.len() - 1;
-        stack = try!(self.vm.execute(stack, &[Call(args)], &BytecodeFunction::empty()));
-        match R::from_value(self.vm, stack.pop()) {
+        stack = try!(vm.execute(stack, &[Call(args)], &BytecodeFunction::empty()));
+        match R::from_value(vm, stack.pop()) {
             Some(x) => Ok(x),
             None => Err(Error::Message("Wrong type".to_string())),
         }
     }
 }
 
-pub fn get_function<'a, 'b, T: Get<'a, 'b>>(vm: &'a VM<'b>, name: &str) -> Option<T> {
+pub fn get_function<'a, 'vm, T: Get<'a, 'vm>>(vm: &'vm VM<'a>, name: &str) -> Option<T> {
     Get::get_function(vm, name)
 }
 
@@ -1032,12 +982,12 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
         load_script(&mut vm, "add10", &add10).unwrap_or_else(|err| panic!("{}", err));
         load_script(&mut vm, "mul", &mul).unwrap_or_else(|err| panic!("{}", err));
         {
-            let mut f: Callable<(VMInt,), VMInt> = Get::get_function(&vm, "add10")
+            let mut f: Callable<fn (VMInt) -> VMInt> = Get::get_function(&vm, "add10")
                                                        .expect("No function");
             let result = f.call(2).unwrap();
             assert_eq!(result, 12);
         }
-        let mut f: Callable<(f64, f64), f64> = Get::get_function(&vm, "mul").expect("No function");
+        let mut f: Callable<fn (f64, f64) -> f64> = Get::get_function(&vm, "mul").expect("No function");
         let result = f.call2(4., 5.).unwrap();
         assert_eq!(result, 20.);
     }
@@ -1069,13 +1019,13 @@ let id : Test -> Test = \x -> x in id
 
         let mut test = Test { x: 123 };
         {
-            let mut f: Callable<(*mut Test,), *mut Test> = Get::get_function(&vm, "id")
+            let mut f: Callable<fn (*mut Test) -> *mut Test> = Get::get_function(&vm, "id")
                                                                .expect("No function id");
             let result = f.call(&mut test).unwrap();
             let p: *mut _ = &mut test;
             assert!(result == p);
         }
-        let mut f: Callable<(*mut Test,), bool> = Get::get_function(&vm, "test")
+        let mut f: Callable<fn (*mut Test) -> bool> = Get::get_function(&vm, "test")
                                                       .expect("No function test");
         let result = f.call(&mut test).unwrap();
         assert!(result);
@@ -1105,7 +1055,7 @@ let id : Test -> Test = \x -> x in id
           })
           .unwrap();
         load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
-        let mut script_fn: Callable<(Box<Test>,), VMInt> = Get::get_function(&vm, "script_fn")
+        let mut script_fn: Callable<fn (Box<Test>) -> VMInt> = Get::get_function(&vm, "script_fn")
                                                                .expect("No function script_fn");
         let result = script_fn.call(Box::new(Test(123)))
                               .unwrap();
