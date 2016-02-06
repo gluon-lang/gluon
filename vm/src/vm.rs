@@ -168,13 +168,20 @@ pub enum Value<'a> {
 }
 
 #[derive(Copy, Clone, Debug)]
-enum Callable<'a> {
+pub enum Callable<'a> {
     Closure(GcPtr<ClosureData<'a>>),
     Extern(GcPtr<ExternFunction<'a>>),
 }
 
 impl<'a> Callable<'a> {
-    fn args(&self) -> VMIndex {
+    pub fn name(&self) -> Option<Symbol> {
+        match *self {
+            Callable::Closure(ref closure) => closure.function.name,
+            Callable::Extern(ref ext) => Some(ext.id),
+        }
+    }
+
+    pub fn args(&self) -> VMIndex {
         match *self {
             Callable::Closure(ref closure) => closure.function.args,
             Callable::Extern(ref ext) => ext.args,
@@ -601,6 +608,8 @@ impl<'a> VM<'a> {
             rooted_values: RefCell::new(Vec::new()),
             macros: MacroEnv::new(),
         };
+        // Enter the top level scope
+        StackFrame::frame(vm.stack.borrow_mut(), 0, None);
         vm.add_types()
           .unwrap();
         vm.add_import();
@@ -684,17 +693,15 @@ impl<'a> VM<'a> {
     }
 
     pub fn execute_call(&self, args: VMIndex) -> VMResult<Value<'a>> {
-        let stack = self.stack.borrow_mut();
-        let frame = StackFrame::new_scope(stack, args + 1, None, None, |frame| {
-            self.execute(frame, &[Call(args)], &BytecodeFunction::empty())
-        });
-        frame.map(|mut frame| {
+        let frame = self.current_frame();
+        let frame = try!(self.execute(frame, &[Call(args)], &BytecodeFunction::empty()));
+        Ok(frame.map(|mut frame| {
             if frame.len() > 0 {
                 frame.pop()
             } else {
                 Int(0)
             }
-        })
+        }).unwrap())
 
     }
 
@@ -711,7 +718,7 @@ impl<'a> VM<'a> {
             return Err(Error::Message(format!("{} is already defined", name)));
         }
         let (status, value) = {
-            let mut stack = StackFrame::new(self.stack.borrow_mut(), 0, None);
+            let mut stack = self.current_frame();
             let status = value.push(self, &mut stack);
             (status, stack.pop())
         };
@@ -815,6 +822,14 @@ impl<'a> VM<'a> {
         }
     }
 
+    pub fn current_frame<'vm>(&'vm self) -> StackFrame<'a, 'vm> {
+        let stack = self.stack.borrow_mut();
+        StackFrame {
+            frame: stack.frames.last().expect("Frame").clone(),
+            stack: stack,
+        }
+    }
+
     pub fn collect(&self) {
         let stack = self.stack.borrow();
         self.with_roots(&stack, |gc, roots| {
@@ -893,14 +908,16 @@ impl<'a> VM<'a> {
                        typ: &TcType,
                        closure: GcPtr<ClosureData<'a>>)
                        -> VMResult<Value<'a>> {
-        let value = try!(self.call_bytecode(0, closure));
+        let value = try!(self.call_bytecode(closure));
         if let Type::Data(types::TypeConstructor::Data(id), _) = **typ {
             if id == self.symbol("IO") {
                 debug!("Run IO {:?}", value);
+                self.push(Int(0));// Dummy value to fill the place of the function for TailCall
                 self.push(value);
                 self.push(Int(0));
-                let mut stack = StackFrame::frame(self.stack.borrow_mut(), 2, None, None);
-                stack = try!(self.execute(stack, &[Call(1)], &BytecodeFunction::empty()));
+                let mut stack = StackFrame::frame(self.stack.borrow_mut(), 2, None);
+                stack = try!(self.execute(stack, &[TailCall(1)], &BytecodeFunction::empty()))
+                            .expect("call_module to have the stack remaining");
                 let result = stack.pop();
                 while stack.len() > 0 {
                     stack.pop();
@@ -912,22 +929,16 @@ impl<'a> VM<'a> {
         Ok(value)
     }
 
-    pub fn call_bytecode(&self,
-                         args: VMIndex,
+    fn call_bytecode(&self,
                          closure: GcPtr<ClosureData<'a>>)
                          -> VMResult<Value<'a>> {
         self.push(Closure(closure));
-        let mut stack = StackFrame::frame(self.stack.borrow_mut(),
-                                          args,
-                                          closure.function.name,
-                                          Some(closure));
-        stack = try!(self.execute(stack, &closure.function.instructions, &closure.function));
-        let x = if stack.len() > 0 {
-            stack.pop()
-        } else {
-            Int(0)
-        };
-        Ok(x)
+        let stack = StackFrame::frame(self.stack.borrow_mut(),
+                                          0,
+                                          Some(Callable::Closure(closure)));
+        try!(self.execute(stack, &closure.function.instructions, &closure.function));
+        let mut stack = self.stack.borrow_mut();
+        Ok(stack.pop())
     }
 
     fn execute_callable<'b>(&'b self,
@@ -938,26 +949,27 @@ impl<'a> VM<'a> {
         match *function {
             Callable::Closure(closure) => {
                 stack = stack.enter_scope(closure.function.args,
-                                          closure.function.name,
-                                          Some(closure));
+                                          Some(Callable::Closure(closure)));
                 stack.frame.excess = excess;
                 stack.stack.frames.last_mut().unwrap().excess = excess;
                 Ok(stack)
             }
-            Callable::Extern(ref ext) => self.execute_function(stack, ext),
+            Callable::Extern(ref ext) => {
+                assert!(stack.len() >= ext.args + 1);
+                let function_index = stack.len() - ext.args - 1;
+                debug!("------- {} {:?}", function_index, &stack[..]);
+                Ok(stack.enter_scope(ext.args, Some(Callable::Extern(*ext))))
+            }
         }
     }
 
     fn execute_function<'b>(&'b self,
-                            mut stack: StackFrame<'a, 'b>,
+                            stack: StackFrame<'a, 'b>,
                             function: &ExternFunction<'a>)
                             -> Result<StackFrame<'a, 'b>, Error> {
+        debug!("CALL EXTERN {}", self.symbols.borrow().string(&function.id));
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
-        assert!(stack.len() >= function.args + 1);
-        let function_index = stack.len() - function.args - 1;
-        debug!("------- {} {:?}", function_index, &stack[..]);
-        stack = stack.enter_scope(function.args, Some(function.id), None);
         let StackFrame { stack, frame } = stack;
         drop(stack);
         let status = (function.function)(self);
@@ -965,14 +977,17 @@ impl<'a> VM<'a> {
             stack: self.stack.borrow_mut(),
             frame: frame,
         };
-        stack = stack.exit_scope();
         let result = stack.pop();
-        while stack.len() > function_index {
+        while stack.len() > 0 {
             debug!("{} {:?}", stack.len(), &stack[..]);
             stack.pop();
         }
+        stack = try!(stack.exit_scope()
+                          .ok_or_else(|| {
+                              Error::Message(StdString::from("Poped the last frame in execute_function"))
+                          }));
+        stack.pop();// Pop function
         stack.push(result);
-        debug!("------- {} {:?}", function_index, &stack[..]);
         match status {
             Status::Ok => Ok(stack),
             Status::Error => {
@@ -1062,41 +1077,49 @@ impl<'a> VM<'a> {
                        stack: StackFrame<'a, 'b>,
                        instructions: &[Instruction],
                        function: &BytecodeFunction)
-                       -> Result<StackFrame<'a, 'b>, Error> {
-        let mut stack = try!(self.execute_(stack, 0, instructions, function));
-        loop {
-            let (closure, i) = match stack.frame.upvars {
-                None => break,
-                Some(closure) => {
+                       -> Result<Option<StackFrame<'a, 'b>>, Error> {
+        let mut maybe_stack = try!(self.execute_(stack, 0, instructions, function));
+        while let Some(mut stack) = maybe_stack {
+            debug!("STACK\n{:?}", stack.stack.frames);
+            maybe_stack = match stack.frame.function {
+                None => return Ok(Some(stack)),
+                Some(Callable::Extern(ext)) => {
+                    if stack.frame.instruction_index != 0 {
+                        // This function was already called
+                        return Ok(Some(stack));
+                    } else {
+                        stack.frame.instruction_index = 1;
+                        stack.stack.frames.last_mut().unwrap().instruction_index = 1;
+                        Some(try!(self.execute_function(stack, &ext)))
+                    }
+                }
+                Some(Callable::Closure(closure)) => {
                     // Tail calls into extern functions at the top level will drop the last
                     // stackframe so just return immedietly
                     if stack.stack.frames.len() == 0 {
-                        return Ok(stack);
+                        return Ok(Some(stack));
                     }
-                    (closure, stack.frame.instruction_index)
+                    let instruction_index = stack.frame.instruction_index;
+                    {
+                        let symbols = self.symbols.borrow();
+                        debug!("Continue with {}\nAt: {}/{}",
+                               closure.function
+                                      .name
+                                      .as_ref()
+                                      .map(|s| symbols.string(s))
+                                      .unwrap_or("<UNKNOWN>"),
+                               instruction_index,
+                               closure.function.instructions.len());
+                    }
+                    let new_stack = try!(self.execute_(stack,
+                                                       instruction_index,
+                                                       &closure.function.instructions,
+                                                       &closure.function));
+                    new_stack
                 }
             };
-            {
-                let symbols = self.symbols.borrow();
-                debug!("Continue with {}\nAt: {}/{}",
-                       closure.function
-                              .name
-                              .as_ref()
-                              .map(|s| symbols.string(s))
-                              .unwrap_or("<UNKNOWN>"),
-                       i,
-                       closure.function.instructions.len());
-            }
-            let new_stack = try!(self.execute_(stack,
-                                               i,
-                                               &closure.function.instructions,
-                                               &closure.function));
-            debug!("Result {:?} {:?}",
-                   new_stack.frame.upvars,
-                   new_stack.stack.values);
-            stack = new_stack;
         }
-        Ok(stack)
+        Ok(maybe_stack)
     }
 
     fn execute_<'b>(&'b self,
@@ -1104,7 +1127,7 @@ impl<'a> VM<'a> {
                     mut index: usize,
                     instructions: &[Instruction],
                     function: &BytecodeFunction)
-                    -> Result<StackFrame<'a, 'b>, Error> {
+                    -> Result<Option<StackFrame<'a, 'b>>, Error> {
         {
             let symbols = self.symbols.borrow();
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
@@ -1135,7 +1158,7 @@ impl<'a> VM<'a> {
                 PushFloat(f) => stack.push(Float(f)),
                 Call(args) => {
                     stack.frame.instruction_index = index + 1;
-                    return self.do_call(stack, args);
+                    return self.do_call(stack, args).map(Some);
                 }
                 TailCall(mut args) => {
                     let mut amount = stack.len() - args;
@@ -1144,7 +1167,7 @@ impl<'a> VM<'a> {
                         let i = stack.stack.values.len() - stack.len() as usize - 2;
                         match stack.stack.values[i] {
                             Data(excess) => {
-                                debug!("Push excess args {:?}", &excess.fields);
+                                debug!("TailCall: Push excess args {:?}", &excess.fields);
                                 for value in &excess.fields {
                                     stack.push(value.get());
                                 }
@@ -1153,12 +1176,15 @@ impl<'a> VM<'a> {
                             _ => panic!("Expected excess args"),
                         }
                     }
-                    stack = stack.exit_scope();
+                    stack = match stack.exit_scope() {
+                        Some(stack) => stack,
+                        None => return Ok(None),
+                    };
                     debug!("{} {} {:?}", stack.len(), amount, &stack[..]);
                     let end = stack.len() - args - 1;
                     stack.remove_range(end - amount, end);
                     debug!("{:?}", &stack[..]);
-                    return self.do_call(stack, args);
+                    return self.do_call(stack, args).map(Some);
                 }
                 Construct(tag, args) => {
                     let d = {
@@ -1184,7 +1210,7 @@ impl<'a> VM<'a> {
                     }
                 }
                 TestTag(tag) => {
-                    let x = match *stack.top() {
+                    let x = match stack.top() {
                         Data(ref data) => {
                             if data.tag == tag {
                                 1
@@ -1381,8 +1407,11 @@ impl<'a> VM<'a> {
                     for value in &excess.fields {
                         stack.push(value.get());
                     }
-                    stack = stack.exit_scope();
-                    self.do_call(stack, excess.fields.len() as VMIndex)
+                    stack = match stack.exit_scope() {
+                        Some(stack) => stack,
+                        None => return Ok(None),
+                    };
+                    self.do_call(stack, excess.fields.len() as VMIndex).map(Some)
                 }
                 x => panic!("Expected excess arguments found {:?}", x),
             }
@@ -1799,36 +1828,32 @@ Int(2)
     #[test]
     fn insert_stack_slice() {
         use std::cell::Cell;
+
         let _ = ::env_logger::init();
         let vm = VM::new();
-        let _: Result<_, ()> = StackFrame::new_scope(vm.stack.borrow_mut(),
-                                                     0,
-                                                     None,
-                                                     None,
-                                                     |mut stack| {
-                                                         stack.push(Int(0));
-                                                         stack.insert_slice(0,
-                                                                            &[Cell::new(Int(2)),
-                                                                              Cell::new(Int(1))]);
-                                                         assert_eq!(&stack[..],
-                                                                    [Int(2), Int(1), Int(0)]);
-                                                         stack = stack.enter_scope(2, None, None);
-                                                         stack.insert_slice(1,
-                                                                            &[Cell::new(Int(10))]);
-                                                         assert_eq!(&stack[..],
-                                                                    [Int(1), Int(10), Int(0)]);
-                                                         stack.insert_slice(1, &[]);
-                                                         assert_eq!(&stack[..],
-                                                                    [Int(1), Int(10), Int(0)]);
-                                                         stack.insert_slice(2,
-                                                                            &[Cell::new(Int(4)),
-                                                                              Cell::new(Int(5)),
-                                                                              Cell::new(Int(6))]);
-                                                         assert_eq!(&stack[..],
-                                                                    [Int(1), Int(10), Int(4),
-                                                                     Int(5), Int(6), Int(0)]);
-                                                         Ok(stack)
-                                                     });
+        let mut stack = StackFrame::frame(vm.stack.borrow_mut(), 0, None);
+         stack.push(Int(0));
+         stack.insert_slice(0,
+                            &[Cell::new(Int(2)),
+                              Cell::new(Int(1))]);
+         assert_eq!(&stack[..],
+                    [Int(2), Int(1), Int(0)]);
+         stack = stack.enter_scope(2, None);
+         stack.insert_slice(1,
+                            &[Cell::new(Int(10))]);
+         assert_eq!(&stack[..],
+                    [Int(1), Int(10), Int(0)]);
+         stack.insert_slice(1, &[]);
+         assert_eq!(&stack[..],
+                    [Int(1), Int(10), Int(0)]);
+         stack.insert_slice(2,
+                            &[Cell::new(Int(4)),
+                              Cell::new(Int(5)),
+                              Cell::new(Int(6))]);
+         assert_eq!(&stack[..],
+                    [Int(1), Int(10), Int(4),
+                     Int(5), Int(6), Int(0)]);
+         stack.exit_scope();
     }
 
     test_expr!{ partial_application,

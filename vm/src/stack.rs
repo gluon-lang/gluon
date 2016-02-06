@@ -1,17 +1,14 @@
 use std::cell::{Cell, RefMut};
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
-use gc::GcPtr;
-use base::symbol::Symbol;
-use vm::{ClosureData, Value, VM};
+use vm::{Callable, Value};
 use types::VMIndex;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Frame<'a> {
     pub offset: VMIndex,
     pub instruction_index: usize,
-    pub function_name: Option<Symbol>,
-    pub upvars: Option<GcPtr<ClosureData<'a>>>,
+    pub function: Option<Callable<'a>>,
     pub excess: bool,
 }
 
@@ -67,27 +64,6 @@ pub struct StackFrame<'a: 'b, 'b> {
     pub frame: Frame<'a>,
 }
 impl<'a: 'b, 'b> StackFrame<'a, 'b> {
-    pub fn new(v: RefMut<'b, Stack<'a>>,
-               args: VMIndex,
-               upvars: Option<GcPtr<ClosureData<'a>>>)
-               -> StackFrame<'a, 'b> {
-        let offset = v.len() - args;
-        StackFrame {
-            stack: v,
-            frame: Frame {
-                offset: offset,
-                upvars: upvars,
-                function_name: None,
-                instruction_index: 0,
-                excess: false,
-            },
-        }
-    }
-
-    pub fn new_empty(vm: &'b VM<'a>) -> StackFrame<'a, 'b> {
-        let stack = vm.stack.borrow_mut();
-        StackFrame::new(stack, 0, None)
-    }
 
     pub fn len(&self) -> VMIndex {
         self.stack.len() - self.frame.offset
@@ -97,8 +73,8 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.values.push(v);
     }
 
-    pub fn top(&mut self) -> &Value<'a> {
-        self.stack.values.last().expect("StackFrame: top")
+    pub fn top(&mut self) -> Value<'a> {
+        *self.stack.values.last().expect("StackFrame: top")
     }
 
     pub fn pop(&mut self) -> Value<'a> {
@@ -125,62 +101,40 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 
     pub fn get_upvar(&self, index: VMIndex) -> Value<'a> {
-        let upvars = self.frame
-                         .upvars
-                         .as_ref()
-                         .expect("Attempted to access upvar in non closure function");
+        let upvars = match self.frame.function {
+            Some(Callable::Closure(ref c)) => c,
+            _ => panic!("Attempted to access upvar in non closure function"),
+        };
         upvars.upvars[index as usize].get()
     }
 
-    pub fn new_scope<E, F>(stack: RefMut<'b, Stack<'a>>,
-                           args: VMIndex,
-                           function_name: Option<Symbol>,
-                           upvars: Option<GcPtr<ClosureData<'a>>>,
-                           f: F)
-                           -> Result<StackFrame<'a, 'b>, E>
-        where F: FnOnce(StackFrame<'a, 'b>) -> Result<StackFrame<'a, 'b>, E>
-    {
-        let stack = StackFrame::frame(stack, args, function_name, upvars);
-        let mut stack = try!(f(stack));
-        stack.stack.frames.pop();
-        Ok(stack)
-    }
-
-    pub fn enter_scope(mut self,
-                       args: VMIndex,
-                       function_name: Option<Symbol>,
-                       new_upvars: Option<GcPtr<ClosureData<'a>>>)
-                       -> StackFrame<'a, 'b> {
+    pub fn enter_scope(mut self, args: VMIndex, function: Option<Callable<'a>>) -> StackFrame<'a, 'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
-        StackFrame::frame(self.stack, args, function_name, new_upvars)
+        StackFrame::frame(self.stack, args, function)
     }
 
-    pub fn exit_scope(mut self) -> StackFrame<'a, 'b> {
+    pub fn exit_scope(mut self) -> Option<StackFrame<'a, 'b>> {
         self.stack.frames.pop().expect("Expected frame");
         let frame = self.stack
                         .frames
                         .last()
-                        .cloned()
-                        .unwrap_or(Frame {
-                            offset: 0,
-                            upvars: None,
-                            function_name: None,
-                            instruction_index: 0,
-                            excess: false,
-                        });
-        debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
-        StackFrame {
-            stack: self.stack,
-            frame: frame,
-        }
+                        .cloned();
+        frame.map(move |frame| {
+            debug!("<---- Restore {} {:?}",
+                   self.stack.frames.len(),
+                   frame);
+            StackFrame {
+                stack: self.stack,
+                frame: frame,
+            }
+        })
     }
 
     pub fn frame(mut stack: RefMut<'b, Stack<'a>>,
                  args: VMIndex,
-                 function_name: Option<Symbol>,
-                 upvars: Option<GcPtr<ClosureData<'a>>>)
+                 function: Option<Callable<'a>>)
                  -> StackFrame<'a, 'b> {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
@@ -188,8 +142,7 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         let frame = Frame {
             offset: offset,
             instruction_index: 0,
-            function_name: function_name,
-            upvars: upvars,
+            function: function,
             excess: false,
         };
         stack.frames.push(frame);
@@ -278,26 +231,30 @@ impl<'a, 'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
     use vm::Value::*;
-    use std::cell::RefCell;
+
     #[test]
     fn remove_range() {
+
         let stack = RefCell::new(Stack::new());
-        let mut stack = stack.borrow_mut();
-        stack.push(Int(0));
-        stack.push(Int(1));
-        let mut frame = StackFrame::frame(stack, 2, None, None);
+        let stack = stack.borrow_mut();
+        let mut frame = StackFrame::frame(stack, 0, None);
+        frame.push(Int(0));
+        frame.push(Int(1));
+        let mut frame = frame.enter_scope(2, None);
         frame.push(Int(2));
         frame.push(Int(3));
-        frame = frame.enter_scope(1, None, None);
+        frame = frame.enter_scope(1, None);
         frame.push(Int(4));
         frame.push(Int(5));
         frame.push(Int(6));
-        frame = frame.exit_scope();
+        frame = frame.exit_scope().unwrap();
         frame.remove_range(2, 5);
         assert_eq!(frame.stack.values, vec![Int(0), Int(1), Int(5), Int(6)]);
-        frame = frame.exit_scope();
+        frame = frame.exit_scope().unwrap();
         frame.remove_range(1, 3);
         assert_eq!(frame.stack.values, vec![Int(0), Int(6)]);
     }

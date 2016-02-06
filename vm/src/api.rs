@@ -250,14 +250,14 @@ impl<'a, T> Pushable<'a> for Vec<T>
           T::Type: Sized
 {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
-        let len = self.len();
+        let len = self.len() as VMIndex;
         for v in self {
             if v.push(vm, stack) == Status::Error {
                 return Status::Error;
             }
         }
         let result = {
-            let values = &stack[stack.len() - len as u32..];
+            let values = &stack[stack.len() - len..];
             vm.alloc(&stack.stack,
                      Def {
                          tag: 0,
@@ -743,14 +743,15 @@ impl<'a, 'vm, A, R> Function<'a, 'vm, fn(A) -> R>
 {
     pub fn call(&mut self, a: A) -> Result<R, Error> {
         let vm = self.value.vm();
-        let mut stack = StackFrame::new_empty(vm);
+        let mut stack = vm.current_frame();
+        stack = stack.enter_scope(0, None);
         stack.push(*self.value);
         a.push(vm, &mut stack);
         for _ in 0..R::extra_args() {
             0.push(vm, &mut stack);
         }
         let args = stack.len() - 1;
-        stack = try!(vm.execute(stack, &[Call(args)], &BytecodeFunction::empty()));
+        stack = try!(vm.execute(stack, &[Call(args)], &BytecodeFunction::empty())).unwrap();
         match R::from_value(vm, stack.pop()) {
             Some(x) => Ok(x),
             None => Err(Error::Message("Wrong type".to_string())),
@@ -764,7 +765,8 @@ impl<'a, 'vm, A, B, R> Function<'a, 'vm, fn(A, B) -> R>
 {
     pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
         let vm = self.value.vm();
-        let mut stack = StackFrame::new_empty(vm);
+        let mut stack = vm.current_frame();
+        stack = stack.enter_scope(0, None);
         stack.push(*self.value);
         a.push(vm, &mut stack);
         b.push(vm, &mut stack);
@@ -772,7 +774,7 @@ impl<'a, 'vm, A, B, R> Function<'a, 'vm, fn(A, B) -> R>
             0.push(vm, &mut stack);
         }
         let args = stack.len() - 1;
-        stack = try!(vm.execute(stack, &[Call(args)], &BytecodeFunction::empty()));
+        stack = try!(vm.execute(stack, &[Call(args)], &BytecodeFunction::empty())).unwrap();
         match R::from_value(vm, stack.pop()) {
             Some(x) => Ok(x),
             None => Err(Error::Message("Wrong type".to_string())),
@@ -857,7 +859,7 @@ where $($args: Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         let n_args = Self::arguments();
-        let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
+        let mut stack = vm.current_frame();
         let mut i = 0;
         $(let $args = {
             let x = $args::from_value(vm, stack[i].clone()).expect(stringify!(Argument $args));
@@ -895,7 +897,7 @@ where $($args: Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM<'a>) -> Status {
         let n_args = Self::arguments();
-        let mut stack = StackFrame::new(vm.stack.borrow_mut(), n_args, None);
+        let mut stack = vm.current_frame();
         let mut i = 0;
         $(let $args = {
             let x = $args::from_value(vm, stack[i].clone()).expect(stringify!(Argument $args));

@@ -11,6 +11,7 @@ use api::{generic, Generic, Getable, Array, IO, MaybeError, primitive};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use vm::{VM, BytecodeFunction, DataStruct, VMInt, Status, Value, RootStr, VMResult};
+#[cfg(all(feature = "check", feature = "parser"))]
 use stack::StackFrame;
 
 
@@ -111,7 +112,7 @@ pub fn print_int(i: VMInt) -> IO<()> {
     IO::Value(())
 }
 pub fn trace(vm: &VM) -> Status {
-    let stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let stack = vm.current_frame();
     println!("{:?}", stack[0]);
     Status::Ok
 }
@@ -167,7 +168,7 @@ pub fn error(_: &VM) -> Status {
 
 /// IO a -> (String -> IO a) -> IO a
 pub fn catch_io(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+    let mut stack = vm.current_frame();
     let frame_level = stack.stack.frames.len();
     let action = stack[0];
     stack.push(action);
@@ -175,9 +176,12 @@ pub fn catch_io(vm: &VM) -> Status {
     match vm.execute(stack, &[Call(1)], &BytecodeFunction::empty()) {
         Ok(_) => Status::Ok,
         Err(err) => {
-            stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+            stack = vm.current_frame();
             while stack.stack.frames.len() > frame_level {
-                stack = stack.exit_scope();
+                match stack.exit_scope() {
+                    Some(new_stack) => stack = new_stack,
+                    None => return Status::Error,
+                }
             }
             let callback = stack[1];
             stack.push(callback);
@@ -188,7 +192,7 @@ pub fn catch_io(vm: &VM) -> Status {
             match vm.execute(stack, &[Call(2)], &BytecodeFunction::empty()) {
                 Ok(_) => Status::Ok,
                 Err(err) => {
-                    stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+                    stack = vm.current_frame();
                     let fmt = format!("{}", err);
                     let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
                     stack.push(result);
@@ -201,14 +205,14 @@ pub fn catch_io(vm: &VM) -> Status {
 
 #[cfg(all(feature = "check", feature = "parser"))]
 pub fn run_expr(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
+    let mut stack = vm.current_frame();
     let frame_level = stack.stack.frames.len();
     let s = stack[0];
     match s {
         Value::String(s) => {
             drop(stack);
             let run_result = ::vm::run_expr(vm, "<top>", &s);
-            stack = StackFrame::new(vm.stack.borrow_mut(), 2, None);
+            stack = vm.current_frame();
             match run_result {
                 Ok(value) => {
                     let fmt = format!("{:?}", value);
@@ -218,7 +222,10 @@ pub fn run_expr(vm: &VM) -> Status {
                 Err(err) => {
                     let trace = backtrace(vm, frame_level, &stack);
                     while stack.stack.frames.len() > frame_level {
-                        stack = stack.exit_scope();
+                        match stack.exit_scope() {
+                            Some(new_stack) => stack = new_stack,
+                            None => return Status::Error,
+                        }
                     }
                     let fmt = format!("{}\n{}", err, trace);
                     let result = vm.alloc(&stack.stack, &fmt[..]);
@@ -233,13 +240,13 @@ pub fn run_expr(vm: &VM) -> Status {
 
 #[cfg(all(feature = "check", feature = "parser"))]
 pub fn load_script(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+    let mut stack = vm.current_frame();
     let frame_level = stack.stack.frames.len();
     match (stack[0], stack[1]) {
         (Value::String(name), Value::String(expr)) => {
             drop(stack);
             let run_result = ::vm::load_script(vm, &name[..], &expr);
-            stack = StackFrame::new(vm.stack.borrow_mut(), 3, None);
+            stack = vm.current_frame();
             match run_result {
                 Ok(()) => {
                     let fmt = format!("Loaded {}", name);
@@ -250,7 +257,10 @@ pub fn load_script(vm: &VM) -> Status {
                     let trace = backtrace(vm, frame_level, &stack);
                     let fmt = format!("{}\n{}", err, trace);
                     while stack.stack.frames.len() > frame_level {
-                        stack = stack.exit_scope();
+                        match stack.exit_scope() {
+                            Some(new_stack) => stack = new_stack,
+                            None => return Status::Error,
+                        }
                     }
                     let result = vm.alloc(&stack.stack, &fmt[..]);
                     stack.push(Value::String(result));
@@ -267,7 +277,7 @@ pub fn load_script(vm: &VM) -> Status {
 fn backtrace(vm: &VM, frame_level: usize, stack: &StackFrame) -> String {
     let mut buffer = String::from("Backtrace:\n");
     for frame in &stack.stack.frames[frame_level..] {
-        match frame.function_name {
+        match frame.function.and_then(|c| c.name()) {
             Some(name) => buffer.push_str(&vm.symbol_string(name)),
             None => buffer.push_str("<unknown>"),
         }

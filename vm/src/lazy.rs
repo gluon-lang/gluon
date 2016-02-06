@@ -44,7 +44,7 @@ impl<'a, T> VMType for Lazy<'a, T>
 }
 
 fn force(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let mut stack = vm.current_frame();
     match stack[0] {
         Value::Lazy(lazy) => {
             match lazy.value.get() {
@@ -90,7 +90,7 @@ fn force(vm: &VM) -> Status {
 }
 
 fn lazy(vm: &VM) -> Status {
-    let mut stack = StackFrame::new(vm.stack.borrow_mut(), 1, None);
+    let mut stack = vm.current_frame();
     let f = stack[0];
     let lazy = vm.gc.borrow_mut().alloc(Move(Lazy {
         value: Cell::new(Lazy_::Thunk(f)),
