@@ -1,11 +1,10 @@
 use gc::Move;
 use base::symbol::Symbol;
 use stack::StackFrame;
-use vm::{VM, Status, BytecodeFunction, DataStruct, ExternFunction, RootedValue, Value, Def,
+use vm::{VM, Status, DataStruct, ExternFunction, RootedValue, Value, Def,
          Userdata_, VMInt, Error, Root, RootStr};
 use base::types;
 use base::types::{TcType, Type, TypeConstructor};
-use types::Instruction::Call;
 use types::VMIndex;
 use std::any::Any;
 use std::fmt;
@@ -751,7 +750,7 @@ impl<'a, 'vm, A, R> Function<'a, 'vm, fn(A) -> R>
             0.push(vm, &mut stack);
         }
         let args = stack.len() - 1;
-        stack = try!(vm.execute(stack, &[Call(args)], &BytecodeFunction::empty())).unwrap();
+        stack = try!(vm.call_function(stack, args)).unwrap();
         match R::from_value(vm, stack.pop()) {
             Some(x) => Ok(x),
             None => Err(Error::Message("Wrong type".to_string())),
@@ -774,7 +773,7 @@ impl<'a, 'vm, A, B, R> Function<'a, 'vm, fn(A, B) -> R>
             0.push(vm, &mut stack);
         }
         let args = stack.len() - 1;
-        stack = try!(vm.execute(stack, &[Call(args)], &BytecodeFunction::empty())).unwrap();
+        stack = try!(vm.call_function(stack, args)).unwrap();
         match R::from_value(vm, stack.pop()) {
             Some(x) => Ok(x),
             None => Err(Error::Message("Wrong type".to_string())),

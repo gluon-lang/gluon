@@ -4,7 +4,6 @@ use std::marker::PhantomData;
 use gc::{Gc, Traverseable, Move};
 use std::cell::Cell;
 use api::{VMType, Pushable};
-use stack::StackFrame;
 use vm::{Status, Value, VM, VMResult};
 
 
@@ -56,15 +55,11 @@ fn force(vm: &VM) -> Status {
                     stack.push(value);
                     stack.push(Value::Int(0));
                     lazy.value.set(Lazy_::Blackhole);
-                    let frame = stack.frame;
-                    drop(stack);
-                    let result = vm.execute_call(1);
-                    stack = StackFrame {
-                        stack: vm.stack.borrow_mut(),
-                        frame: frame,
-                    };
+                    let result = vm.call_function(stack, 1);
                     match result {
-                        Ok(value) => {
+                        Ok(None) => panic!("Expected stack"),
+                        Ok(Some(mut stack)) => {
+                            let value = stack.pop();
                             while stack.len() > 1 {
                                 stack.pop();
                             }
@@ -73,6 +68,7 @@ fn force(vm: &VM) -> Status {
                             Status::Ok
                         }
                         Err(err) => {
+                            let mut stack = vm.current_frame();
                             let err = format!("{}", err);
                             err.push(vm, &mut stack);
                             Status::Error

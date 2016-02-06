@@ -10,7 +10,7 @@ use types::*;
 use api::{generic, Generic, Getable, Array, IO, MaybeError, primitive};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
-use vm::{VM, BytecodeFunction, DataStruct, VMInt, Status, Value, RootStr, VMResult};
+use vm::{VM, DataStruct, VMInt, Status, Value, RootStr, VMResult};
 #[cfg(all(feature = "check", feature = "parser"))]
 use stack::StackFrame;
 
@@ -173,7 +173,7 @@ pub fn catch_io(vm: &VM) -> Status {
     let action = stack[0];
     stack.push(action);
     stack.push(Value::Int(0));
-    match vm.execute(stack, &[Call(1)], &BytecodeFunction::empty()) {
+    match vm.call_function(stack, 1) {
         Ok(_) => Status::Ok,
         Err(err) => {
             stack = vm.current_frame();
@@ -189,7 +189,7 @@ pub fn catch_io(vm: &VM) -> Status {
             let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
             stack.push(result);
             stack.push(Value::Int(0));
-            match vm.execute(stack, &[Call(2)], &BytecodeFunction::empty()) {
+            match vm.call_function(stack, 2) {
                 Ok(_) => Status::Ok,
                 Err(err) => {
                     stack = vm.current_frame();
