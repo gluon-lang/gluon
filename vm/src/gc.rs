@@ -222,7 +222,7 @@ impl GcHeader {
 }
 
 /// A pointer to a garbage collected value.
-/// 
+///
 /// It is only safe to access data through a `GcPtr` if the value is rooted (stored in a place
 /// where the garbage collector will find it during the mark phase).
 pub struct GcPtr<T: ?Sized> {
@@ -606,8 +606,9 @@ mod tests {
         let mut gc: Gc = Gc::new();
         let ptr = gc.alloc(Def { elems: &[Int(1)] });
         let header: *const _ = ptr.header();
-        let other: *const _ = &**gc.values.as_mut().unwrap();
-        assert_eq!(header, other);
+        let other: &GcHeader = gc.values.as_ref().unwrap();
+        assert_eq!(&*ptr as *const _ as *const (), other.value());
+        assert_eq!(header, other as *const _);
     }
 
     #[test]
