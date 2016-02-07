@@ -933,7 +933,6 @@ impl<'a> VM<'a> {
             Callable::Closure(closure) => {
                 stack = stack.enter_scope(closure.function.args, Some(Callable::Closure(closure)));
                 stack.frame.excess = excess;
-                stack.stack.frames.last_mut().unwrap().excess = excess;
                 Ok(stack)
             }
             Callable::Extern(ref ext) => {
@@ -946,19 +945,15 @@ impl<'a> VM<'a> {
     }
 
     fn execute_function<'b>(&'b self,
-                            stack: StackFrame<'a, 'b>,
+                            mut stack: StackFrame<'a, 'b>,
                             function: &ExternFunction<'a>)
                             -> Result<StackFrame<'a, 'b>, Error> {
         debug!("CALL EXTERN {}", self.symbols.borrow().string(&function.id));
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
-        let StackFrame { stack, frame } = stack;
         drop(stack);
         let status = (function.function)(self);
-        let mut stack = StackFrame {
-            stack: self.stack.borrow_mut(),
-            frame: frame,
-        };
+        stack = self.current_frame();
         let result = stack.pop();
         while stack.len() > 0 {
             debug!("{} {:?}", stack.len(), &stack[..]);
@@ -1078,7 +1073,6 @@ impl<'a> VM<'a> {
                         return Ok(Some(stack));
                     } else {
                         stack.frame.instruction_index = 1;
-                        stack.stack.frames.last_mut().unwrap().instruction_index = 1;
                         Some(try!(self.execute_function(stack, &ext)))
                     }
                 }

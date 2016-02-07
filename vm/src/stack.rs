@@ -63,8 +63,15 @@ pub struct StackFrame<'a: 'b, 'b> {
     pub stack: RefMut<'b, Stack<'a>>,
     pub frame: Frame<'a>,
 }
-impl<'a: 'b, 'b> StackFrame<'a, 'b> {
 
+impl<'a, 'b> Drop for StackFrame<'a, 'b> {
+    fn drop(&mut self) {
+        // Move the cached frame back to storage
+        *self.stack.frames.last_mut().unwrap() = self.frame;
+    }
+}
+
+impl<'a: 'b, 'b> StackFrame<'a, 'b> {
     pub fn len(&self) -> VMIndex {
         self.stack.len() - self.frame.offset
     }
@@ -108,11 +115,16 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         upvars.upvars[index as usize].get()
     }
 
-    pub fn enter_scope(mut self, args: VMIndex, function: Option<Callable<'a>>) -> StackFrame<'a, 'b> {
+    pub fn enter_scope(mut self,
+                       args: VMIndex,
+                       function: Option<Callable<'a>>)
+                       -> StackFrame<'a, 'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
-        StackFrame::frame(self.stack, args, function)
+        let frame = StackFrame::add_new_frame(&mut self.stack, args, function);
+        self.frame = frame;
+        self
     }
 
     pub fn exit_scope(mut self) -> Option<StackFrame<'a, 'b>> {
@@ -122,13 +134,9 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
                         .last()
                         .cloned();
         frame.map(move |frame| {
-            debug!("<---- Restore {} {:?}",
-                   self.stack.frames.len(),
-                   frame);
-            StackFrame {
-                stack: self.stack,
-                frame: frame,
-            }
+            debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
+            self.frame = frame;
+            self
         })
     }
 
@@ -136,6 +144,17 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
                  args: VMIndex,
                  function: Option<Callable<'a>>)
                  -> StackFrame<'a, 'b> {
+        let frame = StackFrame::add_new_frame(&mut stack, args, function);
+        StackFrame {
+            stack: stack,
+            frame: frame,
+        }
+    }
+
+    fn add_new_frame(stack: &mut Stack<'a>,
+                     args: VMIndex,
+                     function: Option<Callable<'a>>)
+                     -> Frame<'a> {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
         let offset = stack.len() - args;
@@ -150,10 +169,7 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
                stack.frames.len(),
                frame,
                prev);
-        StackFrame {
-            stack: stack,
-            frame: frame,
-        }
+        frame
     }
 }
 

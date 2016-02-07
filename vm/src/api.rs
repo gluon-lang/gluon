@@ -865,13 +865,9 @@ where $($args: Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm {
             i += 1;
             x
         });*;
-        let StackFrame { stack, frame } = stack;
         drop(stack);
         let r = (*self)($($args),*);
-        let mut stack = StackFrame {
-            stack: vm.stack.borrow_mut(),
-            frame: frame,
-        };
+        let mut stack = vm.current_frame();
         r.push(vm, &mut stack)
     }
 }
@@ -903,13 +899,9 @@ where $($args: Getable<'a, 'vm> + 'vm,)* R: Pushable<'a> + 'vm {
             i += 1;
             x
         });*;
-        let StackFrame { stack, frame } = stack;
         drop(stack);
         let r = (*self)($($args),*);
-        let mut stack = StackFrame {
-            stack: vm.stack.borrow_mut(),
-            frame: frame,
-        };
+        let mut stack = vm.current_frame();
         r.push(vm, &mut stack)
     }
 }
