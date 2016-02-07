@@ -63,8 +63,8 @@ pub fn array_append<'a, 'vm>(lhs: Array<'a, 'vm, Generic<'a, generic::A>>,
     }
     let vm = lhs.vm();
     let value = {
-        let stack = vm.stack.borrow();
-        vm.alloc(&stack,
+        let stack = vm.current_frame();
+        vm.alloc(&stack.stack,
                  Append {
                      lhs: &lhs.fields,
                      rhs: &rhs.fields,

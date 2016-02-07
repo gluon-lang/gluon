@@ -88,7 +88,7 @@ fn force(vm: &VM) -> Status {
 fn lazy(vm: &VM) -> Status {
     let mut stack = vm.current_frame();
     let f = stack[0];
-    let lazy = vm.gc.borrow_mut().alloc(Move(Lazy {
+    let lazy = vm.alloc(&stack.stack, Move(Lazy {
         value: Cell::new(Lazy_::Thunk(f)),
         _marker: PhantomData,
     }));

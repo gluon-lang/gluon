@@ -688,7 +688,7 @@ impl<'a: 'vm, 'vm, F: FunctionType + VMType> Pushable<'a> for Primitive<F> {
                                       Box<Fn(&VM<'a>) -> Status + 'static>>(Box::new(self.function))
         };
         let id = vm.symbol(self.name);
-        let value = Value::Function(vm.gc.borrow_mut().alloc(Move(ExternFunction {
+        let value = Value::Function(vm.alloc(&stack.stack, Move(ExternFunction {
             id: id,
             args: F::arguments(),
             function: extern_function,
@@ -836,7 +836,7 @@ where $($args: Getable<'a, 'vm> + VMType + 'vm,)* R: Pushable<'a> + 'vm {
                        Box<Fn(&VM<'a>) -> Status>>(f)
         };
         let id = vm.symbol("<extern>");
-        let value = Value::Function(vm.gc.borrow_mut().alloc(Move(
+        let value = Value::Function(vm.alloc(&stack.stack, Move(
             ExternFunction {
                 id: id,
                 args: count!($($args),*) + R::extra_args(),

@@ -23,8 +23,6 @@ use compiler::{CompiledFunction, Variable, CompilerEnv};
 use api::{Getable, Pushable, VMType};
 use lazy::Lazy;
 
-use self::Named::*;
-
 use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure, Userdata};
 
 
@@ -423,10 +421,10 @@ impl<'a> Traverseable for ExternFunction<'a> {
 }
 
 #[derive(Debug)]
-pub struct Global<'a> {
-    pub id: Symbol,
-    pub typ: TcType,
-    pub value: Cell<Value<'a>>,
+struct Global<'a> {
+    id: Symbol,
+    typ: TcType,
+    value: Cell<Value<'a>>,
 }
 
 impl<'a> Traverseable for Global<'a> {
@@ -442,22 +440,17 @@ impl<'a> Typed for Global<'a> {
     }
 }
 
-#[derive(Debug)]
-enum Named {
-    GlobalFn(usize),
-}
-
 pub struct VM<'a> {
     globals: FixedVec<Global<'a>>,
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
-    pub interner: RefCell<Interner>,
+    interner: RefCell<Interner>,
     symbols: RefCell<Symbols>,
-    names: RefCell<HashMap<Symbol, Named>>,
-    pub gc: RefCell<Gc>,
+    names: RefCell<HashMap<Symbol, usize>>,
+    gc: RefCell<Gc>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value<'a>>>,
-    pub stack: RefCell<Stack<'a>>,
+    stack: RefCell<Stack<'a>>,
     macros: MacroEnv<VM<'a>>,
 }
 
@@ -467,7 +460,7 @@ pub type VMResult<T> = Result<T, Error>;
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global<'a>>,
-    names: Ref<'b, HashMap<Symbol, Named>>,
+    names: Ref<'b, HashMap<Symbol, usize>>,
     io_symbol: Symbol,
     io_arg: [types::Generic<Symbol>; 1],
 }
@@ -475,7 +468,7 @@ pub struct VMEnv<'a: 'b, 'b> {
 impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     fn find_var(&self, id: &Symbol) -> Option<Variable> {
         match self.names.get(id) {
-            Some(&GlobalFn(index)) if index < self.globals.len() => {
+            Some(&index) if index < self.globals.len() => {
                 let g = &self.globals[index];
                 Some(Variable::Global(index as VMIndex, &g.typ))
             }
@@ -500,7 +493,7 @@ impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
 impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         match self.names.get(id) {
-            Some(&GlobalFn(index)) if index < self.globals.len() => {
+            Some(&index) if index < self.globals.len() => {
                 let g = &self.globals[index];
                 Some(&g.typ)
             }
@@ -652,7 +645,7 @@ impl<'a> VM<'a> {
         };
         let f = self.new_function(compiled_fn);
         let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
-        self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
+        self.names.borrow_mut().insert(id, self.globals.len());
         self.globals.push(Global {
             id: id,
             typ: typ,
@@ -671,7 +664,7 @@ impl<'a> VM<'a> {
             .pop()
     }
 
-    pub fn new_function(&self, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
+    fn new_function(&self, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
         BytecodeFunction::new(&mut self.gc.borrow_mut(), f)
     }
 
@@ -707,7 +700,7 @@ impl<'a> VM<'a> {
             typ: T::make_type(self),
             value: Cell::new(value),
         };
-        self.names.borrow_mut().insert(id, GlobalFn(self.globals.len()));
+        self.names.borrow_mut().insert(id, self.globals.len());
         self.globals.push(global);
         Ok(())
     }
@@ -719,11 +712,7 @@ impl<'a> VM<'a> {
         self.names
             .borrow()
             .get(&id)
-            .map(|g| {
-                match *g {
-                    GlobalFn(i) => i,
-                }
-            })
+            .cloned()
             .ok_or_else(|| Error::Message(format!("Could not retrieve global `{}`", name)))
             .and_then(|i| {
                 let global = &self.globals[i];
@@ -1555,7 +1544,7 @@ fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool) ->
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
     let value = try!(vm.call_module(&typ, closure));
-    vm.names.borrow_mut().insert(function.name, GlobalFn(vm.globals.len()));
+    vm.names.borrow_mut().insert(function.name, vm.globals.len());
     vm.globals.push(Global {
         id: function.name,
         typ: typ,
