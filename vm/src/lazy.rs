@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use gc::{Gc, Traverseable, Move};
 use std::cell::Cell;
 use api::{VMType, Pushable};
-use vm::{Status, Value, VM, VMResult};
+use vm::{Status, Value, VM, Result};
 
 
 #[derive(Clone, PartialEq)]
@@ -96,7 +96,7 @@ fn lazy(vm: &VM) -> Status {
     Status::Ok
 }
 
-pub fn load(vm: &VM) -> VMResult<()> {
+pub fn load(vm: &VM) -> Result<()> {
     use api::generic::A;
     use api::primitive;
     try!(vm.define_global("lazy",

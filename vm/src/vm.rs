@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::Deref;
 use std::string::String as StdString;
+use std::result::Result as StdResult;
 #[cfg(feature = "parser")]
 use base::ast;
 use base::ast::{Typed, ASTType, DisplayEnv};
@@ -462,7 +463,8 @@ pub struct VM<'a> {
     macros: MacroEnv<VM<'a>>,
 }
 
-pub type VMResult<T> = Result<T, Error>;
+/// Type returned from vm functions which may fail
+pub type Result<T> = StdResult<T, Error>;
 
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
 /// typechecker and compiler to lookup things in the virtual machine.
@@ -623,7 +625,7 @@ impl<'a> VM<'a> {
         let _ = &self.macros;
     }
 
-    fn add_types(&self) -> Result<(), (TypeId, TcType)> {
+    fn add_types(&self) -> StdResult<(), (TypeId, TcType)> {
         use api::generic::A;
         use api::Generic;
         let ref ids = self.typeids;
@@ -698,7 +700,7 @@ impl<'a> VM<'a> {
 
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
-    pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
+    pub fn define_global<T>(&self, name: &str, value: T) -> Result<()>
         where T: Pushable<'a>
     {
         let id = self.symbol(name);
@@ -725,7 +727,7 @@ impl<'a> VM<'a> {
 
     /// Retrieves the global called `name`.
     /// Fails if the global does not existor it does not have the correct type.
-    pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T, Error>
+    pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
         where T: Getable<'a, 'vm> + VMType
     {
         let id = self.symbol(name);
@@ -752,7 +754,7 @@ impl<'a> VM<'a> {
     pub fn register_type<T: ?Sized + Any>(&self,
                                           name: &str,
                                           args: Vec<types::Generic<Symbol>>)
-                                          -> VMResult<&TcType> {
+                                          -> Result<&TcType> {
         let n = self.symbol(name);
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(&n) {
@@ -903,7 +905,7 @@ impl<'a> VM<'a> {
     pub fn call_module(&self,
                        typ: &TcType,
                        closure: GcPtr<ClosureData<'a>>)
-                       -> VMResult<Value<'a>> {
+                       -> Result<Value<'a>> {
         let value = try!(self.call_bytecode(closure));
         if let Type::Data(types::TypeConstructor::Data(id), _) = **typ {
             if id == self.symbol("IO") {
@@ -931,12 +933,12 @@ impl<'a> VM<'a> {
     pub fn call_function<'b>(&'b self,
                              mut stack: StackFrame<'a, 'b>,
                              args: VMIndex)
-                             -> Result<Option<StackFrame<'a, 'b>>, Error> {
+                             -> Result<Option<StackFrame<'a, 'b>>> {
         stack = try!(self.do_call(stack, args));
         self.execute(stack)
     }
 
-    fn call_bytecode(&self, closure: GcPtr<ClosureData<'a>>) -> VMResult<Value<'a>> {
+    fn call_bytecode(&self, closure: GcPtr<ClosureData<'a>>) -> Result<Value<'a>> {
         self.push(Closure(closure));
         let stack = StackFrame::frame(self.stack.borrow_mut(), 0, Some(Callable::Closure(closure)));
         try!(self.execute(stack));
@@ -948,7 +950,7 @@ impl<'a> VM<'a> {
                             mut stack: StackFrame<'a, 'b>,
                             function: &Callable<'a>,
                             excess: bool)
-                            -> Result<StackFrame<'a, 'b>, Error> {
+                            -> Result<StackFrame<'a, 'b>> {
         match *function {
             Callable::Closure(closure) => {
                 stack = stack.enter_scope(closure.function.args, Some(Callable::Closure(closure)));
@@ -967,7 +969,7 @@ impl<'a> VM<'a> {
     fn execute_function<'b>(&'b self,
                             mut stack: StackFrame<'a, 'b>,
                             function: &ExternFunction<'a>)
-                            -> Result<StackFrame<'a, 'b>, Error> {
+                            -> Result<StackFrame<'a, 'b>> {
         debug!("CALL EXTERN {}", self.symbols.borrow().string(&function.id));
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
@@ -1002,7 +1004,7 @@ impl<'a> VM<'a> {
                                      args: VMIndex,
                                      required_args: VMIndex,
                                      callable: Callable<'a>)
-                                     -> Result<StackFrame<'a, 'b>, Error> {
+                                     -> Result<StackFrame<'a, 'b>> {
         debug!("cmp {} {} {:?} {:?}", args, required_args, callable, {
             let function_index = stack.len() - 1 - args;
             &(*stack)[(function_index + 1) as usize..]
@@ -1047,7 +1049,7 @@ impl<'a> VM<'a> {
     fn do_call<'b>(&'b self,
                    mut stack: StackFrame<'a, 'b>,
                    args: VMIndex)
-                   -> Result<StackFrame<'a, 'b>, Error> {
+                   -> Result<StackFrame<'a, 'b>> {
         let function_index = stack.len() - 1 - args;
         debug!("Do call {:?} {:?}",
                stack[function_index],
@@ -1073,7 +1075,7 @@ impl<'a> VM<'a> {
 
     fn execute<'b>(&'b self,
                    stack: StackFrame<'a, 'b>)
-                   -> Result<Option<StackFrame<'a, 'b>>, Error> {
+                   -> Result<Option<StackFrame<'a, 'b>>> {
         let mut maybe_stack = Some(stack);
         while let Some(mut stack) = maybe_stack {
             debug!("STACK\n{:?}", stack.stack.frames);
@@ -1118,7 +1120,7 @@ impl<'a> VM<'a> {
                     mut index: usize,
                     instructions: &[Instruction],
                     function: &BytecodeFunction)
-                    -> Result<Option<StackFrame<'a, 'b>>, Error> {
+                    -> Result<Option<StackFrame<'a, 'b>>> {
         {
             let symbols = self.symbols.borrow();
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
@@ -1566,12 +1568,12 @@ fn compile_script(vm: &VM,
 /// If at any point the function fails the resulting error is returned and nothing is added to the
 /// VM.
 #[cfg(all(feature = "check", feature = "parser"))]
-pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<(), Error> {
+pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<()> {
     load_script2(vm, filename, input, true)
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]
-fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool) -> Result<(), Error> {
+fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool) -> Result<()> {
     let (expr, typ) = try!(typecheck_expr(vm, filename, input, implicit_prelude));
     let function = compile_script(vm, filename, &expr);
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
@@ -1602,7 +1604,7 @@ pub fn filename_to_module(filename: &str) -> StdString {
 
 /// Loads `filename` and compiles and runs its input by calling `load_script`
 #[cfg(all(feature = "check", feature = "parser"))]
-pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
+pub fn load_file(vm: &VM, filename: &str) -> Result<()> {
     use std::fs::File;
     use std::io::Read;
     let mut file = try!(File::open(filename));
@@ -1617,7 +1619,7 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<(), Error> {
 pub fn parse_expr(vm: &VM,
                   file: &str,
                   input: &str)
-                  -> Result<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
+                  -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
     use base::symbol::SymbolModule;
     let mut symbols = vm.symbols.borrow_mut();
     Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut symbols), input)))
@@ -1628,7 +1630,7 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           file: &str,
                           expr_str: &str,
                           implicit_prelude: bool)
-                          -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType), Error> {
+                          -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
     use check::typecheck::Typecheck;
     use base::error;
     let mut expr = try!(parse_expr(vm, file, expr_str));
@@ -1650,7 +1652,7 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
 pub fn run_expr<'a, 'vm>(vm: &'vm VM<'a>,
                          name: &str,
                          expr_str: &str)
-                         -> Result<RootedValue<'a, 'vm>, Error> {
+                         -> Result<RootedValue<'a, 'vm>> {
     run_expr2(vm, name, expr_str, true)
 }
 
@@ -1659,7 +1661,7 @@ fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
                       name: &str,
                       expr_str: &str,
                       implicit_prelude: bool)
-                      -> Result<RootedValue<'a, 'vm>, Error> {
+                      -> Result<RootedValue<'a, 'vm>> {
     let (expr, typ) = try!(typecheck_expr(vm, name, expr_str, implicit_prelude));
     let mut function = compile_script(vm, name, &expr);
     function.id = vm.symbols.borrow_mut().symbol(name);

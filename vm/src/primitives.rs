@@ -10,7 +10,7 @@ use types::*;
 use api::{generic, Generic, Getable, Array, IO, MaybeError, primitive};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
-use vm::{VM, DataStruct, VMInt, Status, Value, RootStr, VMResult};
+use vm::{VM, DataStruct, VMInt, Status, Value, RootStr, Result};
 #[cfg(all(feature = "check", feature = "parser"))]
 use stack::StackFrame;
 
@@ -302,7 +302,7 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
 fn f3<A, B, C, R>(f: fn(A, B, C) -> R) -> fn(A, B, C) -> R {
     f
 }
-pub fn load(vm: &VM) -> VMResult<()> {
+pub fn load(vm: &VM) -> Result<()> {
 
     let a = Type::generic(types::Generic {
         kind: types::Kind::star(),
@@ -364,7 +364,7 @@ pub fn load(vm: &VM) -> VMResult<()> {
 }
 
 #[cfg(all(feature = "check", feature = "parser"))]
-fn load_io(vm: &VM) -> VMResult<()> {
+fn load_io(vm: &VM) -> Result<()> {
     // IO functions
     try!(vm.define_global("io",
                           record!(
@@ -384,7 +384,7 @@ fn load_io(vm: &VM) -> VMResult<()> {
 }
 
 #[cfg(not(all(feature = "check", feature = "parser")))]
-fn load_io(vm: &VM) -> VMResult<()> {
+fn load_io(vm: &VM) -> Result<()> {
     // IO functions
     try!(vm.define_global("io",
                           record!(
