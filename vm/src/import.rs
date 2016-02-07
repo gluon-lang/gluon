@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::error::Error as StdError;
-use std::fmt;
 use std::fs::File;
+use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -10,41 +10,39 @@ use vm::{VM, filename_to_module, load_script};
 use base::macros::{Macro, Error as MacroError};
 use base::types::TcIdent;
 
-#[derive(Debug)]
-pub enum Error {
-    CyclicDependency(String),
-    String(&'static str),
-    Other(Box<StdError>),
-}
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::CyclicDependency(ref s) => {
-                write!(f, "Module '{}' occurs in a cyclic dependency", s)
-            }
-            Error::String(s) => s.fmt(f),
-            Error::Other(ref e) => e.fmt(f),
+quick_error! {
+    /// Error type for the import macro
+    #[derive(Debug)]
+    pub enum Error {
+        /// The importer found a cyclic dependency when loading files
+        CyclicDependency(module: String) {
+            description("Cyclic dependency")
+            display("Module '{}' occurs in a cyclic dependency", module)
+        }
+        /// Generic message error
+        String(message: &'static str) {
+            description(message)
+            display("{}", message)
+        }
+        /// The importer could not load the imported file
+        IO(err: io::Error) {
+            description(err.description())
+            display("{}", err)
+            from()
         }
     }
 }
 
-fn error<E: StdError + 'static>(e: E) -> Error {
-    Error::Other(Box::new(e))
-}
-
-impl StdError for Error {
-    fn description(&self) -> &str {
-        "import error"
-    }
-}
-
+/// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
+/// already loaded and then a global access to the loaded module
 pub struct Import {
     visited: RefCell<Vec<String>>,
     paths: RefCell<Vec<PathBuf>>,
 }
 
 impl Import {
+    /// Creates a new import macro
     pub fn new() -> Import {
         Import {
             visited: RefCell::new(Vec::new()),
@@ -52,6 +50,7 @@ impl Import {
         }
     }
 
+    /// Adds a path to the list of paths which the importer uses to find files
     pub fn add_path<P: Into<PathBuf>>(&self, path: P) {
         self.paths.borrow_mut().push(path.into());
     }
@@ -91,7 +90,7 @@ impl<'a> Macro<VM<'a>> for Import {
                                    .next();
                     let mut file = try!(file.ok_or_else(|| Error::String("Could not find file")));
                     let mut buffer = String::new();
-                    try!(file.read_to_string(&mut buffer).map_err(error));
+                    try!(file.read_to_string(&mut buffer));
                     try!(load_script(vm, &modulename, &buffer));
                     self.visited.borrow_mut().pop();
                 }
