@@ -330,6 +330,7 @@ macro_rules! get_global {
     )
 }
 
+/// A rooted value
 #[derive(Clone)]
 pub struct RootedValue<'a: 'vm, 'vm> {
     vm: &'vm VM<'a>,
@@ -362,6 +363,7 @@ impl<'a, 'vm> RootedValue<'a, 'vm> {
     }
 }
 
+/// A rooted userdata value
 pub struct Root<'a, T: ?Sized + 'a> {
     roots: &'a RefCell<Vec<GcPtr<Traverseable + 'static>>>,
     ptr: *const T,
@@ -381,6 +383,7 @@ impl<'a, T: ?Sized> Deref for Root<'a, T> {
     }
 }
 
+/// A rooted string
 pub struct RootStr<'a>(Root<'a, Str>);
 
 impl<'a> Deref for RootStr<'a> {
@@ -390,7 +393,11 @@ impl<'a> Deref for RootStr<'a> {
     }
 }
 
+
+/// Enum signaling a successful or unsuccess ful call to an extern function.
+/// If an error occured the error message is expected to be on the top of the stack.
 #[derive(Eq, PartialEq)]
+#[repr(C)]
 pub enum Status {
     Ok,
     Error,
@@ -440,6 +447,7 @@ impl<'a> Typed for Global<'a> {
     }
 }
 
+/// Representation of the virtual machine
 pub struct VM<'a> {
     globals: FixedVec<Global<'a>>,
     type_infos: RefCell<TypeInfos>,
@@ -456,6 +464,8 @@ pub struct VM<'a> {
 
 pub type VMResult<T> = Result<T, Error>;
 
+/// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
+/// typechecker and compiler to lookup things in the virtual machine.
 #[derive(Debug)]
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
@@ -530,6 +540,7 @@ impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     }
 }
 
+/// Definition for data values in the VM
 pub struct Def<'a: 'b, 'b> {
     pub tag: VMTag,
     pub elems: &'b [Value<'a>],
@@ -577,6 +588,8 @@ impl<'a, 'b> Traverseable for Roots<'a, 'b> {
 }
 
 impl<'a> VM<'a> {
+
+    /// Creates a new virtual machine
     pub fn new() -> VM<'a> {
         let vm = VM {
             globals: FixedVec::new(),
@@ -654,10 +667,12 @@ impl<'a> VM<'a> {
         self.globals.len() as VMIndex - 1
     }
 
+    /// Pushes a value to the top of the stack
     pub fn push(&self, v: Value<'a>) {
         self.stack.borrow_mut().push(v)
     }
 
+    /// Removes the top value from the stack
     pub fn pop(&self) -> Value<'a> {
         self.stack
             .borrow_mut()
@@ -675,11 +690,14 @@ impl<'a> VM<'a> {
             .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call"))
     }
 
+    /// Checks if a global exists called `name`
     pub fn global_exists(&self, name: &str) -> bool {
         let n = self.symbol(name);
         self.names.borrow().get(&n).is_some()
     }
 
+    /// Creates a new global value at `name`.
+    /// Fails if a global called `name` already exists.
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<(), Error>
         where T: Pushable<'a>
     {
@@ -705,6 +723,8 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    /// Retrieves the global called `name`.
+    /// Fails if the global does not existor it does not have the correct type.
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T, Error>
         where T: Getable<'a, 'vm> + VMType
     {
@@ -728,6 +748,7 @@ impl<'a> VM<'a> {
             })
     }
 
+    /// Registers a new type called `name`
     pub fn register_type<T: ?Sized + Any>(&self,
                                           name: &str,
                                           args: Vec<types::Generic<Symbol>>)
@@ -775,6 +796,8 @@ impl<'a> VM<'a> {
         self.interner.borrow_mut().intern(&mut *self.gc.borrow_mut(), s)
     }
 
+
+    /// Returns a borrowed structure which implements `CompilerEnv`
     pub fn env<'b>(&'b self) -> VMEnv<'a, 'b> {
         VMEnv {
             type_infos: self.type_infos.borrow(),
@@ -788,6 +811,7 @@ impl<'a> VM<'a> {
         }
     }
 
+    /// Returns the current stackframe
     pub fn current_frame<'vm>(&'vm self) -> StackFrame<'a, 'vm> {
         let stack = self.stack.borrow_mut();
         StackFrame {
@@ -796,6 +820,7 @@ impl<'a> VM<'a> {
         }
     }
 
+    /// Runs a garbage collection.
     pub fn collect(&self) {
         let stack = self.stack.borrow();
         self.with_roots(&stack, |gc, roots| {
@@ -805,6 +830,7 @@ impl<'a> VM<'a> {
         })
     }
 
+    /// Roots a userdata
     pub fn root<T: Any>(&self, v: GcPtr<Box<Any>>) -> Option<Root<T>> {
         match v.downcast_ref::<T>().or_else(|| v.downcast_ref::<Box<T>>().map(|p| &**p)) {
             Some(ptr) => {
@@ -818,6 +844,7 @@ impl<'a> VM<'a> {
         }
     }
 
+    /// Roots a string
     pub fn root_string(&self, ptr: GcPtr<Str>) -> RootStr {
         self.roots.borrow_mut().push(ptr.as_traverseable());
         RootStr(Root {
@@ -826,6 +853,7 @@ impl<'a> VM<'a> {
         })
     }
 
+    /// Roots a value
     pub fn root_value<'vm>(&'vm self, value: Value<'a>) -> RootedValue<'a, 'vm> {
         self.rooted_values.borrow_mut().push(value);
         RootedValue {
@@ -862,6 +890,8 @@ impl<'a> VM<'a> {
         f(&mut gc, roots)
     }
 
+    /// Allocates a new value from a given `DataDef`.
+    /// Takes the stack as it may collect if the collection limit has been reached.
     pub fn alloc<D>(&self, stack: &Stack<'a>, def: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable
     {
@@ -895,6 +925,9 @@ impl<'a> VM<'a> {
         Ok(value)
     }
 
+    /// Calls a function on the stack.
+    /// When this function is called it is expected that the function exists at
+    /// `stack.len() - args - 1` and that the arguments are of the correct type
     pub fn call_function<'b>(&'b self,
                              mut stack: StackFrame<'a, 'b>,
                              args: VMIndex)
