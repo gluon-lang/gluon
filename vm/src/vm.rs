@@ -1325,6 +1325,7 @@ impl<'a> VM<'a> {
                 AddInt => binop_int(&mut stack, |l, r| l + r),
                 SubtractInt => binop_int(&mut stack, |l, r| l - r),
                 MultiplyInt => binop_int(&mut stack, |l, r| l * r),
+                DivideInt => binop_int(&mut stack, |l, r| l / r),
                 IntLT => {
                     binop_int(&mut stack, |l, r| {
                         if l < r {
@@ -1347,6 +1348,7 @@ impl<'a> VM<'a> {
                 AddFloat => binop_float(&mut stack, |l, r| l + r),
                 SubtractFloat => binop_float(&mut stack, |l, r| l - r),
                 MultiplyFloat => binop_float(&mut stack, |l, r| l * r),
+                DivideFloat => binop_float(&mut stack, |l, r| l / r),
                 FloatLT => {
                     binop(&mut stack, |l, r| {
                         match (l, r) {
@@ -1516,11 +1518,11 @@ fn include_implicit_prelude(vm: &VM, name: &str, expr: &mut ast::LExpr<ast::TcId
 let __implicit_prelude = import "std/prelude.hs"
 and { Num, Eq, Ord, Show, Functor, Monad, Option, Result, not } = __implicit_prelude
 in
-let { (+), (-), (*) } = __implicit_prelude.num_Int
+let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
 and { (==) } = __implicit_prelude.eq_Int
 and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Int
 in
-let { (+), (-), (*) } = __implicit_prelude.num_Float
+let { (+), (-), (*), (/) } = __implicit_prelude.num_Float
 and { (==) } = __implicit_prelude.eq_Float
 and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
 in 0
@@ -1729,6 +1731,18 @@ let (+) = \x y -> x #Int+ y in 1 + 2 + 3
 ",
 Int(6)
 }
+    test_expr!{ divide_int,
+r" 120 #Int/ 4
+",
+Int(30)
+}
+
+    test_expr!{ divide_float,
+r" 120.0 #Float/ 4.0
+",
+Float(30.)
+}
+
     #[test]
     fn record() {
         let _ = ::env_logger::init();

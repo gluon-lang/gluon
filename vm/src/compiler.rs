@@ -426,11 +426,13 @@ impl<'a> Compiler<'a> {
                         "#Int+" => AddInt,
                         "#Int-" => SubtractInt,
                         "#Int*" => MultiplyInt,
+                        "#Int/" => DivideInt,
                         "#Int<" => IntLT,
                         "#Int==" => IntEQ,
                         "#Float+" => AddFloat,
                         "#Float-" => SubtractFloat,
                         "#Float*" => MultiplyFloat,
+                        "#Float/" => DivideFloat,
                         "#Float<" => FloatLT,
                         "#Float==" => FloatEQ,
                         _ => {

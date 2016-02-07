@@ -41,12 +41,14 @@ pub enum Instruction {
     AddInt,
     SubtractInt,
     MultiplyInt,
+    DivideInt,
     IntLT,
     IntEQ,
 
     AddFloat,
     SubtractFloat,
     MultiplyFloat,
+    DivideFloat,
     FloatLT,
     FloatEQ,
 }
@@ -77,11 +79,13 @@ impl Instruction {
             AddInt |
             SubtractInt |
             MultiplyInt |
+            DivideInt |
             IntLT |
             IntEQ |
             AddFloat |
             SubtractFloat |
             MultiplyFloat |
+            DivideFloat |
             FloatLT |
             FloatEQ => -1,
         }

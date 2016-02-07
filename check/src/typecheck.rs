@@ -466,7 +466,7 @@ impl<'a> Typecheck<'a> {
                         panic!("ICE: Unknown primitive type")
                     };
                     match &op_name[1 + offset..] {
-                        "+" | "-" | "*" => Ok(typ),
+                        "+" | "-" | "*" | "/" => Ok(typ),
                         "==" | "<" => Ok(Type::bool().clone()),
                         _ => Err(UndefinedVariable(op.name.clone())),
                     }

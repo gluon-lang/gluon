@@ -192,18 +192,21 @@ type Num a = {
     (+) : a -> a -> a,
     (-) : a -> a -> a,
     (*) : a -> a -> a,
+    (/) : a -> a -> a,
     negate: a -> a
 } in
 let num_Int: Num Int = {
     (+) = monoid_Int_Add.(<>),
     (-) = \l r -> l #Int- r,
     (*) = monoid_Int_Mul.(<>),
+    (/) = \l r -> l #Int/ r,
     negate = \x -> 0 #Int- x
 } in
 let num_Float: Num Float = {
     (+) = monoid_Float_Add.(<>),
     (-) = \l r -> l #Float- r,
     (*) = monoid_Float_Mul.(<>),
+    (/) = \l r -> l #Float/ r,
     negate = \x -> 0.0 #Float- x
 } in
 type Functor f = {
