@@ -96,7 +96,7 @@ unsafe impl<'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
 
 #[derive(Debug)]
 pub struct BytecodeFunction {
-    name: Option<Symbol>,
+    name: Symbol,
     args: VMIndex,
     instructions: Vec<Instruction>,
     inner_functions: Vec<GcPtr<BytecodeFunction>>,
@@ -104,23 +104,13 @@ pub struct BytecodeFunction {
 }
 
 impl BytecodeFunction {
-    pub fn empty() -> BytecodeFunction {
-        BytecodeFunction {
-            name: None,
-            args: 0,
-            instructions: Vec::new(),
-            inner_functions: Vec::new(),
-            strings: Vec::new(),
-        }
-    }
-
     pub fn new(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
         let CompiledFunction { id, args, instructions, inner_functions, strings, .. } = f;
         let fs = inner_functions.into_iter()
                                 .map(|inner| BytecodeFunction::new(gc, inner))
                                 .collect();
         gc.alloc(Move(BytecodeFunction {
-            name: Some(id),
+            name: id,
             args: args,
             instructions: instructions,
             inner_functions: fs,
@@ -174,10 +164,10 @@ pub enum Callable<'a> {
 }
 
 impl<'a> Callable<'a> {
-    pub fn name(&self) -> Option<Symbol> {
+    pub fn name(&self) -> Symbol {
         match *self {
             Callable::Closure(ref closure) => closure.function.name,
-            Callable::Extern(ref ext) => Some(ext.id),
+            Callable::Extern(ref ext) => ext.id,
         }
     }
 
@@ -916,6 +906,14 @@ impl<'a> VM<'a> {
         Ok(value)
     }
 
+    pub fn call_function<'b>(&'b self,
+                             mut stack: StackFrame<'a, 'b>,
+                             args: VMIndex)
+                             -> Result<Option<StackFrame<'a, 'b>>, Error> {
+        stack = try!(self.do_call(stack, args));
+        self.execute(stack)
+    }
+
     fn call_bytecode(&self, closure: GcPtr<ClosureData<'a>>) -> VMResult<Value<'a>> {
         self.push(Closure(closure));
         let stack = StackFrame::frame(self.stack.borrow_mut(), 0, Some(Callable::Closure(closure)));
@@ -1051,14 +1049,6 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn call_function<'b>(&'b self,
-                         mut stack: StackFrame<'a, 'b>,
-                         args: VMIndex)
-                         -> Result<Option<StackFrame<'a, 'b>>, Error> {
-        stack = try!(self.do_call(stack, args));
-        self.execute(stack)
-    }
-
     fn execute<'b>(&'b self,
                    stack: StackFrame<'a, 'b>)
                    -> Result<Option<StackFrame<'a, 'b>>, Error> {
@@ -1086,11 +1076,7 @@ impl<'a> VM<'a> {
                     {
                         let symbols = self.symbols.borrow();
                         debug!("Continue with {}\nAt: {}/{}",
-                               closure.function
-                                      .name
-                                      .as_ref()
-                                      .map(|s| symbols.string(s))
-                                      .unwrap_or("<UNKNOWN>"),
+                               symbols.string(&closure.function.name),
                                instruction_index,
                                closure.function.instructions.len());
                     }
@@ -1114,10 +1100,7 @@ impl<'a> VM<'a> {
         {
             let symbols = self.symbols.borrow();
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
-                   function.name
-                           .as_ref()
-                           .map(|s| symbols.string(s))
-                           .unwrap_or("<UNKNOWN>"),
+                   symbols.string(&function.name),
                    &stack[..],
                    stack.frame);
         }
@@ -1572,9 +1555,9 @@ fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool) ->
     let function = BytecodeFunction::new(&mut vm.gc.borrow_mut(), function);
     let closure = vm.gc.borrow_mut().alloc(ClosureDataDef(function, &[]));
     let value = try!(vm.call_module(&typ, closure));
-    vm.names.borrow_mut().insert(function.name.unwrap(), GlobalFn(vm.globals.len()));
+    vm.names.borrow_mut().insert(function.name, GlobalFn(vm.globals.len()));
     vm.globals.push(Global {
-        id: function.name.unwrap(),
+        id: function.name,
         typ: typ,
         value: Cell::new(value),
     });
