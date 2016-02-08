@@ -1,16 +1,16 @@
 extern crate env_logger;
 extern crate embed_lang;
 
-use embed_lang::vm::vm;
 use embed_lang::vm::vm::{VM, Value};
 use embed_lang::vm::vm::Value::{Float, Int};
+use embed_lang::import::Import;
 
-pub fn load_script(vm: &VM, filename: &str, input: &str) -> vm::Result<()> {
-    vm::load_script2(vm, filename, input, false)
+pub fn load_script(vm: &VM, filename: &str, input: &str) -> ::embed_lang::Result<()> {
+    ::embed_lang::load_script2(vm, filename, input, false)
 }
 
 pub fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
-    *vm::run_expr2(vm, "<top>", s, false).unwrap_or_else(|err| panic!("{}", err))
+    *::embed_lang::run_expr2(vm, "<top>", s, false).unwrap_or_else(|err| panic!("{}", err))
 }
 
 macro_rules! test_expr {
@@ -18,7 +18,7 @@ macro_rules! test_expr {
         #[test]
         fn $name() {
             let _ = ::env_logger::init();
-            let mut vm = VM::new();
+            let mut vm = make_vm();
             let value = run_expr(&mut vm, $expr);
             assert_eq!(value, $value);
         }
@@ -27,7 +27,7 @@ macro_rules! test_expr {
         #[test]
         fn $name() {
             let _ = ::env_logger::init();
-            let mut vm = VM::new();
+            let mut vm = make_vm();
             run_expr(&mut vm, $expr);
         }
     }
@@ -75,7 +75,7 @@ fn record() {
     let text = r"
 { x = 0, y = 1.0, z = {} }
 ";
-    let mut vm = VM::new();
+    let mut vm = make_vm();
     let value = run_expr(&mut vm, text);
     let unit = vm.new_data(0, &mut []);
     assert_eq!(value, vm.new_data(0, &mut [Int(0), Float(1.0), unit]));
@@ -89,7 +89,7 @@ type T = { x: Int, y: Int } in
 let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
-    let mut vm = VM::new();
+    let mut vm = make_vm();
     let value = run_expr(&mut vm, text);
     assert_eq!(value, vm.new_data(0, &mut [Int(1), Int(2)]));
 }
@@ -102,7 +102,7 @@ let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 let sub = \l r -> { x = l.x #Int- r.x, y = l.y #Int- r.y } in
 { T, add, sub }
 ";
-    let mut vm = VM::new();
+    let mut vm = make_vm();
     load_script(&mut vm, "Vec", text).unwrap_or_else(|err| panic!("{}", err));
 
     let script = r#"
@@ -119,7 +119,7 @@ fn adt() {
 type Option a = | None | Some a
 in Some 1
 ";
-    let mut vm = VM::new();
+    let mut vm = make_vm();
     let value = run_expr(&mut vm, text);
     assert_eq!(value, vm.new_data(1, &mut [Int(1)]));
 }
@@ -160,7 +160,7 @@ fn insert_stack_slice() {
     use std::cell::Cell;
 
     let _ = ::env_logger::init();
-    let vm = VM::new();
+    let vm = make_vm();
     let mut stack = vm.current_frame();
     stack.push(Int(0));
     stack.insert_slice(0, &[Cell::new(Int(2)), Cell::new(Int(1))]);
@@ -241,8 +241,8 @@ type AB = | A | B in
 case A of
 | B -> True
 ";
-    let mut vm = VM::new();
-    let result = vm::run_expr(&mut vm, "<top>", text);
+    let mut vm = make_vm();
+    let result = ::embed_lang::run_expr(&mut vm, "<top>", text);
     assert!(result.is_err());
 }
 
@@ -336,7 +336,7 @@ let (+) x y = x #Float+ y
 in
 { x = 1 + 2, y = 1.0 + 2.0 }
 "#;
-    let mut vm = VM::new();
+    let mut vm = make_vm();
     let result = run_expr(&mut vm, text);
     assert_eq!(result, vm.new_data(0, &mut [Int(3), Float(3.0)]));
 }
@@ -356,7 +356,7 @@ in
 let { id } = test_String
 in id 1
 "#;
-    let mut vm = VM::new();
+    let mut vm = make_vm();
     let result = run_expr(&mut vm, text);
     assert_eq!(result, Int(0));
 }
@@ -386,7 +386,7 @@ and { (==) }: Eq (List Int) = prelude.eq_List { (==) }
 in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
-    let value = vm::run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
+    let value = ::embed_lang::run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(*value, Int(0));
 }
 
@@ -395,16 +395,16 @@ fn test_implicit_prelude() {
     let _ = ::env_logger::init();
     let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
     let mut vm = make_vm();
-    vm::run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
+    ::embed_lang::run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
 }
 
 /// Creates a VM for testing which has the correct paths to import the std library properly
 fn make_vm<'a>() -> VM<'a> {
-    let vm = VM::new();
+    let vm = ::embed_lang::new_vm();
     let import_symbol = vm.symbol("import");
     let import = vm.get_macros().get(import_symbol);
     import.as_ref()
-          .and_then(|import| import.downcast_ref::<::embed_lang::vm::import::Import>())
+          .and_then(|import| import.downcast_ref::<Import>())
           .expect("Import macro")
           .add_path("..");
     vm

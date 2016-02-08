@@ -21,8 +21,6 @@ pub mod vm;
 pub mod interner;
 pub mod gc;
 pub mod stack;
-mod primitives;
+pub mod primitives;
 mod lazy;
-#[cfg(all(feature = "check", feature = "parser"))]
-pub mod import;
 mod array;

@@ -1,8 +1,10 @@
 use std::error::Error as StdError;
 use base::ast::Typed;
 use base::types::{TypeEnv, display_type};
-use vm::vm::{VM, RootStr, Status, typecheck_expr, load_file};
+use vm::vm::{VM, RootStr, Status};
 use vm::api::{VMFunction, IO, Function, primitive};
+
+use embed_lang::{typecheck_expr, load_file};
 
 fn type_of_expr(vm: &VM) -> Status {
     let closure: &Fn(_) -> _ = &|args: RootStr| -> IO<String> {
@@ -70,12 +72,12 @@ pub fn run() -> Result<(), Box<StdError>> {
 
 #[cfg(test)]
 mod tests {
-    use vm::vm::VM;
+    use embed_lang::new_vm;
     use super::compile_repl;
 
     #[test]
     fn compile_repl_test() {
-        let vm = VM::new();
+        let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
     }
 }

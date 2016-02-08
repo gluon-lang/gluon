@@ -3,14 +3,16 @@ extern crate embed_lang;
 
 use embed_lang::vm::api::{VMType, Function};
 
-use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr, load_script, run_expr};
+use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr};
+use embed_lang::{load_script, run_expr};
+use embed_lang::import::Import;
 
 fn make_vm<'a>() -> VM<'a> {
-    let vm = VM::new();
+    let vm = ::embed_lang::new_vm();
     let import_symbol = vm.symbol("import");
     let import = vm.get_macros().get(import_symbol);
     import.as_ref()
-          .and_then(|import| import.downcast_ref::<::embed_lang::vm::import::Import>())
+          .and_then(|import| import.downcast_ref::<Import>())
           .expect("Import macro")
           .add_path("..");
     vm

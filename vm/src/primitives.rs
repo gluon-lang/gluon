@@ -1,18 +1,12 @@
 use std::cell::Cell;
-use std::fs::File;
-use std::io::{Read, stdin};
+use std::io::Read;
 use std::string::String as StdString;
 
-use base::types;
-use base::types::Type;
 use primitives as prim;
-use types::*;
-use api::{generic, Generic, Getable, Array, IO, MaybeError, primitive};
+use api::{generic, Generic, Getable, Array, MaybeError, primitive};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use vm::{VM, DataStruct, VMInt, Status, Value, RootStr, Result};
-#[cfg(all(feature = "check", feature = "parser"))]
-use stack::StackFrame;
 
 
 pub fn array_length(array: Array<generic::A>) -> VMInt {
@@ -107,45 +101,11 @@ pub fn string_rfind(haystack: RootStr, needle: RootStr) -> Option<VMInt> {
 pub fn string_trim(s: RootStr) -> String {
     String::from(s.trim())
 }
-pub fn print_int(i: VMInt) -> IO<()> {
-    print!("{}", i);
-    IO::Value(())
-}
+
 pub fn trace(vm: &VM) -> Status {
     let stack = vm.current_frame();
     println!("{:?}", stack[0]);
     Status::Ok
-}
-
-pub fn read_file(s: RootStr) -> IO<String> {
-    let mut buffer = String::new();
-    match File::open(&s[..]).and_then(|mut file| file.read_to_string(&mut buffer)) {
-        Ok(_) => IO::Value(buffer),
-        Err(err) => {
-            use std::fmt::Write;
-            buffer.clear();
-            let _ = write!(&mut buffer, "{}", err);
-            IO::Exception(buffer)
-        }
-    }
-}
-
-pub fn read_line() -> IO<String> {
-    let mut buffer = String::new();
-    match stdin().read_line(&mut buffer) {
-        Ok(_) => IO::Value(buffer),
-        Err(err) => {
-            use std::fmt::Write;
-            buffer.clear();
-            let _ = write!(&mut buffer, "{}", err);
-            IO::Exception(buffer)
-        }
-    }
-}
-
-pub fn print(s: RootStr) -> IO<()> {
-    println!("{}", &*s);
-    IO::Value(())
 }
 
 pub fn show_int(i: VMInt) -> String {
@@ -166,133 +126,6 @@ pub fn error(_: &VM) -> Status {
     Status::Error
 }
 
-/// IO a -> (String -> IO a) -> IO a
-pub fn catch_io(vm: &VM) -> Status {
-    let mut stack = vm.current_frame();
-    let frame_level = stack.stack.frames.len();
-    let action = stack[0];
-    stack.push(action);
-    stack.push(Value::Int(0));
-    match vm.call_function(stack, 1) {
-        Ok(_) => Status::Ok,
-        Err(err) => {
-            stack = vm.current_frame();
-            while stack.stack.frames.len() > frame_level {
-                match stack.exit_scope() {
-                    Some(new_stack) => stack = new_stack,
-                    None => return Status::Error,
-                }
-            }
-            let callback = stack[1];
-            stack.push(callback);
-            let fmt = format!("{}", err);
-            let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
-            stack.push(result);
-            stack.push(Value::Int(0));
-            match vm.call_function(stack, 2) {
-                Ok(_) => Status::Ok,
-                Err(err) => {
-                    stack = vm.current_frame();
-                    let fmt = format!("{}", err);
-                    let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
-                    stack.push(result);
-                    Status::Error
-                }
-            }
-        }
-    }
-}
-
-#[cfg(all(feature = "check", feature = "parser"))]
-pub fn run_expr(vm: &VM) -> Status {
-    let mut stack = vm.current_frame();
-    let frame_level = stack.stack.frames.len();
-    let s = stack[0];
-    match s {
-        Value::String(s) => {
-            drop(stack);
-            let run_result = ::vm::run_expr(vm, "<top>", &s);
-            stack = vm.current_frame();
-            match run_result {
-                Ok(value) => {
-                    let fmt = format!("{:?}", value);
-                    let result = vm.alloc(&stack.stack, &fmt[..]);
-                    stack.push(Value::String(result));
-                }
-                Err(err) => {
-                    let trace = backtrace(vm, frame_level, &stack);
-                    while stack.stack.frames.len() > frame_level {
-                        match stack.exit_scope() {
-                            Some(new_stack) => stack = new_stack,
-                            None => return Status::Error,
-                        }
-                    }
-                    let fmt = format!("{}\n{}", err, trace);
-                    let result = vm.alloc(&stack.stack, &fmt[..]);
-                    stack.push(Value::String(result));
-                }
-            }
-            Status::Ok
-        }
-        x => panic!("Expected string got {:?}", x),
-    }
-}
-
-#[cfg(all(feature = "check", feature = "parser"))]
-pub fn load_script(vm: &VM) -> Status {
-    let mut stack = vm.current_frame();
-    let frame_level = stack.stack.frames.len();
-    match (stack[0], stack[1]) {
-        (Value::String(name), Value::String(expr)) => {
-            drop(stack);
-            let run_result = ::vm::load_script(vm, &name[..], &expr);
-            stack = vm.current_frame();
-            match run_result {
-                Ok(()) => {
-                    let fmt = format!("Loaded {}", name);
-                    let result = vm.alloc(&stack.stack, &fmt[..]);
-                    stack.push(Value::String(result));
-                }
-                Err(err) => {
-                    let trace = backtrace(vm, frame_level, &stack);
-                    let fmt = format!("{}\n{}", err, trace);
-                    while stack.stack.frames.len() > frame_level {
-                        match stack.exit_scope() {
-                            Some(new_stack) => stack = new_stack,
-                            None => return Status::Error,
-                        }
-                    }
-                    let result = vm.alloc(&stack.stack, &fmt[..]);
-                    stack.push(Value::String(result));
-                }
-            }
-            Status::Ok
-        }
-        x => panic!("Expected 2 strings got {:?}", x),
-    }
-}
-
-/// Creates a backtraces starting from `frame_level`
-#[cfg(all(feature = "check", feature = "parser"))]
-fn backtrace(vm: &VM, frame_level: usize, stack: &StackFrame) -> String {
-    let mut buffer = String::from("Backtrace:\n");
-    for frame in &stack.stack.frames[frame_level..] {
-        match frame.function.map(|c| c.name()) {
-            Some(name) => buffer.push_str(&vm.symbol_string(name)),
-            None => buffer.push_str("<unknown>"),
-        }
-        buffer.push('\n');
-    }
-    if !stack.stack.frames.is_empty() {
-        // Remove last newline
-        buffer.pop();
-    }
-    buffer
-}
-
-fn f0<R>(f: fn() -> R) -> fn() -> R {
-    f
-}
 fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
     f
 }
@@ -303,17 +136,6 @@ fn f3<A, B, C, R>(f: fn(A, B, C) -> R) -> fn(A, B, C) -> R {
     f
 }
 pub fn load(vm: &VM) -> Result<()> {
-
-    let a = Type::generic(types::Generic {
-        kind: types::Kind::star(),
-        id: vm.symbol("a"),
-    });
-    let b = Type::generic(types::Generic {
-        kind: types::Kind::star(),
-        id: vm.symbol("b"),
-    });
-    let io = |t| types::Type::data(types::TypeConstructor::Data(vm.symbol("IO")), vec![t]);
-
     try!(vm.define_global("array",
                           record!(
         length => f1(prim::array_length),
@@ -346,54 +168,5 @@ pub fn load(vm: &VM) -> Result<()> {
     try!(vm.define_global("trace", primitive::<fn(A)>("trace", prim::trace)));
 
     try!(::lazy::load(vm));
-    try!(load_io(vm));
-
-    // io_bind m f (): IO a -> (a -> IO b) -> IO b
-    //     = f (m ())
-    let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), PushInt(0), TailCall(2)];
-    let f = Type::function(vec![a.clone()], io(b.clone()));
-    let io_bind_type = Type::function(vec![io(a.clone()), f], io(b.clone()));
-    vm.add_bytecode("io_bind", io_bind_type, 3, io_bind);
-
-
-    vm.add_bytecode("io_return",
-                    Type::function(vec![a.clone()], io(a.clone())),
-                    2,
-                    vec![Pop(1)]);
-    Ok(())
-}
-
-#[cfg(all(feature = "check", feature = "parser"))]
-fn load_io(vm: &VM) -> Result<()> {
-    // IO functions
-    try!(vm.define_global("io",
-                          record!(
-        print_int => f1(prim::print_int),
-        read_file => f1(prim::read_file),
-        read_line => f0(prim::read_line),
-        print => f1(prim::print),
-        catch =>
-            primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", prim::catch_io),
-        run_expr =>
-            primitive::<fn (StdString) -> IO<StdString>>("io.run_expr", prim::run_expr),
-        load_script =>
-            primitive::<fn (StdString, StdString) -> IO<StdString>>("io.load_script",
-                                                                    prim::load_script)
-    )));
-    Ok(())
-}
-
-#[cfg(not(all(feature = "check", feature = "parser")))]
-fn load_io(vm: &VM) -> Result<()> {
-    // IO functions
-    try!(vm.define_global("io",
-                          record!(
-        print_int => f1(prim::print_int),
-        read_file => f1(prim::read_file),
-        read_line => f0(prim::read_line),
-        print => f1(prim::print),
-        catch =>
-            primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", prim::catch_io)
-    )));
     Ok(())
 }

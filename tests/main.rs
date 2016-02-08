@@ -4,7 +4,7 @@ extern crate env_logger;
 extern crate embed_lang;
 extern crate vm;
 
-use vm::vm::{VM, run_expr, load_file};
+use embed_lang::{new_vm, run_expr, load_file};
 
 use std::io::Read;
 use std::fmt;
@@ -50,7 +50,7 @@ fn test_files(path: &str) -> Result<Box<Iterator<Item = PathBuf>>, Box<Error>> {
 }
 
 fn main_() -> Result<(), Box<Error>> {
-    let vm = VM::new();
+    let vm = new_vm();
     try!(load_file(&vm, "std/prelude.hs"));
     let mut text = String::new();
     let _ = ::env_logger::init();

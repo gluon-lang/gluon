@@ -2,10 +2,13 @@
 extern crate log;
 extern crate env_logger;
 extern crate clap;
+#[macro_use]
+extern crate quick_error;
 
 extern crate base;
 extern crate embed_lang;
 extern crate check;
+extern crate parser;
 #[macro_use]
 extern crate vm;
 
@@ -13,7 +16,9 @@ extern crate vm;
 #[cfg(not(test))]
 use std::error::Error as StdError;
 #[cfg(not(test))]
-use vm::vm::{VM, Error, load_script};
+use vm::vm::Error;
+#[cfg(not(test))]
+use embed_lang::{new_vm, load_script};
 #[cfg(not(test))]
 use clap::{Arg, App};
 
@@ -25,7 +30,7 @@ fn run_files(files: &[&str]) -> Result<(), Box<StdError>> {
     use std::fs::File;
     use std::io::Read;
     use std::path::Path;
-    let vm = VM::new();
+    let vm = new_vm();
     let mut text = String::new();
     for file in files {
         text.clear();

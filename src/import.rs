@@ -6,7 +6,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use base::ast;
-use vm::{VM, filename_to_module, load_script};
+use vm::vm::VM;
+use super::{filename_to_module, load_script};
 use base::macros::{Macro, Error as MacroError};
 use base::types::TcIdent;
 
