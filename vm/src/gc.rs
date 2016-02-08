@@ -574,11 +574,10 @@ mod tests {
     unsafe impl<'a> DataDef for Def<'a> {
         type Value = Vec<Value>;
         fn size(&self) -> usize {
-            self.elems.len() * mem::size_of::<Value>()
+            mem::size_of::<Self::Value>()
         }
         fn initialize(self, result: WriteOnly<Vec<Value>>) -> &mut Vec<Value> {
-            let vec = self.elems.iter().map(|x| *x).collect();
-            result.write(vec)
+            result.write(self.elems.to_owned())
         }
     }
 
