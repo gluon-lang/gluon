@@ -20,7 +20,7 @@ pub mod types;
 pub mod vm;
 pub mod interner;
 pub mod gc;
-mod stack;
+pub mod stack;
 mod primitives;
 mod lazy;
 #[cfg(all(feature = "check", feature = "parser"))]
