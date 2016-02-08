@@ -303,6 +303,8 @@ pub fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
     Ok(vm.root_value(value))
 }
 
+/// Creates a new virtual machine with support for importing other modules and with all primitives
+/// loaded.
 pub fn new_vm<'a>() -> VM<'a> {
     let vm = VM::new();
     vm.get_macros().insert(vm.symbol("import"), ::import::Import::new());
