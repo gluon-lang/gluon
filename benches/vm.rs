@@ -5,18 +5,18 @@ extern crate test;
 extern crate base;
 extern crate parser;
 extern crate check;
-extern crate vm;
+extern crate embed_lang;
 
 use std::fs::File;
 use std::io::Read;
 
 use base::symbol::SymbolModule;
 use check::typecheck::Typecheck;
-use vm::vm::VM;
+use embed_lang::new_vm;
 
 #[bench]
 fn prelude(b: &mut ::test::Bencher) {
-    let vm = VM::new();
+    let vm = new_vm();
     let env = vm.env();
     let mut symbols = vm.get_mut_symbols();
     let expr = {
