@@ -85,6 +85,7 @@ extern crate quick_error;
 #[macro_use]
 extern crate vm as vm_mod;
 
+mod io;
 mod crates {
     extern crate base;
     extern crate parser;
@@ -97,7 +98,10 @@ pub use crates::check;
 pub use vm_mod as vm;
 
 pub mod import;
-mod io;
+
+pub use vm::vm::VM;
+
+
 
 use base::ast;
 use base::types::TcType;
@@ -105,7 +109,7 @@ use base::symbol::{Name, NameBuf, Symbol};
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::error::Error as StdError;
-use vm::vm::{ClosureDataDef, RootedValue, VM};
+use vm::vm::{ClosureDataDef, RootedValue};
 use vm::compiler::CompiledFunction;
 
 quick_error! {
