@@ -620,6 +620,8 @@ impl<'a> VM<'a> {
         try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
         try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
+        let ordering = Type::data(types::TypeConstructor::Data(self.symbol("Ordering")), Vec::new());
+        try!(ids.try_insert(TypeId::of::<Ordering>(), ordering));
         let args = vec![types::Generic {
                             id: self.symbol("a"),
                             kind: types::Kind::star(),

@@ -16,9 +16,7 @@ and ends_with haystack needle =
         | None -> False
 in
 let ord: Ord String = {
-    compare = \l r ->
-        let o = string_prim.compare l r
-        in if o #Int== 0 then EQ else if o #Int== 1 then GT else LT
+    compare = string_prim.compare
 }
 in
 let show: Show String = {

@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::cmp::Ordering;
 use std::io::Read;
 use std::string::String as StdString;
 
@@ -81,13 +82,8 @@ pub fn string_eq(l: RootStr, r: RootStr) -> bool {
     *l == *r
 }
 
-pub fn string_compare(l: RootStr, r: RootStr) -> VMInt {
-    use std::cmp::Ordering::*;
-    match l.cmp(&r) {
-        Less => -1,
-        Equal => 0,
-        Greater => 1,
-    }
+pub fn string_compare(l: RootStr, r: RootStr) -> Ordering {
+    l.cmp(&r)
 }
 pub fn string_slice(s: RootStr, start: VMInt, end: VMInt) -> String {
     String::from(&s[start as usize..end as usize])

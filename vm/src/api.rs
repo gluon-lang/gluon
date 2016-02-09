@@ -7,6 +7,7 @@ use base::types;
 use base::types::{TcType, Type, TypeConstructor};
 use types::VMIndex;
 use std::any::Any;
+use std::cmp::Ordering;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -187,6 +188,38 @@ impl<'a, 'vm> Getable<'a, 'vm> for bool {
         }
     }
 }
+
+impl VMType for Ordering {
+    type Type = Self;
+}
+impl<'a> Pushable<'a> for Ordering {
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        let tag = match self {
+            Ordering::Less => 0,
+            Ordering::Equal => 1,
+            Ordering::Greater => 2,
+        };
+        let value = Value::Data(vm.alloc(&stack.stack, Def { tag: tag, elems: &[] }));
+        stack.push(value);
+        Status::Ok
+    }
+}
+impl<'a, 'vm> Getable<'a, 'vm> for Ordering {
+    fn from_value(_: &'vm VM<'a>, value: Value<'a>) -> Option<Ordering> {
+        match value {
+            Value::Data(data) => {
+                match data.tag {
+                    0 => Some(Ordering::Less),
+                    1 => Some(Ordering::Equal),
+                    2 => Some(Ordering::Greater),
+                    _ => None
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
 impl VMType for str {
     type Type = String;
 }
