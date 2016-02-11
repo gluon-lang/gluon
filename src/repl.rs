@@ -4,7 +4,7 @@ use base::types::{TypeEnv, display_type};
 use vm::vm::{VM, RootStr};
 use vm::api::{IO, Function, WithVM};
 
-use embed_lang::{typecheck_expr, load_file};
+use embed_lang::{typecheck_expr, load_file, new_vm};
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<String> {
     let WithVM { vm, value: args } = args;
@@ -63,7 +63,7 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
 
 #[allow(dead_code)]
 pub fn run() -> Result<(), Box<StdError>> {
-    let vm = VM::new();
+    let vm = new_vm();
     try!(compile_repl(&vm));
     let mut repl: Function<fn (()) -> IO<()>> = try!(vm.get_global("std.repl"));
     try!(repl.call(()));
