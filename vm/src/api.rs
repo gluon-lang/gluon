@@ -1,8 +1,8 @@
 use gc::Move;
 use base::symbol::Symbol;
 use stack::StackFrame;
-use vm::{VM, Status, DataStruct, ExternFunction, RootedValue, Value, Def,
-         Userdata_, VMInt, Error, Root, RootStr};
+use vm::{VM, Status, DataStruct, ExternFunction, RootedValue, Value, Def, Userdata_, VMInt, Error,
+         Root, RootStr};
 use base::types;
 use base::types::{TcType, Type, TypeConstructor};
 use types::VMIndex;
@@ -34,7 +34,7 @@ pub fn primitive<F>(name: &'static str, function: fn(&VM) -> Status) -> Primitiv
 }
 
 #[derive(Clone, Copy)]
-pub struct Generic<'a, T>(Value<'a>, PhantomData<T>);
+pub struct Generic<'a, T>(pub Value<'a>, PhantomData<T>);
 
 impl<'a, T: VMType> VMType for Generic<'a, T> {
     type Type = T::Type;
@@ -116,6 +116,40 @@ pub trait Pushable<'a> : VMType {
 pub trait Getable<'a, 'vm>: Sized {
     fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<Self>;
 }
+
+/// Wrapper type which passes acts as the type `T` but also passes the `VM` to the called function
+pub struct WithVM<'a: 'vm, 'vm, T> {
+    pub vm: &'vm VM<'a>,
+    pub value: T,
+}
+
+impl<'a, 'vm, T> VMType for WithVM<'a, 'vm, T> where T: VMType
+{
+    type Type = T::Type;
+
+    fn make_type(vm: &VM) -> TcType {
+        T::make_type(vm)
+    }
+
+    fn extra_args() -> VMIndex {
+        T::extra_args()
+    }
+}
+
+impl<'a, 'vm, T> Pushable<'a> for WithVM<'a, 'vm, T> where T: Pushable<'a>
+{
+    fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
+        self.value.push(vm, stack)
+    }
+}
+
+impl<'a, 'vm, T> Getable<'a, 'vm> for WithVM<'a, 'vm, T> where T: Getable<'a, 'vm>
+{
+    fn from_value(vm: &'vm VM<'a>, value: Value<'a>) -> Option<WithVM<'a, 'vm, T>> {
+        T::from_value(vm, value).map(|t| WithVM { vm: vm, value: t })
+    }
+}
+
 
 impl VMType for () {
     type Type = Self;
@@ -199,7 +233,11 @@ impl<'a> Pushable<'a> for Ordering {
             Ordering::Equal => 1,
             Ordering::Greater => 2,
         };
-        let value = Value::Data(vm.alloc(&stack.stack, Def { tag: tag, elems: &[] }));
+        let value = Value::Data(vm.alloc(&stack.stack,
+                                         Def {
+                                             tag: tag,
+                                             elems: &[],
+                                         }));
         stack.push(value);
         Status::Ok
     }
@@ -212,7 +250,7 @@ impl<'a, 'vm> Getable<'a, 'vm> for Ordering {
                     0 => Some(Ordering::Less),
                     1 => Some(Ordering::Equal),
                     2 => Some(Ordering::Greater),
-                    _ => None
+                    _ => None,
                 }
             }
             _ => None,
@@ -649,9 +687,11 @@ pub mod record {
             Type::record(Vec::new(), fields)
         }
     }
-    impl<'a, A: Pushable<'a>, F: Field, T: PushableFieldList<'a>> Pushable<'a> for Record<HList<(F, A),
-                                                                                                T>>
-        where A::Type: Sized
+    impl<'a, A, F, T> Pushable<'a> for Record<HList<(F, A), T>>
+        where A: Pushable<'a>,
+              F: Field,
+              T: PushableFieldList<'a>,
+              A::Type: Sized
 {
         fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
             self.fields.push(vm, stack);
@@ -689,7 +729,8 @@ macro_rules! hlist {
         $crate::api::record::HList((_field::$field, $value), ())
     };
     ($field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
-        $crate::api::record::HList((_field::$field, $value), hlist!($($field_tail => $value_tail),*))
+        $crate::api::record::HList((_field::$field, $value),
+                                   hlist!($($field_tail => $value_tail),*))
     }
 }
 
@@ -721,11 +762,12 @@ impl<'a: 'vm, 'vm, F: FunctionType + VMType> Pushable<'a> for Primitive<F> {
                                       Box<Fn(&VM<'a>) -> Status + 'static>>(Box::new(self.function))
         };
         let id = vm.symbol(self.name);
-        let value = Value::Function(vm.alloc(&stack.stack, Move(ExternFunction {
-            id: id,
-            args: F::arguments(),
-            function: extern_function,
-        })));
+        let value = Value::Function(vm.alloc(&stack.stack,
+                                             Move(ExternFunction {
+                                                 id: id,
+                                                 args: F::arguments(),
+                                                 function: extern_function,
+                                             })));
         stack.push(value);
         Status::Ok
     }

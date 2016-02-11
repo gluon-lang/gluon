@@ -98,10 +98,8 @@ pub fn string_trim(s: RootStr) -> String {
     String::from(s.trim())
 }
 
-pub fn trace(vm: &VM) -> Status {
-    let stack = vm.current_frame();
-    println!("{:?}", stack[0]);
-    Status::Ok
+pub fn trace(a: Generic<A>) {
+    println!("{:?}", a.0);
 }
 
 pub fn show_int(i: VMInt) -> String {
@@ -161,7 +159,7 @@ pub fn load(vm: &VM) -> Result<()> {
                           primitive::<fn(StdString) -> A>("#error", prim::error)));
     try!(vm.define_global("error",
                           primitive::<fn(StdString) -> A>("error", prim::error)));
-    try!(vm.define_global("trace", primitive::<fn(A)>("trace", prim::trace)));
+    try!(vm.define_global("trace", f1(prim::trace)));
 
     try!(::lazy::load(vm));
     Ok(())

@@ -5,7 +5,7 @@ use std::fs::File;
 use vm::types::*;
 use vm::stack::StackFrame;
 use vm::vm::{VM, Result, Status, Value, VMInt, RootStr};
-use vm::api::{VMType, IO, primitive};
+use vm::api::{VMType, IO, WithVM, primitive};
 use vm::api::generic::{A, B};
 
 pub fn print_int(i: VMInt) -> IO<()> {
@@ -81,70 +81,49 @@ pub fn catch_io(vm: &VM) -> Status {
     }
 }
 
-pub fn run_expr(vm: &VM) -> Status {
+pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
+    let WithVM { vm, value: expr } = expr;
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.frames.len();
-    let s = stack[0];
-    match s {
-        Value::String(s) => {
-            drop(stack);
-            let run_result = super::run_expr(vm, "<top>", &s);
-            stack = vm.current_frame();
-            match run_result {
-                Ok(value) => {
-                    let fmt = format!("{:?}", value);
-                    let result = vm.alloc(&stack.stack, &fmt[..]);
-                    stack.push(Value::String(result));
-                }
-                Err(err) => {
-                    let trace = backtrace(vm, frame_level, &stack);
-                    while stack.stack.frames.len() > frame_level {
-                        match stack.exit_scope() {
-                            Some(new_stack) => stack = new_stack,
-                            None => return Status::Error,
-                        }
-                    }
-                    let fmt = format!("{}\n{}", err, trace);
-                    let result = vm.alloc(&stack.stack, &fmt[..]);
-                    stack.push(Value::String(result));
+    drop(stack);
+    let run_result = super::run_expr(vm, "<top>", &expr);
+    stack = vm.current_frame();
+    match run_result {
+        Ok(value) => IO::Value(format!("{:?}", value)),
+        Err(err) => {
+            let trace = backtrace(vm, frame_level, &stack);
+            let fmt = format!("{}\n{}", err, trace);
+            while stack.stack.frames.len() > frame_level {
+                match stack.exit_scope() {
+                    Some(new_stack) => stack = new_stack,
+                    None => return IO::Exception(fmt),
                 }
             }
-            Status::Ok
+            IO::Exception(fmt)
         }
-        x => panic!("Expected string got {:?}", x),
     }
 }
 
-pub fn load_script(vm: &VM) -> Status {
+pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
+    let WithVM { vm, value: name } = name;
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.frames.len();
-    match (stack[0], stack[1]) {
-        (Value::String(name), Value::String(expr)) => {
-            drop(stack);
-            let run_result = super::load_script(vm, &name[..], &expr);
-            stack = vm.current_frame();
-            match run_result {
-                Ok(()) => {
-                    let fmt = format!("Loaded {}", name);
-                    let result = vm.alloc(&stack.stack, &fmt[..]);
-                    stack.push(Value::String(result));
-                }
-                Err(err) => {
-                    let trace = backtrace(vm, frame_level, &stack);
-                    let fmt = format!("{}\n{}", err, trace);
-                    while stack.stack.frames.len() > frame_level {
-                        match stack.exit_scope() {
-                            Some(new_stack) => stack = new_stack,
-                            None => return Status::Error,
-                        }
-                    }
-                    let result = vm.alloc(&stack.stack, &fmt[..]);
-                    stack.push(Value::String(result));
+    drop(stack);
+    let run_result = super::load_script(vm, &name[..], &expr);
+    stack = vm.current_frame();
+    match run_result {
+        Ok(()) => IO::Value(format!("Loaded {}", &name[..])),
+        Err(err) => {
+            let trace = backtrace(vm, frame_level, &stack);
+            let fmt = format!("{}\n{}", err, trace);
+            while stack.stack.frames.len() > frame_level {
+                match stack.exit_scope() {
+                    Some(new_stack) => stack = new_stack,
+                    None => return IO::Exception(fmt),
                 }
             }
-            Status::Ok
+            IO::Exception(fmt)
         }
-        x => panic!("Expected 2 strings got {:?}", x),
     }
 }
 
@@ -171,6 +150,9 @@ fn f0<R>(f: fn() -> R) -> fn() -> R {
 fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
     f
 }
+fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
+    f
+}
 
 pub fn load(vm: &VM) -> Result<()> {
 
@@ -182,7 +164,7 @@ pub fn load(vm: &VM) -> Result<()> {
 
 
     vm.add_bytecode("io_return",
-                    <fn (A) -> IO<A> as VMType>::make_type(vm),
+                    <fn(A) -> IO<A> as VMType>::make_type(vm),
                     2,
                     vec![Pop(1)]);
     // IO functions
@@ -194,11 +176,8 @@ pub fn load(vm: &VM) -> Result<()> {
         print => f1(print),
         catch =>
             primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", catch_io),
-        run_expr =>
-            primitive::<fn (StdString) -> IO<StdString>>("io.run_expr", run_expr),
-        load_script =>
-            primitive::<fn (StdString, StdString) -> IO<StdString>>("io.load_script",
-                                                                    load_script)
+        run_expr => f1(run_expr),
+        load_script => f2(load_script)
     )));
     Ok(())
 }

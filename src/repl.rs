@@ -1,60 +1,60 @@
 use std::error::Error as StdError;
 use base::ast::Typed;
 use base::types::{TypeEnv, display_type};
-use vm::vm::{VM, RootStr, Status};
-use vm::api::{VMFunction, IO, Function, primitive};
+use vm::vm::{VM, RootStr};
+use vm::api::{IO, Function, WithVM};
 
 use embed_lang::{typecheck_expr, load_file};
 
-fn type_of_expr(vm: &VM) -> Status {
-    let closure: &Fn(_) -> _ = &|args: RootStr| -> IO<String> {
-        IO::Value(match typecheck_expr(vm, "<repl>", &args, false) {
-            Ok((expr, _)) => {
-                let ref env = vm.env();
-                let symbols = vm.get_symbols();
-                format!("{}", display_type(&*symbols, &expr.env_type_of(env)))
-            }
-            Err(msg) => format!("{}", msg),
-        })
-    };
-    closure.unpack_and_call(vm)
+fn type_of_expr(args: WithVM<RootStr>) -> IO<String> {
+    let WithVM { vm, value: args } = args;
+    IO::Value(match typecheck_expr(vm, "<repl>", &args, false) {
+        Ok((expr, _)) => {
+            let ref env = vm.env();
+            let symbols = vm.get_symbols();
+            format!("{}", display_type(&*symbols, &expr.env_type_of(env)))
+        }
+        Err(msg) => format!("{}", msg),
+    })
 }
 
-fn find_type_info(vm: &VM) -> Status {
-    let closure: &Fn(RootStr) -> IO<String> = &|args| {
-        let args = args.trim();
-        IO::Value(match vm.env().find_type_info(&vm.symbol(args)) {
-            Some((generic_args, typ)) => {
-                let fmt = || -> Result<String, ::std::fmt::Error> {
-                    use std::fmt::Write;
-                    let mut buffer = String::new();
-                    try!(write!(&mut buffer, "type {}", args));
-                    for g in generic_args {
-                        try!(write!(&mut buffer, " {}", vm.symbol_string(g.id)))
+fn find_type_info(args: WithVM<RootStr>) -> IO<String> {
+    let vm = args.vm;
+    let args = args.value.trim();
+    IO::Value(match vm.env().find_type_info(&vm.symbol(args)) {
+        Some((generic_args, typ)) => {
+            let fmt = || -> Result<String, ::std::fmt::Error> {
+                use std::fmt::Write;
+                let mut buffer = String::new();
+                try!(write!(&mut buffer, "type {}", args));
+                for g in generic_args {
+                    try!(write!(&mut buffer, " {}", vm.symbol_string(g.id)))
+                }
+                try!(write!(&mut buffer, " = "));
+                match typ {
+                    Some(typ) => {
+                        let symbols = vm.get_symbols();
+                        try!(write!(&mut buffer, "{}", display_type(&*symbols, typ)))
                     }
-                    try!(write!(&mut buffer, " = "));
-                    match typ {
-                        Some(typ) => {
-                            let symbols = vm.get_symbols();
-                            try!(write!(&mut buffer, "{}", display_type(&*symbols, typ)))
-                        }
-                        None => try!(write!(&mut buffer, "<abstract>")),
-                    }
-                    Ok(buffer)
-                };
-                fmt().unwrap()
-            }
-            None => format!("'{}' is not a type", args),
-        })
-    };
-    closure.unpack_and_call(vm)
+                    None => try!(write!(&mut buffer, "<abstract>")),
+                }
+                Ok(buffer)
+            };
+            fmt().unwrap()
+        }
+        None => format!("'{}' is not a type", args),
+    })
+}
+
+fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
+    f
 }
 
 fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
     try!(vm.define_global("repl_prim",
                           record!(
-        type_of_expr => primitive::<fn (String) -> IO<String>>("repl.type_of_expr", type_of_expr),
-        find_type_info => primitive::<fn (String) -> IO<String>>("repl.find_type_info", find_type_info)
+        type_of_expr => f1(type_of_expr),
+        find_type_info => f1(find_type_info)
     )));
     try!(load_file(vm, "std/prelude.hs"));
     try!(load_file(vm, "std/repl.hs"));
