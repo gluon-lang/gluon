@@ -17,18 +17,27 @@ use std::rc::Rc;
 
 use base::ast;
 use base::ast::*;
-use base::types::{Type, TypeConstructor, Generic, Alias, Field, TypeVariable, Kind};
-use base::symbol::{Name, Symbol, SymbolModule};
+use base::types::{Type, TypeConstructor, Generic, Alias, Field, Kind};
+#[cfg(not(test))]
+use base::types::TypeVariable;
+use base::symbol::Name;
+#[cfg(not(test))]
+use base::symbol::{Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, Error as CombineError, Info, BufferedStream,
-                          IteratorStream};
+                          SourcePosition};
 use combine::combinator::EnvParser;
-use combine::{alpha_num, between, chainl1, char, choice, env_parser, letter, many, many1, optional, parser, satisfy, sep_by, string, token, try, value, ParseError, ParseResult, Parser, ParserExt, State};
+use combine::{alpha_num, between, chainl1, char, choice, env_parser, letter, many, many1,
+              optional, parser, satisfy, sep_by, string, token, try, value, ParseError,
+              ParseResult, Parser, ParserExt, State};
 use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
 
 use lexer::{Lexer, Token};
 
-pub type Error = ParseError<IteratorStream<::std::iter::Empty<Token<String>>>>;
+pub type Error = ParseError<BufferedStream<'static,
+                                           Lexer<'static,
+                                                 &'static str,
+                                                 &'static mut IdentEnv<Ident = String>>>>;
 
 /// Parser passes the environment to each parser function
 type LanguageParser<'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<I, F>, I, T>;
@@ -46,7 +55,7 @@ struct ParserEnv<I, F>
 macro_rules! match_parser {
     ($function: ident, $variant: ident -> $typ: ty) => {
         fn $function(&'s self) -> LanguageParser<'s, I, F, $typ> {
-            fn inner<I, Id, F>(_: &ParserEnv<I, F>, input: State<I>) -> ParseResult<$typ, I>
+            fn inner<I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<$typ, I>
                 where I: Stream<Item = Token<Id>>,
                       F: IdentEnv<Ident = Id>,
                       Id: AstId + Clone + PartialEq + fmt::Debug,
@@ -72,13 +81,13 @@ macro_rules! match_parser {
 }
 
 impl<'s, I, Id, F> ParserEnv<I, F>
-    where I: Stream<Item = Token<Id>>,
+    where I: Stream<Item = Token<Id>, Position = SourcePosition>,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
     fn parser<T>(&'s self,
-                 parser: fn(&ParserEnv<I, F>, State<I>) -> ParseResult<T, I>)
+                 parser: fn(&ParserEnv<I, F>, I) -> ParseResult<T, I>)
                  -> LanguageParser<'s, I, F, T> {
         env_parser(self, parser)
     }
@@ -122,7 +131,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     fn ident(&'s self) -> LanguageParser<'s, I, F, Id> {
         self.parser(ParserEnv::parse_ident)
     }
-    fn parse_ident(&self, input: State<I>) -> ParseResult<Id, I> {
+    fn parse_ident(&self, input: I) -> ParseResult<Id, I> {
         self.parser(ParserEnv::parse_ident2)
             .map(|x| x.0)
             .parse_state(input)
@@ -130,7 +139,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     /// Identifier parser which returns `(id, true)` if the identifier is a constructor
     /// (Starts with an uppercase letter
-    fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, bool), I> {
+    fn parse_ident2(&self, input: I) -> ParseResult<(Id, bool), I> {
         satisfy(|t: Token<Id>| {
             match t {
                 Token::Identifier(..) => true,
@@ -148,7 +157,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     fn ident_u(&'s self) -> LanguageParser<'s, I, F, Id::Untyped> {
         self.parser(ParserEnv::parse_untyped_ident)
     }
-    fn parse_untyped_ident(&self, input: State<I>) -> ParseResult<Id::Untyped, I> {
+    fn parse_untyped_ident(&self, input: I) -> ParseResult<Id::Untyped, I> {
         self.ident()
             .map(AstId::to_id)
             .parse_state(input)
@@ -157,7 +166,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     fn ident_type(&'s self) -> LanguageParser<'s, I, F, ASTType<Id::Untyped>> {
         self.parser(ParserEnv::parse_ident_type)
     }
-    fn parse_ident_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
+    fn parse_ident_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
         try(self.parser(ParserEnv::parse_ident2))
             .map(|(s, is_ctor)| {
                 debug!("Id: {:?}", s);
@@ -191,7 +200,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     fn parse_adt(&self,
                  return_type: &ASTType<Id::Untyped>,
-                 input: State<I>)
+                 input: I)
                  -> ParseResult<ASTType<Id::Untyped>, I> {
         let variant = (token(Token::Pipe),
                        self.ident_u(),
@@ -204,7 +213,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn parse_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
+    fn parse_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
         let f = parser(|input| {
             let f = |l: ASTType<Id::Untyped>, r| {
                 match (*l).clone() {
@@ -229,7 +238,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn record_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
+    fn record_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
         let field = self.parser(ParserEnv::parse_ident2)
                         .then(|(id, is_ctor)| {
                             parser(move |input| {
@@ -281,7 +290,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn type_arg(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
+    fn type_arg(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
         let array_type = between(token(Token::OpenBracket),
                                  token(Token::CloseBracket),
                                  self.typ())
@@ -300,7 +309,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                   .parse_state(input)
     }
 
-    fn type_decl(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+    fn type_decl(&self, input: I) -> ParseResult<Expr<Id>, I> {
         debug!("type_decl");
         (token(Token::Type),
          self.parser(ParserEnv::type_binding),
@@ -324,7 +333,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn type_binding(&self,
-                    input: State<I>)
+                    input: I)
                     -> ParseResult<(ASTType<Id::Untyped>, ASTType<Id::Untyped>), I> {
         (self.ident_u(), many(self.ident_u()))
             .map(|(name, args): (_, Vec<_>)| {
@@ -357,7 +366,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         self.parser(ParserEnv::top_expr)
     }
 
-    fn parse_expr(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
+    fn parse_expr(&self, input: I) -> ParseResult<LExpr<Id>, I> {
         let arg_expr1 = self.parser(ParserEnv::parse_arg);
         let arg_expr2 = self.parser(ParserEnv::parse_arg);
         (arg_expr1, many(arg_expr2))
@@ -372,8 +381,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     /// Parses an expression which could be an argument to a function
-    fn parse_arg(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
-        let position = input.position;
+    fn parse_arg(&self, input: I) -> ParseResult<LExpr<Id>, I> {
+        let position = input.position();
         debug!("Expr start: {:?}", input.clone().uncons().map(|t| t.0));
         let loc = |expr| {
             located(Location {
@@ -436,7 +445,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     match_parser! { op, Operator -> Id }
 
     /// Parses any sort of expression
-    fn top_expr(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
+    fn top_expr(&self, input: I) -> ParseResult<LExpr<Id>, I> {
         let term = self.parser(ParserEnv::parse_expr);
         let op = self.op()
                      .map(|op| {
@@ -452,19 +461,14 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                      });
         // An expression parser from combine-language which automatically handles fixity
         // and assoicativity
-        let x = expression_parser(term, op, |l, op, r| {
+        expression_parser(term, op, |l, op, r| {
             let loc = l.location.clone();
             located(loc, Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
         })
-            .parse_state(input);
-        match x {
-            Ok((ref x, _)) => debug!("Ok {:?}", x),
-            Err(ref err) => debug!("Err {:?}", err),
-        }
-        x
+            .parse_state(input)
     }
 
-    fn lambda(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+    fn lambda(&self, input: I) -> ParseResult<Expr<Id>, I> {
         (token(Token::Lambda),
          many(self.ident()),
          token(Token::RightArrow),
@@ -480,7 +484,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn case_of(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+    fn case_of(&self, input: I) -> ParseResult<Expr<Id>, I> {
         let alt = (token(Token::Pipe),
                    self.pattern(),
                    token(Token::RightArrow),
@@ -503,11 +507,12 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         self.parser(ParserEnv::parse_pattern)
     }
 
-    fn parse_pattern(&self, input: State<I>) -> ParseResult<LPattern<Id>, I> {
+    fn parse_pattern(&self, input: I) -> ParseResult<LPattern<Id>, I> {
         self.record_parser(self.ident_u(), self.ident_u(), |record| {
+            let position = input.position();
             let location = Location {
-                column: input.position.column,
-                row: input.position.line,
+                column: position.column,
+                row: position.line,
                 absolute: 0,
             };
             self.parser(ParserEnv::parse_ident2)
@@ -547,7 +552,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         })
     }
 
-    fn if_else(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+    fn if_else(&self, input: I) -> ParseResult<Expr<Id>, I> {
         (token(Token::If),
          self.expr(),
          token(Token::Then),
@@ -558,7 +563,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn let_in(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+    fn let_in(&self, input: I) -> ParseResult<Expr<Id>, I> {
         let bind1 = self.parser(ParserEnv::binding);
         let bind2 = self.parser(ParserEnv::binding);
         (token(Token::Let),
@@ -573,7 +578,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn binding(&self, input: State<I>) -> ParseResult<Binding<Id>, I> {
+    fn binding(&self, input: I) -> ParseResult<Binding<Id>, I> {
         let type_sig = token(Token::Colon).with(self.typ());
         let (name, input) = try!(self.pattern().parse_state(input));
         let (arguments, input) = match name.value {
@@ -594,7 +599,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             input))
     }
 
-    fn record(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
+    fn record(&self, input: I) -> ParseResult<Expr<Id>, I> {
         self.record_parser(self.typ(), self.expr(), |record| {
             record.map(|fields: Vec<_>| {
                       let mut types = Vec::new();
@@ -647,6 +652,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
 ///type information. The type will just be a dummy value until the AST has passed typechecking
+#[cfg(not(test))]
 pub fn parse_tc(symbols: &mut SymbolModule, input: &str) -> Result<LExpr<TcIdent<Symbol>>, Error> {
     let mut env = ast::TcIdentEnv {
         typ: Type::variable(TypeVariable {
@@ -1106,7 +1112,7 @@ case False of
         let e = parse_new(r#"
     if True
             then 1
-else 
+else
     123.45
 "#);
         assert_eq!(e.span(&EmptyEnv::new()),

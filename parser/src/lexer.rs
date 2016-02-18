@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use base::ast::*;
 
-use combine::primitives::{Stream, SourcePosition, Positioner};
+use combine::primitives::{HasPosition, Stream, SourcePosition};
 use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::LanguageEnv;
@@ -39,6 +39,43 @@ pub enum Token<Id> {
     Comma,
     Pipe,
     Equal,
+}
+
+impl<Id> fmt::Display for Token<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Token::*;
+        let s = match *self {
+            Identifier(..) => "Identifier",
+            Operator(..) => "Operator",
+            String(..) => "String",
+            Char(..) => "Char",
+            Integer(..) => "Integer",
+            Float(..) => "Float",
+            Let => "Let",
+            And => "And",
+            In => "In",
+            Type => "Type",
+            Case => "Case",
+            Of => "Of",
+            If => "If",
+            Then => "Then",
+            Else => "Else",
+            OpenBrace => "OpenBrace",
+            CloseBrace => "CloseBrace",
+            OpenParen => "OpenParen",
+            CloseParen => "CloseParen",
+            OpenBracket => "OpenBracket",
+            CloseBracket => "CloseBracket",
+            Lambda => "Lambda",
+            RightArrow => "RightArrow",
+            Colon => "Colon",
+            Dot => "Dot",
+            Comma => "Comma",
+            Pipe => "Pipe",
+            Equal => "Equal",
+        };
+        s.fmt(f)
+    }
 }
 
 impl<Id> Token<Id> {
@@ -79,24 +116,23 @@ impl<Id> Token<Id> {
     }
 }
 
-impl<Id> Positioner for Token<Id> where Id: PartialEq
-{
-    type Position = SourcePosition;
-    fn start() -> Self::Position {
-        char::start()
-    }
-    fn update(&self, _position: &mut Self::Position) {}
-}
-
 /// Parser passes the environment to each parser function
-type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, I, T>;
+type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, State<I>, T>;
 
 pub struct Lexer<'a, I, F>
     where I: Stream<Item = char>
 {
-    pub env: LanguageEnv<'a, I>,
+    pub env: LanguageEnv<'a, State<I>>,
     pub make_ident: Rc<RefCell<F>>,
     pub input: Option<State<I>>,
+}
+
+impl<'a, I, F> HasPosition for Lexer<'a, I, F> where I: Stream<Item = char>
+{
+    type Position = SourcePosition;
+    fn position(&self) -> Self::Position {
+        self.input.as_ref().map(|input| input.position.clone()).unwrap_or_else(|| SourcePosition { line: -1, column: -1 })
+    }
 }
 
 impl<'a, 's, I, Id, F> Lexer<'a, I, F>
@@ -105,10 +141,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
           Id: AstId + Clone,
           I::Range: fmt::Debug + 's
 {
-
     pub fn skip_whitespace(&mut self) {
         if let Some(input) = self.input.take() {
-            self.input = Some(spaces().parse_lazy(input).unwrap().1.into_inner());
+            self.input = Some(self.env.white_space().parse(input).unwrap().1);
         }
     }
 
@@ -117,7 +152,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     fn parser<T>(&'s self,
-                 parser: fn(&Lexer<'a, I, F>, State<I>) -> ParseResult<T, I>)
+                 parser: fn(&Lexer<'a, I, F>, State<I>) -> ParseResult<T, State<I>>)
                  -> LanguageParser<'a, 's, I, F, T> {
         env_parser(self, parser)
     }
@@ -127,7 +162,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         self.parser(Lexer::parse_op)
     }
 
-    fn parse_op(&self, input: State<I>) -> ParseResult<Id, I> {
+    fn parse_op(&self, input: State<I>) -> ParseResult<Id, State<I>> {
         (optional(char('#').with(many(letter()))), try(self.env.op()))
             .map(|(builtin, op): (Option<String>, String)| {
                 match builtin {
@@ -145,7 +180,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     fn ident(&'s self) -> LanguageParser<'a, 's, I, F, Token<Id>> {
         self.parser(Lexer::parse_ident)
     }
-    fn parse_ident(&self, input: State<I>) -> ParseResult<Token<Id>, I> {
+    fn parse_ident(&self, input: State<I>) -> ParseResult<Token<Id>, State<I>> {
         self.parser(Lexer::parse_ident2)
             .map(|x| Token::Identifier(x.0, x.1))
             .parse_state(input)
@@ -153,7 +188,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
 
     /// Identifier parser which returns `(id, true)` if the identifier is a constructor
     /// (Starts with an uppercase letter
-    fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, bool), I> {
+    fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, bool), State<I>> {
         try(self.env.identifier())
             .or(try(self.env.parens(self.env.op())))
             .map(|s| {
@@ -177,7 +212,7 @@ impl<'a, I, Id, F> Iterator for Lexer<'a, I, F>
             None => return None,
         };
         let result = self.env
-                         .lex(choice::<[&mut Parser<Input = I, Output = Token<Id>>; 28],
+                         .lex(choice::<[&mut Parser<Input = State<I>, Output = Token<Id>>; 28],
                                        _>([&mut self.env.reserved("let").map(|_| Token::Let),
                                            &mut self.env.reserved("type").map(|_| Token::Type),
                                            &mut self.env.reserved("and").map(|_| Token::And),
