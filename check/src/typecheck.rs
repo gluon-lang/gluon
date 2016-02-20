@@ -809,6 +809,13 @@ impl<'a> Typecheck<'a> {
                 id.typ = id_type.clone();
                 Ok(id_type.clone())
             }
+            ast::Expr::Block(ref mut exprs) => {
+                let (last, exprs) = exprs.split_last_mut().expect("Expr in block");
+                for expr in exprs {
+                    try!(self.typecheck(expr));
+                }
+                self.typecheck(last)
+            }
         }
     }
 

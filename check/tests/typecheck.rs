@@ -339,11 +339,11 @@ fn real_type() {
     let _ = ::env_logger::init();
     let text = r"
 type Eq a = {
-(==) : a -> a -> Bool
+    (==) : a -> a -> Bool
 } in
 
 let eq_Int: Eq Int = {
-(==) = \l r -> l #Int== r
+    (==) = \l r -> l #Int== r
 }
 in eq_Int
 ";
@@ -356,13 +356,13 @@ fn functor() {
     let _ = ::env_logger::init();
     let text = r"
 type Functor f = {
-map : (a -> b) -> f a -> f b
+    map : (a -> b) -> f a -> f b
 } in
 type Option a = | None | Some a in
 let option_Functor: Functor Option = {
-map = \f x -> case x of
-                | Some y -> Some (f y)
-                | None -> None
+    map = \f x -> case x of
+                    | Some y -> Some (f y)
+                    | None -> None
 }
 in option_Functor.map (\x -> x #Int- 1) (Some 2)
 ";
@@ -375,15 +375,15 @@ fn app_app_unify() {
     let _ = ::env_logger::init();
     let text = r"
 type Monad m = {
-(>>=): m a -> (a -> m b) -> m b,
-return: a -> m a
+    (>>=): m a -> (a -> m b) -> m b,
+    return: a -> m a
 } in
 type Test a = | T a
 in
 let monad_Test: Monad Test = {
-(>>=) = \ta f -> case ta of
-                | T a -> f a,
-return = \x -> T x
+    (>>=) = \ta f -> case ta of
+                    | T a -> f a,
+    return = \x -> T x
 } in
 let (>>=) = monad_Test.(>>=)
 in
@@ -424,9 +424,9 @@ fn infer_mutually_recursive() {
     let text = r"
 let id x = x
 and const x = \_ -> x
-in
+
 let c: a -> b -> a = const
-in c
+c
 ";
     let result = typecheck(text);
     assert!(result.is_ok());
@@ -449,32 +449,28 @@ fn infer_ord_int() {
     let _ = ::env_logger::init();
     let text = r#"
 type Ordering = | LT | EQ | GT
-in
-
 type Ord a = {
-compare : a -> a -> Ordering
-} in
-
-let ord_Int = {
-compare = \l r ->
-    if l #Int< r
-    then LT
-    else if l #Int== r
-    then EQ
-    else GT
-} in
-let make_Ord ord
-=
-let compare = ord.compare
-in {
-    (<=) = \l r -> case compare l r of
-        | LT -> True
-        | EQ -> True
-        | GT -> False
+    compare : a -> a -> Ordering
 }
-in
+let ord_Int = {
+    compare = \l r ->
+        if l #Int< r
+        then LT
+        else if l #Int== r
+        then EQ
+        else GT
+}
+let make_Ord ord =
+    let compare = ord.compare
+    in {
+        (<=) = \l r -> case compare l r of
+            | LT -> True
+            | EQ -> True
+            | GT -> False
+    }
 let (<=) = (make_Ord ord_Int).(<=)
-in "" <= ""
+
+"" <= ""
 "#;
     let result = typecheck(text);
     assert_unify_err!(result, TypeMismatch(..), TypeMismatch(..));
@@ -485,16 +481,16 @@ fn partial_function_unify() {
     let _ = ::env_logger::init();
     let text = r"
 type Monad m = {
-(>>=) : m a -> (a -> m b) -> m b,
-return : a -> m a
+    (>>=) : m a -> (a -> m b) -> m b,
+    return : a -> m a
 } in
 type State s a = s -> { value: a, state: s }
 in
 let (>>=) m f: State s a -> (a -> State s b) -> State s b =
-\state ->
-    let { value, state } = m state
-    and m2 = f value
-    in m2 state
+    \state ->
+        let { value, state } = m state
+        and m2 = f value
+        in m2 state
 in
 let return value: a -> State s a = \state -> { value, state }
 in
@@ -546,8 +542,8 @@ fn undefined_type() {
     let _ = ::env_logger::init();
     let text = r#"
 let x =
-type Test = | Test String Int
-in { Test, x = 1 }
+    type Test = | Test String Int
+    in { Test, x = 1 }
 in
 type Test2 = Test
 in x
@@ -561,11 +557,11 @@ fn record_type_out_of_scope() {
     let _ = ::env_logger::init();
     let text = r#"
 let test =
-type Test = { x: Int }
-in let y: Test = { x = 0 }
-in y
+    type Test = { x: Int }
+    in let y: Test = { x = 0 }
+    in y
 in case test of
-| { x } -> x
+    | { x } -> x
 "#;
     let result = typecheck(text);
     assert_err!(result, Unification(..));
@@ -576,9 +572,9 @@ fn undefined_variant() {
     let _ = ::env_logger::init();
     let text = r#"
 let x =
-type Test = | Test String Int
-in { Test, x = 1 }
-in Test "" 2
+    type Test = | Test String Int
+    { Test, x = 1 }
+Test "" 2
 "#;
     let result = typecheck(text);
     assert_err!(result, UndefinedVariable(..));
@@ -589,7 +585,7 @@ fn unify_variant() {
     let _ = ::env_logger::init();
     let text = r#"
 type Test a = | Test a
-in Test 1
+Test 1
 "#;
     let result = typecheck(text);
     assert_eq!(result, Ok(typ_a("Test", vec![typ("Int")])));
@@ -600,13 +596,10 @@ fn unify_transformer() {
     let _ = ::env_logger::init();
     let text = r#"
 type Test a = | Test a
-in
 type Id a = | Id a
-in
 type IdT m a = m (Id a)
-in
 let return x: a -> IdT Test a = Test (Id x)
-in return 1
+return 1
 "#;
     let result = typecheck(text);
     assert_eq!(result, Ok(typ_a("IdT", vec![typ("Test"), typ("Int")])));
@@ -618,18 +611,18 @@ fn unify_transformer2() {
     let text = r#"
 type Option a = | None | Some a in
 type Monad m = {
-return : a -> m a
+    return : a -> m a
 } in
 let monad_Option: Monad Option = {
-return = \x -> Some x
+    return = \x -> Some x
 } in
 type OptionT m a = m (Option a)
 in
 let monad_OptionT m: Monad m1 -> Monad (OptionT m1) =
-let return x: b -> OptionT m1 b = m.return (Some x)
-in {
-    return
-}
+    let return x: b -> OptionT m1 b = m.return (Some x)
+    in {
+        return
+    }
 in 1
 "#;
     let result = typecheck(text);
@@ -669,9 +662,10 @@ fn field_access_through_multiple_aliases() {
     let text = r#"
 type Test1 = { x: Int }
 and Test2 = Test1
-in
+
 let t: Test2 = { x = 1 }
-in t.x
+
+t.x
 "#;
     let result = typecheck(text);
     assert_eq!(result, Ok(typ("Int")));

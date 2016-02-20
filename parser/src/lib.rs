@@ -27,10 +27,9 @@ use base::symbol::{Symbol, SymbolModule};
 use combine::primitives::{Consumed, Stream, Error as CombineError, Info, BufferedStream,
                           SourcePosition};
 use combine::combinator::EnvParser;
-use combine::{alpha_num, between, chainl1, char, choice, env_parser, letter, many, many1,
-              optional, parser, satisfy, sep_by, string, token, try, value, ParseError,
-              ParseResult, Parser, ParserExt, State};
-use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
+use combine::{between, chainl1, choice, env_parser, many, many1, optional, parser, satisfy,
+              sep_by, sep_by1, token, try, value, ParseError, ParseResult, Parser, ParserExt};
+use combine_language::{Assoc, Fixity, expression_parser};
 
 use lexer::{Lexer, Token};
 
@@ -362,6 +361,22 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
+    fn block(&'s self) -> LanguageParser<'s, I, F, LExpr<Id>> {
+        self.parser(ParserEnv::parse_block)
+    }
+
+    fn parse_block(&self, input: I) -> ParseResult<LExpr<Id>, I> {
+        between(token(Token::OpenBlock),
+                token(Token::CloseBlock),
+                sep_by1(self.expr(), token(Token::Semi)))
+            .map(|exprs: Vec<LExpr<Id>>| {
+                located(exprs.first().expect("Expr in block").location,
+                        Expr::Block(exprs))
+            })
+            .or(self.expr())
+            .parse_state(input)
+    }
+
     fn expr(&'s self) -> LanguageParser<'s, I, F, LExpr<Id>> {
         self.parser(ParserEnv::top_expr)
     }
@@ -588,7 +603,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             _ => (Vec::new(), input),
         };
         let ((typ, _, e), input) = try!(input.combine(|input| {
-            (optional(type_sig), token(Token::Equal), self.expr()).parse_state(input)
+            (optional(type_sig), token(Token::Equal), self.block()).parse_state(input)
         }));
         Ok((Binding {
             name: name,
@@ -668,33 +683,8 @@ fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>, input: &str) -> Resul
     where Id: AstId + Clone + PartialEq + fmt::Debug
 {
     let make_ident = Rc::new(RefCell::new(make_ident));
-    let ops = "+-*/&|=<>";
-    let env = LanguageEnv::new(LanguageDef {
-        ident: Identifier {
-            start: letter().or(char('_')),
-            rest: alpha_num().or(char('_')),
-            reserved: ["if", "then", "else", "let", "and", "in", "type", "case", "of"]
-                          .iter()
-                          .map(|x| (*x).into())
-                          .collect(),
-        },
-        op: Identifier {
-            start: satisfy(move |c| ops.chars().any(|x| x == c)),
-            rest: satisfy(move |c| ops.chars().any(|x| x == c)),
-            reserved: ["->", "\\", "|"].iter().map(|x| (*x).into()).collect(),
-        },
-        comment_start: string("/*").map(|_| ()),
-        comment_end: string("*/").map(|_| ()),
-        comment_line: string("//").map(|_| ()),
-    });
-
+    let lexer = Lexer::<&str, &mut IdentEnv<Ident = Id>>::new(input, make_ident.clone());
     let empty_id = make_ident.borrow_mut().from_str("");
-    let mut lexer = Lexer::<&str, &mut IdentEnv<Ident = Id>> {
-        env: env,
-        make_ident: make_ident.clone(),
-        input: Some(State::new(input)),
-    };
-    lexer.skip_whitespace();
     let env = ParserEnv {
         empty_id: empty_id,
         make_ident: make_ident.clone(),
@@ -703,7 +693,7 @@ fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>, input: &str) -> Resul
     let buffer = BufferedStream::new(lexer, 10);
     let stream = buffer.as_stream();
 
-    env.expr()
+    env.block()
        .parse(stream)
        .map(|t| t.0)
        .map_err(|err| {
@@ -914,6 +904,34 @@ pub mod tests {
         let e = parse_new("let f x y = y in f 2");
         assert_eq!(e,
                    let_a("f", &["x", "y"], id("y"), call(id("f"), vec![int(2)])));
+    }
+
+    #[test]
+    fn let_in_let_args() {
+        let _ = ::env_logger::init();
+        let text = r#"
+let x =
+    let y = 1
+    let z = ""
+    y + 1
+in x
+"#;
+        parse_new(text);
+    }
+
+    #[test]
+    fn dangling_in() {
+        let _ = ::env_logger::init();
+        // Check that the lexer does not insert an extra `in`
+        let text = r#"
+let x = 1
+in
+
+let y = 2
+y
+"#;
+        let e = parse_new(text);
+        assert_eq!(e, let_("x", int(1), let_("y", int(2), id("y"))));
     }
 
     #[test]

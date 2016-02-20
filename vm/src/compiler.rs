@@ -634,6 +634,14 @@ impl<'a> Compiler<'a> {
                 }
                 function.emit(Construct(0, exprs.len() as u32));
             }
+            Expr::Block(ref exprs) => {
+                let (last, exprs) = exprs.split_last().expect("Expr in block");
+                for expr in exprs {
+                    self.compile(expr, function, false);
+                }
+                self.compile(last, function, tail_position);
+                function.emit(Slide(exprs.len() as u32 - 1));
+            }
         }
     }
 

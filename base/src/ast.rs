@@ -319,6 +319,7 @@ pub enum Expr<Id: AstId> {
     Lambda(Lambda<Id>),
     Tuple(Vec<LExpr<Id>>),
     Type(Vec<TypeBinding<Id::Untyped>>, Box<LExpr<Id>>),
+    Block(Vec<LExpr<Id>>),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -400,6 +401,7 @@ impl<Id> LExpr<Id> where Id: AstId
                     .line_offset(2)
             }
             Type(_, ref expr) => expr.span(env).end,
+            Block(ref exprs) => exprs.last().expect("Expr in block").span(env).end,
         };
         Span {
             start: self.location,
@@ -485,6 +487,11 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
         Expr::Type(_, ref mut expr) => v.visit_expr(&mut *expr),
         Expr::Identifier(ref mut id) => v.visit_identifier(id),
         Expr::Literal(..) => (),
+        Expr::Block(ref mut exprs) => {
+            for expr in exprs {
+                v.visit_expr(expr);
+            }
+        }
     }
 }
 
@@ -560,6 +567,7 @@ impl<Id> Typed for Expr<Id> where Id: Typed<Id = Symbol> + AstId<Untyped = Symbo
             Expr::Lambda(ref lambda) => lambda.id.env_type_of(env),
             Expr::Type(_, ref expr) => expr.env_type_of(env),
             Expr::Record { ref typ,  .. } => typ.env_type_of(env),
+            Expr::Block(ref exprs) => exprs.last().expect("Expr in block").env_type_of(env),
         }
     }
 }
