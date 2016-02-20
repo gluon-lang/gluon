@@ -231,6 +231,11 @@ impl<'a> TypeEnv for Environment<'a> {
     }
 }
 
+enum TailCall {
+    Type(TcType),
+    TailCall,
+}
+
 /// Struct which provides methods to typecheck expressions.
 pub struct Typecheck<'a> {
     environment: Environment<'a>,
@@ -389,35 +394,63 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
-        match self.typecheck_(expr) {
-            Ok(typ) => Ok(typ),
-            Err(err) => {
-                self.errors.error(ast::Spanned {
-                    span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
-                    value: err,
-                });
-                Ok(self.inst.subs.new_var())
+    fn typecheck(&mut self, mut expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
+        // How many scopes that have been entered in this "tailcall" loop
+        let mut scope_count = 0;
+        let returned_type;
+        fn moving<T>(t: T) -> T { t }
+        loop {
+            match self.typecheck_(expr) {
+                Ok(tailcall) => {
+                    match tailcall {
+                        TailCall::TailCall => {
+                            // Call typecheck_ again with the next expression
+                            expr = match moving(expr).value {
+                                ast::Expr::Let(_, ref mut new_expr) => new_expr,
+                                ast::Expr::Type(_, ref mut new_expr) => new_expr,
+                                _ => panic!("Only Let and Type expressions can tailcall"),
+                            };
+                            scope_count += 1;
+                        }
+                        TailCall::Type(typ) => {
+                            returned_type = typ;
+                            break;
+                        }
+                    }
+                }
+                Err(err) => {
+                    returned_type = self.inst.subs.new_var();
+                    self.errors.error(ast::Spanned {
+                        span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
+                        value: err,
+                    });
+                    break;
+                }
             }
         }
+        for _ in 0..scope_count {
+            self.exit_scope();
+        }
+        Ok(returned_type)
     }
-    fn typecheck_(&mut self, expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
+
+    fn typecheck_(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
             ast::Expr::Identifier(ref mut id) => {
                 if let Some(&new) = self.original_symbols.get(&id.name) {
                     id.name = new;
                 }
                 id.typ = try!(self.find(id.id()));
-                Ok(id.typ.clone())
+                Ok(TailCall::Type(id.typ.clone()))
             }
             ast::Expr::Literal(ref lit) => {
-                Ok(match *lit {
+                Ok(TailCall::Type(match *lit {
                     ast::LiteralEnum::Integer(_) => Type::int(),
                     ast::LiteralEnum::Float(_) => Type::float(),
                     ast::LiteralEnum::String(_) => Type::string(),
                     ast::LiteralEnum::Char(_) => Type::char(),
                     ast::LiteralEnum::Bool(_) => Type::bool(),
-                })
+                }))
             }
             ast::Expr::Call(ref mut func, ref mut args) => {
                 let mut func_type = try!(self.typecheck(&mut **func));
@@ -435,7 +468,7 @@ impl<'a> Typecheck<'a> {
                         _ => return Err(NotAFunction(func_type.clone())),
                     };
                 }
-                Ok(func_type)
+                Ok(TailCall::Type(func_type))
             }
             ast::Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut **pred));
@@ -445,13 +478,13 @@ impl<'a> Typecheck<'a> {
                     Some(ref mut if_false) => try!(self.typecheck(&mut **if_false)),
                     None => Type::unit(),
                 };
-                self.unify(&true_type, false_type)
+                self.unify(&true_type, false_type).map(TailCall::Type)
             }
             ast::Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = try!(self.typecheck(&mut **lhs));
                 let rhs_type = try!(self.typecheck(&mut **rhs));
                 let op_name = String::from(self.symbols.string(&op.name));
-                if op_name.starts_with("#") {
+                let result = if op_name.starts_with("#") {
                     let arg_type = try!(self.unify(&lhs_type, rhs_type));
                     let offset;
                     let typ = if op_name[1..].starts_with("Int") {
@@ -494,11 +527,12 @@ impl<'a> Typecheck<'a> {
                             }
                         }
                     }
-                }
+                };
+                result.map(TailCall::Type)
             }
             ast::Expr::Tuple(ref mut exprs) => {
                 assert!(exprs.len() == 0);
-                Ok(Type::unit())
+                Ok(TailCall::Type(Type::unit()))
             }
             ast::Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = try!(self.typecheck(&mut **expr));
@@ -515,8 +549,9 @@ impl<'a> Typecheck<'a> {
                     expected_alt_type = Some(alt_type);
                 }
                 expected_alt_type.ok_or(StringError("No alternative in case expression"))
+                        .map(TailCall::Type)
             }
-            ast::Expr::Let(ref mut bindings, ref mut body) => {
+            ast::Expr::Let(ref mut bindings, _) => {
                 self.enter_scope();
                 let level = self.inst.subs.var_id();
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
@@ -584,9 +619,7 @@ impl<'a> Typecheck<'a> {
                     self.finish_binding(level, bind);
                 }
                 debug!("Typecheck `in`");
-                let result = self.typecheck(body);
-                self.exit_scope();
-                result
+                Ok(TailCall::TailCall)
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = try!(self.typecheck(&mut **expr));
@@ -612,7 +645,7 @@ impl<'a> Typecheck<'a> {
                                 return Err(UndefinedField(typ.clone(), field_access.name.clone()))
                             }
                         };
-                        Ok(field_access.typ.clone())
+                        Ok(TailCall::Type(field_access.typ.clone()))
                     }
                     _ => Err(InvalidFieldAccess(record.clone())),
                 }
@@ -624,7 +657,7 @@ impl<'a> Typecheck<'a> {
                     expected_type = try!(self.unify(&expected_type, typ));
                 }
                 a.id.typ = Type::array(expected_type);
-                Ok(a.id.typ.clone())
+                Ok(TailCall::Type(a.id.typ.clone()))
             }
             ast::Expr::Lambda(ref mut lambda) => {
                 let loc = format!("lambda:{}", expr.location);
@@ -634,9 +667,9 @@ impl<'a> Typecheck<'a> {
                                                      &mut lambda.arguments,
                                                      &mut lambda.body));
                 lambda.id.typ = typ.clone();
-                Ok(typ)
+                Ok(TailCall::Type(typ))
             }
-            ast::Expr::Type(ref mut bindings, ref mut expr) => {
+            ast::Expr::Type(ref mut bindings, ref expr) => {
                 self.enter_scope();
                 for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
                     *name = match (**name).clone() {
@@ -733,9 +766,7 @@ impl<'a> Typecheck<'a> {
                         }
                     }
                 }
-                let expr_type = try!(self.typecheck(&mut **expr));
-                self.exit_scope();
-                Ok(expr_type)
+                Ok(TailCall::TailCall)
             }
             ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
@@ -800,21 +831,21 @@ impl<'a> Typecheck<'a> {
                     Ok(x) => x,
                     Err(_) => {
                         id.typ = Type::record(types.clone(), fields);
-                        return Ok(id.typ.clone());
+                        return Ok(TailCall::Type(id.typ.clone()));
                     }
                 };
                 let id_type = self.inst.instantiate(&id_type);
                 let record_type = self.inst.instantiate_(&record_type);
                 try!(self.unify(&Type::record(types, fields), record_type));
                 id.typ = id_type.clone();
-                Ok(id_type.clone())
+                Ok(TailCall::Type(id_type.clone()))
             }
             ast::Expr::Block(ref mut exprs) => {
                 let (last, exprs) = exprs.split_last_mut().expect("Expr in block");
                 for expr in exprs {
                     try!(self.typecheck(expr));
                 }
-                self.typecheck(last)
+                self.typecheck(last).map(TailCall::Type)
             }
         }
     }

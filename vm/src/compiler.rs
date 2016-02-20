@@ -369,7 +369,32 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn compile(&mut self, expr: &CExpr, function: &mut FunctionEnvs, tail_position: bool) {
+    fn compile(&mut self, mut expr: &CExpr, function: &mut FunctionEnvs, tail_position: bool) {
+        // Store a stack of expressions which need to be cleaned up after this "tailcall" loop is
+        // done
+        let mut exprs = Vec::new();
+        exprs.push(expr);
+        while let Some(next) = self.compile_(expr, function, tail_position) {
+            exprs.push(next);
+            expr = next;
+        }
+        for expr in exprs.iter().rev() {
+            let mut count = 0;
+            if let Expr::Let(ref bindings, _) = expr.value {
+                for binding in bindings {
+                    count += function.pop_pattern(&binding.name);
+                }
+                self.stack_constructors.exit_scope();
+            }
+            function.emit(Slide(count));
+        }
+    }
+
+    fn compile_<'e>(&mut self,
+                    expr: &'e CExpr,
+                    function: &mut FunctionEnvs,
+                    tail_position: bool)
+                    -> Option<&'e CExpr> {
         match expr.value {
             Expr::Literal(ref lit) => {
                 match *lit {
@@ -487,13 +512,7 @@ impl<'a> Compiler<'a> {
                         self.compile_let_pattern(&bind.name, &typ, function);
                     }
                 }
-                self.compile(&body, function, tail_position);
-                let mut count = 0;
-                for binding in bindings {
-                    count += function.pop_pattern(&binding.name);
-                }
-                self.stack_constructors.exit_scope();
-                function.emit(Slide(count));
+                return Some(body);
             }
             Expr::Call(ref func, ref args) => {
                 if let Expr::Identifier(ref id) = func.value {
@@ -502,7 +521,7 @@ impl<'a> Compiler<'a> {
                             self.compile(arg, function, false);
                         }
                         function.emit(Construct(tag, num_args));
-                        return;
+                        return None;
                     }
                 }
                 self.compile(&**func, function, false);
@@ -617,7 +636,7 @@ impl<'a> Compiler<'a> {
                         self.stack_constructors.insert(name, type_binding.typ.clone());
                     }
                 }
-                self.compile(&**expr, function, tail_position)
+                return Some(expr);
             }
             Expr::Record { exprs: ref fields, .. } => {
                 for field in fields {
@@ -643,6 +662,7 @@ impl<'a> Compiler<'a> {
                 function.emit(Slide(exprs.len() as u32 - 1));
             }
         }
+        None
     }
 
     fn compile_let_pattern(&mut self,
