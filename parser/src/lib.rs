@@ -51,6 +51,11 @@ struct ParserEnv<I, F>
     env: ::std::marker::PhantomData<I>,
 }
 
+enum LetOrType<Id: AstId> {
+    Let(Vec<Binding<Id>>),
+    Type(Vec<TypeBinding<Id::Untyped>>),
+}
+
 macro_rules! match_parser {
     ($function: ident, $variant: ident -> $typ: ty) => {
         fn $function(&'s self) -> LanguageParser<'s, I, F, $typ> {
@@ -308,14 +313,13 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                   .parse_state(input)
     }
 
-    fn type_decl(&self, input: I) -> ParseResult<Expr<Id>, I> {
+    fn type_decl(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
         debug!("type_decl");
         (token(Token::Type),
          self.parser(ParserEnv::type_binding),
          many(token(Token::And).with(self.parser(ParserEnv::type_binding))),
-         token(Token::In),
-         self.expr())
-            .map(|(_, first, rest, _, expr): (_, _, Vec<_>, _, _)| {
+         token(Token::In))
+            .map(|(_, first, rest, _): (_, _, Vec<_>, _)| {
                 let binds = Some(first)
                                 .into_iter()
                                 .chain(rest)
@@ -326,7 +330,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                     }
                                 })
                                 .collect();
-                Expr::Type(binds, Box::new(expr))
+                LetOrType::Type(binds)
             })
             .parse_state(input)
     }
@@ -397,8 +401,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     /// Parses an expression which could be an argument to a function
     fn parse_arg(&self, input: I) -> ParseResult<LExpr<Id>, I> {
-        let position = input.position();
         debug!("Expr start: {:?}", input.clone().uncons().map(|t| t.0));
+        let position = input.position();
         let loc = |expr| {
             located(Location {
                         column: position.column,
@@ -407,12 +411,68 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     },
                     expr)
         };
-        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 13],
+
+        // To prevent stack overflows we push all binding groups (which are commonly deeply nested)
+        // to a stack and construct the expressions afterwards
+        let mut let_bindings = Vec::new();
+        let mut resulting_expr;
+        let mut input = input;
+        let mut declaration_parser = self.parser(ParserEnv::type_decl)
+                                         .or(self.parser(ParserEnv::let_in))
+                                         .map(loc);
+        loop {
+            match declaration_parser.parse_lazy(input.clone()) {
+                Ok((bindings, new_input)) => {
+                    let_bindings.push(bindings);
+                    input = new_input.into_inner();
+                }
+                Err(err@Consumed::Consumed(_)) => return Err(err),
+                Err(Consumed::Empty(err)) => {
+                    // If a let or type binding has been parsed then any kind of expression can
+                    // follow
+                    let mut expr_parser = if let_bindings.is_empty() {
+                        self.parser(ParserEnv::rest_expr)
+                    } else {
+                        self.expr()
+                    };
+                    let (expr, new_input) = try!(expr_parser.parse_state(input)
+                                                            .map_err(|err2| {
+                                                                err2.map(|err2| err.merge(err2))
+                                                            }));
+                    resulting_expr = expr;
+                    input = new_input.into_inner();
+                    break;
+                }
+            }
+        }
+        for Located { location, value } in let_bindings.into_iter().rev() {
+            resulting_expr = located(location,
+                                     match value {
+                                         LetOrType::Let(bindings) => {
+                                             Expr::Let(bindings, Box::new(resulting_expr))
+                                         }
+                                         LetOrType::Type(bindings) => {
+                                             Expr::Type(bindings, Box::new(resulting_expr))
+                                         }
+                                     });
+        }
+        Ok((resulting_expr, Consumed::Consumed(input)))
+    }
+
+    fn rest_expr(&self, input: I) -> ParseResult<LExpr<Id>, I> {
+        let position = input.position();
+        let loc = |expr| {
+            located(Location {
+                        column: position.column,
+                        row: position.line,
+                        absolute: 0,
+                    },
+                    expr)
+        };
+        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 11],
                  _>([&mut parser(|input| self.if_else(input)).map(&loc),
-                     &mut self.parser(ParserEnv::let_in).map(&loc),
                      &mut self.parser(ParserEnv::case_of).map(&loc),
                      &mut self.parser(ParserEnv::lambda).map(&loc),
-                     &mut self.parser(ParserEnv::type_decl).map(&loc),
                      &mut self.integer()
                               .map(|i| loc(Expr::Literal(LiteralEnum::Integer(i)))),
                      &mut self.float()
@@ -455,6 +515,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                         |expr, field| loc(Expr::FieldAccess(Box::new(expr), field)))
             })
             .parse_state(input)
+
     }
 
     match_parser! { op, Operator -> Id }
@@ -578,17 +639,16 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn let_in(&self, input: I) -> ParseResult<Expr<Id>, I> {
+    fn let_in(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
         let bind1 = self.parser(ParserEnv::binding);
         let bind2 = self.parser(ParserEnv::binding);
         (token(Token::Let),
          bind1.and(many(token(Token::And).with(bind2))),
-         token(Token::In),
-         self.expr())
-            .map(|(_, (b, bindings), _, expr)| {
+         token(Token::In))
+            .map(|(_, (b, bindings), _)| {
                 let mut bindings: Vec<_> = bindings;
                 bindings.insert(0, b);
-                Expr::Let(bindings, Box::new(expr))
+                LetOrType::Let(bindings)
             })
             .parse_state(input)
     }
