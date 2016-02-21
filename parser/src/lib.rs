@@ -8,55 +8,78 @@ extern crate base;
 extern crate combine;
 extern crate combine_language;
 
+mod lexer;
+
 use std::cell::RefCell;
 use std::fmt;
 use std::iter::FromIterator;
+use std::rc::Rc;
 
 use base::ast;
 use base::ast::*;
 use base::types::{Type, TypeConstructor, Generic, Alias, Field, TypeVariable, Kind};
 use base::symbol::{Name, Symbol, SymbolModule};
 
-use combine::primitives::{Consumed, Stream, Error as CombineError, Info};
+use combine::primitives::{Consumed, Stream, Error as CombineError, Info, BufferedStream,
+                          IteratorStream};
 use combine::combinator::EnvParser;
-use combine::*;
+use combine::{alpha_num, between, chainl1, char, choice, env_parser, letter, many, many1, optional, parser, satisfy, sep_by, string, token, try, value, ParseError, ParseResult, Parser, ParserExt, State};
 use combine_language::{LanguageEnv, LanguageDef, Identifier, Assoc, Fixity, expression_parser};
 
-pub type Error = ParseError<&'static str>;
+use lexer::{Lexer, Token};
+
+pub type Error = ParseError<IteratorStream<::std::iter::Empty<Token<String>>>>;
 
 /// Parser passes the environment to each parser function
-type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<'a, I, F>, I, T>;
+type LanguageParser<'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<I, F>, I, T>;
 
 /// `ParserEnv` is passed around to all individual parsers so that identifiers can always be
 /// constructed through calling `make_ident`.
-struct ParserEnv<'a, I, F>
-    where I: Stream<Item = char>
+struct ParserEnv<I, F>
+    where F: IdentEnv
 {
-    env: LanguageEnv<'a, I>,
-    make_ident: RefCell<F>,
+    empty_id: F::Ident,
+    make_ident: Rc<RefCell<F>>,
+    env: ::std::marker::PhantomData<I>,
 }
 
-impl<'a, I, F> ::std::ops::Deref for ParserEnv<'a, I, F> where I: Stream<Item = char>
-{
-    type Target = LanguageEnv<'a, I>;
-    fn deref(&self) -> &LanguageEnv<'a, I> {
-        &self.env
+macro_rules! match_parser {
+    ($function: ident, $variant: ident -> $typ: ty) => {
+        fn $function(&'s self) -> LanguageParser<'s, I, F, $typ> {
+            fn inner<I, Id, F>(_: &ParserEnv<I, F>, input: State<I>) -> ParseResult<$typ, I>
+                where I: Stream<Item = Token<Id>>,
+                      F: IdentEnv<Ident = Id>,
+                      Id: AstId + Clone + PartialEq + fmt::Debug,
+                      I::Range: fmt::Debug
+            {
+                satisfy(|t: Token<Id>| {
+                    match t {
+                        Token::$variant(_) => true,
+                        _ => false,
+                    }
+                })
+                    .map(|t| {
+                        match t {
+                            Token::$variant(s) => s,
+                            _ => unreachable!(),
+                        }
+                    })
+                    .parse_state(input)
+            }
+            self.parser(inner)
+        }
     }
 }
 
-impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
-    where I: Stream<Item = char> + 'a,
+impl<'s, I, Id, F> ParserEnv<I, F>
+    where I: Stream<Item = Token<Id>>,
           F: IdentEnv<Ident = Id>,
-          Id: AstId + Clone,
+          Id: AstId + Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
-    fn intern(&self, s: &str) -> Id {
-        self.make_ident.borrow_mut().from_str(s)
-    }
-
     fn parser<T>(&'s self,
-                 parser: fn(&ParserEnv<'a, I, F>, State<I>) -> ParseResult<T, I>)
-                 -> LanguageParser<'a, 's, I, F, T> {
+                 parser: fn(&ParserEnv<I, F>, State<I>) -> ParseResult<T, I>)
+                 -> LanguageParser<'s, I, F, T> {
         env_parser(self, parser)
     }
 
@@ -96,7 +119,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
         }
     }
 
-    fn ident(&'s self) -> LanguageParser<'a, 's, I, F, Id> {
+    fn ident(&'s self) -> LanguageParser<'s, I, F, Id> {
         self.parser(ParserEnv::parse_ident)
     }
     fn parse_ident(&self, input: State<I>) -> ParseResult<Id, I> {
@@ -108,15 +131,21 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
     /// Identifier parser which returns `(id, true)` if the identifier is a constructor
     /// (Starts with an uppercase letter
     fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, bool), I> {
-        try(self.env.identifier())
-            .or(try(self.parens(self.env.op())))
-            .map(|s| {
-                debug!("Id: {}", s);
-                (self.intern(&s), s.chars().next().unwrap().is_uppercase())
+        satisfy(|t: Token<Id>| {
+            match t {
+                Token::Identifier(..) => true,
+                _ => false,
+            }
+        })
+            .map(|t| {
+                match t {
+                    Token::Identifier(id, is_ctor) => (id, is_ctor),
+                    _ => unreachable!(),
+                }
             })
             .parse_state(input)
     }
-    fn ident_u(&'s self) -> LanguageParser<'a, 's, I, F, Id::Untyped> {
+    fn ident_u(&'s self) -> LanguageParser<'s, I, F, Id::Untyped> {
         self.parser(ParserEnv::parse_untyped_ident)
     }
     fn parse_untyped_ident(&self, input: State<I>) -> ParseResult<Id::Untyped, I> {
@@ -125,34 +154,38 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
             .parse_state(input)
     }
 
-    fn ident_type(&'s self) -> LanguageParser<'a, 's, I, F, ASTType<Id::Untyped>> {
+    fn ident_type(&'s self) -> LanguageParser<'s, I, F, ASTType<Id::Untyped>> {
         self.parser(ParserEnv::parse_ident_type)
     }
     fn parse_ident_type(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
-        try(self.env.identifier())
-            .map(|s| {
-                debug!("Id: {}", s);
-                if s.chars()
-                    .next()
-                    .map(|c| c.is_lowercase())
-                    .unwrap_or(false) {
+        try(self.parser(ParserEnv::parse_ident2))
+            .map(|(s, is_ctor)| {
+                debug!("Id: {:?}", s);
+                if !is_ctor {
                     Type::generic(Generic {
                         kind: Kind::variable(0),
-                        id: self.intern(&s).to_id(),
+                        id: s.to_id(),
                     })
                 } else {
-                    match s.parse() {
+                    let ident_env = self.make_ident.borrow();
+                    match ident_env.string(&s).parse() {
                         Ok(prim) => Type::builtin(prim),
-                        Err(()) => {
-                            Type::data(TypeConstructor::Data(self.intern(&s).to_id()), Vec::new())
-                        }
+                        Err(()) => Type::data(TypeConstructor::Data(s.to_id()), Vec::new()),
                     }
                 }
             })
             .parse_state(input)
     }
 
-    fn typ(&'s self) -> LanguageParser<'a, 's, I, F, ASTType<Id::Untyped>> {
+    match_parser! { string_literal, String -> String }
+
+    match_parser! { char_literal, Char -> char }
+
+    match_parser! { float, Float -> f64 }
+
+    match_parser! { integer, Integer -> i64 }
+
+    fn typ(&'s self) -> LanguageParser<'s, I, F, ASTType<Id::Untyped>> {
         self.parser(ParserEnv::parse_type)
     }
 
@@ -160,7 +193,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                  return_type: &ASTType<Id::Untyped>,
                  input: State<I>)
                  -> ParseResult<ASTType<Id::Untyped>, I> {
-        let variant = (self.lex(char('|')),
+        let variant = (token(Token::Pipe),
                        self.ident_u(),
                        many(self.parser(ParserEnv::type_arg)))
                           .map(|(_, id, args): (_, _, Vec<_>)| {
@@ -185,7 +218,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
             Ok((f, Consumed::Empty(input)))
         });
         (chainl1(self.parser(ParserEnv::type_arg), f),
-         optional(self.reserved_op("->").with(self.typ())))
+         optional(token(Token::RightArrow).with(self.typ())))
             .map(|(arg, ret)| {
                 debug!("Parse: {:?} -> {:?}", arg, ret);
                 match ret {
@@ -203,14 +236,16 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                                 if is_ctor {
                                     value((id.clone(), None)).parse_state(input)
                                 } else {
-                                    self.reserved_op(":")
+                                    token(Token::Colon)
                                         .with(self.typ())
                                         .map(|typ| (id.clone(), Some(typ)))
                                         .parse_state(input)
                                 }
                             })
                         });
-        self.braces(sep_by(field, self.lex(char(','))))
+        between(token(Token::OpenBrace),
+                token(Token::CloseBrace),
+                sep_by(field, token(Token::Comma)))
             .map(|fields: Vec<(Id, _)>| {
                 let mut associated = Vec::new();
                 let mut types = Vec::new();
@@ -247,10 +282,14 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
     }
 
     fn type_arg(&self, input: State<I>) -> ParseResult<ASTType<Id::Untyped>, I> {
-        let array_type = self.brackets(self.typ())
+        let array_type = between(token(Token::OpenBracket),
+                                 token(Token::CloseBracket),
+                                 self.typ())
                              .map(Type::array);
         array_type.or(self.parser(ParserEnv::record_type))
-                  .or(self.parens(optional(self.typ()))
+                  .or(between(token(Token::OpenParen),
+                              token(Token::CloseParen),
+                              optional(self.typ()))
                           .map(|typ| {
                               match typ {
                                   Some(typ) => typ,
@@ -263,10 +302,10 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
 
     fn type_decl(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
         debug!("type_decl");
-        (self.reserved("type"),
+        (token(Token::Type),
          self.parser(ParserEnv::type_binding),
-         many(self.reserved("and").with(self.parser(ParserEnv::type_binding))),
-         self.reserved("in"),
+         many(token(Token::And).with(self.parser(ParserEnv::type_binding))),
+         token(Token::In),
          self.expr())
             .map(|(_, first, rest, _, expr): (_, _, Vec<_>, _, _)| {
                 let binds = Some(first)
@@ -301,7 +340,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
             })
             .then(|return_type| {
                 parser(move |input| {
-                    let (rhs_type, input) = try!(self.reserved_op("=")
+                    let (rhs_type, input) = try!(token(Token::Equal)
                                                      .with(self.typ()
                                                                .or(parser(|input| {
                                                                    self.parse_adt(&return_type,
@@ -314,7 +353,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
             .parse_state(input)
     }
 
-    fn expr(&'s self) -> LanguageParser<'a, 's, I, F, LExpr<Id>> {
+    fn expr(&'s self) -> LanguageParser<'s, I, F, LExpr<Id>> {
         self.parser(ParserEnv::top_expr)
     }
 
@@ -344,66 +383,57 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                     },
                     expr)
         };
-        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 15],
+        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 13],
                  _>([&mut parser(|input| self.if_else(input)).map(&loc),
                      &mut self.parser(ParserEnv::let_in).map(&loc),
                      &mut self.parser(ParserEnv::case_of).map(&loc),
                      &mut self.parser(ParserEnv::lambda).map(&loc),
                      &mut self.parser(ParserEnv::type_decl).map(&loc),
-                     &mut self.lex(try(self.integer().skip(not_followed_by(string(".")))))
+                     &mut self.integer()
                               .map(|i| loc(Expr::Literal(LiteralEnum::Integer(i)))),
-                     &mut self.lex(try(self.float()))
+                     &mut self.float()
                               .map(|f| loc(Expr::Literal(LiteralEnum::Float(f)))),
-                     &mut self.reserved("True")
-                              .map(|_| loc(Expr::Literal(LiteralEnum::Bool(true)))),
-                     &mut self.reserved("False")
-                              .map(|_| loc(Expr::Literal(LiteralEnum::Bool(false)))),
-                     &mut self.ident().map(Expr::Identifier).map(&loc),
+                     &mut self.ident()
+                              .map(|id| {
+                                  match self.make_ident.borrow().string(&id) {
+                                      "True" => Expr::Literal(LiteralEnum::Bool(true)),
+                                      "False" => Expr::Literal(LiteralEnum::Bool(false)),
+                                      _ => Expr::Identifier(id),
+                                  }
+                              })
+                              .map(&loc),
                      &mut self.parser(ParserEnv::record).map(&loc),
-                     &mut self.parens(optional(self.expr()).map(|expr| {
-                         match expr {
-                             Some(expr) => expr,
-                             None => loc(Expr::Tuple(vec![])),
-                         }
-                     })),
+                     &mut between(token(Token::OpenParen),
+                                  token(Token::CloseParen),
+                                  optional(self.expr()).map(|expr| {
+                                      match expr {
+                                          Some(expr) => expr,
+                                          None => loc(Expr::Tuple(vec![])),
+                                      }
+                                  })),
                      &mut self.string_literal()
                               .map(|s| loc(Expr::Literal(LiteralEnum::String(s)))),
                      &mut self.char_literal()
                               .map(|s| loc(Expr::Literal(LiteralEnum::Char(s)))),
-                     &mut self.brackets(sep_by(self.expr(), self.lex(char(','))))
+                     &mut between(token(Token::OpenBracket),
+                                  token(Token::CloseBracket),
+                                  sep_by(self.expr(), token(Token::Comma)))
                               .map(|exprs| {
                                   loc(Expr::Array(Array {
-                                      id: self.intern(""),
+                                      id: self.empty_id.clone(),
                                       expressions: exprs,
                                   }))
                               })])
-            .and(many(self.lex(char('.')).with(self.ident())))
+            .and(many(token(Token::Dot).with(self.ident())))
             .map(|(expr, fields): (_, Vec<_>)| {
+                debug!("Parsed expr {:?}", expr);
                 fields.into_iter().fold(expr,
                                         |expr, field| loc(Expr::FieldAccess(Box::new(expr), field)))
             })
             .parse_state(input)
     }
 
-    ///Parses an operator
-    fn op(&'s self) -> LanguageParser<'a, 's, I, F, Id> {
-        self.parser(ParserEnv::parse_op)
-    }
-
-    fn parse_op(&self, input: State<I>) -> ParseResult<Id, I> {
-        (optional(char('#').with(many(letter()))), try(self.env.op()))
-            .map(|(builtin, op): (Option<String>, String)| {
-                match builtin {
-                    Some(mut builtin) => {
-                        builtin.insert(0, '#');
-                        builtin.extend(op.chars());
-                        self.intern(&builtin)
-                    }
-                    None => self.intern(&op),
-                }
-            })
-            .parse_state(input)
-    }
+    match_parser! { op, Operator -> Id }
 
     /// Parses any sort of expression
     fn top_expr(&self, input: State<I>) -> ParseResult<LExpr<Id>, I> {
@@ -422,21 +452,26 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                      });
         // An expression parser from combine-language which automatically handles fixity
         // and assoicativity
-        expression_parser(term, op, |l, op, r| {
+        let x = expression_parser(term, op, |l, op, r| {
             let loc = l.location.clone();
             located(loc, Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
         })
-            .parse_state(input)
+            .parse_state(input);
+        match x {
+            Ok((ref x, _)) => debug!("Ok {:?}", x),
+            Err(ref err) => debug!("Err {:?}", err),
+        }
+        x
     }
 
     fn lambda(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-        (self.symbol("\\"),
+        (token(Token::Lambda),
          many(self.ident()),
-         self.symbol("->"),
+         token(Token::RightArrow),
          self.expr())
             .map(|(_, args, _, expr)| {
                 Expr::Lambda(Lambda {
-                    id: self.intern(""),
+                    id: self.empty_id.clone(),
                     free_vars: Vec::new(),
                     arguments: args,
                     body: Box::new(expr),
@@ -446,9 +481,9 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
     }
 
     fn case_of(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-        let alt = (self.reserved_op("|"),
+        let alt = (token(Token::Pipe),
                    self.pattern(),
-                   self.reserved_op("->"),
+                   token(Token::RightArrow),
                    self.expr())
                       .map(|(_, p, _, e)| {
                           Alternative {
@@ -456,15 +491,15 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                               expression: e,
                           }
                       });
-        (self.reserved("case"),
+        (token(Token::Case),
          self.expr(),
-         self.reserved("of"),
+         token(Token::Of),
          many1(alt))
             .map(|(_, e, _, alts)| Expr::Match(Box::new(e), alts))
             .parse_state(input)
     }
 
-    fn pattern(&'s self) -> LanguageParser<'a, 's, I, F, LPattern<Id>> {
+    fn pattern(&'s self) -> LanguageParser<'s, I, F, LPattern<Id>> {
         self.parser(ParserEnv::parse_pattern)
     }
 
@@ -499,23 +534,25 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                         }
                     }
                     Pattern::Record {
-                        id: self.intern(""),
+                        id: self.empty_id.clone(),
                         types: types,
                         fields: patterns,
                     }
                 }))
                 .map(|p| located(location, p))
-                .or(self.parens(self.pattern()))
+                .or(between(token(Token::OpenParen),
+                            token(Token::CloseParen),
+                            self.pattern()))
                 .parse_state(input)
         })
     }
 
     fn if_else(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
-        (self.reserved("if"),
+        (token(Token::If),
          self.expr(),
-         self.reserved("then"),
+         token(Token::Then),
          self.expr(),
-         self.reserved("else"),
+         token(Token::Else),
          self.expr())
             .map(|(_, b, _, t, _, f)| Expr::IfElse(Box::new(b), Box::new(t), Some(Box::new(f))))
             .parse_state(input)
@@ -524,9 +561,9 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
     fn let_in(&self, input: State<I>) -> ParseResult<Expr<Id>, I> {
         let bind1 = self.parser(ParserEnv::binding);
         let bind2 = self.parser(ParserEnv::binding);
-        (self.reserved("let"),
-         bind1.and(many(self.reserved("and").with(bind2))),
-         self.reserved("in"),
+        (token(Token::Let),
+         bind1.and(many(token(Token::And).with(bind2))),
+         token(Token::In),
          self.expr())
             .map(|(_, (b, bindings), _, expr)| {
                 let mut bindings: Vec<_> = bindings;
@@ -537,7 +574,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
     }
 
     fn binding(&self, input: State<I>) -> ParseResult<Binding<Id>, I> {
-        let type_sig = self.reserved_op(":").with(self.typ());
+        let type_sig = token(Token::Colon).with(self.typ());
         let (name, input) = try!(self.pattern().parse_state(input));
         let (arguments, input) = match name.value {
             Pattern::Identifier(_) => {
@@ -546,7 +583,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
             _ => (Vec::new(), input),
         };
         let ((typ, _, e), input) = try!(input.combine(|input| {
-            (optional(type_sig), self.reserved_op("="), self.expr()).parse_state(input)
+            (optional(type_sig), token(Token::Equal), self.expr()).parse_state(input)
         }));
         Ok((Binding {
             name: name,
@@ -569,7 +606,7 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                           }
                       }
                       Expr::Record {
-                          typ: self.intern(""),
+                          typ: self.empty_id.clone(),
                           types: types,
                           exprs: exprs,
                       }
@@ -588,19 +625,21 @@ impl<'a, 's, I, Id, F> ParserEnv<'a, I, F>
                             .then(move |(id, is_ctor)| {
                                 parser(move |input| {
                                     let result = if is_ctor {
-                                        optional(self.reserved_op("=").with(p1.clone()))
+                                        optional(token(Token::Equal).with(p1.clone()))
                                             .map(Ok)
                                             .parse_state(input)
 
                                     } else {
-                                        optional(self.reserved_op("=").with(p2.clone()))
+                                        optional(token(Token::Equal).with(p2.clone()))
                                             .map(Err)
                                             .parse_state(input)
                                     };
                                     result.map(|(x, input)| ((id.clone().to_id(), x), input))
                                 })
                             });
-        let mut parser = self.braces(sep_by(&mut field, self.lex(char(','))));
+        let mut parser = between(token(Token::OpenBrace),
+                                 token(Token::CloseBrace),
+                                 sep_by(&mut field, token(Token::Comma)));
         f(&mut parser)
     }
 }
@@ -620,9 +659,9 @@ pub fn parse_tc(symbols: &mut SymbolModule, input: &str) -> Result<LExpr<TcIdent
 }
 
 fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>, input: &str) -> Result<LExpr<Id>, Error>
-    where Id: AstId + Clone
+    where Id: AstId + Clone + PartialEq + fmt::Debug
 {
-
+    let make_ident = Rc::new(RefCell::new(make_ident));
     let ops = "+-*/&|=<>";
     let env = LanguageEnv::new(LanguageDef {
         ident: Identifier {
@@ -643,36 +682,48 @@ fn parse_module<Id>(make_ident: &mut IdentEnv<Ident = Id>, input: &str) -> Resul
         comment_line: string("//").map(|_| ()),
     });
 
-    let env = ParserEnv {
+    let empty_id = make_ident.borrow_mut().from_str("");
+    let mut lexer = Lexer::<&str, &mut IdentEnv<Ident = Id>> {
         env: env,
-        make_ident: RefCell::new(make_ident),
+        make_ident: make_ident.clone(),
+        input: Some(State::new(input)),
     };
-    env.white_space()
-       .with(env.expr())
-       .parse(input)
+    lexer.skip_whitespace();
+    let env = ParserEnv {
+        empty_id: empty_id,
+        make_ident: make_ident.clone(),
+        env: ::std::marker::PhantomData,
+    };
+    let buffer = BufferedStream::new(lexer, 10);
+    let stream = buffer.as_stream();
+
+    env.expr()
+       .parse(stream)
        .map(|t| t.0)
        .map_err(|err| {
            let errors = err.errors
                            .into_iter()
-                           .map(static_error)
+                           .map(|t| static_error(&mut *make_ident.borrow_mut(), t))
                            .collect();
-           From::from(ParseError::<&'static str> {
+           ParseError {
                position: err.position,
                errors: errors,
-           })
+           }
        })
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
-fn static_error(e: CombineError<char, &str>) -> CombineError<char, &'static str> {
-    fn static_info<I: fmt::Display>(i: Info<char, I>) -> Info<char, &'static str> {
+fn static_error<Id>(make_ident: &mut IdentEnv<Ident = Id>,
+                    e: CombineError<Token<Id>, Token<Id>>)
+                    -> CombineError<Token<String>, Token<String>> {
+    let static_info = |i: Info<Token<Id>, Token<Id>>| {
         match i {
-            Info::Token(t) => Info::Token(t),
-            Info::Range(t) => Info::Owned(format!("{}", t)),
+            Info::Token(t) => Info::Token(t.map(|id| String::from(make_ident.string(id)))),
+            Info::Range(t) => Info::Token(t.map(|id| String::from(make_ident.string(id)))),
             Info::Borrowed(t) => Info::Borrowed(t),
             Info::Owned(t) => Info::Owned(t),
         }
-    }
+    };
     match e {
         CombineError::Unexpected(t) => CombineError::Unexpected(static_info(t)),
         CombineError::Expected(t) => CombineError::Expected(static_info(t)),
