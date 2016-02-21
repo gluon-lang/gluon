@@ -14,49 +14,45 @@
 //! // In this case we declare `Eq` to be a record with a single field (`==`) which is a function
 //! // which takes two arguments of the same type and returns a boolean
 //! type Eq a = { (==) : a -> a -> Bool }
-//! in
 //! // `let` declares new variables.
 //! let id x = x
-//! and factorial n =
+//!
+//! let factorial n =
 //!         if n < 2
 //!         then 1
 //!         else n * factorial (n - 1)
-//! in
+//!
 //! let list_module =
 //!         // Declare a new type which only exists in the current scope
 //!         type List a = | Cons a (List a) | Nil
-//!         in
 //!         let map f xs =
 //!                 case xs of
 //!                     | Cons y ys -> Cons (f y) (map f ys)
 //!                     | Nil -> Nil
-//!         in
 //!         let eq eq_a: Eq a -> Eq (List a) =
-//!                 let { (==) } = eq_a in
-//!                 let (===) l r =
-//!                         case l of
-//!                             | Cons la lxs ->
-//!                                 (case r of
-//!                                     | Cons ra rxs -> la == ra && lxs === rxs
-//!                                     | Nil -> False)
-//!                             | Nil ->
-//!                                 (case r of
-//!                                     | Cons _ _ -> False
-//!                                     | Nil -> True)
-//!                 in { (==) = (===) }
-//!         in {
+//!                 let (==) l r =
+//!                     case l of
+//!                         | Cons la lxs ->
+//!                             (case r of
+//!                                 | Cons ra rxs -> eq_a.(==) la ra && lxs == rxs
+//!                                 | Nil -> False)
+//!                         | Nil ->
+//!                             (case r of
+//!                                 | Cons _ _ -> False
+//!                                 | Nil -> True)
+//!                 { (==) }
+//!         {
 //!             // Since `List` is local we export it so its constructors can be used
 //!             // outside the current scope
 //!             List,
 //!             eq,
 //!             map
 //!         }
-//! in
+//!
 //! // Bring the `List` type and its constructors into scope
 //! let { List, eq = list_Eq } = list_module
 //! // Create `==` for `List Int`
-//! and { (==) }: Eq (List Int) = list_Eq { (==) }
-//! in
+//! let { (==) }: Eq (List Int) = list_Eq { (==) }
 //! if Cons 1 Nil == Nil then
 //!     error "This branch is not executed"
 //! else
