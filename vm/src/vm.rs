@@ -445,8 +445,7 @@ impl<'a> Typed for Global<'a> {
     }
 }
 
-/// Representation of the virtual machine
-pub struct VM<'a> {
+pub struct GlobalVMState<'a> {
     globals: FixedVec<Global<'a>>,
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
@@ -454,10 +453,22 @@ pub struct VM<'a> {
     symbols: RefCell<Symbols>,
     names: RefCell<HashMap<Symbol, usize>>,
     pub gc: RefCell<Gc>,
+    macros: MacroEnv<VM<'a>>,
+}
+
+/// Representation of the virtual machine
+pub struct VM<'a> {
+    global_state: GlobalVMState<'a>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value<'a>>>,
     stack: RefCell<Stack<'a>>,
-    macros: MacroEnv<VM<'a>>,
+}
+
+impl<'a> Deref for VM<'a> {
+    type Target = GlobalVMState<'a>;
+    fn deref(&self) -> &GlobalVMState<'a> {
+        &self.global_state
+    }
 }
 
 /// Type returned from vm functions which may fail
@@ -586,11 +597,11 @@ impl<'a, 'b> Traverseable for Roots<'a, 'b> {
     }
 }
 
-impl<'a> VM<'a> {
+impl<'a> GlobalVMState<'a> {
 
     /// Creates a new virtual machine
-    pub fn new() -> VM<'a> {
-        let vm = VM {
+    pub fn new() -> GlobalVMState<'a> {
+        let vm = GlobalVMState {
             globals: FixedVec::new(),
             type_infos: RefCell::new(TypeInfos::new()),
             typeids: FixedMap::new(),
@@ -598,13 +609,8 @@ impl<'a> VM<'a> {
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: RefCell::new(Gc::new()),
-            stack: RefCell::new(Stack::new()),
-            roots: RefCell::new(Vec::new()),
-            rooted_values: RefCell::new(Vec::new()),
             macros: MacroEnv::new(),
         };
-        // Enter the top level scope
-        StackFrame::frame(vm.stack.borrow_mut(), 0, None);
         vm.add_types()
           .unwrap();
         vm
@@ -630,44 +636,6 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub fn add_bytecode(&self,
-                        name: &str,
-                        typ: TcType,
-                        args: VMIndex,
-                        instructions: Vec<Instruction>)
-                        -> VMIndex {
-        let id = self.symbol(name);
-        let compiled_fn = CompiledFunction {
-            args: args,
-            id: id,
-            typ: typ.clone(),
-            instructions: instructions,
-            inner_functions: vec![],
-            strings: vec![],
-        };
-        let f = self.new_function(compiled_fn);
-        let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
-        self.names.borrow_mut().insert(id, self.globals.len());
-        self.globals.push(Global {
-            id: id,
-            typ: typ,
-            value: Cell::new(Closure(closure)),
-        });
-        self.globals.len() as VMIndex - 1
-    }
-
-    /// Pushes a value to the top of the stack
-    pub fn push(&self, v: Value<'a>) {
-        self.stack.borrow_mut().push(v)
-    }
-
-    /// Removes the top value from the stack
-    pub fn pop(&self) -> Value<'a> {
-        self.stack
-            .borrow_mut()
-            .pop()
-    }
-
     pub fn new_function(&self, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
         BytecodeFunction::new(&mut self.gc.borrow_mut(), f)
     }
@@ -685,26 +653,6 @@ impl<'a> VM<'a> {
         self.names.borrow().get(&n).is_some()
     }
 
-    /// Creates a new global value at `name`.
-    /// Fails if a global called `name` already exists.
-    pub fn define_global<T>(&self, name: &str, value: T) -> Result<()>
-        where T: Pushable<'a>
-    {
-        let id = self.symbol(name);
-        if self.names.borrow().contains_key(&id) {
-            return Err(Error::Message(format!("{} is already defined", name)));
-        }
-        let (status, value) = {
-            let mut stack = self.current_frame();
-            let status = value.push(self, &mut stack);
-            (status, stack.pop())
-        };
-        if status == Status::Error {
-            return Err(Error::Message(format!("{:?}", value)));
-        }
-        self.set_global(id, T::make_type(self), value)
-    }
-
     /// TODO dont expose this directly
     pub fn set_global(&self, id: Symbol, typ: TcType, value: Value<'a>) -> Result<()> {
         if self.names.borrow().contains_key(&id) {
@@ -718,31 +666,6 @@ impl<'a> VM<'a> {
         self.names.borrow_mut().insert(id, self.globals.len());
         self.globals.push(global);
         Ok(())
-    }
-
-    /// Retrieves the global called `name`.
-    /// Fails if the global does not existor it does not have the correct type.
-    pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
-        where T: Getable<'a, 'vm> + VMType
-    {
-        let id = self.symbol(name);
-        self.names
-            .borrow()
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| Error::Message(format!("Could not retrieve global `{}`", name)))
-            .and_then(|i| {
-                let global = &self.globals[i];
-                if global.type_of() == T::make_type(self) {
-                    T::from_value(self, global.value.get()).ok_or_else(|| {
-                        Error::Message(format!("Could not retrieve global `{}`", name))
-                    })
-                } else {
-                    Err(Error::Message(format!("Could not retrieve global `{}` as the types did \
-                                                not match",
-                                               name)))
-                }
-            })
     }
 
     /// Registers a new type called `name`
@@ -797,7 +720,6 @@ impl<'a> VM<'a> {
         self.interner.borrow_mut().intern(&mut *self.gc.borrow_mut(), s)
     }
 
-
     /// Returns a borrowed structure which implements `CompilerEnv`
     pub fn env<'b>(&'b self) -> VMEnv<'a, 'b> {
         VMEnv {
@@ -811,6 +733,74 @@ impl<'a> VM<'a> {
                      }],
         }
     }
+
+    pub fn new_data(&self, tag: VMTag, fields: &[Value<'a>]) -> Value<'a> {
+        Data(self.gc.borrow_mut().alloc(Def {
+            tag: tag,
+            elems: fields,
+        }))
+    }
+}
+
+impl<'a> VM<'a> {
+
+    pub fn new() -> VM<'a> {
+        let vm = VM {
+            global_state: GlobalVMState::new(),
+            stack: RefCell::new(Stack::new()),
+            roots: RefCell::new(Vec::new()),
+            rooted_values: RefCell::new(Vec::new()),
+        };
+        // Enter the top level scope
+        StackFrame::frame(vm.stack.borrow_mut(), 0, None);
+        vm
+    }
+
+    /// Creates a new global value at `name`.
+    /// Fails if a global called `name` already exists.
+    pub fn define_global<T>(&self, name: &str, value: T) -> Result<()>
+        where T: Pushable<'a>
+    {
+        let id = self.symbol(name);
+        if self.names.borrow().contains_key(&id) {
+            return Err(Error::Message(format!("{} is already defined", name)));
+        }
+        let (status, value) = {
+            let mut stack = self.current_frame();
+            let status = value.push(self, &mut stack);
+            (status, stack.pop())
+        };
+        if status == Status::Error {
+            return Err(Error::Message(format!("{:?}", value)));
+        }
+        self.set_global(id, T::make_type(self), value)
+    }
+
+    /// Retrieves the global called `name`.
+    /// Fails if the global does not existor it does not have the correct type.
+    pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
+        where T: Getable<'a, 'vm> + VMType
+    {
+        let id = self.symbol(name);
+        self.names
+            .borrow()
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| Error::Message(format!("Could not retrieve global `{}`", name)))
+            .and_then(|i| {
+                let global = &self.globals[i];
+                if global.type_of() == T::make_type(self) {
+                    T::from_value(self, global.value.get()).ok_or_else(|| {
+                        Error::Message(format!("Could not retrieve global `{}`", name))
+                    })
+                } else {
+                    Err(Error::Message(format!("Could not retrieve global `{}` as the types did \
+                                                not match",
+                                               name)))
+                }
+            })
+    }
+
 
     /// Returns the current stackframe
     pub fn current_frame<'vm>(&'vm self) -> StackFrame<'a, 'vm> {
@@ -863,11 +853,13 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn new_data(&self, tag: VMTag, fields: &[Value<'a>]) -> Value<'a> {
-        Data(self.gc.borrow_mut().alloc(Def {
-            tag: tag,
-            elems: fields,
-        }))
+    /// Allocates a new value from a given `DataDef`.
+    /// Takes the stack as it may collect if the collection limit has been reached.
+    pub fn alloc<D>(&self, stack: &Stack<'a>, def: D) -> GcPtr<D::Value>
+        where D: DataDef + Traverseable
+    {
+        self.with_roots(stack,
+                        |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
     }
 
     fn with_roots<F, R>(&self, stack: &Stack<'a>, f: F) -> R
@@ -891,13 +883,42 @@ impl<'a> VM<'a> {
         f(&mut gc, roots)
     }
 
-    /// Allocates a new value from a given `DataDef`.
-    /// Takes the stack as it may collect if the collection limit has been reached.
-    pub fn alloc<D>(&self, stack: &Stack<'a>, def: D) -> GcPtr<D::Value>
-        where D: DataDef + Traverseable
-    {
-        self.with_roots(stack,
-                        |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
+    pub fn add_bytecode(&self,
+                        name: &str,
+                        typ: TcType,
+                        args: VMIndex,
+                        instructions: Vec<Instruction>)
+                        -> VMIndex {
+        let id = self.symbol(name);
+        let compiled_fn = CompiledFunction {
+            args: args,
+            id: id,
+            typ: typ.clone(),
+            instructions: instructions,
+            inner_functions: vec![],
+            strings: vec![],
+        };
+        let f = self.new_function(compiled_fn);
+        let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
+        self.names.borrow_mut().insert(id, self.globals.len());
+        self.globals.push(Global {
+            id: id,
+            typ: typ,
+            value: Cell::new(Closure(closure)),
+        });
+        self.globals.len() as VMIndex - 1
+    }
+
+    /// Pushes a value to the top of the stack
+    pub fn push(&self, v: Value<'a>) {
+        self.stack.borrow_mut().push(v)
+    }
+
+    /// Removes the top value from the stack
+    pub fn pop(&self) -> Value<'a> {
+        self.stack
+            .borrow_mut()
+            .pop()
     }
 
     ///Calls a module, allowed to to run IO expressions
