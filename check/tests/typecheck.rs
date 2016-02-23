@@ -328,8 +328,8 @@ fn case_constructor() {
     let text = r"
 type Option a = | None | Some a
 in case Some 1 of
-| Some x -> x
-| None -> 2
+    | Some x -> x
+    | None -> 2
 ";
     let result = typecheck(text);
     assert_eq!(result, Ok(typ("Int")));
@@ -767,16 +767,16 @@ fn module() {
 type SortedList a = | Cons a (SortedList a)
                 | Nil
 in \(<) ->
-let empty = Nil
-in let insert x xs = case xs of
-    | Nil -> Cons x Nil
-    | Cons y ys -> if x < y
-                   then Cons x xs
-                   else Cons y (insert x ys)
-in
-let ret : { empty: SortedList a, insert: a -> SortedList a -> SortedList a }
-    = { empty, insert }
-in ret
+    let empty = Nil
+    let insert x xs =
+        case xs of
+        | Nil -> Cons x Nil
+        | Cons y ys -> if x < y
+                       then Cons x xs
+                       else Cons y (insert x ys)
+    let ret : { empty: SortedList a, insert: a -> SortedList a -> SortedList a }
+        = { empty, insert }
+    ret
 ";
     let result = typecheck(text);
     assert!(result.is_ok());

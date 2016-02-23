@@ -321,9 +321,10 @@ r#"io.print "123" "#
 test_expr!{ array,
 r#"
 let arr = [1,2,3]
-in array.index arr 0 #Int== 1
-&& array.length arr #Int== 3
-&& array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
+
+array.index arr 0 #Int== 1
+    && array.length arr #Int== 3
+    && array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
 Int(1)
 }
 #[test]

@@ -26,31 +26,32 @@ type Cmd = { info: String, action: String -> IO Bool }
 in
 let commands: Map String Cmd
     =  singleton "q" { info = "Quit the REPL", action = \_ -> return False }
-    <> singleton "t" {
-        info = "Prints the type of an expression",
-        action = \arg -> repl_prim.type_of_expr arg >>= io.print >> return True
-    }
-    <> singleton "i" {
-        info = "Prints information about the given type",
-        action = \arg -> repl_prim.find_type_info arg >>= io.print >> return True
-    }
-    <> singleton "l" {
-        info = "Loads the file at 'folder/module.ext' and stores it at 'module'",
-        action = \arg -> load_file arg >>= io.print >> return True
-    }
+        <> singleton "t" {
+            info = "Prints the type of an expression",
+            action = \arg -> repl_prim.type_of_expr arg >>= io.print >> return True
+        }
+        <> singleton "i" {
+            info = "Prints information about the given type",
+            action = \arg -> repl_prim.find_type_info arg >>= io.print >> return True
+        }
+        <> singleton "l" {
+            info = "Loads the file at 'folder/module.ext' and stores it at 'module'",
+            action = \arg -> load_file arg >>= io.print >> return True
+        }
 in
 let help =
     let info = "Print this help"
     in {
     info,
-    action = \_ -> io.print "Available commands\n" >>
-        io.print ("    :h " ++ info) >>
-        forM_ (to_list commands) (\cmd ->
-            //FIXME This type declaration should not be needed
-            let cmd: { key: String, value: Cmd } = cmd
-            in io.print ("    :" ++ cmd.key ++ " " ++ cmd.value.info))
-            >>
-        return True
+    action = \_ ->
+        io.print "Available commands\n" >>
+            io.print ("    :h " ++ info) >>
+            forM_ (to_list commands) (\cmd ->
+                //FIXME This type declaration should not be needed
+                let cmd: { key: String, value: Cmd } = cmd
+                io.print ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
+            ) >>
+            return True
 }
 in
 let commands = insert "h" help commands

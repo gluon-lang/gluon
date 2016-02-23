@@ -77,6 +77,7 @@ mod tests {
 
     #[test]
     fn compile_repl_test() {
+        let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
     }

@@ -32,4 +32,4 @@ path = "check"
 path = "vm"
 
 [features]
-test = ["check/test"]
+test = ["check/test", "parser/test"]

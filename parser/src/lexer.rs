@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use base::ast::*;
 
-use combine::primitives::{Consumed, HasPosition, Stream, SourcePosition};
+use combine::primitives::{HasPosition, Stream, SourcePosition};
 use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
@@ -43,6 +43,7 @@ pub enum Token<Id> {
     OpenBlock,
     CloseBlock,
     Semi,
+    EOF,
 }
 
 impl<Id> fmt::Display for Token<Id> {
@@ -80,6 +81,7 @@ impl<Id> fmt::Display for Token<Id> {
             OpenBlock => "OpenBlock",
             CloseBlock => "CloseBlock",
             Semi => "Semi",
+            EOF => "EOF",
         };
         s.fmt(f)
     }
@@ -122,29 +124,57 @@ impl<Id> Token<Id> {
             OpenBlock => OpenBlock,
             CloseBlock => CloseBlock,
             Semi => Semi,
+            EOF => EOF,
         }
     }
 }
 
 #[derive(Clone, Debug)]
-struct PToken<Id> {
-    location: SourcePosition,
-    token: Token<Id>,
+pub struct PToken<Id> {
+    pub location: SourcePosition,
+    pub token: Token<Id>,
 }
 
 #[derive(Clone, Debug)]
-struct Offside {
-    context: Context,
-    column: i32,
+pub struct Offside {
+    pub context: Context,
+    pub location: SourcePosition,
 }
 
-#[derive(Clone, Debug)]
-enum Context {
+#[derive(Clone, Debug, PartialEq)]
+pub enum Context {
     /// Contaxt which contains several expressions/declarations separated by semicolons
-    Block,
+    Block {
+        first: bool,
+        needs_close: bool,
+    },
     /// A simple expression
     Expr,
     Let,
+    Type,
+    If,
+    Then,
+    Brace,
+    Paren,
+    Bracket,
+    MatchClause,
+    Lambda,
+}
+
+impl<Id> Token<Id> {
+    pub fn context(&self) -> Option<Context> {
+        match *self {
+            Token::OpenBlock => {
+                Some(Context::Block {
+                    first: true,
+                    needs_close: true,
+                })
+            }
+            Token::Let => Some(Context::Let),
+            Token::Type => Some(Context::Type),
+            _ => None,
+        }
+    }
 }
 
 /// Parser passes the environment to each parser function
@@ -157,8 +187,9 @@ pub struct Lexer<'a, I, F>
     pub env: LanguageEnv<'a, State<I>>,
     pub make_ident: Rc<RefCell<F>>,
     pub input: Option<State<I>>,
-    unprocessed_tokens: Vec<PToken<F::Ident>>,
-    indent_levels: Vec<Offside>,
+    pub unprocessed_tokens: Vec<PToken<F::Ident>>,
+    pub indent_levels: Vec<Offside>,
+    layout: fn(&mut Lexer<'a, I, F>, PToken<F::Ident>) -> Result<Token<F::Ident>, Token<F::Ident>>,
 }
 
 impl<'a, I, F> HasPosition for Lexer<'a, I, F>
@@ -167,12 +198,16 @@ impl<'a, I, F> HasPosition for Lexer<'a, I, F>
 {
     type Position = SourcePosition;
     fn position(&self) -> Self::Position {
-        self.input.as_ref().map(|input| input.position.clone()).unwrap_or_else(|| {
-            SourcePosition {
-                line: -1,
-                column: -1,
-            }
-        })
+        self.unprocessed_tokens
+            .last()
+            .map(|token| token.location.clone())
+            .or_else(|| self.input.as_ref().map(|input| input.position.clone()))
+            .unwrap_or_else(|| {
+                SourcePosition {
+                    line: -1,
+                    column: -1,
+                }
+            })
     }
 }
 
@@ -182,16 +217,20 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
           Id: AstId + Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
-    pub fn new(input: I, make_ident: Rc<RefCell<F>>) -> Lexer<'a, I, F> {
+    pub fn new(layout: Option<fn(&mut Lexer<'a, I, F>, PToken<F::Ident>)
+                                 -> Result<Token<F::Ident>, Token<F::Ident>>>,
+               input: I,
+               make_ident: Rc<RefCell<F>>)
+               -> Lexer<'a, I, F> {
         let ops = "+-*/&|=<>";
         let env = LanguageEnv::new(LanguageDef {
             ident: Identifier {
                 start: letter().or(char('_')),
                 rest: alpha_num().or(char('_')),
-                reserved: ["if", "then", "else", "let", "and", "in", "type", "case", "of"]
-                              .iter()
-                              .map(|x| (*x).into())
-                              .collect(),
+                reserved: Vec::new(), /* ["if", "then", "else", "let", "and", "in", "type", "case", "of"]
+                                       * .iter()
+                                       * .map(|x| (*x).into())
+                                       * .collect(), */
             },
             op: Identifier {
                 start: satisfy(move |c| ops.chars().any(|x| x == c)),
@@ -209,6 +248,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             input: Some(State::new(input)),
             unprocessed_tokens: Vec::new(),
             indent_levels: Vec::new(),
+            layout: layout.unwrap_or(layout_),
         };
         lexer.skip_whitespace();
         lexer
@@ -268,120 +308,369 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             .parse_state(input)
     }
 
-    fn layout_independent_token(&mut self, token: PToken<Id>) -> Token<Id> {
-        loop {
-            let offside = self.indent_levels.last().cloned().unwrap_or(Offside {
-                context: Context::Block,
-                column: 0,
-            });
-            debug!("Offside {:?} {:?}", token, offside);
-            match token.location.column.cmp(&offside.column) {
-                Ordering::Less => {
-                    self.indent_levels.pop();
-                    return match offside.context {
-                        Context::Block => Token::CloseBlock,
-                        Context::Expr => continue,
-                        Context::Let => continue,
-                    };
-                }
-                Ordering::Equal => {
-                    return match offside.context {
-                        Context::Block => {
-                            self.unprocessed_tokens.push(token);
-                            Token::Semi
-                        }
-                        Context::Expr => token.token,
-                        Context::Let => {
-                            if token.token == Token::In {
-                                self.indent_levels.pop();
-                                token.token
-                            } else if token.token == Token::And || token.token == Token::CloseBrace {
-                                token.token
-                            } else {
-                                self.indent_levels.pop();
-                                self.unprocessed_tokens.push(token);
-                                Token::In
-                            }
-                        }
-                    };
-                }
-                Ordering::Greater => {
-                    match token.token {
-                        Token::Let | Token::Type => {
-                            self.indent_levels.push(Offside {
-                                context: Context::Let,
-                                column: token.location.column,
-                            });
-                        }
-                        Token::Case => {
-                            self.indent_levels.push(Offside {
-                                context: Context::Expr,
-                                column: token.location.column,
-                            });
-                        }
-                        Token::In => {
-                            self.indent_levels.pop();
-                        }
-                        _ => (),
-                    }
-                    return token.token;
+    fn layout_independent_token(&mut self, token: PToken<Id>) -> Result<Token<Id>, Token<Id>> {
+        (self.layout)(self, token)
+    }
+
+    fn id_to_keyword(&self, id: Token<Id>) -> Token<Id> {
+        let t = match id {
+            Token::Identifier(ref id, _) => {
+                match self.make_ident.borrow().string(&id) {
+                    "let" => Some(Token::Let),
+                    "type" => Some(Token::Type),
+                    "and" => Some(Token::And),
+                    "in" => Some(Token::In),
+                    "case" => Some(Token::Case),
+                    "of" => Some(Token::Of),
+                    "if" => Some(Token::If),
+                    "then" => Some(Token::Then),
+                    "else" => Some(Token::Else),
+                    _ => None,
                 }
             }
+            _ => None,
+        };
+        match t {
+            Some(t) => t,
+            _ => id,
         }
     }
 
-    fn next_token(&mut self, input: State<I>) -> ParseResult<PToken<Id>, State<I>> {
-        match self.unprocessed_tokens.pop() {
-            Some(token) => Ok((token, Consumed::Empty(input))),
+    pub fn next_token(&mut self) -> PToken<Id> {
+        if let Some(token) = self.unprocessed_tokens.pop() {
+            return token;
+        }
+        let input = match self.input.take() {
+            Some(input) => input,
             None => {
-                let location = input.position();
-                self.env
-                    .lex(choice::<[&mut Parser<Input = State<I>, Output = Token<Id>>; 28],
-                                  _>([&mut self.env.reserved("let").map(|_| Token::Let),
-                                      &mut self.env.reserved("type").map(|_| Token::Type),
-                                      &mut self.env.reserved("and").map(|_| Token::And),
-                                      &mut self.env.reserved("in").map(|_| Token::In),
-                                      &mut self.env.reserved("case").map(|_| Token::Case),
-                                      &mut self.env.reserved("of").map(|_| Token::Of),
-                                      &mut self.env.reserved("if").map(|_| Token::If),
-                                      &mut self.env.reserved("then").map(|_| Token::Then),
-                                      &mut self.env.reserved("else").map(|_| Token::Else),
-                                      &mut self.env
-                                               .reserved_op("\\")
-                                               .map(|_| Token::Lambda),
-                                      &mut self.env
-                                               .reserved_op("->")
-                                               .map(|_| Token::RightArrow),
-                                      &mut self.env.reserved_op(":").map(|_| Token::Colon),
-                                      &mut self.env.reserved_op(".").map(|_| Token::Dot),
-                                      &mut self.env.reserved_op(",").map(|_| Token::Comma),
-                                      &mut self.env.reserved_op("|").map(|_| Token::Pipe),
-                                      &mut self.env.reserved_op("=").map(|_| Token::Equal),
-                                      &mut self.ident(),
-                                      &mut self.op().map(Token::Operator),
-                                      &mut char('(').map(|_| Token::OpenParen),
-                                      &mut char(')').map(|_| Token::CloseParen),
-                                      &mut char('{').map(|_| Token::OpenBrace),
-                                      &mut char('}').map(|_| Token::CloseBrace),
-                                      &mut char('[').map(|_| Token::OpenBracket),
-                                      &mut char(']').map(|_| Token::CloseBracket),
-                                      &mut self.env.string_literal().map(Token::String),
-                                      &mut self.env.char_literal().map(Token::Char),
-                                      &mut try(self.env
-                                                   .integer()
-                                                   .skip(not_followed_by(string("."))))
-                                               .map(Token::Integer),
-                                      &mut self.env.float().map(Token::Float)]))
-                    .map(|token| {
-                        PToken {
-                            location: location,
-                            token: token,
-                        }
-                    })
-                    .parse_state(input)
+                return PToken {
+                    location: SourcePosition {
+                        column: 1,
+                        line: ::std::i32::MAX,
+                    },
+                    token: Token::EOF,
+                }
+            }
+        };
+        let location = input.position();
+        let result = self.env
+                         .lex(choice::<[&mut Parser<Input = State<I>, Output = Token<Id>>; 19],
+                                       _>([&mut self.ident()
+                                                    .map(|id| self.id_to_keyword(id)),
+                                           &mut self.env
+                                                    .reserved_op("\\")
+                                                    .map(|_| Token::Lambda),
+                                           &mut self.env
+                                                    .reserved_op("->")
+                                                    .map(|_| Token::RightArrow),
+                                           &mut self.env.reserved_op(":").map(|_| Token::Colon),
+                                           &mut self.env.reserved_op(".").map(|_| Token::Dot),
+                                           &mut self.env.reserved_op(",").map(|_| Token::Comma),
+                                           &mut self.env.reserved_op("|").map(|_| Token::Pipe),
+                                           &mut self.env.reserved_op("=").map(|_| Token::Equal),
+                                           &mut self.op().map(Token::Operator),
+                                           &mut char('(').map(|_| Token::OpenParen),
+                                           &mut char(')').map(|_| Token::CloseParen),
+                                           &mut char('{').map(|_| Token::OpenBrace),
+                                           &mut char('}').map(|_| Token::CloseBrace),
+                                           &mut char('[').map(|_| Token::OpenBracket),
+                                           &mut char(']').map(|_| Token::CloseBracket),
+                                           &mut self.env.string_literal().map(Token::String),
+                                           &mut self.env.char_literal().map(Token::Char),
+                                           &mut try(self.env
+                                                        .integer()
+                                                        .skip(not_followed_by(string("."))))
+                                                    .map(Token::Integer),
+                                           &mut self.env.float().map(Token::Float)]))
+                         .map(|token| {
+                             PToken {
+                                 location: location,
+                                 token: token,
+                             }
+                         })
+                         .parse_state(input);
+        match result {
+            Ok((token, input)) => {
+                self.input = Some(input.into_inner());
+                token
+            }
+            Err(_err) => {
+                PToken {
+                    location: location,
+                    token: Token::CloseBlock,
+                }
             }
         }
     }
+}
+
+fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
+                         mut token: PToken<Id>)
+                         -> Result<Token<Id>, Token<Id>>
+    where I: Stream<Item = char> + 'a,
+          F: IdentEnv<Ident = Id>,
+          Id: AstId + Clone + PartialEq + fmt::Debug,
+          I::Range: fmt::Debug
+{
+    if token.token == Token::EOF {
+        token.location.column = 0;
+    }
+    loop {
+        let offside = match lexer.indent_levels.last().cloned() {
+            Some(offside) => offside,
+            None => {
+                if token.token == Token::EOF {
+                    return Ok(token.token);
+                }
+                lexer.indent_levels.push(Offside {
+                    context: Context::Block {
+                        first: true,
+                        needs_close: true,
+                    },
+                    location: token.location,
+                });
+                debug!("Default block {:?}", token);
+                lexer.unprocessed_tokens.push(token);
+                return Ok(Token::OpenBlock);
+            }
+        };
+        debug!("--------\n{:?}\n{:?}", token, offside);
+        let ordering = token.location.column.cmp(&offside.location.column);
+        // If it is closing token we remove contexts until a context for that token is found
+        if [Token::In,
+            Token::CloseBlock,
+            Token::Else,
+            Token::CloseBrace,
+            Token::CloseParen,
+            Token::CloseBracket,
+            Token::Comma]
+               .iter()
+               .any(|t| *t == token.token) {
+
+            if token.token == Token::Comma &&
+               (offside.context == Context::Brace || offside.context == Context::Bracket) {
+                return Ok(token.token);
+            }
+            lexer.indent_levels.pop();
+            match (&token.token, &offside.context) {
+                (&Token::Else, &Context::If) |
+                (&Token::CloseBrace, &Context::Brace) |
+                (&Token::CloseParen, &Context::Paren) |
+                (&Token::CloseBracket, &Context::Bracket) => {
+                    return Ok(token.token);
+                }
+                (&Token::In, &Context::Let) |
+                (&Token::In, &Context::Type) |
+                (&Token::CloseBlock, &Context::Block { .. }) => {
+                    if let Some(offside) = lexer.indent_levels.last_mut() {
+                        // The enclosing block should not emit a block separator for the next
+                        // expression
+                        if let Context::Block { ref mut first, .. } = offside.context {
+                            *first = true;
+                        }
+                    }
+                    return Ok(token.token);
+                }
+                _ => {
+                    match offside.context {
+                        Context::Block { needs_close: true, .. } => {
+                            lexer.unprocessed_tokens.push(token);
+                            return Ok(Token::CloseBlock);
+                        }
+                        _ => (),
+                    }
+                    continue;
+                }
+            }
+        }
+        // Next we check offside rules for each of the contexts
+        match offside.context {
+            Context::Block { first, needs_close } => {
+                match ordering {
+                    Ordering::Less => {
+                        {
+                            let second_last = lexer.indent_levels
+                                                   .len()
+                                                   .checked_sub(2)
+                                                   .and_then(|i| lexer.indent_levels.get(i));
+                            if second_last.map(|offside| {
+                                              offside.location.column < token.location.column
+                                          })
+                                          .unwrap_or(false) {
+                                // The token is in the middle of two context which is an error
+                                return Err(token.token);
+                            }
+                        }
+                        if needs_close {
+                            lexer.unprocessed_tokens.push(token.clone());
+                            token.token = Token::CloseBlock;
+                        } else {
+                            lexer.indent_levels.pop();
+                        }
+                        continue;
+                    }
+                    Ordering::Equal => {
+                        if first && token.token != Token::OpenBlock {
+                            // If it is the first token in a sequence we dont want to emit a separator
+                            if let Some(offside) = lexer.indent_levels.last_mut() {
+                                // The enclosing block should not emit a block separator for the next
+                                // expression
+                                if let Context::Block { ref mut first, .. } = offside.context {
+                                    *first = false;
+                                }
+                            }
+                        } else if !first {
+                            if let Some(offside) = lexer.indent_levels.last_mut() {
+                                // The enclosing block should not emit a block separator for the next
+                                // expression
+                                if let Context::Block { ref mut first, .. } = offside.context {
+                                    *first = true;
+                                }
+                            }
+                            lexer.unprocessed_tokens.push(token);
+                            return Ok(Token::Semi);
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            Context::Expr | Context::MatchClause => {
+                if ordering == Ordering::Less {
+                    lexer.indent_levels.pop();
+                    continue;
+                }
+            }
+            Context::Let | Context::Type => {
+                // `and` and `}` are allowed to be on the same line as the `let` or `type`
+                if ordering == Ordering::Equal && token.token != Token::And &&
+                   token.token != Token::CloseBrace {
+                    // Insert an `in` token
+                    lexer.indent_levels.pop();
+                    if let Some(offside) = lexer.indent_levels.last_mut() {
+                        // The enclosing block should not emit a block separator for the next
+                        // expression
+                        if let Context::Block { ref mut first, .. } = offside.context {
+                            *first = true;
+                        }
+                    }
+                    lexer.unprocessed_tokens.push(token);
+                    return Ok(Token::In);
+                }
+            }
+            _ => (),
+        }
+        // Finally we check the token in case it needs to push a new context
+        match token.token {
+            Token::Let => {
+                lexer.indent_levels.push(Offside {
+                    context: Context::Let,
+                    location: token.location,
+                });
+            }
+            Token::If => {
+                lexer.indent_levels.push(Offside {
+                    context: Context::If,
+                    location: token.location,
+                });
+            }
+            Token::Type => {
+                lexer.indent_levels.push(Offside {
+                    context: Context::Type,
+                    location: token.location,
+                });
+            }
+            Token::Case => {
+                lexer.indent_levels.push(Offside {
+                    context: Context::Expr,
+                    location: token.location,
+                });
+            }
+            Token::Lambda => {
+                lexer.indent_levels.push(Offside {
+                    context: Context::Lambda,
+                    location: token.location,
+                });
+            }
+            Token::In => {
+                lexer.indent_levels.pop();
+                if let Context::Block { needs_close: true, .. } = offside.context {
+                    lexer.unprocessed_tokens.push(token);
+                    return Ok(Token::CloseBlock);
+                }
+            }
+            Token::Equal => {
+                if offside.context == Context::Let {
+                    scan_for_next_block(lexer,
+                                        Context::Block {
+                                            first: true,
+                                            needs_close: true,
+                                        });
+                }
+            }
+            Token::RightArrow => {
+                if offside.context == Context::MatchClause || offside.context == Context::Lambda {
+                    if offside.context == Context::Lambda {
+                        lexer.indent_levels.pop();
+                    }
+                    scan_for_next_block(lexer,
+                                        Context::Block {
+                                            first: true,
+                                            needs_close: true,
+                                        });
+                }
+            }
+            Token::Then => {
+                scan_for_next_block(lexer,
+                                    Context::Block {
+                                        first: true,
+                                        needs_close: true,
+                                    });
+            }
+            Token::OpenBrace => {
+                scan_for_next_block(lexer, Context::Brace);
+            }
+            Token::OpenBracket => {
+                scan_for_next_block(lexer, Context::Bracket);
+            }
+            Token::OpenParen => {
+                scan_for_next_block(lexer, Context::Paren);
+            }
+            Token::Comma => {
+                // Prevent a semi to be emitted before the next token
+                if let Some(offside) = lexer.indent_levels.last_mut() {
+                    // The enclosing block should not emit a block separator for the next
+                    // expression
+                    if let Context::Block { ref mut first, .. } = offside.context {
+                        *first = true;
+                    }
+                }
+            }
+            Token::Of => scan_for_next_block(lexer, Context::MatchClause),
+            _ => (),
+        }
+        return Ok(token.token);
+    }
+}
+
+fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>, context: Context)
+    where I: Stream<Item = char> + 'a,
+          F: IdentEnv<Ident = Id>,
+          Id: AstId + Clone + PartialEq + fmt::Debug,
+          I::Range: fmt::Debug + 's
+{
+    let next = lexer.next_token();
+    let location = next.location;
+    lexer.unprocessed_tokens.push(next);
+    if let Context::Block { needs_close: true, .. } = context {
+        lexer.unprocessed_tokens.push(PToken {
+            location: location,
+            token: Token::OpenBlock,
+        });
+    }
+    lexer.indent_levels.push(Offside {
+        context: context,
+        location: location,
+    });
 }
 
 impl<'a, I, Id, F> Iterator for Lexer<'a, I, F>
@@ -392,17 +681,17 @@ impl<'a, I, Id, F> Iterator for Lexer<'a, I, F>
 {
     type Item = Token<Id>;
     fn next(&mut self) -> Option<Token<Id>> {
-        let input = match self.input.take() {
-            Some(input) => input,
-            None => return None,
-        };
-        let (token, input) = match self.next_token(input) {
-            Ok((x, input)) => (x, input.into_inner()),
-            Err(_err) => return None,
-        };
-        self.input = Some(input);
-        let token = self.layout_independent_token(token);
-        debug!("Lex {:}", token);
-        Some(token)
+        let token = self.next_token();
+        match self.layout_independent_token(token) {
+            Ok(Token::EOF) => None,
+            Ok(token) => {
+                debug!("Lex {:?}", token);
+                Some(token)
+            }
+            Err(_unexpected_token) => {
+                self.input.take();
+                None
+            }
+        }
     }
 }
