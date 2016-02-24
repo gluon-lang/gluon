@@ -3,7 +3,7 @@ use std::fmt;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::cmp::Ordering;
-use std::ops::Deref;
+use std::ops::{Add, Sub, Mul, Div, Deref};
 use std::string::String as StdString;
 use std::result::Result as StdResult;
 use base::ast::{Typed, ASTType, DisplayEnv};
@@ -1342,61 +1342,18 @@ impl<'a> VM<'a> {
                     let v = stack.get_upvar(i).clone();
                     stack.push(v);
                 }
-                AddInt => binop_int(&mut stack, |l, r| l + r),
-                SubtractInt => binop_int(&mut stack, |l, r| l - r),
-                MultiplyInt => binop_int(&mut stack, |l, r| l * r),
-                DivideInt => binop_int(&mut stack, |l, r| l / r),
-                IntLT => {
-                    binop_int(&mut stack, |l, r| {
-                        if l < r {
-                            1
-                        } else {
-                            0
-                        }
-                    })
-                }
-                IntEQ => {
-                    binop_int(&mut stack, |l, r| {
-                        if l == r {
-                            1
-                        } else {
-                            0
-                        }
-                    })
-                }
-
-                AddFloat => binop_float(&mut stack, |l, r| l + r),
-                SubtractFloat => binop_float(&mut stack, |l, r| l - r),
-                MultiplyFloat => binop_float(&mut stack, |l, r| l * r),
-                DivideFloat => binop_float(&mut stack, |l, r| l / r),
-                FloatLT => {
-                    binop(&mut stack, |l, r| {
-                        match (l, r) {
-                            (Float(l), Float(r)) => {
-                                Int(if l < r {
-                                    1
-                                } else {
-                                    0
-                                })
-                            }
-                            _ => panic!(),
-                        }
-                    })
-                }
-                FloatEQ => {
-                    binop(&mut stack, |l, r| {
-                        match (l, r) {
-                            (Float(l), Float(r)) => {
-                                Int(if l == r {
-                                    1
-                                } else {
-                                    0
-                                })
-                            }
-                            _ => panic!(),
-                        }
-                    })
-                }
+                AddInt => binop(self, &mut stack, VMInt::add),
+                SubtractInt => binop(self, &mut stack, VMInt::sub),
+                MultiplyInt => binop(self, &mut stack, VMInt::mul),
+                DivideInt => binop(self, &mut stack, VMInt::div),
+                IntLT => binop(self, &mut stack, |l: VMInt, r| l < r),
+                IntEQ => binop(self, &mut stack, |l: VMInt, r| l == r),
+                AddFloat => binop(self, &mut stack, f64::add),
+                SubtractFloat => binop(self, &mut stack, f64::sub),
+                MultiplyFloat => binop(self, &mut stack, f64::mul),
+                DivideFloat => binop(self, &mut stack, f64::div),
+                FloatLT => binop(self, &mut stack, |l: f64, r| l < r),
+                FloatEQ => binop(self, &mut stack, |l: f64, r| l == r),
             }
             index += 1;
         }
@@ -1435,34 +1392,20 @@ impl<'a> VM<'a> {
 }
 
 #[inline]
-fn binop<'a, 'b, F>(stack: &mut StackFrame<'a, 'b>, f: F)
-    where F: FnOnce(Value<'a>, Value<'a>) -> Value<'a>
+fn binop<'a, 'b, F, T, R>(vm: &'b VM<'a>, stack: &mut StackFrame<'a, 'b>, f: F)
+    where F: FnOnce(T, T) -> R,
+          T: Getable<'a, 'b> + fmt::Debug,
+          R: Pushable<'a>
 {
     let r = stack.pop();
     let l = stack.pop();
-    stack.push(f(l, r));
-}
-#[inline]
-fn binop_int<F>(stack: &mut StackFrame, f: F)
-    where F: FnOnce(VMInt, VMInt) -> VMInt
-{
-    binop(stack, move |l, r| {
-        match (l, r) {
-            (Int(l), Int(r)) => Int(f(l, r)),
-            (l, r) => panic!("{:?} `intOp` {:?}", l, r),
+    match (T::from_value(vm, l), T::from_value(vm, r)) {
+        (Some(l), Some(r)) => {
+            let result = f(l, r);
+            result.push(vm, stack);
         }
-    })
-}
-#[inline]
-fn binop_float<F>(stack: &mut StackFrame, f: F)
-    where F: FnOnce(f64, f64) -> f64
-{
-    binop(stack, move |l, r| {
-        match (l, r) {
-            (Float(l), Float(r)) => Float(f(l, r)),
-            (l, r) => panic!("{:?} `floatOp` {:?}", l, r),
-        }
-    })
+        (l, r) => panic!("{:?} `op` {:?}", l, r),
+    }
 }
 
 fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
