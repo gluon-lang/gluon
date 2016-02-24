@@ -444,7 +444,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     },
                     expr)
         };
-        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 12],
+        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 11],
                  _>([&mut parser(|input| self.if_else(input)).map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::case_of).map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::lambda).map(&loc),
@@ -462,9 +462,6 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                               })
                               .map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::record).map(&loc),
-                     &mut between(token(Token::OpenBlock),
-                                  token(Token::CloseBlock),
-                                  self.expr()),
                      &mut between(token(Token::OpenParen),
                                   token(Token::CloseParen),
                                   optional(self.expr()).map(|expr| {
@@ -513,19 +510,22 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                          };
                          (op, assoc)
                      });
-        sep_by1(expression_parser(term, op, |l, op, r| {
-                    let loc = l.location.clone();
-                    located(loc, Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
-                }),
-                token(Token::Semi))
-            .map(|mut exprs: Vec<LExpr<Id>>| {
-                if exprs.len() == 1 {
-                    exprs.pop().unwrap()
-                } else {
-                    located(exprs.first().expect("Expr in block").location,
-                            Expr::Block(exprs))
-                }
-            })
+        between(token(Token::OpenBlock),
+                token(Token::CloseBlock),
+                self.expr())
+            .or(sep_by1(expression_parser(term, op, |l, op, r| {
+                            let loc = l.location.clone();
+                            located(loc, Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
+                        }),
+                        token(Token::Semi))
+                    .map(|mut exprs: Vec<LExpr<Id>>| {
+                        if exprs.len() == 1 {
+                            exprs.pop().unwrap()
+                        } else {
+                            located(exprs.first().expect("Expr in block").location,
+                                    Expr::Block(exprs))
+                        }
+                    }))
             .parse_state(input)
     }
 
@@ -639,7 +639,6 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn binding(&self, input: I) -> ParseResult<Binding<Id>, I> {
-        let type_sig = token(Token::Colon).with(self.typ());
         let (name, input) = try!(self.pattern().parse_state(input));
         let (arguments, input) = match name.value {
             Pattern::Identifier(_) => {
@@ -647,6 +646,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             }
             _ => (Vec::new(), input),
         };
+        let type_sig = token(Token::Colon).with(self.typ());
         let ((typ, _, e), input) = try!(input.combine(|input| {
             (optional(type_sig), token(Token::Equal), self.expr()).parse_state(input)
         }));

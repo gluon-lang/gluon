@@ -488,19 +488,6 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Context::Block { first, needs_close } => {
                 match ordering {
                     Ordering::Less => {
-                        {
-                            let second_last = lexer.indent_levels
-                                                   .len()
-                                                   .checked_sub(2)
-                                                   .and_then(|i| lexer.indent_levels.get(i));
-                            if second_last.map(|offside| {
-                                              offside.location.column < token.location.column
-                                          })
-                                          .unwrap_or(false) {
-                                // The token is in the middle of two context which is an error
-                                return Err(token.token);
-                            }
-                        }
                         if needs_close {
                             lexer.unprocessed_tokens.push(token.clone());
                             token.token = Token::CloseBlock;

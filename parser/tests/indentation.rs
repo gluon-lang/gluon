@@ -4,11 +4,15 @@ extern crate log;
 
 extern crate base;
 extern crate parser;
+extern crate combine;
 
+use combine::ParseError;
+use combine::primitives::{Error, Info, SourcePosition};
 use base::ast::*;
-use parser::{parse_string, Error};
+use parser::parse_string;
+use parser::lexer::Token;
 
-fn parse(text: &str) -> Result<LExpr<String>, Error> {
+fn parse(text: &str) -> Result<LExpr<String>, ::parser::Error> {
     parse_string(None, &mut EmptyEnv::new(), text)
 }
 
@@ -52,11 +56,15 @@ fn wrong_indent_expression() {
 let y =
     let x = 1
     x
-   1
+   2
 y
 "#;
     let result = parse(text);
-    assert!(result.is_err());
+    assert_eq!(result, Err(ParseError {
+        position: SourcePosition { column: 4, line: 5 },
+        errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
+                     Error::Expected(Info::Token(Token::In))],
+    }));
 }
 
 #[test]
