@@ -189,6 +189,7 @@ pub struct Lexer<'a, I, F>
     pub input: Option<State<I>>,
     pub unprocessed_tokens: Vec<PToken<F::Ident>>,
     pub indent_levels: Vec<Offside>,
+    end_position: SourcePosition,
     layout: fn(&mut Lexer<'a, I, F>, PToken<F::Ident>) -> Result<Token<F::Ident>, Token<F::Ident>>,
 }
 
@@ -202,12 +203,7 @@ impl<'a, I, F> HasPosition for Lexer<'a, I, F>
             .last()
             .map(|token| token.location.clone())
             .or_else(|| self.input.as_ref().map(|input| input.position.clone()))
-            .unwrap_or_else(|| {
-                SourcePosition {
-                    line: -1,
-                    column: -1,
-                }
-            })
+            .unwrap_or_else(|| self.end_position.clone())
     }
 }
 
@@ -227,10 +223,11 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             ident: Identifier {
                 start: letter().or(char('_')),
                 rest: alpha_num().or(char('_')),
-                reserved: Vec::new(), /* ["if", "then", "else", "let", "and", "in", "type", "case", "of"]
-                                       * .iter()
-                                       * .map(|x| (*x).into())
-                                       * .collect(), */
+                // ["if", "then", "else", "let", "and", "in", "type", "case", "of"]
+                // .iter()
+                // .map(|x| (*x).into())
+                // .collect(),
+                reserved: Vec::new(),
             },
             op: Identifier {
                 start: satisfy(move |c| ops.chars().any(|x| x == c)),
@@ -248,6 +245,10 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             input: Some(State::new(input)),
             unprocessed_tokens: Vec::new(),
             indent_levels: Vec::new(),
+            end_position: SourcePosition {
+                column: -1,
+                line: -1,
+            },
             layout: layout.unwrap_or(layout_),
         };
         lexer.skip_whitespace();
@@ -388,13 +389,14 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                                  token: token,
                              }
                          })
-                         .parse_state(input);
+                         .parse(input);
         match result {
             Ok((token, input)) => {
-                self.input = Some(input.into_inner());
+                self.input = Some(input);
                 token
             }
-            Err(_err) => {
+            Err(err) => {
+                self.end_position = err.position;
                 PToken {
                     location: location,
                     token: Token::CloseBlock,
@@ -498,18 +500,19 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                     }
                     Ordering::Equal => {
                         if first && token.token != Token::OpenBlock {
-                            // If it is the first token in a sequence we dont want to emit a separator
+                            // If it is the first token in a sequence we dont want to emit a
+                            // separator
                             if let Some(offside) = lexer.indent_levels.last_mut() {
-                                // The enclosing block should not emit a block separator for the next
-                                // expression
+                                // The enclosing block should not emit a block separator for the
+                                // next expression
                                 if let Context::Block { ref mut first, .. } = offside.context {
                                     *first = false;
                                 }
                             }
                         } else if !first {
                             if let Some(offside) = lexer.indent_levels.last_mut() {
-                                // The enclosing block should not emit a block separator for the next
-                                // expression
+                                // The enclosing block should not emit a block separator for the
+                                // next expression
                                 if let Context::Block { ref mut first, .. } = offside.context {
                                     *first = true;
                                 }

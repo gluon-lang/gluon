@@ -63,7 +63,7 @@ y
     assert_eq!(result, Err(ParseError {
         position: SourcePosition { column: 4, line: 5 },
         errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
-                     Error::Expected(Info::Token(Token::In))],
+                     Error::Expected("`in` or an expression in the same column as the `let`".into())],
     }));
 }
 

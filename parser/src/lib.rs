@@ -291,22 +291,23 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn type_arg(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
-        let array_type = between(token(Token::OpenBracket),
-                                 token(Token::CloseBracket),
-                                 self.typ())
-                             .map(Type::array);
-        array_type.or(self.parser(ParserEnv::<I, F>::record_type))
-                  .or(between(token(Token::OpenParen),
-                              token(Token::CloseParen),
-                              optional(self.typ()))
-                          .map(|typ| {
-                              match typ {
-                                  Some(typ) => typ,
-                                  None => Type::unit(),
-                              }
-                          }))
-                  .or(self.ident_type())
-                  .parse_state(input)
+        choice::<[&mut Parser<Input = I, Output = ASTType<Id::Untyped>>; 4],
+                 _>([&mut between(token(Token::OpenBracket),
+                                  token(Token::CloseBracket),
+                                  self.typ())
+                              .map(Type::array),
+                     &mut self.parser(ParserEnv::<I, F>::record_type),
+                     &mut between(token(Token::OpenParen),
+                                  token(Token::CloseParen),
+                                  optional(self.typ()))
+                              .map(|typ| {
+                                  match typ {
+                                      Some(typ) => typ,
+                                      None => Type::unit(),
+                                  }
+                              }),
+                     &mut self.ident_type()])
+            .parse_state(input)
     }
 
     fn type_decl(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
@@ -314,26 +315,15 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         (token(Token::Type),
          self.parser(ParserEnv::<I, F>::type_binding),
          many(token(Token::And).with(self.parser(ParserEnv::<I, F>::type_binding))),
-         token(Token::In))
-            .map(|(_, first, rest, _): (_, _, Vec<_>, _)| {
-                let binds = Some(first)
-                                .into_iter()
-                                .chain(rest)
-                                .map(|(name, typ)| {
-                                    ast::TypeBinding {
-                                        name: name,
-                                        typ: typ,
-                                    }
-                                })
-                                .collect();
-                LetOrType::Type(binds)
+         token(Token::In).expected("`in` or an expression in the same column as the `let`"))
+            .map(|(_, first, mut bindings, _): (_, _, Vec<_>, _)| {
+                bindings.insert(0, first);
+                LetOrType::Type(bindings)
             })
             .parse_state(input)
     }
 
-    fn type_binding(&self,
-                    input: I)
-                    -> ParseResult<(ASTType<Id::Untyped>, ASTType<Id::Untyped>), I> {
+    fn type_binding(&self, input: I) -> ParseResult<TypeBinding<Id::Untyped>, I> {
         (self.ident_u(), many(self.ident_u()))
             .map(|(name, args): (_, Vec<_>)| {
                 let args = args.into_iter()
@@ -351,7 +341,12 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                 token(Token::Equal)
                     .with(self.typ()
                               .or(parser(move |input| self.parse_adt(&return_type, input))))
-                    .map(move |rhs_type| (return_type2.clone(), rhs_type))
+                    .map(move |rhs_type| {
+                        TypeBinding {
+                            name: return_type2.clone(),
+                            typ: rhs_type,
+                        }
+                    })
             })
             .parse_state(input)
     }
@@ -629,7 +624,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         let bind2 = self.parser(ParserEnv::<I, F>::binding);
         (token(Token::Let),
          bind1.and(many(token(Token::And).with(bind2))),
-         token(Token::In))
+         token(Token::In).expected("`in` or an expression in the same column as the `let`"))
             .map(|(_, (b, bindings), _)| {
                 let mut bindings: Vec<_> = bindings;
                 bindings.insert(0, b);
