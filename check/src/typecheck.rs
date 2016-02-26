@@ -43,7 +43,12 @@ pub enum TypeError<I> {
     DuplicateTypeDefinition(I),
     /// Type is not a type which has any fields
     InvalidFieldAccess(ast::ASTType<I>),
-    StringError(&'static str),
+    /// Expected to find a record with the following fields
+    UndefinedRecord {
+        fields: Vec<I>,
+    },
+    /// Found a case expression without any alternatives
+    EmptyCase,
 }
 
 
@@ -101,7 +106,10 @@ fn map_symbol(symbols: &SymbolModule,
         Rename(ref err) => Rename(err.clone()),
         DuplicateTypeDefinition(ref id) => DuplicateTypeDefinition(f(id)),
         InvalidFieldAccess(ref typ) => InvalidFieldAccess(typ.clone_strings(symbols)),
-        StringError(name) => StringError(name),
+        UndefinedRecord { ref fields } => {
+            UndefinedRecord { fields: fields.iter().map(f).collect() }
+        }
+        EmptyCase => EmptyCase,
     };
     ast::Spanned {
         span: err.span,
@@ -175,7 +183,15 @@ impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeErr
                        "Type '{}' is not a type which allows field accesses",
                        typ)
             }
-            StringError(ref name) => write!(f, "{}", name),
+            UndefinedRecord { ref fields } => {
+                try!(write!(f, "No type found with the following fields: "));
+                try!(write!(f, "{}", fields[0]));
+                for field in &fields[1..] {
+                    try!(write!(f, ", {}", field));
+                }
+                Ok(())
+            }
+            EmptyCase => write!(f, "`case` expression with no alternatives"),
         }
     }
 }
@@ -294,7 +310,7 @@ impl<'a> Typecheck<'a> {
     fn find_record(&self, fields: &[Symbol]) -> TcResult<(&TcType, &TcType)> {
         self.environment
             .find_record(fields)
-            .ok_or(StringError("Expected fields"))
+            .ok_or(UndefinedRecord { fields: fields.to_owned() })
     }
 
     fn find_type_info(&self, id: &Symbol) -> TcResult<(&[Generic<Symbol>], Option<&TcType>)> {
@@ -398,7 +414,9 @@ impl<'a> Typecheck<'a> {
         // How many scopes that have been entered in this "tailcall" loop
         let mut scope_count = 0;
         let returned_type;
-        fn moving<T>(t: T) -> T { t }
+        fn moving<T>(t: T) -> T {
+            t
+        }
         loop {
             match self.typecheck_(expr) {
                 Ok(tailcall) => {
@@ -434,7 +452,9 @@ impl<'a> Typecheck<'a> {
         Ok(returned_type)
     }
 
-    fn typecheck_(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TailCall, TypeError<Symbol>> {
+    fn typecheck_(&mut self,
+                  expr: &mut ast::LExpr<TcIdent>)
+                  -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
             ast::Expr::Identifier(ref mut id) => {
                 if let Some(&new) = self.original_symbols.get(&id.name) {
@@ -548,8 +568,8 @@ impl<'a> Typecheck<'a> {
                     }
                     expected_alt_type = Some(alt_type);
                 }
-                expected_alt_type.ok_or(StringError("No alternative in case expression"))
-                        .map(TailCall::Type)
+                expected_alt_type.ok_or(EmptyCase)
+                                 .map(TailCall::Type)
             }
             ast::Expr::Let(ref mut bindings, _) => {
                 self.enter_scope();
