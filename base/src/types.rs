@@ -433,72 +433,70 @@ pub fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
     }
 }
 
-impl<Id> Type<Id, ()> {
-    pub fn app(l: ASTType<Id>, r: ASTType<Id>) -> ASTType<Id> {
-        ASTType::from(Type::App(l, r))
+impl<Id, T> Type<Id, T> where T: From<Type<Id, T>>
+{
+    pub fn app(l: T, r: T) -> T {
+        T::from(Type::App(l, r))
     }
 
-    pub fn array(typ: ASTType<Id>) -> ASTType<Id> {
-        ASTType::from(Type::Array(typ))
+    pub fn array(typ: T) -> T {
+        T::from(Type::Array(typ))
     }
 
-    pub fn data(id: TypeConstructor<Id>, args: Vec<ASTType<Id>>) -> ASTType<Id> {
-        ASTType::from(Type::Data(id, args))
+    pub fn data(id: TypeConstructor<Id>, args: Vec<T>) -> T {
+        T::from(Type::Data(id, args))
     }
 
-    pub fn variants(vs: Vec<(Id, ASTType<Id>)>) -> ASTType<Id> {
-        ASTType::from(Type::Variants(vs))
+    pub fn variants(vs: Vec<(Id, T)>) -> T {
+        T::from(Type::Variants(vs))
     }
 
-    pub fn record(types: Vec<Field<Id, Alias<Id, ASTType<Id>>>>,
-                  fields: Vec<Field<Id>>)
-                  -> ASTType<Id> {
-        ASTType::from(Type::Record {
+    pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
+        T::from(Type::Record {
             types: types,
             fields: fields,
         })
     }
 
-    pub fn function(args: Vec<ASTType<Id>>, ret: ASTType<Id>) -> ASTType<Id> {
-        ASTType::from(args.into_iter()
-                          .rev()
-                          .fold(ret,
-                                |body, arg| ASTType::from(Type::Function(vec![arg], body))))
+    pub fn function(args: Vec<T>, ret: T) -> T {
+        args.into_iter()
+            .rev()
+            .fold(ret, |body, arg| T::from(Type::Function(vec![arg], body)))
     }
 
-    pub fn generic(typ: Generic<Id>) -> ASTType<Id> {
-        ASTType::from(Type::Generic(typ))
+    pub fn generic(typ: Generic<Id>) -> T {
+        T::from(Type::Generic(typ))
     }
 
-    pub fn builtin(typ: BuiltinType) -> ASTType<Id> {
-        ASTType::from(Type::Builtin(typ))
+    pub fn builtin(typ: BuiltinType) -> T {
+        T::from(Type::Builtin(typ))
     }
 
-    pub fn variable(typ: TypeVariable) -> ASTType<Id> {
-        ASTType::from(Type::Variable(typ))
+    pub fn variable(typ: TypeVariable) -> T {
+        T::from(Type::Variable(typ))
     }
 
-    pub fn string() -> ASTType<Id> {
+    pub fn string() -> T {
         Type::builtin(BuiltinType::String)
     }
 
-    pub fn char() -> ASTType<Id> {
+    pub fn char() -> T {
         Type::builtin(BuiltinType::Char)
     }
 
-    pub fn int() -> ASTType<Id> {
+    pub fn int() -> T {
         Type::builtin(BuiltinType::Int)
     }
 
-    pub fn float() -> ASTType<Id> {
+    pub fn float() -> T {
         Type::builtin(BuiltinType::Float)
     }
 
-    pub fn bool() -> ASTType<Id> {
+    pub fn bool() -> T {
         Type::builtin(BuiltinType::Bool)
     }
 
-    pub fn unit() -> ASTType<Id> {
+    pub fn unit() -> T {
         Type::builtin(BuiltinType::Unit)
     }
 }
@@ -927,15 +925,15 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
 #[cfg(test)]
 mod test {
     use super::*;
+    use ast::ASTType;
 
     #[test]
     fn show_record() {
-        assert_eq!(format!("{}", Type::<&str, ()>::record(vec![], vec![])),
-                   "{}");
+        assert_eq!(format!("{}", Type::<&str, ASTType<&str>>::record(vec![], vec![])), "{}");
         let typ = Type::record(vec![],
                                vec![Field {
                                         name: "x",
-                                        typ: Type::int(),
+                                        typ: Type::<&str, ASTType<&str>>::int(),
                                     }]);
         assert_eq!(format!("{}", typ), "{ x: Int }");
 

@@ -520,7 +520,7 @@ impl<'a> Typecheck<'a> {
                     };
                     match &op_name[1 + offset..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
-                        "==" | "<" => Ok(Type::bool().clone()),
+                        "==" | "<" => Ok(Type::bool()),
                         _ => Err(UndefinedVariable(op.name.clone())),
                     }
                 } else {
@@ -806,7 +806,7 @@ impl<'a> Typecheck<'a> {
                                               (generics, typ.cloned())
                                           };
 
-                                          let name =
+                                          let name: TcType =
                                               Type::data(types::TypeConstructor::Data(*symbol),
                                                          generics.iter()
                                                                  .cloned()
@@ -1110,7 +1110,7 @@ impl<'a> Typecheck<'a> {
                                           let generic = format!("{}{}", generic, i);
                                           i += 1;
                                           let id = self.symbols.symbol(generic);
-                                          let gen = Type::generic(Generic {
+                                          let gen: TcType = Type::generic(Generic {
                                               kind: var.kind.clone(),
                                               id: id,
                                           });

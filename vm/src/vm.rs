@@ -680,7 +680,7 @@ impl<'a> GlobalVMState<'a> {
         } else {
             let id = TypeId::of::<T>();
             let arg_types = args.iter().map(|g| Type::generic(g.clone())).collect();
-            let typ = Type::data(types::TypeConstructor::Data(n), arg_types);
+            let typ: TcType = Type::data(types::TypeConstructor::Data(n), arg_types);
             self.typeids
                 .try_insert(id, typ.clone())
                 .expect("Id not inserted");

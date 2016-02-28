@@ -67,7 +67,7 @@ pub struct InFile<E> {
     error: Errors<SourceContext<E>>,
 }
 
-impl <E> InFile<E> {
+impl<E> InFile<E> {
     /// Creates a new `InFile` error which states that the error occured in `file` using the file
     /// contents in `contents` to provide a context to the span.
     pub fn new(file: String, contents: &str, error: Errors<ast::Spanned<E>>) -> InFile<E> {

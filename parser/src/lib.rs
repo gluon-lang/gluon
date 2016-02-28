@@ -336,7 +336,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                .collect();
                 Type::data(TypeConstructor::Data(name), args)
             })
-            .then(|return_type| {
+            .then(|return_type: ASTType<Id::Untyped>| {
                 let return_type2 = return_type.clone();
                 token(Token::Equal)
                     .with(self.typ()
