@@ -12,9 +12,10 @@ let { (<>), empty } = monoid
 
 
 let load_file filename: String -> IO String =
-    let last_slash = (\_ -> case string.rfind filename "/" of
-        | None -> 0
-        | Some i -> i + 1) ()
+    let last_slash =
+        case string.rfind filename "/" of
+            | None -> 0
+            | Some i -> i + 1
     let modulename = string.slice filename last_slash (string.length filename - 3)
     let read_result = io.catch (io.read_file filename >>= \x -> return (Ok x)) (\err -> return (Err err))
     read_result >>= \result ->

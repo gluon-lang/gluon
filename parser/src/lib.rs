@@ -724,7 +724,7 @@ pub fn parse_string<'a, 's>(layout: Option<fn(&mut Lexer<'s,
                                                          &'s str,
                                                          &'a mut IdentEnv<Ident = String>>,
                                               PToken<String>)
-                                              -> Result<Token<String>, Token<String>>>,
+                                              -> Result<Token<String>, ::lexer::Error<String>>>,
                             make_ident: &'a mut IdentEnv<Ident = String>,
                             input: &'s str)
                             -> Result<LExpr<String>, Error> {
@@ -735,7 +735,7 @@ pub fn parse_module<'a, 's, Id>(layout: Option<fn(&mut Lexer<'s,
                                                              &'s str,
                                                              &'a mut IdentEnv<Ident = Id>>,
                                                   PToken<Id>)
-                                                  -> Result<Token<Id>, Token<Id>>>,
+                                                  -> Result<Token<Id>, ::lexer::Error<Id>>>,
                                 make_ident: &'a mut IdentEnv<Ident = Id>,
                                 input: &'s str)
                                 -> Result<LExpr<Id>, Error>

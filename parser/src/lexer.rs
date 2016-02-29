@@ -177,8 +177,63 @@ impl<Id> Token<Id> {
     }
 }
 
+pub enum Error<Id> {
+    UnexpectedToken(Token<Id>),
+    Unindentation,
+}
+
 /// Parser passes the environment to each parser function
 type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, State<I>, T>;
+
+pub struct Contexts {
+    stack: Vec<Offside>,
+}
+
+impl Contexts {
+    pub fn last(&self) -> Option<&Offside> {
+        self.stack.last()
+    }
+
+    pub fn last_mut(&mut self) -> Option<&mut Offside> {
+        self.stack.last_mut()
+    }
+
+    pub fn pop(&mut self) -> Option<Offside> {
+        self.stack.pop()
+    }
+
+    pub fn push<Id>(&mut self, offside: Offside) -> Result<(), Error<Id>> {
+        try!(self.check_unindentation_limit(&offside));
+        self.stack.push(offside);
+        Ok(())
+    }
+
+    pub fn replace<Id>(&mut self, offside: Offside) -> Result<(), Error<Id>> {
+        self.pop();
+        self.push(offside)
+    }
+
+    fn check_unindentation_limit<Id>(&mut self, offside: &Offside) -> Result<(), Error<Id>> {
+        let mut skip_block = false;
+        for other_offside in self.stack.iter().rev() {
+            match other_offside.context {
+                Context::Lambda => {
+                    skip_block = true;
+                    continue;
+                }
+                Context::Paren | Context::Bracket | Context::Brace => return Ok(()),
+                Context::Block { .. } if skip_block => continue,
+                // New context should not be unindented past the closest enclosing block context
+                Context::MatchClause | Context::Type | Context::Let | Context::Block { .. }
+                    if offside.location.column < other_offside.location.column => (),
+                _ => continue,
+            }
+            debug!("Unindentation error: {:?} < {:?}", offside, other_offside);
+            return Err(Error::Unindentation);
+        }
+        Ok(())
+    }
+}
 
 pub struct Lexer<'a, I, F>
     where I: Stream<Item = char>,
@@ -188,9 +243,9 @@ pub struct Lexer<'a, I, F>
     pub make_ident: Rc<RefCell<F>>,
     pub input: Option<State<I>>,
     pub unprocessed_tokens: Vec<PToken<F::Ident>>,
-    pub indent_levels: Vec<Offside>,
+    pub indent_levels: Contexts,
     end_position: SourcePosition,
-    layout: fn(&mut Lexer<'a, I, F>, PToken<F::Ident>) -> Result<Token<F::Ident>, Token<F::Ident>>,
+    layout: fn(&mut Lexer<'a, I, F>, PToken<F::Ident>) -> Result<Token<F::Ident>, Error<F::Ident>>,
 }
 
 impl<'a, I, F> HasPosition for Lexer<'a, I, F>
@@ -214,7 +269,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
           I::Range: fmt::Debug + 's
 {
     pub fn new(layout: Option<fn(&mut Lexer<'a, I, F>, PToken<F::Ident>)
-                                 -> Result<Token<F::Ident>, Token<F::Ident>>>,
+                                 -> Result<Token<F::Ident>, Error<F::Ident>>>,
                input: I,
                make_ident: Rc<RefCell<F>>)
                -> Lexer<'a, I, F> {
@@ -244,7 +299,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             make_ident: make_ident,
             input: Some(State::new(input)),
             unprocessed_tokens: Vec::new(),
-            indent_levels: Vec::new(),
+            indent_levels: Contexts { stack: Vec::new() },
             end_position: SourcePosition {
                 column: -1,
                 line: -1,
@@ -309,7 +364,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             .parse_state(input)
     }
 
-    fn layout_independent_token(&mut self, token: PToken<Id>) -> Result<Token<Id>, Token<Id>> {
+    fn layout_independent_token(&mut self, token: PToken<Id>) -> Result<Token<Id>, Error<Id>> {
         (self.layout)(self, token)
     }
 
@@ -408,7 +463,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
 
 fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                          mut token: PToken<Id>)
-                         -> Result<Token<Id>, Token<Id>>
+                         -> Result<Token<Id>, Error<Id>>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
@@ -424,13 +479,13 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                 if token.token == Token::EOF {
                     return Ok(token.token);
                 }
-                lexer.indent_levels.push(Offside {
+                try!(lexer.indent_levels.push(Offside {
                     context: Context::Block {
                         first: true,
                         needs_close: true,
                     },
                     location: token.location,
-                });
+                }));
                 debug!("Default block {:?}", token);
                 lexer.unprocessed_tokens.push(token);
                 return Ok(Token::OpenBlock);
@@ -524,7 +579,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                     _ => (),
                 }
             }
-            Context::Expr | Context::MatchClause => {
+            Context::Expr | Context::MatchClause | Context::Lambda => {
                 if ordering == Ordering::Less {
                     lexer.indent_levels.pop();
                     continue;
@@ -550,37 +605,25 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             _ => (),
         }
         // Finally we check the token in case it needs to push a new context
+        let push_context = match token.token {
+            Token::Let => Some(Context::Let),
+            Token::If => Some(Context::If),
+            Token::Type => Some(Context::Type),
+            Token::Case => Some(Context::Expr),
+            Token::Lambda => Some(Context::Lambda),
+            Token::OpenBrace => Some(Context::Brace),
+            Token::OpenBracket => Some(Context::Bracket),
+            Token::OpenParen => Some(Context::Paren),
+            _ => None,
+        };
+        if let Some(context) = push_context {
+            let offside = Offside {
+                context: context,
+                location: token.location,
+            };
+            return lexer.indent_levels.push(offside).map(move |()| token.token);
+        }
         match token.token {
-            Token::Let => {
-                lexer.indent_levels.push(Offside {
-                    context: Context::Let,
-                    location: token.location,
-                });
-            }
-            Token::If => {
-                lexer.indent_levels.push(Offside {
-                    context: Context::If,
-                    location: token.location,
-                });
-            }
-            Token::Type => {
-                lexer.indent_levels.push(Offside {
-                    context: Context::Type,
-                    location: token.location,
-                });
-            }
-            Token::Case => {
-                lexer.indent_levels.push(Offside {
-                    context: Context::Expr,
-                    location: token.location,
-                });
-            }
-            Token::Lambda => {
-                lexer.indent_levels.push(Offside {
-                    context: Context::Lambda,
-                    location: token.location,
-                });
-            }
             Token::In => {
                 lexer.indent_levels.pop();
                 if let Context::Block { needs_close: true, .. } = offside.context {
@@ -590,40 +633,28 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             }
             Token::Equal => {
                 if offside.context == Context::Let {
-                    scan_for_next_block(lexer,
-                                        Context::Block {
-                                            first: true,
-                                            needs_close: true,
-                                        });
+                    try!(scan_for_next_block(lexer,
+                                             Context::Block {
+                                                 first: true,
+                                                 needs_close: true,
+                                             }));
                 }
             }
             Token::RightArrow => {
                 if offside.context == Context::MatchClause || offside.context == Context::Lambda {
-                    if offside.context == Context::Lambda {
-                        lexer.indent_levels.pop();
-                    }
-                    scan_for_next_block(lexer,
-                                        Context::Block {
-                                            first: true,
-                                            needs_close: true,
-                                        });
+                    try!(scan_for_next_block(lexer,
+                                             Context::Block {
+                                                 first: true,
+                                                 needs_close: true,
+                                             }));
                 }
             }
             Token::Then => {
-                scan_for_next_block(lexer,
-                                    Context::Block {
-                                        first: true,
-                                        needs_close: true,
-                                    });
-            }
-            Token::OpenBrace => {
-                scan_for_next_block(lexer, Context::Brace);
-            }
-            Token::OpenBracket => {
-                scan_for_next_block(lexer, Context::Bracket);
-            }
-            Token::OpenParen => {
-                scan_for_next_block(lexer, Context::Paren);
+                try!(scan_for_next_block(lexer,
+                                         Context::Block {
+                                             first: true,
+                                             needs_close: true,
+                                         }));
             }
             Token::Comma => {
                 // Prevent a semi to be emitted before the next token
@@ -635,14 +666,16 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                     }
                 }
             }
-            Token::Of => scan_for_next_block(lexer, Context::MatchClause),
+            Token::Of => try!(scan_for_next_block(lexer, Context::MatchClause)),
             _ => (),
         }
         return Ok(token.token);
     }
 }
 
-fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>, context: Context)
+fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
+                                         context: Context)
+                                         -> Result<(), Error<Id>>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
@@ -660,7 +693,7 @@ fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>, context: C
     lexer.indent_levels.push(Offside {
         context: context,
         location: location,
-    });
+    })
 }
 
 impl<'a, I, Id, F> Iterator for Lexer<'a, I, F>

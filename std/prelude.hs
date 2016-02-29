@@ -11,9 +11,10 @@ let monoid_Function m: Monoid b -> (Monoid (a -> b)) = {
 }
 
 let monoid_List =
-    let (<>) xs ys = case xs of
-        | Cons x zs -> Cons x (zs <> ys)
-        | Nil -> ys
+    let (<>) xs ys =
+        case xs of
+            | Cons x zs -> Cons x (zs <> ys)
+            | Nil -> ys
     { (<>), empty = Nil }
 
 let monoid_Option m: Monoid a -> Monoid (Option a) = {
@@ -55,17 +56,20 @@ let flip f = \x y -> f y x
 
 let not x = if x then False else True
 
-let concatMap f xs: (a -> List b) -> List a -> List b = case xs of
-    | Cons x ys -> monoid_List.(<>) (f x) (concatMap f ys)
-    | Nil -> Nil
+let concatMap f xs: (a -> List b) -> List a -> List b =
+    case xs of
+        | Cons x ys -> monoid_List.(<>) (f x) (concatMap f ys)
+        | Nil -> Nil
 
-let foldl f x xs = case xs of
-    | Cons y ys -> foldl f (f x y) ys
-    | Nil -> x
+let foldl f x xs =
+    case xs of
+        | Cons y ys -> foldl f (f x y) ys
+        | Nil -> x
 
-let foldr f x xs = case xs of
-    | Cons y ys -> f y (foldr f x ys)
-    | Nil -> x
+let foldr f x xs =
+    case xs of
+        | Cons y ys -> f y (foldr f x ys)
+        | Nil -> x
 
 type Eq a = {
     (==) : a -> a -> Bool
@@ -108,12 +112,14 @@ let eq_Result: Eq e -> Eq t -> Eq (Result e t) = \eq_e eq_t -> {
 let eq_List: Eq a -> Eq (List a) = \d ->
     let (==) l r =
         case l of
-            | Nil -> (case r of
-                | Nil -> True
-                | Cons x y -> False)
-            | Cons x xs -> case r of
-                | Nil -> False
-                | Cons y ys -> d.(==) x y && xs == ys
+            | Nil ->
+                case r of
+                    | Nil -> True
+                    | Cons x y -> False
+            | Cons x xs ->
+                case r of
+                    | Nil -> False
+                    | Cons y ys -> d.(==) x y && xs == ys
     { (==) }
 
 type Ordering = | LT | EQ | GT
@@ -176,22 +182,26 @@ let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_e ord_t -> {
 let make_Ord ord =
     let compare = ord.compare
     {
-        (<=) = \l r -> case compare l r of
-            | LT -> True
-            | EQ -> True
-            | GT -> False,
-        (<) = \l r -> case compare l r of
-            | LT -> True
-            | EQ -> False
-            | GT -> False,
-        (>) = \l r -> case compare l r of
-            | LT -> False
-            | EQ -> False
-            | GT -> True,
-        (=>) = \l r -> case compare l r of
-            | LT -> False
-            | EQ -> True
-            | GT -> True
+        (<=) = \l r ->
+            case compare l r of
+                | LT -> True
+                | EQ -> True
+                | GT -> False,
+        (<) = \l r ->
+            case compare l r of
+                | LT -> True
+                | EQ -> False
+                | GT -> False,
+        (>) = \l r ->
+            case compare l r of
+                | LT -> False
+                | EQ -> False
+                | GT -> True,
+        (=>) = \l r ->
+            case compare l r of
+                | LT -> False
+                | EQ -> True
+                | GT -> True
     }
 
 type Num a = {
@@ -335,7 +345,8 @@ let monad_IO: Monad IO = {
 let make_Monad m =
     let { (>>=), return } = m
     let (>>) l r = l >>= \_ -> r
-    let forM_ xs f = case xs of
+    let forM_ xs f =
+        case xs of
             | Cons y ys ->
                 f y >> forM_ ys f
             | Nil -> return ()
@@ -375,11 +386,13 @@ let (++) = string_prim.append
 
 let show_List: Show a -> Show (List a) = \d ->
     let show xs =
-        let show2 ys = case ys of
-            | Cons y ys2 -> case ys2 of
-                | Cons z zs -> d.show y ++ ", " ++ show2 ys2
-                | Nil -> d.show y ++ "]"
-            | Nil -> "]"
+        let show2 ys =
+            case ys of
+                | Cons y ys2 ->
+                    case ys2 of
+                        | Cons z zs -> d.show y ++ ", " ++ show2 ys2
+                        | Nil -> d.show y ++ "]"
+                | Nil -> "]"
         "[" ++ show2 xs
     { show }
 

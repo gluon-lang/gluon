@@ -377,18 +377,22 @@ fn app_app_unify() {
 type Monad m = {
     (>>=): m a -> (a -> m b) -> m b,
     return: a -> m a
-} in
+}
+
 type Test a = | T a
-in
+
 let monad_Test: Monad Test = {
-    (>>=) = \ta f -> case ta of
-                    | T a -> f a,
+    (>>=) = \ta f ->
+        case ta of
+            | T a -> f a,
     return = \x -> T x
-} in
+}
+
 let (>>=) = monad_Test.(>>=)
-in
+
 let test: Test () = T 1 >>= \x -> monad_Test.return ()
-in test
+
+test
 ";
     let result = typecheck(text);
     assert_eq!(result, Ok(typ_a("Test", vec![Type::unit()])));
@@ -463,10 +467,11 @@ let ord_Int = {
 let make_Ord ord =
     let compare = ord.compare
     in {
-        (<=) = \l r -> case compare l r of
-            | LT -> True
-            | EQ -> True
-            | GT -> False
+        (<=) = \l r ->
+            case compare l r of
+                | LT -> True
+                | EQ -> True
+                | GT -> False
     }
 let (<=) = (make_Ord ord_Int).(<=)
 

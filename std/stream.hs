@@ -9,9 +9,10 @@ and Stream a = Lazy (Stream_ a)
 in
 let from f: (Int -> Option a) -> Stream a =
         let from_ i =
-                lazy (\_ -> case f i of
-                    | Some x -> Value x (from_ (i + 1))
-                    | None -> Empty
+                lazy (\_ ->
+                    case f i of
+                        | Some x -> Value x (from_ (i + 1))
+                        | None -> Empty
                 )
         in from_ 0
 in

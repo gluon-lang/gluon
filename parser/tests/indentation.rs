@@ -111,8 +111,9 @@ fn record_unindented_fields() {
     let _ = ::env_logger::init();
     let text = r#"
 let monad_Test: Monad Test = {
-    (>>=) = \ta f -> case ta of
-                    | T a -> f a,
+    (>>=) = \ta f ->
+        case ta of
+            | T a -> f a,
     return = \x -> T x
 }
 in 1
@@ -121,14 +122,49 @@ in 1
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
+// match clauses cannot be unindented past the enclosing block
 #[test]
-fn allow_unindentation_after_case_of() {
+fn to_much_unindented_case_of() {
     let _ = ::env_logger::init();
     let text = r#"
-let test x = case x of
-    | Some y -> y
-    | None -> 0
+let test x =
+    case x of
+  | Some y -> y
+  | None -> 0
 in test
+"#;
+    let result = parse(text);
+    assert!(result.is_err(), "{:?}", result.unwrap());
+}
+
+#[test]
+fn case_of_alignment() {
+    let _ = ::env_logger::init();
+    let text = r#"
+case x of
+    | Some y ->
+        case x of
+            | Some y2 -> y2
+            | None -> 0
+    | None -> 0
+"#;
+    let result = parse(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    match result.as_ref().unwrap().value {
+        Expr::Match(_, ref alts) => assert_eq!(alts.len(), 2),
+        ref x => panic!("{:?}", x)
+    }
+}
+
+#[test]
+fn allow_unindented_lambda() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let f = \x ->
+    let y = x + 1
+    y
+
+f
 "#;
     let result = parse(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
