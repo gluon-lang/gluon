@@ -49,39 +49,39 @@ Larger example which display most if not all of the syntactical elements in the 
 type Eq a = { (==) : a -> a -> Bool }
 // `let` declares new variables.
 let id x = x
-//!
+
 let factorial n =
         if n < 2
         then 1
         else n * factorial (n - 1)
-//!
+
 let list_module =
-        // Declare a new type which only exists in the current scope
-        type List a = | Cons a (List a) | Nil
-        let map f xs =
-                case xs of
-                    | Cons y ys -> Cons (f y) (map f ys)
-                    | Nil -> Nil
-        let eq eq_a: Eq a -> Eq (List a) =
-                let (==) l r =
-                    case l of
-                        | Cons la lxs ->
-                            (case r of
-                                | Cons ra rxs -> eq_a.(==) la ra && lxs == rxs
-                                | Nil -> False)
-                        | Nil ->
-                            (case r of
-                                | Cons _ _ -> False
-                                | Nil -> True)
-                { (==) }
-        {
-            // Since `List` is local we export it so its constructors can be used
-            // outside the current scope
-            List,
-            eq,
-            map
-        }
-//!
+    // Declare a new type which only exists in the current scope
+    type List a = | Cons a (List a) | Nil
+    let map f xs =
+        case xs of
+            | Cons y ys -> Cons (f y) (map f ys)
+            | Nil -> Nil
+    let eq eq_a: Eq a -> Eq (List a) =
+        let (==) l r =
+            case l of
+                | Cons la lxs ->
+                    (case r of
+                        | Cons ra rxs -> eq_a.(==) la ra && lxs == rxs
+                        | Nil -> False)
+                | Nil ->
+                    (case r of
+                        | Cons _ _ -> False
+                        | Nil -> True)
+        { (==) }
+    {
+        // Since `List` is local we export it so its constructors can be used
+        // outside the current scope
+        List,
+        eq,
+        map
+    }
+
 // Bring the `List` type and its constructors into scope
 let { List, eq = list_Eq } = list_module
 // Create `==` for `List Int`
