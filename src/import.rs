@@ -35,6 +35,14 @@ quick_error! {
     }
 }
 
+macro_rules! std_libs {
+    ($($file: expr),*) => {
+        [$((concat!("std/", $file, ".hs"), include_str!(concat!("../std/", $file, ".hs")))),*]
+    }
+}
+// Include the standard library distribution in the binary
+static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!("prelude", "map", "repl", "string", "state", "test", "writer");
+
 /// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
 /// already loaded and then a global access to the loaded module
 pub struct Import {
@@ -77,22 +85,28 @@ impl<'a> Macro<VM<'a>> for Import {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
                     self.visited.borrow_mut().push(filename.clone());
-                    let file = self.paths
-                                   .borrow()
-                                   .iter()
-                                   .filter_map(|p| {
-                                       let mut base = p.clone();
-                                       base.push(path);
-                                       match File::open(&base) {
-                                           Ok(file) => Some(file),
-                                           Err(_) => None,
-                                       }
-                                   })
-                                   .next();
-                    let mut file = try!(file.ok_or_else(|| Error::String("Could not find file")));
                     let mut buffer = String::new();
-                    try!(file.read_to_string(&mut buffer));
-                    try!(load_script(vm, &modulename, &buffer));
+                    let file_contents = match STD_LIBS.iter().find(|tup| tup.0 == filename) {
+                        Some(tup) => tup.1,
+                        None => {
+                            let file = self.paths
+                                           .borrow()
+                                           .iter()
+                                           .filter_map(|p| {
+                                               let mut base = p.clone();
+                                               base.push(path);
+                                               match File::open(&base) {
+                                                   Ok(file) => Some(file),
+                                                   Err(_) => None,
+                                               }
+                                           })
+                                           .next();
+                            let mut file = try!(file.ok_or_else(|| Error::String("Could not find file")));
+                            try!(file.read_to_string(&mut buffer));
+                            &*buffer
+                        }
+                    };
+                    try!(load_script(vm, &modulename, file_contents));
                     self.visited.borrow_mut().pop();
                 }
                 // FIXME Does not handle shadowing
