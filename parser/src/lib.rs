@@ -27,7 +27,7 @@ use combine::{between, chainl1, choice, env_parser, many, many1, optional, parse
               sep_by, sep_by1, token, try, value, ParseError, ParseResult, Parser, ParserExt};
 use combine_language::{Assoc, Fixity, expression_parser};
 
-use lexer::{Lexer, Token};
+use lexer::{Lexer, Delimiter, Token};
 
 pub type Error = ParseError<BufferedStream<'static,
                                            Lexer<'static,
@@ -252,8 +252,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                 }
                             })
                         });
-        between(token(Token::OpenBrace),
-                token(Token::CloseBrace),
+        between(token(Token::Open(Delimiter::Brace)),
+                token(Token::Close(Delimiter::Brace)),
                 sep_by(field, token(Token::Comma)))
             .map(|fields: Vec<(Id, _)>| {
                 let mut associated = Vec::new();
@@ -292,13 +292,13 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     fn type_arg(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
         choice::<[&mut Parser<Input = I, Output = ASTType<Id::Untyped>>; 4],
-                 _>([&mut between(token(Token::OpenBracket),
-                                  token(Token::CloseBracket),
+                 _>([&mut between(token(Token::Open(Delimiter::Bracket)),
+                                  token(Token::Close(Delimiter::Bracket)),
                                   self.typ())
                               .map(Type::array),
                      &mut self.parser(ParserEnv::<I, F>::record_type),
-                     &mut between(token(Token::OpenParen),
-                                  token(Token::CloseParen),
+                     &mut between(token(Token::Open(Delimiter::Paren)),
+                                  token(Token::Close(Delimiter::Paren)),
                                   optional(self.typ()))
                               .map(|typ| {
                                   match typ {
@@ -457,8 +457,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                               })
                               .map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::record).map(&loc),
-                     &mut between(token(Token::OpenParen),
-                                  token(Token::CloseParen),
+                     &mut between(token(Token::Open(Delimiter::Paren)),
+                                  token(Token::Close(Delimiter::Paren)),
                                   optional(self.expr()).map(|expr| {
                                       match expr {
                                           Some(expr) => expr,
@@ -469,8 +469,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                               .map(|s| loc(Expr::Literal(LiteralEnum::String(s)))),
                      &mut self.char_literal()
                               .map(|s| loc(Expr::Literal(LiteralEnum::Char(s)))),
-                     &mut between(token(Token::OpenBracket),
-                                  token(Token::CloseBracket),
+                     &mut between(token(Token::Open(Delimiter::Bracket)),
+                                  token(Token::Close(Delimiter::Bracket)),
                                   sep_by(self.expr(), token(Token::Comma)))
                               .map(|exprs| {
                                   loc(Expr::Array(Array {
@@ -601,8 +601,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     }
                 }))
                 .map(|p| located(location, p))
-                .or(between(token(Token::OpenParen),
-                            token(Token::CloseParen),
+                .or(between(token(Token::Open(Delimiter::Paren)),
+                            token(Token::Close(Delimiter::Paren)),
                             self.pattern()))
                 .parse_state(input)
         })
@@ -697,8 +697,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                     result.map(|(x, input)| ((id.clone().to_id(), x), input))
                                 })
                             });
-        let mut parser = between(token(Token::OpenBrace),
-                                 token(Token::CloseBrace),
+        let mut parser = between(token(Token::Open(Delimiter::Brace)),
+                                 token(Token::Close(Delimiter::Brace)),
                                  sep_by(&mut field, token(Token::Comma)));
         f(&mut parser)
     }

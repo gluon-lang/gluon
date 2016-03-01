@@ -10,6 +10,30 @@ use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum Delimiter {
+    Brace,
+    Bracket,
+    Paren,
+}
+
+impl Delimiter {
+    fn as_str(&self) -> &'static str {
+        use self::Delimiter::*;
+        match *self {
+            Brace => "Brace",
+            Bracket => "Bracket",
+            Paren => "Paren",
+        }
+    }
+}
+
+impl fmt::Display for Delimiter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum Token<Id> {
     Identifier(Id, bool),
@@ -27,12 +51,8 @@ pub enum Token<Id> {
     If,
     Then,
     Else,
-    OpenBrace,
-    CloseBrace,
-    OpenParen,
-    CloseParen,
-    OpenBracket,
-    CloseBracket,
+    Open(Delimiter),
+    Close(Delimiter),
     Lambda,
     RightArrow,
     Colon,
@@ -49,6 +69,7 @@ pub enum Token<Id> {
 impl<Id> fmt::Display for Token<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Token::*;
+        use self::Delimiter::*;
         let s = match *self {
             Identifier(..) => "Identifier",
             Operator(..) => "Operator",
@@ -65,12 +86,12 @@ impl<Id> fmt::Display for Token<Id> {
             If => "If",
             Then => "Then",
             Else => "Else",
-            OpenBrace => "OpenBrace",
-            CloseBrace => "CloseBrace",
-            OpenParen => "OpenParen",
-            CloseParen => "CloseParen",
-            OpenBracket => "OpenBracket",
-            CloseBracket => "CloseBracket",
+            Open(Brace) => "OpenBrace",
+            Close(Brace) => "CloseBrace",
+            Open(Paren) => "OpenParen",
+            Close(Paren) => "CloseParen",
+            Open(Bracket) => "OpenBracket",
+            Close(Bracket) => "CloseBracket",
             Lambda => "Lambda",
             RightArrow => "RightArrow",
             Colon => "Colon",
@@ -108,12 +129,8 @@ impl<Id> Token<Id> {
             If => If,
             Then => Then,
             Else => Else,
-            OpenBrace => OpenBrace,
-            CloseBrace => CloseBrace,
-            OpenParen => OpenParen,
-            CloseParen => CloseBracket,
-            OpenBracket => OpenBracket,
-            CloseBracket => CloseBracket,
+            Open(d) => Open(d),
+            Close(d) => Close(d),
             Lambda => Lambda,
             RightArrow => RightArrow,
             Colon => Colon,
@@ -154,27 +171,9 @@ pub enum Context {
     Type,
     If,
     Then,
-    Brace,
-    Paren,
-    Bracket,
+    Delimiter(Delimiter),
     MatchClause,
     Lambda,
-}
-
-impl<Id> Token<Id> {
-    pub fn context(&self) -> Option<Context> {
-        match *self {
-            Token::OpenBlock => {
-                Some(Context::Block {
-                    first: true,
-                    needs_close: true,
-                })
-            }
-            Token::Let => Some(Context::Let),
-            Token::Type => Some(Context::Type),
-            _ => None,
-        }
-    }
 }
 
 pub enum Error<Id> {
@@ -221,7 +220,7 @@ impl Contexts {
                     skip_block = true;
                     continue;
                 }
-                Context::Paren | Context::Bracket | Context::Brace => return Ok(()),
+                Context::Delimiter(_) => return Ok(()),
                 Context::Block { .. } if skip_block => continue,
                 // New context should not be unindented past the closest enclosing block context
                 Context::MatchClause | Context::Type | Context::Let | Context::Block { .. }
@@ -425,12 +424,16 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                                            &mut self.env.reserved_op("|").map(|_| Token::Pipe),
                                            &mut self.env.reserved_op("=").map(|_| Token::Equal),
                                            &mut self.op().map(Token::Operator),
-                                           &mut char('(').map(|_| Token::OpenParen),
-                                           &mut char(')').map(|_| Token::CloseParen),
-                                           &mut char('{').map(|_| Token::OpenBrace),
-                                           &mut char('}').map(|_| Token::CloseBrace),
-                                           &mut char('[').map(|_| Token::OpenBracket),
-                                           &mut char(']').map(|_| Token::CloseBracket),
+                                           &mut char('(').map(|_| Token::Open(Delimiter::Paren)),
+                                           &mut char(')')
+                                                    .map(|_| Token::Close(Delimiter::Paren)),
+                                           &mut char('{').map(|_| Token::Open(Delimiter::Brace)),
+                                           &mut char('}')
+                                                    .map(|_| Token::Close(Delimiter::Brace)),
+                                           &mut char('[')
+                                                    .map(|_| Token::Open(Delimiter::Bracket)),
+                                           &mut char(']')
+                                                    .map(|_| Token::Close(Delimiter::Bracket)),
                                            &mut self.env.string_literal().map(Token::String),
                                            &mut self.env.char_literal().map(Token::Char),
                                            &mut try(self.env
@@ -497,25 +500,24 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
         if [Token::In,
             Token::CloseBlock,
             Token::Else,
-            Token::CloseBrace,
-            Token::CloseParen,
-            Token::CloseBracket,
+            Token::Close(Delimiter::Brace),
+            Token::Close(Delimiter::Bracket),
+            Token::Close(Delimiter::Paren),
             Token::Comma]
                .iter()
                .any(|t| *t == token.token) {
 
             if token.token == Token::Comma &&
-               (offside.context == Context::Brace || offside.context == Context::Bracket) {
+               (offside.context == Context::Delimiter(Delimiter::Brace) ||
+                offside.context == Context::Delimiter(Delimiter::Bracket)) {
                 return Ok(token.token);
             }
             lexer.indent_levels.pop();
             match (&token.token, &offside.context) {
-                (&Token::Else, &Context::If) |
-                (&Token::CloseBrace, &Context::Brace) |
-                (&Token::CloseParen, &Context::Paren) |
-                (&Token::CloseBracket, &Context::Bracket) => {
-                    return Ok(token.token);
-                }
+                (&Token::Else, &Context::If) => return Ok(token.token),
+                (&Token::Close(close_delim),
+                 &Context::Delimiter(context_delim))
+                    if close_delim == context_delim => return Ok(token.token),
                 (&Token::In, &Context::Let) |
                 (&Token::In, &Context::Type) |
                 (&Token::CloseBlock, &Context::Block { .. }) => {
@@ -588,7 +590,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Context::Let | Context::Type => {
                 // `and` and `}` are allowed to be on the same line as the `let` or `type`
                 if ordering == Ordering::Equal && token.token != Token::And &&
-                   token.token != Token::CloseBrace {
+                   token.token != Token::Close(Delimiter::Brace) {
                     // Insert an `in` token
                     lexer.indent_levels.pop();
                     if let Some(offside) = lexer.indent_levels.last_mut() {
@@ -611,9 +613,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Token::Type => Some(Context::Type),
             Token::Case => Some(Context::Expr),
             Token::Lambda => Some(Context::Lambda),
-            Token::OpenBrace => Some(Context::Brace),
-            Token::OpenBracket => Some(Context::Bracket),
-            Token::OpenParen => Some(Context::Paren),
+            Token::Open(delim) => Some(Context::Delimiter(delim)),
             _ => None,
         };
         if let Some(context) = push_context {
