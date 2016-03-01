@@ -399,6 +399,19 @@ fn test_implicit_prelude() {
     ::embed_lang::run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
 }
 
+#[test]
+fn access_field_through_vm() {
+    let _ = ::env_logger::init();
+    let text = r#" { x = 0, inner = { y = 1.0 } } "#;
+    let mut vm = make_vm();
+    load_script(&mut vm, "test", text)
+        .unwrap_or_else(|err| panic!("{}", err));
+    let test_x = vm.get_global("test.x");
+    assert_eq!(test_x, Ok(0));
+    let test_inner_y = vm.get_global("test.inner.y");
+    assert_eq!(test_inner_y, Ok(1.0));
+}
+
 /// Creates a VM for testing which has the correct paths to import the std library properly
 fn make_vm<'a>() -> VM<'a> {
     let vm = ::embed_lang::new_vm();

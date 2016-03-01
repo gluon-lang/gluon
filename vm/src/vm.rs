@@ -8,10 +8,9 @@ use std::string::String as StdString;
 use std::result::Result as StdResult;
 use base::ast::{Typed, ASTType, DisplayEnv};
 use base::symbol::{Name, NameBuf, Symbol, Symbols};
-use base::types::{KindEnv, TypeEnv, TcType, RcKind};
-use base::macros::MacroEnv;
 use base::types;
-use base::types::Type;
+use base::types::{Type, KindEnv, TypeEnv, TcType, RcKind};
+use base::macros::MacroEnv;
 use types::*;
 use base::fixed::{FixedMap, FixedVec};
 use interner::{Interner, InternedStr};
@@ -598,7 +597,6 @@ impl<'a, 'b> Traverseable for Roots<'a, 'b> {
 }
 
 impl<'a> GlobalVMState<'a> {
-
     /// Creates a new virtual machine
     pub fn new() -> GlobalVMState<'a> {
         let vm = GlobalVMState {
@@ -626,7 +624,8 @@ impl<'a> GlobalVMState<'a> {
         try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
         try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
-        let ordering = Type::data(types::TypeConstructor::Data(self.symbol("Ordering")), Vec::new());
+        let ordering = Type::data(types::TypeConstructor::Data(self.symbol("Ordering")),
+                                  Vec::new());
         try!(ids.try_insert(TypeId::of::<Ordering>(), ordering));
         let args = vec![types::Generic {
                             id: self.symbol("a"),
@@ -656,7 +655,8 @@ impl<'a> GlobalVMState<'a> {
     /// TODO dont expose this directly
     pub fn set_global(&self, id: Symbol, typ: TcType, value: Value<'a>) -> Result<()> {
         if self.names.borrow().contains_key(&id) {
-            return Err(Error::Message(format!("{} is already defined", self.symbols.borrow().string(&id))));
+            return Err(Error::Message(format!("{} is already defined",
+                                              self.symbols.borrow().string(&id))));
         }
         let global = Global {
             id: id,
@@ -743,7 +743,6 @@ impl<'a> GlobalVMState<'a> {
 }
 
 impl<'a> VM<'a> {
-
     pub fn new() -> VM<'a> {
         let vm = VM {
             global_state: GlobalVMState::new(),
@@ -777,28 +776,60 @@ impl<'a> VM<'a> {
     }
 
     /// Retrieves the global called `name`.
-    /// Fails if the global does not existor it does not have the correct type.
+    /// Fails if the global does not exist or it does not have the correct type.
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
         where T: Getable<'a, 'vm> + VMType
     {
-        let id = self.symbol(name);
-        self.names
-            .borrow()
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| Error::Message(format!("Could not retrieve global `{}`", name)))
-            .and_then(|i| {
-                let global = &self.globals[i];
-                if global.type_of() == T::make_type(self) {
-                    T::from_value(self, global.value.get()).ok_or_else(|| {
-                        Error::Message(format!("Could not retrieve global `{}`", name))
-                    })
-                } else {
-                    Err(Error::Message(format!("Could not retrieve global `{}` as the types did \
-                                                not match",
-                                               name)))
+
+        let mut components = Name::new(name).components();
+        let global = match components.next() {
+            Some(comp) => {
+                let comp_id = self.symbol(comp);
+                try!(self.names
+                         .borrow()
+                         .get(&comp_id)
+                         .map(|&i| &self.globals[i])
+                         .ok_or_else(|| {
+                             Error::Message(format!("Could not retrieve global `{}`", name))
+                         }))
+            }
+            None => return Err(Error::Message(format!("'{}' is not a valid name", name))),
+        };
+        let mut typ = &global.typ;
+        let mut value = global.value.get();
+        // If there are any remaining components iterate through them, accessing each field
+        for comp in components {
+            let next = match **typ {
+                Type::Record { ref fields, .. } => {
+                    let field_name = self.symbol(comp);
+                    fields.iter()
+                          .enumerate()
+                          .find(|&(_, field)| field.name == field_name)
+                          .map(|(offset, field)| (offset, &field.typ))
                 }
-            })
+                _ => None,
+            };
+            let (offset, next_type) = try!(next.ok_or_else(|| {
+                Error::Message(format!("'{}' cannot be accessed by the field '{}'",
+                                       types::display_type(&*self.symbols.borrow(), &typ),
+                                       comp))
+            }));
+            typ = next_type;
+            value = match value {
+                Value::Data(data) => data.fields[offset].get(),
+                _ => panic!(),
+            };
+        }
+
+        // Finally check that type of the returned value is correct
+        if *typ == T::make_type(self) {
+            T::from_value(self, value)
+                .ok_or_else(|| Error::Message(format!("Could not retrieve global `{}`", name)))
+        } else {
+            Err(Error::Message(format!("Could not retrieve global `{}` as the types did not \
+                                        match",
+                                       name)))
+        }
     }
 
 
@@ -922,10 +953,7 @@ impl<'a> VM<'a> {
     }
 
     ///Calls a module, allowed to to run IO expressions
-    pub fn call_module(&self,
-                       typ: &TcType,
-                       closure: GcPtr<ClosureData<'a>>)
-                       -> Result<Value<'a>> {
+    pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData<'a>>) -> Result<Value<'a>> {
         let value = try!(self.call_bytecode(closure));
         if let Type::Data(types::TypeConstructor::Data(id), _) = **typ {
             if id == self.symbol("IO") {
@@ -1093,9 +1121,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    fn execute<'b>(&'b self,
-                   stack: StackFrame<'a, 'b>)
-                   -> Result<Option<StackFrame<'a, 'b>>> {
+    fn execute<'b>(&'b self, stack: StackFrame<'a, 'b>) -> Result<Option<StackFrame<'a, 'b>>> {
         let mut maybe_stack = Some(stack);
         while let Some(mut stack) = maybe_stack {
             debug!("STACK\n{:?}", stack.stack.frames);
@@ -1421,7 +1447,7 @@ fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
 }
 
 quick_error! {
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq)]
     pub enum Error {
         Message(err: StdString) {
             display("{}", err)
