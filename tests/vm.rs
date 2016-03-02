@@ -432,6 +432,15 @@ fn test_prelude() {
 }
 
 #[test]
+fn access_types_by_path() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+    run_expr(&vm, r#" import "std/prelude.hs" "#);
+    assert!(vm.find_type_info("std.prelude.Option").is_ok());
+    assert!(vm.find_type_info("std.prelude.Result").is_ok());
+}
+
+#[test]
 fn value_size() {
     assert!(::std::mem::size_of::<Value>() <= 16);
 }

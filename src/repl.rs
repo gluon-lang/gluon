@@ -21,8 +21,8 @@ fn type_of_expr(args: WithVM<RootStr>) -> IO<String> {
 fn find_type_info(args: WithVM<RootStr>) -> IO<String> {
     let vm = args.vm;
     let args = args.value.trim();
-    IO::Value(match vm.env().find_type_info(&vm.symbol(args)) {
-        Some((generic_args, typ)) => {
+    IO::Value(match vm.find_type_info(args) {
+        Ok((generic_args, typ)) => {
             let fmt = || -> Result<String, ::std::fmt::Error> {
                 use std::fmt::Write;
                 let mut buffer = String::new();
@@ -42,7 +42,7 @@ fn find_type_info(args: WithVM<RootStr>) -> IO<String> {
             };
             fmt().unwrap()
         }
-        None => format!("'{}' is not a type", args),
+        Err(err) => format!("{}", err),
     })
 }
 

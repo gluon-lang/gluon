@@ -780,7 +780,6 @@ impl<'a> VM<'a> {
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
         where T: Getable<'a, 'vm> + VMType
     {
-
         let mut components = Name::new(name).components();
         let global = match components.next() {
             Some(comp) => {
@@ -830,6 +829,36 @@ impl<'a> VM<'a> {
                                         match",
                                        name)))
         }
+    }
+
+    pub fn find_type_info(&self, name: &str) -> Result<(&[types::Generic<Symbol>], Option<&TcType>)> {
+        let name = Name::new(name);
+        let global = if name.module() != Name::new("") {
+            let comp_id = self.symbol(name.module());
+            try!(self.names
+                     .borrow()
+                     .get(&comp_id)
+                     .map(|&i| &self.globals[i])
+                     .ok_or_else(|| {
+                         Error::Message(format!("Could not retrieve global `{}`", name))
+                     }))
+        } else {
+            return Err(Error::Message(format!("'{}' is not a valid name", name)));
+        };
+        let maybe_type_info = match *global.typ {
+            Type::Record { ref types, .. } => {
+                let field_name = self.symbol(name.name());
+                types.iter().find(|field| field.name == field_name)
+                    .map(|field| ((&*field.typ.args, Some(&field.typ.typ))))
+            }
+            _ => None,
+        };
+        maybe_type_info
+            .ok_or_else(|| {
+                Error::Message(format!("'{}' cannot be accessed by the field '{}'",
+                                       types::display_type(&*self.symbols.borrow(), &global.typ),
+                                       name.name()))
+            })
     }
 
 
