@@ -74,11 +74,14 @@ pub fn run() -> Result<(), Box<StdError>> {
 mod tests {
     use embed_lang::new_vm;
     use super::compile_repl;
+    use vm::api::{IO, Function};
 
     #[test]
     fn compile_repl_test() {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+        let repl: Result<Function<fn (()) -> IO<()>>, _> = vm.get_global("std.repl");
+        assert!(repl.is_ok());
     }
 }

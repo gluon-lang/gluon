@@ -434,10 +434,18 @@ fn test_prelude() {
 #[test]
 fn access_types_by_path() {
     let _ = ::env_logger::init();
+
     let vm = make_vm();
     run_expr(&vm, r#" import "std/prelude.hs" "#);
+
     assert!(vm.find_type_info("std.prelude.Option").is_ok());
     assert!(vm.find_type_info("std.prelude.Result").is_ok());
+
+    let text = r#" type T a = | T a in { x = 0, inner = { T, y = 1.0 } } "#;
+    load_script(&vm, "test", text)
+        .unwrap_or_else(|err| panic!("{}", err));
+    let result = vm.find_type_info("test.inner.T");
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]

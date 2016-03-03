@@ -784,13 +784,20 @@ impl<'a> VM<'a> {
         let global = match components.next() {
             Some(comp) => {
                 let comp_id = self.symbol(comp);
-                try!(self.names
-                         .borrow()
-                         .get(&comp_id)
-                         .map(|&i| &self.globals[i])
-                         .ok_or_else(|| {
-                             Error::Message(format!("Could not retrieve global `{}`", name))
-                         }))
+                let names = self.names
+                                .borrow();
+                try!(names.get(&comp_id)
+                          .or_else(|| {
+                              // We access by the the full name so no components should be left
+                              // to walk through
+                              for _ in components.by_ref() {
+                              }
+                              names.get(&self.symbol(name))
+                          })
+                          .map(|&i| &self.globals[i])
+                          .ok_or_else(|| {
+                              Error::Message(format!("Could not retrieve global `{}`", name))
+                          }))
             }
             None => return Err(Error::Message(format!("'{}' is not a valid name", name))),
         };
@@ -831,34 +838,63 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn find_type_info(&self, name: &str) -> Result<(&[types::Generic<Symbol>], Option<&TcType>)> {
+    pub fn find_type_info(&self,
+                          name: &str)
+                          -> Result<(&[types::Generic<Symbol>], Option<&TcType>)> {
         let name = Name::new(name);
-        let global = if name.module() != Name::new("") {
-            let comp_id = self.symbol(name.module());
-            try!(self.names
-                     .borrow()
-                     .get(&comp_id)
-                     .map(|&i| &self.globals[i])
-                     .ok_or_else(|| {
-                         Error::Message(format!("Could not retrieve global `{}`", name))
-                     }))
-        } else {
-            return Err(Error::Message(format!("'{}' is not a valid name", name)));
+        let mut components = name.module().components();
+        let global = match components.next() {
+            Some(comp) => {
+                let comp_id = self.symbol(comp);
+                let names = self.names
+                                .borrow();
+                try!(names.get(&comp_id)
+                          .or_else(|| {
+                              // We access by the the full name so no components should be left
+                              // to walk through
+                              for _ in components.by_ref() {
+                              }
+                              names.get(&self.symbol(name.module()))
+                          })
+                          .map(|&i| &self.globals[i])
+                          .ok_or_else(|| {
+                              Error::Message(format!("Could not retrieve global `{}`", name))
+                          }))
+            }
+            None => return Err(Error::Message(format!("'{}' is not a valid name", name))),
         };
-        let maybe_type_info = match *global.typ {
+
+        let mut typ = &global.typ;
+        for comp in components {
+            let next = match **typ {
+                Type::Record { ref fields, .. } => {
+                    let field_name = self.symbol(comp);
+                    fields.iter()
+                          .find(|field| field.name == field_name)
+                          .map(|field| &field.typ)
+                }
+                _ => None,
+            };
+            typ = try!(next.ok_or_else(|| {
+                Error::Message(format!("'{}' cannot be accessed by the field '{}'",
+                                       types::display_type(&*self.symbols.borrow(), &typ),
+                                       comp))
+            }));
+        }
+        let maybe_type_info = match **typ {
             Type::Record { ref types, .. } => {
                 let field_name = self.symbol(name.name());
-                types.iter().find(|field| field.name == field_name)
-                    .map(|field| ((&*field.typ.args, Some(&field.typ.typ))))
+                types.iter()
+                     .find(|field| field.name == field_name)
+                     .map(|field| ((&*field.typ.args, Some(&field.typ.typ))))
             }
             _ => None,
         };
-        maybe_type_info
-            .ok_or_else(|| {
-                Error::Message(format!("'{}' cannot be accessed by the field '{}'",
-                                       types::display_type(&*self.symbols.borrow(), &global.typ),
-                                       name.name()))
-            })
+        maybe_type_info.ok_or_else(|| {
+            Error::Message(format!("'{}' cannot be accessed by the field '{}'",
+                                   types::display_type(&*self.symbols.borrow(), typ),
+                                   name.name()))
+        })
     }
 
 
