@@ -1,7 +1,7 @@
 # embed_lang (working title)
 [![Build Status](https://travis-ci.org/Marwes/embed_lang.svg?branch=master)](https://travis-ci.org/Marwes/embed_lang)
 
-This library is a complete compiler and virtual machine for an embeddable langauge implemented in pure [Rust][Rust]. This is currently very unstable as neither the semantics of syntax is nailed down yet.
+This library is a complete compiler and virtual machine for an embeddable langauge implemented in pure [Rust][Rust]. As both syntax and semantics are not fully nailed down yet it is not recommended for serious use.
 
 ## Usage
 
@@ -12,8 +12,6 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 * Checking the types of expressions with `:t expression`
 * Checking type information with `:i type`
 * Exiting the REPL by writing `:q`
-
-As a warning, the standard math operators (+, -, * etc) are not exported in the global scope, as such the expression `2 + 2` will not compile. To use these operators they need to explicitly be brought into scope `let { (+), (-), (*) } = prelude.num_Int in 2 + 2`. See the reason for this in issue [#10][]
 
 ## Documentation
 
@@ -51,9 +49,9 @@ type Eq a = { (==) : a -> a -> Bool }
 let id x = x
 
 let factorial n =
-        if n < 2
-        then 1
-        else n * factorial (n - 1)
+    if n < 2
+    then 1
+    else n * factorial (n - 1)
 
 let list_module =
     // Declare a new type which only exists in the current scope
@@ -113,9 +111,6 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Embeddable** - Similiar to [Lua][Lua] it is meant to be able to be included in another program which can use the virtual machine to extend its own functionality.
 
-* **Pure** The language is currently pure but this could likely change as the goal to be embeddable means that it will interact with non-pure languages leading purity to be to restrictive.
-
-[#10]:https://github.com/Marwes/embed_lang/issues/10
 [prelude]:https://github.com/Marwes/embed_lang/blob/master/std/prelude.hs
 
 ## Inspiration
