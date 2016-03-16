@@ -82,7 +82,7 @@ let loop x: () -> IO () = io.read_line >>= \line ->
     else if string.starts_with line "def " then
         store (string.slice line 4 (string.length line))
     else
-        io.run_expr line >>= io.print >> return True) >>= \continue -> 
+        io.catch (io.run_expr line) return >>= io.print >> return True) >>= \continue -> 
             if continue then
                 loop ()
             else
