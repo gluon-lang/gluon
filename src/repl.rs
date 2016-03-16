@@ -1,6 +1,6 @@
 use std::error::Error as StdError;
 use base::ast::Typed;
-use base::types::{TypeEnv, display_type};
+use base::types::{Kind, TypeEnv, display_type};
 use vm::vm::{VM, RootStr};
 use vm::api::{IO, Function, WithVM};
 
@@ -15,6 +15,20 @@ fn type_of_expr(args: WithVM<RootStr>) -> IO<String> {
             format!("{}", display_type(&*symbols, &expr.env_type_of(env)))
         }
         Err(msg) => format!("{}", msg),
+    })
+}
+
+fn find_kind(args: WithVM<RootStr>) -> IO<String> {
+    let vm = args.vm;
+    let args = args.value.trim();
+    IO::Value(match vm.find_type_info(args) {
+        Ok((generic_args, _)) => {
+            let kind = generic_args.iter().rev().fold(Kind::star(), |acc, arg| {
+                Kind::function(arg.kind.clone(), acc)
+            });
+            format!("{}", kind)
+        }
+        Err(err) => format!("{}", err),
     })
 }
 
@@ -54,7 +68,8 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
     try!(vm.define_global("repl_prim",
                           record!(
         type_of_expr => f1(type_of_expr),
-        find_type_info => f1(find_type_info)
+        find_type_info => f1(find_type_info),
+        find_kind => f1(find_kind)
     )));
     try!(load_file(vm, "std/prelude.hs"));
     try!(load_file(vm, "std/repl.hs"));

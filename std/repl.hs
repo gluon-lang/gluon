@@ -35,6 +35,10 @@ let commands: Map String Cmd
             info = "Prints information about the given type",
             action = \arg -> repl_prim.find_type_info arg >>= io.print >> return True
         }
+        <> singleton "k" {
+            info = "Prints the kind of the given type",
+            action = \arg -> repl_prim.find_kind arg >>= io.print >> return True
+        }
         <> singleton "l" {
             info = "Loads the file at 'folder/module.ext' and stores it at 'module'",
             action = \arg -> load_file arg >>= io.print >> return True
