@@ -568,12 +568,24 @@ impl TypeVariable {
     }
 }
 
+struct DisplayKind<'a>(Prec, &'a Kind);
+
 impl fmt::Display for Kind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        write!(f, "{}", DisplayKind(Prec::Top, self))
+    }
+}
+impl<'a> fmt::Display for DisplayKind<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self.1 {
             Kind::Variable(i) => i.fmt(f),
             Kind::Star => '*'.fmt(f),
-            Kind::Function(ref arg, ref ret) => write!(f, "({} -> {})", arg, ret),
+            Kind::Function(ref arg, ref ret) => {
+                match self.0 {
+                    Prec::Function => write!(f, "({} -> {})", DisplayKind(Prec::Function, arg), ret),
+                    Prec::Top | Prec::Constructor => write!(f, "{} -> {}", DisplayKind(Prec::Function, arg), ret)
+                }
+            }
         }
     }
 }
@@ -990,5 +1002,13 @@ mod test {
                                     }],
                                vec![]);
         assert_eq!(format!("{}", typ), "{ Test a = a -> String }");
+    }
+
+    #[test]
+    fn show_kind() {
+        let two_args = Kind::function(Kind::star(), Kind::function(Kind::star(), Kind::star()));
+        assert_eq!(format!("{}", two_args), "* -> * -> *");
+        let function_arg = Kind::function(Kind::function(Kind::star(), Kind::star()), Kind::star());
+        assert_eq!(format!("{}", function_arg), "(* -> *) -> *");
     }
 }
