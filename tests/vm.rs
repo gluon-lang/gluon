@@ -327,6 +327,18 @@ array.index arr 0 #Int== 1
     && array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
 Int(1)
 }
+
+test_expr!{ access_only_a_few_fields_from_large_record,
+r#"
+let record = { a = 0, b = 1, c = 2, d = 3, e = 4, f = 5, g = 6, h = 7, i = 8, j = 9, k = 10, l = 11, m = 12 }
+let { a } = record
+let { i, m } = record
+
+a #Int+ i #Int+ m
+"#,
+Int(20)
+}
+
 #[test]
 fn overloaded_bindings() {
     let _ = ::env_logger::init();

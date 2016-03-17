@@ -122,6 +122,10 @@ impl FunctionEnv {
         }
     }
 
+    fn stack_size(&mut self) -> VMIndex {
+        (self.stack_size - 1) as VMIndex
+    }
+
     fn push_stack_var(&mut self, s: Symbol) {
         self.stack_size += 1;
         self.new_stack_var(s)
@@ -691,13 +695,30 @@ impl<'a> Compiler<'a> {
                 });
                 match *typ {
                     Type::Record { fields: ref type_fields, .. } => {
-                        function.emit(Split);
-                        for field in type_fields {
-                            let name = match fields.iter().find(|tup| tup.0 == field.name) {
-                                Some(&(name, bind)) => bind.unwrap_or(name),
-                                None => self.symbols.symbol(""),
-                            };
-                            function.push_stack_var(name);
+                        if fields.len() == 0 || (type_fields.len() > 4 && type_fields.len() / fields.len() >= 4) {
+                            // For pattern matches on large records where only a few of the fields
+                            // are used we instead emit a series of GetField instructions to avoid
+                            // pushing a lot of unnecessary fields to the stack
+                            let record_index = function.stack_size();
+                            for pattern_field in fields {
+                                let offset = type_fields.iter()
+                                                        .position(|field| {
+                                                            field.name == pattern_field.0
+                                                        })
+                                                        .expect("Field to exist");
+                                function.emit(Push(record_index));
+                                function.emit(GetField(offset as VMIndex));
+                                function.new_stack_var(pattern_field.1.unwrap_or(pattern_field.0));
+                            }
+                        } else {
+                            function.emit(Split);
+                            for field in type_fields {
+                                let name = match fields.iter().find(|tup| tup.0 == field.name) {
+                                    Some(&(name, bind)) => bind.unwrap_or(name),
+                                    None => self.symbols.symbol(""),
+                                };
+                                function.push_stack_var(name);
+                            }
                         }
                     }
                     _ => {
