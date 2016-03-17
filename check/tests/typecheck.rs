@@ -786,3 +786,20 @@ in \(<) ->
     let result = typecheck(text);
     assert!(result.is_ok());
 }
+
+#[test]
+fn call_error_span() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let f x = x #Int+ 1
+in f "123"
+"#;
+    let result = typecheck(text);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.errors.len(), 1);
+    assert_eq!(err.errors[0].span, ast::Span {
+        start: ast::Location { row: 3, column: 6, absolute: 0 },
+        end: ast::Location { row: 3, column: 11, absolute: 0 },
+    });
+}

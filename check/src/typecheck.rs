@@ -482,7 +482,8 @@ impl<'a> Typecheck<'a> {
                         Type::Function(ref arg_type, ref ret) => {
                             assert!(arg_type.len() == 1);
                             let actual = try!(self.typecheck(arg));
-                            try!(self.unify(&arg_type[0], actual));
+                            let span = arg.span(&ast::TcIdentEnvWrapper(&self.symbols));
+                            self.unify_span(span, &arg_type[0], actual);
                             ret.clone()
                         }
                         _ => return Err(NotAFunction(func_type.clone())),
@@ -1165,6 +1166,19 @@ impl<'a> Typecheck<'a> {
                                       _ => None,
                                   }
                               })
+    }
+
+    fn unify_span(&mut self, span: ast::Span, expected: &TcType, actual: TcType) -> TcType {
+        match self.unify(expected, actual) {
+            Ok(typ) => typ,
+            Err(err) => {
+                self.errors.error(ast::Spanned {
+                    span: span,
+                    value: err,
+                });
+                self.inst.subs.new_var()
+            }
+        }
     }
 
     fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult<TcType> {
