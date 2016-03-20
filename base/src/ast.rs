@@ -621,7 +621,7 @@ fn get_return_type(env: &TypeEnv,
     } else {
         match *alias_type {
             Type::Function(_, ref ret) => get_return_type(env, ret.clone(), arg_count - 1),
-            Type::Data(TypeConstructor::Data(id), ref arguments) => {
+            Type::Data(TypeConstructor::Data(ref id), ref arguments) => {
                 let (args, typ) = {
                     let (args, typ) = env.find_type_info(&id)
                                          .unwrap_or_else(|| {

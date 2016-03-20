@@ -46,7 +46,7 @@ struct Environment<'b> {
 }
 
 impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, _type_name: Symbol) -> Option<RcKind> {
+    fn find_kind(&self, _type_name: &Symbol) -> Option<RcKind> {
         None
     }
 }
@@ -99,7 +99,7 @@ pub fn rename(symbols: &mut SymbolModule,
                                                     .expect("ICE: Existing field")
                                                     .typ
                                                     .clone();
-                        let id = field.1.unwrap_or(field.0);
+                        let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
                         field.1 = Some(self.stack_var(id, pattern.location, field_type));
                     }
                     let record_type = self.remove_aliases(typ).clone();
@@ -107,18 +107,18 @@ pub fn rename(symbols: &mut SymbolModule,
                         Type::Record { ref types, .. } => types,
                         _ => panic!(),
                     };
-                    for &(name, _) in types {
+                    for &(ref name, _) in types {
                         let field_type = imported_types.iter()
-                                                       .find(|field| field.name == name)
+                                                       .find(|field| field.name == *name)
                                                        .expect("field_type");
-                        self.stack_type(name,
-                                        field_type.typ.name,
+                        self.stack_type(name.clone(),
+                                        field_type.typ.name.clone(),
                                         field_type.typ.args.clone(),
                                         field_type.typ.typ.clone());
                     }
                 }
                 ast::Pattern::Identifier(ref mut id) => {
-                    let new_name = self.stack_var(id.name, pattern.location, id.typ.clone());
+                    let new_name = self.stack_var(id.name.clone(), pattern.location, id.typ.clone());
                     id.name = new_name;
                 }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
@@ -127,7 +127,7 @@ pub fn rename(symbols: &mut SymbolModule,
                                   .expect("ICE: Expected constructor")
                                   .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
-                        arg.name = self.stack_var(arg.name, pattern.location, arg_type.clone());
+                        arg.name = self.stack_var(arg.name.clone(), pattern.location, arg_type.clone());
                     }
                 }
             }
@@ -141,7 +141,7 @@ pub fn rename(symbols: &mut SymbolModule,
                    self.symbols.string(&old_id),
                    self.symbols.string(&new_id),
                    types::display_type(&self.symbols, &typ));
-            self.env.stack.insert(old_id, (new_id, typ));
+            self.env.stack.insert(old_id, (new_id.clone(), typ));
             new_id
 
         }
@@ -153,8 +153,8 @@ pub fn rename(symbols: &mut SymbolModule,
                       real_type: TcType) {
             // Insert variant constructors into the local scope
             if let Type::Variants(ref variants) = *real_type {
-                for &(name, ref typ) in variants {
-                    self.env.stack.insert(name, (name, typ.clone()));
+                for &(ref name, ref typ) in variants {
+                    self.env.stack.insert(name.clone(), (name.clone(), typ.clone()));
                 }
             }
             // FIXME: Workaround so that both the types name in this module and its global
@@ -165,24 +165,24 @@ pub fn rename(symbols: &mut SymbolModule,
             self.env.stack_types.insert(id, (generics, real_type));
         }
 
-        fn rename(&self, id: Symbol, expected: &TcType) -> Option<Symbol> {
+        fn rename(&self, id: &Symbol, expected: &TcType) -> Option<Symbol> {
             self.env
                 .stack
                 .get_all(&id)
                 .and_then(|bindings| {
                     if bindings.len() == 1 {
-                        Some(bindings[0].0)
+                        Some(bindings[0].0.clone())
                     } else {
                         bindings.iter()
                                 .rev()
                                 .find(|bind| equivalent(&self.env, &bind.1, expected))
-                                .map(|bind| bind.0)
+                                .map(|bind| bind.0.clone())
                     }
                 })
                 .or_else(|| {
                     self.env.find_type(&id).and_then(|typ| {
                         if equivalent(&self.env, typ, &expected) {
-                            Some(id)
+                            Some(id.clone())
                         } else {
                             None
                         }
@@ -193,7 +193,7 @@ pub fn rename(symbols: &mut SymbolModule,
         fn rename_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<(), RenameError> {
             match expr.value {
                 ast::Expr::Identifier(ref mut id) => {
-                    let new_id = self.rename(*id.id(), &id.typ);
+                    let new_id = self.rename(id.id(), &id.typ);
                     if new_id.is_none() {
                         return Err(RenameError::NoMatchingType {
                             symbol: String::from(self.symbols.string(&id.name)),
@@ -212,19 +212,19 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                     debug!("Rename identifier {} = {}",
                            self.symbols.string(&id.name),
-                           self.symbols.string(&new_id.unwrap_or(id.name)));
-                    id.name = new_id.unwrap_or(id.name);
+                           self.symbols.string(new_id.as_ref().unwrap_or(&id.name)));
+                    id.name = new_id.unwrap_or_else(|| id.name.clone());
                 }
                 ast::Expr::Record { ref mut typ, ref mut exprs, .. } => {
                     let field_types = self.find_fields(&typ.typ).expect("field_types");
-                    for (field, &mut (id, ref mut maybe_expr)) in field_types.iter().zip(exprs) {
+                    for (field, &mut (ref id, ref mut maybe_expr)) in field_types.iter().zip(exprs) {
                         match *maybe_expr {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
                                 let new_id = self.rename(id, &field.typ);
                                 *maybe_expr =
                                     Some(ast::no_loc(ast::Expr::Identifier(ast::TcIdent {
-                                        name: new_id.unwrap_or(id),
+                                        name: new_id.unwrap_or_else(|| id.clone()),
                                         typ: field.typ.clone(),
                                     })));
                             }
@@ -232,11 +232,11 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 ast::Expr::BinOp(ref mut l, ref mut id, ref mut r) => {
-                    let new_id = self.rename(*id.id(), &id.typ);
+                    let new_id = self.rename(id.id(), &id.typ);
                     debug!("Rename {} = {}",
                            self.symbols.string(&id.name),
-                           self.symbols.string(&new_id.unwrap_or(id.name)));
-                    id.name = new_id.unwrap_or(id.name);
+                           self.symbols.string(new_id.as_ref().unwrap_or(&id.name)));
+                    id.name = new_id.unwrap_or_else(|| id.name.clone());
                     self.visit_expr(l);
                     self.visit_expr(r);
                 }
@@ -268,7 +268,7 @@ pub fn rename(symbols: &mut SymbolModule,
                             self.env.stack.enter_scope();
                             for (typ, arg) in types::arg_iter(&bind.type_of())
                                                   .zip(&mut bind.arguments) {
-                                arg.name = self.stack_var(arg.name, expr.location, typ.clone());
+                                arg.name = self.stack_var(arg.name.clone(), expr.location, typ.clone());
                             }
                             self.visit_expr(&mut bind.expression);
                             self.env.stack.exit_scope();
@@ -281,7 +281,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 ast::Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
                     for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.arguments) {
-                        arg.name = self.stack_var(arg.name, expr.location, typ.clone());
+                        arg.name = self.stack_var(arg.name.clone(), expr.location, typ.clone());
                     }
                     self.visit_expr(&mut lambda.body);
                     self.env.stack.exit_scope();
@@ -290,9 +290,9 @@ pub fn rename(symbols: &mut SymbolModule,
                     self.env.stack_types.enter_scope();
                     for &ast::TypeBinding { ref name, ref typ } in bindings {
                         match **name {
-                            Type::Data(types::TypeConstructor::Data(id), ref args) => {
+                            Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
                                 let generic_args = extract_generics(args);
-                                self.stack_type(id, id, generic_args, typ.clone());
+                                self.stack_type(id.clone(), id.clone(), generic_args, typ.clone());
                             }
                             _ => panic!(),
                         }
@@ -385,7 +385,7 @@ impl<'a, 'm> Unifier<AliasInstantiator<'a>, TcType> for Equivalent<'m> {
                 match unifier.unifier.map.get(&gl.id).cloned() {
                     Some(ref typ) => unifier.try_match(typ, r),
                     None => {
-                        unifier.unifier.map.insert(gl.id, r.clone());
+                        unifier.unifier.map.insert(gl.id.clone(), r.clone());
                         None
                     }
                 }

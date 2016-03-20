@@ -112,11 +112,11 @@ impl FunctionEnv {
         self.emit(PushString(index as VMIndex));
     }
 
-    fn upvar(&mut self, s: Symbol) -> VMIndex {
-        match (0..).zip(self.free_vars.iter()).find(|t| *t.1 == s).map(|t| t.0) {
-            Some(index) => index,
+    fn upvar(&mut self, s: &Symbol) -> VMIndex {
+        match self.free_vars.iter().position(|t| t == s) {
+            Some(index) => index as VMIndex,
             None => {
-                self.free_vars.push(s);
+                self.free_vars.push(s.clone());
                 (self.free_vars.len() - 1) as VMIndex
             }
         }
@@ -218,7 +218,7 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> ::base::types::KindEnv for Compiler<'a> {
-    fn find_kind(&self, _type_name: Symbol) -> Option<types::RcKind> {
+    fn find_kind(&self, _type_name: &Symbol) -> Option<types::RcKind> {
         None
     }
 }
@@ -257,7 +257,7 @@ impl<'a> Compiler<'a> {
         self.interner.intern(self.gc, s)
     }
 
-    fn find(&self, id: Symbol, current: &mut FunctionEnvs) -> Option<Variable> {
+    fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable> {
         self.stack_constructors
             .iter()
             .filter_map(|(_, typ)| {
@@ -265,7 +265,7 @@ impl<'a> Compiler<'a> {
                     Type::Variants(ref variants) => {
                         variants.iter()
                                 .enumerate()
-                                .find(|&(_, v)| v.0 == id)
+                                .find(|&(_, v)| v.0 == *id)
                     }
                     _ => None,
                 }
@@ -279,7 +279,7 @@ impl<'a> Compiler<'a> {
                        .iter()
                        .rev()
                        .cloned()
-                       .find(|&(_, var)| var == id)
+                       .find(|&(_, ref var)| var == id)
                        .map(|(index, _)| Stack(index))
                        .or_else(|| {
                            let i = current.envs.len() - 1;
@@ -291,7 +291,7 @@ impl<'a> Compiler<'a> {
                                       .iter()
                                       .rev()
                                       .cloned()
-                                      .find(|&(_, var)| var == id)
+                                      .find(|&(_, ref var)| var == id)
                                       .map(|_| UpVar(current[0].upvar(id)))
                                })
                                .next()
@@ -305,7 +305,7 @@ impl<'a> Compiler<'a> {
         let mut typ = typ;
         loop {
             match *typ {
-                Type::Data(types::TypeConstructor::Data(id), _) => {
+                Type::Data(types::TypeConstructor::Data(ref id), _) => {
                     match self.find_type_info(&id) {
                         Some((_, Some(real_type))) => {
                             typ = real_type;
@@ -362,7 +362,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn load_identifier(&self, id: Symbol, function: &mut FunctionEnvs) {
+    fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) {
         match self.find(id, function)
                   .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id))) {
             Stack(index) => function.emit(Push(index)),
@@ -415,7 +415,7 @@ impl<'a> Compiler<'a> {
                     ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
-            Expr::Identifier(ref id) => self.load_identifier(*id.id(), function),
+            Expr::Identifier(ref id) => self.load_identifier(id.id(), function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 self.compile(&**pred, function, false);
                 let jump_index = function.instructions.len();
@@ -465,7 +465,7 @@ impl<'a> Compiler<'a> {
                         "#Float<" => FloatLT,
                         "#Float==" => FloatEQ,
                         _ => {
-                            self.load_identifier(*op.id(), function);
+                            self.load_identifier(op.id(), function);
                             Call(2)
                         }
                     };
@@ -487,7 +487,7 @@ impl<'a> Compiler<'a> {
                         function.emit(NewClosure(0, 0));
                         match bind.name.value {
                             ast::Pattern::Identifier(ref name) => {
-                                function.new_stack_var(*name.id());
+                                function.new_stack_var(name.id().clone());
                             }
                             _ => panic!("ICE: Unexpected non identifer pattern"),
                         }
@@ -520,7 +520,7 @@ impl<'a> Compiler<'a> {
             }
             Expr::Call(ref func, ref args) => {
                 if let Expr::Identifier(ref id) = func.value {
-                    if let Some(Constructor(tag, num_args)) = self.find(*id.id(), function) {
+                    if let Some(Constructor(tag, num_args)) = self.find(id.id(), function) {
                         for arg in args.iter() {
                             self.compile(arg, function, false);
                         }
@@ -577,7 +577,7 @@ impl<'a> Compiler<'a> {
                 // Create a catch all to prevent us from running into undefined behaviour
                 if !catch_all {
                     let error_fn = self.symbols.symbol("#error");
-                    self.load_identifier(error_fn, function);
+                    self.load_identifier(&error_fn, function);
                     function.emit_string(self.intern("Non-exhaustive pattern"));
                     function.emit(Call(1));
                     // The stack has been increased by 1 here but it should not affect compiling the
@@ -633,11 +633,11 @@ impl<'a> Compiler<'a> {
             }
             Expr::Type(ref type_bindings, ref expr) => {
                 for type_binding in type_bindings {
-                    if let Type::Data(types::TypeConstructor::Data(name), ref args) =
+                    if let Type::Data(types::TypeConstructor::Data(ref name), ref args) =
                            *type_binding.name {
                         let generic_args = extract_generics(args);
-                        self.stack_types.insert(name, (generic_args, type_binding.typ.clone()));
-                        self.stack_constructors.insert(name, type_binding.typ.clone());
+                        self.stack_types.insert(name.clone(), (generic_args, type_binding.typ.clone()));
+                        self.stack_constructors.insert(name.clone(), type_binding.typ.clone());
                     }
                 }
                 return Some(expr);
@@ -646,7 +646,7 @@ impl<'a> Compiler<'a> {
                 for field in fields {
                     match field.1 {
                         Some(ref field_expr) => self.compile(field_expr, function, false),
-                        None => self.load_identifier(field.0, function),
+                        None => self.load_identifier(&field.0, function),
                     }
                 }
                 function.emit(Construct(0, fields.len() as u32));
@@ -675,11 +675,11 @@ impl<'a> Compiler<'a> {
                            function: &mut FunctionEnvs) {
         match *pattern {
             ast::Pattern::Identifier(ref name) => {
-                function.new_stack_var(*name.id());
+                function.new_stack_var(name.id().clone());
             }
             ast::Pattern::Record { ref types, ref fields, .. } => {
                 let mut typ = typ.clone();
-                if let Type::Data(types::TypeConstructor::Data(id), _) = *typ {
+                if let Type::Data(types::TypeConstructor::Data(ref id), _) = *typ.clone() {
                     typ = self.find_type_info(&id)
                               .and_then(|(_, typ)| typ.cloned())
                               .unwrap_or(typ);
@@ -688,10 +688,10 @@ impl<'a> Compiler<'a> {
                 with_pattern_types(types, &typ, |name, alias| {
                     // FIXME: Workaround so that both the types name in this module and its global
                     // name are imported. Without this aliases may not be traversed properly
-                    self.stack_types.insert(alias.name, (alias.args.clone(), alias.typ.clone()));
-                    self.stack_constructors.insert(alias.name, alias.typ.clone());
-                    self.stack_types.insert(name, (alias.args.clone(), alias.typ.clone()));
-                    self.stack_constructors.insert(name, alias.typ.clone());
+                    self.stack_types.insert(alias.name.clone(), (alias.args.clone(), alias.typ.clone()));
+                    self.stack_constructors.insert(alias.name.clone(), alias.typ.clone());
+                    self.stack_types.insert(name.clone(), (alias.args.clone(), alias.typ.clone()));
+                    self.stack_constructors.insert(name.clone(), alias.typ.clone());
                 });
                 match *typ {
                     Type::Record { fields: ref type_fields, .. } => {
@@ -708,13 +708,13 @@ impl<'a> Compiler<'a> {
                                                         .expect("Field to exist");
                                 function.emit(Push(record_index));
                                 function.emit(GetField(offset as VMIndex));
-                                function.new_stack_var(pattern_field.1.unwrap_or(pattern_field.0));
+                                function.new_stack_var(pattern_field.1.as_ref().unwrap_or(&pattern_field.0).clone());
                             }
                         } else {
                             function.emit(Split);
                             for field in type_fields {
                                 let name = match fields.iter().find(|tup| tup.0 == field.name) {
-                                    Some(&(name, bind)) => bind.unwrap_or(name),
+                                    Some(&(ref name, ref bind)) => bind.as_ref().unwrap_or(name).clone(),
                                     None => self.symbols.symbol(""),
                                 };
                                 function.push_stack_var(name);
@@ -740,7 +740,7 @@ impl<'a> Compiler<'a> {
                       -> (VMIndex, VMIndex, CompiledFunction) {
         function.start_function(self);
         for arg in arguments {
-            function.push_stack_var(*arg.id());
+            function.push_stack_var(arg.id().clone());
         }
         self.compile(body, function, true);
 
@@ -750,7 +750,7 @@ impl<'a> Compiler<'a> {
         // Insert all free variables into the above globals free variables
         // if they arent in that lambdas scope
         let f = function.end_function(self);
-        for &var in f.free_vars.iter() {
+        for var in f.free_vars.iter() {
             match self.find(var, function).expect("free_vars: find") {
                 Stack(index) => function.emit(Push(index)),
                 UpVar(index) => function.emit(PushUpVar(index)),
@@ -774,14 +774,14 @@ impl<'a> Compiler<'a> {
 }
 
 fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(Symbol, &types::Alias<Symbol, TcType>)
+    where F: FnMut(&Symbol, &types::Alias<Symbol, TcType>)
 {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
             let associated_type = record_type_fields.iter()
                                                     .find(|type_field| type_field.name == field.0)
                                                     .expect("Associated type to exist in record");
-            f(field.0, &associated_type.typ);
+            f(&field.0, &associated_type.typ);
         }
     }
 }

@@ -1,13 +1,34 @@
 //! Module which contains types working with symbols
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::fmt;
-use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
-
+use std::sync::Arc;
 use std::borrow::Borrow;
 use std::ops::Deref;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct Symbol(u32);
+use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
+
+// FIXME Don't have a double indirection (Arc + String)
+#[derive(Clone, Debug, Eq)]
+pub struct Symbol(Arc<NameBuf>);
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl PartialEq for Symbol {
+    fn eq(&self, other: &Symbol) -> bool {
+        &*self.0 as *const NameBuf == &*other.0 as *const NameBuf
+    }
+}
+
+impl Hash for Symbol {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        (&*self.0 as *const NameBuf).hash(h)
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct NameBuf(String);
@@ -134,22 +155,22 @@ impl<'a> From<&'a Name> for NameBuf {
 
 #[derive(Debug)]
 pub struct Symbols {
-    strings: Vec<NameBuf>,
+    strings: HashMap<Symbol, NameBuf>,
     indexes: HashMap<NameBuf, Symbol>,
 }
 
 impl Symbols {
     pub fn new() -> Symbols {
         Symbols {
-            strings: Vec::new(),
+            strings: HashMap::new(),
             indexes: HashMap::new(),
         }
     }
 
     fn make_symbol(&mut self, name: NameBuf) -> Symbol {
-        let s = Symbol(self.strings.len() as u32);
-        self.indexes.insert(name.clone(), s);
-        self.strings.push(name);
+        let s = Symbol(Arc::new(name.clone()));
+        self.indexes.insert(name.clone(), s.clone());
+        self.strings.insert(s.clone(), name);
         s
     }
 
@@ -157,7 +178,7 @@ impl Symbols {
         where N: Into<NameBuf> + AsRef<Name>
     {
         match self.indexes.get(name.as_ref()) {
-            Some(symbol) => return *symbol,
+            Some(symbol) => return symbol.clone(),
             None => (),
         }
         self.make_symbol(name.into())
@@ -199,7 +220,7 @@ impl DisplayEnv for Symbols {
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
         self.strings
-            .get(ident.0 as usize)
+            .get(ident)
             .map(|name| &*name.0)
             .unwrap_or("<UNDEFINED>")
     }

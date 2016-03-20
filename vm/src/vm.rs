@@ -159,10 +159,10 @@ pub enum Callable<'a> {
 }
 
 impl<'a> Callable<'a> {
-    pub fn name(&self) -> Symbol {
+    pub fn name(&self) -> &Symbol {
         match *self {
-            Callable::Closure(ref closure) => closure.function.name,
-            Callable::Extern(ref ext) => ext.id,
+            Callable::Closure(ref closure) => &closure.function.name,
+            Callable::Extern(ref ext) => &ext.id,
         }
     }
 
@@ -497,11 +497,11 @@ impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
 }
 
 impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
-    fn find_kind(&self, type_name: Symbol) -> Option<RcKind> {
+    fn find_kind(&self, type_name: &Symbol) -> Option<RcKind> {
         self.type_infos
             .find_kind(type_name)
             .or_else(|| {
-                if type_name == self.io_symbol {
+                if *type_name == self.io_symbol {
                     Some(types::Kind::function(types::Kind::star(), types::Kind::star()))
                 } else {
                     None
@@ -659,7 +659,7 @@ impl<'a> GlobalVMState<'a> {
                                               self.symbols.borrow().string(&id))));
         }
         let global = Global {
-            id: id,
+            id: id.clone(),
             typ: typ,
             value: Cell::new(value),
         };
@@ -680,12 +680,12 @@ impl<'a> GlobalVMState<'a> {
         } else {
             let id = TypeId::of::<T>();
             let arg_types = args.iter().map(|g| Type::generic(g.clone())).collect();
-            let typ: TcType = Type::data(types::TypeConstructor::Data(n), arg_types);
+            let typ: TcType = Type::data(types::TypeConstructor::Data(n.clone()), arg_types);
             self.typeids
                 .try_insert(id, typ.clone())
                 .expect("Id not inserted");
             let t = self.typeids.get(&id).unwrap();
-            let ctor = Type::variants(vec![(n, typ.clone())]);
+            let ctor = Type::variants(vec![(n.clone(), typ.clone())]);
             type_infos.id_to_type.insert(n, (args, ctor.clone()));
             type_infos.type_to_id.insert(ctor, typ);
             Ok(t)
@@ -704,7 +704,7 @@ impl<'a> GlobalVMState<'a> {
         self.symbols.borrow_mut()
     }
 
-    pub fn symbol_string(&self, s: Symbol) -> StdString {
+    pub fn symbol_string(&self, s: &Symbol) -> StdString {
         let symbols = self.symbols.borrow();
         StdString::from(symbols.string(&s))
     }
@@ -988,7 +988,7 @@ impl<'a> VM<'a> {
         let id = self.symbol(name);
         let compiled_fn = CompiledFunction {
             args: args,
-            id: id,
+            id: id.clone(),
             typ: typ.clone(),
             instructions: instructions,
             inner_functions: vec![],
@@ -996,7 +996,7 @@ impl<'a> VM<'a> {
         };
         let f = self.new_function(compiled_fn);
         let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
-        self.names.borrow_mut().insert(id, self.globals.len());
+        self.names.borrow_mut().insert(id.clone(), self.globals.len());
         self.globals.push(Global {
             id: id,
             typ: typ,
@@ -1020,8 +1020,8 @@ impl<'a> VM<'a> {
     ///Calls a module, allowed to to run IO expressions
     pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData<'a>>) -> Result<Value<'a>> {
         let value = try!(self.call_bytecode(closure));
-        if let Type::Data(types::TypeConstructor::Data(id), _) = **typ {
-            if id == self.symbol("IO") {
+        if let Type::Data(types::TypeConstructor::Data(ref id), _) = **typ {
+            if *id == self.symbol("IO") {
                 debug!("Run IO {:?}", value);
                 self.push(Int(0));// Dummy value to fill the place of the function for TailCall
                 self.push(value);

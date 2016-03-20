@@ -99,7 +99,7 @@ pub struct TypeInfos {
 }
 
 impl KindEnv for TypeInfos {
-    fn find_kind(&self, type_name: Symbol) -> Option<types::RcKind> {
+    fn find_kind(&self, type_name: &Symbol) -> Option<types::RcKind> {
         self.id_to_type
             .get(&type_name)
             .map(|&(ref args, _)| {
@@ -137,7 +137,7 @@ impl TypeEnv for TypeInfos {
             .find(|&(_, &(_, ref typ))| {
                 match **typ {
                     Type::Record { fields: ref record_fields, .. } => {
-                        fields.iter().all(|&name| record_fields.iter().any(|f| f.name == name))
+                        fields.iter().all(|name| record_fields.iter().any(|f| f.name == *name))
                     }
                     _ => false,
                 }

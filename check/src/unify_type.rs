@@ -121,15 +121,15 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
                 // FIXME Take associated types into account when unifying
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
                     let opt_type = if l.name != r.name {
-                        unifier.report_error(UnifyError::Other(TypeError::FieldMismatch(l.name,
-                                                                                        r.name)));
+                        unifier.report_error(UnifyError::Other(TypeError::FieldMismatch(l.name.clone(),
+                                                                                        r.name.clone())));
                         Some(unifier.subs.new_var())
                     } else {
                         unifier.try_match(&l.typ, &r.typ)
                     };
                     opt_type.map(|typ| {
                         types::Field {
-                            name: l.name,
+                            name: l.name.clone(),
                             typ: typ,
                         }
                     })
@@ -187,7 +187,7 @@ fn zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
     match **actual {
-        Type::Data(types::TypeConstructor::Data(r), ref r_args) => {
+        Type::Data(types::TypeConstructor::Data(ref r), ref r_args) => {
             debug!("Attempt alias {:?} {:?}", r, r_args);
             let r = match unifier.state.type_of_alias(r, r_args) {
                 Ok(typ) => typ,
@@ -374,20 +374,20 @@ mod tests {
         let (x, y, z, w) = (intern("x"), intern("y"), intern("z"), intern("w"));
         let l = Type::record(vec![],
                              vec![types::Field {
-                                      name: x,
+                                      name: x.clone(),
                                       typ: Type::int(),
                                   },
                                   types::Field {
-                                      name: y,
+                                      name: y.clone(),
                                       typ: Type::string(),
                                   }]);
         let r = Type::record(vec![],
                              vec![types::Field {
-                                      name: z,
+                                      name: z.clone(),
                                       typ: Type::int(),
                                   },
                                   types::Field {
-                                      name: w,
+                                      name: w.clone(),
                                       typ: Type::string(),
                                   }]);
         let inst = Instantiator::new();

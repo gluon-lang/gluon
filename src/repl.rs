@@ -42,7 +42,7 @@ fn find_type_info(args: WithVM<RootStr>) -> IO<String> {
                 let mut buffer = String::new();
                 try!(write!(&mut buffer, "type {}", args));
                 for g in generic_args {
-                    try!(write!(&mut buffer, " {}", vm.symbol_string(g.id)))
+                    try!(write!(&mut buffer, " {}", vm.symbol_string(&g.id)))
                 }
                 try!(write!(&mut buffer, " = "));
                 match typ {

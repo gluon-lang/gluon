@@ -85,12 +85,12 @@ impl<'a> KindCheck<'a> {
         self.star.clone()
     }
 
-    fn find(&mut self, id: Symbol) -> Result<RcKind> {
+    fn find(&mut self, id: &Symbol) -> Result<RcKind> {
         let kind = self.variables
                        .iter()
                        .find(|var| {
                            match ***var {
-                               Type::Generic(ref other) => other.id == id,
+                               Type::Generic(ref other) => other.id == *id,
                                _ => false,
                            }
                        })
@@ -98,7 +98,7 @@ impl<'a> KindCheck<'a> {
                        .or_else(|| {
                            self.locals
                                .iter()
-                               .find(|t| t.0 == id)
+                               .find(|t| t.0 == *id)
                                .map(|t| t.1.clone())
                        })
                        .or_else(|| self.info.find_kind(id))
@@ -106,10 +106,10 @@ impl<'a> KindCheck<'a> {
                        .unwrap_or_else(|| {
                            let id_str = self.idents.string(&id);
                            if id_str.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
-                               Err(UnifyError::Other(KindError::UndefinedType(id)))
+                               Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
                            } else {
                                // Create a new variable
-                               self.locals.push((id, self.subs.new_var()));
+                               self.locals.push((id.clone(), self.subs.new_var()));
                                Ok(self.locals.last().unwrap().1.clone())
                            }
                        });
@@ -134,7 +134,7 @@ impl<'a> KindCheck<'a> {
         match **typ {
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
-                gen.kind = try!(self.find(gen.id));
+                gen.kind = try!(self.find(&gen.id));
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Variable(_) => panic!("kindcheck called on variable"),
@@ -159,7 +159,7 @@ impl<'a> KindCheck<'a> {
                 }
             }
             Type::Data(types::TypeConstructor::Builtin(_), _) => panic!("Builtin with arguments"),
-            Type::Data(types::TypeConstructor::Data(ctor), ref args) => {
+            Type::Data(types::TypeConstructor::Data(ref ctor), ref args) => {
                 let mut kind = try!(self.find(ctor));
                 let mut new_args = Vec::new();
                 for arg in args {
@@ -180,7 +180,7 @@ impl<'a> KindCheck<'a> {
                     };
                 }
                 Ok((kind,
-                    Type::data(types::TypeConstructor::Data(ctor), new_args)))
+                    Type::data(types::TypeConstructor::Data(ctor.clone()), new_args)))
             }
             Type::Function(ref args, ref ret) => {
                 let (kind, arg) = try!(self.kindcheck(&args[0]));
@@ -197,7 +197,7 @@ impl<'a> KindCheck<'a> {
                                                 let (kind, typ) = try!(self.kindcheck(&variant.1));
                                                 let star = self.star.clone();
                                                 try!(self.unify(&star, kind));
-                                                Ok((variant.0, typ))
+                                                Ok((variant.0.clone(), typ))
                                             })
                                             .collect());
                 Ok((self.star.clone(), Type::variants(variants)))
@@ -209,7 +209,7 @@ impl<'a> KindCheck<'a> {
                                             let star = self.star.clone();
                                             try!(self.unify(&star, kind));
                                             Ok(types::Field {
-                                                name: field.name,
+                                                name: field.name.clone(),
                                                 typ: typ,
                                             })
                                         })
@@ -250,7 +250,7 @@ impl<'a> KindCheck<'a> {
                                           let mut kind = var.kind.clone();
                                           kind = update_kind(&self.subs, kind, default);
                                           Some(Type::generic(types::Generic {
-                                              id: var.id,
+                                              id: var.id.clone(),
                                               kind: kind,
                                           }))
                                       }

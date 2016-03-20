@@ -131,7 +131,7 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
 fn backtrace(vm: &VM, frame_level: usize, stack: &StackFrame) -> String {
     let mut buffer = String::from("Backtrace:\n");
     for frame in &stack.stack.frames[frame_level..] {
-        match frame.function.map(|c| c.name()) {
+        match frame.function.as_ref().map(|c| c.name()) {
             Some(name) => buffer.push_str(&vm.symbol_string(name)),
             None => buffer.push_str("<unknown>"),
         }

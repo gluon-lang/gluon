@@ -214,7 +214,7 @@ pub fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool
         vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
     };
     let value = try!(vm.call_module(&typ, closure));
-    try!(vm.set_global(function.name, typ, value));
+    try!(vm.set_global(function.name.clone(), typ, value));
     Ok(())
 }
 

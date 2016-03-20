@@ -38,7 +38,7 @@ impl<'a> AliasInstantiator<'a> {
 
     pub fn maybe_remove_alias(&self, typ: &TcType) -> Option<TcType> {
         match **typ {
-            Type::Data(TypeConstructor::Data(id), ref args) => {
+            Type::Data(TypeConstructor::Data(ref id), ref args) => {
                 self.type_of_alias(id, args)
                     .unwrap_or_else(|_| None)
             }
@@ -47,7 +47,7 @@ impl<'a> AliasInstantiator<'a> {
     }
 
     pub fn type_of_alias(&self,
-                         id: Symbol,
+                         id: &Symbol,
                          arguments: &[TcType])
                          -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
         let (args, mut typ) = {
@@ -103,7 +103,7 @@ impl<'a> AliasInstantiator<'a> {
             _ => arguments.len() == args.len(),
         };
         if !ok_substitution {
-            let expected = Type::data(TypeConstructor::Data(id),
+            let expected = Type::data(TypeConstructor::Data(id.clone()),
                                       arguments.iter().cloned().collect());
             return Err(unify::Error::TypeMismatch(expected, typ));
         }
@@ -127,7 +127,7 @@ impl Instantiator {
 
     fn variable_for(&self, generic: &Generic<Symbol>) -> TcType {
         let mut variables = self.named_variables.borrow_mut();
-        let var = match variables.entry(generic.id) {
+        let var = match variables.entry(generic.id.clone()) {
             Entry::Vacant(entry) => {
                 let t = self.subs.new_var();
                 entry.insert(t).clone()
