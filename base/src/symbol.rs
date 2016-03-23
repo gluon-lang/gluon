@@ -12,6 +12,12 @@ use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
 #[derive(Clone, Debug, Eq)]
 pub struct Symbol(Arc<NameBuf>);
 
+impl AsRef<str> for Symbol {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)

@@ -116,7 +116,7 @@ quick_error! {
             display("{}", err)
             from()
         }
-        Typecheck(err: ::base::error::InFile<::check::typecheck::TypeError<StdString>>) {
+        Typecheck(err: ::base::error::InFile<::check::typecheck::TypeError<Symbol>>) {
             description(err.description())
             display("{}", err)
             from()

@@ -228,7 +228,7 @@ impl<Id: fmt::Debug> fmt::Debug for RcType<Id> {
     }
 }
 
-impl<Id: Deref<Target = str>> fmt::Display for RcType<Id> {
+impl<Id: AsRef<str>> fmt::Display for RcType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         (**self).fmt(f)
     }
@@ -747,7 +747,7 @@ enum Prec {
 }
 
 impl<I, T> fmt::Display for Type<I, T>
-    where I: Deref<Target = str>,
+    where I: AsRef<str>,
           T: Deref<Target = Type<I, T>>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

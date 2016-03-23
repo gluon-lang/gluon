@@ -59,11 +59,11 @@ impl<T> EmptyEnv<T> {
     }
 }
 
-impl<T: Deref<Target = str>> DisplayEnv for EmptyEnv<T> {
+impl<T: AsRef<str>> DisplayEnv for EmptyEnv<T> {
     type Ident = T;
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-        ident
+        ident.as_ref()
     }
 }
 
@@ -83,7 +83,7 @@ impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
     }
 }
 
-impl<T> IdentEnv for EmptyEnv<T> where T: Deref<Target = str> + for<'a> From<&'a str>
+impl<T> IdentEnv for EmptyEnv<T> where T: AsRef<str> + for<'a> From<&'a str>
 {
     fn from_str(&mut self, s: &str) -> Self::Ident {
         T::from(s)

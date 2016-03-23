@@ -51,81 +51,6 @@ pub enum TypeError<I> {
     EmptyCase,
 }
 
-
-
-fn map_symbol(symbols: &SymbolModule,
-              err: &ast::Spanned<TypeError<Symbol>>)
-              -> ast::Spanned<TypeError<String>> {
-    use self::TypeError::*;
-    use unify::Error::{TypeMismatch, Occurs, Other};
-    use unify_type::TypeError::FieldMismatch;
-
-    let f = |symbol| String::from(symbols.string(symbol));
-
-    let result = match err.value {
-        UndefinedVariable(ref name) => UndefinedVariable(f(name)),
-        NotAFunction(ref typ) => NotAFunction(typ.clone_strings(symbols)),
-        UndefinedType(ref name) => UndefinedType(f(name)),
-        UndefinedField(ref typ, ref field) => UndefinedField(typ.clone_strings(symbols), f(field)),
-        Unification(ref expected, ref actual, ref errors) => {
-            let errors = errors.iter()
-                               .map(|error| {
-                                   match *error {
-                                       TypeMismatch(ref l, ref r) => {
-                                           TypeMismatch(l.clone_strings(symbols),
-                                                        r.clone_strings(symbols))
-                                       }
-                                       Occurs(ref var, ref typ) => {
-                                           Occurs(var.clone(), typ.clone_strings(symbols))
-                                       }
-                                       Other(::unify_type::TypeError::UndefinedType(ref id)) => {
-                                           Other(::unify_type::TypeError::UndefinedType(f(&id)))
-                                       }
-                                       Other(FieldMismatch(ref l, ref r)) => {
-                                           Other(FieldMismatch(f(l), f(r)))
-                                       }
-                                   }
-                               })
-                               .collect();
-            Unification(expected.clone_strings(symbols),
-                        actual.clone_strings(symbols),
-                        errors)
-        }
-        PatternError(ref typ, expected_len) => {
-            PatternError(typ.clone_strings(symbols), expected_len)
-        }
-        KindError(ref err) => {
-            KindError(match *err {
-                TypeMismatch(ref l, ref r) => TypeMismatch(l.clone(), r.clone()),
-                Occurs(ref var, ref typ) => Occurs(var.clone(), typ.clone()),
-                Other(::kindcheck::KindError::UndefinedType(ref x)) => {
-                    Other(::kindcheck::KindError::UndefinedType(f(x)))
-                }
-            })
-        }
-        Rename(ref err) => Rename(err.clone()),
-        DuplicateTypeDefinition(ref id) => DuplicateTypeDefinition(f(id)),
-        InvalidFieldAccess(ref typ) => InvalidFieldAccess(typ.clone_strings(symbols)),
-        UndefinedRecord { ref fields } => {
-            UndefinedRecord { fields: fields.iter().map(f).collect() }
-        }
-        EmptyCase => EmptyCase,
-    };
-    ast::Spanned {
-        span: err.span,
-        value: result,
-    }
-}
-
-fn map_symbols(symbols: &SymbolModule, errors: &Errors<ast::Spanned<TypeError<Symbol>>>) -> Error {
-    Errors {
-        errors: errors.errors
-                      .iter()
-                      .map(|e| map_symbol(symbols, e))
-                      .collect(),
-    }
-}
-
 impl<I> From<kindcheck::Error<I>> for TypeError<I> where I: PartialEq + Clone
 {
     fn from(e: kindcheck::Error<I>) -> TypeError<I> {
@@ -142,7 +67,7 @@ impl<I> From<::rename::RenameError> for TypeError<I> {
     }
 }
 
-impl<I: fmt::Display + ::std::ops::Deref<Target = str>> fmt::Display for TypeError<I> {
+impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::TypeError::*;
         match *self {
@@ -264,7 +189,7 @@ pub struct Typecheck<'a> {
 }
 
 /// Error returned when unsuccessfully typechecking an expression
-pub type Error = Errors<ast::Spanned<TypeError<String>>>;
+pub type Error = Errors<ast::Spanned<TypeError<Symbol>>>;
 
 impl<'a> Typecheck<'a> {
     /// Create a new typechecker which typechecks expressions in `module`
@@ -390,7 +315,7 @@ impl<'a> Typecheck<'a> {
 
         let mut typ = self.typecheck(expr).unwrap();
         if self.errors.has_errors() {
-            Err(map_symbols(&self.symbols, &self.errors))
+            Err(mem::replace(&mut self.errors, Errors::new()))
         } else {
             typ = self.finish_type(0, typ);
             typ = types::walk_move_type(typ, &mut unroll_app);
@@ -404,7 +329,7 @@ impl<'a> Typecheck<'a> {
                             value: value.into(),
                         });
                     }
-                    Err(map_symbols(&self.symbols, &self.errors))
+                    Err(mem::replace(&mut self.errors, Errors::new()))
                 }
             }
         }

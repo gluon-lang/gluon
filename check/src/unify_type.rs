@@ -20,7 +20,7 @@ pub enum TypeError<I> {
 }
 
 pub fn fmt_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
-    where I: fmt::Display + ::std::ops::Deref<Target = str>
+    where I: fmt::Display + AsRef<str>
 {
     use unify::Error::*;
     match *error {
