@@ -9,8 +9,7 @@ use embed_lang::import::Import;
 
 fn make_vm<'a>() -> VM<'a> {
     let vm = ::embed_lang::new_vm();
-    let import_symbol = vm.symbol("import");
-    let import = vm.get_macros().get(import_symbol);
+    let import = vm.get_macros().get("import");
     import.as_ref()
           .and_then(|import| import.downcast_ref::<Import>())
           .expect("Import macro")

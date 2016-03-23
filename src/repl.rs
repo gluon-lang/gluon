@@ -1,6 +1,6 @@
 use std::error::Error as StdError;
 use base::ast::Typed;
-use base::types::{Kind, TypeEnv, display_type};
+use base::types::{Kind, TypeEnv};
 use vm::vm::{VM, RootStr};
 use vm::api::{IO, Function, WithVM};
 
@@ -11,8 +11,7 @@ fn type_of_expr(args: WithVM<RootStr>) -> IO<String> {
     IO::Value(match typecheck_expr(vm, "<repl>", &args, false) {
         Ok((expr, _)) => {
             let ref env = vm.env();
-            let symbols = vm.get_symbols();
-            format!("{}", display_type(&*symbols, &expr.env_type_of(env)))
+            format!("{}", expr.env_type_of(env))
         }
         Err(msg) => format!("{}", msg),
     })
@@ -42,14 +41,11 @@ fn find_type_info(args: WithVM<RootStr>) -> IO<String> {
                 let mut buffer = String::new();
                 try!(write!(&mut buffer, "type {}", args));
                 for g in generic_args {
-                    try!(write!(&mut buffer, " {}", vm.symbol_string(&g.id)))
+                    try!(write!(&mut buffer, " {}", g.id))
                 }
                 try!(write!(&mut buffer, " = "));
                 match typ {
-                    Some(typ) => {
-                        let symbols = vm.get_symbols();
-                        try!(write!(&mut buffer, "{}", display_type(&*symbols, typ)))
-                    }
+                    Some(typ) => try!(write!(&mut buffer, "{}", typ)),
                     None => try!(write!(&mut buffer, "<abstract>")),
                 }
                 Ok(buffer)

@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell, Ref, RefMut};
+use std::cell::{Cell, RefCell, Ref};
 use std::fmt;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -694,19 +694,6 @@ impl<'a> GlobalVMState<'a> {
 
     pub fn get_macros(&self) -> &MacroEnv<VM<'a>> {
         &self.macros
-    }
-
-    pub fn get_symbols(&self) -> Ref<Symbols> {
-        self.symbols.borrow()
-    }
-
-    pub fn get_mut_symbols(&self) -> RefMut<Symbols> {
-        self.symbols.borrow_mut()
-    }
-
-    pub fn symbol_string(&self, s: &Symbol) -> StdString {
-        let symbols = self.symbols.borrow();
-        StdString::from(symbols.string(&s))
     }
 
     pub fn symbol<N>(&self, name: N) -> Symbol

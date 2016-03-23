@@ -6,7 +6,6 @@ use std::rc::Rc;
 
 use ast;
 use ast::MutVisitor;
-use symbol::Symbol;
 use types::TcIdent;
 use error::Errors;
 
@@ -37,7 +36,7 @@ impl<F: ::mopa::Any, Env> Macro<Env> for F
 /// Type containing macros bound to symbols which can be applied on an AST expression to transform
 /// it.
 pub struct MacroEnv<Env> {
-    macros: RefCell<HashMap<Symbol, Rc<Macro<Env>>>>,
+    macros: RefCell<HashMap<String, Rc<Macro<Env>>>>,
 }
 
 impl<Env> MacroEnv<Env> {
@@ -47,15 +46,15 @@ impl<Env> MacroEnv<Env> {
     }
 
     /// Inserts a `Macro` which acts on any occurance of `symbol` when applied to an expression.
-    pub fn insert<M>(&self, name: Symbol, mac: M)
+    pub fn insert<M>(&self, name: String, mac: M)
         where M: Macro<Env> + 'static
     {
         self.macros.borrow_mut().insert(name, Rc::new(mac));
     }
 
     /// Retrieves the macro bound to `symbol`
-    pub fn get(&self, name: Symbol) -> Option<Rc<Macro<Env>>> {
-        self.macros.borrow().get(&name).cloned()
+    pub fn get(&self, name: &str) -> Option<Rc<Macro<Env>>> {
+        self.macros.borrow().get(name).cloned()
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
@@ -88,11 +87,7 @@ impl<'a, Env> MutVisitor for MacroExpander<'a, Env> {
             ast::Expr::Call(ref mut id, ref mut args) => {
                 match ***id {
                     ast::Expr::Identifier(ref id) => {
-                        let mac = {
-                            let macros = self.macros.macros.borrow();
-                            macros.get(&id.name).cloned()
-                        };
-                        match mac {
+                        match self.macros.get(id.name.as_ref()) {
                             Some(m) => {
                                 match m.expand(self.env, args) {
                                     Ok(e) => Some(e),

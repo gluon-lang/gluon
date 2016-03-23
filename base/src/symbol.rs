@@ -36,6 +36,12 @@ impl Hash for Symbol {
     }
 }
 
+impl Symbol {
+    pub fn new(name: &str) -> Symbol {
+        Symbol(Arc::new(NameBuf(String::from(name))))
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct NameBuf(String);
 
@@ -228,7 +234,7 @@ impl DisplayEnv for Symbols {
         self.strings
             .get(ident)
             .map(|name| &*name.0)
-            .unwrap_or("<UNDEFINED>")
+            .unwrap_or(ident.as_ref())
     }
 }
 

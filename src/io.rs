@@ -91,7 +91,7 @@ pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     match run_result {
         Ok(value) => IO::Value(format!("{:?}", value)),
         Err(err) => {
-            let trace = backtrace(vm, frame_level, &stack);
+            let trace = backtrace(frame_level, &stack);
             let fmt = format!("{}\n{}", err, trace);
             while stack.stack.frames.len() > frame_level {
                 match stack.exit_scope() {
@@ -114,7 +114,7 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
     match run_result {
         Ok(()) => IO::Value(format!("Loaded {}", &name[..])),
         Err(err) => {
-            let trace = backtrace(vm, frame_level, &stack);
+            let trace = backtrace(frame_level, &stack);
             let fmt = format!("{}\n{}", err, trace);
             while stack.stack.frames.len() > frame_level {
                 match stack.exit_scope() {
@@ -128,11 +128,11 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
 }
 
 /// Creates a backtraces starting from `frame_level`
-fn backtrace(vm: &VM, frame_level: usize, stack: &StackFrame) -> String {
+fn backtrace(frame_level: usize, stack: &StackFrame) -> String {
     let mut buffer = String::from("Backtrace:\n");
     for frame in &stack.stack.frames[frame_level..] {
         match frame.function.as_ref().map(|c| c.name()) {
-            Some(name) => buffer.push_str(&vm.symbol_string(name)),
+            Some(name) => buffer.push_str(name.as_ref()),
             None => buffer.push_str("<unknown>"),
         }
         buffer.push('\n');

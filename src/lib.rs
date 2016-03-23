@@ -101,7 +101,7 @@ pub use vm::vm::VM;
 
 use base::ast;
 use base::types::TcType;
-use base::symbol::{Name, NameBuf, Symbol};
+use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::error::Error as StdError;
@@ -141,7 +141,7 @@ quick_error! {
 
 pub type Result<T> = StdResult<T, Error>;
 
-fn include_implicit_prelude(vm: &VM, name: &str, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) {
+fn include_implicit_prelude(name: &str, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) {
     use std::mem;
     if name == "std.prelude" {
         return;
@@ -160,7 +160,7 @@ and { (==) } = __implicit_prelude.eq_Float
 and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
 in 0
 "#;
-    let prelude_expr = parse_expr(vm, "", prelude_import).unwrap();
+    let prelude_expr = parse_expr("", prelude_import).unwrap();
     let original_expr = mem::replace(expr, prelude_expr);
     fn assign_last_body(l: &mut ast::LExpr<ast::TcIdent<Symbol>>,
                         original_expr: ast::LExpr<ast::TcIdent<Symbol>>) {
@@ -178,14 +178,13 @@ fn compile_script(vm: &VM,
                   filename: &str,
                   expr: &ast::LExpr<ast::TcIdent<Symbol>>)
                   -> CompiledFunction {
-    use base::symbol::SymbolModule;
     use vm::compiler::Compiler;
     debug!("Compile `{}`", filename);
     let mut function = {
         let env = vm.env();
         let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
-        let mut symbols = vm.get_mut_symbols();
+        let mut symbols = Symbols::new();
         let name = Name::new(filename);
         let name = NameBuf::from(name.module());
         let symbols = SymbolModule::new(StdString::from(name.as_ref()), &mut symbols);
@@ -244,12 +243,10 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<()> {
     load_script(vm, &name, &buffer)
 }
 
-pub fn parse_expr(vm: &VM,
-                  file: &str,
+pub fn parse_expr(file: &str,
                   input: &str)
                   -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
-    use base::symbol::SymbolModule;
-    let mut symbols = vm.get_mut_symbols();
+    let mut symbols = Symbols::new();
     Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut symbols), input)))
 }
 
@@ -260,13 +257,13 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
     use check::typecheck::Typecheck;
     use base::error;
-    let mut expr = try!(parse_expr(vm, file, expr_str));
+    let mut expr = try!(parse_expr(file, expr_str));
     if implicit_prelude {
-        include_implicit_prelude(vm, file, &mut expr);
+        include_implicit_prelude(file, &mut expr);
     }
     try!(vm.get_macros().run(vm, &mut expr));
     let env = vm.env();
-    let mut symbols = vm.get_mut_symbols();
+    let mut symbols = Symbols::new();
     let mut tc = Typecheck::new(file.into(), &mut symbols, &env);
     let typ = try!(tc.typecheck_expr(&mut expr)
                      .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
@@ -303,7 +300,7 @@ pub fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
 /// loaded.
 pub fn new_vm<'a>() -> VM<'a> {
     let vm = VM::new();
-    vm.get_macros().insert(vm.symbol("import"), ::import::Import::new());
+    vm.get_macros().insert(String::from("import"), ::import::Import::new());
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::io::load(&vm).expect("Loaded IO library");
     vm
