@@ -94,14 +94,15 @@ impl Instruction {
 
 #[derive(Debug)]
 pub struct TypeInfos {
-    pub id_to_type: HashMap<Symbol, (Vec<types::Generic<Symbol>>, TcType)>,
+    pub id_to_type: HashMap<String, (Vec<types::Generic<Symbol>>, TcType)>,
     pub type_to_id: HashMap<TcType, TcType>,
 }
 
 impl KindEnv for TypeInfos {
     fn find_kind(&self, type_name: &Symbol) -> Option<types::RcKind> {
+        let type_name = AsRef::<str>::as_ref(type_name);
         self.id_to_type
-            .get(&type_name)
+            .get(AsRef::<str>::as_ref(type_name))
             .map(|&(ref args, _)| {
                 let mut kind = types::Kind::star();
                 for arg in args.iter().rev() {
@@ -114,11 +115,12 @@ impl KindEnv for TypeInfos {
 
 impl TypeEnv for TypeInfos {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+        let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .iter()
             .filter_map(|(_, &(_, ref typ))| {
                 match **typ {
-                    Type::Variants(ref variants) => variants.iter().find(|v| v.0 == *id),
+                    Type::Variants(ref variants) => variants.iter().find(|v| v.0.as_ref() == id),
                     _ => None,
                 }
             })
@@ -127,6 +129,7 @@ impl TypeEnv for TypeInfos {
     }
 
     fn find_type_info(&self, id: &Symbol) -> Option<(&[types::Generic<Symbol>], Option<&TcType>)> {
+        let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .get(id)
             .map(|&(ref args, ref typ)| (&args[..], Some(typ)))
@@ -137,7 +140,7 @@ impl TypeEnv for TypeInfos {
             .find(|&(_, &(_, ref typ))| {
                 match **typ {
                     Type::Record { fields: ref record_fields, .. } => {
-                        fields.iter().all(|name| record_fields.iter().any(|f| f.name == *name))
+                        fields.iter().all(|name| record_fields.iter().any(|f| f.name.as_ref() == name.as_ref()))
                     }
                     _ => false,
                 }

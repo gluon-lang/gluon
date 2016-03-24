@@ -450,7 +450,7 @@ pub struct GlobalVMState<'a> {
     typeids: FixedMap<TypeId, TcType>,
     pub interner: RefCell<Interner>,
     symbols: RefCell<Symbols>,
-    names: RefCell<HashMap<Symbol, usize>>,
+    names: RefCell<HashMap<StdString, usize>>,
     pub gc: RefCell<Gc>,
     macros: MacroEnv<VM<'a>>,
 }
@@ -479,14 +479,14 @@ pub type Result<T> = StdResult<T, Error>;
 pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global<'a>>,
-    names: Ref<'b, HashMap<Symbol, usize>>,
+    names: Ref<'b, HashMap<StdString, usize>>,
     io_symbol: Symbol,
     io_arg: [types::Generic<Symbol>; 1],
 }
 
 impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     fn find_var(&self, id: &Symbol) -> Option<Variable> {
-        match self.names.get(id) {
+        match self.names.get(id.as_ref()) {
             Some(&index) if index < self.globals.len() => {
                 let g = &self.globals[index];
                 Some(Variable::Global(index as VMIndex, &g.typ))
@@ -501,7 +501,7 @@ impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
         self.type_infos
             .find_kind(type_name)
             .or_else(|| {
-                if *type_name == self.io_symbol {
+                if type_name.as_ref() == "IO" {
                     Some(types::Kind::function(types::Kind::star(), types::Kind::star()))
                 } else {
                     None
@@ -511,7 +511,7 @@ impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
 }
 impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
-        match self.names.get(id) {
+        match self.names.get(AsRef::<str>::as_ref(id)) {
             Some(&index) if index < self.globals.len() => {
                 let g = &self.globals[index];
                 Some(&g.typ)
@@ -537,7 +537,7 @@ impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
         self.type_infos
             .find_type_info(id)
             .or_else(|| {
-                if *id == self.io_symbol {
+                if id.as_ref() == "IO" {
                     Some((&self.io_arg, None))
                 } else {
                     None
@@ -648,13 +648,12 @@ impl<'a> GlobalVMState<'a> {
 
     /// Checks if a global exists called `name`
     pub fn global_exists(&self, name: &str) -> bool {
-        let n = self.symbol(name);
-        self.names.borrow().get(&n).is_some()
+        self.names.borrow().get(name).is_some()
     }
 
     /// TODO dont expose this directly
     pub fn set_global(&self, id: Symbol, typ: TcType, value: Value<'a>) -> Result<()> {
-        if self.names.borrow().contains_key(&id) {
+        if self.names.borrow().contains_key(id.as_ref()) {
             return Err(Error::Message(format!("{} is already defined",
                                               self.symbols.borrow().string(&id))));
         }
@@ -663,7 +662,7 @@ impl<'a> GlobalVMState<'a> {
             typ: typ,
             value: Cell::new(value),
         };
-        self.names.borrow_mut().insert(id, self.globals.len());
+        self.names.borrow_mut().insert(StdString::from(id.as_ref()), self.globals.len());
         self.globals.push(global);
         Ok(())
     }
@@ -675,7 +674,7 @@ impl<'a> GlobalVMState<'a> {
                                           -> Result<&TcType> {
         let n = self.symbol(name);
         let mut type_infos = self.type_infos.borrow_mut();
-        if type_infos.id_to_type.contains_key(&n) {
+        if type_infos.id_to_type.contains_key(name) {
             Err(Error::Message(format!("Type '{}' has already been registered", name)))
         } else {
             let id = TypeId::of::<T>();
@@ -686,7 +685,7 @@ impl<'a> GlobalVMState<'a> {
                 .expect("Id not inserted");
             let t = self.typeids.get(&id).unwrap();
             let ctor = Type::variants(vec![(n.clone(), typ.clone())]);
-            type_infos.id_to_type.insert(n, (args, ctor.clone()));
+            type_infos.id_to_type.insert(name.into(), (args, ctor.clone()));
             type_infos.type_to_id.insert(ctor, typ);
             Ok(t)
         }
@@ -747,8 +746,7 @@ impl<'a> VM<'a> {
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<()>
         where T: Pushable<'a>
     {
-        let id = self.symbol(name);
-        if self.names.borrow().contains_key(&id) {
+        if self.names.borrow().contains_key(name) {
             return Err(Error::Message(format!("{} is already defined", name)));
         }
         let (status, value) = {
@@ -759,7 +757,7 @@ impl<'a> VM<'a> {
         if status == Status::Error {
             return Err(Error::Message(format!("{:?}", value)));
         }
-        self.set_global(id, T::make_type(self), value)
+        self.set_global(Symbol::new(name), T::make_type(self), value)
     }
 
     /// Retrieves the global called `name`.
@@ -770,16 +768,15 @@ impl<'a> VM<'a> {
         let mut components = Name::new(name).components();
         let global = match components.next() {
             Some(comp) => {
-                let comp_id = self.symbol(comp);
                 let names = self.names
                                 .borrow();
-                try!(names.get(&comp_id)
+                try!(names.get(comp)
                           .or_else(|| {
                               // We access by the the full name so no components should be left
                               // to walk through
                               for _ in components.by_ref() {
                               }
-                              names.get(&self.symbol(name))
+                              names.get(name)
                           })
                           .map(|&i| &self.globals[i])
                           .ok_or_else(|| {
@@ -832,16 +829,15 @@ impl<'a> VM<'a> {
         let mut components = name.module().components();
         let global = match components.next() {
             Some(comp) => {
-                let comp_id = self.symbol(comp);
                 let names = self.names
                                 .borrow();
-                try!(names.get(&comp_id)
+                try!(names.get(comp)
                           .or_else(|| {
                               // We access by the the full name so no components should be left
                               // to walk through
                               for _ in components.by_ref() {
                               }
-                              names.get(&self.symbol(name.module()))
+                              names.get(name.module().as_str())
                           })
                           .map(|&i| &self.globals[i])
                           .ok_or_else(|| {
@@ -983,7 +979,7 @@ impl<'a> VM<'a> {
         };
         let f = self.new_function(compiled_fn);
         let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
-        self.names.borrow_mut().insert(id.clone(), self.globals.len());
+        self.names.borrow_mut().insert(name.into(), self.globals.len());
         self.globals.push(Global {
             id: id,
             typ: typ,
