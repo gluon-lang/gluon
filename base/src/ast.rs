@@ -623,12 +623,12 @@ fn get_return_type(env: &TypeEnv,
             Type::Function(_, ref ret) => get_return_type(env, ret.clone(), arg_count - 1),
             Type::Data(TypeConstructor::Data(ref id), ref arguments) => {
                 let (args, typ) = {
-                    let (args, typ) = env.find_type_info(&id)
+                    let alias = env.find_type_info(&id)
                                          .unwrap_or_else(|| {
                                              panic!("ICE: '{:?}' does not exist", id)
                                          });
-                    match typ {
-                        Some(typ) => (args, typ.clone()),
+                    match alias.typ {
+                        Some(ref typ) => (&alias.args, typ.clone()),
                         None => panic!("Unexpected type {:?} is not a function", alias_type),
                     }
                 };

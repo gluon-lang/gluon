@@ -338,7 +338,7 @@ fn associated_record() {
                                           typ: Alias {
                                               name: String::from("Fn"),
                                               args: vec![],
-                                              typ: typ("Fn"),
+                                              typ: Some(typ("Fn")),
                                           },
                                       }],
                                  vec![Field {

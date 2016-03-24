@@ -533,7 +533,7 @@ type Test = | Test String Int in { Test, x = 1 }
                                         typ: types::Alias {
                                             name: intern("Test"),
                                             args: vec![],
-                                            typ: test,
+                                            typ: Some(test),
                                         },
                                     }],
                                vec![types::Field {

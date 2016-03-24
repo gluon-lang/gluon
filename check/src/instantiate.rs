@@ -51,17 +51,16 @@ impl<'a> AliasInstantiator<'a> {
                          arguments: &[TcType])
                          -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
         let (args, mut typ) = {
-            let (args, typ) = try!(self.env
-                                       .find_type_info(&id)
-                                       .map(|s| Ok(s))
-                                       .unwrap_or_else(|| {
-                                           Err(unify::Error::Other(UndefinedType(id.clone())))
-                                       }));
-            match typ {
-                Some(typ) => {
+            let alias = try!(self.env
+                                 .find_type_info(&id)
+                                 .map(|s| Ok(s))
+                                 .unwrap_or_else(|| {
+                                     Err(unify::Error::Other(UndefinedType(id.clone())))
+                                 }));
+            match alias.typ {
+                Some(ref typ) => {
                     // TODO avoid clones here
-                    let args: Vec<_> = args.iter().cloned().collect();
-                    (args, typ.clone())
+                    (alias.args.clone(), typ.clone())
                 }
                 None => return Ok(None),
             }

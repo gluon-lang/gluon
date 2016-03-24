@@ -21,8 +21,8 @@ fn find_kind(args: WithVM<RootStr>) -> IO<String> {
     let vm = args.vm;
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
-        Ok((generic_args, _)) => {
-            let kind = generic_args.iter().rev().fold(Kind::star(), |acc, arg| {
+        Ok(ref alias) => {
+            let kind = alias.args.iter().rev().fold(Kind::star(), |acc, arg| {
                 Kind::function(arg.kind.clone(), acc)
             });
             format!("{}", kind)
@@ -35,17 +35,17 @@ fn find_type_info(args: WithVM<RootStr>) -> IO<String> {
     let vm = args.vm;
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
-        Ok((generic_args, typ)) => {
+        Ok(alias) => {
             let fmt = || -> Result<String, ::std::fmt::Error> {
                 use std::fmt::Write;
                 let mut buffer = String::new();
                 try!(write!(&mut buffer, "type {}", args));
-                for g in generic_args {
+                for g in &alias.args {
                     try!(write!(&mut buffer, " {}", g.id))
                 }
                 try!(write!(&mut buffer, " = "));
-                match typ {
-                    Some(typ) => try!(write!(&mut buffer, "{}", typ)),
+                match alias.typ {
+                    Some(ref typ) => try!(write!(&mut buffer, "{}", typ)),
                     None => try!(write!(&mut buffer, "<abstract>")),
                 }
                 Ok(buffer)

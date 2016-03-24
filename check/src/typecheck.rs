@@ -126,16 +126,16 @@ type TcResult<T> = Result<T, TypeError<Symbol>>;
 struct Environment<'a> {
     environment: &'a (TypeEnv + 'a),
     stack: ScopedMap<Symbol, TcType>,
-    stack_types: ScopedMap<Symbol, (TcType, Vec<Generic<Symbol>>, TcType)>,
+    stack_types: ScopedMap<Symbol, (TcType, Alias<Symbol, TcType>)>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
     fn find_kind(&self, type_name: &Symbol) -> Option<RcKind> {
         self.stack_types
             .get(type_name)
-            .map(|&(_, ref args, _)| {
+            .map(|&(_, ref alias)| {
                 let mut kind = Kind::star();
-                for arg in args.iter().rev() {
+                for arg in alias.args.iter().rev() {
                     kind = Kind::function(arg.kind.clone(), kind);
                 }
                 kind
@@ -149,25 +149,31 @@ impl<'a> TypeEnv for Environment<'a> {
         self.stack.get(id).or_else(|| self.environment.find_type(id))
     }
 
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
         self.stack_types
             .get(id)
-            .map(|&(_, ref generics, ref typ)| (&generics[..], Some(typ)))
+            .map(|&(_, ref alias)| alias)
             .or_else(|| self.environment.find_type_info(id))
     }
 
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         self.stack_types
             .iter()
-            .find(|&(_, &(_, _, ref typ))| {
-                match **typ {
-                    Type::Record { fields: ref record_fields, .. } => {
-                        fields.iter().all(|name| record_fields.iter().any(|f| f.name == *name))
+            .find(|&(_, &(_, ref alias))| {
+                match alias.typ {
+                    Some(ref typ) => {
+                        match **typ {
+                            Type::Record { fields: ref record_fields, .. } => {
+                                fields.iter()
+                                      .all(|name| record_fields.iter().any(|f| f.name == *name))
+                            }
+                            _ => false,
+                        }
                     }
-                    _ => false,
+                    None => false,
                 }
             })
-            .map(|t| (&(t.1).0, &(t.1).2))
+            .map(|t| (&(t.1).0, (t.1).1.typ.as_ref().unwrap()))
             .or_else(|| self.environment.find_record(fields))
     }
 }
@@ -238,7 +244,7 @@ impl<'a> Typecheck<'a> {
             .ok_or(UndefinedRecord { fields: fields.to_owned() })
     }
 
-    fn find_type_info(&self, id: &Symbol) -> TcResult<(&[Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, TcType>> {
         self.environment
             .find_type_info(id)
             .ok_or_else(|| UndefinedType(id.clone()))
@@ -252,21 +258,28 @@ impl<'a> Typecheck<'a> {
                   id: Symbol,
                   typ: TcType,
                   generics: Vec<Generic<Symbol>>,
-                  real_type: TcType) {
+                  real_type: Option<TcType>) {
         // Insert variant constructors into the local scope
-        if let Type::Variants(ref variants) = *real_type {
-            for (name, typ) in variants.iter().cloned() {
-                self.stack_var(name, typ);
+        if let Some(ref real_type) = real_type {
+            if let Type::Variants(ref variants) = **real_type {
+                for (name, typ) in variants.iter().cloned() {
+                    self.stack_var(name, typ);
+                }
             }
         }
+        let alias = Alias {
+            name: id.clone(),
+            args: generics,
+            typ: real_type,
+        };
         if let Type::Data(types::TypeConstructor::Data(ref id), _) = *typ {
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
             self.environment
                 .stack_types
-                .insert(id.clone(), (typ.clone(), generics.clone(), real_type.clone()));
+                .insert(id.clone(), (typ.clone(), alias.clone()));
         }
-        self.environment.stack_types.insert(id, (typ, generics, real_type));
+        self.environment.stack_types.insert(id, (typ, alias));
     }
 
     fn enter_scope(&mut self) {
@@ -703,7 +716,10 @@ impl<'a> Typecheck<'a> {
                                 });
                             } else {
                                 let generic_args = extract_generics(args);
-                                self.stack_type(id.clone(), name.clone(), generic_args, typ.clone());
+                                self.stack_type(id.clone(),
+                                                name.clone(),
+                                                generic_args,
+                                                Some(typ.clone()));
                             }
                         }
                         _ => {
@@ -724,20 +740,16 @@ impl<'a> Typecheck<'a> {
                                               *typ = self.refresh_symbols_in_type(typ.clone());
                                           }
                                           let (generics, typ) = {
-                                              let (generics, typ) =
-                                                  try!(self.find_type_info(symbol));
-                                              let generics: Vec<_> = generics.iter()
-                                                                             .cloned()
-                                                                             .collect();
-                                              (generics, typ.cloned())
+                                              let alias = try!(self.find_type_info(symbol));
+                                              (alias.args.clone(), alias.typ.clone())
                                           };
 
                                           let name: TcType =
-                                              Type::data(types::TypeConstructor::Data(symbol.clone()),
-                                                         generics.iter()
-                                                                 .cloned()
-                                                                 .map(Type::generic)
-                                                                 .collect());
+                                      Type::data(types::TypeConstructor::Data(symbol.clone()),
+                                                 generics.iter()
+                                                         .cloned()
+                                                         .map(Type::generic)
+                                                         .collect());
                                           let typ = match typ {
                                               Some(typ) => typ.clone(),
                                               None => name.clone(),
@@ -751,7 +763,7 @@ impl<'a> Typecheck<'a> {
                                               typ: Alias {
                                                   name: symbol.clone(),
                                                   args: generics,
-                                                  typ: typ,
+                                                  typ: Some(typ),
                                               },
                                           })
                                       })
@@ -771,7 +783,9 @@ impl<'a> Typecheck<'a> {
                                         })
                                         .collect::<TcResult<Vec<_>>>());
                 let (id_type, record_type) = match self.find_record(&fields.iter()
-                                                                           .map(|f| f.name.clone())
+                                                                           .map(|f| {
+                                                                               f.name.clone()
+                                                                           })
                                                                            .collect::<Vec<_>>())
                                                        .map(|t| (t.0.clone(), t.1.clone())) {
                     Ok(x) => x,
@@ -916,7 +930,8 @@ impl<'a> Typecheck<'a> {
                                     // This forces refresh_type to remap the name a type was given
                                     // in this module to its actual name
                                     self.original_symbols
-                                        .insert(field_type.name.clone(), field_type.typ.name.clone());
+                                        .insert(field_type.name.clone(),
+                                                field_type.typ.name.clone());
                                     self.stack_type(name,
                                                     alias_type,
                                                     field_type.typ.args.clone(),
@@ -1055,44 +1070,41 @@ impl<'a> Typecheck<'a> {
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
-        types::walk_move_type(typ,
-                              &mut |typ| {
-                                  match *typ {
-                                      Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
-                                          self.original_symbols
-                                              .get(&id)
-                                              .map(|current| {
-                                                  Type::data(types::TypeConstructor::Data(current.clone()),
-                                                             args.clone())
-                                              })
-                                      }
-                                      Type::Variants(ref variants) => {
-                                          let iter = || {
-                                              variants.iter()
-                                                      .map(|var| self.original_symbols.get(&var.0))
-                                          };
-                                          if iter().any(|opt| opt.is_some()) {
-                                              // If any of the variants requires a symbol replacement
-                                              // we create a new type
-                                              Some(Type::variants(iter()
-                                                                      .zip(variants.iter())
-                                                                      .map(|(new, old)| {
-                                                                          match new {
-                                                                              Some(new) => {
-                                                                                  (new.clone(),
-                                                                                   old.1.clone())
-                                                                              }
-                                                                              None => old.clone(),
-                                                                          }
-                                                                      })
-                                                                      .collect()))
-                                          } else {
-                                              None
-                                          }
-                                      }
-                                      _ => None,
-                                  }
-                              })
+        let mut f = |typ: &Type<_, TcType>| {
+            match *typ {
+                Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
+                    self.original_symbols
+                        .get(&id)
+                        .or_else(|| self.environment.find_type_info(id).map(|alias| &alias.name))
+                        .map(|current| {
+                            Type::data(types::TypeConstructor::Data(current.clone()), args.clone())
+                        })
+                }
+                Type::Variants(ref variants) => {
+                    let iter = || {
+                        variants.iter()
+                                .map(|var| self.original_symbols.get(&var.0))
+                    };
+                    if iter().any(|opt| opt.is_some()) {
+                        // If any of the variants requires a symbol replacement
+                        // we create a new type
+                        Some(Type::variants(iter()
+                                                .zip(variants.iter())
+                                                .map(|(new, old)| {
+                                                    match new {
+                                                        Some(new) => (new.clone(), old.1.clone()),
+                                                        None => old.clone(),
+                                                    }
+                                                })
+                                                .collect()))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        };
+        types::walk_move_type(typ, &mut f)
     }
 
     fn unify_span(&mut self, span: ast::Span, expected: &TcType, actual: TcType) -> TcType {

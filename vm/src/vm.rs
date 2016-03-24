@@ -480,8 +480,7 @@ pub struct VMEnv<'a: 'b, 'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global<'a>>,
     names: Ref<'b, HashMap<StdString, usize>>,
-    io_symbol: Symbol,
-    io_arg: [types::Generic<Symbol>; 1],
+    io_alias: types::Alias<Symbol, TcType>,
 }
 
 impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
@@ -520,25 +519,29 @@ impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
                 self.type_infos
                     .id_to_type
                     .values()
-                    .filter_map(|tuple| {
-                        match *tuple.1 {
-                            Type::Variants(ref ctors) => {
-                                ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1)
-                            }
-                            _ => None,
-                        }
+                    .filter_map(|alias| {
+                        alias.typ
+                             .as_ref()
+                             .and_then(|typ| {
+                                 match **typ {
+                                     Type::Variants(ref ctors) => {
+                                         ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1)
+                                     }
+                                     _ => None,
+                                 }
+                             })
                     })
                     .next()
                     .map(|ctor| ctor)
             }
         }
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[types::Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<&types::Alias<Symbol, TcType>> {
         self.type_infos
             .find_type_info(id)
             .or_else(|| {
                 if id.as_ref() == "IO" {
-                    Some((&self.io_arg, None))
+                    Some(&self.io_alias)
                 } else {
                     None
                 }
@@ -685,7 +688,12 @@ impl<'a> GlobalVMState<'a> {
                 .expect("Id not inserted");
             let t = self.typeids.get(&id).unwrap();
             let ctor = Type::variants(vec![(n.clone(), typ.clone())]);
-            type_infos.id_to_type.insert(name.into(), (args, ctor.clone()));
+            type_infos.id_to_type.insert(name.into(),
+                                         types::Alias {
+                                             name: n,
+                                             args: args,
+                                             typ: Some(ctor.clone()),
+                                         });
             type_infos.type_to_id.insert(ctor, typ);
             Ok(t)
         }
@@ -712,11 +720,14 @@ impl<'a> GlobalVMState<'a> {
             type_infos: self.type_infos.borrow(),
             globals: &self.globals,
             names: self.names.borrow(),
-            io_symbol: self.symbol("IO"),
-            io_arg: [types::Generic {
-                         id: self.symbol("a"),
-                         kind: types::Kind::star(),
-                     }],
+            io_alias: types::Alias {
+                name: self.symbol("IO"),
+                args: vec![types::Generic {
+                               id: self.symbol("a"),
+                               kind: types::Kind::star(),
+                           }],
+                typ: None,
+            },
         }
     }
 
@@ -822,9 +833,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub fn find_type_info(&self,
-                          name: &str)
-                          -> Result<(&[types::Generic<Symbol>], Option<&TcType>)> {
+    pub fn find_type_info(&self, name: &str) -> Result<&types::Alias<Symbol, TcType>> {
         let name = Name::new(name);
         let mut components = name.module().components();
         let global = match components.next() {
@@ -869,7 +878,7 @@ impl<'a> VM<'a> {
                 let field_name = self.symbol(name.name());
                 types.iter()
                      .find(|field| field.name == field_name)
-                     .map(|field| ((&*field.typ.args, Some(&field.typ.typ))))
+                     .map(|field| &field.typ)
             }
             _ => None,
         };

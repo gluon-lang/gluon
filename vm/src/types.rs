@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use base::symbol::Symbol;
 use base::types;
-use base::types::{KindEnv, TypeEnv, TcType, Type};
+use base::types::{Alias, KindEnv, TypeEnv, TcType, Type};
 
 pub use self::Instruction::*;
 
@@ -94,7 +94,7 @@ impl Instruction {
 
 #[derive(Debug)]
 pub struct TypeInfos {
-    pub id_to_type: HashMap<String, (Vec<types::Generic<Symbol>>, TcType)>,
+    pub id_to_type: HashMap<String, Alias<Symbol, TcType>>,
     pub type_to_id: HashMap<TcType, TcType>,
 }
 
@@ -102,13 +102,11 @@ impl KindEnv for TypeInfos {
     fn find_kind(&self, type_name: &Symbol) -> Option<types::RcKind> {
         let type_name = AsRef::<str>::as_ref(type_name);
         self.id_to_type
-            .get(AsRef::<str>::as_ref(type_name))
-            .map(|&(ref args, _)| {
-                let mut kind = types::Kind::star();
-                for arg in args.iter().rev() {
-                    kind = types::Kind::function(arg.kind.clone(), kind);
-                }
-                kind
+            .get(type_name)
+            .map(|alias| {
+                alias.args.iter().rev().fold(types::Kind::star(), |acc, arg| {
+                    types::Kind::function(arg.kind.clone(), acc)
+                })
             })
     }
 }
@@ -118,34 +116,48 @@ impl TypeEnv for TypeInfos {
         let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .iter()
-            .filter_map(|(_, &(_, ref typ))| {
-                match **typ {
-                    Type::Variants(ref variants) => variants.iter().find(|v| v.0.as_ref() == id),
-                    _ => None,
-                }
+            .filter_map(|(_, ref alias)| {
+                alias.typ.as_ref().and_then(|typ| {
+                    match **typ {
+                        Type::Variants(ref variants) => {
+                            variants.iter().find(|v| v.0.as_ref() == id)
+                        }
+                        _ => None,
+                    }
+                })
             })
             .next()
             .map(|x| &x.1)
     }
 
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[types::Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
         let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .get(id)
-            .map(|&(ref args, ref typ)| (&args[..], Some(typ)))
     }
+
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         self.id_to_type
             .iter()
-            .find(|&(_, &(_, ref typ))| {
-                match **typ {
-                    Type::Record { fields: ref record_fields, .. } => {
-                        fields.iter().all(|name| record_fields.iter().any(|f| f.name.as_ref() == name.as_ref()))
-                    }
-                    _ => false,
-                }
+            .find(|&(_, alias)| {
+                alias.typ
+                     .as_ref()
+                     .map(|typ| {
+                         match **typ {
+                             Type::Record { fields: ref record_fields, .. } => {
+                                 fields.iter().all(|name| {
+                                     record_fields.iter().any(|f| f.name.as_ref() == name.as_ref())
+                                 })
+                             }
+                             _ => false,
+                         }
+                     })
+                     .unwrap_or(false)
             })
-            .and_then(|t| self.type_to_id.get(&(t.1).1).map(|id_type| (id_type, &(t.1).1)))
+            .and_then(|t| {
+                let typ = t.1.typ.as_ref().unwrap();
+                self.type_to_id.get(typ).map(|id_type| (id_type, typ))
+            })
     }
 }
 

@@ -279,7 +279,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                 typ: Alias {
                                     name: untyped_id,
                                     args: vec![],
-                                    typ: typ,
+                                    typ: Some(typ),
                                 },
                             });
                         }

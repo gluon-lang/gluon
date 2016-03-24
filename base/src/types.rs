@@ -36,7 +36,7 @@ impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
 
 pub trait TypeEnv: KindEnv {
     fn find_type(&self, id: &Symbol) -> Option<&TcType>;
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[Generic<Symbol>], Option<&TcType>)>;
+    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>>;
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
 }
 
@@ -44,7 +44,7 @@ impl TypeEnv for () {
     fn find_type(&self, _id: &Symbol) -> Option<&TcType> {
         None
     }
-    fn find_type_info(&self, _id: &Symbol) -> Option<(&[Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, _id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
         None
     }
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
@@ -56,7 +56,7 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         (**self).find_type(id)
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
         (**self).find_type_info(id)
     }
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
@@ -70,7 +70,7 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
         inner.find_type(id)
              .or_else(|| outer.find_type(id))
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
         let &(ref outer, ref inner) = self;
         inner.find_type_info(id)
              .or_else(|| outer.find_type_info(id))
@@ -151,7 +151,7 @@ impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
                                                             }
                                                         })
                                                         .collect(),
-                                             typ: field.typ.typ.map_(f),
+                                             typ: field.typ.typ.as_ref().map(|t| t.map_(f)),
                                          },
                                      }
                                  })
@@ -376,7 +376,7 @@ pub struct Generic<Id> {
 pub struct Alias<Id, T> {
     pub name: Id,
     pub args: Vec<Generic<Id>>,
-    pub typ: T,
+    pub typ: Option<T>,
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
@@ -705,13 +705,19 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                     for arg in &types[0].typ.args {
                         try!(write!(f, "{} ", self.env.string(&arg.id)));
                     }
-                    try!(write!(f, "= {}", top(self.env, &*types[0].typ.typ)));
+                    match types[0].typ.typ {
+                        Some(ref typ) => try!(write!(f, "= {}", top(self.env, typ))),
+                        None => try!(write!(f, "= <abstract>")),
+                    }
                     for field in &types[1..] {
                         try!(write!(f, " {} ", self.env.string(&field.name)));
                         for arg in &field.typ.args {
                             try!(write!(f, "{} ", self.env.string(&arg.id)));
                         }
-                        try!(write!(f, "= {}", top(self.env, &*field.typ.typ)));
+                        match field.typ.typ {
+                            Some(ref typ) => try!(write!(f, "= {}", top(self.env, typ))),
+                            None => try!(write!(f, "= <abstract>")),
+                        }
                     }
                     if fields.len() == 0 {
                         try!(write!(f, " "));
@@ -777,7 +783,9 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
         }
         Type::Record { ref types, ref fields } => {
             for field in types {
-                walk_type(&field.typ.typ, f);
+                if let Some(ref typ) = field.typ.typ {
+                    walk_type(typ, f);
+                }
             }
             for field in fields {
                 walk_type(&field.typ, f);
@@ -960,7 +968,7 @@ mod test {
                                                            kind: Kind::star(),
                                                            id: "a",
                                                        }],
-                                            typ: f.clone(),
+                                            typ: Some(f.clone()),
                                         },
                                     }],
                                vec![Field {
@@ -976,7 +984,7 @@ mod test {
                                                            kind: Kind::star(),
                                                            id: "a",
                                                        }],
-                                            typ: f.clone(),
+                                            typ: Some(f.clone()),
                                         },
                                     }],
                                vec![Field {
@@ -997,7 +1005,7 @@ mod test {
                                                            kind: Kind::star(),
                                                            id: "a",
                                                        }],
-                                            typ: f.clone(),
+                                            typ: Some(f.clone()),
                                         },
                                     }],
                                vec![]);

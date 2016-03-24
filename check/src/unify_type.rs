@@ -121,8 +121,9 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
                 // FIXME Take associated types into account when unifying
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
                     let opt_type = if l.name != r.name {
-                        unifier.report_error(UnifyError::Other(TypeError::FieldMismatch(l.name.clone(),
-                                                                                        r.name.clone())));
+
+                        let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
+                        unifier.report_error(UnifyError::Other(err));
                         Some(unifier.subs.new_var())
                     } else {
                         unifier.try_match(&l.typ, &r.typ)

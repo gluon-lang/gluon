@@ -191,15 +191,17 @@ impl CompilerEnv for TypeInfos {
 
         self.id_to_type
             .iter()
-            .filter_map(|(_, &(_, ref typ))| {
-                match **typ {
-                    Type::Variants(ref variants) => {
-                        variants.iter()
-                                .enumerate()
-                                .find(|&(_, v)| v.0 == *id)
+            .filter_map(|(_, ref alias)| {
+                alias.typ.as_ref().and_then(|typ| {
+                    match **typ {
+                        Type::Variants(ref variants) => {
+                            variants.iter()
+                                    .enumerate()
+                                    .find(|&(_, v)| v.0 == *id)
+                        }
+                        _ => None,
                     }
-                    _ => None,
-                }
+                })
             })
             .next()
             .map(|(tag, &(_, ref typ))| {
@@ -214,7 +216,7 @@ pub struct Compiler<'a> {
     gc: &'a mut Gc,
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, TcType>,
-    stack_types: ScopedMap<Symbol, (Vec<types::Generic<Symbol>>, TcType)>,
+    stack_types: ScopedMap<Symbol, types::Alias<Symbol, TcType>>,
 }
 
 impl<'a> ::base::types::KindEnv for Compiler<'a> {
@@ -227,10 +229,9 @@ impl<'a> TypeEnv for Compiler<'a> {
     fn find_type(&self, _id: &Symbol) -> Option<&TcType> {
         None
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<(&[types::Generic<Symbol>], Option<&TcType>)> {
+    fn find_type_info(&self, id: &Symbol) -> Option<&types::Alias<Symbol, TcType>> {
         self.stack_types
             .get(id)
-            .map(|&(ref generics, ref typ)| (&generics[..], Some(typ)))
     }
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         None
@@ -307,7 +308,7 @@ impl<'a> Compiler<'a> {
             match *typ {
                 Type::Data(types::TypeConstructor::Data(ref id), _) => {
                     match self.find_type_info(&id) {
-                        Some((_, Some(real_type))) => {
+                        Some(&types::Alias { typ: Some(ref real_type), .. }) => {
                             typ = real_type;
                         }
                         _ => break,
@@ -636,7 +637,12 @@ impl<'a> Compiler<'a> {
                     if let Type::Data(types::TypeConstructor::Data(ref name), ref args) =
                            *type_binding.name {
                         let generic_args = extract_generics(args);
-                        self.stack_types.insert(name.clone(), (generic_args, type_binding.typ.clone()));
+                        self.stack_types.insert(name.clone(),
+                                                types::Alias {
+                                                    name: name.clone(),
+                                                    args: generic_args,
+                                                    typ: Some(type_binding.typ.clone()),
+                                                });
                         self.stack_constructors.insert(name.clone(), type_binding.typ.clone());
                     }
                 }
@@ -681,21 +687,24 @@ impl<'a> Compiler<'a> {
                 let mut typ = typ.clone();
                 if let Type::Data(types::TypeConstructor::Data(ref id), _) = *typ.clone() {
                     typ = self.find_type_info(&id)
-                              .and_then(|(_, typ)| typ.cloned())
+                              .and_then(|alias| alias.typ.clone())
                               .unwrap_or(typ);
                 }
                 // Insert all variant constructor into scope
                 with_pattern_types(types, &typ, |name, alias| {
                     // FIXME: Workaround so that both the types name in this module and its global
                     // name are imported. Without this aliases may not be traversed properly
-                    self.stack_types.insert(alias.name.clone(), (alias.args.clone(), alias.typ.clone()));
-                    self.stack_constructors.insert(alias.name.clone(), alias.typ.clone());
-                    self.stack_types.insert(name.clone(), (alias.args.clone(), alias.typ.clone()));
-                    self.stack_constructors.insert(name.clone(), alias.typ.clone());
+                    self.stack_types.insert(alias.name.clone(), alias.clone());
+                    self.stack_types.insert(name.clone(), alias.clone());
+                    if let Some(ref typ) = alias.typ {
+                        self.stack_constructors.insert(alias.name.clone(), typ.clone());
+                        self.stack_constructors.insert(name.clone(), typ.clone());
+                    }
                 });
                 match *typ {
                     Type::Record { fields: ref type_fields, .. } => {
-                        if fields.len() == 0 || (type_fields.len() > 4 && type_fields.len() / fields.len() >= 4) {
+                        if fields.len() == 0 ||
+                           (type_fields.len() > 4 && type_fields.len() / fields.len() >= 4) {
                             // For pattern matches on large records where only a few of the fields
                             // are used we instead emit a series of GetField instructions to avoid
                             // pushing a lot of unnecessary fields to the stack
@@ -708,13 +717,18 @@ impl<'a> Compiler<'a> {
                                                         .expect("Field to exist");
                                 function.emit(Push(record_index));
                                 function.emit(GetField(offset as VMIndex));
-                                function.new_stack_var(pattern_field.1.as_ref().unwrap_or(&pattern_field.0).clone());
+                                function.new_stack_var(pattern_field.1
+                                                                    .as_ref()
+                                                                    .unwrap_or(&pattern_field.0)
+                                                                    .clone());
                             }
                         } else {
                             function.emit(Split);
                             for field in type_fields {
                                 let name = match fields.iter().find(|tup| tup.0 == field.name) {
-                                    Some(&(ref name, ref bind)) => bind.as_ref().unwrap_or(name).clone(),
+                                    Some(&(ref name, ref bind)) => {
+                                        bind.as_ref().unwrap_or(name).clone()
+                                    }
                                     None => self.symbols.symbol(""),
                                 };
                                 function.push_stack_var(name);
