@@ -116,8 +116,8 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
                 Ok(args.map(|args| Type::data(l.clone(), args)))
             }
             (&Type::Record { fields: ref l_args, types: ref l_types },
-             &Type::Record { fields: ref r_args, .. })
-                if l_args.len() == r_args.len() => {
+             &Type::Record { fields: ref r_args, types: ref r_types })
+                if l_args.len() == r_args.len() && l_types == r_types => {
                 // FIXME Take associated types into account when unifying
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
                     let opt_type = if !l.name.name_eq(&r.name) {

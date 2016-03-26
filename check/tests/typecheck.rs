@@ -766,6 +766,21 @@ in f ""
 }
 
 #[test]
+fn type_field_mismatch() {
+    let _ = ::env_logger::init();
+    let text = r#"
+if True then
+    type Test = Int
+    { Test }
+else
+    type Test = Float
+    { Test }
+"#;
+    let result = typecheck(text);
+    assert_unify_err!(result, TypeMismatch(..));
+}
+
+#[test]
 fn module() {
     let _ = ::env_logger::init();
     let text = r"
