@@ -193,7 +193,7 @@ fn compile_script(symbols: &mut Symbols,
         let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
         compiler.compile_expr(&expr)
     };
-    function.id = vm.symbol(filename);
+    function.id = Symbol::new(filename);
     function
 }
 
@@ -306,7 +306,7 @@ pub fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
     let mut symbols = Symbols::new();
     let (expr, typ) = try!(typecheck_expr_(&mut symbols, vm, name, expr_str, implicit_prelude));
     let mut function = compile_script(&mut symbols, vm, name, &expr);
-    function.id = vm.symbol(name);
+    function.id = Symbol::new(name);
     let function = vm.new_function(function);
     let closure = {
         let stack = vm.current_frame();

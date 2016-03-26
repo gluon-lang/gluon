@@ -6,8 +6,8 @@ use std::cmp::Ordering;
 use std::ops::{Add, Sub, Mul, Div, Deref};
 use std::string::String as StdString;
 use std::result::Result as StdResult;
-use base::ast::{Typed, ASTType, DisplayEnv};
-use base::symbol::{Name, NameBuf, Symbol, Symbols};
+use base::ast::{Typed, ASTType};
+use base::symbol::{Name, Symbol};
 use base::types;
 use base::types::{Type, KindEnv, TypeEnv, TcType, RcKind};
 use base::macros::MacroEnv;
@@ -444,12 +444,16 @@ impl<'a> Typed for Global<'a> {
     }
 }
 
+struct GlobalSymbols {
+    io: Symbol,
+}
+
 pub struct GlobalVMState<'a> {
     globals: FixedVec<Global<'a>>,
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
     pub interner: RefCell<Interner>,
-    symbols: RefCell<Symbols>,
+    symbols: GlobalSymbols,
     names: RefCell<HashMap<StdString, usize>>,
     pub gc: RefCell<Gc>,
     macros: MacroEnv<VM<'a>>,
@@ -606,7 +610,9 @@ impl<'a> GlobalVMState<'a> {
             globals: FixedVec::new(),
             type_infos: RefCell::new(TypeInfos::new()),
             typeids: FixedMap::new(),
-            symbols: RefCell::new(Symbols::new()),
+            symbols: GlobalSymbols {
+                io: Symbol::new("IO"),
+            },
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: RefCell::new(Gc::new()),
@@ -628,7 +634,7 @@ impl<'a> GlobalVMState<'a> {
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
         try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
         let args = vec![types::Generic {
-                            id: self.symbol("a"),
+                            id: Symbol::new("a"),
                             kind: types::Kind::star(),
                         }];
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
@@ -654,8 +660,7 @@ impl<'a> GlobalVMState<'a> {
     /// TODO dont expose this directly
     pub fn set_global(&self, id: Symbol, typ: TcType, value: Value<'a>) -> Result<()> {
         if self.names.borrow().contains_key(id.as_ref()) {
-            return Err(Error::Message(format!("{} is already defined",
-                                              self.symbols.borrow().string(&id))));
+            return Err(Error::Message(format!("{} is already defined", id)));
         }
         let global = Global {
             id: id.clone(),
@@ -672,13 +677,13 @@ impl<'a> GlobalVMState<'a> {
                                           name: &str,
                                           args: Vec<types::Generic<Symbol>>)
                                           -> Result<&TcType> {
-        let n = self.symbol(name);
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(name) {
             Err(Error::Message(format!("Type '{}' has already been registered", name)))
         } else {
             let id = TypeId::of::<T>();
             let arg_types = args.iter().map(|g| Type::generic(g.clone())).collect();
+            let n = Symbol::new(name);
             let typ: TcType = Type::data(types::TypeConstructor::Data(n.clone()), arg_types);
             self.typeids
                 .try_insert(id, typ.clone())
@@ -700,13 +705,6 @@ impl<'a> GlobalVMState<'a> {
         &self.macros
     }
 
-    pub fn symbol<N>(&self, name: N) -> Symbol
-        where N: Into<NameBuf> + AsRef<Name>
-    {
-        let mut symbols = self.symbols.borrow_mut();
-        symbols.symbol(name)
-    }
-
     pub fn intern(&self, s: &str) -> InternedStr {
         self.interner.borrow_mut().intern(&mut *self.gc.borrow_mut(), s)
     }
@@ -718,9 +716,9 @@ impl<'a> GlobalVMState<'a> {
             globals: &self.globals,
             names: self.names.borrow(),
             io_alias: types::Alias {
-                name: self.symbol("IO"),
+                name: self.symbols.io.clone(),
                 args: vec![types::Generic {
-                               id: self.symbol("a"),
+                               id: Symbol::new("a"),
                                kind: types::Kind::star(),
                            }],
                 typ: None,
@@ -864,7 +862,7 @@ impl<'a> VM<'a> {
             };
             typ = try!(next.ok_or_else(|| {
                 Error::Message(format!("'{}' cannot be accessed by the field '{}'",
-                                       types::display_type(&*self.symbols.borrow(), &typ),
+                                       typ,
                                        field_name))
             }));
         }
@@ -879,7 +877,7 @@ impl<'a> VM<'a> {
         };
         maybe_type_info.ok_or_else(|| {
             Error::Message(format!("'{}' cannot be accessed by the field '{}'",
-                                   types::display_type(&*self.symbols.borrow(), typ),
+                                   typ,
                                    name.name()))
         })
     }
@@ -972,7 +970,7 @@ impl<'a> VM<'a> {
                         args: VMIndex,
                         instructions: Vec<Instruction>)
                         -> VMIndex {
-        let id = self.symbol(name);
+        let id = Symbol::new(name);
         let compiled_fn = CompiledFunction {
             args: args,
             id: id.clone(),
@@ -1008,7 +1006,7 @@ impl<'a> VM<'a> {
     pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData<'a>>) -> Result<Value<'a>> {
         let value = try!(self.call_bytecode(closure));
         if let Type::Data(types::TypeConstructor::Data(ref id), _) = **typ {
-            if *id == self.symbol("IO") {
+            if *id == self.symbols.io {
                 debug!("Run IO {:?}", value);
                 self.push(Int(0));// Dummy value to fill the place of the function for TailCall
                 self.push(value);
@@ -1070,7 +1068,7 @@ impl<'a> VM<'a> {
                             mut stack: StackFrame<'a, 'b>,
                             function: &ExternFunction<'a>)
                             -> Result<StackFrame<'a, 'b>> {
-        debug!("CALL EXTERN {}", self.symbols.borrow().string(&function.id));
+        debug!("CALL EXTERN {}", function.id);
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
         drop(stack);
@@ -1195,13 +1193,10 @@ impl<'a> VM<'a> {
                         return Ok(Some(stack));
                     }
                     let instruction_index = stack.frame.instruction_index;
-                    {
-                        let symbols = self.symbols.borrow();
-                        debug!("Continue with {}\nAt: {}/{}",
-                               symbols.string(&closure.function.name),
-                               instruction_index,
-                               closure.function.instructions.len());
-                    }
+                    debug!("Continue with {}\nAt: {}/{}",
+                           closure.function.name,
+                           instruction_index,
+                           closure.function.instructions.len());
                     let new_stack = try!(self.execute_(stack,
                                                        instruction_index,
                                                        &closure.function.instructions,
@@ -1220,9 +1215,8 @@ impl<'a> VM<'a> {
                     function: &BytecodeFunction)
                     -> Result<Option<StackFrame<'a, 'b>>> {
         {
-            let symbols = self.symbols.borrow();
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
-                   symbols.string(&function.name),
+                   function.name,
                    &stack[..],
                    stack.frame);
         }

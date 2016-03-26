@@ -6,6 +6,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use base::ast;
+use base::symbol::Symbol;
 use vm::vm::VM;
 use super::{filename_to_module, load_script2};
 use base::macros::{Macro, Error as MacroError};
@@ -84,7 +85,7 @@ impl<'a> Macro<VM<'a>> for Import {
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
-                let name = vm.symbol(&*modulename);
+                let name = Symbol::new(&*modulename);
                 debug!("Import '{}' {:?}", modulename, self.visited);
                 if !vm.global_exists(&modulename) {
                     if self.visited.borrow().iter().any(|m| **m == **filename) {

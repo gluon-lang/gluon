@@ -62,6 +62,7 @@ impl<'a, 'vm, T> Getable<'a, 'vm> for Generic<'a, T> {
 /// Module containing types which represent generic variables in embed_lang's type system
 pub mod generic {
     use super::VMType;
+    use base::symbol::Symbol;
     use base::types::{Type, TcType, Generic, Kind};
     use vm::VM;
 
@@ -72,12 +73,12 @@ pub mod generic {
             pub enum $i { }
             impl VMType for $i {
                 type Type = $i;
-                fn make_type(vm: &VM) -> TcType {
+                fn make_type(_vm: &VM) -> TcType {
                     let s = stringify!($i);
                     let lower  = [s.as_bytes()[0] + 32];
                     let lower_str = unsafe { ::std::str::from_utf8_unchecked(&lower) };
                     Type::generic(Generic {
-                        id: vm.symbol(lower_str),
+                        id: Symbol::new(lower_str),
                         kind: Kind::star(),
                     })
                 }
@@ -502,7 +503,11 @@ impl<T: VMType> VMType for IO<T> where T::Type: Sized
 {
     type Type = IO<T::Type>;
     fn make_type(vm: &VM) -> TcType {
-        Type::data(TypeConstructor::Data(vm.symbol("IO")),
+        use base::types::TypeEnv;
+        let env = vm.env();
+        // FIXME Inefficient
+        let symbol = env.find_type_info(&Symbol::new("IO")).unwrap().name.clone();
+        Type::data(TypeConstructor::Data(symbol),
                    vec![T::make_type(vm)])
     }
     fn extra_args() -> VMIndex {
@@ -659,7 +664,7 @@ pub mod record {
 
         fn field_types(vm: &VM, fields: &mut Vec<types::Field<Symbol, TcType>>) {
             fields.push(types::Field {
-                name: vm.symbol(F::name()),
+                name: Symbol::new(F::name()),
                 typ: H::make_type(vm),
             });
             T::field_types(vm, fields);
@@ -768,7 +773,7 @@ impl<'a: 'vm, 'vm, F: FunctionType + VMType> Pushable<'a> for Primitive<F> {
             ::std::mem::transmute::<Box<Fn(&'vm VM<'a>) -> Status + 'static>,
                                       Box<Fn(&VM<'a>) -> Status + 'static>>(Box::new(self.function))
         };
-        let id = vm.symbol(self.name);
+        let id = Symbol::new(self.name);
         let value = Value::Function(vm.alloc(&stack.stack,
                                              Move(ExternFunction {
                                                  id: id,
@@ -917,7 +922,7 @@ where $($args: Getable<'a, 'vm> + VMType + 'vm,)* R: Pushable<'a> + 'vm {
                     ::<Box<Fn(&'vm VM<'a>) -> Status>,
                        Box<Fn(&VM<'a>) -> Status>>(f)
         };
-        let id = vm.symbol("<extern>");
+        let id = Symbol::new("<extern>");
         let value = Value::Function(vm.alloc(&stack.stack, Move(
             ExternFunction {
                 id: id,
