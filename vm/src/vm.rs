@@ -627,9 +627,6 @@ impl<'a> GlobalVMState<'a> {
         try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
         try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
         try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
-        let ordering = Type::data(types::TypeConstructor::Data(self.symbol("Ordering")),
-                                  Vec::new());
-        try!(ids.try_insert(TypeId::of::<Ordering>(), ordering));
         let args = vec![types::Generic {
                             id: self.symbol("a"),
                             kind: types::Kind::star(),
@@ -799,21 +796,20 @@ impl<'a> VM<'a> {
         let mut typ = &global.typ;
         let mut value = global.value.get();
         // If there are any remaining components iterate through them, accessing each field
-        for comp in components {
+        for field_name in components {
             let next = match **typ {
                 Type::Record { ref fields, .. } => {
-                    let field_name = self.symbol(comp);
                     fields.iter()
                           .enumerate()
-                          .find(|&(_, field)| field.name == field_name)
+                          .find(|&(_, field)| field.name.as_ref() == field_name)
                           .map(|(offset, field)| (offset, &field.typ))
                 }
                 _ => None,
             };
             let (offset, next_type) = try!(next.ok_or_else(|| {
                 Error::Message(format!("'{}' cannot be accessed by the field '{}'",
-                                       types::display_type(&*self.symbols.borrow(), &typ),
-                                       comp))
+                                       typ,
+                                       field_name))
             }));
             typ = next_type;
             value = match value {
@@ -857,12 +853,11 @@ impl<'a> VM<'a> {
         };
 
         let mut typ = &global.typ;
-        for comp in components {
+        for field_name in components {
             let next = match **typ {
                 Type::Record { ref fields, .. } => {
-                    let field_name = self.symbol(comp);
                     fields.iter()
-                          .find(|field| field.name == field_name)
+                          .find(|field| field.name.as_ref() == field_name)
                           .map(|field| &field.typ)
                 }
                 _ => None,
@@ -870,14 +865,14 @@ impl<'a> VM<'a> {
             typ = try!(next.ok_or_else(|| {
                 Error::Message(format!("'{}' cannot be accessed by the field '{}'",
                                        types::display_type(&*self.symbols.borrow(), &typ),
-                                       comp))
+                                       field_name))
             }));
         }
         let maybe_type_info = match **typ {
             Type::Record { ref types, .. } => {
-                let field_name = self.symbol(name.name());
+                let field_name = name.name();
                 types.iter()
-                     .find(|field| field.name == field_name)
+                     .find(|field| field.name.as_ref() == field_name.as_str())
                      .map(|field| &field.typ)
             }
             _ => None,

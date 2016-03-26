@@ -76,7 +76,7 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
 pub fn run() -> Result<(), Box<StdError>> {
     let vm = new_vm();
     try!(compile_repl(&vm));
-    let mut repl: Function<fn (()) -> IO<()>> = try!(vm.get_global("std.repl"));
+    let mut repl: Function<fn(()) -> IO<()>> = try!(vm.get_global("std.repl"));
     try!(repl.call(()));
     Ok(())
 }
@@ -92,7 +92,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let repl: Result<Function<fn (()) -> IO<()>>, _> = vm.get_global("std.repl");
+        let repl: Result<Function<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
         assert!(repl.is_ok());
     }
 }

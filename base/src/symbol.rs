@@ -40,6 +40,11 @@ impl Symbol {
     pub fn new(name: &str) -> Symbol {
         Symbol(Arc::new(NameBuf(String::from(name))))
     }
+
+    /// Checks whether the names of two symbols are equal
+    pub fn name_eq(&self, other: &Symbol) -> bool {
+        self == other || self.0 == other.0
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

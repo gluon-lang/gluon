@@ -324,7 +324,7 @@ impl<'a> Compiler<'a> {
         match *self.remove_aliases(typ) {
             Type::Record { ref fields, .. } => {
                 fields.iter()
-                      .position(|f| f.name == *field)
+                      .position(|f| f.name.name_eq(field))
                       .map(|i| i as VMIndex)
             }
             ref typ => {
@@ -432,7 +432,7 @@ impl<'a> Compiler<'a> {
                     Jump(function.instructions.len() as VMIndex);
             }
             Expr::BinOp(ref lhs, ref op, ref rhs) => {
-                if op.name == self.symbols.symbol("&&") {
+                if op.name.as_ref() == "&&" {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.instructions.len();
                     function.emit(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
@@ -441,7 +441,7 @@ impl<'a> Compiler<'a> {
                     self.compile(&**rhs, function, tail_position);
                     function.instructions[lhs_end + 2] =
                         Jump(function.instructions.len() as VMIndex);//replace jump instruction
-                } else if op.name == self.symbols.symbol("||") {
+                } else if op.name.as_ref() == "||" {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.instructions.len();
                     function.emit(CJump(0));
@@ -712,7 +712,7 @@ impl<'a> Compiler<'a> {
                             for pattern_field in fields {
                                 let offset = type_fields.iter()
                                                         .position(|field| {
-                                                            field.name == pattern_field.0
+                                                            field.name.name_eq(&pattern_field.0)
                                                         })
                                                         .expect("Field to exist");
                                 function.emit(Push(record_index));
@@ -725,7 +725,7 @@ impl<'a> Compiler<'a> {
                         } else {
                             function.emit(Split);
                             for field in type_fields {
-                                let name = match fields.iter().find(|tup| tup.0 == field.name) {
+                                let name = match fields.iter().find(|tup| tup.0.name_eq(&field.name)) {
                                     Some(&(ref name, ref bind)) => {
                                         bind.as_ref().unwrap_or(name).clone()
                                     }
@@ -793,7 +793,7 @@ fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
             let associated_type = record_type_fields.iter()
-                                                    .find(|type_field| type_field.name == field.0)
+                                                    .find(|type_field| type_field.name.name_eq(&field.0))
                                                     .expect("Associated type to exist in record");
             f(&field.0, &associated_type.typ);
         }

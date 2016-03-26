@@ -94,7 +94,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     let field_types = self.find_fields(typ).expect("field_types");
                     for field in fields.iter_mut() {
                         let field_type = field_types.iter()
-                                                    .find(|field_type| field_type.name == field.0)
+                                                    .find(|field_type| field_type.name.name_eq(&field.0))
                                                     .expect("ICE: Existing field")
                                                     .typ
                                                     .clone();
@@ -108,7 +108,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     };
                     for &(ref name, _) in types {
                         let field_type = imported_types.iter()
-                                                       .find(|field| field.name == *name)
+                                                       .find(|field| field.name.name_eq(name))
                                                        .expect("field_type");
                         self.stack_type(name.clone(),
                                         field_type.typ.name.clone(),

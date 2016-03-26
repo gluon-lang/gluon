@@ -165,7 +165,7 @@ impl<'a> TypeEnv for Environment<'a> {
                         match **typ {
                             Type::Record { fields: ref record_fields, .. } => {
                                 fields.iter()
-                                      .all(|name| record_fields.iter().any(|f| f.name == *name))
+                                      .all(|name| record_fields.iter().any(|f| f.name.name_eq(name)))
                             }
                             _ => false,
                         }
@@ -263,6 +263,8 @@ impl<'a> Typecheck<'a> {
         if let Some(ref real_type) = real_type {
             if let Type::Variants(ref variants) = **real_type {
                 for (name, typ) in variants.iter().cloned() {
+                    let symbol = self.symbols.symbol(name.as_ref());
+                    self.original_symbols.insert(symbol, name.clone());
                     self.stack_var(name, typ);
                 }
             }
@@ -596,7 +598,7 @@ impl<'a> Typecheck<'a> {
                 match *record {
                     Type::Record { ref fields, .. } => {
                         let field_type = fields.iter()
-                                               .find(|field| field.name == *field_access.id())
+                                               .find(|field| field.name.name_eq(field_access.id()))
                                                .map(|field| field.typ.clone());
                         field_access.typ = match field_type {
                             Some(typ) => self.inst.instantiate(&typ),
@@ -836,7 +838,10 @@ impl<'a> Typecheck<'a> {
                          match_type: TcType)
                          -> TcResult<TcType> {
         match pattern.value {
-            ast::Pattern::Constructor(ref id, ref mut args) => {
+            ast::Pattern::Constructor(ref mut id, ref mut args) => {
+                if let Some(new) = self.original_symbols.get(&id.name) {
+                    id.name = new.clone();
+                }
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = try!(self.find(&id.name));
                 let return_type = try!(self.typecheck_pattern_rec(args, ctor_type));
@@ -850,7 +855,7 @@ impl<'a> Typecheck<'a> {
                     Type::Record { fields: ref expected_fields, .. } => {
                         for pattern_field in fields {
                             let expected_field = try!(expected_fields.iter()
-                                .find(|expected_field| pattern_field.0 == expected_field.name)
+                                .find(|expected_field| pattern_field.0.name_eq(&expected_field.name))
                                 .ok_or_else(|| {
                                     UndefinedField(match_type.clone(), pattern_field.0.clone())
                                 }));
@@ -914,7 +919,7 @@ impl<'a> Typecheck<'a> {
                             // The `types` in the record type should have a type matching the
                             // `name`
                             let field_type = types.iter()
-                                                  .find(|field| field.name == name);
+                                                  .find(|field| field.name.name_eq(&name));
                             match field_type {
                                 Some(field_type) => {
                                     let args = field_type.typ
@@ -930,7 +935,7 @@ impl<'a> Typecheck<'a> {
                                     // This forces refresh_type to remap the name a type was given
                                     // in this module to its actual name
                                     self.original_symbols
-                                        .insert(field_type.name.clone(),
+                                        .insert(name.clone(),
                                                 field_type.typ.name.clone());
                                     self.stack_type(name,
                                                     alias_type,
@@ -1162,7 +1167,7 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut 
     if let Type::Record { fields: ref field_types, .. } = **typ {
         for field in fields {
             let associated_type = field_types.iter()
-                                             .find(|type_field| type_field.name == field.0)
+                                             .find(|type_field| type_field.name.name_eq(&field.0))
                                              .expect("Associated type to exist in record");
             f(&field.0, &associated_type.typ);
         }

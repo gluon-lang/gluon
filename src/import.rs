@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use base::ast;
 use vm::vm::VM;
-use super::{filename_to_module, load_script};
+use super::{filename_to_module, load_script2};
 use base::macros::{Macro, Error as MacroError};
 use base::types::TcIdent;
 
@@ -41,7 +41,13 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
-static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!("prelude", "map", "repl", "string", "state", "test", "writer");
+static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!("prelude",
+                                                               "map",
+                                                               "repl",
+                                                               "string",
+                                                               "state",
+                                                               "test",
+                                                               "writer");
 
 /// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
 /// already loaded and then a global access to the loaded module
@@ -101,12 +107,16 @@ impl<'a> Macro<VM<'a>> for Import {
                                                }
                                            })
                                            .next();
-                            let mut file = try!(file.ok_or_else(|| Error::String("Could not find file")));
+                            let mut file = try!(file.ok_or_else(|| {
+                                Error::String("Could not find file")
+                            }));
                             try!(file.read_to_string(&mut buffer));
                             &*buffer
                         }
                     };
-                    try!(load_script(vm, &modulename, file_contents));
+                    // FIXME Remove this hack
+                    let implicit_prelude = modulename != "std.types";
+                    try!(load_script2(vm, &modulename, file_contents, implicit_prelude));
                     self.visited.borrow_mut().pop();
                 }
                 // FIXME Does not handle shadowing

@@ -225,6 +225,11 @@ impl<'a, 'vm> Getable<'a, 'vm> for bool {
 
 impl VMType for Ordering {
     type Type = Self;
+    fn make_type(vm: &VM) -> TcType {
+        let symbol = vm.find_type_info("std.types.Ordering").unwrap().name.clone();
+        let ctor = types::TypeConstructor::Data(symbol);
+        Type::data(ctor, vec![])
+    }
 }
 impl<'a> Pushable<'a> for Ordering {
     fn push<'b>(self, vm: &VM<'a>, stack: &mut StackFrame<'a, 'b>) -> Status {
@@ -373,7 +378,8 @@ impl<T: VMType> VMType for Option<T> where T::Type: Sized
 {
     type Type = Option<T::Type>;
     fn make_type(vm: &VM) -> TcType {
-        let ctor = types::TypeConstructor::Data(vm.symbol("std.prelude.Option"));
+        let symbol = vm.find_type_info("std.types.Option").unwrap().name.clone();
+        let ctor = types::TypeConstructor::Data(symbol);
         Type::data(ctor, vec![T::make_type(vm)])
     }
 }
@@ -417,7 +423,8 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
 {
     type Type = Result<T::Type, E::Type>;
     fn make_type(vm: &VM) -> TcType {
-        let ctor = types::TypeConstructor::Data(vm.symbol("std.prelude.Result"));
+        let symbol = vm.find_type_info("std.types.Result").unwrap().name.clone();
+        let ctor = types::TypeConstructor::Data(symbol);
         Type::data(ctor, vec![E::make_type(vm), T::make_type(vm)])
     }
 }

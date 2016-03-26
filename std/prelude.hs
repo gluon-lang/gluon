@@ -1,5 +1,4 @@
-type Option a = | None | Some a
-type Result e t = | Err e | Ok t
+let { Option, Result, Ordering } = import "std/types.hs"
 type List a = | Nil | Cons a (List a)
 type Monoid m = {
     (<>): m -> m -> m,
@@ -121,8 +120,6 @@ let eq_List: Eq a -> Eq (List a) = \d ->
                     | Nil -> False
                     | Cons y ys -> d.(==) x y && xs == ys
     { (==) }
-
-type Ordering = | LT | EQ | GT
 
 let monoid_Ordering = {
     (<>) = \x y ->

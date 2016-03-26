@@ -141,7 +141,9 @@ quick_error! {
 
 pub type Result<T> = StdResult<T, Error>;
 
-fn include_implicit_prelude(name: &str, expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) {
+fn include_implicit_prelude(symbols: &mut Symbols,
+                            name: &str,
+                            expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) {
     use std::mem;
     if name == "std.prelude" {
         return;
@@ -160,7 +162,7 @@ and { (==) } = __implicit_prelude.eq_Float
 and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
 in 0
 "#;
-    let prelude_expr = parse_expr("", prelude_import).unwrap();
+    let prelude_expr = parse_expr_(symbols, "", prelude_import).unwrap();
     let original_expr = mem::replace(expr, prelude_expr);
     fn assign_last_body(l: &mut ast::LExpr<ast::TcIdent<Symbol>>,
                         original_expr: ast::LExpr<ast::TcIdent<Symbol>>) {
@@ -174,7 +176,8 @@ in 0
     assign_last_body(expr, original_expr);
 }
 
-fn compile_script(vm: &VM,
+fn compile_script(symbols: &mut Symbols,
+                  vm: &VM,
                   filename: &str,
                   expr: &ast::LExpr<ast::TcIdent<Symbol>>)
                   -> CompiledFunction {
@@ -184,10 +187,9 @@ fn compile_script(vm: &VM,
         let env = vm.env();
         let mut interner = vm.interner.borrow_mut();
         let mut gc = vm.gc.borrow_mut();
-        let mut symbols = Symbols::new();
         let name = Name::new(filename);
         let name = NameBuf::from(name.module());
-        let symbols = SymbolModule::new(StdString::from(name.as_ref()), &mut symbols);
+        let symbols = SymbolModule::new(StdString::from(name.as_ref()), symbols);
         let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
         compiler.compile_expr(&expr)
     };
@@ -205,8 +207,9 @@ pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<()> {
 }
 
 pub fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool) -> Result<()> {
-    let (expr, typ) = try!(typecheck_expr(vm, filename, input, implicit_prelude));
-    let function = compile_script(vm, filename, &expr);
+    let mut symbols = Symbols::new();
+    let (expr, typ) = try!(typecheck_expr_(&mut symbols, vm, filename, input, implicit_prelude));
+    let function = compile_script(&mut symbols, vm, filename, &expr);
     let function = vm.new_function(function);
     let closure = {
         let stack = vm.current_frame();
@@ -243,11 +246,38 @@ pub fn load_file(vm: &VM, filename: &str) -> Result<()> {
     load_script(vm, &name, &buffer)
 }
 
+fn parse_expr_(symbols: &mut Symbols,
+               file: &str,
+               input: &str)
+               -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
+    Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), symbols), input)))
+}
+
 pub fn parse_expr(file: &str,
                   input: &str)
                   -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
     let mut symbols = Symbols::new();
-    Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut symbols), input)))
+    parse_expr_(&mut symbols, file, input)
+}
+
+fn typecheck_expr_<'a>(symbols: &mut Symbols,
+                       vm: &VM<'a>,
+                       file: &str,
+                       expr_str: &str,
+                       implicit_prelude: bool)
+                       -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
+    use check::typecheck::Typecheck;
+    use base::error;
+    let mut expr = try!(parse_expr_(symbols, file, expr_str));
+    if implicit_prelude {
+        include_implicit_prelude(symbols, file, &mut expr);
+    }
+    try!(vm.get_macros().run(vm, &mut expr));
+    let env = vm.env();
+    let mut tc = Typecheck::new(file.into(), symbols, &env);
+    let typ = try!(tc.typecheck_expr(&mut expr)
+                     .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
+    Ok((expr, typ))
 }
 
 pub fn typecheck_expr<'a>(vm: &VM<'a>,
@@ -255,19 +285,8 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
                           expr_str: &str,
                           implicit_prelude: bool)
                           -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
-    use check::typecheck::Typecheck;
-    use base::error;
-    let mut expr = try!(parse_expr(file, expr_str));
-    if implicit_prelude {
-        include_implicit_prelude(file, &mut expr);
-    }
-    try!(vm.get_macros().run(vm, &mut expr));
-    let env = vm.env();
     let mut symbols = Symbols::new();
-    let mut tc = Typecheck::new(file.into(), &mut symbols, &env);
-    let typ = try!(tc.typecheck_expr(&mut expr)
-                     .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
-    Ok((expr, typ))
+    typecheck_expr_(&mut symbols, vm, file, expr_str, implicit_prelude)
 }
 
 /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -280,12 +299,13 @@ pub fn run_expr<'a, 'vm>(vm: &'vm VM<'a>,
 }
 
 pub fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
-                      name: &str,
-                      expr_str: &str,
-                      implicit_prelude: bool)
-                      -> Result<RootedValue<'a, 'vm>> {
-    let (expr, typ) = try!(typecheck_expr(vm, name, expr_str, implicit_prelude));
-    let mut function = compile_script(vm, name, &expr);
+                          name: &str,
+                          expr_str: &str,
+                          implicit_prelude: bool)
+                          -> Result<RootedValue<'a, 'vm>> {
+    let mut symbols = Symbols::new();
+    let (expr, typ) = try!(typecheck_expr_(&mut symbols, vm, name, expr_str, implicit_prelude));
+    let mut function = compile_script(&mut symbols, vm, name, &expr);
     function.id = vm.symbol(name);
     let function = vm.new_function(function);
     let closure = {
@@ -301,6 +321,7 @@ pub fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
 pub fn new_vm<'a>() -> VM<'a> {
     let vm = VM::new();
     vm.get_macros().insert(String::from("import"), ::import::Import::new());
+    run_expr2(&vm, "", r#" import "std/types.hs" "#, false).unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::io::load(&vm).expect("Loaded IO library");
     vm
