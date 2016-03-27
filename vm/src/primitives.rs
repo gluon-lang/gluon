@@ -4,10 +4,10 @@ use std::io::Read;
 use std::string::String as StdString;
 
 use primitives as prim;
-use api::{generic, Generic, Getable, Array, MaybeError, primitive};
+use api::{generic, Generic, Getable, Array, MaybeError, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
-use vm::{VM, DataStruct, VMInt, Status, Value, RootStr, Result};
+use vm::{VM, Thread, DataStruct, VMInt, Status, Value, RootStr, Result};
 
 
 pub fn array_length(array: Array<generic::A>) -> VMInt {
@@ -120,6 +120,10 @@ pub fn error(_: &VM) -> Status {
     Status::Error
 }
 
+fn spawn<'vm>(vm: WithVM<'vm, ()>) -> Thread {
+    vm.vm.new_thread()
+}
+
 fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
     f
 }
@@ -160,6 +164,7 @@ pub fn load(vm: &VM) -> Result<()> {
     try!(vm.define_global("error",
                           primitive::<fn(StdString) -> A>("error", prim::error)));
     try!(vm.define_global("trace", f1(prim::trace)));
+    try!(vm.define_global("spawn", f1(prim::spawn)));
 
     try!(::lazy::load(vm));
     Ok(())

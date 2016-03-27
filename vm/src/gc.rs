@@ -479,7 +479,7 @@ impl Gc {
 
     ///Marks the GcPtr
     ///Returns true if the pointer was already marked
-    fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
+    pub fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
         let header = value.header();
         if header.marked.get() {
             return true;

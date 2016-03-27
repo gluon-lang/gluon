@@ -1,7 +1,7 @@
 use gc::Move;
 use base::symbol::Symbol;
 use stack::StackFrame;
-use vm::{VM, Status, DataStruct, ExternFunction, RootedValue, Value, Def, Userdata_, VMInt, Error,
+use vm::{VM, Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, Userdata_, VMInt, Error,
          Root, RootStr};
 use base::types;
 use base::types::{TcType, Type, TypeConstructor};
@@ -151,6 +151,17 @@ impl<'vm, T> Getable<'vm> for WithVM<'vm, T> where T: Getable<'vm>
     }
 }
 
+impl VMType for Thread {
+    type Type = Thread;
+}
+
+impl Pushable for Thread {
+    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+        let value = Value::Thread(vm.alloc(&stack.stack, Move(self)));
+        stack.push(value);
+        Status::Ok
+    }
+}
 
 impl VMType for () {
     type Type = Self;
@@ -596,7 +607,7 @@ impl<'vm, T> Getable<'vm> for Array<'vm, T> {
     }
 }
 
-impl<'r, T: Any> VMType for Root<'r, T> {
+impl<'vm, T: Any> VMType for Root<'vm, T> {
     type Type = T;
 }
 impl<'vm, T: Any> Getable<'vm> for Root<'vm, T> {
@@ -608,7 +619,7 @@ impl<'vm, T: Any> Getable<'vm> for Root<'vm, T> {
     }
 }
 
-impl<'r> VMType for RootStr<'r> {
+impl<'vm> VMType for RootStr<'vm> {
     type Type = <str as VMType>::Type;
 }
 impl<'vm> Getable<'vm> for RootStr<'vm> {

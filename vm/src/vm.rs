@@ -4,8 +4,10 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::ops::{Add, Sub, Mul, Div, Deref};
-use std::string::String as StdString;
 use std::result::Result as StdResult;
+use std::string::String as StdString;
+use std::sync::Arc;
+
 use base::ast::{Typed, ASTType};
 use base::symbol::{Name, Symbol};
 use base::types;
@@ -150,6 +152,7 @@ pub enum Value {
     PartialApplication(GcPtr<PartialApplicationData>),
     Userdata(Userdata_),
     Lazy(GcPtr<Lazy<Value>>),
+    Thread(GcPtr<Thread>),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -254,6 +257,7 @@ impl Traverseable for Value {
             Userdata(ref data) => data.data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
             Value::Lazy(ref lazy) => lazy.traverse(gc),
+            Value::Thread(ref thread) => thread.traverse(gc),
             Int(_) | Float(_) => (),
         }
     }
@@ -312,6 +316,7 @@ impl fmt::Debug for Value {
                     }
                     Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
                     Value::Lazy(_) => write!(f, "<lazy>"),
+                    Value::Thread(_) => write!(f, "<thread>"),
                 }
             }
         }
@@ -470,24 +475,52 @@ impl Traverseable for GlobalVMState {
 }
 
 /// Representation of the virtual machine
-pub struct VM {
-    global_state: GlobalVMState,
+pub struct Thread {
+    global_state: Arc<GlobalVMState>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value>>,
     stack: RefCell<Stack>,
 }
 
-impl Deref for VM {
+impl Deref for Thread {
     type Target = GlobalVMState;
     fn deref(&self) -> &GlobalVMState {
         &self.global_state
     }
 }
 
-impl Traverseable for VM {
+impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
         self.stack.borrow().get_values().traverse(gc);
+    }
+}
+
+impl PartialEq for Thread {
+    fn eq(&self, other: &Thread) -> bool {
+        self as *const _ == other as *const _
+    }
+}
+
+pub struct VM(GcPtr<Thread>);
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        assert!(self.roots.borrow().len() == 1);
+        self.roots.borrow_mut().pop();
+    }
+}
+
+impl Deref for VM {
+    type Target = Thread;
+    fn deref(&self) -> &Thread {
+        &self.0
+    }
+}
+
+impl Traverseable for VM {
+    fn traverse(&self, gc: &mut Gc) {
+        self.0.traverse(gc);
     }
 }
 
@@ -606,10 +639,21 @@ struct Roots<'b> {
 }
 impl<'b> Traverseable for Roots<'b> {
     fn traverse(&self, gc: &mut Gc) {
+        // Since this vm's stack is already borrowed in self we need to manually mark it to prevent
+        // it from being traversed normally
+        gc.mark(self.vm.0);
         self.stack.get_values().traverse(gc);
 
         // Traverse the vm's fields, avoiding the stack which is traversed above
         self.vm.traverse_fields_except_stack(gc);
+    }
+}
+
+impl  Thread {
+    fn traverse_fields_except_stack(&self, gc: &mut Gc) {
+        self.global_state.traverse(gc);
+        self.roots.borrow().traverse(gc);
+        self.rooted_values.borrow().traverse(gc);
     }
 }
 
@@ -648,6 +692,7 @@ impl GlobalVMState {
                             kind: types::Kind::star(),
                         }];
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
+        let _ = self.register_type::<Thread>("Thread", vec![]);
         Ok(())
     }
 
@@ -746,14 +791,37 @@ impl GlobalVMState {
 
 impl VM {
     pub fn new() -> VM {
-        let vm = VM {
-            global_state: GlobalVMState::new(),
+        let vm = Thread {
+            global_state: Arc::new(GlobalVMState::new()),
+            stack: RefCell::new(Stack::new()),
+            roots: RefCell::new(Vec::new()),
+            rooted_values: RefCell::new(Vec::new()),
+        };
+        let mut gc = Gc::new();
+        let vm = VM(gc.alloc(Move(vm)));
+        *vm.gc.borrow_mut() = gc;
+        vm.roots.borrow_mut().push(vm.0.as_traverseable());
+        // Enter the top level scope
+        StackFrame::frame(vm.stack.borrow_mut(), 0, None);
+        vm
+    }
+
+    pub fn new_thread(&self) -> Thread {
+        let vm = Thread {
+            global_state: self.global_state.clone(),
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new()),
             rooted_values: RefCell::new(Vec::new()),
         };
         // Enter the top level scope
         StackFrame::frame(vm.stack.borrow_mut(), 0, None);
+        vm
+    }
+
+    pub fn new_vm(&self) -> VM {
+        let vm = self.new_thread();
+        let vm = VM(self.alloc(&self.stack.borrow(), Move(vm)));
+        vm.roots.borrow_mut().push(vm.0.as_traverseable());
         vm
     }
 
@@ -913,7 +981,7 @@ impl VM {
     }
 
     /// Roots a userdata
-    pub fn root<T: Any>(&self, v: GcPtr<Box<Any>>) -> Option<Root<T>> {
+    pub fn root<'vm, T: Any>(&'vm self, v: GcPtr<Box<Any>>) -> Option<Root<'vm, T>> {
         match v.downcast_ref::<T>().or_else(|| v.downcast_ref::<Box<T>>().map(|p| &**p)) {
             Some(ptr) => {
                 self.roots.borrow_mut().push(v.as_traverseable());
@@ -936,7 +1004,7 @@ impl VM {
     }
 
     /// Roots a value
-    pub fn root_value<'vm>(&'vm self, value: Value) -> RootedValue<'vm> {
+    pub fn root_value(&self, value: Value) -> RootedValue {
         self.rooted_values.borrow_mut().push(value);
         RootedValue {
             vm: self,
@@ -968,12 +1036,6 @@ impl VM {
         };
         let mut gc = self.gc.borrow_mut();
         f(&mut gc, roots)
-    }
-
-    fn traverse_fields_except_stack(&self, gc: &mut Gc) {
-        self.global_state.traverse(gc);
-        self.roots.borrow().traverse(gc);
-        self.rooted_values.borrow().traverse(gc);
     }
 
     pub fn add_bytecode(&self,
