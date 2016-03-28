@@ -459,6 +459,16 @@ pub struct GlobalVMState<'a> {
     macros: MacroEnv<VM<'a>>,
 }
 
+impl<'a> Traverseable for GlobalVMState<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        for g in self.globals.borrow().iter() {
+            g.traverse(gc);
+        }
+        // Also need to check the interned string table
+        self.interner.borrow().traverse(gc);
+    }
+}
+
 /// Representation of the virtual machine
 pub struct VM<'a> {
     global_state: GlobalVMState<'a>,
@@ -471,6 +481,13 @@ impl<'a> Deref for VM<'a> {
     type Target = GlobalVMState<'a>;
     fn deref(&self) -> &GlobalVMState<'a> {
         &self.global_state
+    }
+}
+
+impl<'a> Traverseable for VM<'a> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.traverse_fields_except_stack(gc);
+        self.stack.borrow().values.traverse(gc);
     }
 }
 
@@ -584,22 +601,15 @@ impl<'a, 'b> Traverseable for Def<'a, 'b> {
 }
 
 struct Roots<'a: 'b, 'b> {
-    globals: &'b FixedVec<Global<'a>>,
+    vm: &'b VM<'a>,
     stack: &'b Stack<'a>,
-    interner: &'b mut Interner,
-    roots: Ref<'b, Vec<GcPtr<Traverseable>>>,
-    rooted_values: Ref<'b, Vec<Value<'a>>>,
 }
 impl<'a, 'b> Traverseable for Roots<'a, 'b> {
     fn traverse(&self, gc: &mut Gc) {
-        for g in self.globals.borrow().iter() {
-            g.traverse(gc);
-        }
         self.stack.values.traverse(gc);
-        // Also need to check the interned string table
-        self.interner.traverse(gc);
-        self.roots.traverse(gc);
-        self.rooted_values.traverse(gc);
+
+        // Traverse the vm's fields, avoiding the stack which is traversed above
+        self.vm.traverse_fields_except_stack(gc);
     }
 }
 
@@ -952,16 +962,18 @@ impl<'a> VM<'a> {
             stack as *const _ as usize >= &self.stack as *const _ as usize &&
             stack as *const _ as usize <= (&self.stack as *const _).offset(1) as usize
         });
-        let mut interner = self.interner.borrow_mut();
         let roots = Roots {
-            globals: &self.globals,
+            vm: self,
             stack: stack,
-            interner: &mut *interner,
-            roots: self.roots.borrow(),
-            rooted_values: self.rooted_values.borrow(),
         };
         let mut gc = self.gc.borrow_mut();
         f(&mut gc, roots)
+    }
+
+    fn traverse_fields_except_stack(&self, gc: &mut Gc) {
+        self.global_state.traverse(gc);
+        self.roots.borrow().traverse(gc);
+        self.rooted_values.borrow().traverse(gc);
     }
 
     pub fn add_bytecode(&self,
