@@ -766,6 +766,18 @@ in f ""
 }
 
 #[test]
+fn not_enough_information_to_decide_overload() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let f x = x #Int+ 1
+let f x = x #Float+ 1.0
+\x -> f x
+"#;
+    let result = typecheck(text);
+    assert_err!(result, Rename(..));
+}
+
+#[test]
 fn type_field_mismatch() {
     let _ = ::env_logger::init();
     let text = r#"
