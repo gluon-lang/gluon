@@ -323,6 +323,7 @@ pub fn new_vm() -> VM {
     vm.get_macros().insert(String::from("import"), ::import::Import::new());
     run_expr2(&vm, "", r#" import "std/types.hs" "#, false).unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
+    ::vm::channel::load(&vm).expect("Loaded channel library");
     ::io::load(&vm).expect("Loaded IO library");
     vm
 }

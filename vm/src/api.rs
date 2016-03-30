@@ -359,6 +359,26 @@ impl<T> Pushable for Vec<T>
     }
 }
 
+pub struct Userdata<T>(pub T);
+
+impl<T: VMType> VMType for Userdata<T> {
+    type Type = T::Type;
+}
+impl<T: Any + VMType> Pushable for Userdata<T> {
+    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+        stack.push(Value::Userdata(Userdata_::new(vm, self.0)));
+        Status::Ok
+    }
+}
+impl<'vm, T: Clone + Any> Getable<'vm> for Userdata<T> {
+    fn from_value(_: &'vm VM, value: Value) -> Option<Userdata<T>> {
+        match value {
+            Value::Userdata(v) => v.data.downcast_ref::<T>().map(|x| Userdata(x.clone())),
+            _ => None,
+        }
+    }
+}
+
 impl<T: VMType> VMType for Box<T> {
     type Type = T::Type;
 }
@@ -366,6 +386,22 @@ impl<T: Any + VMType> Pushable for Box<T> {
     fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Userdata(Userdata_::new(vm, self)));
         Status::Ok
+    }
+}
+
+impl<'s, T: VMType> VMType for *const T {
+    type Type = T::Type;
+    fn make_type(vm: &VM) -> TcType {
+        T::make_type(vm)
+    }
+}
+
+impl<'vm, T: Any> Getable<'vm> for *const T {
+    fn from_value(_: &'vm VM, value: Value) -> Option<*const T> {
+        match value {
+            Value::Userdata(v) => v.data.downcast_ref::<T>().map(|x| x as *const T),
+            _ => None,
+        }
     }
 }
 
@@ -758,13 +794,29 @@ macro_rules! hlist {
 }
 
 #[macro_export]
-macro_rules! record {
+macro_rules! field_decl {
+    ($($field: ident),*) => {
+        mod _field { types!($($field),*); }
+    }
+}
+
+#[macro_export]
+macro_rules! record_no_decl {
     ($($field: ident => $value: expr),*) => {
         {
-            mod _field { types!($($field),*); }
             $crate::api::Record {
                 fields: hlist!($($field => $value),*)
             }
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! record {
+    ($($field: ident => $value: expr),*) => {
+        {
+            field_decl!($($field),*);
+            record_no_decl!($($field => $value),*)
         }
     }
 }

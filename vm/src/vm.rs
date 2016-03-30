@@ -650,6 +650,28 @@ impl<'b> Traverseable for Roots<'b> {
 }
 
 impl  Thread {
+
+    /// Pushes a value to the top of the stack
+    pub fn push(&self, v: Value) {
+        self.stack.borrow_mut().push(v)
+    }
+
+    /// Removes the top value from the stack
+    pub fn pop(&self) -> Value {
+        self.stack
+            .borrow_mut()
+            .pop()
+    }
+
+    /// Returns the current stackframe
+    pub fn current_frame(&self) -> StackFrame {
+        let stack = self.stack.borrow_mut();
+        StackFrame {
+            frame: stack.get_frames().last().expect("Frame").clone(),
+            stack: stack,
+        }
+    }
+
     fn traverse_fields_except_stack(&self, gc: &mut Gc) {
         self.global_state.traverse(gc);
         self.roots.borrow().traverse(gc);

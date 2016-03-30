@@ -4,7 +4,7 @@ use std::io::Read;
 use std::string::String as StdString;
 
 use primitives as prim;
-use api::{generic, Generic, Getable, Array, MaybeError, primitive, WithVM};
+use api::{generic, Function, Generic, Getable, Pushable, Array, MaybeError, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use vm::{VM, Thread, DataStruct, VMInt, Status, Value, RootStr, Result};
@@ -120,8 +120,13 @@ pub fn error(_: &VM) -> Status {
     Status::Error
 }
 
-fn spawn<'vm>(vm: WithVM<'vm, ()>) -> Thread {
-    vm.vm.new_thread()
+fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn (())>>) -> Thread {
+    let thread = value.vm.new_thread();
+    {
+        let mut stack = thread.current_frame();
+        value.value.push(value.vm, &mut stack);
+    }
+    thread
 }
 
 fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
