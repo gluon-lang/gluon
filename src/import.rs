@@ -72,9 +72,9 @@ impl Import {
     }
 }
 
-impl<'a> Macro<VM<'a>> for Import {
+impl Macro<VM> for Import {
     fn expand(&self,
-              vm: &VM<'a>,
+              vm: &VM,
               arguments: &mut [ast::LExpr<TcIdent>])
               -> Result<ast::LExpr<TcIdent>, MacroError> {
         if arguments.len() != 1 {

@@ -9,7 +9,7 @@ pub fn load_script(vm: &VM, filename: &str, input: &str) -> ::embed_lang::Result
     ::embed_lang::load_script2(vm, filename, input, false)
 }
 
-pub fn run_expr<'a>(vm: &VM<'a>, s: &str) -> Value<'a> {
+pub fn run_expr(vm: &VM, s: &str) -> Value {
     *::embed_lang::run_expr2(vm, "<top>", s, false).unwrap_or_else(|err| panic!("{}", err))
 }
 
@@ -425,7 +425,7 @@ fn access_field_through_vm() {
 }
 
 /// Creates a VM for testing which has the correct paths to import the std library properly
-fn make_vm<'a>() -> VM<'a> {
+fn make_vm() -> VM {
     let vm = ::embed_lang::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()

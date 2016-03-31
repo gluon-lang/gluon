@@ -7,7 +7,7 @@ use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr};
 use embed_lang::{load_script, run_expr};
 use embed_lang::import::Import;
 
-fn make_vm<'a>() -> VM<'a> {
+fn make_vm() -> VM {
     let vm = ::embed_lang::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()

@@ -5,34 +5,34 @@ use vm::{Callable, Value};
 use types::VMIndex;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Frame<'a> {
+pub struct Frame {
     pub offset: VMIndex,
     pub instruction_index: usize,
-    pub function: Option<Callable<'a>>,
+    pub function: Option<Callable>,
     pub excess: bool,
 }
 
 #[derive(Debug)]
-pub struct Stack<'a> {
-    pub values: Vec<Value<'a>>,
-    pub frames: Vec<Frame<'a>>,
+pub struct Stack {
+    pub values: Vec<Value>,
+    pub frames: Vec<Frame>,
 }
 
-impl<'a> Stack<'a> {
-    pub fn new() -> Stack<'a> {
+impl Stack {
+    pub fn new() -> Stack {
         Stack {
             values: Vec::new(),
             frames: Vec::new(),
         }
     }
 
-    pub fn pop(&mut self) -> Value<'a> {
+    pub fn pop(&mut self) -> Value {
         self.values
             .pop()
             .expect("pop on empty stack")
     }
 
-    pub fn push(&mut self, v: Value<'a>) {
+    pub fn push(&mut self, v: Value) {
         self.values.push(v)
     }
 
@@ -59,36 +59,36 @@ impl<'a> Stack<'a> {
 }
 
 #[derive(Debug)]
-pub struct StackFrame<'a: 'b, 'b> {
-    pub stack: RefMut<'b, Stack<'a>>,
-    pub frame: Frame<'a>,
+pub struct StackFrame<'b> {
+    pub stack: RefMut<'b, Stack>,
+    pub frame: Frame,
 }
 
-impl<'a, 'b> Drop for StackFrame<'a, 'b> {
+impl<'b> Drop for StackFrame<'b> {
     fn drop(&mut self) {
         // Move the cached frame back to storage
         *self.stack.frames.last_mut().unwrap() = self.frame;
     }
 }
 
-impl<'a: 'b, 'b> StackFrame<'a, 'b> {
+impl<'a: 'b, 'b> StackFrame<'b> {
     pub fn len(&self) -> VMIndex {
         self.stack.len() - self.frame.offset
     }
 
-    pub fn push(&mut self, v: Value<'a>) {
+    pub fn push(&mut self, v: Value) {
         self.stack.values.push(v);
     }
 
-    pub fn top(&mut self) -> Value<'a> {
+    pub fn top(&mut self) -> Value {
         *self.stack.values.last().expect("StackFrame: top")
     }
 
-    pub fn pop(&mut self) -> Value<'a> {
+    pub fn pop(&mut self) -> Value {
         self.stack.pop()
     }
 
-    pub fn insert_slice(&mut self, index: VMIndex, values: &[Cell<Value<'a>>]) {
+    pub fn insert_slice(&mut self, index: VMIndex, values: &[Cell<Value>]) {
         self.stack.values.reserve(values.len());
         unsafe {
             let old_len = self.len();
@@ -107,7 +107,7 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         self.stack.remove_range(self.frame.offset + from, self.frame.offset + to);
     }
 
-    pub fn get_upvar(&self, index: VMIndex) -> Value<'a> {
+    pub fn get_upvar(&self, index: VMIndex) -> Value {
         let upvars = match self.frame.function {
             Some(Callable::Closure(ref c)) => c,
             _ => panic!("Attempted to access upvar in non closure function"),
@@ -117,8 +117,8 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
 
     pub fn enter_scope(mut self,
                        args: VMIndex,
-                       function: Option<Callable<'a>>)
-                       -> StackFrame<'a, 'b> {
+                       function: Option<Callable>)
+                       -> StackFrame<'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
@@ -127,7 +127,7 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         self
     }
 
-    pub fn exit_scope(mut self) -> Option<StackFrame<'a, 'b>> {
+    pub fn exit_scope(mut self) -> Option<StackFrame<'b>> {
         self.stack.frames.pop().expect("Expected frame");
         let frame = self.stack
                         .frames
@@ -140,10 +140,10 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         })
     }
 
-    pub fn frame(mut stack: RefMut<'b, Stack<'a>>,
+    pub fn frame(mut stack: RefMut<'b, Stack>,
                  args: VMIndex,
-                 function: Option<Callable<'a>>)
-                 -> StackFrame<'a, 'b> {
+                 function: Option<Callable>)
+                 -> StackFrame<'b> {
         let frame = StackFrame::add_new_frame(&mut stack, args, function);
         StackFrame {
             stack: stack,
@@ -151,10 +151,10 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
         }
     }
 
-    fn add_new_frame(stack: &mut Stack<'a>,
+    fn add_new_frame(stack: &mut Stack,
                      args: VMIndex,
-                     function: Option<Callable<'a>>)
-                     -> Frame<'a> {
+                     function: Option<Callable>)
+                     -> Frame {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
         let offset = stack.len() - args;
@@ -173,73 +173,73 @@ impl<'a: 'b, 'b> StackFrame<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Deref for StackFrame<'a, 'b> {
-    type Target = [Value<'a>];
-    fn deref(&self) -> &[Value<'a>] {
+impl<'b> Deref for StackFrame<'b> {
+    type Target = [Value];
+    fn deref(&self) -> &[Value] {
         &self.stack.values[self.frame.offset as usize..]
     }
 }
 
-impl<'a, 'b> DerefMut for StackFrame<'a, 'b> {
-    fn deref_mut(&mut self) -> &mut [Value<'a>] {
+impl<'b> DerefMut for StackFrame<'b> {
+    fn deref_mut(&mut self) -> &mut [Value] {
         &mut self.stack.values[self.frame.offset as usize..]
     }
 }
 
-impl<'a, 'b> Index<VMIndex> for StackFrame<'a, 'b> {
-    type Output = Value<'a>;
-    fn index(&self, index: VMIndex) -> &Value<'a> {
+impl<'b> Index<VMIndex> for StackFrame<'b> {
+    type Output = Value;
+    fn index(&self, index: VMIndex) -> &Value {
         &self.stack.values[(self.frame.offset + index) as usize]
     }
 }
-impl<'a, 'b> IndexMut<VMIndex> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, index: VMIndex) -> &mut Value<'a> {
+impl<'b> IndexMut<VMIndex> for StackFrame<'b> {
+    fn index_mut(&mut self, index: VMIndex) -> &mut Value {
         &mut self.stack.values[(self.frame.offset + index) as usize]
     }
 }
-impl<'a, 'b> Index<RangeFull> for StackFrame<'a, 'b> {
-    type Output = [Value<'a>];
-    fn index(&self, _: RangeFull) -> &[Value<'a>] {
+impl<'b> Index<RangeFull> for StackFrame<'b> {
+    type Output = [Value];
+    fn index(&self, _: RangeFull) -> &[Value] {
         &self.stack.values[self.frame.offset as usize..]
     }
 }
-impl<'a, 'b> IndexMut<RangeFull> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, _: RangeFull) -> &mut [Value<'a>] {
+impl<'b> IndexMut<RangeFull> for StackFrame<'b> {
+    fn index_mut(&mut self, _: RangeFull) -> &mut [Value] {
         &mut self.stack.values[self.frame.offset as usize..]
     }
 }
-impl<'a, 'b> Index<Range<VMIndex>> for StackFrame<'a, 'b> {
-    type Output = [Value<'a>];
-    fn index(&self, range: Range<VMIndex>) -> &[Value<'a>] {
+impl<'b> Index<Range<VMIndex>> for StackFrame<'b> {
+    type Output = [Value];
+    fn index(&self, range: Range<VMIndex>) -> &[Value] {
         let offset = self.frame.offset;
         &self.stack.values[(range.start + offset) as usize..(range.end + offset) as usize]
     }
 }
-impl<'a, 'b> IndexMut<Range<VMIndex>> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, range: Range<VMIndex>) -> &mut [Value<'a>] {
+impl<'b> IndexMut<Range<VMIndex>> for StackFrame<'b> {
+    fn index_mut(&mut self, range: Range<VMIndex>) -> &mut [Value] {
         let offset = self.frame.offset;
         &mut self.stack.values[(range.start + offset) as usize..(range.end + offset) as usize]
     }
 }
-impl<'a, 'b> Index<RangeTo<VMIndex>> for StackFrame<'a, 'b> {
-    type Output = [Value<'a>];
-    fn index(&self, range: RangeTo<VMIndex>) -> &[Value<'a>] {
+impl<'b> Index<RangeTo<VMIndex>> for StackFrame<'b> {
+    type Output = [Value];
+    fn index(&self, range: RangeTo<VMIndex>) -> &[Value] {
         &self.stack.values[..(range.end + self.frame.offset) as usize]
     }
 }
-impl<'a, 'b> IndexMut<RangeTo<VMIndex>> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, range: RangeTo<VMIndex>) -> &mut [Value<'a>] {
+impl<'b> IndexMut<RangeTo<VMIndex>> for StackFrame<'b> {
+    fn index_mut(&mut self, range: RangeTo<VMIndex>) -> &mut [Value] {
         &mut self.stack.values[..(range.end + self.frame.offset) as usize]
     }
 }
-impl<'a, 'b> Index<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
-    type Output = [Value<'a>];
-    fn index(&self, range: RangeFrom<VMIndex>) -> &[Value<'a>] {
+impl<'b> Index<RangeFrom<VMIndex>> for StackFrame<'b> {
+    type Output = [Value];
+    fn index(&self, range: RangeFrom<VMIndex>) -> &[Value] {
         &self.stack.values[(range.start + self.frame.offset) as usize..]
     }
 }
-impl<'a, 'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'a, 'b> {
-    fn index_mut(&mut self, range: RangeFrom<VMIndex>) -> &mut [Value<'a>] {
+impl<'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'b> {
+    fn index_mut(&mut self, range: RangeFrom<VMIndex>) -> &mut [Value] {
         &mut self.stack.values[(range.start + self.frame.offset) as usize..]
     }
 }

@@ -47,39 +47,39 @@ impl PartialEq for Userdata_ {
 }
 
 #[derive(Debug)]
-pub struct ClosureData<'a> {
+pub struct ClosureData {
     pub function: GcPtr<BytecodeFunction>,
-    pub upvars: Array<Cell<Value<'a>>>,
+    pub upvars: Array<Cell<Value>>,
 }
 
-impl<'a> PartialEq for ClosureData<'a> {
-    fn eq(&self, _: &ClosureData<'a>) -> bool {
+impl PartialEq for ClosureData {
+    fn eq(&self, _: &ClosureData) -> bool {
         false
     }
 }
 
-impl<'a> Traverseable for ClosureData<'a> {
+impl Traverseable for ClosureData {
     fn traverse(&self, gc: &mut Gc) {
         self.function.traverse(gc);
         self.upvars.traverse(gc);
     }
 }
 
-pub struct ClosureDataDef<'a: 'b, 'b>(pub GcPtr<BytecodeFunction>, pub &'b [Value<'a>]);
-impl<'a, 'b> Traverseable for ClosureDataDef<'a, 'b> {
+pub struct ClosureDataDef<'b>(pub GcPtr<BytecodeFunction>, pub &'b [Value]);
+impl<'b> Traverseable for ClosureDataDef<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
         self.1.traverse(gc);
     }
 }
 
-unsafe impl<'a: 'b, 'b> DataDef for ClosureDataDef<'a, 'b> {
-    type Value = ClosureData<'a>;
+unsafe impl<'b> DataDef for ClosureDataDef<'b> {
+    type Value = ClosureData;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<GcPtr<BytecodeFunction>>() + Array::<Cell<Value<'a>>>::size_of(self.1.len())
+        size_of::<GcPtr<BytecodeFunction>>() + Array::<Cell<Value>>::size_of(self.1.len())
     }
-    fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData<'a>>) -> &'w mut ClosureData<'a> {
+    fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData>) -> &'w mut ClosureData {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.0;
@@ -120,19 +120,19 @@ impl Traverseable for BytecodeFunction {
     }
 }
 
-pub struct DataStruct<'a> {
+pub struct DataStruct {
     pub tag: VMTag,
-    pub fields: Array<Cell<Value<'a>>>,
+    pub fields: Array<Cell<Value>>,
 }
 
-impl<'a> Traverseable for DataStruct<'a> {
+impl Traverseable for DataStruct {
     fn traverse(&self, gc: &mut Gc) {
         self.fields.traverse(gc);
     }
 }
 
-impl<'a> PartialEq for DataStruct<'a> {
-    fn eq(&self, other: &DataStruct<'a>) -> bool {
+impl PartialEq for DataStruct {
+    fn eq(&self, other: &DataStruct) -> bool {
         self.tag == other.tag && self.fields == other.fields
     }
 }
@@ -140,25 +140,25 @@ impl<'a> PartialEq for DataStruct<'a> {
 pub type VMInt = isize;
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum Value<'a> {
+pub enum Value {
     Int(VMInt),
     Float(f64),
     String(GcPtr<Str>),
-    Data(GcPtr<DataStruct<'a>>),
-    Function(GcPtr<ExternFunction<'a>>),
-    Closure(GcPtr<ClosureData<'a>>),
-    PartialApplication(GcPtr<PartialApplicationData<'a>>),
+    Data(GcPtr<DataStruct>),
+    Function(GcPtr<ExternFunction>),
+    Closure(GcPtr<ClosureData>),
+    PartialApplication(GcPtr<PartialApplicationData>),
     Userdata(Userdata_),
-    Lazy(GcPtr<Lazy<'a, Value<'a>>>),
+    Lazy(GcPtr<Lazy<Value>>),
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum Callable<'a> {
-    Closure(GcPtr<ClosureData<'a>>),
-    Extern(GcPtr<ExternFunction<'a>>),
+pub enum Callable {
+    Closure(GcPtr<ClosureData>),
+    Extern(GcPtr<ExternFunction>),
 }
 
-impl<'a> Callable<'a> {
+impl Callable {
     pub fn name(&self) -> &Symbol {
         match *self {
             Callable::Closure(ref closure) => &closure.function.name,
@@ -174,13 +174,13 @@ impl<'a> Callable<'a> {
     }
 }
 
-impl<'a> PartialEq for Callable<'a> {
-    fn eq(&self, _: &Callable<'a>) -> bool {
+impl PartialEq for Callable {
+    fn eq(&self, _: &Callable) -> bool {
         false
     }
 }
 
-impl<'a> Traverseable for Callable<'a> {
+impl Traverseable for Callable {
     fn traverse(&self, gc: &mut Gc) {
         match *self {
             Callable::Closure(ref closure) => closure.traverse(gc),
@@ -190,40 +190,40 @@ impl<'a> Traverseable for Callable<'a> {
 }
 
 #[derive(Debug)]
-pub struct PartialApplicationData<'a> {
-    function: Callable<'a>,
-    arguments: Array<Cell<Value<'a>>>,
+pub struct PartialApplicationData {
+    function: Callable,
+    arguments: Array<Cell<Value>>,
 }
 
-impl<'a> PartialEq for PartialApplicationData<'a> {
-    fn eq(&self, _: &PartialApplicationData<'a>) -> bool {
+impl PartialEq for PartialApplicationData {
+    fn eq(&self, _: &PartialApplicationData) -> bool {
         false
     }
 }
 
-impl<'a> Traverseable for PartialApplicationData<'a> {
+impl Traverseable for PartialApplicationData {
     fn traverse(&self, gc: &mut Gc) {
         self.function.traverse(gc);
         self.arguments.traverse(gc);
     }
 }
 
-struct PartialApplicationDataDef<'a: 'b, 'b>(Callable<'a>, &'b [Value<'a>]);
-impl<'a, 'b> Traverseable for PartialApplicationDataDef<'a, 'b> {
+struct PartialApplicationDataDef<'b>(Callable, &'b [Value]);
+impl<'b> Traverseable for PartialApplicationDataDef<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
         self.1.traverse(gc);
     }
 }
-unsafe impl<'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
-    type Value = PartialApplicationData<'a>;
+unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
+    type Value = PartialApplicationData;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<Callable<'a>>() + Array::<Cell<Value<'a>>>::size_of(self.1.len())
+        size_of::<Callable>() + Array::<Cell<Value>>::size_of(self.1.len())
     }
     fn initialize<'w>(self,
-                      mut result: WriteOnly<'w, PartialApplicationData<'a>>)
-                      -> &'w mut PartialApplicationData<'a> {
+                      mut result: WriteOnly<'w, PartialApplicationData>)
+                      -> &'w mut PartialApplicationData {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.0;
@@ -233,18 +233,18 @@ unsafe impl<'a: 'b, 'b> DataDef for PartialApplicationDataDef<'a, 'b> {
     }
 }
 
-impl<'a> PartialEq<Value<'a>> for Cell<Value<'a>> {
-    fn eq(&self, other: &Value<'a>) -> bool {
+impl PartialEq<Value> for Cell<Value> {
+    fn eq(&self, other: &Value) -> bool {
         self.get() == *other
     }
 }
-impl<'a> PartialEq<Cell<Value<'a>>> for Value<'a> {
-    fn eq(&self, other: &Cell<Value<'a>>) -> bool {
+impl PartialEq<Cell<Value>> for Value {
+    fn eq(&self, other: &Cell<Value>) -> bool {
         *self == other.get()
     }
 }
 
-impl<'a> Traverseable for Value<'a> {
+impl Traverseable for Value {
     fn traverse(&self, gc: &mut Gc) {
         match *self {
             String(ref data) => data.traverse(gc),
@@ -259,11 +259,11 @@ impl<'a> Traverseable for Value<'a> {
     }
 }
 
-impl<'a> fmt::Debug for Value<'a> {
+impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        struct Level<'a: 'b, 'b>(i32, &'b Value<'a>);
-        struct LevelSlice<'a: 'b, 'b>(i32, &'b [Cell<Value<'a>>]);
-        impl<'a, 'b> fmt::Debug for LevelSlice<'a, 'b> {
+        struct Level<'b>(i32, &'b Value);
+        struct LevelSlice<'b>(i32, &'b [Cell<Value>]);
+        impl<'b> fmt::Debug for LevelSlice<'b> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let level = self.0;
                 if level <= 0 {
@@ -275,7 +275,7 @@ impl<'a> fmt::Debug for Value<'a> {
                 Ok(())
             }
         }
-        impl<'a, 'b> fmt::Debug for Level<'a, 'b> {
+        impl<'b> fmt::Debug for Level<'b> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let level = self.0;
                 if level <= 0 {
@@ -329,51 +329,51 @@ macro_rules! get_global {
 
 /// A rooted value
 #[derive(Clone)]
-pub struct RootedValue<'a: 'vm, 'vm> {
-    vm: &'vm VM<'a>,
-    value: Value<'a>,
+pub struct RootedValue<'vm> {
+    vm: &'vm VM,
+    value: Value,
 }
 
-impl<'a, 'vm> Drop for RootedValue<'a, 'vm> {
+impl<'vm> Drop for RootedValue<'vm> {
     fn drop(&mut self) {
         // TODO not safe if the root changes order of being dropped with another root
         self.vm.rooted_values.borrow_mut().pop();
     }
 }
 
-impl<'a, 'vm> fmt::Debug for RootedValue<'a, 'vm> {
+impl<'vm> fmt::Debug for RootedValue<'vm> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.value)
     }
 }
 
-impl<'a, 'vm> Deref for RootedValue<'a, 'vm> {
-    type Target = Value<'a>;
-    fn deref(&self) -> &Value<'a> {
+impl<'vm> Deref for RootedValue<'vm> {
+    type Target = Value;
+    fn deref(&self) -> &Value {
         &self.value
     }
 }
 
-impl<'a, 'vm> RootedValue<'a, 'vm> {
-    pub fn vm(&self) -> &'vm VM<'a> {
+impl<'vm> RootedValue<'vm> {
+    pub fn vm(&self) -> &'vm VM {
         self.vm
     }
 }
 
 /// A rooted userdata value
-pub struct Root<'a, T: ?Sized + 'a> {
-    roots: &'a RefCell<Vec<GcPtr<Traverseable + 'static>>>,
+pub struct Root<'vm, T: ?Sized + 'vm> {
+    roots: &'vm RefCell<Vec<GcPtr<Traverseable + 'static>>>,
     ptr: *const T,
 }
 
-impl<'a, T: ?Sized> Drop for Root<'a, T> {
+impl<'vm, T: ?Sized> Drop for Root<'vm, T> {
     fn drop(&mut self) {
         // TODO not safe if the root changes order of being dropped with another root
         self.roots.borrow_mut().pop();
     }
 }
 
-impl<'a, T: ?Sized> Deref for Root<'a, T> {
+impl<'vm, T: ?Sized> Deref for Root<'vm, T> {
     type Target = T;
     fn deref(&self) -> &T {
         unsafe { &*self.ptr }
@@ -381,9 +381,9 @@ impl<'a, T: ?Sized> Deref for Root<'a, T> {
 }
 
 /// A rooted string
-pub struct RootStr<'a>(Root<'a, Str>);
+pub struct RootStr<'vm>(Root<'vm, Str>);
 
-impl<'a> Deref for RootStr<'a> {
+impl <'vm> Deref for RootStr<'vm> {
     type Target = str;
     fn deref(&self) -> &str {
         &self.0
@@ -400,19 +400,19 @@ pub enum Status {
     Error,
 }
 
-pub struct ExternFunction<'a> {
+pub struct ExternFunction {
     pub id: Symbol,
     pub args: VMIndex,
-    pub function: Box<Fn(&VM<'a>) -> Status + 'static>,
+    pub function: Box<Fn(&VM) -> Status + 'static>,
 }
 
-impl<'a> PartialEq for ExternFunction<'a> {
-    fn eq(&self, _: &ExternFunction<'a>) -> bool {
+impl PartialEq for ExternFunction {
+    fn eq(&self, _: &ExternFunction) -> bool {
         false
     }
 }
 
-impl<'a> fmt::Debug for ExternFunction<'a> {
+impl fmt::Debug for ExternFunction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // read the v-table pointer of the Fn(..) type and print that
         let p: *const () = unsafe { ::std::mem::transmute_copy(&&*self.function) };
@@ -420,24 +420,24 @@ impl<'a> fmt::Debug for ExternFunction<'a> {
     }
 }
 
-impl<'a> Traverseable for ExternFunction<'a> {
+impl Traverseable for ExternFunction {
     fn traverse(&self, _: &mut Gc) {}
 }
 
 #[derive(Debug)]
-struct Global<'a> {
+struct Global {
     id: Symbol,
     typ: TcType,
-    value: Cell<Value<'a>>,
+    value: Cell<Value>,
 }
 
-impl<'a> Traverseable for Global<'a> {
+impl Traverseable for Global {
     fn traverse(&self, gc: &mut Gc) {
         self.value.traverse(gc);
     }
 }
 
-impl<'a> Typed for Global<'a> {
+impl Typed for Global {
     type Id = Symbol;
     fn env_type_of(&self, _: &TypeEnv) -> ASTType<Symbol> {
         self.typ.clone()
@@ -448,18 +448,18 @@ struct GlobalSymbols {
     io: Symbol,
 }
 
-pub struct GlobalVMState<'a> {
-    globals: FixedVec<Global<'a>>,
+pub struct GlobalVMState {
+    globals: FixedVec<Global>,
     type_infos: RefCell<TypeInfos>,
     typeids: FixedMap<TypeId, TcType>,
     pub interner: RefCell<Interner>,
     symbols: GlobalSymbols,
     names: RefCell<HashMap<StdString, usize>>,
     pub gc: RefCell<Gc>,
-    macros: MacroEnv<VM<'a>>,
+    macros: MacroEnv<VM>,
 }
 
-impl<'a> Traverseable for GlobalVMState<'a> {
+impl Traverseable for GlobalVMState {
     fn traverse(&self, gc: &mut Gc) {
         for g in self.globals.borrow().iter() {
             g.traverse(gc);
@@ -470,21 +470,21 @@ impl<'a> Traverseable for GlobalVMState<'a> {
 }
 
 /// Representation of the virtual machine
-pub struct VM<'a> {
-    global_state: GlobalVMState<'a>,
+pub struct VM {
+    global_state: GlobalVMState,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
-    rooted_values: RefCell<Vec<Value<'a>>>,
-    stack: RefCell<Stack<'a>>,
+    rooted_values: RefCell<Vec<Value>>,
+    stack: RefCell<Stack>,
 }
 
-impl<'a> Deref for VM<'a> {
-    type Target = GlobalVMState<'a>;
-    fn deref(&self) -> &GlobalVMState<'a> {
+impl Deref for VM {
+    type Target = GlobalVMState;
+    fn deref(&self) -> &GlobalVMState {
         &self.global_state
     }
 }
 
-impl<'a> Traverseable for VM<'a> {
+impl Traverseable for VM {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
         self.stack.borrow().values.traverse(gc);
@@ -497,14 +497,14 @@ pub type Result<T> = StdResult<T, Error>;
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
 /// typechecker and compiler to lookup things in the virtual machine.
 #[derive(Debug)]
-pub struct VMEnv<'a: 'b, 'b> {
+pub struct VMEnv<'b> {
     type_infos: Ref<'b, TypeInfos>,
-    globals: &'b FixedVec<Global<'a>>,
+    globals: &'b FixedVec<Global>,
     names: Ref<'b, HashMap<StdString, usize>>,
     io_alias: types::Alias<Symbol, TcType>,
 }
 
-impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
+impl<'b> CompilerEnv for VMEnv<'b> {
     fn find_var(&self, id: &Symbol) -> Option<Variable> {
         match self.names.get(id.as_ref()) {
             Some(&index) if index < self.globals.len() => {
@@ -516,7 +516,7 @@ impl<'a, 'b> CompilerEnv for VMEnv<'a, 'b> {
     }
 }
 
-impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
+impl<'b> KindEnv for VMEnv<'b> {
     fn find_kind(&self, type_name: &Symbol) -> Option<RcKind> {
         self.type_infos
             .find_kind(type_name)
@@ -529,7 +529,7 @@ impl<'a, 'b> KindEnv for VMEnv<'a, 'b> {
             })
     }
 }
-impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
+impl<'b> TypeEnv for VMEnv<'b> {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         match self.names.get(AsRef::<str>::as_ref(id)) {
             Some(&index) if index < self.globals.len() => {
@@ -574,17 +574,17 @@ impl<'a, 'b> TypeEnv for VMEnv<'a, 'b> {
 }
 
 /// Definition for data values in the VM
-pub struct Def<'a: 'b, 'b> {
+pub struct Def<'b> {
     pub tag: VMTag,
-    pub elems: &'b [Value<'a>],
+    pub elems: &'b [Value],
 }
-unsafe impl<'a, 'b> DataDef for Def<'a, 'b> {
-    type Value = DataStruct<'a>;
+unsafe impl<'b> DataDef for Def<'b> {
+    type Value = DataStruct;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<usize>() + Array::<Value<'a>>::size_of(self.elems.len())
+        size_of::<usize>() + Array::<Value>::size_of(self.elems.len())
     }
-    fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct<'a>>) -> &'w mut DataStruct<'a> {
+    fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.tag = self.tag;
@@ -594,17 +594,17 @@ unsafe impl<'a, 'b> DataDef for Def<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Traverseable for Def<'a, 'b> {
+impl<'b> Traverseable for Def<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.elems.traverse(gc);
     }
 }
 
-struct Roots<'a: 'b, 'b> {
-    vm: &'b VM<'a>,
-    stack: &'b Stack<'a>,
+struct Roots<'b> {
+    vm: &'b VM,
+    stack: &'b Stack,
 }
-impl<'a, 'b> Traverseable for Roots<'a, 'b> {
+impl<'b> Traverseable for Roots<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.stack.values.traverse(gc);
 
@@ -613,9 +613,9 @@ impl<'a, 'b> Traverseable for Roots<'a, 'b> {
     }
 }
 
-impl<'a> GlobalVMState<'a> {
+impl GlobalVMState {
     /// Creates a new virtual machine
-    pub fn new() -> GlobalVMState<'a> {
+    pub fn new() -> GlobalVMState {
         let vm = GlobalVMState {
             globals: FixedVec::new(),
             type_infos: RefCell::new(TypeInfos::new()),
@@ -668,7 +668,7 @@ impl<'a> GlobalVMState<'a> {
     }
 
     /// TODO dont expose this directly
-    pub fn set_global(&self, id: Symbol, typ: TcType, value: Value<'a>) -> Result<()> {
+    pub fn set_global(&self, id: Symbol, typ: TcType, value: Value) -> Result<()> {
         if self.names.borrow().contains_key(id.as_ref()) {
             return Err(Error::Message(format!("{} is already defined", id)));
         }
@@ -711,7 +711,7 @@ impl<'a> GlobalVMState<'a> {
         }
     }
 
-    pub fn get_macros(&self) -> &MacroEnv<VM<'a>> {
+    pub fn get_macros(&self) -> &MacroEnv<VM> {
         &self.macros
     }
 
@@ -720,7 +720,7 @@ impl<'a> GlobalVMState<'a> {
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`
-    pub fn env<'b>(&'b self) -> VMEnv<'a, 'b> {
+    pub fn env<'b>(&'b self) -> VMEnv<'b> {
         VMEnv {
             type_infos: self.type_infos.borrow(),
             globals: &self.globals,
@@ -736,7 +736,7 @@ impl<'a> GlobalVMState<'a> {
         }
     }
 
-    pub fn new_data(&self, tag: VMTag, fields: &[Value<'a>]) -> Value<'a> {
+    pub fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value {
         Data(self.gc.borrow_mut().alloc(Def {
             tag: tag,
             elems: fields,
@@ -744,8 +744,8 @@ impl<'a> GlobalVMState<'a> {
     }
 }
 
-impl<'a> VM<'a> {
-    pub fn new() -> VM<'a> {
+impl VM {
+    pub fn new() -> VM {
         let vm = VM {
             global_state: GlobalVMState::new(),
             stack: RefCell::new(Stack::new()),
@@ -760,7 +760,7 @@ impl<'a> VM<'a> {
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<()>
-        where T: Pushable<'a>
+        where T: Pushable
     {
         if self.names.borrow().contains_key(name) {
             return Err(Error::Message(format!("{} is already defined", name)));
@@ -779,7 +779,7 @@ impl<'a> VM<'a> {
     /// Retrieves the global called `name`.
     /// Fails if the global does not exist or it does not have the correct type.
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
-        where T: Getable<'a, 'vm> + VMType
+        where T: Getable<'vm> + VMType
     {
         let mut components = Name::new(name).components();
         let global = match components.next() {
@@ -894,7 +894,7 @@ impl<'a> VM<'a> {
 
 
     /// Returns the current stackframe
-    pub fn current_frame<'vm>(&'vm self) -> StackFrame<'a, 'vm> {
+    pub fn current_frame<'vm>(&'vm self) -> StackFrame<'vm> {
         let stack = self.stack.borrow_mut();
         StackFrame {
             frame: stack.frames.last().expect("Frame").clone(),
@@ -936,7 +936,7 @@ impl<'a> VM<'a> {
     }
 
     /// Roots a value
-    pub fn root_value<'vm>(&'vm self, value: Value<'a>) -> RootedValue<'a, 'vm> {
+    pub fn root_value<'vm>(&'vm self, value: Value) -> RootedValue<'vm> {
         self.rooted_values.borrow_mut().push(value);
         RootedValue {
             vm: self,
@@ -946,15 +946,15 @@ impl<'a> VM<'a> {
 
     /// Allocates a new value from a given `DataDef`.
     /// Takes the stack as it may collect if the collection limit has been reached.
-    pub fn alloc<D>(&self, stack: &Stack<'a>, def: D) -> GcPtr<D::Value>
+    pub fn alloc<D>(&self, stack: &Stack, def: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable
     {
         self.with_roots(stack,
                         |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
     }
 
-    fn with_roots<F, R>(&self, stack: &Stack<'a>, f: F) -> R
-        where F: for<'b> FnOnce(&mut Gc, Roots<'a, 'b>) -> R
+    fn with_roots<F, R>(&self, stack: &Stack, f: F) -> R
+        where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R
     {
         // For this to be safe we require that the received stack is the same one that is in this
         // VM
@@ -1003,19 +1003,19 @@ impl<'a> VM<'a> {
     }
 
     /// Pushes a value to the top of the stack
-    pub fn push(&self, v: Value<'a>) {
+    pub fn push(&self, v: Value) {
         self.stack.borrow_mut().push(v)
     }
 
     /// Removes the top value from the stack
-    pub fn pop(&self) -> Value<'a> {
+    pub fn pop(&self) -> Value {
         self.stack
             .borrow_mut()
             .pop()
     }
 
     ///Calls a module, allowed to to run IO expressions
-    pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData<'a>>) -> Result<Value<'a>> {
+    pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
         let value = try!(self.call_bytecode(closure));
         if let Type::Data(types::TypeConstructor::Data(ref id), _) = **typ {
             if *id == self.symbols.io {
@@ -1041,14 +1041,14 @@ impl<'a> VM<'a> {
     /// When this function is called it is expected that the function exists at
     /// `stack.len() - args - 1` and that the arguments are of the correct type
     pub fn call_function<'b>(&'b self,
-                             mut stack: StackFrame<'a, 'b>,
+                             mut stack: StackFrame<'b>,
                              args: VMIndex)
-                             -> Result<Option<StackFrame<'a, 'b>>> {
+                             -> Result<Option<StackFrame<'b>>> {
         stack = try!(self.do_call(stack, args));
         self.execute(stack)
     }
 
-    fn call_bytecode(&self, closure: GcPtr<ClosureData<'a>>) -> Result<Value<'a>> {
+    fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
         self.push(Closure(closure));
         let stack = StackFrame::frame(self.stack.borrow_mut(), 0, Some(Callable::Closure(closure)));
         try!(self.execute(stack));
@@ -1057,10 +1057,10 @@ impl<'a> VM<'a> {
     }
 
     fn execute_callable<'b>(&'b self,
-                            mut stack: StackFrame<'a, 'b>,
-                            function: &Callable<'a>,
+                            mut stack: StackFrame<'b>,
+                            function: &Callable,
                             excess: bool)
-                            -> Result<StackFrame<'a, 'b>> {
+                            -> Result<StackFrame<'b>> {
         match *function {
             Callable::Closure(closure) => {
                 stack = stack.enter_scope(closure.function.args, Some(Callable::Closure(closure)));
@@ -1077,9 +1077,9 @@ impl<'a> VM<'a> {
     }
 
     fn execute_function<'b>(&'b self,
-                            mut stack: StackFrame<'a, 'b>,
-                            function: &ExternFunction<'a>)
-                            -> Result<StackFrame<'a, 'b>> {
+                            mut stack: StackFrame<'b>,
+                            function: &ExternFunction)
+                            -> Result<StackFrame<'b>> {
         debug!("CALL EXTERN {}", function.id);
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
@@ -1110,11 +1110,11 @@ impl<'a> VM<'a> {
     }
 
     fn call_function_with_upvars<'b>(&'b self,
-                                     mut stack: StackFrame<'a, 'b>,
+                                     mut stack: StackFrame<'b>,
                                      args: VMIndex,
                                      required_args: VMIndex,
-                                     callable: Callable<'a>)
-                                     -> Result<StackFrame<'a, 'b>> {
+                                     callable: Callable)
+                                     -> Result<StackFrame<'b>> {
         debug!("cmp {} {} {:?} {:?}", args, required_args, callable, {
             let function_index = stack.len() - 1 - args;
             &(*stack)[(function_index + 1) as usize..]
@@ -1157,9 +1157,9 @@ impl<'a> VM<'a> {
     }
 
     fn do_call<'b>(&'b self,
-                   mut stack: StackFrame<'a, 'b>,
+                   mut stack: StackFrame<'b>,
                    args: VMIndex)
-                   -> Result<StackFrame<'a, 'b>> {
+                   -> Result<StackFrame<'b>> {
         let function_index = stack.len() - 1 - args;
         debug!("Do call {:?} {:?}",
                stack[function_index],
@@ -1183,7 +1183,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    fn execute<'b>(&'b self, stack: StackFrame<'a, 'b>) -> Result<Option<StackFrame<'a, 'b>>> {
+    fn execute<'b>(&'b self, stack: StackFrame<'b>) -> Result<Option<StackFrame<'b>>> {
         let mut maybe_stack = Some(stack);
         while let Some(mut stack) = maybe_stack {
             debug!("STACK\n{:?}", stack.stack.frames);
@@ -1221,11 +1221,11 @@ impl<'a> VM<'a> {
     }
 
     fn execute_<'b>(&'b self,
-                    mut stack: StackFrame<'a, 'b>,
+                    mut stack: StackFrame<'b>,
                     mut index: usize,
                     instructions: &[Instruction],
                     function: &BytecodeFunction)
-                    -> Result<Option<StackFrame<'a, 'b>>> {
+                    -> Result<Option<StackFrame<'b>>> {
         {
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
                    function.name,
@@ -1476,10 +1476,10 @@ impl<'a> VM<'a> {
 }
 
 #[inline]
-fn binop<'a, 'b, F, T, R>(vm: &'b VM<'a>, stack: &mut StackFrame<'a, 'b>, f: F)
+fn binop<'b, F, T, R>(vm: &'b VM, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> R,
-          T: Getable<'a, 'b> + fmt::Debug,
-          R: Pushable<'a>
+          T: Getable<'b> + fmt::Debug,
+          R: Pushable
 {
     let r = stack.pop();
     let l = stack.pop();

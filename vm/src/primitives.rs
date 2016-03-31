@@ -14,40 +14,40 @@ pub fn array_length(array: Array<generic::A>) -> VMInt {
     array.len() as VMInt
 }
 
-pub fn array_index<'a, 'vm>(array: Array<'a, 'vm, Generic<'a, generic::A>>,
+pub fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
                             index: VMInt)
-                            -> MaybeError<Generic<'a, generic::A>, String> {
+                            -> MaybeError<Generic<generic::A>, String> {
     match array.get(index) {
         Some(value) => MaybeError::Ok(value),
         None => MaybeError::Err(format!("{} is out of range", index)),
     }
 }
 
-pub fn array_append<'a, 'vm>(lhs: Array<'a, 'vm, Generic<'a, generic::A>>,
-                             rhs: Array<'a, 'vm, Generic<'a, generic::A>>)
-                             -> Array<'a, 'vm, Generic<'a, generic::A>> {
-    struct Append<'a: 'b, 'b> {
-        lhs: &'b [Cell<Value<'a>>],
-        rhs: &'b [Cell<Value<'a>>],
+pub fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
+                             rhs: Array<'vm, Generic<generic::A>>)
+                             -> Array<'vm, Generic<generic::A>> {
+    struct Append<'b> {
+        lhs: &'b [Cell<Value>],
+        rhs: &'b [Cell<Value>],
     }
 
-    impl<'a, 'b> Traverseable for Append<'a, 'b> {
+    impl<'b> Traverseable for Append<'b> {
         fn traverse(&self, gc: &mut Gc) {
             self.lhs.traverse(gc);
             self.rhs.traverse(gc);
         }
     }
 
-    unsafe impl<'a, 'b> DataDef for Append<'a, 'b> {
-        type Value = DataStruct<'a>;
+    unsafe impl<'b> DataDef for Append<'b> {
+        type Value = DataStruct;
         fn size(&self) -> usize {
             use std::mem::size_of;
             let len = self.lhs.len() + self.rhs.len();
-            size_of::<usize>() + ::array::Array::<Value<'a>>::size_of(len)
+            size_of::<usize>() + ::array::Array::<Value>::size_of(len)
         }
         fn initialize<'w>(self,
-                          mut result: WriteOnly<'w, DataStruct<'a>>)
-                          -> &'w mut DataStruct<'a> {
+                          mut result: WriteOnly<'w, DataStruct>)
+                          -> &'w mut DataStruct {
             unsafe {
                 let result = &mut *result.as_mut_ptr();
                 result.tag = 0;

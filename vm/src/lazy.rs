@@ -8,19 +8,19 @@ use vm::{Status, Value, VM, Result};
 
 
 #[derive(Clone, PartialEq)]
-pub struct Lazy<'a, T> {
-    value: Cell<Lazy_<'a>>,
+pub struct Lazy<T> {
+    value: Cell<Lazy_>,
     _marker: PhantomData<T>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Lazy_<'a> {
+enum Lazy_ {
     Blackhole,
-    Thunk(Value<'a>),
-    Value(Value<'a>),
+    Thunk(Value),
+    Value(Value),
 }
 
-impl<'a, T> Traverseable for Lazy<'a, T> {
+impl<T> Traverseable for Lazy<T> {
     fn traverse(&self, gc: &mut Gc) {
         match self.value.get() {
             Lazy_::Blackhole => (),
@@ -30,11 +30,11 @@ impl<'a, T> Traverseable for Lazy<'a, T> {
     }
 }
 
-impl<'a, T> VMType for Lazy<'a, T>
+impl<T> VMType for Lazy<T>
     where T: VMType,
           T::Type: Sized
 {
-    type Type = Lazy<'static, T::Type>;
+    type Type = Lazy<T::Type>;
 
     fn make_type(vm: &VM) -> TcType {
         use base::symbol::Symbol;
@@ -106,8 +106,8 @@ pub fn load(vm: &VM) -> Result<()> {
     use api::generic::A;
     use api::primitive;
     try!(vm.define_global("lazy",
-                          primitive::<fn(fn(()) -> A) -> Lazy<'static, A>>("lazy", ::lazy::lazy)));
+                          primitive::<fn(fn(()) -> A) -> Lazy<A>>("lazy", ::lazy::lazy)));
     try!(vm.define_global("force",
-                          primitive::<fn(Lazy<'static, A>) -> A>("force", ::lazy::force)));
+                          primitive::<fn(Lazy<A>) -> A>("force", ::lazy::force)));
     Ok(())
 }

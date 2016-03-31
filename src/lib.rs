@@ -260,8 +260,8 @@ pub fn parse_expr(file: &str,
     parse_expr_(&mut symbols, file, input)
 }
 
-fn typecheck_expr_<'a>(symbols: &mut Symbols,
-                       vm: &VM<'a>,
+fn typecheck_expr_(symbols: &mut Symbols,
+                       vm: &VM,
                        file: &str,
                        expr_str: &str,
                        implicit_prelude: bool)
@@ -280,7 +280,7 @@ fn typecheck_expr_<'a>(symbols: &mut Symbols,
     Ok((expr, typ))
 }
 
-pub fn typecheck_expr<'a>(vm: &VM<'a>,
+pub fn typecheck_expr(vm: &VM,
                           file: &str,
                           expr_str: &str,
                           implicit_prelude: bool)
@@ -291,18 +291,18 @@ pub fn typecheck_expr<'a>(vm: &VM<'a>,
 
 /// Compiles and runs the expression in `expr_str`. If successful the value from running the
 /// expression is returned
-pub fn run_expr<'a, 'vm>(vm: &'vm VM<'a>,
+pub fn run_expr<'vm>(vm: &'vm VM,
                          name: &str,
                          expr_str: &str)
-                         -> Result<RootedValue<'a, 'vm>> {
+                         -> Result<RootedValue<'vm>> {
     run_expr2(vm, name, expr_str, true)
 }
 
-pub fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
+pub fn run_expr2<'vm>(vm: &'vm VM,
                           name: &str,
                           expr_str: &str,
                           implicit_prelude: bool)
-                          -> Result<RootedValue<'a, 'vm>> {
+                          -> Result<RootedValue<'vm>> {
     let mut symbols = Symbols::new();
     let (expr, typ) = try!(typecheck_expr_(&mut symbols, vm, name, expr_str, implicit_prelude));
     let mut function = compile_script(&mut symbols, vm, name, &expr);
@@ -318,7 +318,7 @@ pub fn run_expr2<'a, 'vm>(vm: &'vm VM<'a>,
 
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
-pub fn new_vm<'a>() -> VM<'a> {
+pub fn new_vm() -> VM {
     let vm = VM::new();
     vm.get_macros().insert(String::from("import"), ::import::Import::new());
     run_expr2(&vm, "", r#" import "std/types.hs" "#, false).unwrap();
