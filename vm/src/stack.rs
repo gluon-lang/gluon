@@ -1,7 +1,8 @@
 use std::cell::{Cell, RefMut};
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
-use vm::{Callable, Value};
+use gc::GcPtr;
+use vm::{Callable, Value, DataStruct};
 use types::VMIndex;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -14,8 +15,8 @@ pub struct Frame {
 
 #[derive(Debug)]
 pub struct Stack {
-    pub values: Vec<Value>,
-    pub frames: Vec<Frame>,
+    values: Vec<Value>,
+    frames: Vec<Frame>,
 }
 
 impl Stack {
@@ -55,6 +56,14 @@ impl Stack {
 
     pub fn len(&self) -> VMIndex {
         self.values.len() as VMIndex
+    }
+
+    pub fn get_values(&self) -> &[Value] {
+        &self.values
+    }
+
+    pub fn get_frames(&self) -> &[Frame] {
+        &self.frames
     }
 }
 
@@ -113,6 +122,14 @@ impl<'a: 'b, 'b> StackFrame<'b> {
             _ => panic!("Attempted to access upvar in non closure function"),
         };
         upvars.upvars[index as usize].get()
+    }
+
+    pub fn excess_args(&self) -> Option<GcPtr<DataStruct>> {
+        let i = self.stack.values.len() - self.len() as usize - 2;
+        match self.stack.values[i] {
+            Value::Data(data) => Some(data),
+            _ => None,
+        }
     }
 
     pub fn enter_scope(mut self,

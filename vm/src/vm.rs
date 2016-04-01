@@ -487,7 +487,7 @@ impl Deref for VM {
 impl Traverseable for VM {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
-        self.stack.borrow().values.traverse(gc);
+        self.stack.borrow().get_values().traverse(gc);
     }
 }
 
@@ -606,7 +606,7 @@ struct Roots<'b> {
 }
 impl<'b> Traverseable for Roots<'b> {
     fn traverse(&self, gc: &mut Gc) {
-        self.stack.values.traverse(gc);
+        self.stack.get_values().traverse(gc);
 
         // Traverse the vm's fields, avoiding the stack which is traversed above
         self.vm.traverse_fields_except_stack(gc);
@@ -897,7 +897,7 @@ impl VM {
     pub fn current_frame<'vm>(&'vm self) -> StackFrame<'vm> {
         let stack = self.stack.borrow_mut();
         StackFrame {
-            frame: stack.frames.last().expect("Frame").clone(),
+            frame: stack.get_frames().last().expect("Frame").clone(),
             stack: stack,
         }
     }
@@ -1150,7 +1150,7 @@ impl VM {
                 // collected
                 let offset = stack.len() - required_args - 1;
                 stack.insert_slice(offset, &[Cell::new(Data(d))]);
-                debug!("xxxxxx {:?}\n{:?}", &(*stack)[..], stack.stack.frames);
+                debug!("xxxxxx {:?}\n{:?}", &(*stack)[..], stack.stack.get_frames());
                 self.execute_callable(stack, &callable, true)
             }
         }
@@ -1186,7 +1186,7 @@ impl VM {
     fn execute<'b>(&'b self, stack: StackFrame<'b>) -> Result<Option<StackFrame<'b>>> {
         let mut maybe_stack = Some(stack);
         while let Some(mut stack) = maybe_stack {
-            debug!("STACK\n{:?}", stack.stack.frames);
+            debug!("STACK\n{:?}", stack.stack.get_frames());
             maybe_stack = match stack.frame.function {
                 None => return Ok(Some(stack)),
                 Some(Callable::Extern(ext)) => {
@@ -1201,7 +1201,7 @@ impl VM {
                 Some(Callable::Closure(closure)) => {
                     // Tail calls into extern functions at the top level will drop the last
                     // stackframe so just return immedietly
-                    if stack.stack.frames.len() == 0 {
+                    if stack.stack.get_frames().len() == 0 {
                         return Ok(Some(stack));
                     }
                     let instruction_index = stack.frame.instruction_index;
@@ -1258,16 +1258,15 @@ impl VM {
                     let mut amount = stack.len() - args;
                     if stack.frame.excess {
                         amount += 1;
-                        let i = stack.stack.values.len() - stack.len() as usize - 2;
-                        match stack.stack.values[i] {
-                            Data(excess) => {
-                                debug!("TailCall: Push excess args {:?}", &excess.fields);
+                        match stack.excess_args() {
+                            Some(excess) => {
+                                debug!("TailCall: Push excess args {:?}", excess.fields);
                                 for value in &excess.fields {
                                     stack.push(value.get());
                                 }
                                 args += excess.fields.len() as VMIndex;
                             }
-                            _ => panic!("Expected excess args"),
+                            None => panic!("Expected excess args"),
                         }
                     }
                     stack = match stack.exit_scope() {

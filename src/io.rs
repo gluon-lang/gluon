@@ -47,7 +47,7 @@ pub fn read_line() -> IO<String> {
 /// IO a -> (String -> IO a) -> IO a
 pub fn catch_io(vm: &VM) -> Status {
     let mut stack = vm.current_frame();
-    let frame_level = stack.stack.frames.len();
+    let frame_level = stack.stack.get_frames().len();
     let action = stack[0];
     stack.push(action);
     stack.push(Value::Int(0));
@@ -55,7 +55,7 @@ pub fn catch_io(vm: &VM) -> Status {
         Ok(_) => Status::Ok,
         Err(err) => {
             stack = vm.current_frame();
-            while stack.stack.frames.len() > frame_level {
+            while stack.stack.get_frames().len() > frame_level {
                 match stack.exit_scope() {
                     Some(new_stack) => stack = new_stack,
                     None => return Status::Error,
@@ -84,7 +84,7 @@ pub fn catch_io(vm: &VM) -> Status {
 pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     let WithVM { vm, value: expr } = expr;
     let mut stack = vm.current_frame();
-    let frame_level = stack.stack.frames.len();
+    let frame_level = stack.stack.get_frames().len();
     drop(stack);
     let run_result = super::run_expr(vm, "<top>", &expr);
     stack = vm.current_frame();
@@ -93,7 +93,7 @@ pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
         Err(err) => {
             let trace = backtrace(frame_level, &stack);
             let fmt = format!("{}\n{}", err, trace);
-            while stack.stack.frames.len() > frame_level {
+            while stack.stack.get_frames().len() > frame_level {
                 match stack.exit_scope() {
                     Some(new_stack) => stack = new_stack,
                     None => return IO::Exception(fmt),
@@ -107,7 +107,7 @@ pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
 pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
     let WithVM { vm, value: name } = name;
     let mut stack = vm.current_frame();
-    let frame_level = stack.stack.frames.len();
+    let frame_level = stack.stack.get_frames().len();
     drop(stack);
     let run_result = super::load_script(vm, &name[..], &expr);
     stack = vm.current_frame();
@@ -116,7 +116,7 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
         Err(err) => {
             let trace = backtrace(frame_level, &stack);
             let fmt = format!("{}\n{}", err, trace);
-            while stack.stack.frames.len() > frame_level {
+            while stack.stack.get_frames().len() > frame_level {
                 match stack.exit_scope() {
                     Some(new_stack) => stack = new_stack,
                     None => return IO::Exception(fmt),
@@ -130,14 +130,14 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
 /// Creates a backtraces starting from `frame_level`
 fn backtrace(frame_level: usize, stack: &StackFrame) -> String {
     let mut buffer = String::from("Backtrace:\n");
-    for frame in &stack.stack.frames[frame_level..] {
+    for frame in &stack.stack.get_frames()[frame_level..] {
         match frame.function.as_ref().map(|c| c.name()) {
             Some(name) => buffer.push_str(name.as_ref()),
             None => buffer.push_str("<unknown>"),
         }
         buffer.push('\n');
     }
-    if !stack.stack.frames.is_empty() {
+    if !stack.stack.get_frames().is_empty() {
         // Remove last newline
         buffer.pop();
     }
