@@ -28,6 +28,10 @@ impl Stack {
     }
 
     pub fn pop(&mut self) -> Value {
+        if let Some(frame) = self.frames.last() {
+            assert!(self.values.len() > frame.offset as usize,
+                    "Attempted to pop value which did not belong to the current frame");
+        }
         self.values
             .pop()
             .expect("pop on empty stack")
@@ -114,6 +118,10 @@ impl<'a: 'b, 'b> StackFrame<'b> {
 
     pub fn remove_range(&mut self, from: VMIndex, to: VMIndex) {
         self.stack.remove_range(self.frame.offset + from, self.frame.offset + to);
+    }
+
+    pub fn get_rooted_value(&self, index: VMIndex) -> Value {
+        self[index]
     }
 
     pub fn get_upvar(&self, index: VMIndex) -> Value {

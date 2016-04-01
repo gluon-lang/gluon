@@ -1448,10 +1448,14 @@ impl VM {
         let result = stack.pop();
         debug!("Return {:?}", result);
         let len = stack.len();
+        let frame_has_excess = stack.frame.excess;
+        stack = stack.exit_scope().expect("Stack");
         for _ in 0..(len + 1) {
             stack.pop();
         }
-        if stack.frame.excess {
+        if frame_has_excess {
+            // If the function that just finished had extra arguments we need to call the result of
+            // the call with the extra arguments
             match stack.pop() {
                 Data(excess) => {
                     debug!("Push excess args {:?}", &excess.fields);
@@ -1459,17 +1463,13 @@ impl VM {
                     for value in &excess.fields {
                         stack.push(value.get());
                     }
-                    stack = match stack.exit_scope() {
-                        Some(stack) => stack,
-                        None => return Ok(None),
-                    };
                     self.do_call(stack, excess.fields.len() as VMIndex).map(Some)
                 }
                 x => panic!("Expected excess arguments found {:?}", x),
             }
         } else {
             stack.push(result);
-            Ok(stack.exit_scope())
+            Ok(Some(stack))
         }
     }
 }
