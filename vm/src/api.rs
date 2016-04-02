@@ -858,6 +858,12 @@ pub struct Function<'vm, F> {
     _marker: PhantomData<F>,
 }
 
+impl <'vm, F> Function<'vm, F> {
+    pub fn value(&self) -> Value {
+        *self.value
+    }
+}
+
 impl<'vm, F> VMType for Function<'vm, F> where F: VMType
 {
     type Type = F::Type;

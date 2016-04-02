@@ -402,6 +402,7 @@ impl <'vm> Deref for RootStr<'vm> {
 #[repr(C)]
 pub enum Status {
     Ok,
+    Yield,
     Error,
 }
 
@@ -507,8 +508,8 @@ pub struct VM(GcPtr<Thread>);
 
 impl Drop for VM {
     fn drop(&mut self) {
-        assert!(self.roots.borrow().len() == 1);
-        self.roots.borrow_mut().pop();
+        let p = self.roots.borrow_mut().pop().expect("VM ptr");
+        assert!(&*p as *const Traverseable as *const () == &*self.0 as *const Thread as *const ())
     }
 }
 
@@ -650,7 +651,7 @@ impl<'b> Traverseable for Roots<'b> {
     }
 }
 
-impl  Thread {
+impl Thread {
 
     /// Pushes a value to the top of the stack
     pub fn push(&self, v: Value) {
@@ -835,9 +836,8 @@ impl VM {
             rooted_values: RefCell::new(Vec::new()),
         };
         let mut gc = Gc::new();
-        let vm = VM(gc.alloc(Move(vm)));
+        let vm =  VM::from_gc_ptr(gc.alloc(Move(vm)));
         *vm.gc.borrow_mut() = gc;
-        vm.roots.borrow_mut().push(vm.0.as_traverseable());
         // Enter the top level scope
         StackFrame::frame(vm.stack.borrow_mut(), 0, None);
         vm
@@ -857,7 +857,11 @@ impl VM {
 
     pub fn new_vm(&self) -> VM {
         let vm = self.new_thread();
-        let vm = VM(self.alloc(&self.stack.borrow(), Move(vm)));
+        VM::from_gc_ptr(self.alloc(&self.stack.borrow(), Move(vm)))
+    }
+    
+    pub fn from_gc_ptr(p: GcPtr<Thread>) -> VM {
+        let vm = VM(p);
         vm.roots.borrow_mut().push(vm.0.as_traverseable());
         vm
     }
@@ -1147,6 +1151,16 @@ impl VM {
         self.execute(stack)
     }
 
+    pub fn resume(&self) -> Result<()> {
+        let stack = self.current_frame();
+        if stack.stack.get_frames().len() == 1 {
+            // Only the top level frame left means that the thread has finished
+            return Err(Error::Dead);
+        }
+        self.execute(stack)
+            .map(|_| ())
+    }
+
     fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
         self.push(Closure(closure));
         let stack = StackFrame::frame(self.stack.borrow_mut(), 0, Some(Callable::Closure(closure)));
@@ -1199,6 +1213,7 @@ impl VM {
         stack.push(result);
         match status {
             Status::Ok => Ok(stack),
+            Status::Yield => Err(Error::Yield),
             Status::Error => {
                 match stack.pop() {
                     String(s) => Err(Error::Message(s.to_string())),
@@ -1605,6 +1620,10 @@ fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
 quick_error! {
     #[derive(Debug, PartialEq)]
     pub enum Error {
+        Yield {
+        }
+        Dead {
+        }
         Message(err: StdString) {
             display("{}", err)
         }
