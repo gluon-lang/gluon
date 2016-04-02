@@ -5,7 +5,7 @@ use embed_lang::vm::api;
 use embed_lang::vm::api::{VMType, Function};
 use embed_lang::vm::gc::Traverseable;
 
-use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr, Userdata};
+use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr};
 use embed_lang::{load_script, run_expr};
 use embed_lang::import::Import;
 

@@ -19,7 +19,7 @@ use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use array::{Array, Str};
 use compiler::{CompiledFunction, Variable, CompilerEnv};
-use api::{Getable, Pushable, VMType};
+use api::{Getable, IO, Pushable, VMType};
 use lazy::Lazy;
 
 use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
@@ -461,17 +461,12 @@ impl Typed for Global {
     }
 }
 
-struct GlobalSymbols {
-    io: Symbol,
-}
-
 pub struct GlobalVMState {
     globals: FixedVec<Global>,
     type_infos: RefCell<TypeInfos>,
     generics: RefCell<HashMap<StdString, TcType>>,
     typeids: FixedMap<TypeId, TcType>,
     pub interner: RefCell<Interner>,
-    symbols: GlobalSymbols,
     names: RefCell<HashMap<StdString, usize>>,
     pub gc: RefCell<Gc>,
     macros: MacroEnv<VM>,
@@ -547,7 +542,6 @@ pub struct VMEnv<'b> {
     type_infos: Ref<'b, TypeInfos>,
     globals: &'b FixedVec<Global>,
     names: Ref<'b, HashMap<StdString, usize>>,
-    io_alias: types::Alias<Symbol, TcType>,
 }
 
 impl<'b> CompilerEnv for VMEnv<'b> {
@@ -606,13 +600,6 @@ impl<'b> TypeEnv for VMEnv<'b> {
     fn find_type_info(&self, id: &Symbol) -> Option<&types::Alias<Symbol, TcType>> {
         self.type_infos
             .find_type_info(id)
-            .or_else(|| {
-                if id.as_ref() == "IO" {
-                    Some(&self.io_alias)
-                } else {
-                    None
-                }
-            })
     }
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         self.type_infos.find_record(fields)
@@ -699,7 +686,6 @@ impl GlobalVMState {
             type_infos: RefCell::new(TypeInfos::new()),
             generics: RefCell::new(HashMap::new()),
             typeids: FixedMap::new(),
-            symbols: GlobalSymbols { io: Symbol::new("IO") },
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: RefCell::new(Gc::new()),
@@ -724,6 +710,7 @@ impl GlobalVMState {
                             id: Symbol::new("a"),
                             kind: types::Kind::star(),
                         }];
+        let _ = self.register_type::<IO<Generic<A>>>("IO", args.clone());
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
         let _ = self.register_type::<Thread>("Thread", vec![]);
         Ok(())
@@ -814,14 +801,6 @@ impl GlobalVMState {
             type_infos: self.type_infos.borrow(),
             globals: &self.globals,
             names: self.names.borrow(),
-            io_alias: types::Alias {
-                name: self.symbols.io.clone(),
-                args: vec![types::Generic {
-                               id: Symbol::new("a"),
-                               kind: types::Kind::star(),
-                           }],
-                typ: None,
-            },
         }
     }
 
@@ -1125,7 +1104,11 @@ impl VM {
     pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
         let value = try!(self.call_bytecode(closure));
         if let Type::Data(types::TypeConstructor::Data(ref id), _) = **typ {
-            if *id == self.symbols.io {
+            let is_io = {
+                let infos = self.type_infos.borrow();
+                infos.find_type_info(&Symbol::new("IO")).map(|alias| *id == alias.name).unwrap_or(false)
+            };
+            if is_io {
                 debug!("Run IO {:?}", value);
                 self.push(Int(0));// Dummy value to fill the place of the function for TailCall
                 self.push(value);
