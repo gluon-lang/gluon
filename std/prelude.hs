@@ -74,6 +74,10 @@ type Eq a = {
     (==) : a -> a -> Bool
 }
 
+let eq_Unit: Eq () = {
+    (==) = \l r -> True
+}
+
 let eq_Int = {
     (==) = \l r -> l #Int== r
 }
@@ -371,6 +375,10 @@ type Show a = {
     show : a -> String
 }
 
+let show_Unit: Show () = {
+    show = const "()"
+}
+
 let show_Int: Show Int = {
     show = prim.show_Int
 }
@@ -400,6 +408,13 @@ let show_Option: Show a -> Show (Option a) = \d ->
             | None -> "None"
     { show }
 
+let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
+    let show o =
+        case o of
+            | Ok x -> "Ok (" ++ t.show x ++ ")"
+            | Err x -> "Err (" ++ e.show x ++ ")"
+    { show }
+
 {
     Eq,
     Ord,
@@ -417,7 +432,7 @@ let show_Option: Show a -> Show (Option a) = \d ->
     id, const, flip, not,
     foldl, foldr,
     ord_Option, ord_Result, ord_Float, ord_Int, make_Ord,
-    eq_List, eq_Option, eq_Result, eq_Float, eq_Int,
+    eq_Unit, eq_List, eq_Option, eq_Result, eq_Float, eq_Int,
     monoid_Function, monoid_List, monoid_Option,
     monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
     num_Int, num_Float,
@@ -427,6 +442,6 @@ let show_Option: Show a -> Show (Option a) = \d ->
     make_Alternative,
     monad_Option, monad_List, monad_IO,
     make_Monad,
-    show_Int, show_Float, show_List, show_Option
+    show_Unit, show_Int, show_Float, show_List, show_Option, show_Result
 }
 
