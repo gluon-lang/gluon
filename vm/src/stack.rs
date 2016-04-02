@@ -140,10 +140,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         }
     }
 
-    pub fn enter_scope(mut self,
-                       args: VMIndex,
-                       function: Option<Callable>)
-                       -> StackFrame<'b> {
+    pub fn enter_scope(mut self, args: VMIndex, function: Option<Callable>) -> StackFrame<'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
@@ -176,10 +173,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         }
     }
 
-    fn add_new_frame(stack: &mut Stack,
-                     args: VMIndex,
-                     function: Option<Callable>)
-                     -> Frame {
+    fn add_new_frame(stack: &mut Stack, args: VMIndex, function: Option<Callable>) -> Frame {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
         let offset = stack.len() - args;

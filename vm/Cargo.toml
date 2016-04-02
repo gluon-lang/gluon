@@ -9,5 +9,8 @@ log = "0.3.5"
 env_logger = "0.3.2"
 quick-error = "0.2.2"
 
+[dependencies.mopa]
+git = "https://github.com/Marwes/mopa.git"
+
 [dependencies.base]
 path = "../base"

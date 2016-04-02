@@ -1,6 +1,7 @@
 use std::fmt;
 use std::mem;
 use std::ptr;
+use std::collections::VecDeque;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
@@ -321,31 +322,37 @@ impl GcPtr<str> {
 /// A type implementing Traverseable must call traverse on each of its fields
 /// which in turn contains `GcPtr`
 pub trait Traverseable {
-    fn traverse(&self, func: &mut Gc);
+    fn traverse(&self, gc: &mut Gc) {
+        let _ = gc;
+    }
 }
 
-impl<T> Traverseable for Move<T> where T: Traverseable
+impl<T> Traverseable for Move<T>
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc)
     }
 }
 
-impl<T: ?Sized> Traverseable for Box<T> where T: Traverseable
+impl<T: ?Sized> Traverseable for Box<T>
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc)
     }
 }
 
-impl<'a, T: ?Sized> Traverseable for &'a T where T: Traverseable
+impl<'a, T: ?Sized> Traverseable for &'a T
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
     }
 }
 
-impl<'a, T: ?Sized> Traverseable for &'a mut T where T: Traverseable
+impl<'a, T: ?Sized> Traverseable for &'a mut T
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
@@ -389,14 +396,24 @@ impl Traverseable for str {
     fn traverse(&self, _: &mut Gc) {}
 }
 
-impl<T> Traverseable for Cell<T> where T: Traverseable + Copy
+impl<T: ?Sized> Traverseable for *const T {
+    fn traverse(&self, _: &mut Gc) {}
+}
+
+impl<T: ?Sized> Traverseable for *mut T {
+    fn traverse(&self, _: &mut Gc) {}
+}
+
+impl<T> Traverseable for Cell<T>
+    where T: Traverseable + Copy
 {
     fn traverse(&self, f: &mut Gc) {
         self.get().traverse(f);
     }
 }
 
-impl<U> Traverseable for [U] where U: Traverseable
+impl<U> Traverseable for [U]
+    where U: Traverseable
 {
     fn traverse(&self, f: &mut Gc) {
         for x in self.iter() {
@@ -405,15 +422,25 @@ impl<U> Traverseable for [U] where U: Traverseable
     }
 }
 
-impl<T> Traverseable for Vec<T> where T: Traverseable
+impl<T> Traverseable for Vec<T>
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
     }
 }
 
+impl<T> Traverseable for VecDeque<T>
+    where T: Traverseable
+{
+    fn traverse(&self, gc: &mut Gc) {
+        self.as_slices().traverse(gc);
+    }
+}
+
 ///When traversing a GcPtr we need to mark it
-impl<T: ?Sized> Traverseable for GcPtr<T> where T: Traverseable
+impl<T: ?Sized> Traverseable for GcPtr<T>
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         if !gc.mark(*self) {

@@ -1,9 +1,11 @@
 extern crate env_logger;
 extern crate embed_lang;
 
+use embed_lang::vm::api;
 use embed_lang::vm::api::{VMType, Function};
+use embed_lang::vm::gc::Traverseable;
 
-use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr};
+use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr, Userdata};
 use embed_lang::{load_script, run_expr};
 use embed_lang::import::Import;
 
@@ -57,6 +59,7 @@ let id : Test -> Test = \x -> x in id
     impl VMType for Test {
         type Type = Test;
     }
+    impl Traverseable for Test { }
     struct Test {
         x: VMInt,
     }
@@ -82,6 +85,7 @@ fn root_data() {
     let _ = ::env_logger::init();
 
     struct Test(VMInt);
+    impl Traverseable for Test { }
     impl VMType for Test {
         type Type = Test;
     }
@@ -101,8 +105,8 @@ fn root_data() {
       })
       .unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
-    let mut script_fn: Function<fn(Box<Test>) -> VMInt> = vm.get_global("script_fn").unwrap();
-    let result = script_fn.call(Box::new(Test(123)))
+    let mut script_fn: Function<fn(api::Userdata<Test>) -> VMInt> = vm.get_global("script_fn").unwrap();
+    let result = script_fn.call(api::Userdata(Test(123)))
                           .unwrap();
     assert_eq!(result, 124);
 }

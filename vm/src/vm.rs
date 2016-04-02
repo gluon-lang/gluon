@@ -22,19 +22,32 @@ use compiler::{CompiledFunction, Variable, CompilerEnv};
 use api::{Getable, Pushable, VMType};
 use lazy::Lazy;
 
-use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure, Userdata};
+use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
 
 use stack::{Stack, StackFrame};
 
+mopafy!(Userdata);
+pub trait Userdata: ::mopa::Any + Traverseable { }
+
+impl<T> Userdata for T
+    where T: Any + Traverseable
+{ }
+
+impl fmt::Debug for Userdata {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Userdata")
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Userdata_ {
-    pub data: GcPtr<Box<Any>>,
+    pub data: GcPtr<Box<Userdata>>,
 }
 
 impl Userdata_ {
-    pub fn new<T: Any>(vm: &VM, v: T) -> Userdata_ {
-        let v: Box<Any> = Box::new(v);
+    pub fn new<T: Userdata>(vm: &VM, v: T) -> Userdata_ {
+        let v: Box<Userdata> = Box::new(v);
         Userdata_ { data: vm.gc.borrow_mut().alloc(Move(v)) }
     }
     fn ptr(&self) -> *const () {
@@ -151,7 +164,6 @@ pub enum Value {
     Closure(GcPtr<ClosureData>),
     PartialApplication(GcPtr<PartialApplicationData>),
     Userdata(Userdata_),
-    Lazy(GcPtr<Lazy<Value>>),
     Thread(GcPtr<Thread>),
 }
 
@@ -254,9 +266,8 @@ impl Traverseable for Value {
             Data(ref data) => data.traverse(gc),
             Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
-            Userdata(ref data) => data.data.traverse(gc),
+            Value::Userdata(ref data) => data.data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
-            Value::Lazy(ref lazy) => lazy.traverse(gc),
             Value::Thread(ref thread) => thread.traverse(gc),
             Int(_) | Float(_) => (),
         }
@@ -314,8 +325,7 @@ impl fmt::Debug for Value {
                                name,
                                LevelSlice(level - 1, &app.arguments))
                     }
-                    Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
-                    Value::Lazy(_) => write!(f, "<lazy>"),
+                    Value::Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
                     Value::Thread(_) => write!(f, "<thread>"),
                 }
             }
@@ -388,7 +398,7 @@ impl<'vm, T: ?Sized> Deref for Root<'vm, T> {
 /// A rooted string
 pub struct RootStr<'vm>(Root<'vm, Str>);
 
-impl <'vm> Deref for RootStr<'vm> {
+impl<'vm> Deref for RootStr<'vm> {
     type Target = str;
     fn deref(&self) -> &str {
         &self.0
@@ -652,7 +662,6 @@ impl<'b> Traverseable for Roots<'b> {
 }
 
 impl Thread {
-
     /// Pushes a value to the top of the stack
     pub fn push(&self, v: Value) {
         self.stack.borrow_mut().push(v)
@@ -689,9 +698,7 @@ impl GlobalVMState {
             type_infos: RefCell::new(TypeInfos::new()),
             generics: RefCell::new(HashMap::new()),
             typeids: FixedMap::new(),
-            symbols: GlobalSymbols {
-                io: Symbol::new("IO"),
-            },
+            symbols: GlobalSymbols { io: Symbol::new("IO") },
             interner: RefCell::new(Interner::new()),
             names: RefCell::new(HashMap::new()),
             gc: RefCell::new(Gc::new()),
@@ -752,9 +759,7 @@ impl GlobalVMState {
         Ok(())
     }
 
-    pub fn get_generic(&self,
-                       name: &str)
-                       -> TcType {
+    pub fn get_generic(&self, name: &str) -> TcType {
         let mut generics = self.generics.borrow_mut();
         if let Some(g) = generics.get(name) {
             return g.clone();
@@ -836,7 +841,7 @@ impl VM {
             rooted_values: RefCell::new(Vec::new()),
         };
         let mut gc = Gc::new();
-        let vm =  VM::from_gc_ptr(gc.alloc(Move(vm)));
+        let vm = VM::from_gc_ptr(gc.alloc(Move(vm)));
         *vm.gc.borrow_mut() = gc;
         // Enter the top level scope
         StackFrame::frame(vm.stack.borrow_mut(), 0, None);
@@ -859,7 +864,7 @@ impl VM {
         let vm = self.new_thread();
         VM::from_gc_ptr(self.alloc(&self.stack.borrow(), Move(vm)))
     }
-    
+
     pub fn from_gc_ptr(p: GcPtr<Thread>) -> VM {
         let vm = VM(p);
         vm.roots.borrow_mut().push(vm.0.as_traverseable());
@@ -1022,17 +1027,15 @@ impl VM {
     }
 
     /// Roots a userdata
-    pub fn root<'vm, T: Any>(&'vm self, v: GcPtr<Box<Any>>) -> Option<Root<'vm, T>> {
-        match v.downcast_ref::<T>().or_else(|| v.downcast_ref::<Box<T>>().map(|p| &**p)) {
-            Some(ptr) => {
-                self.roots.borrow_mut().push(v.as_traverseable());
-                Some(Root {
-                    roots: &self.roots,
-                    ptr: ptr,
-                })
-            }
-            None => None,
-        }
+    pub fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
+        v.downcast_ref::<T>()
+         .map(|ptr| {
+             self.roots.borrow_mut().push(v.as_traverseable());
+             Root {
+                 roots: &self.roots,
+                 ptr: ptr,
+             }
+         })
     }
 
     /// Roots a string
@@ -1270,10 +1273,7 @@ impl VM {
         }
     }
 
-    fn do_call<'b>(&'b self,
-                   mut stack: StackFrame<'b>,
-                   args: VMIndex)
-                   -> Result<StackFrame<'b>> {
+    fn do_call<'b>(&'b self, mut stack: StackFrame<'b>, args: VMIndex) -> Result<StackFrame<'b>> {
         let function_index = stack.len() - 1 - args;
         debug!("Do call {:?} {:?}",
                stack[function_index],

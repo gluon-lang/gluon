@@ -725,7 +725,8 @@ impl<'a> Compiler<'a> {
                         } else {
                             function.emit(Split);
                             for field in type_fields {
-                                let name = match fields.iter().find(|tup| tup.0.name_eq(&field.name)) {
+                                let name = match fields.iter()
+                                                       .find(|tup| tup.0.name_eq(&field.name)) {
                                     Some(&(ref name, ref bind)) => {
                                         bind.as_ref().unwrap_or(name).clone()
                                     }
@@ -793,7 +794,9 @@ fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
             let associated_type = record_type_fields.iter()
-                                                    .find(|type_field| type_field.name.name_eq(&field.0))
+                                                    .find(|type_field| {
+                                                        type_field.name.name_eq(&field.0)
+                                                    })
                                                     .expect("Associated type to exist in record");
             f(&field.0, &associated_type.typ);
         }

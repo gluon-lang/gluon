@@ -15,8 +15,8 @@ pub fn array_length(array: Array<generic::A>) -> VMInt {
 }
 
 pub fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
-                            index: VMInt)
-                            -> MaybeError<Generic<generic::A>, String> {
+                        index: VMInt)
+                        -> MaybeError<Generic<generic::A>, String> {
     match array.get(index) {
         Some(value) => MaybeError::Ok(value),
         None => MaybeError::Err(format!("{} is out of range", index)),
@@ -24,8 +24,8 @@ pub fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
 }
 
 pub fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
-                             rhs: Array<'vm, Generic<generic::A>>)
-                             -> Array<'vm, Generic<generic::A>> {
+                         rhs: Array<'vm, Generic<generic::A>>)
+                         -> Array<'vm, Generic<generic::A>> {
     struct Append<'b> {
         lhs: &'b [Cell<Value>],
         rhs: &'b [Cell<Value>],
@@ -45,9 +45,7 @@ pub fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
             let len = self.lhs.len() + self.rhs.len();
             size_of::<usize>() + ::array::Array::<Value>::size_of(len)
         }
-        fn initialize<'w>(self,
-                          mut result: WriteOnly<'w, DataStruct>)
-                          -> &'w mut DataStruct {
+        fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
             unsafe {
                 let result = &mut *result.as_mut_ptr();
                 result.tag = 0;

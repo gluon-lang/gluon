@@ -6,6 +6,8 @@ extern crate log;
 extern crate env_logger;
 #[macro_use]
 extern crate quick_error;
+#[macro_use]
+extern crate mopa;
 
 extern crate base;
 #[cfg(feature = "parser")]

@@ -1,15 +1,56 @@
+use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
+
 use base::symbol::Symbol;
 use base::types::{TcType, Type, TypeConstructor, TypeEnv};
 use base::types;
 use api::record::{Record, HList};
 use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
+use gc::{Traverseable, Gc};
 use vm::{Callable, Error, Thread, Value, VM, Result as VMResult, Status};
 
-use std::sync::mpsc;
+struct Sender<T> {
+    queue: Arc<Mutex<VecDeque<T>>>,
+}
 
-impl <T: VMType> VMType for mpsc::Sender<T> where T::Type: Sized {
-    type Type = mpsc::Sender<T::Type>;
+impl<T> Traverseable for Sender<T> {
+    fn traverse(&self, _gc: &mut Gc) {
+        // No need to traverse in Sender as values can only be accessed through Receiver
+    }
+}
+
+impl<T> Sender<T> {
+    fn send(&self, value: T) {
+        self.queue.lock().unwrap().push_back(value);
+    }
+}
+
+impl<T: Traverseable> Traverseable for Receiver<T> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.queue.lock().unwrap().traverse(gc);
+    }
+}
+
+
+struct Receiver<T> {
+    queue: Arc<Mutex<VecDeque<T>>>,
+}
+
+impl<T> Receiver<T> {
+    fn try_recv(&self) -> Result<T, ()> {
+        self.queue
+            .lock()
+            .unwrap()
+            .pop_front()
+            .ok_or(())
+    }
+}
+
+impl<T: VMType> VMType for Sender<T>
+    where T::Type: Sized
+{
+    type Type = Sender<T::Type>;
     fn make_type(vm: &VM) -> TcType {
         let symbol = vm.env().find_type_info(&Symbol::new("Sender")).unwrap().name.clone();
         let ctor = TypeConstructor::Data(symbol);
@@ -17,8 +58,10 @@ impl <T: VMType> VMType for mpsc::Sender<T> where T::Type: Sized {
     }
 }
 
-impl <T: VMType> VMType for mpsc::Receiver<T> where T::Type: Sized {
-    type Type = mpsc::Receiver<T::Type>;
+impl<T: VMType> VMType for Receiver<T>
+    where T::Type: Sized
+{
+    type Type = Receiver<T::Type>;
     fn make_type(vm: &VM) -> TcType {
         let symbol = vm.env().find_type_info(&Symbol::new("Receiver")).unwrap().name.clone();
         let ctor = TypeConstructor::Data(symbol);
@@ -28,26 +71,26 @@ impl <T: VMType> VMType for mpsc::Receiver<T> where T::Type: Sized {
 
 field_decl!{ sender, receiver }
 
-fn channel(_: ()) -> Record<HList<(_field::sender, Userdata<mpsc::Sender<Generic<A>>>),
-                       HList<(_field::receiver, Userdata<mpsc::Receiver<Generic<A>>>), ()>>>
-{
-    let (sender, receiver) = mpsc::channel();
+fn channel(_: ())
+           -> Record<HList<(_field::sender, Userdata<Sender<Generic<A>>>),
+                           HList<(_field::receiver, Userdata<Receiver<Generic<A>>>), ()>>> {
+    let sender = Sender { queue: Arc::new(Mutex::new(VecDeque::new())) };
+    let receiver = Receiver { queue: sender.queue.clone() };
     record_no_decl!(sender => Userdata(sender), receiver => Userdata(receiver))
 }
 
-fn recv(receiver: *const mpsc::Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
+fn recv(receiver: *const Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
     unsafe {
         let receiver = &*receiver;
         receiver.try_recv()
-            .map_err(|_| ())
+                .map_err(|_| ())
     }
 }
 
-fn send(sender: *const mpsc::Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
+fn send(sender: *const Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
     unsafe {
         let sender = &*sender;
-        sender.send(value)
-            .map_err(|_| ())
+        Ok(sender.send(value))
     }
 }
 
@@ -78,7 +121,7 @@ fn resume(vm: &VM) -> Status {
                 }
             }
         }
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -86,14 +129,14 @@ fn yield_(_vm: &VM) -> Status {
     Status::Yield
 }
 
-fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn (())>>) -> Thread {
+fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn(())>>) -> Thread {
     let thread = value.vm.new_thread();
     {
         let mut stack = thread.current_frame();
         let callable = match value.value.value() {
             Value::Closure(c) => Some(Callable::Closure(c)),
             Value::Function(c) => Some(Callable::Extern(c)),
-            _ => None
+            _ => None,
         };
         value.value.push(value.vm, &mut stack);
         stack.push(Value::Int(0));
@@ -114,13 +157,14 @@ pub fn load(vm: &VM) -> VMResult<()> {
                         id: Symbol::new("a"),
                         kind: types::Kind::star(),
                     }];
-    let _ = vm.register_type::<mpsc::Sender<A>>("Sender", args.clone());
-    let _ = vm.register_type::<mpsc::Receiver<A>>("Receiver", args);
+    let _ = vm.register_type::<Sender<A>>("Sender", args.clone());
+    let _ = vm.register_type::<Receiver<A>>("Receiver", args);
     try!(vm.define_global("channel", f1(channel)));
     try!(vm.define_global("recv", f1(recv)));
     try!(vm.define_global("send", f2(send)));
-    try!(vm.define_global("resume", primitive::<fn (Thread) -> Result<(), String>>("resume", resume)));
-    try!(vm.define_global("yield", primitive::<fn (())>("yield", yield_)));
+    try!(vm.define_global("resume",
+                          primitive::<fn(Thread) -> Result<(), String>>("resume", resume)));
+    try!(vm.define_global("yield", primitive::<fn(())>("yield", yield_)));
     try!(vm.define_global("spawn", f1(spawn)));
     Ok(())
 }

@@ -1,10 +1,11 @@
 use base::types;
 use base::types::TcType;
 use std::marker::PhantomData;
-use gc::{Gc, Traverseable, Move};
+use gc::{Gc, Traverseable};
 use std::cell::Cell;
 use api::{VMType, Pushable};
-use vm::{Status, Value, VM, Result};
+use api::generic::A;
+use vm::{Userdata_, Status, Value, VM, Result};
 
 
 #[derive(Clone, PartialEq)]
@@ -50,7 +51,8 @@ impl<T> VMType for Lazy<T>
 fn force(vm: &VM) -> Status {
     let mut stack = vm.current_frame();
     match stack[0] {
-        Value::Lazy(lazy) => {
+        Value::Userdata(lazy) => {
+            let lazy = lazy.data.downcast_ref::<Lazy<A>>().expect("Lazy");
             match lazy.value.get() {
                 Lazy_::Blackhole => {
                     "<<loop>>".push(vm, &mut stack);
@@ -93,17 +95,16 @@ fn force(vm: &VM) -> Status {
 fn lazy(vm: &VM) -> Status {
     let mut stack = vm.current_frame();
     let f = stack[0];
-    let lazy = vm.alloc(&stack.stack,
-                        Move(Lazy {
-                            value: Cell::new(Lazy_::Thunk(f)),
-                            _marker: PhantomData,
-                        }));
-    stack.push(Value::Lazy(lazy));
+    let lazy = Userdata_::new(vm,
+                              Lazy::<A> {
+                                  value: Cell::new(Lazy_::Thunk(f)),
+                                  _marker: PhantomData,
+                              });
+    stack.push(Value::Userdata(lazy));
     Status::Ok
 }
 
 pub fn load(vm: &VM) -> Result<()> {
-    use api::generic::A;
     use api::primitive;
     try!(vm.define_global("lazy",
                           primitive::<fn(fn(()) -> A) -> Lazy<A>>("lazy", ::lazy::lazy)));
