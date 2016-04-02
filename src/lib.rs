@@ -185,12 +185,10 @@ fn compile_script(symbols: &mut Symbols,
     debug!("Compile `{}`", filename);
     let mut function = {
         let env = vm.env();
-        let mut interner = vm.interner.borrow_mut();
-        let mut gc = vm.gc.borrow_mut();
         let name = Name::new(filename);
         let name = NameBuf::from(name.module());
         let symbols = SymbolModule::new(StdString::from(name.as_ref()), symbols);
-        let mut compiler = Compiler::new(&env, &mut interner, &mut gc, symbols);
+        let mut compiler = Compiler::new(&env, vm, symbols);
         compiler.compile_expr(&expr)
     };
     function.id = Symbol::new(filename);

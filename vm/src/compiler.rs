@@ -1,6 +1,5 @@
 use std::ops::{Deref, DerefMut};
-use interner::{Interner, InternedStr};
-use gc::Gc;
+use interner::InternedStr;
 use base::ast;
 use base::symbol::{Symbol, SymbolModule};
 use base::ast::{Typed, DisplayEnv, LExpr, Expr};
@@ -8,6 +7,7 @@ use base::types;
 use base::types::{Type, TcIdent, TcType, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
+use vm::VM;
 use self::Variable::*;
 
 pub type CExpr = LExpr<TcIdent>;
@@ -212,8 +212,7 @@ impl CompilerEnv for TypeInfos {
 
 pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
-    interner: &'a mut Interner,
-    gc: &'a mut Gc,
+    vm: &'a VM,
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, types::Alias<Symbol, TcType>>,
@@ -240,14 +239,12 @@ impl<'a> TypeEnv for Compiler<'a> {
 
 impl<'a> Compiler<'a> {
     pub fn new(globals: &'a CompilerEnv,
-               interner: &'a mut Interner,
-               gc: &'a mut Gc,
+               vm: &'a VM,
                symbols: SymbolModule<'a>)
                -> Compiler<'a> {
         Compiler {
             globals: globals,
-            interner: interner,
-            gc: gc,
+            vm: vm,
             symbols: symbols,
             stack_constructors: ScopedMap::new(),
             stack_types: ScopedMap::new(),
@@ -255,7 +252,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn intern(&mut self, s: &str) -> InternedStr {
-        self.interner.intern(self.gc, s)
+        self.vm.intern(s)
     }
 
     fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable> {

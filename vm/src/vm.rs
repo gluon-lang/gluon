@@ -466,9 +466,9 @@ pub struct GlobalVMState {
     type_infos: RefCell<TypeInfos>,
     generics: RefCell<HashMap<StdString, TcType>>,
     typeids: FixedMap<TypeId, TcType>,
-    pub interner: RefCell<Interner>,
+    interner: RefCell<Interner>,
     names: RefCell<HashMap<StdString, usize>>,
-    pub gc: RefCell<Gc>,
+    gc: RefCell<Gc>,
     macros: MacroEnv<VM>,
 }
 
