@@ -456,6 +456,7 @@ struct GlobalSymbols {
 pub struct GlobalVMState {
     globals: FixedVec<Global>,
     type_infos: RefCell<TypeInfos>,
+    generics: RefCell<HashMap<StdString, TcType>>,
     typeids: FixedMap<TypeId, TcType>,
     pub interner: RefCell<Interner>,
     symbols: GlobalSymbols,
@@ -685,6 +686,7 @@ impl GlobalVMState {
         let vm = GlobalVMState {
             globals: FixedVec::new(),
             type_infos: RefCell::new(TypeInfos::new()),
+            generics: RefCell::new(HashMap::new()),
             typeids: FixedMap::new(),
             symbols: GlobalSymbols {
                 io: Symbol::new("IO"),
@@ -749,6 +751,21 @@ impl GlobalVMState {
         Ok(())
     }
 
+    pub fn get_generic(&self,
+                       name: &str)
+                       -> TcType {
+        let mut generics = self.generics.borrow_mut();
+        if let Some(g) = generics.get(name) {
+            return g.clone();
+        }
+        let g: TcType = Type::generic(types::Generic {
+            id: Symbol::new(name),
+            kind: types::Kind::star(),
+        });
+        generics.insert(name.into(), g.clone());
+        g
+    }
+
     /// Registers a new type called `name`
     pub fn register_type<T: ?Sized + Any>(&self,
                                           name: &str,
@@ -766,14 +783,12 @@ impl GlobalVMState {
                 .try_insert(id, typ.clone())
                 .expect("Id not inserted");
             let t = self.typeids.get(&id).unwrap();
-            let ctor = Type::variants(vec![(n.clone(), typ.clone())]);
             type_infos.id_to_type.insert(name.into(),
                                          types::Alias {
                                              name: n,
                                              args: args,
-                                             typ: Some(ctor.clone()),
+                                             typ: None,
                                          });
-            type_infos.type_to_id.insert(ctor, typ);
             Ok(t)
         }
     }

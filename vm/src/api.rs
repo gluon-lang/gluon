@@ -62,8 +62,7 @@ impl<'vm, T> Getable<'vm> for Generic<T> {
 /// Module containing types which represent generic variables in embed_lang's type system
 pub mod generic {
     use super::VMType;
-    use base::symbol::Symbol;
-    use base::types::{Type, TcType, Generic, Kind};
+    use base::types::TcType;
     use vm::VM;
 
     macro_rules! make_generics {
@@ -73,14 +72,11 @@ pub mod generic {
             pub enum $i { }
             impl VMType for $i {
                 type Type = $i;
-                fn make_type(_vm: &VM) -> TcType {
+                fn make_type(vm: &VM) -> TcType {
                     let s = stringify!($i);
                     let lower  = [s.as_bytes()[0] + 32];
                     let lower_str = unsafe { ::std::str::from_utf8_unchecked(&lower) };
-                    Type::generic(Generic {
-                        id: Symbol::new(lower_str),
-                        kind: Kind::star(),
-                    })
+                    vm.get_generic(lower_str)
                 }
             }
             )+
