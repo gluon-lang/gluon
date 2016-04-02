@@ -160,5 +160,6 @@ pub fn load(vm: &VM) -> Result<()> {
     try!(vm.define_global("trace", f1(prim::trace)));
 
     try!(::lazy::load(vm));
+    try!(::reference::load(vm));
     Ok(())
 }

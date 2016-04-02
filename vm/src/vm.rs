@@ -50,6 +50,7 @@ impl Userdata_ {
         let v: Box<Userdata> = Box::new(v);
         Userdata_ { data: vm.gc.borrow_mut().alloc(Move(v)) }
     }
+
     fn ptr(&self) -> *const () {
         let p: *const _ = &*self.data;
         p as *const ()
@@ -1039,7 +1040,7 @@ impl VM {
     }
 
     /// Roots a string
-    pub fn root_string(&self, ptr: GcPtr<Str>) -> RootStr {
+    pub fn root_string<'vm>(&'vm self, ptr: GcPtr<Str>) -> RootStr<'vm> {
         self.roots.borrow_mut().push(ptr.as_traverseable());
         RootStr(Root {
             roots: &self.roots,

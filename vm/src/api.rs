@@ -12,8 +12,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-/// Type representing embed_lang's IO type
-#[derive(Debug)]
+/// Type representing embed_lang's IO type#[derive(Debug)]
 pub enum IO<T> {
     Value(T),
     Exception(String),
@@ -36,6 +35,12 @@ pub fn primitive<F>(name: &'static str, function: fn(&VM) -> Status) -> Primitiv
 #[derive(Clone, Copy)]
 pub struct Generic<T>(pub Value, PhantomData<T>);
 
+impl<T> From<Value> for Generic<T> {
+    fn from(v: Value) -> Generic<T> {
+        Generic(v, PhantomData)
+    }
+}
+
 impl<T: VMType> VMType for Generic<T> {
     type Type = T::Type;
 
@@ -55,7 +60,7 @@ impl<T: VMType> Pushable for Generic<T> {
 }
 impl<'vm, T> Getable<'vm> for Generic<T> {
     fn from_value(_: &'vm VM, value: Value) -> Option<Generic<T>> {
-        Some(Generic(value, PhantomData))
+        Some(Generic::from(value))
     }
 }
 
