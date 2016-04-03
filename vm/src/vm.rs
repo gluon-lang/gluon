@@ -14,7 +14,6 @@ use base::types;
 use base::types::{Type, KindEnv, TypeEnv, TcType, RcKind};
 use base::macros::MacroEnv;
 use types::*;
-use base::fixed::{FixedMap, FixedVec};
 use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use array::{Array, Str};
@@ -134,7 +133,7 @@ impl BytecodeFunction {
             inner_functions: fs,
             strings: strings,
             globals: module_globals.into_iter()
-                                   .map(|index| vm.globals[index as usize].value.get())
+                                   .map(|index| vm.globals.borrow()[index.as_ref()].value.get())
                                    .collect(),
         }))
     }
@@ -465,19 +464,18 @@ impl Typed for Global {
 }
 
 pub struct GlobalVMState {
-    globals: FixedVec<Global>,
+    globals: RefCell<HashMap<StdString, Global>>,
     type_infos: RefCell<TypeInfos>,
     generics: RefCell<HashMap<StdString, TcType>>,
-    typeids: FixedMap<TypeId, TcType>,
+    typeids: RefCell<HashMap<TypeId, TcType>>,
     interner: RefCell<Interner>,
-    names: RefCell<HashMap<StdString, usize>>,
     gc: RefCell<Gc>,
     macros: MacroEnv<VM>,
 }
 
 impl Traverseable for GlobalVMState {
     fn traverse(&self, gc: &mut Gc) {
-        for g in self.globals.borrow().iter() {
+        for g in self.globals.borrow().values() {
             g.traverse(gc);
         }
         // Also need to check the interned string table
@@ -543,19 +541,15 @@ pub type Result<T> = StdResult<T, Error>;
 #[derive(Debug)]
 pub struct VMEnv<'b> {
     type_infos: Ref<'b, TypeInfos>,
-    globals: &'b FixedVec<Global>,
-    names: Ref<'b, HashMap<StdString, usize>>,
+    globals: Ref<'b, HashMap<StdString, Global>>,
 }
 
 impl<'b> CompilerEnv for VMEnv<'b> {
-    fn find_var(&self, id: &Symbol) -> Option<Variable> {
-        match self.names.get(id.as_ref()) {
-            Some(&index) if index < self.globals.len() => {
-                let g = &self.globals[index];
-                Some(Variable::Global(index as VMIndex, &g.typ))
-            }
-            _ => self.type_infos.find_var(id),
-        }
+    fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
+        self.globals
+            .get(id.as_ref())
+            .map(|g| Variable::Global(g.id.clone()))
+            .or_else(|| self.type_infos.find_var(id))
     }
 }
 
@@ -574,12 +568,10 @@ impl<'b> KindEnv for VMEnv<'b> {
 }
 impl<'b> TypeEnv for VMEnv<'b> {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
-        match self.names.get(AsRef::<str>::as_ref(id)) {
-            Some(&index) if index < self.globals.len() => {
-                let g = &self.globals[index];
-                Some(&g.typ)
-            }
-            _ => {
+        self.globals
+            .get(AsRef::<str>::as_ref(id))
+            .map(|g| &g.typ)
+            .or_else(|| {
                 self.type_infos
                     .id_to_type
                     .values()
@@ -597,8 +589,7 @@ impl<'b> TypeEnv for VMEnv<'b> {
                     })
                     .next()
                     .map(|ctor| ctor)
-            }
-        }
+            })
     }
     fn find_type_info(&self, id: &Symbol) -> Option<&types::Alias<Symbol, TcType>> {
         self.type_infos
@@ -685,12 +676,11 @@ impl GlobalVMState {
     /// Creates a new virtual machine
     pub fn new() -> GlobalVMState {
         let vm = GlobalVMState {
-            globals: FixedVec::new(),
+            globals: RefCell::new(HashMap::new()),
             type_infos: RefCell::new(TypeInfos::new()),
             generics: RefCell::new(HashMap::new()),
-            typeids: FixedMap::new(),
+            typeids: RefCell::new(HashMap::new()),
             interner: RefCell::new(Interner::new()),
-            names: RefCell::new(HashMap::new()),
             gc: RefCell::new(Gc::new()),
             macros: MacroEnv::new(),
         };
@@ -702,13 +692,15 @@ impl GlobalVMState {
     fn add_types(&self) -> StdResult<(), (TypeId, TcType)> {
         use api::generic::A;
         use api::Generic;
-        let ref ids = self.typeids;
-        try!(ids.try_insert(TypeId::of::<()>(), Type::unit()));
-        try!(ids.try_insert(TypeId::of::<bool>(), Type::bool()));
-        try!(ids.try_insert(TypeId::of::<VMInt>(), Type::int()));
-        try!(ids.try_insert(TypeId::of::<f64>(), Type::float()));
-        try!(ids.try_insert(TypeId::of::<::std::string::String>(), Type::string()));
-        try!(ids.try_insert(TypeId::of::<char>(), Type::char()));
+        {
+            let mut ids = self.typeids.borrow_mut();
+            ids.insert(TypeId::of::<()>(), Type::unit());
+            ids.insert(TypeId::of::<bool>(), Type::bool());
+            ids.insert(TypeId::of::<VMInt>(), Type::int());
+            ids.insert(TypeId::of::<f64>(), Type::float());
+            ids.insert(TypeId::of::<::std::string::String>(), Type::string());
+            ids.insert(TypeId::of::<char>(), Type::char());
+        }
         let args = vec![types::Generic {
                             id: Symbol::new("a"),
                             kind: types::Kind::star(),
@@ -723,21 +715,24 @@ impl GlobalVMState {
         BytecodeFunction::new(&mut self.gc.borrow_mut(), self, f)
     }
 
-    pub fn get_type<T: ?Sized + Any>(&self) -> &TcType {
+    pub fn get_type<T: ?Sized + Any>(&self) -> TcType {
         let id = TypeId::of::<T>();
         self.typeids
+            .borrow()
             .get(&id)
+            .cloned()
             .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call"))
     }
 
     /// Checks if a global exists called `name`
     pub fn global_exists(&self, name: &str) -> bool {
-        self.names.borrow().get(name).is_some()
+        self.globals.borrow().get(name).is_some()
     }
 
     /// TODO dont expose this directly
     pub fn set_global(&self, id: Symbol, typ: TcType, value: Value) -> Result<()> {
-        if self.names.borrow().contains_key(id.as_ref()) {
+        let mut globals = self.globals.borrow_mut();
+        if globals.contains_key(id.as_ref()) {
             return Err(Error::Message(format!("{} is already defined", id)));
         }
         let global = Global {
@@ -745,8 +740,7 @@ impl GlobalVMState {
             typ: typ,
             value: Cell::new(value),
         };
-        self.names.borrow_mut().insert(StdString::from(id.as_ref()), self.globals.len());
-        self.globals.push(global);
+        globals.insert(StdString::from(id.as_ref()), global);
         Ok(())
     }
 
@@ -767,7 +761,7 @@ impl GlobalVMState {
     pub fn register_type<T: ?Sized + Any>(&self,
                                           name: &str,
                                           args: Vec<types::Generic<Symbol>>)
-                                          -> Result<&TcType> {
+                                          -> Result<TcType> {
         let mut type_infos = self.type_infos.borrow_mut();
         if type_infos.id_to_type.contains_key(name) {
             Err(Error::Message(format!("Type '{}' has already been registered", name)))
@@ -777,9 +771,9 @@ impl GlobalVMState {
             let n = Symbol::new(name);
             let typ: TcType = Type::data(types::TypeConstructor::Data(n.clone()), arg_types);
             self.typeids
-                .try_insert(id, typ.clone())
-                .expect("Id not inserted");
-            let t = self.typeids.get(&id).unwrap();
+                .borrow_mut()
+                .insert(id, typ.clone());
+            let t = self.typeids.borrow().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(name.into(),
                                          types::Alias {
                                              name: n,
@@ -802,8 +796,7 @@ impl GlobalVMState {
     pub fn env<'b>(&'b self) -> VMEnv<'b> {
         VMEnv {
             type_infos: self.type_infos.borrow(),
-            globals: &self.globals,
-            names: self.names.borrow(),
+            globals: self.globals.borrow(),
         }
     }
 
@@ -859,9 +852,6 @@ impl VM {
     pub fn define_global<T>(&self, name: &str, value: T) -> Result<()>
         where T: Pushable
     {
-        if self.names.borrow().contains_key(name) {
-            return Err(Error::Message(format!("{} is already defined", name)));
-        }
         let (status, value) = {
             let mut stack = self.current_frame();
             let status = value.push(self, &mut stack);
@@ -879,22 +869,20 @@ impl VM {
         where T: Getable<'vm> + VMType
     {
         let mut components = Name::new(name).components();
+        let globals = self.globals.borrow();
         let global = match components.next() {
             Some(comp) => {
-                let names = self.names
-                                .borrow();
-                try!(names.get(comp)
-                          .or_else(|| {
-                              // We access by the the full name so no components should be left
-                              // to walk through
-                              for _ in components.by_ref() {
-                              }
-                              names.get(name)
-                          })
-                          .map(|&i| &self.globals[i])
-                          .ok_or_else(|| {
-                              Error::Message(format!("Could not retrieve global `{}`", name))
-                          }))
+                try!(globals.get(comp)
+                            .or_else(|| {
+                                // We access by the the full name so no components should be left
+                                // to walk through
+                                for _ in components.by_ref() {
+                                }
+                                globals.get(name)
+                            })
+                            .ok_or_else(|| {
+                                Error::Message(format!("Could not retrieve global `{}`", name))
+                            }))
             }
             None => return Err(Error::Message(format!("'{}' is not a valid name", name))),
         };
@@ -934,25 +922,24 @@ impl VM {
         }
     }
 
-    pub fn find_type_info(&self, name: &str) -> Result<&types::Alias<Symbol, TcType>> {
+    pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, TcType>> {
+        let globals = self.globals.borrow();
+        let globals = &*globals;
         let name = Name::new(name);
         let mut components = name.module().components();
         let global = match components.next() {
             Some(comp) => {
-                let names = self.names
-                                .borrow();
-                try!(names.get(comp)
-                          .or_else(|| {
-                              // We access by the the full name so no components should be left
-                              // to walk through
-                              for _ in components.by_ref() {
-                              }
-                              names.get(name.module().as_str())
-                          })
-                          .map(|&i| &self.globals[i])
-                          .ok_or_else(|| {
-                              Error::Message(format!("Could not retrieve global `{}`", name))
-                          }))
+                try!(globals.get(comp)
+                            .or_else(|| {
+                                // We access by the the full name so no components should be left
+                                // to walk through
+                                for _ in components.by_ref() {
+                                }
+                                globals.get(name.module().as_str())
+                            })
+                            .ok_or_else(|| {
+                                Error::Message(format!("Could not retrieve global `{}`", name))
+                            }))
             }
             None => return Err(Error::Message(format!("'{}' is not a valid name", name))),
         };
@@ -982,7 +969,7 @@ impl VM {
             }
             _ => None,
         };
-        maybe_type_info.ok_or_else(|| {
+        maybe_type_info.cloned().ok_or_else(|| {
             Error::Message(format!("'{}' cannot be accessed by the field '{}'",
                                    typ,
                                    name.name()))
@@ -1076,13 +1063,14 @@ impl VM {
         compiled_fn.instructions = instructions;
         let f = self.new_function(compiled_fn);
         let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
-        self.names.borrow_mut().insert(name.into(), self.globals.len());
-        self.globals.push(Global {
-            id: id,
-            typ: typ,
-            value: Cell::new(Closure(closure)),
-        });
-        self.globals.len() as VMIndex - 1
+        let mut globals = self.globals.borrow_mut();
+        globals.insert(name.into(),
+                       Global {
+                           id: id,
+                           typ: typ,
+                           value: Cell::new(Closure(closure)),
+                       });
+        globals.len() as VMIndex - 1
     }
 
     /// Pushes a value to the top of the stack

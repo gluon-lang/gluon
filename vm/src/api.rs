@@ -103,7 +103,7 @@ pub trait VMType {
 
     /// Creates an embed_lang type which maps to `Self` in rust
     fn make_type(vm: &VM) -> TcType {
-        TcType::from(vm_type::<Self>(vm).clone())
+        vm.get_type::<Self::Type>()
     }
 
     /// How many extra arguments a function returning this type requires.
@@ -853,10 +853,6 @@ impl<'vm, F: FunctionType + VMType> Pushable for Primitive<F> {
         stack.push(value);
         Status::Ok
     }
-}
-
-fn vm_type<'vm, T: ?Sized + VMType>(vm: &'vm VM) -> &'vm Type<Symbol> {
-    vm.get_type::<T::Type>()
 }
 
 fn make_type<T: ?Sized + VMType>(vm: &VM) -> TcType {

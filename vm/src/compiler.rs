@@ -13,9 +13,9 @@ use self::Variable::*;
 pub type CExpr = LExpr<TcIdent>;
 
 #[derive(Clone, Debug)]
-pub enum Variable<'a> {
+pub enum Variable<G> {
     Stack(VMIndex),
-    Global(VMIndex, &'a TcType),
+    Global(G),
     Constructor(VMTag, VMIndex),
     UpVar(VMIndex),
 }
@@ -29,7 +29,7 @@ pub struct CompiledFunction {
     pub inner_functions: Vec<CompiledFunction>,
     pub strings: Vec<InternedStr>,
     /// Storage for globals which are needed by the module which is currently being compiled
-    pub module_globals: Vec<VMIndex>,
+    pub module_globals: Vec<Symbol>,
 }
 
 impl CompiledFunction {
@@ -176,11 +176,11 @@ impl FunctionEnv {
 }
 
 pub trait CompilerEnv: TypeEnv {
-    fn find_var(&self, id: &Symbol) -> Option<Variable>;
+    fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>>;
 }
 
 impl<T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
-    fn find_var(&self, s: &Symbol) -> Option<Variable> {
+    fn find_var(&self, s: &Symbol) -> Option<Variable<Symbol>> {
         let &(ref outer, ref inner) = self;
         inner.find_var(s)
              .or_else(|| outer.find_var(s))
@@ -188,12 +188,12 @@ impl<T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
 }
 
 impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
-    fn find_var(&self, s: &Symbol) -> Option<Variable> {
+    fn find_var(&self, s: &Symbol) -> Option<Variable<Symbol>> {
         (**self).find_var(s)
     }
 }
 impl CompilerEnv for TypeInfos {
-    fn find_var(&self, id: &Symbol) -> Option<Variable> {
+    fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
         fn count_function_args(typ: &TcType) -> VMIndex {
             match **typ {
                 Type::Function(_, ref rest) => 1 + count_function_args(rest),
@@ -264,61 +264,64 @@ impl<'a> Compiler<'a> {
         self.vm.intern(s)
     }
 
-    fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable> {
-        let mut variable = self.stack_constructors
-                               .iter()
-                               .filter_map(|(_, typ)| {
-                                   match **typ {
-                                       Type::Variants(ref variants) => {
-                                           variants.iter()
-                                                   .enumerate()
-                                                   .find(|&(_, v)| v.0 == *id)
-                                       }
-                                       _ => None,
+    fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable<VMIndex>> {
+        let variable = self.stack_constructors
+                           .iter()
+                           .filter_map(|(_, typ)| {
+                               match **typ {
+                                   Type::Variants(ref variants) => {
+                                       variants.iter()
+                                               .enumerate()
+                                               .find(|&(_, v)| v.0 == *id)
                                    }
-                               })
-                               .next()
-                               .map(|(tag, &(_, ref typ))| {
-                                   Constructor(tag as VMIndex,
-                                               types::arg_iter(typ).count() as VMIndex)
-                               })
-                               .or_else(|| {
-                                   current.stack
+                                   _ => None,
+                               }
+                           })
+                           .next()
+                           .map(|(tag, &(_, ref typ))| {
+                               Constructor(tag as VMIndex, types::arg_iter(typ).count() as VMIndex)
+                           })
+                           .or_else(|| {
+                               current.stack
+                                      .iter()
+                                      .rev()
+                                      .cloned()
+                                      .find(|&(_, ref var)| var == id)
+                                      .map(|(index, _)| Stack(index))
+                                      .or_else(|| {
+                                          let i = current.envs.len() - 1;
+                                          let (rest, current) = current.envs.split_at_mut(i);
+                                          rest.iter()
+                                              .rev()
+                                              .filter_map(|env| {
+                                                  env.stack
+                                                     .iter()
+                                                     .rev()
+                                                     .cloned()
+                                                     .find(|&(_, ref var)| var == id)
+                                                     .map(|_| UpVar(current[0].upvar(id)))
+                                              })
+                                              .next()
+                                      })
+                           })
+                           .or_else(|| self.globals.find_var(&id));
+        variable.map(|variable| {
+            match variable {
+                Stack(i) => Stack(i),
+                Global(s) => {
+                    let existing = current.function
+                                          .module_globals
                                           .iter()
-                                          .rev()
-                                          .cloned()
-                                          .find(|&(_, ref var)| var == id)
-                                          .map(|(index, _)| Stack(index))
-                                          .or_else(|| {
-                                              let i = current.envs.len() - 1;
-                                              let (rest, current) = current.envs.split_at_mut(i);
-                                              rest.iter()
-                                                  .rev()
-                                                  .filter_map(|env| {
-                                                      env.stack
-                                                         .iter()
-                                                         .rev()
-                                                         .cloned()
-                                                         .find(|&(_, ref var)| var == id)
-                                                         .map(|_| UpVar(current[0].upvar(id)))
-                                                  })
-                                                  .next()
-                                          })
-                               })
-                               .or_else(|| self.globals.find_var(&id));
-
-        // Remap the index of the global to the local index it has in the module
-        if let Some(Variable::Global(ref mut index, _)) = variable {
-            let used_index = current.function
-                                    .module_globals
-                                    .iter()
-                                    .position(|existing_index| existing_index == index);
-            *index = used_index.unwrap_or_else(|| {
-                current.function.module_globals.push(*index as VMIndex);
-                current.function.module_globals.len() - 1
-            }) as VMIndex;
-        }
-        variable
+                                          .position(|existing| existing == &s);
+                    Global(existing.unwrap_or_else(|| {
+                        current.function.module_globals.push(s);
+                        current.function.module_globals.len() - 1
+                    }) as VMIndex)
+                }
+                Constructor(tag, args) => Constructor(tag, args),
+                UpVar(i) => UpVar(i),
+            }
+        })
     }
 
 
@@ -384,7 +387,7 @@ impl<'a> Compiler<'a> {
                   .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id))) {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
-            Global(index, _) => function.emit(PushGlobal(index)),
+            Global(index) => function.emit(PushGlobal(index)),
             Constructor(tag, 0) => function.emit(Construct(tag, 0)),
             Constructor(..) => panic!("Constructor {:?} is not fully applied", id),
         }
@@ -456,8 +459,9 @@ impl<'a> Compiler<'a> {
                     function.emit(PushInt(0));
                     function.emit(Jump(0));//lhs false, jump to after rhs
                     self.compile(&**rhs, function, tail_position);
+                    // replace jump instruction
                     function.function.instructions[lhs_end + 2] =
-                        Jump(function.function.instructions.len() as VMIndex);//replace jump instruction
+                        Jump(function.function.instructions.len() as VMIndex);
                 } else if op.name.as_ref() == "||" {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.function.instructions.len();
@@ -772,7 +776,10 @@ impl<'a> Compiler<'a> {
                       body: &LExpr<TcIdent>,
                       function: &mut FunctionEnvs)
                       -> (VMIndex, VMIndex, CompiledFunction) {
-        function.start_function(self, arguments.len() as VMIndex, id.id().clone(), id.typ.clone());
+        function.start_function(self,
+                                arguments.len() as VMIndex,
+                                id.id().clone(),
+                                id.typ.clone());
         for arg in arguments {
             function.push_stack_var(arg.id().clone());
         }
