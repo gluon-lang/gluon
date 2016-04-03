@@ -106,12 +106,18 @@ pub struct Gc {
 /// For `Sized` types this is just a cast but for unsized types some more metadata must be taken
 /// from the provided `D` value to make it initialize correctly.
 pub unsafe trait FromPtr<D> {
-    fn make_ptr(data: D, ptr: *mut ()) -> *mut Self;
+    unsafe fn make_ptr(data: D, ptr: *mut ()) -> *mut Self;
 }
 
 unsafe impl<D, T> FromPtr<D> for T {
-    fn make_ptr(_: D, ptr: *mut ()) -> *mut Self {
+    unsafe fn make_ptr(_: D, ptr: *mut ()) -> *mut Self {
         ptr as *mut Self
+    }
+}
+
+unsafe impl<'s, 't, T> FromPtr<&'s &'t [T]> for [T] {
+    unsafe fn make_ptr(v: &'s &'t [T], ptr: *mut ()) -> *mut [T] {
+        ::std::slice::from_raw_parts_mut(ptr as *mut T, v.len())
     }
 }
 
@@ -137,6 +143,16 @@ unsafe impl<T> DataDef for Move<T> {
     }
     fn initialize(self, result: WriteOnly<T>) -> &mut T {
         result.write(self.0)
+    }
+}
+
+unsafe impl<'s, T: Copy> DataDef for &'s [T] {
+    type Value = [T];
+    fn size(&self) -> usize {
+        self.len() * mem::size_of::<T>()
+    }
+    fn initialize(self, result: WriteOnly<[T]>) -> &mut [T] {
+        result.write_slice(self)
     }
 }
 

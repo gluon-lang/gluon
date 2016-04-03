@@ -28,15 +28,29 @@ pub struct CompiledFunction {
     pub instructions: Vec<Instruction>,
     pub inner_functions: Vec<CompiledFunction>,
     pub strings: Vec<InternedStr>,
+    /// Storage for globals which are needed by the module which is currently being compiled
+    pub module_globals: Vec<VMIndex>,
+}
+
+impl CompiledFunction {
+    pub fn new(args: VMIndex, id: Symbol, typ: TcType) -> CompiledFunction {
+        CompiledFunction {
+            args: args,
+            id: id,
+            typ: typ,
+            instructions: Vec::new(),
+            inner_functions: Vec::new(),
+            strings: Vec::new(),
+            module_globals: Vec::new(),
+        }
+    }
 }
 
 struct FunctionEnv {
-    instructions: Vec<Instruction>,
-    free_vars: Vec<Symbol>,
-    inner_functions: Vec<CompiledFunction>,
-    strings: Vec<InternedStr>,
     stack: Vec<(VMIndex, Symbol)>,
     stack_size: VMIndex,
+    free_vars: Vec<Symbol>,
+    function: CompiledFunction,
 }
 
 struct FunctionEnvs {
@@ -58,13 +72,13 @@ impl DerefMut for FunctionEnvs {
 
 impl FunctionEnvs {
     fn new() -> FunctionEnvs {
-        FunctionEnvs { envs: vec![FunctionEnv::new()] }
+        FunctionEnvs { envs: vec![] }
     }
 
-    fn start_function(&mut self, compiler: &mut Compiler) {
+    fn start_function(&mut self, compiler: &mut Compiler, args: VMIndex, id: Symbol, typ: TcType) {
         compiler.stack_types.enter_scope();
         compiler.stack_constructors.enter_scope();
-        self.envs.push(FunctionEnv::new());
+        self.envs.push(FunctionEnv::new(args, id, typ));
     }
 
     fn end_function(&mut self, compiler: &mut Compiler) -> FunctionEnv {
@@ -75,21 +89,19 @@ impl FunctionEnvs {
 }
 
 impl FunctionEnv {
-    fn new() -> FunctionEnv {
+    fn new(args: VMIndex, id: Symbol, typ: TcType) -> FunctionEnv {
         FunctionEnv {
-            instructions: Vec::new(),
             free_vars: Vec::new(),
-            inner_functions: Vec::new(),
-            strings: Vec::new(),
             stack: Vec::new(),
             stack_size: 0,
+            function: CompiledFunction::new(args, id, typ),
         }
     }
 
     fn emit(&mut self, i: Instruction) {
         debug!("{:?} {} {}", i, self.stack_size, i.adjust());
         self.stack_size = (self.stack_size as i32 + i.adjust()) as VMIndex;
-        self.instructions.push(i);
+        self.function.instructions.push(i);
     }
 
     fn emit_call(&mut self, args: VMIndex, tail_position: bool) {
@@ -102,11 +114,11 @@ impl FunctionEnv {
     }
 
     fn emit_string(&mut self, s: InternedStr) {
-        let index = match self.strings.iter().position(|t| *t == s) {
+        let index = match self.function.strings.iter().position(|t| *t == s) {
             Some(i) => i,
             None => {
-                self.strings.push(s);
-                self.strings.len() - 1
+                self.function.strings.push(s);
+                self.function.strings.len() - 1
             }
         };
         self.emit(PushString(index as VMIndex));
@@ -238,10 +250,7 @@ impl<'a> TypeEnv for Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(globals: &'a CompilerEnv,
-               vm: &'a VM,
-               symbols: SymbolModule<'a>)
-               -> Compiler<'a> {
+    pub fn new(globals: &'a CompilerEnv, vm: &'a VM, symbols: SymbolModule<'a>) -> Compiler<'a> {
         Compiler {
             globals: globals,
             vm: vm,
@@ -256,46 +265,60 @@ impl<'a> Compiler<'a> {
     }
 
     fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable> {
-        self.stack_constructors
-            .iter()
-            .filter_map(|(_, typ)| {
-                match **typ {
-                    Type::Variants(ref variants) => {
-                        variants.iter()
-                                .enumerate()
-                                .find(|&(_, v)| v.0 == *id)
-                    }
-                    _ => None,
-                }
-            })
-            .next()
-            .map(|(tag, &(_, ref typ))| {
-                Constructor(tag as VMIndex, types::arg_iter(typ).count() as VMIndex)
-            })
-            .or_else(|| {
-                current.stack
-                       .iter()
-                       .rev()
-                       .cloned()
-                       .find(|&(_, ref var)| var == id)
-                       .map(|(index, _)| Stack(index))
-                       .or_else(|| {
-                           let i = current.envs.len() - 1;
-                           let (rest, current) = current.envs.split_at_mut(i);
-                           rest.iter()
-                               .rev()
-                               .filter_map(|env| {
-                                   env.stack
-                                      .iter()
-                                      .rev()
-                                      .cloned()
-                                      .find(|&(_, ref var)| var == id)
-                                      .map(|_| UpVar(current[0].upvar(id)))
+        let mut variable = self.stack_constructors
+                               .iter()
+                               .filter_map(|(_, typ)| {
+                                   match **typ {
+                                       Type::Variants(ref variants) => {
+                                           variants.iter()
+                                                   .enumerate()
+                                                   .find(|&(_, v)| v.0 == *id)
+                                       }
+                                       _ => None,
+                                   }
                                })
                                .next()
-                       })
-            })
-            .or_else(|| self.globals.find_var(&id))
+                               .map(|(tag, &(_, ref typ))| {
+                                   Constructor(tag as VMIndex,
+                                               types::arg_iter(typ).count() as VMIndex)
+                               })
+                               .or_else(|| {
+                                   current.stack
+                                          .iter()
+                                          .rev()
+                                          .cloned()
+                                          .find(|&(_, ref var)| var == id)
+                                          .map(|(index, _)| Stack(index))
+                                          .or_else(|| {
+                                              let i = current.envs.len() - 1;
+                                              let (rest, current) = current.envs.split_at_mut(i);
+                                              rest.iter()
+                                                  .rev()
+                                                  .filter_map(|env| {
+                                                      env.stack
+                                                         .iter()
+                                                         .rev()
+                                                         .cloned()
+                                                         .find(|&(_, ref var)| var == id)
+                                                         .map(|_| UpVar(current[0].upvar(id)))
+                                                  })
+                                                  .next()
+                                          })
+                               })
+                               .or_else(|| self.globals.find_var(&id));
+
+        // Remap the index of the global to the local index it has in the module
+        if let Some(Variable::Global(ref mut index, _)) = variable {
+            let used_index = current.function
+                                    .module_globals
+                                    .iter()
+                                    .position(|existing_index| existing_index == index);
+            *index = used_index.unwrap_or_else(|| {
+                current.function.module_globals.push(*index as VMIndex);
+                current.function.module_globals.len() - 1
+            }) as VMIndex;
+        }
+        variable
     }
 
 
@@ -347,17 +370,13 @@ impl<'a> Compiler<'a> {
     ///interpreter
     pub fn compile_expr(&mut self, expr: &CExpr) -> CompiledFunction {
         let mut env = FunctionEnvs::new();
+        let id = self.symbols.symbol("");
+        let typ = Type::function(vec![],
+                                 TcType::from(expr.env_type_of(&self.globals).clone()));
+        env.start_function(self, 0, id, typ);
         self.compile(expr, &mut env, true);
-        let FunctionEnv { instructions, inner_functions, strings, .. } = env.end_function(self);
-        CompiledFunction {
-            args: 0,
-            id: self.symbols.symbol(""),
-            typ: Type::function(vec![],
-                                TcType::from(expr.env_type_of(&self.globals).clone())),
-            instructions: instructions,
-            inner_functions: inner_functions,
-            strings: strings,
-        }
+        let FunctionEnv { function, .. } = env.end_function(self);
+        function
     }
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) {
@@ -416,38 +435,40 @@ impl<'a> Compiler<'a> {
             Expr::Identifier(ref id) => self.load_identifier(id.id(), function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 self.compile(&**pred, function, false);
-                let jump_index = function.instructions.len();
+                let jump_index = function.function.instructions.len();
                 function.emit(CJump(0));
                 if let Some(ref if_false) = *if_false {
                     self.compile(&**if_false, function, tail_position);
                 }
-                let false_jump_index = function.instructions.len();
+                let false_jump_index = function.function.instructions.len();
                 function.emit(Jump(0));
-                function.instructions[jump_index] = CJump(function.instructions.len() as VMIndex);
+                function.function.instructions[jump_index] =
+                    CJump(function.function.instructions.len() as VMIndex);
                 self.compile(&**if_true, function, tail_position);
-                function.instructions[false_jump_index] =
-                    Jump(function.instructions.len() as VMIndex);
+                function.function.instructions[false_jump_index] =
+                    Jump(function.function.instructions.len() as VMIndex);
             }
             Expr::BinOp(ref lhs, ref op, ref rhs) => {
                 if op.name.as_ref() == "&&" {
                     self.compile(&**lhs, function, false);
-                    let lhs_end = function.instructions.len();
+                    let lhs_end = function.function.instructions.len();
                     function.emit(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
                     function.emit(PushInt(0));
                     function.emit(Jump(0));//lhs false, jump to after rhs
                     self.compile(&**rhs, function, tail_position);
-                    function.instructions[lhs_end + 2] =
-                        Jump(function.instructions.len() as VMIndex);//replace jump instruction
+                    function.function.instructions[lhs_end + 2] =
+                        Jump(function.function.instructions.len() as VMIndex);//replace jump instruction
                 } else if op.name.as_ref() == "||" {
                     self.compile(&**lhs, function, false);
-                    let lhs_end = function.instructions.len();
+                    let lhs_end = function.function.instructions.len();
                     function.emit(CJump(0));
                     self.compile(&**rhs, function, tail_position);
                     function.emit(Jump(0));
-                    function.instructions[lhs_end] = CJump(function.instructions.len() as VMIndex);
+                    function.function.instructions[lhs_end] =
+                        CJump(function.function.instructions.len() as VMIndex);
                     function.emit(PushInt(1));
-                    let end = function.instructions.len();
-                    function.instructions[end - 2] = Jump(end as VMIndex);
+                    let end = function.function.instructions.len();
+                    function.function.instructions[end - 2] = Jump(end as VMIndex);
                 } else {
                     let instr = match self.symbols.string(&op.name) {
                         "#Int+" => AddInt,
@@ -476,7 +497,7 @@ impl<'a> Compiler<'a> {
                 self.stack_constructors.enter_scope();
                 let stack_start = function.stack_size;
                 // Index where the instruction to create the first closure should be at
-                let first_index = function.instructions.len();
+                let first_index = function.function.instructions.len();
                 let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter() {
@@ -504,10 +525,10 @@ impl<'a> Compiler<'a> {
                                                                              &bind.expression,
                                                                              function);
                         let offset = first_index + i;
-                        function.instructions[offset] = NewClosure(function_index, vars);
+                        function.function.instructions[offset] = NewClosure(function_index, vars);
                         function.emit(CloseClosure(vars));
                         function.stack_size -= vars;
-                        function.inner_functions.push(cf);
+                        function.function.inner_functions.push(cf);
                     } else {
                         self.compile(&bind.expression, function, false);
                         let typ = bind.expression.env_type_of(self);
@@ -558,16 +579,16 @@ impl<'a> Compiler<'a> {
                                                      self.symbols.string(id.id()))
                                           });
                             function.emit(TestTag(tag));
-                            start_jumps.push(function.instructions.len());
+                            start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
                         }
                         ast::Pattern::Record { .. } => {
                             catch_all = true;
-                            start_jumps.push(function.instructions.len());
+                            start_jumps.push(function.function.instructions.len());
                         }
                         _ => {
                             catch_all = true;
-                            start_jumps.push(function.instructions.len());
+                            start_jumps.push(function.function.instructions.len());
                             function.emit(Jump(0));
                         }
                     }
@@ -586,8 +607,8 @@ impl<'a> Compiler<'a> {
                     self.stack_constructors.enter_scope();
                     match alt.pattern.value {
                         ast::Pattern::Constructor(_, ref args) => {
-                            function.instructions[start_index] =
-                                CJump(function.instructions.len() as VMIndex);
+                            function.function.instructions[start_index] =
+                                CJump(function.function.instructions.len() as VMIndex);
                             function.emit(Split);
                             for arg in args.iter() {
                                 function.push_stack_var(arg.id().clone());
@@ -598,20 +619,21 @@ impl<'a> Compiler<'a> {
                             self.compile_let_pattern(&alt.pattern, typ, function);
                         }
                         ast::Pattern::Identifier(ref id) => {
-                            function.instructions[start_index] =
-                                Jump(function.instructions.len() as VMIndex);
+                            function.function.instructions[start_index] =
+                                Jump(function.function.instructions.len() as VMIndex);
                             function.new_stack_var(id.id().clone());
                         }
                     }
                     self.compile(&alt.expression, function, tail_position);
-                    end_jumps.push(function.instructions.len());
+                    end_jumps.push(function.function.instructions.len());
                     let count = function.pop_pattern(&alt.pattern);
                     self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
                     function.emit(Jump(0));
                 }
                 for &index in end_jumps.iter() {
-                    function.instructions[index] = Jump(function.instructions.len() as VMIndex);
+                    function.function.instructions[index] =
+                        Jump(function.function.instructions.len() as VMIndex);
                 }
             }
             Expr::Array(ref a) => {
@@ -627,7 +649,7 @@ impl<'a> Compiler<'a> {
                                                                      function);
                 function.emit(MakeClosure(function_index, vars));
                 function.stack_size -= vars;
-                function.inner_functions.push(cf);
+                function.function.inner_functions.push(cf);
             }
             Expr::Type(ref type_bindings, ref expr) => {
                 for type_binding in type_bindings {
@@ -750,7 +772,7 @@ impl<'a> Compiler<'a> {
                       body: &LExpr<TcIdent>,
                       function: &mut FunctionEnvs)
                       -> (VMIndex, VMIndex, CompiledFunction) {
-        function.start_function(self);
+        function.start_function(self, arguments.len() as VMIndex, id.id().clone(), id.typ.clone());
         for arg in arguments {
             function.push_stack_var(arg.id().clone());
         }
@@ -769,19 +791,10 @@ impl<'a> Compiler<'a> {
                 _ => panic!("Free variables can only be on the stack or another upvar"),
             }
         }
-        let function_index = function.inner_functions.len() as VMIndex;
+        let function_index = function.function.inner_functions.len() as VMIndex;
         let free_vars = f.free_vars.len() as VMIndex;
-        let FunctionEnv { instructions, inner_functions, strings, .. } = f;
-        (function_index,
-         free_vars,
-         CompiledFunction {
-            args: arguments.len() as VMIndex,
-            id: id.id().clone(),
-            typ: id.typ.clone(),
-            instructions: instructions,
-            inner_functions: inner_functions,
-            strings: strings,
-        })
+        let FunctionEnv { function, .. } = f;
+        (function_index, free_vars, function)
     }
 }
 

@@ -30,9 +30,7 @@ use stack::{Stack, StackFrame};
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable { }
 
-impl<T> Userdata for T
-    where T: Any + Traverseable
-{ }
+impl<T> Userdata for T where T: Any + Traverseable {}
 
 impl fmt::Debug for Userdata {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -112,13 +110,22 @@ pub struct BytecodeFunction {
     instructions: Vec<Instruction>,
     inner_functions: Vec<GcPtr<BytecodeFunction>>,
     strings: Vec<InternedStr>,
+    globals: Vec<Value>,
 }
 
 impl BytecodeFunction {
-    pub fn new(gc: &mut Gc, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
-        let CompiledFunction { id, args, instructions, inner_functions, strings, .. } = f;
+    pub fn new(gc: &mut Gc, vm: &GlobalVMState, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
+        let CompiledFunction {
+            id,
+            args,
+            instructions,
+            inner_functions,
+            strings,
+            module_globals,
+            ..
+        } = f;
         let fs = inner_functions.into_iter()
-                                .map(|inner| BytecodeFunction::new(gc, inner))
+                                .map(|inner| BytecodeFunction::new(gc, vm, inner))
                                 .collect();
         gc.alloc(Move(BytecodeFunction {
             name: id,
@@ -126,6 +133,9 @@ impl BytecodeFunction {
             instructions: instructions,
             inner_functions: fs,
             strings: strings,
+            globals: module_globals.into_iter()
+                                   .map(|index| vm.globals[index as usize].value.get())
+                                   .collect(),
         }))
     }
 }
@@ -133,6 +143,7 @@ impl BytecodeFunction {
 impl Traverseable for BytecodeFunction {
     fn traverse(&self, gc: &mut Gc) {
         self.inner_functions.traverse(gc);
+        self.globals.traverse(gc);
     }
 }
 
@@ -333,14 +344,6 @@ impl fmt::Debug for Value {
         }
         write!(f, "{:?}", Level(3, self))
     }
-}
-
-macro_rules! get_global {
-    ($vm: ident, $i: expr) => (
-        match $vm.globals[$i].value.get() {
-            x => x
-        }
-    )
 }
 
 /// A rooted value
@@ -717,7 +720,7 @@ impl GlobalVMState {
     }
 
     pub fn new_function(&self, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
-        BytecodeFunction::new(&mut self.gc.borrow_mut(), f)
+        BytecodeFunction::new(&mut self.gc.borrow_mut(), self, f)
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> &TcType {
@@ -1069,14 +1072,8 @@ impl VM {
                         instructions: Vec<Instruction>)
                         -> VMIndex {
         let id = Symbol::new(name);
-        let compiled_fn = CompiledFunction {
-            args: args,
-            id: id.clone(),
-            typ: typ.clone(),
-            instructions: instructions,
-            inner_functions: vec![],
-            strings: vec![],
-        };
+        let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
+        compiled_fn.instructions = instructions;
         let f = self.new_function(compiled_fn);
         let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
         self.names.borrow_mut().insert(name.into(), self.globals.len());
@@ -1106,7 +1103,9 @@ impl VM {
         if let Type::Data(types::TypeConstructor::Data(ref id), _) = **typ {
             let is_io = {
                 let infos = self.type_infos.borrow();
-                infos.find_type_info(&Symbol::new("IO")).map(|alias| *id == alias.name).unwrap_or(false)
+                infos.find_type_info(&Symbol::new("IO"))
+                     .map(|alias| *id == alias.name)
+                     .unwrap_or(false)
             };
             if is_io {
                 debug!("Run IO {:?}", value);
@@ -1344,7 +1343,7 @@ impl VM {
                     stack.push(String(function.strings[string_index as usize].inner()));
                 }
                 PushGlobal(i) => {
-                    let x = get_global!(self, i as usize);
+                    let x = function.globals[i as usize];
                     stack.push(x);
                 }
                 PushFloat(f) => stack.push(Float(f)),
