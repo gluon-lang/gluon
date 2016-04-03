@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
 use base::symbol::Symbol;
-use base::types::{TcType, Type, TypeConstructor, TypeEnv};
+use base::types::{TcType, Type, TypeConstructor};
 use base::types;
 use api::record::{Record, HList};
 use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
@@ -52,7 +52,7 @@ impl<T: VMType> VMType for Sender<T>
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &VM) -> TcType {
-        let symbol = vm.env().find_type_info(&Symbol::new("Sender")).unwrap().name.clone();
+        let symbol = vm.get_env().find_type_info("Sender").unwrap().name.clone();
         let ctor = TypeConstructor::Data(symbol);
         Type::data(ctor, vec![T::make_type(vm)])
     }
@@ -63,7 +63,7 @@ impl<T: VMType> VMType for Receiver<T>
 {
     type Type = Receiver<T::Type>;
     fn make_type(vm: &VM) -> TcType {
-        let symbol = vm.env().find_type_info(&Symbol::new("Receiver")).unwrap().name.clone();
+        let symbol = vm.get_env().find_type_info("Receiver").unwrap().name.clone();
         let ctor = TypeConstructor::Data(symbol);
         Type::data(ctor, vec![T::make_type(vm)])
     }

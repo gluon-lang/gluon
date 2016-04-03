@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use base::symbol::Symbol;
 use base::types;
-use base::types::{TcType, TypeEnv};
+use base::types::TcType;
 use gc::{Gc, Traverseable};
 use stack::StackFrame;
 use vm::{VM, Value, Root, Status, Userdata_};
@@ -26,9 +26,8 @@ where T: VMType,
     type Type = Reference<T::Type>;
 
     fn make_type(vm: &VM) -> TcType {
-        let env = vm.env();
-        // FIXME Inefficient
-        let symbol = env.find_type_info(&Symbol::new("Ref")).unwrap().name.clone();
+        let env = vm.get_env();
+        let symbol = env.find_type_info("Ref").unwrap().name.clone();
         let ctor = types::TypeConstructor::Data(symbol);
         types::Type::data(ctor, vec![T::make_type(vm)])
     }

@@ -38,11 +38,8 @@ impl<T> VMType for Lazy<T>
     type Type = Lazy<T::Type>;
 
     fn make_type(vm: &VM) -> TcType {
-        use base::symbol::Symbol;
-        use base::types::TypeEnv;
-        let env = vm.env();
-        // FIXME Inefficient
-        let symbol = env.find_type_info(&Symbol::new("Lazy")).unwrap().name.clone();
+        let env = vm.get_env();
+        let symbol = env.find_type_info("Lazy").unwrap().name.clone();
         let ctor = types::TypeConstructor::Data(symbol);
         types::Type::data(ctor, vec![T::make_type(vm)])
     }

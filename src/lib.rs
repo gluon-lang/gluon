@@ -184,11 +184,11 @@ fn compile_script(symbols: &mut Symbols,
     use vm::compiler::Compiler;
     debug!("Compile `{}`", filename);
     let mut function = {
-        let env = vm.env();
+        let env = vm.get_env();
         let name = Name::new(filename);
         let name = NameBuf::from(name.module());
         let symbols = SymbolModule::new(StdString::from(name.as_ref()), symbols);
-        let mut compiler = Compiler::new(&env, vm, symbols);
+        let mut compiler = Compiler::new(&*env, vm, symbols);
         compiler.compile_expr(&expr)
     };
     function.id = Symbol::new(filename);
@@ -271,8 +271,8 @@ fn typecheck_expr_(symbols: &mut Symbols,
         include_implicit_prelude(symbols, file, &mut expr);
     }
     try!(vm.get_macros().run(vm, &mut expr));
-    let env = vm.env();
-    let mut tc = Typecheck::new(file.into(), symbols, &env);
+    let env = vm.get_env();
+    let mut tc = Typecheck::new(file.into(), symbols, &*env);
     let typ = try!(tc.typecheck_expr(&mut expr)
                      .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
     Ok((expr, typ))

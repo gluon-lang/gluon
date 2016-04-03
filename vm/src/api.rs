@@ -553,10 +553,8 @@ impl<T: VMType> VMType for IO<T>
 {
     type Type = IO<T::Type>;
     fn make_type(vm: &VM) -> TcType {
-        use base::types::TypeEnv;
-        let env = vm.env();
-        // FIXME Inefficient
-        let symbol = env.find_type_info(&Symbol::new("IO")).unwrap().name.clone();
+        let env = vm.get_env();
+        let symbol = env.find_type_info("IO").unwrap().name.clone();
         Type::data(TypeConstructor::Data(symbol), vec![T::make_type(vm)])
     }
     fn extra_args() -> VMIndex {

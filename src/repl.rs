@@ -10,8 +10,8 @@ fn type_of_expr(args: WithVM<RootStr>) -> IO<String> {
     let WithVM { vm, value: args } = args;
     IO::Value(match typecheck_expr(vm, "<repl>", &args, false) {
         Ok((expr, _)) => {
-            let ref env = vm.env();
-            format!("{}", expr.env_type_of(env))
+            let env = vm.get_env();
+            format!("{}", expr.env_type_of(&*env))
         }
         Err(msg) => format!("{}", msg),
     })
