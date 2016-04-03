@@ -459,7 +459,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
                 if data.tag == 0 {
                     Some(None)
                 } else {
-                    T::from_value(vm, data.fields[1].get()).map(Some)
+                    T::from_value(vm, data.fields[1]).map(Some)
                 }
             }
             _ => None,
@@ -510,8 +510,8 @@ impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for Result<T, E> {
         match value {
             Value::Data(data) => {
                 match data.tag {
-                    0 => E::from_value(vm, data.fields[0].get()).map(Err),
-                    1 => T::from_value(vm, data.fields[0].get()).map(Ok),
+                    0 => E::from_value(vm, data.fields[0]).map(Err),
+                    1 => T::from_value(vm, data.fields[0]).map(Ok),
                     _ => None,
                 }
             }
@@ -614,7 +614,7 @@ impl<'vm, T: Getable<'vm>> Array<'vm, T> {
             Value::Data(data) => {
                 data.fields
                     .get(index as usize)
-                    .and_then(|v| T::from_value(self.0.vm(), v.get()))
+                    .and_then(|v| T::from_value(self.0.vm(), *v))
             }
             _ => None,
         }

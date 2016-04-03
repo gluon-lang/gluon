@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::cmp::Ordering;
 use std::io::Read;
 use std::string::String as StdString;
@@ -27,8 +26,8 @@ pub fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
                          rhs: Array<'vm, Generic<generic::A>>)
                          -> Array<'vm, Generic<generic::A>> {
     struct Append<'b> {
-        lhs: &'b [Cell<Value>],
-        rhs: &'b [Cell<Value>],
+        lhs: &'b [Value],
+        rhs: &'b [Value],
     }
 
     impl<'b> Traverseable for Append<'b> {

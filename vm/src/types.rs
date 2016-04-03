@@ -36,7 +36,6 @@ pub enum Instruction {
     PushUpVar(VMIndex),
 
     GetIndex,
-    SetIndex,
 
     AddInt,
     SubtractInt,
@@ -75,7 +74,6 @@ impl Instruction {
             CloseClosure(_) => -1,
             PushUpVar(_) => 1,
             GetIndex => 0,
-            SetIndex => -1,
             AddInt |
             SubtractInt |
             MultiplyInt |

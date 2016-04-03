@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell, Ref};
+use std::cell::{RefCell, Ref};
 use std::fmt;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -62,7 +62,7 @@ impl PartialEq for Userdata_ {
 #[derive(Debug)]
 pub struct ClosureData {
     pub function: GcPtr<BytecodeFunction>,
-    pub upvars: Array<Cell<Value>>,
+    pub upvars: Array<Value>,
 }
 
 impl PartialEq for ClosureData {
@@ -90,13 +90,13 @@ unsafe impl<'b> DataDef for ClosureDataDef<'b> {
     type Value = ClosureData;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<GcPtr<BytecodeFunction>>() + Array::<Cell<Value>>::size_of(self.1.len())
+        size_of::<GcPtr<BytecodeFunction>>() + Array::<Value>::size_of(self.1.len())
     }
     fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData>) -> &'w mut ClosureData {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.0;
-            result.upvars.initialize(self.1.iter().map(|v| Cell::new(v.clone())));
+            result.upvars.initialize(self.1.iter().cloned());
             result
         }
     }
@@ -133,7 +133,7 @@ impl BytecodeFunction {
             inner_functions: fs,
             strings: strings,
             globals: module_globals.into_iter()
-                                   .map(|index| vm.env.borrow().globals[index.as_ref()].value.get())
+                                   .map(|index| vm.env.borrow().globals[index.as_ref()].value)
                                    .collect(),
         }))
     }
@@ -148,7 +148,7 @@ impl Traverseable for BytecodeFunction {
 
 pub struct DataStruct {
     pub tag: VMTag,
-    pub fields: Array<Cell<Value>>,
+    pub fields: Array<Value>,
 }
 
 impl Traverseable for DataStruct {
@@ -218,7 +218,7 @@ impl Traverseable for Callable {
 #[derive(Debug)]
 pub struct PartialApplicationData {
     function: Callable,
-    arguments: Array<Cell<Value>>,
+    arguments: Array<Value>,
 }
 
 impl PartialEq for PartialApplicationData {
@@ -245,7 +245,7 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
     type Value = PartialApplicationData;
     fn size(&self) -> usize {
         use std::mem::size_of;
-        size_of::<Callable>() + Array::<Cell<Value>>::size_of(self.1.len())
+        size_of::<Callable>() + Array::<Value>::size_of(self.1.len())
     }
     fn initialize<'w>(self,
                       mut result: WriteOnly<'w, PartialApplicationData>)
@@ -253,20 +253,9 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.0;
-            result.arguments.initialize(self.1.iter().map(|v| Cell::new(v.clone())));
+            result.arguments.initialize(self.1.iter().cloned());
             result
         }
-    }
-}
-
-impl PartialEq<Value> for Cell<Value> {
-    fn eq(&self, other: &Value) -> bool {
-        self.get() == *other
-    }
-}
-impl PartialEq<Cell<Value>> for Value {
-    fn eq(&self, other: &Cell<Value>) -> bool {
-        *self == other.get()
     }
 }
 
@@ -288,7 +277,7 @@ impl Traverseable for Value {
 impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         struct Level<'b>(i32, &'b Value);
-        struct LevelSlice<'b>(i32, &'b [Cell<Value>]);
+        struct LevelSlice<'b>(i32, &'b [Value]);
         impl<'b> fmt::Debug for LevelSlice<'b> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let level = self.0;
@@ -296,7 +285,7 @@ impl fmt::Debug for Value {
                     return Ok(());
                 }
                 for v in self.1 {
-                    try!(write!(f, "{:?}", Level(level - 1, &v.get())));
+                    try!(write!(f, "{:?}", Level(level - 1, v)));
                 }
                 Ok(())
             }
@@ -447,7 +436,7 @@ impl Traverseable for ExternFunction {
 struct Global {
     id: Symbol,
     typ: TcType,
-    value: Cell<Value>,
+    value: Value,
 }
 
 impl Traverseable for Global {
@@ -665,7 +654,7 @@ unsafe impl<'b> DataDef for Def<'b> {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.tag = self.tag;
-            result.fields.initialize(self.elems.iter().map(|v| Cell::new(v.clone())));
+            result.fields.initialize(self.elems.iter().cloned());
             result
         }
     }
@@ -791,7 +780,7 @@ impl GlobalVMState {
         let global = Global {
             id: id.clone(),
             typ: typ,
-            value: Cell::new(value),
+            value: value,
         };
         globals.insert(StdString::from(id.as_ref()), global);
         Ok(())
@@ -939,7 +928,7 @@ impl VM {
             None => return Err(Error::Message(format!("'{}' is not a valid name", name))),
         };
         let mut typ = &global.typ;
-        let mut value = global.value.get();
+        let mut value = global.value;
         // If there are any remaining components iterate through them, accessing each field
         for field_name in components {
             let next = match **typ {
@@ -958,7 +947,7 @@ impl VM {
             }));
             typ = next_type;
             value = match value {
-                Value::Data(data) => data.fields[offset].get(),
+                Value::Data(data) => data.fields[offset],
                 _ => panic!(),
             };
         }
@@ -1072,7 +1061,7 @@ impl VM {
                        Global {
                            id: id,
                            typ: typ,
-                           value: Cell::new(Closure(closure)),
+                           value: Closure(closure),
                        });
         env.globals.len() as VMIndex - 1
     }
@@ -1241,7 +1230,7 @@ impl VM {
                 // Insert the excess args before the actual closure so it does not get
                 // collected
                 let offset = stack.len() - required_args - 1;
-                stack.insert_slice(offset, &[Cell::new(Data(d))]);
+                stack.insert_slice(offset, &[Data(d)]);
                 debug!("xxxxxx {:?}\n{:?}", &(*stack)[..], stack.stack.get_frames());
                 self.execute_callable(stack, &callable, true)
             }
@@ -1351,7 +1340,7 @@ impl VM {
                             Some(excess) => {
                                 debug!("TailCall: Push excess args {:?}", excess.fields);
                                 for value in &excess.fields {
-                                    stack.push(value.get());
+                                    stack.push(*value);
                                 }
                                 args += excess.fields.len() as VMIndex;
                             }
@@ -1385,7 +1374,7 @@ impl VM {
                 GetField(i) => {
                     match stack.pop() {
                         Data(data) => {
-                            let v = data.fields[i as usize].get();
+                            let v = data.fields[i as usize];
                             stack.push(v);
                         }
                         x => return Err(Error::Message(format!("GetField on {:?}", x))),
@@ -1410,8 +1399,8 @@ impl VM {
                 Split => {
                     match stack.pop() {
                         Data(data) => {
-                            for field in data.fields.iter().map(|x| x.get()) {
-                                stack.push(field.clone());
+                            for field in &data.fields {
+                                stack.push(*field);
                             }
                         }
                         _ => {
@@ -1451,27 +1440,11 @@ impl VM {
                     let array = stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
-                            let v = array.fields[index as usize].get();
+                            let v = array.fields[index as usize];
                             stack.push(v);
                         }
                         (x, y) => {
                             return Err(Error::Message(format!("Op GetIndex called on invalid \
-                                                               types {:?} {:?}",
-                                                              x,
-                                                              y)))
-                        }
-                    }
-                }
-                SetIndex => {
-                    let value = stack.pop();
-                    let index = stack.pop();
-                    let array = stack.pop();
-                    match (array, index) {
-                        (Data(array), Int(index)) => {
-                            array.fields[index as usize].set(value);
-                        }
-                        (x, y) => {
-                            return Err(Error::Message(format!("Op SetIndex called on invalid \
                                                                types {:?} {:?}",
                                                               x,
                                                               y)))
@@ -1501,9 +1474,14 @@ impl VM {
                 CloseClosure(n) => {
                     let i = stack.len() - n - 1;
                     match stack[i] {
-                        Closure(closure) => {
-                            for var in closure.upvars.iter().rev() {
-                                var.set(stack.pop());
+                        Closure(mut closure) => {
+                            // Unique access should be safe as this closure should not be shared as
+                            // it has just been allocated and havent even had its upvars set yet
+                            // (which is done here).
+                            unsafe {
+                                for var in closure.as_mut().upvars.iter_mut().rev() {
+                                    *var = stack.pop();
+                                }
                             }
                             stack.pop();//Remove the closure
                         }
@@ -1550,7 +1528,7 @@ impl VM {
                     debug!("Push excess args {:?}", &excess.fields);
                     stack.push(result);
                     for value in &excess.fields {
-                        stack.push(value.get());
+                        stack.push(*value);
                     }
                     self.do_call(stack, excess.fields.len() as VMIndex).map(Some)
                 }

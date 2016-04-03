@@ -157,21 +157,19 @@ Int(2)
 
 #[test]
 fn insert_stack_slice() {
-    use std::cell::Cell;
-
     let _ = ::env_logger::init();
     let vm = make_vm();
     let mut stack = vm.current_frame();
     stack.push(Int(0));
-    stack.insert_slice(0, &[Cell::new(Int(2)), Cell::new(Int(1))]);
+    stack.insert_slice(0, &[Int(2), Int(1)]);
     assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
     stack = stack.enter_scope(2, None);
-    stack.insert_slice(1, &[Cell::new(Int(10))]);
+    stack.insert_slice(1, &[Int(10)]);
     assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
     stack.insert_slice(1, &[]);
     assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
     stack.insert_slice(2,
-                       &[Cell::new(Int(4)), Cell::new(Int(5)), Cell::new(Int(6))]);
+                       &[Int(4), Int(5), Int(6)]);
     assert_eq!(&stack[..],
                [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
 }

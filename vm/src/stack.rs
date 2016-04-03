@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefMut};
+use std::cell::RefMut;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
 use gc::GcPtr;
@@ -101,7 +101,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         self.stack.pop()
     }
 
-    pub fn insert_slice(&mut self, index: VMIndex, values: &[Cell<Value>]) {
+    pub fn insert_slice(&mut self, index: VMIndex, values: &[Value]) {
         self.stack.values.reserve(values.len());
         unsafe {
             let old_len = self.len();
@@ -109,7 +109,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
                 *self.get_unchecked_mut(i as usize + values.len()) = self[i];
             }
             for (i, val) in (index..).zip(values) {
-                *self.get_unchecked_mut(i as usize) = val.get();
+                *self.get_unchecked_mut(i as usize) = *val;
             }
             let new_len = self.stack.values.len() + values.len();
             self.stack.values.set_len(new_len);
@@ -129,7 +129,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
             Some(Callable::Closure(ref c)) => c,
             _ => panic!("Attempted to access upvar in non closure function"),
         };
-        upvars.upvars[index as usize].get()
+        upvars.upvars[index as usize]
     }
 
     pub fn excess_args(&self) -> Option<GcPtr<DataStruct>> {

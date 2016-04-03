@@ -305,6 +305,10 @@ impl<T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
 }
 
 impl<T: ?Sized> GcPtr<T> {
+    pub unsafe fn as_mut(&mut self) -> &mut T {
+        &mut *(self.ptr as *mut T)
+    }
+
     fn header(&self) -> &GcHeader {
         // Use of transmute_copy allows us to get the pointer
         // to the data regardless of wether T is unsized or not
