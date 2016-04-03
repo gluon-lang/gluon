@@ -2,6 +2,7 @@
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use ast;
 use ast::{ASTType, DisplayEnv};
@@ -218,8 +219,50 @@ impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
+pub struct ArcType<Id> {
+    typ: Arc<Type<Id, ArcType<Id>>>,
+}
+
+impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Id> Deref for ArcType<Id> {
+    type Target = Type<Id, ArcType<Id>>;
+    fn deref(&self) -> &Type<Id, ArcType<Id>> {
+        &self.typ
+    }
+}
+
+impl<Id> ArcType<Id> {
+    pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
+        ArcType { typ: Arc::new(typ) }
+    }
+}
+
+impl<Id: Clone> ArcType<Id> {
+    pub fn into_inner(self) -> Type<Id, ArcType<Id>> {
+        (*self.typ).clone()
+    }
+}
+
+impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
+    fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
+        ArcType::new(typ)
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct RcType<Id> {
-    typ: Rc<Type<Id, ASTType<Id>>>,
+    typ: Rc<Type<Id, RcType<Id>>>,
 }
 
 impl<Id: fmt::Debug> fmt::Debug for RcType<Id> {
@@ -527,8 +570,8 @@ impl<'a, Id, T> Iterator for ArgIterator<'a, T>
     }
 }
 
-impl<Id> RcType<Id> {
-    pub fn return_type(&self) -> &RcType<Id> {
+impl<Id> ASTType<Id> {
+    pub fn return_type(&self) -> &ASTType<Id> {
         match **self {
             Type::Function(_, ref return_type) => return_type.return_type(),
             _ => self,
@@ -536,7 +579,7 @@ impl<Id> RcType<Id> {
     }
 
     ///Returns the inner most application of a type application
-    pub fn inner_app(&self) -> &RcType<Id> {
+    pub fn inner_app(&self) -> &ASTType<Id> {
         match **self {
             Type::App(ref a, _) => a.inner_app(),
             _ => self,

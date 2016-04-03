@@ -4,7 +4,7 @@ use std::ops::Deref;
 use symbol::Symbol;
 use types::{Type, TypeVariable, TypeConstructor, Kind, TypeEnv, instantiate};
 
-pub type ASTType<Id> = ::types::RcType<Id>;
+pub type ASTType<Id> = ::types::ArcType<Id>;
 
 ///Trait representing a type that can by used as in identifier in the AST
 ///Used to allow the AST to both have a representation which has typed expressions etc as well
