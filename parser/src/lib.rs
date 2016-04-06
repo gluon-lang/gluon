@@ -371,7 +371,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     /// Parses an expression which could be an argument to a function
     fn parse_arg(&self, input: I) -> ParseResult<LExpr<Id>, I> {
-        debug!("Expr start: {:?}", input.clone().uncons().map(|t| t.0));
+        debug!("Expr start: {:?}", input.clone().uncons());
         let position = input.position();
         let loc = |expr| {
             located(Location {

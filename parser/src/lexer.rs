@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use base::ast::*;
 
-use combine::primitives::{HasPosition, Stream, SourcePosition};
+use combine::primitives::{SourcePosition, Error as CombineError};
 use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
@@ -33,6 +33,8 @@ impl fmt::Display for Delimiter {
         self.as_str().fmt(f)
     }
 }
+
+pub type Error<Id> = CombineError<Token<Id>, Token<Id>>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Token<Id> {
@@ -176,11 +178,6 @@ pub enum Context {
     Lambda,
 }
 
-pub enum Error<Id> {
-    UnexpectedToken(Token<Id>),
-    Unindentation,
-}
-
 /// Parser passes the environment to each parser function
 type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, State<I>, T>;
 
@@ -228,7 +225,7 @@ impl Contexts {
                 _ => continue,
             }
             debug!("Unindentation error: {:?} < {:?}", offside, other_offside);
-            return Err(Error::Unindentation);
+            return Err(CombineError::Message("Line was unindented to far".into()));
         }
         Ok(())
     }
@@ -245,20 +242,6 @@ pub struct Lexer<'a, I, F>
     pub indent_levels: Contexts,
     end_position: SourcePosition,
     layout: fn(&mut Lexer<'a, I, F>, PToken<F::Ident>) -> Result<Token<F::Ident>, Error<F::Ident>>,
-}
-
-impl<'a, I, F> HasPosition for Lexer<'a, I, F>
-    where I: Stream<Item = char>,
-          F: IdentEnv
-{
-    type Position = SourcePosition;
-    fn position(&self) -> Self::Position {
-        self.unprocessed_tokens
-            .last()
-            .map(|token| token.location.clone())
-            .or_else(|| self.input.as_ref().map(|input| input.position.clone()))
-            .unwrap_or_else(|| self.end_position.clone())
-    }
 }
 
 impl<'a, 's, I, Id, F> Lexer<'a, I, F>
@@ -696,25 +679,36 @@ fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
     })
 }
 
-impl<'a, I, Id, F> Iterator for Lexer<'a, I, F>
+impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
 {
     type Item = Token<Id>;
-    fn next(&mut self) -> Option<Token<Id>> {
+    type Range = Token<Id>;
+    type Position = SourcePosition;
+
+    fn uncons(&mut self) -> Result<Token<Id>, Error<Id>> {
         let token = self.next_token();
         match self.layout_independent_token(token) {
-            Ok(Token::EOF) => None,
+            Ok(Token::EOF) => Err(Error::end_of_input()),
             Ok(token) => {
                 debug!("Lex {:?}", token);
-                Some(token)
+                Ok(token)
             }
-            Err(_unexpected_token) => {
+            Err(err) => {
                 self.input.take();
-                None
+                Err(err)
             }
         }
+    }
+
+    fn position(&self) -> Self::Position {
+        self.unprocessed_tokens
+            .last()
+            .map(|token| token.location.clone())
+            .or_else(|| self.input.as_ref().map(|input| input.position.clone()))
+            .unwrap_or_else(|| self.end_position.clone())
     }
 }
