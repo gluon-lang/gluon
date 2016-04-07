@@ -1,5 +1,4 @@
 # embed_lang (working title)
-[![Build Status](https://travis-ci.org/Marwes/embed_lang.svg?branch=master)](https://travis-ci.org/Marwes/embed_lang)
 
 This library is a complete compiler and virtual machine for an embeddable langauge implemented in pure [Rust][Rust]. As both syntax and semantics are not fully nailed down yet it is not recommended for serious use.
 
@@ -14,6 +13,8 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 * Exiting the REPL by writing `:q`
 
 ## Documentation
+
+[Tutorial (WIP)](https://github.com/Marwes/embed_lang/blob/master/TUTORIAL.md)
 
 [Rustdoc](https://marwes.github.io/embed_lang/embed_lang/index.html)
 
