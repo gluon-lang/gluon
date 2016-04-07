@@ -11,7 +11,7 @@ This tutorial aims the explain the basics of embed_lang's syntax and semantics.
 
 In traditional form we will begin with the classic hello world program.
 
-```
+```f#
 io.print "Hello world"
 ```
 
@@ -30,7 +30,7 @@ surprising if you are experienced in programming. Identifiers are a sequence of 
 underscore ('_') which has to start with a letter or an underscore. Literals come in four different forms
 integer, float, string and character literals.
 
-```
+```f#
 // An identifier
 abc123_
 // An integer literal
@@ -50,7 +50,7 @@ by a newline and `/*` starts a block comment which is ended by `*/`.
 
 ### Functions
 
-```
+```f#
 f x "argument" 3
 ```
 
@@ -60,16 +60,16 @@ separated by whitespace.
 
 Another way of calling a function is through infix notation since embed_lang implements all operators as just functions.
 
-```
+```f#
 1 + 2 // Calls the + function on 1 and 2
 ```
-```
+```f#
 (+) 1 2 // Parenthesizing an operator makes it possible to use in a normal function call
 ```
 
-It is also important to recognize that function application binds harder than any binary operator.
+It is important to note that function application binds harder than any binary operator.
 
-```
+```f#
 (+) 0 1 - (+) 2 3 // Equivalent to (0 + 1) - (2 + 3)
 ```
 
@@ -78,7 +78,7 @@ It is also important to recognize that function application binds harder than an
 Any language more complex than Hello world is bound to require variable bindings which serve to bind some value to a name
 allowing it to be used later.
 
-```
+```f#
 let x = 1 + 2 in x // Returns 3
 ```
 
@@ -88,14 +88,14 @@ what defines the actual value returned from the `let` expression.
 
 Let bindings also allow functions to be defined which is done by listing the arguments between the bound identifier and `=`
 
-```
+```f#
 // Defines the `id` function which takes a single argument and returns it.
 let id x = x in id 1 // Returns 1
 ```
 
 Mutually recursive functions can also be defined using `let` by writing `and` between each binding.
 
-```
+```f#
 let f x = g x
 and g x = f x
 in f 1 // Never returns
@@ -105,15 +105,15 @@ in f 1 // Never returns
 
 TODO
 
-To support grouping of data elements embed_lang has first class record.
+To support grouping of data elements embed_lang has first class records.
 
-```
+```f#
 { pi = 3.14, add = (+) }
 ```
 
 The assignment can be omitted if there is a variable in scope with the same name as the field.
 
-```
+```f#
 let id x = x
 { id }
 ```
@@ -123,7 +123,7 @@ let id x = x
 The simplest control flow expression is the `if` expression which evaluates a boolean expression and then takes the
 first branch if the boolean is evaluated to `True` and the second if it evaluates to `False`
 
-```
+```f#
 if True then 1 else 0
 ```
 
@@ -139,7 +139,7 @@ embed_lang also has `case` expressions which allow values to be branched on and 
 Variants can be unpacked through `case` expressions by writing the variants name followed by an identifier for each
 of its arguments.
 
-```
+```f#
 case Some 1 of
 | Some x -> x
 | None -> 0
@@ -150,14 +150,14 @@ case Some 1 of
 TODO
 Records can be unpacked but not branched on
 
-```
+```f#
 case { x = 1.0, pi = 3.14 } of
 | { x = y, pi } -> y + pi
 ```
 
 `let` bindings can unpack records letting the expression above be written as.
 
-```
+```f#
 let { x = y, pi } = { x = 1.0, pi = 3.14 }
 in y + pi
 ```
@@ -166,7 +166,7 @@ in y + pi
 
 embed_lang allows new types to be defined through the `type` expression.
 
-```
+```f#
 // type <identifier> <identifier>* = <type> in <expression>
 type Option a = | None | Some a
 in 0
@@ -175,7 +175,7 @@ in 0
 `type` requires `in <expression>` just like `let` to ensure that that a value is returned. Mutually recursive types can
 be defined by writing `and` between each definition.
 
-```
+```f#
 type SExpr_ = | Atom String | Cons SExpr SExpr
 and SExpr = { location: Int, expr: SExpr_ }
 in Atom "name"
@@ -224,13 +224,14 @@ have a more convenient way to write bindings by relying on indentation.
 When writing an expression which starts on the same line as the `let` or `type` binding above, embed_lang allows the `in`
 expression to be omitted.
 
-```
+```f#
 let id x = x
 id 1 // `in` can be omitted since `id 1` starts on the same line as `let`
 ```
 
 Same thing works for for indented lines.
-```
+
+```f#
 let module =
     let id x = x
     type MyInt = Int
@@ -251,7 +252,7 @@ module.id module.pi
 
 TODO
 
-```
+```f#
 // \(<identifier)* -> <expr>
 \x y -> x + y - 10
 ```
