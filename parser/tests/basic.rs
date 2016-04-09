@@ -27,6 +27,7 @@ fn let_(s: &str, e: PExpr, b: PExpr) -> PExpr {
 }
 fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
     no_loc(Expr::Let(vec![Binding {
+                              comment: None,
                               name: no_loc(Pattern::Identifier(intern(s))),
                               typ: None,
                               arguments: args.iter().map(|i| intern(i)).collect(),
@@ -82,7 +83,6 @@ fn case(e: PExpr, alts: Vec<(Pattern<String>, PExpr)>) -> PExpr {
 fn lambda(name: &str, args: Vec<String>, body: PExpr) -> PExpr {
     no_loc(Expr::Lambda(Lambda {
         id: intern(name),
-        free_vars: Vec::new(),
         arguments: args,
         body: Box::new(body),
     }))
@@ -90,6 +90,7 @@ fn lambda(name: &str, args: Vec<String>, body: PExpr) -> PExpr {
 
 fn type_decl(name: ASTType<String>, typ: ASTType<String>, body: PExpr) -> PExpr {
     type_decls(vec![TypeBinding {
+                        comment: None,
                         name: name,
                         typ: typ,
                     }],
@@ -225,8 +226,8 @@ fn type_mutually_recursive() {
                                       typ: Type::record(vec![], vec![]),
                                   }]);
     let binds = vec![
-        TypeBinding { name: typ("Test"), typ: test },
-        TypeBinding { name: typ("Test2"), typ: test2 },
+        TypeBinding { comment: None, name: typ("Test"), typ: test },
+        TypeBinding { comment: None, name: typ("Test2"), typ: test2 },
         ];
     assert_eq!(e, type_decls(binds, int(1)));
 }
@@ -279,9 +280,9 @@ case None of
     let e = parse(text);
     assert_eq!(e,
                Ok(case(id("None"),
-                    vec![(Pattern::Constructor(intern("Some"), vec![intern("x")]),
-                          id("x")),
-                         (Pattern::Constructor(intern("None"), vec![]), int(0))])));
+                       vec![(Pattern::Constructor(intern("Some"), vec![intern("x")]),
+                             id("x")),
+                            (Pattern::Constructor(intern("None"), vec![]), int(0))])));
 }
 #[test]
 fn array_expr() {
@@ -316,6 +317,7 @@ fn let_pattern() {
     let e = parse_new("let {x, y} = test in x");
     assert_eq!(e,
                no_loc(Expr::Let(vec![Binding {
+                                         comment: None,
                                          name: no_loc(Pattern::Record {
                                              id: String::new(),
                                              types: Vec::new(),
@@ -406,4 +408,42 @@ else
                    start: loc(2, 1),
                    end: loc(5, 11),
                });
+}
+
+#[test]
+fn comment_on_let() {
+    let _ = ::env_logger::init();
+    let text = r#"
+/// The identity function
+let id x = x
+id
+"#;
+    let e = parse_new(text);
+    assert_eq!(e,
+               no_loc(Expr::Let(vec![Binding {
+                                         comment: Some("The identity function".into()),
+                                         name: no_loc(Pattern::Identifier(intern("id"))),
+                                         typ: None,
+                                         arguments: vec![intern("x")],
+                                         expression: id("x"),
+                                     }],
+                                Box::new(id("id")))));
+}
+
+#[test]
+fn comment_on_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+/** Test type */
+type Test = Int
+id
+"#;
+    let e = parse_new(text);
+    assert_eq!(e,
+        type_decls(vec![TypeBinding {
+                        comment: Some("Test type ".into()),
+                        name: typ("Test"),
+                        typ: typ("Int"),
+                    }],
+               id("id")));
 }

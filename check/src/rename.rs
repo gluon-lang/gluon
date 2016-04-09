@@ -299,7 +299,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 ast::Expr::Type(ref bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
-                    for &ast::TypeBinding { ref name, ref typ } in bindings {
+                    for &ast::TypeBinding { ref name, ref typ, comment: _ } in bindings {
                         match **name {
                             Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
                                 let generic_args = extract_generics(args);

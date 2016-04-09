@@ -292,7 +292,6 @@ pub struct Array<Id: AstId> {
 pub struct Lambda<Id: AstId> {
     // Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
-    pub free_vars: Vec<Id>,
     pub arguments: Vec<Id>,
     pub body: Box<LExpr<Id>>,
 }
@@ -324,12 +323,14 @@ pub enum Expr<Id: AstId> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
+    pub comment: Option<String>,
     pub name: ASTType<Id>,
     pub typ: ASTType<Id>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Binding<Id: AstId> {
+    pub comment: Option<String>,
     pub name: LPattern<Id>,
     pub typ: Option<ASTType<Id::Untyped>>,
     pub arguments: Vec<Id>,

@@ -20,8 +20,8 @@ use base::ast::*;
 use base::types::{Type, TypeConstructor, Generic, Alias, Field, Kind, TypeVariable};
 use base::symbol::{Name, Symbol, SymbolModule};
 
-use combine::primitives::{Consumed, Stream, Error as CombineError, Info, BufferedStream,
-                          SourcePosition};
+use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
+                          BufferedStream, SourcePosition};
 use combine::combinator::EnvParser;
 use combine::{between, chainl1, choice, env_parser, many, many1, optional, parser, satisfy,
               sep_by, sep_by1, token, try, value, ParseError, ParseResult, Parser, ParserExt};
@@ -45,6 +45,28 @@ struct ParserEnv<I, F>
     empty_id: F::Ident,
     make_ident: Rc<RefCell<F>>,
     env: ::std::marker::PhantomData<I>,
+}
+
+// Wrapper type to reduce typechecking times
+#[derive(Clone)]
+struct Wrapper<'a: 'l, 's: 'l, 'l, Id: Clone + PartialEq + fmt::Debug + 'a> {
+    stream: BufferedStream<'l, Lexer<'s, &'s str, &'a mut IdentEnv<Ident = Id>>>,
+}
+
+impl<'a, 's, 'l, Id> StreamOnce for Wrapper<'a, 's, 'l, Id>
+    where Id: Clone + PartialEq + fmt::Debug
+{
+    type Item = Token<Id>;
+    type Range = Token<Id>;
+    type Position = SourcePosition;
+
+    fn uncons(&mut self) -> Result<Token<Id>, ::lexer::Error<Id>> {
+        self.stream.uncons()
+    }
+
+    fn position(&self) -> Self::Position {
+        self.stream.position()
+    }
 }
 
 enum LetOrType<Id: AstId> {
@@ -78,6 +100,10 @@ macro_rules! match_parser {
             self.parser(inner)
         }
     }
+}
+
+fn as_trait<P: Parser>(p: &mut P) -> &mut Parser<Input = P::Input, Output = P::Output> {
+    p
 }
 
 impl<'s, I, Id, F> ParserEnv<I, F>
@@ -193,6 +219,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     match_parser! { float, Float -> f64 }
 
     match_parser! { integer, Integer -> i64 }
+
+    match_parser! { doc_comment, DocComment -> String }
 
     fn typ(&'s self) -> LanguageParser<'s, I, F, ASTType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_type)
@@ -312,11 +340,18 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     fn type_decl(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
         debug!("type_decl");
-        (token(Token::Type),
-         self.parser(ParserEnv::<I, F>::type_binding),
-         many(token(Token::And).with(self.parser(ParserEnv::<I, F>::type_binding))),
+        let type_binding = |t| {
+            (try(optional(self.doc_comment()).skip(token(t))),
+             self.parser(ParserEnv::<I, F>::type_binding))
+                .map(|(comment, mut bind)| {
+                    bind.comment = comment;
+                    bind
+                })
+        };
+        (as_trait(&mut type_binding(Token::Type)),
+         many(as_trait(&mut type_binding(Token::And))),
          token(Token::In).expected("`in` or an expression in the same column as the `let`"))
-            .map(|(_, first, mut bindings, _): (_, _, Vec<_>, _)| {
+            .map(|(first, mut bindings, _): (_, Vec<_>, _)| {
                 bindings.insert(0, first);
                 LetOrType::Type(bindings)
             })
@@ -343,6 +378,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                               .or(parser(move |input| self.parse_adt(&return_type, input))))
                     .map(move |rhs_type| {
                         TypeBinding {
+                            comment: None,
                             name: return_type2.clone(),
                             typ: rhs_type,
                         }
@@ -532,7 +568,6 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .map(|(_, args, _, expr)| {
                 Expr::Lambda(Lambda {
                     id: self.empty_id.clone(),
-                    free_vars: Vec::new(),
                     arguments: args,
                     body: Box::new(expr),
                 })
@@ -620,12 +655,18 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn let_in(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
-        let bind1 = self.parser(ParserEnv::<I, F>::binding);
-        let bind2 = self.parser(ParserEnv::<I, F>::binding);
-        (token(Token::Let),
-         bind1.and(many(token(Token::And).with(bind2))),
+        let binding = |t| {
+            (try(optional(self.doc_comment()).skip(token(t))),
+             self.parser(ParserEnv::<I, F>::binding))
+                .map(|(comment, mut bind)| {
+                    bind.comment = comment;
+                    bind
+                })
+        };
+        (as_trait(&mut binding(Token::Let)),
+         many(as_trait(&mut binding(Token::And))),
          token(Token::In).expected("`in` or an expression in the same column as the `let`"))
-            .map(|(_, (b, bindings), _)| {
+            .map(|(b, bindings, _)| {
                 let mut bindings: Vec<_> = bindings;
                 bindings.insert(0, b);
                 LetOrType::Let(bindings)
@@ -646,6 +687,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             (optional(type_sig), token(Token::Equal), self.expr()).parse_state(input)
         }));
         Ok((Binding {
+            comment: None,
             name: name,
             typ: typ,
             arguments: arguments,
@@ -750,7 +792,7 @@ pub fn parse_module<'a, 's, Id>(layout: Option<fn(&mut Lexer<'s,
         env: ::std::marker::PhantomData,
     };
     let buffer = BufferedStream::new(lexer, 10);
-    let stream = buffer.as_stream();
+    let stream = Wrapper { stream: buffer.as_stream() };
 
     env.expr()
        .parse(stream)

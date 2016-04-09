@@ -685,29 +685,29 @@ impl<'a> Typecheck<'a> {
                     }
 
                     // Kindcheck all the types in the environment
-                    for &mut ast::TypeBinding { ref mut name, ref mut typ } in bindings.iter_mut() {
-                        match **name {
+                    for bind in bindings.iter_mut() {
+                        match *bind.name {
                             Type::Data(_, ref args) => {
                                 check.set_variables(args);
                             }
                             _ => {
                                 panic!("ICE: Unexpected lhs of type binding {}",
-                                       types::display_type(&self.symbols, name))
+                                       types::display_type(&self.symbols, &bind.name))
                             }
                         }
-                        try!(check.kindcheck_type(typ));
-                        try!(check.kindcheck_type(name));
+                        try!(check.kindcheck_type(&mut bind.typ));
+                        try!(check.kindcheck_type(&mut bind.name));
                     }
 
                     // All kinds are now inferred so replace the kinds store in the AST
-                    for &mut ast::TypeBinding { ref mut name, ref mut typ } in bindings.iter_mut() {
-                        *typ = check.finalize_type(typ.clone());
-                        *name = check.finalize_type(name.clone());
+                    for bind in bindings.iter_mut() {
+                        bind.typ = check.finalize_type(bind.typ.clone());
+                        bind.name = check.finalize_type(bind.name.clone());
                     }
                 }
 
                 // Finally insert the declared types into the global scope
-                for &mut ast::TypeBinding { ref name, ref typ } in bindings {
+                for &mut ast::TypeBinding { ref name, ref typ, .. } in bindings {
                     match **name {
                         Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
                             debug!("HELP {} \n{:?}", self.symbols.string(&id), args);

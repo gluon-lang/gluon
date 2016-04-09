@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use base::ast::*;
 
-use combine::primitives::{SourcePosition, Error as CombineError};
+use combine::primitives::{Consumed, SourcePosition, Error as CombineError};
 use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
@@ -44,6 +44,7 @@ pub enum Token<Id> {
     Char(char),
     Integer(i64),
     Float(f64),
+    DocComment(String),
     Let,
     And,
     In,
@@ -79,6 +80,7 @@ impl<Id> fmt::Display for Token<Id> {
             Char(..) => "Char",
             Integer(..) => "Integer",
             Float(..) => "Float",
+            DocComment(..) => "DocComment",
             Let => "Let",
             And => "And",
             In => "In",
@@ -122,6 +124,7 @@ impl<Id> Token<Id> {
             Char(c) => Char(c),
             Integer(i) => Integer(i),
             Float(f) => Float(f),
+            DocComment(ref s) => DocComment(s.clone()),
             Let => Let,
             And => And,
             In => In,
@@ -164,7 +167,7 @@ pub struct Offside {
 pub enum Context {
     /// Contaxt which contains several expressions/declarations separated by semicolons
     Block {
-        first: bool,
+        emit_semi: bool,
         needs_close: bool,
     },
     /// A simple expression
@@ -231,6 +234,10 @@ impl Contexts {
     }
 }
 
+fn is_operator_char(c: char) -> bool {
+    "+-*/&|=<>".chars().any(|x| x == c)
+}
+
 pub struct Lexer<'a, I, F>
     where I: Stream<Item = char>,
           F: IdentEnv
@@ -247,7 +254,7 @@ pub struct Lexer<'a, I, F>
 impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
-          Id: AstId + Clone + PartialEq + fmt::Debug,
+          Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
     pub fn new(layout: Option<fn(&mut Lexer<'a, I, F>, PToken<F::Ident>)
@@ -255,7 +262,6 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                input: I,
                make_ident: Rc<RefCell<F>>)
                -> Lexer<'a, I, F> {
-        let ops = "+-*/&|=<>";
         let env = LanguageEnv::new(LanguageDef {
             ident: Identifier {
                 start: letter().or(char('_')),
@@ -267,16 +273,16 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 reserved: Vec::new(),
             },
             op: Identifier {
-                start: satisfy(move |c| ops.chars().any(|x| x == c)),
-                rest: satisfy(move |c| ops.chars().any(|x| x == c)),
-                reserved: ["->", "\\", "|"].iter().map(|x| (*x).into()).collect(),
+                start: satisfy(is_operator_char),
+                rest: satisfy(is_operator_char),
+                reserved: Vec::new(),
             },
             comment_start: string("/*").map(|_| ()),
             comment_end: string("*/").map(|_| ()),
             comment_line: string("//").map(|_| ()),
         });
 
-        let mut lexer = Lexer {
+        Lexer {
             env: env,
             make_ident: make_ident,
             input: Some(State::new(input)),
@@ -287,14 +293,6 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 line: -1,
             },
             layout: layout.unwrap_or(layout_),
-        };
-        lexer.skip_whitespace();
-        lexer
-    }
-
-    fn skip_whitespace(&mut self) {
-        if let Some(input) = self.input.take() {
-            self.input = Some(self.env.white_space().parse(input).unwrap().1);
         }
     }
 
@@ -390,53 +388,19 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 }
             }
         };
-        let location = input.position();
-        let result = self.env
-                         .lex(choice::<[&mut Parser<Input = State<I>, Output = Token<Id>>; 19],
-                                       _>([&mut self.ident()
-                                                    .map(|id| self.id_to_keyword(id)),
-                                           &mut self.env
-                                                    .reserved_op("\\")
-                                                    .map(|_| Token::Lambda),
-                                           &mut self.env
-                                                    .reserved_op("->")
-                                                    .map(|_| Token::RightArrow),
-                                           &mut self.env.reserved_op(":").map(|_| Token::Colon),
-                                           &mut self.env.reserved_op(".").map(|_| Token::Dot),
-                                           &mut self.env.reserved_op(",").map(|_| Token::Comma),
-                                           &mut self.env.reserved_op("|").map(|_| Token::Pipe),
-                                           &mut self.env.reserved_op("=").map(|_| Token::Equal),
-                                           &mut self.op().map(Token::Operator),
-                                           &mut char('(').map(|_| Token::Open(Delimiter::Paren)),
-                                           &mut char(')')
-                                                    .map(|_| Token::Close(Delimiter::Paren)),
-                                           &mut char('{').map(|_| Token::Open(Delimiter::Brace)),
-                                           &mut char('}')
-                                                    .map(|_| Token::Close(Delimiter::Brace)),
-                                           &mut char('[')
-                                                    .map(|_| Token::Open(Delimiter::Bracket)),
-                                           &mut char(']')
-                                                    .map(|_| Token::Close(Delimiter::Bracket)),
-                                           &mut self.env.string_literal().map(Token::String),
-                                           &mut self.env.char_literal().map(Token::Char),
-                                           &mut try(self.env
-                                                        .integer()
-                                                        .skip(not_followed_by(string("."))))
-                                                    .map(Token::Integer),
-                                           &mut self.env.float().map(Token::Float)]))
-                         .map(|token| {
-                             PToken {
-                                 location: location,
-                                 token: token,
-                             }
-                         })
-                         .parse(input);
+        let mut location = input.position();
+        let result = self.next_token_(&mut location, input);
         match result {
             Ok((token, input)) => {
-                self.input = Some(input);
-                token
+                self.input = Some(input.into_inner());
+                PToken {
+                    location: location,
+                    token: token,
+                }
             }
             Err(err) => {
+                let err = err.into_inner();
+                debug!("Error tokenizing: {:?}", err);
                 self.end_position = err.position;
                 PToken {
                     location: location,
@@ -445,6 +409,131 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             }
         }
     }
+
+    fn next_token_(&mut self,
+                   location: &mut SourcePosition,
+                   mut input: State<I>)
+                   -> ParseResult<Token<Id>, State<I>> {
+        loop {
+            // Skip all whitespace before the token
+            let (_, new_input) = try!(spaces().parse_lazy(input));
+            input = new_input.into_inner();
+            *location = input.position();
+            let (first, one_char_consumed) = try!(any().parse_state(input.clone()));
+
+            // Decide how to tokenize depending on what the first char is
+            // ie if its an operator then more operators will follow
+            if is_operator_char(first) || first == '#' {
+                let (op, new_input) = try!(self.op().parse_state(input));
+                input = new_input.into_inner();
+                let ids = self.make_ident.borrow();
+                let s = ids.string(&op);
+                let tok = match s {
+                    "=" => Token::Equal,
+                    "->" => Token::RightArrow,
+                    "|" => Token::Pipe,
+                    _ => {
+                        if s.starts_with("///") {
+                            let mut line_doc_comment = many(satisfy(|c| c != '\n' && c != '\r'))
+                                                           .map(Token::DocComment);
+                            return line_doc_comment.parse_state(input);
+                        } else if s.starts_with("/**") {
+                            return self.block_doc_comment(input);
+                        } else if s.starts_with("//") {
+                            let ((), new_input) = try!(skip_many(satisfy(|c| {
+                                                           c != '\n' && c != '\r'
+                                                       }))
+                                                           .parse_lazy(input));
+                            input = new_input.into_inner();
+                            continue;
+                        } else if s.starts_with("/*") {
+                            // Skip over normal comments and try to parse a new token
+                            let ((), new_input) = try!(self.skip_block_comment(input));
+                            input = new_input.into_inner();
+                            continue;
+                        } else {
+                            Token::Operator(op.clone())
+                        }
+                    }
+                };
+                return Ok((tok, Consumed::Consumed(input)));
+            } else if first.is_digit(10) {
+                return try(self.env
+                               .integer()
+                               .skip(not_followed_by(string("."))))
+                           .map(Token::Integer)
+                           .or(self.env.float().map(Token::Float))
+                           .parse_state(input);
+            } else if first.is_alphabetic() || first == '_' {
+                return self.ident().map(|t| self.id_to_keyword(t)).parse_state(input);
+            }
+
+            let tok = match first {
+                '(' => {
+                    match self.ident().map(|t| self.id_to_keyword(t)).parse_state(input) {
+                        Ok(x) => return Ok(x),
+                        Err(_) => Token::Open(Delimiter::Paren),
+                    }
+                }
+                ')' => Token::Close(Delimiter::Paren),
+                '{' => Token::Open(Delimiter::Brace),
+                '}' => Token::Close(Delimiter::Brace),
+                '[' => Token::Open(Delimiter::Bracket),
+                ']' => Token::Close(Delimiter::Bracket),
+                ':' => Token::Colon,
+                ',' => Token::Comma,
+                '.' => Token::Dot,
+                '\\' => Token::Lambda,
+                '"' => return self.env.string_literal().map(Token::String).parse_state(input),
+                '\'' => return self.env.char_literal().map(Token::Char).parse_state(input),
+                _ => Token::EOF,
+            };
+            return Ok((tok, one_char_consumed));
+        }
+    }
+
+    fn skip_block_comment(&self, input: State<I>) -> ParseResult<(), State<I>> {
+        let mut block_doc_comment = parser(|input| {
+            let mut input = Consumed::Empty(input);
+            loop {
+                match input.clone()
+                           .combine(|input| try(string("*/")).parse_lazy(input)) {
+                    Ok((_, input)) => return Ok(((), input)),
+                    Err(_) => {
+                        match input.combine(|input| any().parse_state(input)) {
+                            Ok((_, rest)) => {
+                                input = rest;
+                            }
+                            Err(err) => return Err(err),
+                        }
+                    }
+                }
+            }
+        });
+        block_doc_comment.parse_state(input)
+    }
+    fn block_doc_comment(&self, input: State<I>) -> ParseResult<Token<Id>, State<I>> {
+        let mut block_doc_comment = parser(|input| {
+            let mut input = Consumed::Empty(input);
+            let mut out = String::new();
+            loop {
+                match input.clone()
+                           .combine(|input| try(string("*/")).parse_lazy(input)) {
+                    Ok((_, input)) => return Ok((Token::DocComment(out), input)),
+                    Err(_) => {
+                        match input.combine(|input| any().parse_state(input)) {
+                            Ok((c, rest)) => {
+                                out.push(c);
+                                input = rest
+                            }
+                            Err(err) => return Err(err),
+                        }
+                    }
+                }
+            }
+        });
+        block_doc_comment.parse_state(input)
+    }
 }
 
 fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
@@ -452,13 +541,14 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                          -> Result<Token<Id>, Error<Id>>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
-          Id: AstId + Clone + PartialEq + fmt::Debug,
+          Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
 {
     if token.token == Token::EOF {
         token.location.column = 0;
     }
     loop {
+        // Retrieve the current indentation level if one exists
         let offside = match lexer.indent_levels.last().cloned() {
             Some(offside) => offside,
             None => {
@@ -467,7 +557,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                 }
                 try!(lexer.indent_levels.push(Offside {
                     context: Context::Block {
-                        first: true,
+                        emit_semi: false,
                         needs_close: true,
                     },
                     location: token.location,
@@ -507,8 +597,8 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                     if let Some(offside) = lexer.indent_levels.last_mut() {
                         // The enclosing block should not emit a block separator for the next
                         // expression
-                        if let Context::Block { ref mut first, .. } = offside.context {
-                            *first = true;
+                        if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                            *emit_semi = false;
                         }
                     }
                     return Ok(token.token);
@@ -527,7 +617,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
         }
         // Next we check offside rules for each of the contexts
         match offside.context {
-            Context::Block { first, needs_close } => {
+            Context::Block { emit_semi, needs_close } => {
                 match ordering {
                     Ordering::Less => {
                         if needs_close {
@@ -539,26 +629,30 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                         continue;
                     }
                     Ordering::Equal => {
-                        if first && token.token != Token::OpenBlock {
-                            // If it is the first token in a sequence we dont want to emit a
-                            // separator
-                            if let Some(offside) = lexer.indent_levels.last_mut() {
-                                // The enclosing block should not emit a block separator for the
-                                // next expression
-                                if let Context::Block { ref mut first, .. } = offside.context {
-                                    *first = false;
+                        match token.token {
+                            _ if emit_semi => {
+                                if let Some(offside) = lexer.indent_levels.last_mut() {
+                                    // The enclosing block should not emit a block separator for the
+                                    // next expression
+                                    if let Context::Block { ref mut emit_semi, .. } =
+                                           offside.context {
+                                        *emit_semi = false;
+                                    }
+                                }
+                                lexer.unprocessed_tokens.push(token);
+                                return Ok(Token::Semi);
+                            }
+                            Token::DocComment(_) | Token::OpenBlock => (),
+                            _ => {
+                                // If it is the first token in a sequence we dont want to emit a
+                                // separator
+                                if let Some(offside) = lexer.indent_levels.last_mut() {
+                                    if let Context::Block { ref mut emit_semi, .. } =
+                                           offside.context {
+                                        *emit_semi = true;
+                                    }
                                 }
                             }
-                        } else if !first {
-                            if let Some(offside) = lexer.indent_levels.last_mut() {
-                                // The enclosing block should not emit a block separator for the
-                                // next expression
-                                if let Context::Block { ref mut first, .. } = offside.context {
-                                    *first = true;
-                                }
-                            }
-                            lexer.unprocessed_tokens.push(token);
-                            return Ok(Token::Semi);
                         }
                     }
                     _ => (),
@@ -579,8 +673,8 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                     if let Some(offside) = lexer.indent_levels.last_mut() {
                         // The enclosing block should not emit a block separator for the next
                         // expression
-                        if let Context::Block { ref mut first, .. } = offside.context {
-                            *first = true;
+                        if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                            *emit_semi = false;
                         }
                     }
                     lexer.unprocessed_tokens.push(token);
@@ -589,7 +683,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             }
             _ => (),
         }
-        // Finally we check the token in case it needs to push a new context
+        // Some tokens directly inserts a new context when emitted
         let push_context = match token.token {
             Token::Let => Some(Context::Let),
             Token::If => Some(Context::If),
@@ -606,6 +700,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             };
             return lexer.indent_levels.push(offside).map(move |()| token.token);
         }
+        // For other tokens we need to scan for the next token to get its position
         match token.token {
             Token::In => {
                 lexer.indent_levels.pop();
@@ -618,7 +713,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                 if offside.context == Context::Let {
                     try!(scan_for_next_block(lexer,
                                              Context::Block {
-                                                 first: true,
+                                                 emit_semi: false,
                                                  needs_close: true,
                                              }));
                 }
@@ -627,7 +722,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                 if offside.context == Context::MatchClause || offside.context == Context::Lambda {
                     try!(scan_for_next_block(lexer,
                                              Context::Block {
-                                                 first: true,
+                                                 emit_semi: false,
                                                  needs_close: true,
                                              }));
                 }
@@ -635,7 +730,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Token::Then => {
                 try!(scan_for_next_block(lexer,
                                          Context::Block {
-                                             first: true,
+                                             emit_semi: false,
                                              needs_close: true,
                                          }));
             }
@@ -644,8 +739,8 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                 if let Some(offside) = lexer.indent_levels.last_mut() {
                     // The enclosing block should not emit a block separator for the next
                     // expression
-                    if let Context::Block { ref mut first, .. } = offside.context {
-                        *first = true;
+                    if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                        *emit_semi = false;
                     }
                 }
             }
@@ -661,7 +756,7 @@ fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                                          -> Result<(), Error<Id>>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
-          Id: AstId + Clone + PartialEq + fmt::Debug,
+          Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
     let next = lexer.next_token();
@@ -682,7 +777,7 @@ fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
 impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
-          Id: AstId + Clone + PartialEq + fmt::Debug,
+          Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
 {
     type Item = Token<Id>;
