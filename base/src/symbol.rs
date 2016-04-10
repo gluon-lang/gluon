@@ -1,4 +1,5 @@
 //! Module which contains types working with symbols
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::fmt;
@@ -27,6 +28,18 @@ impl fmt::Display for Symbol {
 impl PartialEq for Symbol {
     fn eq(&self, other: &Symbol) -> bool {
         &*self.0 as *const NameBuf == &*other.0 as *const NameBuf
+    }
+}
+
+impl PartialOrd for Symbol {
+    fn partial_cmp(&self, other: &Symbol) -> Option<Ordering> {
+        (&*self.0 as *const NameBuf).partial_cmp(&(&*other.0 as *const NameBuf))
+    }
+}
+
+impl Ord for Symbol {
+    fn cmp(&self, other: &Symbol) -> Ordering {
+        (&*self.0 as *const NameBuf).cmp(&(&*other.0 as *const NameBuf))
     }
 }
 
