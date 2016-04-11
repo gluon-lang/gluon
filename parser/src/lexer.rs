@@ -277,9 +277,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 rest: satisfy(is_operator_char),
                 reserved: Vec::new(),
             },
-            comment_start: string("/*").map(|_| ()),
-            comment_end: string("*/").map(|_| ()),
-            comment_line: string("//").map(|_| ()),
+            comment_start: satisfy(|_| false).map(|_| ()),
+            comment_end: satisfy(|_| false).map(|_| ()),
+            comment_line: satisfy(|_| false).map(|_| ()),
         });
 
         Lexer {

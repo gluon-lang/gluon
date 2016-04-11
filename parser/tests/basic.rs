@@ -447,3 +447,24 @@ id
                     }],
                id("id")));
 }
+
+#[test]
+fn comment_after_integer() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let x = 1
+
+/** Test type */
+type Test = Int
+id
+"#;
+    let e = parse_new(text);
+    assert_eq!(e,
+        let_a("x", &[], int(1),
+            type_decls(vec![TypeBinding {
+                            comment: Some("Test type ".into()),
+                            name: typ("Test"),
+                            typ: typ("Int"),
+                        }],
+               id("id"))));
+}
