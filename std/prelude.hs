@@ -47,10 +47,13 @@ let monoid_Float_Mul = {
     empty = 1.0
 }
 
+/// The identity function
 let id x = x
 
+/// const `x` creates a function which always returns `x`
 let const x = \_ -> x
 
+/// flip `f` takes creates a new function which takes its two arguments in reverse order
 let flip f = \x y -> f y x
 
 let not x = if x then False else True
@@ -60,11 +63,13 @@ let concatMap f xs: (a -> List b) -> List a -> List b =
         | Cons x ys -> monoid_List.(<>) (f x) (concatMap f ys)
         | Nil -> Nil
 
+/// Folds a lift from the left
 let foldl f x xs =
     case xs of
         | Cons y ys -> foldl f (f x y) ys
         | Nil -> x
 
+/// Folds a lift from the right
 let foldr f x xs =
     case xs of
         | Cons y ys -> f y (foldr f x ys)
@@ -180,6 +185,7 @@ let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_e ord_t -> {
                     | Err r_val -> ord_e.compare l_val r_val)
 }
 
+/// Creates the `<=`, `<`, `>` and `=>` operators from an instance of `Ord`
 let make_Ord ord =
     let compare = ord.compare
     {

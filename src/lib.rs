@@ -205,8 +205,14 @@ pub fn load_script(vm: &VM, filename: &str, input: &str) -> Result<()> {
 }
 
 pub fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool) -> Result<()> {
+    use check::metadata;
     let mut symbols = Symbols::new();
-    let (expr, typ) = try!(typecheck_expr_(&mut symbols, vm, filename, input, implicit_prelude));
+    let (mut expr, typ) = try!(typecheck_expr_(&mut symbols,
+                                               vm,
+                                               filename,
+                                               input,
+                                               implicit_prelude));
+    let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
     let function = compile_script(&mut symbols, vm, filename, &expr);
     let function = vm.new_function(function);
     let closure = {
@@ -214,7 +220,7 @@ pub fn load_script2(vm: &VM, filename: &str, input: &str, implicit_prelude: bool
         vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
     };
     let value = try!(vm.call_module(&typ, closure));
-    try!(vm.set_global(function.name.clone(), typ, value));
+    try!(vm.set_global(function.name.clone(), typ, metadata, value));
     Ok(())
 }
 
@@ -259,11 +265,11 @@ pub fn parse_expr(file: &str,
 }
 
 fn typecheck_expr_(symbols: &mut Symbols,
-                       vm: &VM,
-                       file: &str,
-                       expr_str: &str,
-                       implicit_prelude: bool)
-                       -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
+                   vm: &VM,
+                   file: &str,
+                   expr_str: &str,
+                   implicit_prelude: bool)
+                   -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
     use check::typecheck::Typecheck;
     use base::error;
     let mut expr = try!(parse_expr_(symbols, file, expr_str));
@@ -279,28 +285,25 @@ fn typecheck_expr_(symbols: &mut Symbols,
 }
 
 pub fn typecheck_expr(vm: &VM,
-                          file: &str,
-                          expr_str: &str,
-                          implicit_prelude: bool)
-                          -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
+                      file: &str,
+                      expr_str: &str,
+                      implicit_prelude: bool)
+                      -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
     let mut symbols = Symbols::new();
     typecheck_expr_(&mut symbols, vm, file, expr_str, implicit_prelude)
 }
 
 /// Compiles and runs the expression in `expr_str`. If successful the value from running the
 /// expression is returned
-pub fn run_expr<'vm>(vm: &'vm VM,
-                         name: &str,
-                         expr_str: &str)
-                         -> Result<RootedValue<'vm>> {
+pub fn run_expr<'vm>(vm: &'vm VM, name: &str, expr_str: &str) -> Result<RootedValue<'vm>> {
     run_expr2(vm, name, expr_str, true)
 }
 
 pub fn run_expr2<'vm>(vm: &'vm VM,
-                          name: &str,
-                          expr_str: &str,
-                          implicit_prelude: bool)
-                          -> Result<RootedValue<'vm>> {
+                      name: &str,
+                      expr_str: &str,
+                      implicit_prelude: bool)
+                      -> Result<RootedValue<'vm>> {
     let mut symbols = Symbols::new();
     let (expr, typ) = try!(typecheck_expr_(&mut symbols, vm, name, expr_str, implicit_prelude));
     let mut function = compile_script(&mut symbols, vm, name, &expr);

@@ -31,11 +31,13 @@ fn find_kind(args: WithVM<RootStr>) -> IO<String> {
     })
 }
 
-fn find_type_info(args: WithVM<RootStr>) -> IO<String> {
+fn find_info(args: WithVM<RootStr>) -> IO<String> {
     let vm = args.vm;
     let args = args.value.trim();
-    IO::Value(match vm.find_type_info(args) {
+    let env = vm.get_env();
+    IO::Value(match env.find_type_info(args) {
         Ok(alias) => {
+            // Found a type alias
             let fmt = || -> Result<String, ::std::fmt::Error> {
                 use std::fmt::Write;
                 let mut buffer = String::new();
@@ -52,7 +54,26 @@ fn find_type_info(args: WithVM<RootStr>) -> IO<String> {
             };
             fmt().unwrap()
         }
-        Err(err) => format!("{}", err),
+        Err(err) => {
+            // Try to find a value at `args` to print its type and documentation comment (if any)
+            match env.get_binding_info(args) {
+                Ok(typ) => {
+                    use std::fmt::Write;
+                    let mut buffer = String::new();
+                    write!(&mut buffer, "{}: {}", args, typ).unwrap();
+                    let maybe_comment = env.get_metadata(args)
+                                           .ok()
+                                           .and_then(|metadata| metadata.comment.as_ref());
+                    if let Some(comment) = maybe_comment {
+                        for line in comment.lines() {
+                            write!(&mut buffer, "\n/// {}", line).unwrap();
+                        }
+                    }
+                    buffer
+                }
+                Err(_) => format!("{}", err),
+            }
+        }
     })
 }
 
@@ -64,7 +85,7 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
     try!(vm.define_global("repl_prim",
                           record!(
         type_of_expr => f1(type_of_expr),
-        find_type_info => f1(find_type_info),
+        find_info => f1(find_info),
         find_kind => f1(find_kind)
     )));
     try!(load_file(vm, "std/prelude.hs"));

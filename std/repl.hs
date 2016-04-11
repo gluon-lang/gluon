@@ -32,8 +32,8 @@ let commands: Map String Cmd
             action = \arg -> repl_prim.type_of_expr arg >>= io.print >> return True
         }
         <> singleton "i" {
-            info = "Prints information about the given type",
-            action = \arg -> repl_prim.find_type_info arg >>= io.print >> return True
+            info = "Prints information about the given name",
+            action = \arg -> repl_prim.find_info arg >>= io.print >> return True
         }
         <> singleton "k" {
             info = "Prints the kind of the given type",

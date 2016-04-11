@@ -9,6 +9,7 @@ use std::string::String as StdString;
 use std::sync::Arc;
 
 use base::ast::{Typed, ASTType};
+use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol};
 use base::types;
 use base::types::{Type, KindEnv, TypeEnv, TcType, RcKind};
@@ -436,6 +437,7 @@ impl Traverseable for ExternFunction {
 struct Global {
     id: Symbol,
     typ: TcType,
+    metadata: Metadata,
     value: Value,
 }
 
@@ -581,14 +583,40 @@ impl TypeEnv for VMEnv {
     }
 }
 
+impl MetadataEnv for VMEnv {
+    fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
+        self.globals
+            .get(AsRef::<str>::as_ref(id))
+            .map(|g| &g.metadata)
+    }
+}
+
 impl VMEnv {
     pub fn find_type_info(&self, name: &str) -> Result<&types::Alias<Symbol, TcType>> {
         if let Some(alias) = self.type_infos.id_to_type.get(name) {
             return Ok(alias);
         }
-        let globals = &self.globals;
         let name = Name::new(name);
-        let mut components = name.module().components();
+        let typ = try!(self.get_path_type(name.module()));
+        let maybe_type_info = match **typ {
+            Type::Record { ref types, .. } => {
+                let field_name = name.name();
+                types.iter()
+                     .find(|field| field.name.as_ref() == field_name.as_str())
+                     .map(|field| &field.typ)
+            }
+            _ => None,
+        };
+        maybe_type_info.ok_or_else(|| {
+            Error::Message(format!("'{}' cannot be accessed by the field '{}'",
+                                   typ,
+                                   name.name()))
+        })
+    }
+
+    fn get_path_type(&self, module: &Name) -> Result<&TcType> {
+        let globals = &self.globals;
+        let mut components = module.components();
         let global = match components.next() {
             Some(comp) => {
                 try!(globals.get(comp)
@@ -597,13 +625,13 @@ impl VMEnv {
                                 // to walk through
                                 for _ in components.by_ref() {
                                 }
-                                globals.get(name.module().as_str())
+                                globals.get(module.as_str())
                             })
                             .ok_or_else(|| {
-                                Error::Message(format!("Could not retrieve global `{}`", name))
+                                Error::Message(format!("Could not retrieve global `{}`", module))
                             }))
             }
-            None => return Err(Error::Message(format!("'{}' is not a valid name", name))),
+            None => return Err(Error::Message(format!("'{}' is not a valid name", module))),
         };
 
         let mut typ = &global.typ;
@@ -622,10 +650,16 @@ impl VMEnv {
                                        field_name))
             }));
         }
+        Ok(typ)
+    }
+
+    pub fn get_binding_info(&self, name: &str) -> Result<&TcType> {
+        let name = Name::new(name);
+        let typ = try!(self.get_path_type(name.module()));
         let maybe_type_info = match **typ {
-            Type::Record { ref types, .. } => {
+            Type::Record { ref fields, .. } => {
                 let field_name = name.name();
-                types.iter()
+                fields.iter()
                      .find(|field| field.name.as_ref() == field_name.as_str())
                      .map(|field| &field.typ)
             }
@@ -636,6 +670,33 @@ impl VMEnv {
                                    typ,
                                    name.name()))
         })
+    }
+
+    pub fn get_metadata(&self, name: &str) -> Result<&Metadata> {
+        let globals = &self.globals;
+        let name = Name::new(name);
+        let mut components = name.components();
+        let global = match components.next() {
+            Some(comp) => {
+                try!(globals.get(comp)
+                            .or_else(|| {
+                                components = name.name().components();
+                                globals.get(name.module().as_str())
+                            })
+                            .ok_or_else(|| {
+                                Error::Message(format!("There is no metadata for '{}'", name))
+                            }))
+            }
+            None => return Err(Error::Message(format!("There is no metadata for '{}'", name))),
+        };
+
+        let mut metadata = &global.metadata;
+        for field_name in components {
+            metadata = try!(metadata.module.get(field_name).ok_or_else(|| {
+                Error::Message(format!("There is no metadata for '{}'", name))
+            }));
+        }
+        Ok(metadata)
     }
 }
 
@@ -771,7 +832,7 @@ impl GlobalVMState {
     }
 
     /// TODO dont expose this directly
-    pub fn set_global(&self, id: Symbol, typ: TcType, value: Value) -> Result<()> {
+    pub fn set_global(&self, id: Symbol, typ: TcType, metadata: Metadata, value: Value) -> Result<()> {
         let mut env = self.env.borrow_mut();
         let globals = &mut env.globals;
         if globals.contains_key(id.as_ref()) {
@@ -780,6 +841,7 @@ impl GlobalVMState {
         let global = Global {
             id: id.clone(),
             typ: typ,
+            metadata: metadata,
             value: value,
         };
         globals.insert(StdString::from(id.as_ref()), global);
@@ -900,7 +962,7 @@ impl VM {
         if status == Status::Error {
             return Err(Error::Message(format!("{:?}", value)));
         }
-        self.set_global(Symbol::new(name), T::make_type(self), value)
+        self.set_global(Symbol::new(name), T::make_type(self), Metadata::default(), value)
     }
 
     /// Retrieves the global called `name`.
@@ -1061,6 +1123,7 @@ impl VM {
                        Global {
                            id: id,
                            typ: typ,
+                           metadata: Metadata::default(),
                            value: Closure(closure),
                        });
         env.globals.len() as VMIndex - 1
