@@ -5,12 +5,19 @@ This library is a complete compiler and virtual machine for an embeddable langau
 ## Usage
 
 ### REPL
-There is a rudimentary REPL which can be used by passing the `-i` flag to the built executable (after running cargo build, run `target/debug/repl -i`). The REPL is currently capable of:
+There is a rudimentary REPL which can be used by passing the `-i` flag to the built repl executable which can be run through `cargo run -- -i`). The REPL is capable of:
 * Evaluating expressions (expressions of type IO will be evaluated in the IO context).
+* Printing help about available commands with `:h`
 * Loading files with `:l path_to_file` the result of evaluating the expression in the loaded file is stored in a variable named after the filename without an extension.
 * Checking the types of expressions with `:t expression`
-* Checking type information with `:i type`
-* Exiting the REPL by writing `:q`
+*   Printing information about a name with `:i name`.<br>
+    Example:
+
+        :i std.prelude.List
+        type std.prelude.List a = | Nil| Cons a (std.prelude.List a)
+        /// A linked list type
+        
+* Exit the REPL by writing `:q`
 
 ## Documentation
 
@@ -100,6 +107,8 @@ If you are interested in contributing to this project there are a few issues ope
 ## Goals/Features
 These goals may change or be refined over time as I experiment with what is possible to with the language.
 
+* **Embeddable** - Similiar to [Lua][Lua] it is meant to be able to be included in another program which can use the virtual machine to extend its own functionality.
+
 * **Statically typed** - It currently uses the Hindley-Milner type system with some extensions.
 
 * **Tiny** - The language should be as small as possible while still remaining practical. As having a static typesystem already demands a good chunk of extra code it becomes even more important to have a very small set of features as every feature added is likely to need code added to the parser, typechecker as well as the compiler causing even small additions to add a larger amount of code than it would in a dynamic language.
@@ -108,9 +117,7 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Strict** - Laziness is supported through an explicit type but being strict by default leads to easier to debug code.
 
-* **Modular** - The library is split into parser, typechecker and virtual machine + compiler currently and these parts should for the most part be possible to be used independently. Certain language agonstic things are also likely candidates for separation from the main library. For instance the garbage collector is currently quite unaware of the rest of the code and might be made into separate crate (if you see something useful separately from the library please don't hesitate to open an issue!).
-
-* **Embeddable** - Similiar to [Lua][Lua] it is meant to be able to be included in another program which can use the virtual machine to extend its own functionality.
+* **Modular** - The library is split into parser, typechecker and virtual machine + compiler currently all of which can be used independently. Certain language agonstic things are also likely candidates for separation from the main library. For instance the garbage collector is currently quite unaware of the rest of the code and might be made into separate crate (if you see something useful separately from the library please don't hesitate to open an issue!).
 
 [prelude]:https://github.com/Marwes/embed_lang/blob/master/std/prelude.hs
 
