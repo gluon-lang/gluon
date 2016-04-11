@@ -440,12 +440,12 @@ id
 "#;
     let e = parse_new(text);
     assert_eq!(e,
-        type_decls(vec![TypeBinding {
-                        comment: Some("Test type ".into()),
-                        name: typ("Test"),
-                        typ: typ("Int"),
-                    }],
-               id("id")));
+               type_decls(vec![TypeBinding {
+                                   comment: Some("Test type ".into()),
+                                   name: typ("Test"),
+                                   typ: typ("Int"),
+                               }],
+                          id("id")));
 }
 
 #[test]
@@ -460,11 +460,33 @@ id
 "#;
     let e = parse_new(text);
     assert_eq!(e,
-        let_a("x", &[], int(1),
-            type_decls(vec![TypeBinding {
-                            comment: Some("Test type ".into()),
-                            name: typ("Test"),
-                            typ: typ("Int"),
-                        }],
-               id("id"))));
+               let_a("x",
+                     &[],
+                     int(1),
+                     type_decls(vec![TypeBinding {
+                                         comment: Some("Test type ".into()),
+                                         name: typ("Test"),
+                                         typ: typ("Int"),
+                                     }],
+                                id("id"))));
+}
+
+#[test]
+fn merge_line_comments() {
+    let _ = ::env_logger::init();
+    let text = r#"
+/// Merge
+/// consecutive
+/// line comments.
+type Test = Int
+id
+"#;
+    let e = parse_new(text);
+    assert_eq!(e,
+               type_decls(vec![TypeBinding {
+                                   comment: Some("Merge\nconsecutive\nline comments.".into()),
+                                   name: typ("Test"),
+                                   typ: typ("Int"),
+                               }],
+                          id("id")));
 }

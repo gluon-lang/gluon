@@ -434,9 +434,22 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                     "|" => Token::Pipe,
                     _ => {
                         if s.starts_with("///") {
-                            let mut line_doc_comment = many(satisfy(|c| c != '\n' && c != '\r'))
-                                                           .map(Token::DocComment);
-                            return line_doc_comment.parse_state(input);
+                            let mut comment = String::new();
+                            // Merge consecutive line comments
+                            loop {
+                                let mut line = satisfy(|c| c != '\n' && c != '\r').iter(input);
+                                comment.extend(line.by_ref());
+                                comment.push('\n');
+                                let ((), new_input) = try!(line.into_result(()));
+                                input = new_input.into_inner();
+                                let mut p = spaces().with(try(string("///"))).skip(spaces());
+                                match p.parse_state(input.clone()) {
+                                    Ok((_, new_input)) => input = new_input.into_inner(),
+                                    Err(_) => break,
+                                }
+                            }
+                            comment.pop();
+                            return Ok((Token::DocComment(comment), Consumed::Consumed(input)));
                         } else if s.starts_with("/**") {
                             return self.block_doc_comment(input);
                         } else if s.starts_with("//") {
