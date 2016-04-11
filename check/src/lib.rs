@@ -19,6 +19,7 @@ pub mod unify;
 pub mod kindcheck;
 mod substitution;
 mod rename;
+pub mod metadata;
 
 #[cfg(test)]
 mod tests {

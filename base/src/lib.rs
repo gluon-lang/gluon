@@ -13,3 +13,4 @@ pub mod error;
 pub mod types;
 pub mod macros;
 pub mod scoped_map;
+pub mod metadata;
