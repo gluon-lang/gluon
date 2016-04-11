@@ -1,5 +1,18 @@
 let { Option, Result, Ordering } = import "std/types.hs"
+/// A linked list type
 type List a = | Nil | Cons a (List a)
+/**
+
+`Monoid m` represents an associative operation on `m` an which has an identity.
+This means the following laws must hold:
+
+* x <> empty = x
+
+* empty <> x = x
+
+* x <> (y <> z) = (x <> y) <> z
+
+*/
 type Monoid m = {
     (<>): m -> m -> m,
     empty: m
@@ -75,6 +88,7 @@ let foldr f x xs =
         | Cons y ys -> f y (foldr f x ys)
         | Nil -> x
 
+/// `Eq a` defines equality (==) on `a`
 type Eq a = {
     (==) : a -> a -> Bool
 }
@@ -138,6 +152,7 @@ let monoid_Ordering = {
     empty = EQ
 }
 
+/// `Ord a` defines an ordering on `a`
 type Ord a = {
     compare : a -> a -> Ordering
 }
@@ -211,6 +226,10 @@ let make_Ord ord =
                 | GT -> True
     }
 
+/**
+The basic operation on numbers.
+Defined for both the primitive type `Int` and `Float`
+*/
 type Num a = {
     (+) : a -> a -> a,
     (-) : a -> a -> a,
@@ -235,6 +254,10 @@ let num_Float: Num Float = {
     negate = \x -> 0.0 #Float- x
 }
 
+/**
+A `Functor` represents an action on a parameterized type which does not change the structure of
+the mapped type.
+*/
 type Functor f = {
     map : (a -> b) -> f a -> f b
 }
@@ -377,6 +400,7 @@ let applicative_IO: Applicative IO = {
     pure = monad_IO.return
 }
 
+/// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = {
     show : a -> String
 }

@@ -46,3 +46,21 @@ let id x = x
         module: Default::default(),
     }));
 }
+
+#[test]
+fn propagate_metadata_type_record() {
+    let _ = ::env_logger::init();
+    let text = r#"
+/// A test type
+type Test = Int
+{ Test }
+"#;
+    let (mut expr, result) = typecheck_expr(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&(), &mut expr);
+    assert_eq!(metadata.module.get("Test"), Some(&Metadata {
+        comment: Some("A test type".into()),
+        module: Default::default(),
+    }));
+}

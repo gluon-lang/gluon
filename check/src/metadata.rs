@@ -5,8 +5,8 @@ use base::ast;
 use base::ast::MutVisitor;
 use base::metadata::{Metadata, MetadataEnv};
 use base::scoped_map::ScopedMap;
-use base::symbol::Symbol;
-use base::types::TcIdent;
+use base::symbol::{Name, Symbol};
+use base::types::{Type, TypeConstructor, TcIdent};
 
 struct Environment<'b> {
     env: &'b MetadataEnv,
@@ -52,7 +52,9 @@ pub fn metadata(env: &MetadataEnv,
         }
 
         fn stack_var(&mut self, id: Symbol, metadata: Metadata) {
-            self.env.stack.insert(id, metadata);
+            if metadata.has_data() {
+                self.env.stack.insert(id, metadata);
+            }
         }
 
         fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
@@ -68,7 +70,7 @@ pub fn metadata(env: &MetadataEnv,
                 ast::Expr::Identifier(ref mut id) => {
                     self.metadata(id.id()).cloned().unwrap_or_else(|| Metadata::default())
                 }
-                ast::Expr::Record { ref mut exprs, .. } => {
+                ast::Expr::Record { ref mut exprs, ref mut types, .. } => {
                     let mut module = BTreeMap::new();
                     for &mut (ref id, ref mut maybe_expr) in exprs {
                         let maybe_metadata = match *maybe_expr {
@@ -85,6 +87,13 @@ pub fn metadata(env: &MetadataEnv,
                         };
                         if let Some(metadata) = maybe_metadata {
                             module.insert(String::from(id.as_ref()), metadata);
+                        }
+                    }
+                    for &mut (ref id, _) in types {
+                        let maybe_metadata = self.metadata(id).cloned();
+                        if let Some(metadata) = maybe_metadata {
+                            let name = Name::new(id.as_ref()).name().as_str();
+                            module.insert(String::from(name), metadata);
                         }
                     }
                     Metadata { comment: None, module: module }
@@ -112,8 +121,26 @@ pub fn metadata(env: &MetadataEnv,
                     self.env.stack.exit_scope();
                     result
                 }
-                ast::Expr::Type(ref _bindings, ref mut expr) => {
-                    self.metadata_expr(expr)
+                ast::Expr::Type(ref mut bindings, ref mut expr) => {
+                    self.env.stack.enter_scope();
+                    for bind in bindings.iter_mut() {
+                        let maybe_metadata = bind.comment.as_ref().map(|comment| 
+                                                      Metadata {
+                                                          comment: Some(comment.clone()),
+                                                          module: BTreeMap::new(),
+                                                      });
+                        match *bind.name {
+                            Type::Data(TypeConstructor::Data(ref id), _) => {
+                                if let Some(metadata) = maybe_metadata {
+                                    self.stack_var(id.clone(), metadata);
+                                }
+                            }
+                            _ => unreachable!()
+                        }
+                    }
+                    let result = self.metadata_expr(expr);
+                    self.env.stack.exit_scope();
+                    result
                 }
                 _ => {
                     ast::walk_mut_expr(self, expr);

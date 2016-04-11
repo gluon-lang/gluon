@@ -32,15 +32,15 @@ fn find_kind(args: WithVM<RootStr>) -> IO<String> {
 }
 
 fn find_info(args: WithVM<RootStr>) -> IO<String> {
+    use std::fmt::Write;
     let vm = args.vm;
     let args = args.value.trim();
     let env = vm.get_env();
-    IO::Value(match env.find_type_info(args) {
+    let mut buffer = String::new();
+    match env.find_type_info(args) {
         Ok(alias) => {
             // Found a type alias
-            let fmt = || -> Result<String, ::std::fmt::Error> {
-                use std::fmt::Write;
-                let mut buffer = String::new();
+            let mut fmt = || -> Result<(), ::std::fmt::Error> {
                 try!(write!(&mut buffer, "type {}", args));
                 for g in &alias.args {
                     try!(write!(&mut buffer, " {}", g.id))
@@ -50,31 +50,29 @@ fn find_info(args: WithVM<RootStr>) -> IO<String> {
                     Some(ref typ) => try!(write!(&mut buffer, "{}", typ)),
                     None => try!(write!(&mut buffer, "<abstract>")),
                 }
-                Ok(buffer)
+                Ok(())
             };
-            fmt().unwrap()
+            fmt().unwrap();
         }
         Err(err) => {
             // Try to find a value at `args` to print its type and documentation comment (if any)
             match env.get_binding_info(args) {
                 Ok(typ) => {
-                    use std::fmt::Write;
-                    let mut buffer = String::new();
                     write!(&mut buffer, "{}: {}", args, typ).unwrap();
-                    let maybe_comment = env.get_metadata(args)
-                                           .ok()
-                                           .and_then(|metadata| metadata.comment.as_ref());
-                    if let Some(comment) = maybe_comment {
-                        for line in comment.lines() {
-                            write!(&mut buffer, "\n/// {}", line).unwrap();
-                        }
-                    }
-                    buffer
                 }
-                Err(_) => format!("{}", err),
+                Err(_) => return IO::Value(format!("{}", err)),
             }
         }
-    })
+    }
+    let maybe_comment = env.get_metadata(args)
+                           .ok()
+                           .and_then(|metadata| metadata.comment.as_ref());
+    if let Some(comment) = maybe_comment {
+        for line in comment.lines() {
+            write!(&mut buffer, "\n/// {}", line).unwrap();
+        }
+    }
+    IO::Value(buffer)
 }
 
 fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
