@@ -36,9 +36,10 @@ pub fn metadata(env: &MetadataEnv,
 
         fn new_pattern(&mut self, mut metadata: Metadata, pattern: &mut ast::LPattern<TcIdent>) {
             match pattern.value {
-                ast::Pattern::Record { ref mut fields, .. } => {
-                    for field in fields {
+                ast::Pattern::Record { ref mut fields, ref mut types, .. } => {
+                    for field in fields.iter_mut().chain(types) {
                         if let Some(m) = metadata.module.remove(field.0.as_ref()) {
+                            println!("{:?}", field);
                             let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
                             self.stack_var(id, m);
                         }
@@ -58,7 +59,6 @@ pub fn metadata(env: &MetadataEnv,
         }
 
         fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
-            // TODO Extract metadata from globals
             self.env
                 .stack
                 .get(&id)
