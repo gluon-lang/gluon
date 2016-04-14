@@ -78,21 +78,14 @@ extern crate log;
 extern crate env_logger;
 #[macro_use]
 extern crate quick_error;
+
 #[macro_use]
-extern crate vm as vm_mod;
+pub extern crate vm;
+pub extern crate base;
+pub extern crate parser;
+pub extern crate check;
 
 mod io;
-mod crates {
-    extern crate base;
-    extern crate parser;
-    extern crate check;
-}
-
-pub use crates::base;
-pub use crates::parser;
-pub use crates::check;
-pub use vm_mod as vm;
-
 pub mod import;
 
 pub use vm::vm::VM;
