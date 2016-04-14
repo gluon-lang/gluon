@@ -33,11 +33,11 @@ impl<T> VMType for Reference<T>
     }
 }
 
-impl<T> Pushable for Reference<T>
+impl <'vm, T> Pushable<'vm> for Reference<T>
     where T: Any + VMType,
           T::Type: Sized
 {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Userdata(Userdata_::new(vm, self)));
         Status::Ok
     }

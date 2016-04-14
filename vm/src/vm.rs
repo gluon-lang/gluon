@@ -944,8 +944,8 @@ impl VM {
 
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
-    pub fn define_global<T>(&self, name: &str, value: T) -> Result<()>
-        where T: Pushable
+    pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
+        where T: Pushable<'vm>
     {
         let (status, value) = {
             let mut stack = self.current_frame();
@@ -1606,7 +1606,7 @@ impl VM {
 fn binop<'b, F, T, R>(vm: &'b VM, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> R,
           T: Getable<'b> + fmt::Debug,
-          R: Pushable
+          R: Pushable<'b>
 {
     let r = stack.pop();
     let l = stack.pop();

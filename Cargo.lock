@@ -5,6 +5,7 @@ dependencies = [
  "base 0.1.0",
  "check 0.1.0",
  "clap 2.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "compiletest_rs 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "parser 0.1.0",
@@ -74,6 +75,14 @@ version = "0.9.0"
 source = "git+https://github.com/Marwes/combine-language.git?branch=2.0.0#d65bb412e0d90c72ec9d498ffb16416a3a973fa1"
 dependencies = [
  "combine 1.3.0 (git+https://github.com/Marwes/combine.git?branch=2.0.0)",
+]
+
+[[package]]
+name = "compiletest_rs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

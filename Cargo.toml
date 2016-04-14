@@ -31,5 +31,8 @@ path = "check"
 [dependencies.vm]
 path = "vm"
 
+[dev-dependencies.compiletest_rs]
+version = "0.1.1"
+
 [features]
 test = ["check/test", "parser/test"]

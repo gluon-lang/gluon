@@ -59,8 +59,8 @@ impl<T: VMType> VMType for Generic<T> {
         T::extra_args()
     }
 }
-impl<T: VMType> Pushable for Generic<T> {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm, T: VMType> Pushable<'vm> for Generic<T> {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(self.0);
         Status::Ok
     }
@@ -123,13 +123,43 @@ pub trait VMType {
 
 
 /// Trait which allows a rust value to be pushed to the virtual machine
-pub trait Pushable: VMType {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status;
+pub trait Pushable<'vm> : VMType {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status;
 }
 
 /// Trait which allows rust values to be retrieved from the virtual machine
 pub trait Getable<'vm>: Sized {
     fn from_value(vm: &'vm VM, value: Value) -> Option<Self>;
+}
+
+impl<'vm, T: ?Sized + VMType> VMType for &'vm T {
+    type Type = T::Type;
+    fn make_type(vm: &VM) -> TcType {
+        T::make_type(vm)
+    }
+}
+
+impl<'vm, T> Getable<'vm> for &'vm T where T: ::vm::Userdata {
+    fn from_value(vm: &'vm VM, value: Value) -> Option<Self> {
+        unsafe {
+            <*const T as Getable<'vm>>::from_value(vm, value).map(|p| &*p)
+        }
+    }
+}
+
+unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
+    ::std::mem::transmute(x)
+}
+
+impl<'vm> Getable<'vm> for &'vm str {
+    fn from_value(_vm: &'vm VM, value: Value) -> Option<Self> {
+        unsafe {
+            match value {
+                Value::String(ref s) => Some(forget_lifetime(s)),
+                _ => None
+            }
+        }
+    }
 }
 
 /// Wrapper type which passes acts as the type `T` but also passes the `VM` to the called function
@@ -152,10 +182,10 @@ impl<'vm, T> VMType for WithVM<'vm, T>
     }
 }
 
-impl<'vm, T> Pushable for WithVM<'vm, T>
-    where T: Pushable
+impl<'vm, T> Pushable<'vm> for WithVM<'vm, T>
+    where T: Pushable<'vm>
 {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         self.value.push(vm, stack)
     }
 }
@@ -172,8 +202,8 @@ impl VMType for Thread {
     type Type = Thread;
 }
 
-impl Pushable for Thread {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for Thread {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let value = Value::Thread(vm.alloc(&stack.stack, Move(self)));
         stack.push(value);
         Status::Ok
@@ -183,8 +213,8 @@ impl Pushable for Thread {
 impl VMType for () {
     type Type = Self;
 }
-impl Pushable for () {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for () {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Int(0));
         Status::Ok
     }
@@ -198,8 +228,8 @@ impl<'vm> Getable<'vm> for () {
 impl VMType for i32 {
     type Type = Self;
 }
-impl Pushable for i32 {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for i32 {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Int(self as VMInt));
         Status::Ok
     }
@@ -215,8 +245,8 @@ impl<'vm> Getable<'vm> for i32 {
 impl VMType for u32 {
     type Type = Self;
 }
-impl Pushable for u32 {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for u32 {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Int(self as VMInt));
         Status::Ok
     }
@@ -232,8 +262,8 @@ impl<'vm> Getable<'vm> for u32 {
 impl VMType for VMInt {
     type Type = Self;
 }
-impl Pushable for VMInt {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for VMInt {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Int(self));
         Status::Ok
     }
@@ -249,8 +279,8 @@ impl<'vm> Getable<'vm> for VMInt {
 impl VMType for f64 {
     type Type = Self;
 }
-impl Pushable for f64 {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for f64 {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Float(self));
         Status::Ok
     }
@@ -266,8 +296,8 @@ impl<'vm> Getable<'vm> for f64 {
 impl VMType for bool {
     type Type = Self;
 }
-impl Pushable for bool {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for bool {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Int(if self {
             1
         } else {
@@ -294,8 +324,8 @@ impl VMType for Ordering {
         Type::data(ctor, vec![])
     }
 }
-impl Pushable for Ordering {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for Ordering {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let tag = match self {
             Ordering::Less => 0,
             Ordering::Equal => 1,
@@ -329,14 +359,11 @@ impl<'vm> Getable<'vm> for Ordering {
 impl VMType for str {
     type Type = <String as VMType>::Type;
 }
-impl<'s> VMType for &'s str {
-    type Type = <String as VMType>::Type;
-}
 impl VMType for String {
     type Type = String;
 }
-impl<'s> Pushable for &'s str {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm, 's> Pushable<'vm> for &'s str {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let s = vm.alloc(&stack.stack, self);
         stack.push(Value::String(s));
         Status::Ok
@@ -350,8 +377,8 @@ impl<'vm> Getable<'vm> for String {
         }
     }
 }
-impl Pushable for String {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for String {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let s = vm.alloc(&stack.stack, &self[..]);
         stack.push(Value::String(s));
         Status::Ok
@@ -361,8 +388,8 @@ impl Pushable for String {
 impl VMType for char {
     type Type = Self;
 }
-impl Pushable for char {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm> Pushable<'vm> for char {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Int(self as VMInt));
         Status::Ok
     }
@@ -383,11 +410,11 @@ impl<T> VMType for Vec<T>
     type Type = Vec<T::Type>;
 }
 
-impl<T> Pushable for Vec<T>
-    where T: Pushable,
+impl<'vm, T> Pushable<'vm> for Vec<T>
+    where T: Pushable<'vm>,
           T::Type: Sized
 {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let len = self.len() as VMIndex;
         for v in self {
             if v.push(vm, stack) == Status::Error {
@@ -415,8 +442,8 @@ pub struct Userdata<T>(pub T);
 impl<T: VMType> VMType for Userdata<T> {
     type Type = T::Type;
 }
-impl<T: ::vm::Userdata + VMType> Pushable for Userdata<T> {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm, T: ::vm::Userdata + VMType> Pushable<'vm> for Userdata<T> {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Userdata(Userdata_::new(vm, self.0)));
         Status::Ok
     }
@@ -449,8 +476,8 @@ impl<'vm, T: ::vm::Userdata> Getable<'vm> for *const T {
 impl<T: VMType> VMType for *mut T {
     type Type = T::Type;
 }
-impl<T: VMType + Any> Pushable for *mut T {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm, T: VMType + Any> Pushable<'vm> for *mut T {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Userdata(Userdata_::new(vm, self)));
         Status::Ok
     }
@@ -473,10 +500,10 @@ impl<T: VMType> VMType for Option<T>
         Type::data(ctor, vec![T::make_type(vm)])
     }
 }
-impl<T: Pushable> Pushable for Option<T>
+impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
     where T::Type: Sized
 {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         match self {
             Some(value) => {
                 let len = stack.len();
@@ -520,11 +547,11 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
     }
 }
 
-impl<T: Pushable, E: Pushable> Pushable for Result<T, E>
+impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for Result<T, E>
     where T::Type: Sized,
           E::Type: Sized
 {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let tag = match self {
             Ok(ok) => {
                 ok.push(vm, stack);
@@ -572,8 +599,8 @@ impl<T: VMType, E> VMType for MaybeError<T, E> {
         T::make_type(vm)
     }
 }
-impl<T: Pushable, E: fmt::Display> Pushable for MaybeError<T, E> {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for MaybeError<T, E> {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         match self {
             MaybeError::Ok(value) => {
                 value.push(vm, stack);
@@ -610,10 +637,10 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for IO<T> {
     }
 }
 
-impl<T: Pushable> Pushable for IO<T>
+impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T>
     where T::Type: Sized
 {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         match self {
             IO::Value(value) => {
                 value.push(vm, stack);
@@ -673,10 +700,10 @@ impl<'vm, T: VMType> VMType for Array<'vm, T>
 }
 
 
-impl<'vm, T: VMType> Pushable for Array<'vm, T>
+impl<'vm, T: VMType> Pushable<'vm> for Array<'vm, T>
     where T::Type: Sized
 {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(*self.0);
         Status::Ok
     }
@@ -742,8 +769,8 @@ macro_rules! define_tuple {
                 }
             }
         }
-        impl<'vm, $($id: Pushable),+> Pushable for ($($id),+) {
-            fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+        impl<'vm, $($id: Pushable<'vm>),+> Pushable<'vm> for ($($id),+) {
+            fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
                 let ( $($id),+ ) = self;
                 $(
                     $id.push(vm, stack);
@@ -823,18 +850,18 @@ pub mod record {
         }
     }
 
-    pub trait PushableFieldList: FieldList {
-        fn push<'b>(self, vm: &VM, fields: &mut StackFrame<'b>);
+    pub trait PushableFieldList<'vm>: FieldList {
+        fn push<'b>(self, vm: &'vm VM, fields: &mut StackFrame<'b>);
     }
 
-    impl PushableFieldList for () {
-        fn push<'b>(self, _: &VM, _: &mut StackFrame<'b>) {}
+    impl<'vm> PushableFieldList<'vm> for () {
+        fn push<'b>(self, _: &'vm VM, _: &mut StackFrame<'b>) {}
     }
 
-    impl<F: Field, H: Pushable, T> PushableFieldList for HList<(F, H), T>
-        where T: PushableFieldList
+    impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HList<(F, H), T>
+        where T: PushableFieldList<'vm>
 {
-        fn push<'b>(self, vm: &VM, fields: &mut StackFrame<'b>) {
+        fn push<'b>(self, vm: &'vm VM, fields: &mut StackFrame<'b>) {
             let HList((_, head), tail) = self;
             head.push(vm, fields);
             tail.push(vm, fields);
@@ -852,13 +879,13 @@ pub mod record {
             Type::record(Vec::new(), fields)
         }
     }
-    impl<A, F, T> Pushable for Record<HList<(F, A), T>>
-        where A: Pushable,
+    impl<'vm, A, F, T> Pushable<'vm> for Record<HList<(F, A), T>>
+        where A: Pushable<'vm>,
               F: Field,
-              T: PushableFieldList,
+              T: PushableFieldList<'vm>,
               A::Type: Sized
 {
-        fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+        fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
             self.fields.push(vm, stack);
             let len = HList::<(F, A), T>::len();
             let offset = stack.len() - len;
@@ -934,8 +961,8 @@ impl<F: VMType> VMType for Primitive<F> {
     }
 }
 
-impl<'vm, F: FunctionType + VMType> Pushable for Primitive<F> {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl<'vm, F: FunctionType + VMType> Pushable<'vm> for Primitive<F> {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let extern_function = unsafe {
             // The VM guarantess that it only ever calls this function with itself which should
             // make sure that ignoring the lifetime is safe
@@ -979,10 +1006,10 @@ impl<'vm, F> VMType for Function<'vm, F>
     }
 }
 
-impl<'vm, F: Any> Pushable for Function<'vm, F>
+impl<'vm, F: Any> Pushable<'vm> for Function<'vm, F>
     where F: VMType
 {
-    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(*self.value);
         Status::Ok
     }
@@ -997,7 +1024,7 @@ impl<'vm, F> Getable<'vm> for Function<'vm, F> {
 }
 
 impl<'vm, A, R> Function<'vm, fn(A) -> R>
-    where A: Pushable,
+    where A: Pushable<'vm>,
           R: VMType + Getable<'vm>
 {
     pub fn call(&mut self, a: A) -> Result<R, Error> {
@@ -1018,8 +1045,8 @@ impl<'vm, A, R> Function<'vm, fn(A) -> R>
     }
 }
 impl<'vm, A, B, R> Function<'vm, fn(A, B) -> R>
-    where A: Pushable,
-          B: Pushable,
+    where A: Pushable<'vm>,
+          B: Pushable<'vm>,
           R: VMType + Getable<'vm>
 {
     pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
@@ -1059,9 +1086,24 @@ impl<'s, T: FunctionType> FunctionType for &'s T {
     }
 }
 
-impl<'vm, 's, T> VMFunction<'vm> for &'s T
+impl<'vm, 's, T: ?Sized> VMFunction<'vm> for &'s T
     where T: VMFunction<'vm>
 {
+    fn unpack_and_call(&self, vm: &'vm VM) -> Status {
+        (**self).unpack_and_call(vm)
+    }
+}
+
+impl <F> FunctionType for Box<F>
+where F: FunctionType
+{
+    fn arguments() -> VMIndex {
+        F::arguments()
+    }
+}
+
+impl <'vm, F: ?Sized> VMFunction<'vm> for Box<F>
+where F: VMFunction<'vm> {
     fn unpack_and_call(&self, vm: &'vm VM) -> Status {
         (**self).unpack_and_call(vm)
     }
@@ -1079,9 +1121,9 @@ impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
     }
 }
 
-impl <'vm, $($args,)* R> Pushable for fn ($($args),*) -> R
-where $($args: Getable<'vm> + VMType + 'vm,)* R: Pushable + 'vm {
-    fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+impl <'vm, $($args,)* R> Pushable<'vm> for fn ($($args),*) -> R
+where $($args: Getable<'vm> + VMType + 'vm,)* R: Pushable<'vm> + 'vm {
+    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let f = Box::new(move |vm| self.unpack_and_call(vm));
         let extern_function = unsafe {
             //The VM guarantess that it only ever calls this function with itself which should
@@ -1109,7 +1151,7 @@ impl <'vm, $($args,)* R: VMType> FunctionType for fn ($($args),*) -> R {
 }
 
 impl <'vm, $($args,)* R> VMFunction<'vm> for fn ($($args),*) -> R
-where $($args: Getable<'vm> + 'vm,)* R: Pushable + 'vm {
+where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM) -> Status {
         let n_args = Self::arguments();
@@ -1142,8 +1184,9 @@ impl <'s, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's {
         Type::function(args, make_type::<R>(vm))
     }
 }
-impl <'vm, 's, $($args,)* R> VMFunction<'vm> for Fn($($args),*) -> R + 's
-where $($args: Getable<'vm> + 'vm,)* R: Pushable + 'vm {
+
+impl <'vm, $($args,)* R> VMFunction<'vm> for Fn($($args),*) -> R + 'vm
+where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
     fn unpack_and_call(&self, vm: &'vm VM) -> Status {
         let n_args = Self::arguments();
@@ -1158,19 +1201,6 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable + 'vm {
         let r = (*self)($($args),*);
         let mut stack = vm.current_frame();
         r.push(vm, &mut stack)
-    }
-}
-
-impl <'s, $($args,)* R: VMType> FunctionType for Box<Fn($($args),*) -> R + 's> {
-    fn arguments() -> VMIndex {
-        count!($($args),*) + R::extra_args()
-    }
-}
-
-impl <'vm, 's, $($args,)* R> VMFunction<'vm> for Box<Fn($($args),*) -> R + 's>
-where $($args: Getable<'vm> + 'vm,)* R: Pushable + 'vm {
-    fn unpack_and_call(&self, vm: &'vm VM) -> Status {
-        (**self).unpack_and_call(vm)
     }
 }
     )
