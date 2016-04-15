@@ -209,7 +209,6 @@ impl Drop for AllocPtr {
                 current = next.next.take();
             }
             let size = self.size();
-            println!("Drop {:p} {}", self.value(), self.value_size);
             (self.drop)(self.value());
             ptr::read(&*self.ptr);
             deallocate(self.ptr as *mut u8, size);
@@ -514,7 +513,6 @@ impl Gc {
         unsafe {
             let p: *mut D::Value = D::Value::make_ptr(&def, ptr.value());
             let ret: *const D::Value = &*def.initialize(WriteOnly::new(p));
-            println!("Alloc {:p} {}", ret, size);
             // Check that the returned pointer is the same as the one we sent as an extra precaution
             // that the pointer was initialized
             assert!(ret == p);
