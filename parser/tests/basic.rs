@@ -49,7 +49,7 @@ fn typ(s: &str) -> ASTType<String> {
     let is_var = s.chars().next().unwrap().is_lowercase();
     match s.parse() {
         Ok(b) => Type::builtin(b),
-        Err(()) if is_var => generic(s),
+        Err(()) if is_var => generic_ty(s),
         Err(()) => Type::data(TypeConstructor::Data(intern(s)), Vec::new()),
     }
 }
@@ -57,11 +57,14 @@ fn typ_a(s: &str, args: Vec<ASTType<String>>) -> ASTType<String> {
     assert!(s.len() != 0);
     ASTType::new(types::type_con(intern(s), args))
 }
-fn generic(s: &str) -> ASTType<String> {
-    Type::generic(Generic {
+fn generic_ty(s: &str) -> ASTType<String> {
+    Type::generic(generic(s))
+}
+fn generic(s: &str) -> Generic<String> {
+    Generic {
         kind: Kind::variable(0),
         id: intern(s),
-    })
+    }
 }
 fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
     no_loc(Expr::Call(Box::new(e), args))
@@ -88,11 +91,15 @@ fn lambda(name: &str, args: Vec<String>, body: PExpr) -> PExpr {
     }))
 }
 
-fn type_decl(name: ASTType<String>, typ: ASTType<String>, body: PExpr) -> PExpr {
+fn type_decl(name: String, args: Vec<Generic<String>>, typ: ASTType<String>, body: PExpr) -> PExpr {
     type_decls(vec![TypeBinding {
                         comment: None,
-                        name: name,
-                        typ: typ,
+                        name: name.clone(),
+                        alias: Alias {
+                            name: name,
+                            args: args,
+                            typ: Some(typ),
+                        },
                     }],
                body)
 }
@@ -160,7 +167,7 @@ fn expression() {
                          vec![intern("x"), intern("y")],
                          binop(id("x"), "+", id("y")))));
     let e = parse(r#"type Test = Int in 0"#);
-    assert_eq!(e, Ok(type_decl(typ("Test"), typ("Int"), int(0))));
+    assert_eq!(e, Ok(type_decl(intern("Test"), vec![], typ("Int"), int(0))));
 }
 
 #[test]
@@ -207,7 +214,7 @@ fn type_decl_record() {
     let record = Type::record(Vec::new(),
                               vec![field("x", typ("Int")),
                                    field("y", Type::record(vec![], vec![]))]);
-    assert_eq!(e, type_decl(typ("Test"), record, int(1)));
+    assert_eq!(e, type_decl(intern("Test"), vec![], record, int(1)));
 }
 
 #[test]
@@ -226,8 +233,16 @@ fn type_mutually_recursive() {
                                       typ: Type::record(vec![], vec![]),
                                   }]);
     let binds = vec![
-        TypeBinding { comment: None, name: typ("Test"), typ: test },
-        TypeBinding { comment: None, name: typ("Test2"), typ: test2 },
+        TypeBinding {
+            comment: None,
+            name: intern("Test"),
+            alias: Alias { name: intern("Test"), args: Vec::new(), typ: Some(test), }
+        },
+        TypeBinding {
+            comment: None,
+            name: intern("Test2"),
+            alias: Alias { name: intern("Test2"), args: Vec::new(), typ: Some(test2) }
+        },
         ];
     assert_eq!(e, type_decls(binds, int(1)));
 }
@@ -266,7 +281,8 @@ fn variant_type() {
     let none = Type::function(vec![], option.clone());
     let some = Type::function(vec![typ("a")], option.clone());
     assert_eq!(e,
-               type_decl(option,
+               type_decl(intern("Option"),
+                         vec![generic("a")],
                          Type::variants(vec![(intern("None"), none), (intern("Some"), some)]),
                          call(id("Some"), vec![int(1)])));
 }
@@ -351,7 +367,7 @@ fn associated_record() {
     let record = record_a(vec![(intern("Fn"), Some(fn_type)), (intern("Test"), None)],
                           vec![(intern("x"), Some(int(1)))]);
     assert_eq!(e,
-               type_decl(typ_a("Test", vec![typ("a")]), test_type, record));
+               type_decl(intern("Test"), vec![generic("a")], test_type, record));
 }
 
 #[test]
@@ -442,8 +458,12 @@ id
     assert_eq!(e,
                type_decls(vec![TypeBinding {
                                    comment: Some("Test type ".into()),
-                                   name: typ("Test"),
-                                   typ: typ("Int"),
+                                   name: intern("Test"),
+                                   alias: Alias {
+                                       name: intern("Test"),
+                                       args: Vec::new(),
+                                       typ: Some(typ("Int")),
+                                   },
                                }],
                           id("id")));
 }
@@ -465,8 +485,12 @@ id
                      int(1),
                      type_decls(vec![TypeBinding {
                                          comment: Some("Test type ".into()),
-                                         name: typ("Test"),
-                                         typ: typ("Int"),
+                                         name: intern("Test"),
+                                         alias: Alias {
+                                             name: intern("Test"),
+                                             args: Vec::new(),
+                                             typ: Some(typ("Int")),
+                                         },
                                      }],
                                 id("id"))));
 }
@@ -485,8 +509,12 @@ id
     assert_eq!(e,
                type_decls(vec![TypeBinding {
                                    comment: Some("Merge\nconsecutive\nline comments.".into()),
-                                   name: typ("Test"),
-                                   typ: typ("Int"),
+                                   name: intern("Test"),
+                                   alias: Alias {
+                                       name: intern("Test"),
+                                       args: Vec::new(),
+                                       typ: Some(typ("Int")),
+                                   },
                                }],
                           id("id")));
 }

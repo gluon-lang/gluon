@@ -6,16 +6,14 @@ use base::ast::MutVisitor;
 use base::metadata::{Metadata, MetadataEnv};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Name, Symbol};
-use base::types::{Type, TypeConstructor, TcIdent};
+use base::types::TcIdent;
 
 struct Environment<'b> {
     env: &'b MetadataEnv,
     stack: ScopedMap<Symbol, Metadata>,
 }
 
-pub fn metadata(env: &MetadataEnv,
-                expr: &mut ast::LExpr<TcIdent>)
-                -> Metadata {
+pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
     struct MetadataVisitor<'b> {
         env: Environment<'b>,
     }
@@ -23,14 +21,18 @@ pub fn metadata(env: &MetadataEnv,
         fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::Binding<TcIdent>) {
             match bind.name.value {
                 ast::Pattern::Identifier(ref mut id) => {
-                    let metadata = bind.comment.as_ref().map(|comment| 
-                                                  Metadata {
-                                                      comment: Some(comment.clone()),
-                                                      module: BTreeMap::new(),
-                                                  }).unwrap_or(metadata);
+                    let metadata = bind.comment
+                                       .as_ref()
+                                       .map(|comment| {
+                                           Metadata {
+                                               comment: Some(comment.clone()),
+                                               module: BTreeMap::new(),
+                                           }
+                                       })
+                                       .unwrap_or(metadata);
                     self.stack_var(id.name.clone(), metadata);
                 }
-                _ => self.new_pattern(metadata, &mut bind.name)
+                _ => self.new_pattern(metadata, &mut bind.name),
             }
         }
 
@@ -39,7 +41,6 @@ pub fn metadata(env: &MetadataEnv,
                 ast::Pattern::Record { ref mut fields, ref mut types, .. } => {
                     for field in fields.iter_mut().chain(types) {
                         if let Some(m) = metadata.module.remove(field.0.as_ref()) {
-                            println!("{:?}", field);
                             let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
                             self.stack_var(id, m);
                         }
@@ -54,11 +55,13 @@ pub fn metadata(env: &MetadataEnv,
 
         fn stack_var(&mut self, id: Symbol, metadata: Metadata) {
             if metadata.has_data() {
+                debug!("Insert {}", id);
                 self.env.stack.insert(id, metadata);
             }
         }
 
         fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
+            debug!("Lookup {}", id);
             self.env
                 .stack
                 .get(&id)
@@ -78,8 +81,7 @@ pub fn metadata(env: &MetadataEnv,
                                 let m = self.metadata_expr(expr);
                                 if m.has_data() {
                                     Some(m)
-                                }
-                                else {
+                                } else {
                                     None
                                 }
                             }
@@ -96,7 +98,10 @@ pub fn metadata(env: &MetadataEnv,
                             module.insert(String::from(name), metadata);
                         }
                     }
-                    Metadata { comment: None, module: module }
+                    Metadata {
+                        comment: None,
+                        module: module,
+                    }
                 }
                 ast::Expr::Let(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
@@ -110,8 +115,7 @@ pub fn metadata(env: &MetadataEnv,
                             self.metadata_expr(&mut bind.expression);
                             self.env.stack.exit_scope();
                         }
-                    }
-                    else {
+                    } else {
                         for bind in bindings {
                             let metadata = self.metadata_expr(&mut bind.expression);
                             self.new_binding(metadata, bind);
@@ -124,18 +128,14 @@ pub fn metadata(env: &MetadataEnv,
                 ast::Expr::Type(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
                     for bind in bindings.iter_mut() {
-                        let maybe_metadata = bind.comment.as_ref().map(|comment| 
-                                                      Metadata {
-                                                          comment: Some(comment.clone()),
-                                                          module: BTreeMap::new(),
-                                                      });
-                        match *bind.name {
-                            Type::Data(TypeConstructor::Data(ref id), _) => {
-                                if let Some(metadata) = maybe_metadata {
-                                    self.stack_var(id.clone(), metadata);
-                                }
+                        let maybe_metadata = bind.comment.as_ref().map(|comment| {
+                            Metadata {
+                                comment: Some(comment.clone()),
+                                module: BTreeMap::new(),
                             }
-                            _ => unreachable!()
+                        });
+                        if let Some(metadata) = maybe_metadata {
+                            self.stack_var(bind.name.clone(), metadata);
                         }
                     }
                     let result = self.metadata_expr(expr);

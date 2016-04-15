@@ -347,6 +347,7 @@ let test: Test () = T 1 >>= \x -> monad_Test.return ()
 test
 ";
     let result = typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
     assert_eq!(result, Ok(typ_a("Test", vec![Type::unit()])));
 }
 

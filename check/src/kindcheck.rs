@@ -2,7 +2,7 @@ use std::fmt;
 
 use base::ast;
 use base::types;
-use base::types::{RcKind, Type, Kind, merge};
+use base::types::{Generic, RcKind, Type, Kind, merge};
 use base::symbol::Symbol;
 use base::types::KindEnv;
 
@@ -19,7 +19,7 @@ pub type Result<T> = ::std::result::Result<T, Error<Symbol>>;
 
 /// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
-    variables: Vec<TcType>,
+    variables: Vec<Generic<Symbol>>,
     ///Type bindings local to the current kindcheck invocation
     locals: Vec<(Symbol, RcKind)>,
     info: &'a (KindEnv + 'a),
@@ -76,7 +76,7 @@ impl<'a> KindCheck<'a> {
         self.locals.push((name, kind));
     }
 
-    pub fn set_variables(&mut self, variables: &[TcType]) {
+    pub fn set_variables(&mut self, variables: &[Generic<Symbol>]) {
         self.variables.clear();
         self.variables.extend(variables.iter().cloned());
     }
@@ -88,13 +88,8 @@ impl<'a> KindCheck<'a> {
     fn find(&mut self, id: &Symbol) -> Result<RcKind> {
         let kind = self.variables
                        .iter()
-                       .find(|var| {
-                           match ***var {
-                               Type::Generic(ref other) => other.id == *id,
-                               _ => false,
-                           }
-                       })
-                       .map(|t| t.kind().clone())
+                       .find(|var| var.id == *id)
+                       .map(|t| t.kind.clone())
                        .or_else(|| {
                            self.locals
                                .iter()
@@ -247,16 +242,19 @@ impl<'a> KindCheck<'a> {
                                           }))
                                       }
                                       Type::Generic(ref var) => {
-                                          let mut kind = var.kind.clone();
-                                          kind = update_kind(&self.subs, kind, default);
-                                          Some(Type::generic(types::Generic {
-                                              id: var.id.clone(),
-                                              kind: kind,
-                                          }))
+                                          Some(Type::generic(self.finalize_generic(var)))
                                       }
                                       _ => None,
                                   }
                               })
+    }
+    pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
+        let mut kind = var.kind.clone();
+        kind = update_kind(&self.subs, kind, Some(&self.star));
+        types::Generic {
+            id: var.id.clone(),
+            kind: kind,
+        }
     }
 }
 

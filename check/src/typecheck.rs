@@ -7,7 +7,7 @@ use base::ast::{Typed, DisplayEnv, MutVisitor};
 use base::types;
 use base::types::{RcKind, Type, Generic, Kind};
 use base::error::Errors;
-use base::symbol::{Name, Symbol, SymbolModule, Symbols};
+use base::symbol::{Symbol, SymbolModule, Symbols};
 use base::types::{KindEnv, TypeEnv, TcIdent, Alias, TcType};
 use instantiate::{AliasInstantiator, Instantiator, unroll_app};
 use kindcheck;
@@ -51,7 +51,8 @@ pub enum TypeError<I> {
     EmptyCase,
 }
 
-impl<I> From<kindcheck::Error<I>> for TypeError<I> where I: PartialEq + Clone
+impl<I> From<kindcheck::Error<I>> for TypeError<I>
+    where I: PartialEq + Clone
 {
     fn from(e: kindcheck::Error<I>) -> TypeError<I> {
         match e {
@@ -165,7 +166,9 @@ impl<'a> TypeEnv for Environment<'a> {
                         match **typ {
                             Type::Record { fields: ref record_fields, .. } => {
                                 fields.iter()
-                                      .all(|name| record_fields.iter().any(|f| f.name.name_eq(name)))
+                                      .all(|name| {
+                                          record_fields.iter().any(|f| f.name.name_eq(name))
+                                      })
                             }
                             _ => false,
                         }
@@ -269,17 +272,21 @@ impl<'a> Typecheck<'a> {
                 }
             }
         }
-        let alias = Alias {
+        let mut alias = Alias {
             name: id.clone(),
             args: generics,
             typ: real_type,
         };
-        if let Type::Data(types::TypeConstructor::Data(ref id), _) = *typ {
-            // FIXME: Workaround so that both the types name in this module and its global
-            // name are imported. Without this aliases may not be traversed properly
-            self.environment
-                .stack_types
-                .insert(id.clone(), (typ.clone(), alias.clone()));
+        match *typ {
+            Type::Data(types::TypeConstructor::Data(ref alias_id), _) => {
+                alias.name = alias_id.clone();
+                // FIXME: Workaround so that both the types name in this module and its global
+                // name are imported. Without this aliases may not be traversed properly
+                self.environment
+                    .stack_types
+                    .insert(alias_id.clone(), (typ.clone(), alias.clone()));
+            }
+            _ => unreachable!()
         }
         self.environment.stack_types.insert(id, (typ, alias));
     }
@@ -632,23 +639,18 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::Type(ref mut bindings, ref expr) => {
                 self.enter_scope();
-                for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
-                    *name = match (**name).clone() {
-                        Type::Data(types::TypeConstructor::Data(original), args) => {
-                            // Create a new symbol for this binding so that this type will
-                            // differ from any other types which are named the same
-                            let s = String::from(self.symbols.string(&original));
-                            let new = self.symbols.scoped_symbol(&s);
-                            self.original_symbols.insert(original, new.clone());
-                            Type::data(types::TypeConstructor::Data(new), args)
-                        }
-                        _ => {
-                            panic!("ICE: Unexpected lhs of type binding {}",
-                                   types::display_type(&self.symbols, name))
-                        }
-                    }
+                for bind in bindings.iter_mut() {
+                    let s = String::from(self.symbols.string(&bind.alias.name));
+                    let new = self.symbols.scoped_symbol(&s);
+                    self.original_symbols.insert(bind.alias.name.clone(), new.clone());
+                    // Rename the aliase's name to its global name
+                    bind.alias.name = new;
                 }
-                for &mut ast::TypeBinding { ref mut typ, .. } in bindings.iter_mut() {
+                for bind in bindings.iter_mut() {
+                    let typ = bind.alias
+                                  .typ
+                                  .as_mut()
+                                  .expect("Expected binding to have an aliased type");
                     *typ = self.refresh_symbols_in_type(typ.clone());
                 }
                 {
@@ -658,76 +660,59 @@ impl<'a> Typecheck<'a> {
                                                                      subs);
                     // Setup kind variables for all type variables and insert the types in the
                     // this type expression into the kindcheck environment
-                    for &mut ast::TypeBinding { ref mut name, .. } in bindings.iter_mut() {
-                        *name = match (**name).clone() {
-                            Type::Data(types::TypeConstructor::Data(id), mut args) => {
-                                // Create the kind for this binding
-                                // Test a b: 2 -> 1 -> *
-                                // and bind the same variables to the arguments of the type binding
-                                // ('a' and 'b' in the example)
-                                let mut id_kind = check.star();
-                                for arg in args.iter_mut().rev() {
-                                    let mut a = (**arg).clone();
-                                    if let Type::Generic(ref mut gen) = a {
-                                        gen.kind = check.subs.new_var();
-                                        id_kind = Kind::function(gen.kind.clone(), id_kind);
-                                    }
-                                    *arg = TcType::from(a);
-                                }
-                                check.add_local(id.clone(), id_kind);
-                                Type::data(types::TypeConstructor::Data(id), args)
-                            }
-                            _ => {
-                                panic!("ICE: Unexpected lhs of type binding {}",
-                                       types::display_type(&self.symbols, name))
-                            }
-                        };
+                    for bind in bindings.iter_mut() {
+                        // Create the kind for this binding
+                        // Test a b: 2 -> 1 -> *
+                        // and bind the same variables to the arguments of the type binding
+                        // ('a' and 'b' in the example)
+                        let mut id_kind = check.star();
+                        for gen in bind.alias.args.iter_mut().rev() {
+                            gen.kind = check.subs.new_var();
+                            id_kind = Kind::function(gen.kind.clone(), id_kind);
+                        }
+                        check.add_local(bind.alias.name.clone(), id_kind);
                     }
 
                     // Kindcheck all the types in the environment
                     for bind in bindings.iter_mut() {
-                        match *bind.name {
-                            Type::Data(_, ref args) => {
-                                check.set_variables(args);
-                            }
-                            _ => {
-                                panic!("ICE: Unexpected lhs of type binding {}",
-                                       types::display_type(&self.symbols, &bind.name))
-                            }
-                        }
-                        try!(check.kindcheck_type(&mut bind.typ));
-                        try!(check.kindcheck_type(&mut bind.name));
+                        check.set_variables(&bind.alias.args);
+                        let typ = bind.alias
+                                      .typ
+                                      .as_mut()
+                                      .expect("Expected binding to have an aliased type");
+                        try!(check.kindcheck_type(typ));
                     }
 
                     // All kinds are now inferred so replace the kinds store in the AST
                     for bind in bindings.iter_mut() {
-                        bind.typ = check.finalize_type(bind.typ.clone());
-                        bind.name = check.finalize_type(bind.name.clone());
+                        if let Some(ref mut typ) = bind.alias.typ {
+                            *typ = check.finalize_type(typ.clone());
+                        }
+                        for arg in &mut bind.alias.args {
+                            *arg = check.finalize_generic(&arg);
+                        }
                     }
                 }
 
                 // Finally insert the declared types into the global scope
-                for &mut ast::TypeBinding { ref name, ref typ, .. } in bindings {
-                    match **name {
-                        Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
-                            debug!("HELP {} \n{:?}", self.symbols.string(&id), args);
-                            if self.environment.stack_types.get(&id).is_some() {
-                                self.errors.error(ast::Spanned {
-                                    span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
-                                    value: DuplicateTypeDefinition(id.clone()),
-                                });
-                            } else {
-                                let generic_args = extract_generics(args);
-                                self.stack_type(id.clone(),
-                                                name.clone(),
-                                                generic_args,
-                                                Some(typ.clone()));
-                            }
-                        }
-                        _ => {
-                            panic!("ICE: Unexpected lhs of type binding {}",
-                                   types::display_type(&self.symbols, name))
-                        }
+                for bind in bindings {
+                    let args = &bind.alias.args;
+                    let generic_args = args.iter().cloned().map(Type::generic).collect();
+                    let name = Type::<_, TcType>::data(types::TypeConstructor::Data(bind.alias
+                                                                                        .name
+                                                                                        .clone()),
+                                                       generic_args);
+                    debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
+                    if self.environment.stack_types.get(&bind.name).is_some() {
+                        self.errors.error(ast::Spanned {
+                            span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
+                            value: DuplicateTypeDefinition(bind.name.clone()),
+                        });
+                    } else {
+                        self.stack_type(bind.name.clone(),
+                                        name.clone(),
+                                        args.clone(),
+                                        bind.alias.typ.clone());
                     }
                 }
                 Ok(TailCall::TailCall)
@@ -735,38 +720,14 @@ impl<'a> Typecheck<'a> {
             ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
                                       .map(|&mut (ref mut symbol, ref mut typ)| {
-                                          if let Some(new) = self.original_symbols.get(symbol) {
-                                              *symbol = new.clone();
-                                          }
                                           if let Some(ref mut typ) = *typ {
                                               *typ = self.refresh_symbols_in_type(typ.clone());
                                           }
-                                          let (generics, typ) = {
-                                              let alias = try!(self.find_type_info(symbol));
-                                              (alias.args.clone(), alias.typ.clone())
-                                          };
+                                          let alias = try!(self.find_type_info(symbol));
 
-                                          let name: TcType =
-                                      Type::data(types::TypeConstructor::Data(symbol.clone()),
-                                                 generics.iter()
-                                                         .cloned()
-                                                         .map(Type::generic)
-                                                         .collect());
-                                          let typ = match typ {
-                                              Some(typ) => typ.clone(),
-                                              None => name.clone(),
-                                          };
-                                          let n = String::from(Name::new(self.symbols
-                                                                             .string(symbol))
-                                                                   .name()
-                                                                   .as_str());
                                           Ok(types::Field {
-                                              name: self.symbols.symbol(n),
-                                              typ: Alias {
-                                                  name: symbol.clone(),
-                                                  args: generics,
-                                                  typ: Some(typ),
-                                              },
+                                              name: symbol.clone(),
+                                              typ: alias.clone(),
                                           })
                                       })
                                       .collect::<TcResult<Vec<_>>>());
@@ -855,10 +816,14 @@ impl<'a> Typecheck<'a> {
                     Type::Record { fields: ref expected_fields, .. } => {
                         for pattern_field in fields {
                             let expected_field = try!(expected_fields.iter()
-                                .find(|expected_field| pattern_field.0.name_eq(&expected_field.name))
-                                .ok_or_else(|| {
-                                    UndefinedField(match_type.clone(), pattern_field.0.clone())
-                                }));
+                                                    .find(|expected_field| {
+                                                        pattern_field.0
+                                                                     .name_eq(&expected_field.name)
+                                                    })
+                                                    .ok_or_else(|| {
+                                                        UndefinedField(match_type.clone(),
+                                                                       pattern_field.0.clone())
+                                                    }));
                             let var = self.inst.subs.new_var();
                             types.push(var.clone());
                             try!(self.unify(&var, expected_field.typ.clone()));
@@ -935,8 +900,7 @@ impl<'a> Typecheck<'a> {
                                     // This forces refresh_type to remap the name a type was given
                                     // in this module to its actual name
                                     self.original_symbols
-                                        .insert(name.clone(),
-                                                field_type.typ.name.clone());
+                                        .insert(name.clone(), field_type.typ.name.clone());
                                     self.stack_type(name,
                                                     alias_type,
                                                     field_type.typ.args.clone(),
@@ -972,7 +936,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn kindcheck(&self, typ: &mut TcType, args: &mut [TcType]) -> TcResult<()> {
+    fn kindcheck(&self, typ: &mut TcType, args: &mut [Generic<Symbol>]) -> TcResult<()> {
         let subs = Substitution::new();
         let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
         check.set_variables(args);

@@ -8,8 +8,6 @@ use base::types;
 use base::types::{TcType, Type, Generic, TcIdent, RcKind, KindEnv, TypeEnv};
 use base::error::Errors;
 
-use typecheck::extract_generics;
-
 pub type Error = Errors<ast::Spanned<RenameError>>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -94,7 +92,9 @@ pub fn rename(symbols: &mut SymbolModule,
                     let field_types = self.find_fields(typ).expect("field_types");
                     for field in fields.iter_mut() {
                         let field_type = field_types.iter()
-                                                    .find(|field_type| field_type.name.name_eq(&field.0))
+                                                    .find(|field_type| {
+                                                        field_type.name.name_eq(&field.0)
+                                                    })
                                                     .expect("ICE: Existing field")
                                                     .typ
                                                     .clone();
@@ -299,17 +299,11 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 ast::Expr::Type(ref bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
-                    for &ast::TypeBinding { ref name, ref typ, comment: _ } in bindings {
-                        match **name {
-                            Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
-                                let generic_args = extract_generics(args);
-                                self.stack_type(id.clone(),
-                                                id.clone(),
-                                                generic_args,
-                                                Some(typ.clone()));
-                            }
-                            _ => panic!(),
-                        }
+                    for bind in bindings {
+                        self.stack_type(bind.name.clone(),
+                                        bind.alias.name.clone(),
+                                        bind.alias.args.clone(),
+                                        bind.alias.typ.clone());
                     }
                     self.visit_expr(expr);
                     self.env.stack_types.exit_scope();

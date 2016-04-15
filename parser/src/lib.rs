@@ -360,27 +360,35 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     fn type_binding(&self, input: I) -> ParseResult<TypeBinding<Id::Untyped>, I> {
         (self.ident_u(), many(self.ident_u()))
-            .map(|(name, args): (_, Vec<_>)| {
-                let args = args.into_iter()
+            .then(|(name, args): (Id::Untyped, Vec<Id::Untyped>)| {
+                let arg_types = args.iter()
                                .map(|id| {
                                    Type::generic(Generic {
                                        kind: Kind::variable(0),
-                                       id: id,
+                                       id: id.clone(),
                                    })
                                })
                                .collect();
-                Type::data(TypeConstructor::Data(name), args)
-            })
-            .then(|return_type: ASTType<Id::Untyped>| {
-                let return_type2 = return_type.clone();
+                let return_type = Type::data(TypeConstructor::Data(name.clone()), arg_types);
                 token(Token::Equal)
                     .with(self.typ()
                               .or(parser(move |input| self.parse_adt(&return_type, input))))
                     .map(move |rhs_type| {
                         TypeBinding {
                             comment: None,
-                            name: return_type2.clone(),
-                            typ: rhs_type,
+                            name: name.clone(),
+                            alias: Alias {
+                                name: name.clone(),
+                                args: args.iter()
+                                   .map(|id| {
+                                       Generic {
+                                           kind: Kind::variable(0),
+                                           id: id.clone(),
+                                       }
+                                   })
+                                   .collect(),
+                                typ: Some(rhs_type),
+                            },
                         }
                     })
             })

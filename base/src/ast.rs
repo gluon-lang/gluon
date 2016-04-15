@@ -2,7 +2,7 @@
 use std::fmt;
 use std::ops::Deref;
 use symbol::Symbol;
-use types::{Type, TypeVariable, TypeConstructor, Kind, TypeEnv, instantiate};
+use types::{Alias, Type, TypeVariable, TypeConstructor, Kind, TypeEnv, instantiate};
 
 pub type ASTType<Id> = ::types::ArcType<Id>;
 
@@ -324,8 +324,8 @@ pub enum Expr<Id: AstId> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
     pub comment: Option<String>,
-    pub name: ASTType<Id>,
-    pub typ: ASTType<Id>,
+    pub name: Id,
+    pub alias: Alias<Id, ASTType<Id>>,
 }
 
 #[derive(Clone, PartialEq, Debug)]

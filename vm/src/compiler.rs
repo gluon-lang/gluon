@@ -656,18 +656,10 @@ impl<'a> Compiler<'a> {
                 function.function.inner_functions.push(cf);
             }
             Expr::Type(ref type_bindings, ref expr) => {
-                for type_binding in type_bindings {
-                    if let Type::Data(types::TypeConstructor::Data(ref name), ref args) =
-                           *type_binding.name {
-                        let generic_args = extract_generics(args);
-                        self.stack_types.insert(name.clone(),
-                                                types::Alias {
-                                                    name: name.clone(),
-                                                    args: generic_args,
-                                                    typ: Some(type_binding.typ.clone()),
-                                                });
-                        self.stack_constructors.insert(name.clone(), type_binding.typ.clone());
-                    }
+                for bind in type_bindings {
+                    self.stack_types.insert(bind.alias.name.clone(), bind.alias.clone());
+                    let typ = bind.alias.typ.as_ref().expect("TypeBinding type").clone();
+                    self.stack_constructors.insert(bind.name.clone(), typ);
                 }
                 return Some(expr);
             }
@@ -818,18 +810,4 @@ fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f
             f(&field.0, &associated_type.typ);
         }
     }
-}
-
-fn extract_generics(args: &[TcType]) -> Vec<types::Generic<Symbol>> {
-    args.iter()
-        .map(|arg| {
-            match **arg {
-                Type::Generic(ref gen) => gen.clone(),
-                _ => {
-                    panic!("The type on the lhs of a type binding did not have all generic \
-                            arguments")
-                }
-            }
-        })
-        .collect()
 }
