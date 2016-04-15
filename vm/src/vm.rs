@@ -1084,7 +1084,8 @@ impl VM {
     /// Allocates a new value from a given `DataDef`.
     /// Takes the stack as it may collect if the collection limit has been reached.
     pub fn alloc<D>(&self, stack: &Stack, def: D) -> GcPtr<D::Value>
-        where D: DataDef + Traverseable
+        where D: DataDef + Traverseable,
+              D::Value: Sized
     {
         self.with_roots(stack,
                         |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })

@@ -160,6 +160,7 @@ unsafe impl<'s, T: Copy> DataDef for &'s [T] {
 struct GcHeader {
     next: Option<AllocPtr>,
     value_size: usize,
+    drop: unsafe fn (*mut ()),
     marked: Cell<bool>,
 }
 
@@ -169,7 +170,10 @@ struct AllocPtr {
 }
 
 impl AllocPtr {
-    fn new(value_size: usize) -> AllocPtr {
+    fn new<T>(value_size: usize) -> AllocPtr {
+        unsafe fn drop<T>(t: *mut ()) {
+			ptr::drop_in_place(t as *mut T)
+        }
         unsafe {
             let alloc_size = GcHeader::value_offset() + value_size;
             let ptr = allocate(alloc_size) as *mut GcHeader;
@@ -177,6 +181,7 @@ impl AllocPtr {
                        GcHeader {
                            next: None,
                            value_size: value_size,
+                           drop: drop::<T>,
                            marked: Cell::new(false),
                        });
             AllocPtr { ptr: ptr }
@@ -204,6 +209,8 @@ impl Drop for AllocPtr {
                 current = next.next.take();
             }
             let size = self.size();
+            println!("Drop {:p} {}", self.value(), self.value_size);
+            (self.drop)(self.value());
             ptr::read(&*self.ptr);
             deallocate(self.ptr as *mut u8, size);
         }
@@ -486,7 +493,8 @@ impl Gc {
     /// Unsafe since `roots` must be able to traverse all accesible `GcPtr` values.
     pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> GcPtr<D::Value>
         where R: Traverseable,
-              D: DataDef + Traverseable
+              D: DataDef + Traverseable,
+              D::Value: Sized
     {
         if self.allocated_memory >= self.collect_limit {
             self.collect((roots, &def));
@@ -496,15 +504,17 @@ impl Gc {
 
     /// Allocates a new object.
     pub fn alloc<D>(&mut self, def: D) -> GcPtr<D::Value>
-        where D: DataDef
+        where D: DataDef,
+              D::Value: Sized
     {
         let size = def.size();
-        let mut ptr = AllocPtr::new(size);
+        let mut ptr = AllocPtr::new::<D::Value>(size);
         ptr.next = self.values.take();
         self.allocated_memory += ptr.size();
         unsafe {
             let p: *mut D::Value = D::Value::make_ptr(&def, ptr.value());
             let ret: *const D::Value = &*def.initialize(WriteOnly::new(p));
+            println!("Alloc {:p} {}", ret, size);
             // Check that the returned pointer is the same as the one we sent as an extra precaution
             // that the pointer was initialized
             assert!(ret == p);
@@ -574,9 +584,11 @@ impl Gc {
 
 #[cfg(test)]
 mod tests {
-    use super::{Gc, GcPtr, GcHeader, Traverseable, DataDef, WriteOnly};
+    use super::{Gc, GcPtr, GcHeader, Traverseable, DataDef, WriteOnly, Move};
     use std::fmt;
     use std::mem;
+    use std::rc::Rc;
+    use std::cell::Cell;
 
     use self::Value::*;
 
@@ -683,5 +695,28 @@ mod tests {
             gc.collect(&mut *stack);
         }
         assert_eq!(object_count(&gc), 0);
+    }
+
+    pub struct Dropable {
+        dropped: Rc<Cell<bool>>,
+    }
+
+    impl Drop for Dropable {
+        fn drop(&mut self) {
+            self.dropped.set(true);
+        }
+    }
+
+    #[test]
+    fn drop() {
+        let dropped = Rc::new(Cell::new(false));
+        let mut gc = Gc::new();
+        {
+            let ptr = gc.alloc(Move(Dropable { dropped: dropped.clone() }));
+            assert_eq!(false, ptr.dropped.get());
+        }
+        assert_eq!(false, dropped.get());
+        unsafe { gc.collect(()); }
+        assert_eq!(true, dropped.get());
     }
 }
