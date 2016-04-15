@@ -29,13 +29,13 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 
 ## Hello world
 
-```haskell
+```f#
 io.print "Hello world!"
 ```
 
 ## Factorial
 
-```haskell
+```f#
 let factorial n : Int -> Int =
     if n < 2
     then 1
@@ -48,51 +48,51 @@ factorial 10
 
 Larger example which display most if not all of the syntactical elements in the language.
 
-```haskell
-// `type` is used to declare a new type.
-// In this case we declare `Eq` to be a record with a single field (`==`) which is a function
-// which takes two arguments of the same type and returns a boolean
-type Eq a = { (==) : a -> a -> Bool }
+```f#
 // `let` declares new variables.
 let id x = x
 
 let factorial n =
-    if n < 2
-    then 1
-    else n * factorial (n - 1)
+        if n < 2
+        then 1
+        else n * factorial (n - 1)
+
+// `type` is used to declare a new type.
+// In this case we declare `Countable` to be a record with a single field (count) which is a function
+// taking a single arguemnt and returning an integer
+type Countable a = { count: a -> Int }
+
+// "Counting" an integer just means returning the integer itself
+let countable_Int: Countable Int = { count = \x -> x }
 
 let list_module =
     // Declare a new type which only exists in the current scope
     type List a = | Cons a (List a) | Nil
     let map f xs =
-        case xs of
-            | Cons y ys -> Cons (f y) (map f ys)
-            | Nil -> Nil
-    let eq eq_a: Eq a -> Eq (List a) =
-        let (==) l r =
-            case l of
-                | Cons la lxs ->
-                    (case r of
-                        | Cons ra rxs -> eq_a.(==) la ra && lxs == rxs
-                        | Nil -> False)
-                | Nil ->
-                    (case r of
-                        | Cons _ _ -> False
-                        | Nil -> True)
-        { (==) }
+            case xs of
+                | Cons y ys -> Cons (f y) (map f ys)
+                | Nil -> Nil
+    // Define a count instance over lists which counts each of the elements and sums
+    // the results
+    let countable_List c: Countable a -> Countable (List a) =
+        let count xs =
+            case xs of
+            | Cons y ys -> c.count y + count ys
+            | Nil -> 0
+        { count }
     {
         // Since `List` is local we export it so its constructors can be used
         // outside the current scope
         List,
-        eq,
+        countable_List,
         map
     }
 
 // Bring the `List` type and its constructors into scope
-let { List, eq = list_Eq } = list_module
-// Create `==` for `List Int`
-let { (==) }: Eq (List Int) = list_Eq { (==) }
-if Cons 1 Nil == Nil then
+let { List, countable_List } = list_module
+// Create a `Countable` record for `List Int`
+let { count }: Countable (List Int) = countable_List countable_Int
+if count (Cons 20 (Cons 22 Nil)) == 41 then
     error "This branch is not executed"
 else
     io.print "Hello world!"
