@@ -193,6 +193,24 @@ pub fn load(vm: &VM) -> Result<()> {
         acosh => f1(f64::acosh),
         atanh => f1(f64::atanh)
     )));
+    try!(vm.define_global("int",
+                          record!(
+        min_value => VMInt::min_value(),
+        max_value => VMInt::max_value(),
+        count_ones => f1(VMInt::count_ones),
+        rotate_left => f2(VMInt::rotate_left),
+        rotate_right => f2(VMInt::rotate_right),
+        swap_bytes => f1(VMInt::swap_bytes),
+        from_be => f1(VMInt::from_be),
+        from_le => f1(VMInt::from_le),
+        to_be => f1(VMInt::to_be),
+        to_le => f1(VMInt::to_le),
+        pow => f2(VMInt::pow),
+        abs => f1(VMInt::abs),
+        signum => f1(VMInt::signum),
+        is_positive => f1(VMInt::is_positive),
+        is_negative => f1(VMInt::is_negative)
+    )));
     try!(vm.define_global("array",
                           record!(
         length => f1(prim::array_length),
