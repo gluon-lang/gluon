@@ -99,6 +99,9 @@ impl FunctionEnv {
     }
 
     fn emit(&mut self, i: Instruction) {
+        if let Slide(0) = i {
+            return;
+        }
         debug!("{:?} {} {}", i, self.stack_size, i.adjust());
         self.stack_size = (self.stack_size as i32 + i.adjust()) as VMIndex;
         self.function.instructions.push(i);
