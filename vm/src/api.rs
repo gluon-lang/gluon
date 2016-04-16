@@ -188,6 +188,40 @@ impl<'vm> Getable<'vm> for () {
     }
 }
 
+impl VMType for i32 {
+    type Type = Self;
+}
+impl Pushable for i32 {
+    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+        stack.push(Value::Int(self as VMInt));
+        Status::Ok
+    }
+}
+impl<'vm> Getable<'vm> for i32 {
+    fn from_value(_: &'vm VM, value: Value) -> Option<i32> {
+        match value {
+            Value::Int(i) => Some(i as i32),
+            _ => None,
+        }
+    }
+}
+impl VMType for u32 {
+    type Type = Self;
+}
+impl Pushable for u32 {
+    fn push<'b>(self, _: &VM, stack: &mut StackFrame<'b>) -> Status {
+        stack.push(Value::Int(self as VMInt));
+        Status::Ok
+    }
+}
+impl<'vm> Getable<'vm> for u32 {
+    fn from_value(_: &'vm VM, value: Value) -> Option<u32> {
+        match value {
+            Value::Int(i) => Some(i as u32),
+            _ => None,
+        }
+    }
+}
 impl VMType for VMInt {
     type Type = Self;
 }
@@ -286,13 +320,13 @@ impl<'vm> Getable<'vm> for Ordering {
 }
 
 impl VMType for str {
-    type Type = String;
+    type Type = <String as VMType>::Type;
 }
 impl<'s> VMType for &'s str {
-    type Type = <str as VMType>::Type;
+    type Type = <String as VMType>::Type;
 }
 impl VMType for String {
-    type Type = <str as VMType>::Type;
+    type Type = String;
 }
 impl<'s> Pushable for &'s str {
     fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
@@ -548,8 +582,9 @@ impl<T: Pushable, E: fmt::Display> Pushable for MaybeError<T, E> {
     }
 }
 
-impl<T: VMType> VMType for IO<T>
-    where T::Type: Sized
+impl<T> VMType for IO<T>
+    where T: VMType,
+          T::Type: Sized
 {
     type Type = IO<T::Type>;
     fn make_type(vm: &VM) -> TcType {
@@ -896,8 +931,8 @@ impl<'vm, F> Getable<'vm> for Function<'vm, F> {
 }
 
 impl<'vm, A, R> Function<'vm, fn(A) -> R>
-    where A: Pushable + 'static,
-          R: VMType + Getable<'vm> + 'static
+    where A: Pushable,
+          R: VMType + Getable<'vm>
 {
     pub fn call(&mut self, a: A) -> Result<R, Error> {
         let vm = self.value.vm();
@@ -917,9 +952,9 @@ impl<'vm, A, R> Function<'vm, fn(A) -> R>
     }
 }
 impl<'vm, A, B, R> Function<'vm, fn(A, B) -> R>
-    where A: Pushable + 'static,
-          B: Pushable + 'static,
-          R: VMType + Getable<'vm> + 'static
+    where A: Pushable,
+          B: Pushable,
+          R: VMType + Getable<'vm>
 {
     pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
         let vm = self.value.vm();

@@ -797,6 +797,8 @@ impl GlobalVMState {
             ids.insert(TypeId::of::<()>(), Type::unit());
             ids.insert(TypeId::of::<bool>(), Type::bool());
             ids.insert(TypeId::of::<VMInt>(), Type::int());
+            ids.insert(TypeId::of::<i32>(), Type::int());
+            ids.insert(TypeId::of::<u32>(), Type::int());
             ids.insert(TypeId::of::<f64>(), Type::float());
             ids.insert(TypeId::of::<::std::string::String>(), Type::string());
             ids.insert(TypeId::of::<char>(), Type::char());
