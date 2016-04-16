@@ -1,5 +1,7 @@
 
 *.swp
 *.swo
+# rustfmt backup files
+*.bk
 
 target
