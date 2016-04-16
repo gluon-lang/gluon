@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use base::ast;
 use base::symbol::Symbol;
 use vm::vm::VM;
-use super::{filename_to_module, load_script2};
+use super::{filename_to_module, Compiler};
 use base::macros::{Macro, Error as MacroError};
 use base::types::TcIdent;
 
@@ -116,8 +116,8 @@ impl Macro<VM> for Import {
                         }
                     };
                     // FIXME Remove this hack
-                    let implicit_prelude = modulename != "std.types";
-                    try!(load_script2(vm, &modulename, file_contents, implicit_prelude));
+                    let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
+                    try!(compiler.load_script(vm, &modulename, file_contents));
                     self.visited.borrow_mut().pop();
                 }
                 // FIXME Does not handle shadowing

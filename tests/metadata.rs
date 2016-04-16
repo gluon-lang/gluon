@@ -3,7 +3,7 @@ extern crate embed_lang;
 
 use embed_lang::vm::vm::VM;
 use embed_lang::import::Import;
-use embed_lang::load_script;
+use embed_lang::Compiler;
 
 fn make_vm() -> VM {
     let vm = ::embed_lang::new_vm();
@@ -23,7 +23,7 @@ fn metadata_from_other_module() {
 let { List, id } = import "std/prelude.hs"
 { List, id }
 "#;
-    load_script(&vm, "test", text).unwrap();
+    Compiler::new().load_script(&vm, "test", text).unwrap();
     
     let env = vm.get_env();
     assert!(env.get_metadata("test.id").is_ok());

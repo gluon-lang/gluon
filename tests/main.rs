@@ -4,7 +4,7 @@ extern crate env_logger;
 extern crate embed_lang;
 extern crate vm;
 
-use embed_lang::{new_vm, run_expr, load_file};
+use embed_lang::{new_vm, Compiler};
 
 use std::io::Read;
 use std::fmt;
@@ -51,7 +51,8 @@ fn test_files(path: &str) -> Result<Box<Iterator<Item = PathBuf>>, Box<Error>> {
 
 fn main_() -> Result<(), Box<Error>> {
     let vm = new_vm();
-    try!(load_file(&vm, "std/prelude.hs"));
+    let mut compiler = Compiler::new();
+    try!(compiler.load_file(&vm, "std/prelude.hs"));
     let mut text = String::new();
     let _ = ::env_logger::init();
     for filename in try!(test_files("tests/pass")) {
@@ -60,7 +61,7 @@ fn main_() -> Result<(), Box<Error>> {
         try!(file.read_to_string(&mut text));
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        try!(run_expr(&vm, name, &text));
+        try!(compiler.run_expr(&vm, name, &text));
     }
     for filename in try!(test_files("tests/fail")) {
         let mut file = try!(File::open(&filename));
@@ -68,7 +69,7 @@ fn main_() -> Result<(), Box<Error>> {
         try!(file.read_to_string(&mut text));
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        match run_expr(&vm, name, &text) {
+        match compiler.run_expr(&vm, name, &text) {
             Ok(x) => {
                 return Err(StringError(format!("Expected test '{}' to fail got {:?}",
                                                filename.to_str().unwrap(),

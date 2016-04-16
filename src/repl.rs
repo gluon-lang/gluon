@@ -4,11 +4,12 @@ use base::types::{Kind, TypeEnv};
 use vm::vm::{VM, RootStr};
 use vm::api::{IO, Function, WithVM};
 
-use embed_lang::{typecheck_expr, load_file, new_vm};
+use embed_lang::{Compiler, new_vm};
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<String> {
     let WithVM { vm, value: args } = args;
-    IO::Value(match typecheck_expr(vm, "<repl>", &args, false) {
+    let mut compiler = Compiler::new().implicit_prelude(false);
+    IO::Value(match compiler.typecheck_expr(vm, "<repl>", &args) {
         Ok((expr, _)) => {
             let env = vm.get_env();
             format!("{}", expr.env_type_of(&*env))
@@ -86,8 +87,9 @@ fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
         find_info => f1(find_info),
         find_kind => f1(find_kind)
     )));
-    try!(load_file(vm, "std/prelude.hs"));
-    try!(load_file(vm, "std/repl.hs"));
+    let mut compiler = Compiler::new();
+    try!(compiler.load_file(vm, "std/prelude.hs"));
+    try!(compiler.load_file(vm, "std/repl.hs"));
     Ok(())
 }
 

@@ -6,8 +6,18 @@ use embed_lang::vm::api::{VMType, Function};
 use embed_lang::vm::gc::Traverseable;
 
 use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr};
-use embed_lang::{load_script, run_expr};
+use embed_lang::Compiler;
 use embed_lang::import::Import;
+
+fn load_script(vm: &VM, filename: &str, input: &str) -> ::embed_lang::Result<()> {
+    Compiler::new()
+        .load_script(vm, filename, input)
+}
+
+fn run_expr(vm: &VM, s: &str) -> Value {
+    *Compiler::new()
+        .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
+}
 
 fn make_vm() -> VM {
     let vm = ::embed_lang::new_vm();
@@ -127,8 +137,8 @@ test "hello"
           test
       })
       .unwrap();
-    let result = run_expr(&mut vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
-    match *result {
+    let result = run_expr(&mut vm, expr);
+    match result {
         Value::String(s) => assert_eq!(&s[..], "hello world"),
         x => panic!("Expected string {:?}", x),
     }

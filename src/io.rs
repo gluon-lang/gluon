@@ -8,6 +8,8 @@ use vm::vm::{VM, Result, Status, Value, VMInt, RootStr};
 use vm::api::{VMType, IO, WithVM, primitive};
 use vm::api::generic::{A, B};
 
+use super::Compiler;
+
 pub fn print_int(i: VMInt) -> IO<()> {
     print!("{}", i);
     IO::Value(())
@@ -86,7 +88,7 @@ pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
     drop(stack);
-    let run_result = super::run_expr(vm, "<top>", &expr);
+    let run_result = Compiler::new().run_expr(vm, "<top>", &expr);
     stack = vm.current_frame();
     match run_result {
         Ok(value) => IO::Value(format!("{:?}", value)),
@@ -109,7 +111,7 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
     drop(stack);
-    let run_result = super::load_script(vm, &name[..], &expr);
+    let run_result = Compiler::new().load_script(vm, &name[..], &expr);
     stack = vm.current_frame();
     match run_result {
         Ok(()) => IO::Value(format!("Loaded {}", &name[..])),

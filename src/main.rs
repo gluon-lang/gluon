@@ -16,9 +16,7 @@ extern crate vm;
 #[cfg(not(test))]
 use std::error::Error as StdError;
 #[cfg(not(test))]
-use vm::vm::Error;
-#[cfg(not(test))]
-use embed_lang::{new_vm, load_script};
+use embed_lang::{new_vm, Compiler};
 #[cfg(not(test))]
 use clap::{Arg, App};
 
@@ -27,23 +25,10 @@ mod repl;
 
 #[cfg(not(test))]
 fn run_files(files: &[&str]) -> Result<(), Box<StdError>> {
-    use std::fs::File;
-    use std::io::Read;
-    use std::path::Path;
     let vm = new_vm();
-    let mut text = String::new();
+    let mut compiler = Compiler::new();
     for file in files {
-        text.clear();
-        let path = Path::new(file);
-        try!(File::open(path).and_then(|mut f| f.read_to_string(&mut text)));
-        match path.file_stem().and_then(|s| s.to_str()) {
-            Some(name) => try!(load_script(&vm, name, &text)),
-            None => {
-                return Err(Error::Message(format!("Could not create a package name from '{}'",
-                                                  file))
-                               .into())
-            }
-        }
+        try!(compiler.load_file(&vm, file));
     }
     Ok(())
 }
