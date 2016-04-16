@@ -28,7 +28,7 @@ use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closur
 use stack::{Stack, StackFrame};
 
 mopafy!(Userdata);
-pub trait Userdata: ::mopa::Any + Traverseable { }
+pub trait Userdata: ::mopa::Any + Traverseable {}
 
 impl<T> Userdata for T where T: Any + Traverseable {}
 
@@ -115,15 +115,13 @@ pub struct BytecodeFunction {
 
 impl BytecodeFunction {
     pub fn new(gc: &mut Gc, vm: &GlobalVMState, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
-        let CompiledFunction {
-            id,
-            args,
-            instructions,
-            inner_functions,
-            strings,
-            module_globals,
-            ..
-        } = f;
+        let CompiledFunction { id,
+                               args,
+                               instructions,
+                               inner_functions,
+                               strings,
+                               module_globals,
+                               .. } = f;
         let fs = inner_functions.into_iter()
                                 .map(|inner| BytecodeFunction::new(gc, vm, inner))
                                 .collect();
@@ -660,8 +658,8 @@ impl VMEnv {
             Type::Record { ref fields, .. } => {
                 let field_name = name.name();
                 fields.iter()
-                     .find(|field| field.name.as_ref() == field_name.as_str())
-                     .map(|field| &field.typ)
+                      .find(|field| field.name.as_ref() == field_name.as_str())
+                      .map(|field| &field.typ)
             }
             _ => None,
         };
@@ -832,7 +830,12 @@ impl GlobalVMState {
     }
 
     /// TODO dont expose this directly
-    pub fn set_global(&self, id: Symbol, typ: TcType, metadata: Metadata, value: Value) -> Result<()> {
+    pub fn set_global(&self,
+                      id: Symbol,
+                      typ: TcType,
+                      metadata: Metadata,
+                      value: Value)
+                      -> Result<()> {
         let mut env = self.env.borrow_mut();
         let globals = &mut env.globals;
         if globals.contains_key(id.as_ref()) {
@@ -962,7 +965,10 @@ impl VM {
         if status == Status::Error {
             return Err(Error::Message(format!("{:?}", value)));
         }
-        self.set_global(Symbol::new(name), T::make_type(self), Metadata::default(), value)
+        self.set_global(Symbol::new(name),
+                        T::make_type(self),
+                        Metadata::default(),
+                        value)
     }
 
     /// Retrieves the global called `name`.
@@ -1028,7 +1034,7 @@ impl VM {
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, TcType>> {
         let env = self.env.borrow();
         env.find_type_info(name)
-            .map(|alias| alias.clone())
+           .map(|alias| alias.clone())
     }
 
 
@@ -1121,12 +1127,12 @@ impl VM {
         let closure = self.alloc(&self.stack.borrow(), ClosureDataDef(f, &[]));
         let mut env = self.env.borrow_mut();
         env.globals.insert(name.into(),
-                       Global {
-                           id: id,
-                           typ: typ,
-                           metadata: Metadata::default(),
-                           value: Closure(closure),
-                       });
+                           Global {
+                               id: id,
+                               typ: typ,
+                               metadata: Metadata::default(),
+                               value: Closure(closure),
+                           });
         env.globals.len() as VMIndex - 1
     }
 
@@ -1148,9 +1154,10 @@ impl VM {
         if let Type::Data(types::TypeConstructor::Data(ref id), _) = **typ {
             let is_io = {
                 let env = self.env.borrow();
-                env.type_infos.find_type_info(&Symbol::new("IO"))
-                     .map(|alias| *id == alias.name)
-                     .unwrap_or(false)
+                env.type_infos
+                   .find_type_info(&Symbol::new("IO"))
+                   .map(|alias| *id == alias.name)
+                   .unwrap_or(false)
             };
             if is_io {
                 debug!("Run IO {:?}", value);

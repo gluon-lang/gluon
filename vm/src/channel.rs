@@ -103,7 +103,8 @@ fn resume(vm: &VM) -> Status {
             let result = child.resume();
             stack = vm.current_frame();
             match result {
-                Ok(()) | Err(Error::Yield) => {
+                Ok(()) |
+                Err(Error::Yield) => {
                     let value: Result<(), &str> = Ok(());
                     value.push(vm, &mut stack);
                     Status::Ok

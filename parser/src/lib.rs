@@ -138,17 +138,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     fn fixity(&self, i: &str) -> Fixity {
         match i {
-            "*" |
-            "/" |
-            "%" |
-            "+" |
-            "-" |
-            "==" |
-            "/=" |
-            "<" |
-            ">" |
-            "<=" |
-            ">=" => Fixity::Left,
+            "*" | "/" | "%" | "+" | "-" | "==" | "/=" | "<" | ">" | "<=" | ">=" => Fixity::Left,
             ":" | "++" | "&&" | "||" | "$" => Fixity::Right,
             _ => Fixity::Left,
         }
@@ -362,13 +352,13 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         (self.ident_u(), many(self.ident_u()))
             .then(|(name, args): (Id::Untyped, Vec<Id::Untyped>)| {
                 let arg_types = args.iter()
-                               .map(|id| {
-                                   Type::generic(Generic {
-                                       kind: Kind::variable(0),
-                                       id: id.clone(),
-                                   })
-                               })
-                               .collect();
+                                    .map(|id| {
+                                        Type::generic(Generic {
+                                            kind: Kind::variable(0),
+                                            id: id.clone(),
+                                        })
+                                    })
+                                    .collect();
                 let return_type = Type::data(TypeConstructor::Data(name.clone()), arg_types);
                 token(Token::Equal)
                     .with(self.typ()
@@ -380,13 +370,13 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                             alias: Alias {
                                 name: name.clone(),
                                 args: args.iter()
-                                   .map(|id| {
-                                       Generic {
-                                           kind: Kind::variable(0),
-                                           id: id.clone(),
-                                       }
-                                   })
-                                   .collect(),
+                                          .map(|id| {
+                                              Generic {
+                                                  kind: Kind::variable(0),
+                                                  id: id.clone(),
+                                              }
+                                          })
+                                          .collect(),
                                 typ: Some(rhs_type),
                             },
                         }
@@ -440,7 +430,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     let_bindings.push(bindings);
                     input = new_input.into_inner();
                 }
-                Err(err@Consumed::Consumed(_)) => return Err(err),
+                Err(err @ Consumed::Consumed(_)) => return Err(err),
                 Err(Consumed::Empty(err)) => {
                     // If a let or type binding has been parsed then any kind of expression can
                     // follow
@@ -569,10 +559,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn lambda(&self, input: I) -> ParseResult<Expr<Id>, I> {
-        (token(Token::Lambda),
-         many(self.ident()),
-         token(Token::RightArrow),
-         self.expr())
+        (token(Token::Lambda), many(self.ident()), token(Token::RightArrow), self.expr())
             .map(|(_, args, _, expr)| {
                 Expr::Lambda(Lambda {
                     id: self.empty_id.clone(),
@@ -584,20 +571,14 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn case_of(&self, input: I) -> ParseResult<Expr<Id>, I> {
-        let alt = (token(Token::Pipe),
-                   self.pattern(),
-                   token(Token::RightArrow),
-                   self.expr())
+        let alt = (token(Token::Pipe), self.pattern(), token(Token::RightArrow), self.expr())
                       .map(|(_, p, _, e)| {
                           Alternative {
                               pattern: p,
                               expression: e,
                           }
                       });
-        (token(Token::Case),
-         self.expr(),
-         token(Token::Of),
-         many1(alt))
+        (token(Token::Case), self.expr(), token(Token::Of), many1(alt))
             .map(|(_, e, _, alts)| Expr::Match(Box::new(e), alts))
             .parse_state(input)
     }

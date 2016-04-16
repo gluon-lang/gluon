@@ -111,7 +111,8 @@ pub enum Type<Id, T = ASTType<Id>> {
     },
 }
 
-impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
+impl<Id, T> Type<Id, T>
+    where T: Deref<Target = Type<Id, T>>
 {
     pub fn map<F, R, T2>(&self, mut f: F) -> T2
         where F: FnMut(&Id) -> R,
@@ -476,7 +477,8 @@ pub fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
     }
 }
 
-impl<Id, T> Type<Id, T> where T: From<Type<Id, T>>
+impl<Id, T> Type<Id, T>
+    where T: From<Type<Id, T>>
 {
     pub fn app(l: T, r: T) -> T {
         T::from(Type::App(l, r))
@@ -625,8 +627,12 @@ impl<'a> fmt::Display for DisplayKind<'a> {
             Kind::Star => '*'.fmt(f),
             Kind::Function(ref arg, ref ret) => {
                 match self.0 {
-                    Prec::Function => write!(f, "({} -> {})", DisplayKind(Prec::Function, arg), ret),
-                    Prec::Top | Prec::Constructor => write!(f, "{} -> {}", DisplayKind(Prec::Function, arg), ret)
+                    Prec::Function => {
+                        write!(f, "({} -> {})", DisplayKind(Prec::Function, arg), ret)
+                    }
+                    Prec::Top | Prec::Constructor => {
+                        write!(f, "{} -> {}", DisplayKind(Prec::Function, arg), ret)
+                    }
                 }
             }
         }
@@ -843,7 +849,9 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
                 walk_type(&variant.1, f);
             }
         }
-        Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => (),
+        Type::Builtin(_) |
+        Type::Variable(_) |
+        Type::Generic(_) => (),
     }
 }
 
@@ -943,7 +951,9 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                     .map(Type::Variants)
                     .map(From::from)
             }
-            Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => None,
+            Type::Builtin(_) |
+            Type::Variable(_) |
+            Type::Generic(_) => None,
         }
     };
     result.or(new)
@@ -992,7 +1002,8 @@ mod test {
 
     #[test]
     fn show_record() {
-        assert_eq!(format!("{}", Type::<&str, ASTType<&str>>::record(vec![], vec![])), "{}");
+        assert_eq!(format!("{}", Type::<&str, ASTType<&str>>::record(vec![], vec![])),
+                   "{}");
         let typ = Type::record(vec![],
                                vec![Field {
                                         name: "x",

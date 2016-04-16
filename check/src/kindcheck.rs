@@ -51,7 +51,8 @@ fn walk_move_kind2<F>(kind: &RcKind, f: &mut F) -> Option<RcKind>
                     (None, None) => None,
                 }
             }
-            Kind::Star | Kind::Variable(_) => None,
+            Kind::Star |
+            Kind::Variable(_) => None,
         }
     };
     new2.or(new)
@@ -174,8 +175,7 @@ impl<'a> KindCheck<'a> {
                         }
                     };
                 }
-                Ok((kind,
-                    Type::data(types::TypeConstructor::Data(ctor.clone()), new_args)))
+                Ok((kind, Type::data(types::TypeConstructor::Data(ctor.clone()), new_args)))
             }
             Type::Function(ref args, ref ret) => {
                 let (kind, arg) = try!(self.kindcheck(&args[0]));
@@ -321,7 +321,8 @@ impl Substitutable for RcKind {
                     walk_kind(a, f);
                     walk_kind(r, f);
                 }
-                Kind::Variable(_) | Kind::Star => (),
+                Kind::Variable(_) |
+                Kind::Star => (),
             }
         }
         walk_kind(self, &mut f)
@@ -338,8 +339,7 @@ impl<S> unify::Unifiable<S> for RcKind {
         where U: unify::Unifier<S, Self>
     {
         match (&**unifier.subs.real(self), &**unifier.subs.real(other)) {
-            (&Kind::Function(ref l1, ref l2),
-             &Kind::Function(ref r1, ref r2)) => {
+            (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
                 let a = unifier.try_match(l1, r1);
                 let r = unifier.try_match(l2, r2);
                 Ok(merge(l1, a, l2, r, Kind::function))

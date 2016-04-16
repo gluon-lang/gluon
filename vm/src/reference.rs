@@ -19,9 +19,9 @@ impl<T> Traverseable for Reference<T> {
     }
 }
 
-impl <T> VMType for Reference<T>
-where T: VMType,
-      T::Type: Sized
+impl<T> VMType for Reference<T>
+    where T: VMType,
+          T::Type: Sized
 {
     type Type = Reference<T::Type>;
 
@@ -33,9 +33,9 @@ where T: VMType,
     }
 }
 
-impl <T> Pushable for Reference<T>
-where T: Any + VMType,
-      T::Type: Sized
+impl<T> Pushable for Reference<T>
+    where T: Any + VMType,
+          T::Type: Sized
 {
     fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Userdata(Userdata_::new(vm, self)));
@@ -43,13 +43,15 @@ where T: Any + VMType,
     }
 }
 
-impl <'vm, T> Getable<'vm> for Reference<T>
+impl<'vm, T> Getable<'vm> for Reference<T>
     where T: Any + VMType
 {
     fn from_value(_: &'vm VM, value: Value) -> Option<Reference<T>> {
         match value {
-            Value::Userdata(v) => v.data.downcast_ref::<Self>().map(|x| Reference(x.0.clone(), x.1)),
-            _ => None
+            Value::Userdata(v) => {
+                v.data.downcast_ref::<Self>().map(|x| Reference(x.0.clone(), x.1))
+            }
+            _ => None,
         }
     }
 }

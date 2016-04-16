@@ -116,7 +116,7 @@ pub trait VMType {
 
 
 /// Trait which allows a rust value to be pushed to the virtual machine
-pub trait Pushable : VMType {
+pub trait Pushable: VMType {
     fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status;
 }
 

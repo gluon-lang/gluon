@@ -39,7 +39,8 @@ impl<'s, S: ?Sized, Type, U> UnifierState<'s, S, Type, U>
 }
 
 pub trait Unifier<S: ?Sized, Type>: Sized
-where Type: Unifiable<S> {
+    where Type: Unifiable<S>
+{
     fn report_error(unifier: &mut UnifierState<S, Type, Self>, error: Error<Type, Type::Error>);
     fn try_match(unifier: &mut UnifierState<S, Type, Self>, l: &Type, r: &Type) -> Option<Type>;
     fn match_either<F, G>(unifier: &mut UnifierState<S, Type, Self>,
@@ -284,7 +285,8 @@ mod test {
                         traverse_(a, f);
                         traverse_(r, f);
                     }
-                    Type::Variable(_) | Type::Id(_) => (),
+                    Type::Variable(_) |
+                    Type::Id(_) => (),
                 }
             }
             traverse_(self, &mut f)

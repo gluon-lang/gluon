@@ -294,7 +294,9 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                         .map(Type::Variants)
                         .map(From::from)
                 }
-                Type::Builtin(_) | Type::Variable(_) | Type::Generic(_) => None,
+                Type::Builtin(_) |
+                Type::Variable(_) |
+                Type::Generic(_) => None,
             }
         }
     };

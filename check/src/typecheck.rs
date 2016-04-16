@@ -286,7 +286,7 @@ impl<'a> Typecheck<'a> {
                     .stack_types
                     .insert(alias_id.clone(), (typ.clone(), alias.clone()));
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
         self.environment.stack_types.insert(id, (typ, alias));
     }

@@ -223,8 +223,11 @@ impl Contexts {
                 Context::Delimiter(_) => return Ok(()),
                 Context::Block { .. } if skip_block => continue,
                 // New context should not be unindented past the closest enclosing block context
-                Context::MatchClause | Context::Type | Context::Let | Context::Block { .. }
-                    if offside.location.column < other_offside.location.column => (),
+                Context::MatchClause |
+                Context::Type |
+                Context::Let |
+                Context::Block { .. } if offside.location.column <
+                                         other_offside.location.column => (),
                 _ => continue,
             }
             debug!("Unindentation error: {:?} < {:?}", offside, other_offside);
@@ -601,8 +604,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             lexer.indent_levels.pop();
             match (&token.token, &offside.context) {
                 (&Token::Else, &Context::If) => return Ok(token.token),
-                (&Token::Close(close_delim),
-                 &Context::Delimiter(context_delim))
+                (&Token::Close(close_delim), &Context::Delimiter(context_delim))
                     if close_delim == context_delim => return Ok(token.token),
                 (&Token::In, &Context::Let) |
                 (&Token::In, &Context::Type) |
@@ -655,7 +657,8 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                                 lexer.unprocessed_tokens.push(token);
                                 return Ok(Token::Semi);
                             }
-                            Token::DocComment(_) | Token::OpenBlock => (),
+                            Token::DocComment(_) |
+                            Token::OpenBlock => (),
                             _ => {
                                 // If it is the first token in a sequence we dont want to emit a
                                 // separator

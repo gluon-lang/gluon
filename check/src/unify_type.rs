@@ -84,8 +84,7 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
         debug!("{:?} <=> {:?}", self, other);
         match (&**self, &**other) {
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
-            (&Type::Function(ref l_args, ref l_ret),
-             &Type::Function(ref r_args, ref r_ret)) => {
+            (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
                 if l_args.len() == r_args.len() {
                     let args = walk_move_types(l_args.iter().zip(r_args.iter()),
                                                |l, r| unifier.try_match(l, r));
@@ -108,16 +107,17 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
             (&Type::Array(ref l), &Type::Array(ref r)) => {
                 Ok(unifier.try_match(l, r).map(Type::array))
             }
-            (&Type::Data(ref l, ref l_args),
-             &Type::Data(ref r, ref r_args))
-                if l == r && l_args.len() == r_args.len() => {
+            (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) if l == r &&
+                                                                                l_args.len() ==
+                                                                                r_args.len() => {
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()),
                                            |l, r| unifier.try_match(l, r));
                 Ok(args.map(|args| Type::data(l.clone(), args)))
             }
             (&Type::Record { fields: ref l_args, types: ref l_types },
-             &Type::Record { fields: ref r_args, types: ref r_types })
-                if l_args.len() == r_args.len() && l_types == r_types => {
+             &Type::Record { fields: ref r_args, types: ref r_types }) if l_args.len() ==
+                                                                         r_args.len() &&
+                                                                         l_types == r_types => {
                 // FIXME Take associated types into account when unifying
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
                     let opt_type = if !l.name.name_eq(&r.name) {

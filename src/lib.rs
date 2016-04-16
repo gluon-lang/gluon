@@ -19,8 +19,8 @@
 //!         else n * factorial (n - 1)
 //!
 //! // `type` is used to declare a new type.
-//! // In this case we declare `Countable` to be a record with a single field (count) which is a function
-//! // taking a single arguemnt and returning an integer
+//! // In this case we declare `Countable` to be a record with a single field (count) which is a
+//! // function taking a single arguemnt and returning an integer
 //! type Countable a = { count: a -> Int }
 //!
 //! // "Counting" an integer just means returning the integer itself
@@ -143,7 +143,10 @@ pub struct Compiler {
 impl Compiler {
     /// Creates a new compiler with default settings
     pub fn new() -> Compiler {
-        Compiler { symbols: Symbols::new(), implicit_prelude: true }
+        Compiler {
+            symbols: Symbols::new(),
+            implicit_prelude: true,
+        }
     }
 
     /// Sets wheter the implicit prelude should be include when compiling a file using this
@@ -157,14 +160,15 @@ impl Compiler {
                       file: &str,
                       input: &str)
                       -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
-        Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols), input)))
+        Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols),
+                                   input)))
     }
 
     pub fn typecheck_expr(&mut self,
-                       vm: &VM,
-                       file: &str,
-                       expr_str: &str)
-                       -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
+                          vm: &VM,
+                          file: &str,
+                          expr_str: &str)
+                          -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
         use check::typecheck::Typecheck;
         use base::error;
         let mut expr = try!(self.parse_expr(file, expr_str));
@@ -180,10 +184,10 @@ impl Compiler {
     }
 
     pub fn compile_script(&mut self,
-                      vm: &VM,
-                      filename: &str,
-                      expr: &ast::LExpr<ast::TcIdent<Symbol>>)
-                      -> CompiledFunction {
+                          vm: &VM,
+                          filename: &str,
+                          expr: &ast::LExpr<ast::TcIdent<Symbol>>)
+                          -> CompiledFunction {
         use vm::compiler::Compiler;
         debug!("Compile `{}`", filename);
         let mut function = {
@@ -201,22 +205,20 @@ impl Compiler {
     pub fn extract_metadata(&mut self,
                             vm: &VM,
                             file: &str,
-                            expr_str: &str) -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
+                            expr_str: &str)
+                            -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
         use check::metadata;
-        let (mut expr, typ) = try!(self.typecheck_expr(
-                                                   vm,
-                                                   file,
-                                                   expr_str));
+        let (mut expr, typ) = try!(self.typecheck_expr(vm, file, expr_str));
 
         let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
         Ok((expr, typ, metadata))
     }
 
-    /// Compiles `input` and if it is successful runs the resulting code and stores the resulting value
-    /// in the global variable named by running `filename_to_module` on `filename`.
+    /// Compiles `input` and if it is successful runs the resulting code and stores the resulting
+    /// value in the global variable named by running `filename_to_module` on `filename`.
     ///
-    /// If at any point the function fails the resulting error is returned and nothing is added to the
-    /// VM.
+    /// If at any point the function fails the resulting error is returned and nothing is added to
+    /// the VM.
     pub fn load_script(&mut self, vm: &VM, filename: &str, input: &str) -> Result<()> {
         let (expr, typ, metadata) = try!(self.extract_metadata(vm, filename, input));
         let function = self.compile_script(vm, filename, &expr);
@@ -245,7 +247,11 @@ impl Compiler {
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
-    pub fn run_expr<'vm>(&mut self, vm: &'vm VM, name: &str, expr_str: &str) -> Result<RootedValue<'vm>> {
+    pub fn run_expr<'vm>(&mut self,
+                         vm: &'vm VM,
+                         name: &str,
+                         expr_str: &str)
+                         -> Result<RootedValue<'vm>> {
         let (expr, typ) = try!(self.typecheck_expr(vm, name, expr_str));
         let mut function = self.compile_script(vm, name, &expr);
         function.id = Symbol::new(name);
@@ -292,7 +298,6 @@ impl Compiler {
         }
         assign_last_body(expr, original_expr);
     }
-
 }
 
 pub fn filename_to_module(filename: &str) -> StdString {
@@ -316,7 +321,8 @@ pub fn new_vm() -> VM {
     vm.get_macros().insert(String::from("import"), ::import::Import::new());
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr(&vm, "", r#" import "std/types.hs" "#).unwrap();
+        .run_expr(&vm, "", r#" import "std/types.hs" "#)
+        .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::vm::channel::load(&vm).expect("Loaded channel library");
     ::io::load(&vm).expect("Loaded IO library");

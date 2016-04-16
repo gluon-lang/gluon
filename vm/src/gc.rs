@@ -160,7 +160,7 @@ unsafe impl<'s, T: Copy> DataDef for &'s [T] {
 struct GcHeader {
     next: Option<AllocPtr>,
     value_size: usize,
-    drop: unsafe fn (*mut ()),
+    drop: unsafe fn(*mut ()),
     marked: Cell<bool>,
 }
 
@@ -172,7 +172,7 @@ struct AllocPtr {
 impl AllocPtr {
     fn new<T>(value_size: usize) -> AllocPtr {
         unsafe fn drop<T>(t: *mut ()) {
-			ptr::drop_in_place(t as *mut T)
+            ptr::drop_in_place(t as *mut T)
         }
         unsafe {
             let alloc_size = GcHeader::value_offset() + value_size;
@@ -714,7 +714,9 @@ mod tests {
             assert_eq!(false, ptr.dropped.get());
         }
         assert_eq!(false, dropped.get());
-        unsafe { gc.collect(()); }
+        unsafe {
+            gc.collect(());
+        }
         assert_eq!(true, dropped.get());
     }
 }
