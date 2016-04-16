@@ -24,7 +24,9 @@ mod repl;
 
 
 #[cfg(not(test))]
-fn run_files(files: &[&str]) -> Result<(), Box<StdError>> {
+fn run_files<'s, I>(files: I) -> Result<(), Box<StdError>>
+where I: Iterator<Item = &'s str>
+{
     let vm = new_vm();
     let mut compiler = Compiler::new();
     for file in files {
@@ -54,7 +56,7 @@ fn main() {
                     println!("{}", err);
                 }
             } else if let Some(args) = matches.values_of("INPUT") {
-                match run_files(&args) {
+                match run_files(args) {
                     Ok(()) => (),
                     Err(msg) => println!("{}", msg),
                 }

@@ -17,10 +17,10 @@ name = "repl"
 path = "src/main.rs"
 
 [dependencies]
-log = "0.3.5"
-env_logger = "0.3.2"
-clap = "1.5.5"
-quick-error = "0.2.2"
+log = "0.3.6"
+env_logger = "0.3.3"
+clap = "2.2.5"
+quick-error = "1.0.0"
 
 [dependencies.base]
 path = "base"
