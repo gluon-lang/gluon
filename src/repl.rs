@@ -116,4 +116,32 @@ mod tests {
         let repl: Result<Function<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
         assert!(repl.is_ok());
     }
+
+    #[test]
+    fn type_of_expr() {
+        let _ = ::env_logger::init();
+        let vm = new_vm();
+        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+        let mut type_of: Function<fn(&'static str) -> IO<String>> = vm.get_global("repl_prim.type_of_expr").unwrap();
+        assert!(type_of.call("std.prelude.Option").is_ok());
+    }
+
+    #[test]
+    fn find_kind() {
+        let _ = ::env_logger::init();
+        let vm = new_vm();
+        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+        let mut find_kind: Function<fn(&'static str) -> IO<String>> = vm.get_global("repl_prim.find_kind").unwrap();
+        assert_eq!(find_kind.call("std.prelude.Option"), Ok(IO::Value("* -> *".into())));
+    }
+
+    #[test]
+    fn find_info() {
+        let _ = ::env_logger::init();
+        let vm = new_vm();
+        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+        let mut find_info: Function<fn(&'static str) -> IO<String>> = vm.get_global("repl_prim.find_info").unwrap();
+        assert!(find_info.call("std.prelude.Option").is_ok());
+        assert!(find_info.call("std.prelude.id").is_ok());
+    }
 }

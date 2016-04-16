@@ -13,6 +13,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 
 /// Type representing embed_lang's IO type#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum IO<T> {
     Value(T),
     Exception(String),
