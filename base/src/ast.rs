@@ -248,14 +248,6 @@ pub fn no_loc<T>(x: T) -> Located<T> {
     located(Location::eof(), x)
 }
 
-impl ASTType<Symbol> {
-    pub fn clone_strings<E>(&self, symbols: &E) -> ASTType<String>
-        where E: DisplayEnv<Ident = Symbol>
-    {
-        self.map(|symbol| String::from(symbols.string(symbol)))
-    }
-}
-
 #[derive(Clone, PartialEq, Debug)]
 pub enum LiteralEnum {
     Integer(i64),

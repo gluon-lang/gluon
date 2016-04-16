@@ -14,8 +14,8 @@ pub type Error = Errors<ast::Spanned<RenameError>>;
 pub enum RenameError {
     NoMatchingType {
         symbol: String,
-        expected: ast::ASTType<String>,
-        possible_types: Vec<ast::ASTType<String>>,
+        expected: TcType,
+        possible_types: Vec<TcType>,
     },
 }
 
@@ -205,14 +205,14 @@ pub fn rename(symbols: &mut SymbolModule,
                     if new_id.is_none() {
                         return Err(RenameError::NoMatchingType {
                             symbol: String::from(self.symbols.string(&id.name)),
-                            expected: id.typ.clone_strings(&self.symbols),
+                            expected: id.typ.clone(),
                             possible_types: self.env
                                                 .stack
                                                 .get_all(id.id())
                                                 .iter()
                                                 .flat_map(|binds| {
                                                     binds.iter().map(|bind| {
-                                                        bind.1.clone_strings(&self.symbols)
+                                                        bind.1.clone()
                                                     })
                                                 })
                                                 .collect(),
