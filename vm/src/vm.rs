@@ -595,7 +595,7 @@ impl VMEnv {
             return Ok(alias);
         }
         let name = Name::new(name);
-        let typ = try!(self.get_path_type(name.module()));
+        let typ = try!(self.get_binding_type(name.module().as_str()));
         let maybe_type_info = match **typ {
             Type::Record { ref types, .. } => {
                 let field_name = name.name();
@@ -612,28 +612,35 @@ impl VMEnv {
         })
     }
 
-    fn get_path_type(&self, module: &Name) -> Result<&TcType> {
+    pub fn get_binding_type(&self, name: &str) -> Result<&TcType> {
         let globals = &self.globals;
-        let mut components = module.components();
-        let global = match components.next() {
-            Some(comp) => {
-                try!(globals.get(comp)
-                            .or_else(|| {
-                                // We access by the the full name so no components should be left
-                                // to walk through
-                                for _ in components.by_ref() {
-                                }
-                                globals.get(module.as_str())
-                            })
-                            .ok_or_else(|| {
-                                Error::Message(format!("Could not retrieve global `{}`", module))
-                            }))
+        let mut module = Name::new(name);
+        let global;
+        // Try to find a global by successively reducing the module path
+        // Input: "x.y.z.w"
+        // Test: "x.y.z"
+        // Test: "x.y"
+        // Test: "x"
+        // Test: -> Error
+        loop {
+            if module.as_str() == "" {
+                return Err(Error::Message(format!("Could not retrieve binding `{}`", name)));
             }
-            None => return Err(Error::Message(format!("'{}' is not a valid name", module))),
-        };
+            if let Some(g) = globals.get(module.as_str()) {
+                global = g;
+                break;
+            }
+            module = module.module();
+        }
+        let remaining_offset = module.as_str().len() + 1;//Add 1 byte for the '.'
+        if remaining_offset >= name.len() {
+            // No fields left
+            return Ok(&global.typ);
+        }
+        let remaining_fields = Name::new(&name[remaining_offset..]);
 
         let mut typ = &global.typ;
-        for field_name in components {
+        for field_name in remaining_fields.components() {
             let next = match **typ {
                 Type::Record { ref fields, .. } => {
                     fields.iter()
@@ -649,25 +656,6 @@ impl VMEnv {
             }));
         }
         Ok(typ)
-    }
-
-    pub fn get_binding_info(&self, name: &str) -> Result<&TcType> {
-        let name = Name::new(name);
-        let typ = try!(self.get_path_type(name.module()));
-        let maybe_type_info = match **typ {
-            Type::Record { ref fields, .. } => {
-                let field_name = name.name();
-                fields.iter()
-                      .find(|field| field.name.as_ref() == field_name.as_str())
-                      .map(|field| &field.typ)
-            }
-            _ => None,
-        };
-        maybe_type_info.ok_or_else(|| {
-            Error::Message(format!("'{}' cannot be accessed by the field '{}'",
-                                   typ,
-                                   name.name()))
-        })
     }
 
     pub fn get_metadata(&self, name: &str) -> Result<&Metadata> {

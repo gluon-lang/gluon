@@ -29,15 +29,27 @@ let commands: Map String Cmd
     =  singleton "q" { info = "Quit the REPL", action = \_ -> return False }
         <> singleton "t" {
             info = "Prints the type of an expression",
-            action = \arg -> repl_prim.type_of_expr arg >>= io.print >> return True
+            action = \arg -> repl_prim.type_of_expr arg >>= \result ->
+                case result of
+                | Ok x -> io.print x
+                | Err x -> io.print x
+                >> return True
         }
         <> singleton "i" {
             info = "Prints information about the given name",
-            action = \arg -> repl_prim.find_info arg >>= io.print >> return True
+            action = \arg -> repl_prim.find_info arg >>= \result ->
+                case result of
+                | Ok x -> io.print x
+                | Err x -> io.print x
+                >> return True
         }
         <> singleton "k" {
             info = "Prints the kind of the given type",
-            action = \arg -> repl_prim.find_kind arg >>= io.print >> return True
+            action = \arg -> repl_prim.find_kind arg >>= \result ->
+                case result of
+                | Ok x -> io.print x
+                | Err x -> io.print x
+                >> return True
         }
         <> singleton "l" {
             info = "Loads the file at 'folder/module.ext' and stores it at 'module'",

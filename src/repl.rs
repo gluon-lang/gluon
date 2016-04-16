@@ -6,19 +6,19 @@ use vm::api::{IO, Function, WithVM};
 
 use embed_lang::{Compiler, new_vm};
 
-fn type_of_expr(args: WithVM<RootStr>) -> IO<String> {
+fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
     let mut compiler = Compiler::new().implicit_prelude(false);
     IO::Value(match compiler.typecheck_expr(vm, "<repl>", &args) {
         Ok((expr, _)) => {
             let env = vm.get_env();
-            format!("{}", expr.env_type_of(&*env))
+            Ok(format!("{}", expr.env_type_of(&*env)))
         }
-        Err(msg) => format!("{}", msg),
+        Err(msg) => Err(format!("{}", msg)),
     })
 }
 
-fn find_kind(args: WithVM<RootStr>) -> IO<String> {
+fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let vm = args.vm;
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
@@ -26,13 +26,13 @@ fn find_kind(args: WithVM<RootStr>) -> IO<String> {
             let kind = alias.args.iter().rev().fold(Kind::star(), |acc, arg| {
                 Kind::function(arg.kind.clone(), acc)
             });
-            format!("{}", kind)
+            Ok(format!("{}", kind))
         }
-        Err(err) => format!("{}", err),
+        Err(err) => Err(format!("{}", err)),
     })
 }
 
-fn find_info(args: WithVM<RootStr>) -> IO<String> {
+fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     use std::fmt::Write;
     let vm = args.vm;
     let args = args.value.trim();
@@ -57,11 +57,11 @@ fn find_info(args: WithVM<RootStr>) -> IO<String> {
         }
         Err(err) => {
             // Try to find a value at `args` to print its type and documentation comment (if any)
-            match env.get_binding_info(args) {
+            match env.get_binding_type(args) {
                 Ok(typ) => {
                     write!(&mut buffer, "{}: {}", args, typ).unwrap();
                 }
-                Err(_) => return IO::Value(format!("{}", err)),
+                Err(_) => return IO::Value(Err(format!("{}", err))),
             }
         }
     }
@@ -73,7 +73,7 @@ fn find_info(args: WithVM<RootStr>) -> IO<String> {
             write!(&mut buffer, "\n/// {}", line).unwrap();
         }
     }
-    IO::Value(buffer)
+    IO::Value(Ok(buffer))
 }
 
 fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
@@ -117,12 +117,14 @@ mod tests {
         assert!(repl.is_ok());
     }
 
+    type QueryFn = fn(&'static str) -> IO<Result<String, String>>;
+
     #[test]
     fn type_of_expr() {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut type_of: Function<fn(&'static str) -> IO<String>> = vm.get_global("repl_prim.type_of_expr").unwrap();
+        let mut type_of: Function<QueryFn> = vm.get_global("repl_prim.type_of_expr").unwrap();
         assert!(type_of.call("std.prelude.Option").is_ok());
     }
 
@@ -131,8 +133,8 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut find_kind: Function<fn(&'static str) -> IO<String>> = vm.get_global("repl_prim.find_kind").unwrap();
-        assert_eq!(find_kind.call("std.prelude.Option"), Ok(IO::Value("* -> *".into())));
+        let mut find_kind: Function<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
+        assert_eq!(find_kind.call("std.prelude.Option"), Ok(IO::Value(Ok("* -> *".into()))));
     }
 
     #[test]
@@ -140,8 +142,18 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut find_info: Function<fn(&'static str) -> IO<String>> = vm.get_global("repl_prim.find_info").unwrap();
-        assert!(find_info.call("std.prelude.Option").is_ok());
-        assert!(find_info.call("std.prelude.id").is_ok());
+        let mut find_info: Function<QueryFn> = vm.get_global("repl_prim.find_info").unwrap();
+        match find_info.call("std.prelude.Option") {
+            Ok(IO::Value(Ok(_))) => (),
+            x => assert!(false, "{:?}", x),
+        }
+        match find_info.call("std.prelude.id") {
+            Ok(IO::Value(Ok(_))) => (),
+            x => assert!(false, "{:?}", x),
+        }
+        match find_info.call("float") {
+            Ok(IO::Value(Ok(_))) => (),
+            x => assert!(false, "{:?}", x),
+        }
     }
 }
