@@ -130,11 +130,6 @@ dependencies = [
 
 [[package]]
 name = "quick-error"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "quick-error"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
@@ -214,7 +209,7 @@ dependencies = [
  "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "mopa 0.2.0 (git+https://github.com/Marwes/mopa.git)",
- "quick-error 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quick-error 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
