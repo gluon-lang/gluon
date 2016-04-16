@@ -341,6 +341,18 @@ a #Int+ i #Int+ m
 Int(20)
 }
 
+// Without a slide instruction after the alternatives code this code would try to call `x 1`
+// instead of `id 1`
+test_expr!{ slide_down_case_alternative,
+r#"
+type Test = | Test Int
+let id x = x
+id (case Test 0 of
+    | Test x -> 1)
+"#,
+Int(1)
+}
+
 #[test]
 fn overloaded_bindings() {
     let _ = ::env_logger::init();

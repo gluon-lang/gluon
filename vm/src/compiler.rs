@@ -569,10 +569,12 @@ impl<'a> Compiler<'a> {
             }
             Expr::Match(ref expr, ref alts) => {
                 self.compile(&**expr, function, false);
+                // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
-                let mut end_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
                 let mut catch_all = false;
+                // Emit a TestTag + Jump instuction for each alternative which jumps to the
+                // alternatives code if TestTag is sucessesful
                 for alt in alts.iter() {
                     match alt.pattern.value {
                         ast::Pattern::Constructor(ref id, _) => {
@@ -607,6 +609,9 @@ impl<'a> Compiler<'a> {
                     // alternatives
                     function.stack_size -= 1;
                 }
+                // Indexes for each alternative from the end of the alternatives code to code
+                // after the alternative
+                let mut end_jumps = Vec::new();
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     self.stack_constructors.enter_scope();
                     match alt.pattern.value {
@@ -629,10 +634,10 @@ impl<'a> Compiler<'a> {
                         }
                     }
                     self.compile(&alt.expression, function, tail_position);
-                    end_jumps.push(function.function.instructions.len());
                     let count = function.pop_pattern(&alt.pattern);
                     self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
+                    end_jumps.push(function.function.instructions.len());
                     function.emit(Jump(0));
                 }
                 for &index in end_jumps.iter() {
