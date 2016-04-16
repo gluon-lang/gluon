@@ -183,8 +183,7 @@ pub fn load(vm: &VM) -> Result<()> {
         acos => f1(f64::acos),
         atan => f1(f64::atan),
         atan2 => f2(f64::atan2),
-        // TODO Implement marshalling for tuples
-        //sin_cos => f1(f64::sin_cos),
+        sin_cos => f1(f64::sin_cos),
         exp_m1 => f1(f64::exp_m1),
         ln_1p => f1(f64::ln_1p),
         sinh => f1(f64::sinh),

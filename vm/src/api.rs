@@ -12,6 +12,12 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
+macro_rules! count {
+    () => { 0 };
+    ($_e: ident) => { 1 };
+    ($_e: ident, $($rest: ident),*) => { 1 + count!($($rest),*) }
+}
+
 /// Type representing embed_lang's IO type#[derive(Debug)]
 #[derive(Debug, PartialEq)]
 pub enum IO<T> {
@@ -706,6 +712,65 @@ impl<'vm> Getable<'vm> for RootStr<'vm> {
     }
 }
 
+macro_rules! define_tuple {
+    ($($id: ident)+) => {
+        impl<$($id: VMType),+> VMType for ($($id),+) {
+            type Type = ($($id::Type),+);
+
+            fn make_type(vm: &VM) -> TcType {
+                let fields = vec![$(
+                    types::Field {
+                        name: Symbol::new(stringify!($id)),
+                        typ: $id::make_type(vm),
+                    }
+                ),+];
+                Type::record(Vec::new(), fields)
+            }
+        }
+        impl<'vm, $($id: Getable<'vm>),+> Getable<'vm> for ($($id),+) {
+            #[allow(unused_assignments)]
+            fn from_value(vm: &'vm VM, value: Value) -> Option<($($id),+)> {
+                match value {
+                    Value::Data(v) => {
+                        let mut i = 0;
+                        match ( $({ let a = $id::from_value(vm, v.fields[i].clone()); i += 1; a }),+ ) {
+                            ($(Some($id)),+) => Some(( $($id),+ )),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            }
+        }
+        impl<'vm, $($id: Pushable),+> Pushable for ($($id),+) {
+            fn push<'b>(self, vm: &VM, stack: &mut StackFrame<'b>) -> Status {
+                let ( $($id),+ ) = self;
+                $(
+                    $id.push(vm, stack);
+                )+
+                let len = count!($($id),+);
+                let offset = stack.len() - len;
+                let value = vm.new_data(0, &stack[offset..]);
+                for _ in 0..len {
+                    stack.pop();
+                }
+                stack.push(value);
+                Status::Ok
+            }
+        }
+    }
+}
+
+macro_rules! define_tuples {
+    ($first: ident) => { };
+    ($first: ident $($rest: ident)+) => {
+        define_tuple!{ $first $($rest)+ }
+        define_tuples!{ $($rest)+ }
+    }
+}
+define_tuples! { _0 _1 _2 _3 _4 _5 _6 }
+
+
 pub use self::record::Record;
 
 pub mod record {
@@ -1000,12 +1065,6 @@ impl<'vm, 's, T> VMFunction<'vm> for &'s T
     fn unpack_and_call(&self, vm: &'vm VM) -> Status {
         (**self).unpack_and_call(vm)
     }
-}
-
-macro_rules! count {
-    () => { 0 };
-    ($_e: ident) => { 1 };
-    ($_e: ident, $($rest: ident),*) => { 1 + count!($($rest),*) }
 }
 
 macro_rules! make_vm_function {
