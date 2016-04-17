@@ -1,17 +1,31 @@
-use std::cell::RefMut;
+use std::cell::{RefCell, RefMut};
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
 use gc::GcPtr;
-use vm::{Callable, Value, DataStruct};
+use vm::{ClosureData, Value, DataStruct, ExternFunction};
 use types::VMIndex;
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum State {
+    Unknown,
+    /// Locked frame which can only be unlocked by the caller which introduced the lock
+    Lock,
+    /// Extra frame introduced to store a call with excess arguments
+    Excess,
+    Closure(GcPtr<ClosureData>),
+    Extern(GcPtr<ExternFunction>),
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Frame {
     pub offset: VMIndex,
     pub instruction_index: usize,
-    pub function: Option<Callable>,
+    pub state: State,
     pub excess: bool,
 }
+
+#[derive(Debug)]
+pub struct Lock(VMIndex);
 
 #[derive(Debug)]
 pub struct Stack {
@@ -28,8 +42,8 @@ impl Stack {
     }
 
     pub fn pop(&mut self) -> Value {
-        if let Some(frame) = self.frames.last() {
-            assert!(self.values.len() > frame.offset as usize,
+        if let Some(&frame) = self.frames.last() {
+            assert!(self.len() > frame.offset,
                     "Attempted to pop value which did not belong to the current frame");
         }
         self.values
@@ -68,6 +82,13 @@ impl Stack {
 
     pub fn get_frames(&self) -> &[Frame] {
         &self.frames
+    }
+
+    /// Release a lock on the stack.
+    ///
+    /// Panics if the lock is not the top-most lock
+    pub fn release_lock(&mut self, lock: Lock) {
+        assert!(self.frames.pop().map(|frame| frame.offset) == Some(lock.0));
     }
 }
 
@@ -125,8 +146,8 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     }
 
     pub fn get_upvar(&self, index: VMIndex) -> Value {
-        let upvars = match self.frame.function {
-            Some(Callable::Closure(ref c)) => c,
+        let upvars = match self.frame.state {
+            State::Closure(ref c) => c,
             _ => panic!("Attempted to access upvar in non closure function"),
         };
         upvars.upvars[index as usize]
@@ -140,49 +161,76 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         }
     }
 
-    pub fn enter_scope(mut self, args: VMIndex, function: Option<Callable>) -> StackFrame<'b> {
+    pub fn enter_scope(mut self, args: VMIndex, state: State) -> StackFrame<'b> {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
-        let frame = StackFrame::add_new_frame(&mut self.stack, args, function);
+        let frame = StackFrame::add_new_frame(&mut self.stack, args, state);
         self.frame = frame;
         self
     }
 
     pub fn exit_scope(mut self) -> Option<StackFrame<'b>> {
-        self.stack.frames.pop().expect("Expected frame");
+        let current_frame = self.stack.frames.pop().expect("Expected frame");
+        assert!(current_frame.offset == self.frame.offset,
+                "Attempted to exit a scope other than the top-most scope");
         let frame = self.stack
                         .frames
                         .last()
                         .cloned();
-        frame.map(move |frame| {
-            debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
+        frame.and_then(move |frame| {
             self.frame = frame;
-            self
+            if frame.state == State::Lock {
+                // Locks must be unlocked manually using release lock
+                None
+            }
+            else {
+                debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
+                Some(self)
+            }
         })
     }
 
     pub fn frame(mut stack: RefMut<'b, Stack>,
                  args: VMIndex,
-                 function: Option<Callable>)
+                 state: State)
                  -> StackFrame<'b> {
-        let frame = StackFrame::add_new_frame(&mut stack, args, function);
+        let frame = StackFrame::add_new_frame(&mut stack, args, state);
         StackFrame {
             stack: stack,
             frame: frame,
         }
     }
 
-    fn add_new_frame(stack: &mut Stack, args: VMIndex, function: Option<Callable>) -> Frame {
+    pub fn current(stack: &RefCell<Stack>) -> StackFrame {
+        let stack = stack.borrow_mut();
+        StackFrame {
+            frame: stack.get_frames().last().expect("Frame").clone(),
+            stack: stack,
+        }
+    }
+
+    /// Lock the stack below the current offset
+    pub fn into_lock(mut self) -> Lock {
+        let offset = self.stack.len();
+        self.frame = StackFrame::add_new_frame(&mut self.stack, 0, State::Lock);
+        Lock(offset)
+    }
+
+    fn add_new_frame(stack: &mut Stack, args: VMIndex, state: State) -> Frame {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
         let offset = stack.len() - args;
         let frame = Frame {
             offset: offset,
             instruction_index: 0,
-            function: function,
+            state: state,
             excess: false,
         };
+        // Panic if the frame attempts to take ownership past the current frame
+        if let Some(frame) = stack.frames.last() {
+            assert!(frame.offset <= offset);
+        }
         stack.frames.push(frame);
         debug!("----> Store {} {:?}\n||| {:?}",
                stack.frames.len(),
@@ -263,7 +311,6 @@ impl<'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'b> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -273,16 +320,17 @@ mod tests {
 
     #[test]
     fn remove_range() {
+        let _ = ::env_logger::init();
 
         let stack = RefCell::new(Stack::new());
         let stack = stack.borrow_mut();
-        let mut frame = StackFrame::frame(stack, 0, None);
+        let mut frame = StackFrame::frame(stack, 0, State::Unknown);
         frame.push(Int(0));
         frame.push(Int(1));
-        let mut frame = frame.enter_scope(2, None);
+        let mut frame = frame.enter_scope(2, State::Unknown);
         frame.push(Int(2));
         frame.push(Int(3));
-        frame = frame.enter_scope(1, None);
+        frame = frame.enter_scope(1, State::Unknown);
         frame.push(Int(4));
         frame.push(Int(5));
         frame.push(Int(6));
@@ -292,5 +340,38 @@ mod tests {
         frame = frame.exit_scope().unwrap();
         frame.remove_range(1, 3);
         assert_eq!(frame.stack.values, vec![Int(0), Int(6)]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn attempt_take_locked_range() {
+        let _ = ::env_logger::init();
+
+        let stack = RefCell::new(Stack::new());
+        let mut frame = StackFrame::frame(stack.borrow_mut(), 0, State::Unknown);
+        frame.push(Int(0));
+        frame.push(Int(1));
+        let frame = frame.enter_scope(2, State::Unknown);
+        let _lock = frame.into_lock();
+        // Panic as it attempts to access past the lock
+        StackFrame::frame(stack.borrow_mut(), 1, State::Unknown);
+    }
+
+    #[test]
+    fn lock_unlock() {
+        let _ = ::env_logger::init();
+
+        let stack = RefCell::new(Stack::new());
+        let mut frame = StackFrame::frame(stack.borrow_mut(), 0, State::Unknown);
+        frame.push(Int(0));
+        frame.push(Int(1));
+        frame = frame.enter_scope(2, State::Unknown);
+        let lock = frame.into_lock();
+        frame = StackFrame::frame(stack.borrow_mut(), 0, State::Unknown);
+        frame.push(Int(2));
+        frame.exit_scope();
+        stack.borrow_mut().release_lock(lock);
+        frame = StackFrame::current(&stack);
+        assert_eq!(frame.pop(), Int(2));
     }
 }

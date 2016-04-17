@@ -8,7 +8,8 @@ use api::record::{Record, HList};
 use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
 use gc::{Traverseable, Gc};
-use vm::{Callable, Error, Thread, Value, VM, Result as VMResult, Status};
+use vm::{Error, Thread, Value, VM, Result as VMResult, Status};
+use stack::State;
 
 struct Sender<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
@@ -135,9 +136,9 @@ fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn(())>>) -> Thread {
     {
         let mut stack = thread.current_frame();
         let callable = match value.value.value() {
-            Value::Closure(c) => Some(Callable::Closure(c)),
-            Value::Function(c) => Some(Callable::Extern(c)),
-            _ => None,
+            Value::Closure(c) => State::Closure(c),
+            Value::Function(c) => State::Extern(c),
+            _ => State::Unknown,
         };
         value.value.push(value.vm, &mut stack);
         stack.push(Value::Int(0));

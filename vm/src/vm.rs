@@ -25,7 +25,7 @@ use lazy::Lazy;
 use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
 
-use stack::{Stack, StackFrame};
+use stack::{State, Stack, StackFrame};
 
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable {}
@@ -744,11 +744,7 @@ impl Thread {
 
     /// Returns the current stackframe
     pub fn current_frame(&self) -> StackFrame {
-        let stack = self.stack.borrow_mut();
-        StackFrame {
-            frame: stack.get_frames().last().expect("Frame").clone(),
-            stack: stack,
-        }
+        StackFrame::current(&self.stack)
     }
 
     fn traverse_fields_except_stack(&self, gc: &mut Gc) {
@@ -915,7 +911,7 @@ impl VM {
         let vm = VM::from_gc_ptr(gc.alloc(Move(vm)));
         *vm.gc.borrow_mut() = gc;
         // Enter the top level scope
-        StackFrame::frame(vm.stack.borrow_mut(), 0, None);
+        StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
         vm
     }
 
@@ -927,7 +923,7 @@ impl VM {
             rooted_values: RefCell::new(Vec::new()),
         };
         // Enter the top level scope
-        StackFrame::frame(vm.stack.borrow_mut(), 0, None);
+        StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
         vm
     }
 
@@ -1027,14 +1023,15 @@ impl VM {
            .map(|alias| alias.clone())
     }
 
+    /// Returns the current stackframe
+    pub fn release_lock<'vm>(&'vm self, lock: ::stack::Lock) -> StackFrame<'vm> {
+        self.stack.borrow_mut().release_lock(lock);
+        self.current_frame()
+    }
 
     /// Returns the current stackframe
     pub fn current_frame<'vm>(&'vm self) -> StackFrame<'vm> {
-        let stack = self.stack.borrow_mut();
-        StackFrame {
-            frame: stack.get_frames().last().expect("Frame").clone(),
-            stack: stack,
-        }
+        StackFrame::current(&self.stack)
     }
 
     /// Runs a garbage collection.
@@ -1154,7 +1151,7 @@ impl VM {
                 self.push(Int(0));// Dummy value to fill the place of the function for TailCall
                 self.push(value);
                 self.push(Int(0));
-                let mut stack = StackFrame::frame(self.stack.borrow_mut(), 2, None);
+                let mut stack = StackFrame::frame(self.stack.borrow_mut(), 2, State::Unknown);
                 stack = try!(self.call_function(stack, 1))
                             .expect("call_module to have the stack remaining");
                 let result = stack.pop();
@@ -1191,7 +1188,7 @@ impl VM {
 
     fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
         self.push(Closure(closure));
-        let stack = StackFrame::frame(self.stack.borrow_mut(), 0, Some(Callable::Closure(closure)));
+        let stack = StackFrame::frame(self.stack.borrow_mut(), 0, State::Closure(closure));
         try!(self.execute(stack));
         let mut stack = self.stack.borrow_mut();
         Ok(stack.pop())
@@ -1204,7 +1201,7 @@ impl VM {
                             -> Result<StackFrame<'b>> {
         match *function {
             Callable::Closure(closure) => {
-                stack = stack.enter_scope(closure.function.args, Some(Callable::Closure(closure)));
+                stack = stack.enter_scope(closure.function.args, State::Closure(closure));
                 stack.frame.excess = excess;
                 Ok(stack)
             }
@@ -1212,7 +1209,7 @@ impl VM {
                 assert!(stack.len() >= ext.args + 1);
                 let function_index = stack.len() - ext.args - 1;
                 debug!("------- {} {:?}", function_index, &stack[..]);
-                Ok(stack.enter_scope(ext.args, Some(Callable::Extern(*ext))))
+                Ok(stack.enter_scope(ext.args, State::Extern(*ext)))
             }
         }
     }
@@ -1326,9 +1323,10 @@ impl VM {
         let mut maybe_stack = Some(stack);
         while let Some(mut stack) = maybe_stack {
             debug!("STACK\n{:?}", stack.stack.get_frames());
-            maybe_stack = match stack.frame.function {
-                None => return Ok(Some(stack)),
-                Some(Callable::Extern(ext)) => {
+            maybe_stack = match stack.frame.state {
+                State::Lock | State::Unknown => return Ok(Some(stack)),
+                State::Excess => stack.exit_scope(),
+                State::Extern(ext) => {
                     if stack.frame.instruction_index != 0 {
                         // This function was already called
                         return Ok(Some(stack));
@@ -1337,7 +1335,7 @@ impl VM {
                         Some(try!(self.execute_function(stack, &ext)))
                     }
                 }
-                Some(Callable::Closure(closure)) => {
+                State::Closure(closure) => {
                     // Tail calls into extern functions at the top level will drop the last
                     // stackframe so just return immedietly
                     if stack.stack.get_frames().len() == 0 {
@@ -1410,7 +1408,7 @@ impl VM {
                     }
                     stack = match stack.exit_scope() {
                         Some(stack) => stack,
-                        None => return Ok(None),
+                        None => StackFrame::frame(self.stack.borrow_mut(), args + amount + 1, State::Excess),
                     };
                     debug!("{} {} {:?}", stack.len(), amount, &stack[..]);
                     let end = stack.len() - args - 1;
@@ -1568,24 +1566,25 @@ impl VM {
             }
             index += 1;
         }
-        if stack.len() != 0 {
-            debug!("--> {:?}", stack.top());
-        } else {
-            debug!("--> ()");
-        }
-        let result = stack.pop();
+        let result = stack.top();
         debug!("Return {:?}", result);
         let len = stack.len();
         let frame_has_excess = stack.frame.excess;
-        stack = stack.exit_scope().expect("Stack");
-        for _ in 0..(len + 1) {
+        // We might not get access to the frame above the current as it could be locked
+        let stack_exists = stack.exit_scope().is_some();
+        let mut stack = self.stack.borrow_mut();
+        stack.pop();
+        for _ in 0..len {
             stack.pop();
         }
+        stack.push(result);
         if frame_has_excess {
+            stack.pop();
             // If the function that just finished had extra arguments we need to call the result of
             // the call with the extra arguments
             match stack.pop() {
                 Data(excess) => {
+                    let mut stack = StackFrame::frame(stack, excess.fields.len() as VMIndex, State::Excess);
                     debug!("Push excess args {:?}", &excess.fields);
                     stack.push(result);
                     for value in &excess.fields {
@@ -1596,8 +1595,8 @@ impl VM {
                 x => panic!("Expected excess arguments found {:?}", x),
             }
         } else {
-            stack.push(result);
-            Ok(Some(stack))
+            drop(stack);
+            Ok(if stack_exists { Some(self.current_frame()) } else { None })
         }
     }
 }

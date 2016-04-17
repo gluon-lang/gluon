@@ -1,6 +1,6 @@
 use gc::{Gc, Traverseable, Move};
 use base::symbol::Symbol;
-use stack::StackFrame;
+use stack::{State, StackFrame};
 use vm::{VM, Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, Userdata_,
          VMInt, Error, Root, RootStr};
 use base::types;
@@ -129,6 +129,11 @@ pub trait Pushable<'vm> : VMType {
 
 /// Trait which allows rust values to be retrieved from the virtual machine
 pub trait Getable<'vm>: Sized {
+    /// unsafe version of from_value which allows references to the internal of GcPtr's to be
+    /// extracted if `value` is rooted
+    unsafe fn from_value_unsafe(vm: &'vm VM, value: Value) -> Option<Self> {
+        Self::from_value(vm, value)
+    }
     fn from_value(vm: &'vm VM, value: Value) -> Option<Self>;
 }
 
@@ -140,10 +145,12 @@ impl<'vm, T: ?Sized + VMType> VMType for &'vm T {
 }
 
 impl<'vm, T> Getable<'vm> for &'vm T where T: ::vm::Userdata {
-    fn from_value(vm: &'vm VM, value: Value) -> Option<Self> {
-        unsafe {
-            <*const T as Getable<'vm>>::from_value(vm, value).map(|p| &*p)
-        }
+    unsafe fn from_value_unsafe(vm: &'vm VM, value: Value) -> Option<Self> {
+        <*const T as Getable<'vm>>::from_value(vm, value).map(|p| &*p)
+    }
+    // Only allow the unsafe version to be used
+    fn from_value(_vm: &'vm VM, _value: Value) -> Option<Self> {
+        None
     }
 }
 
@@ -1030,7 +1037,7 @@ impl<'vm, A, R> Function<'vm, fn(A) -> R>
     pub fn call(&mut self, a: A) -> Result<R, Error> {
         let vm = self.value.vm();
         let mut stack = vm.current_frame();
-        stack = stack.enter_scope(0, None);
+        stack = stack.enter_scope(0, State::Unknown);
         stack.push(*self.value);
         a.push(vm, &mut stack);
         for _ in 0..R::extra_args() {
@@ -1052,7 +1059,7 @@ impl<'vm, A, B, R> Function<'vm, fn(A, B) -> R>
     pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
         let vm = self.value.vm();
         let mut stack = vm.current_frame();
-        stack = stack.enter_scope(0, None);
+        stack = stack.enter_scope(0, State::Unknown);
         stack.push(*self.value);
         a.push(vm, &mut stack);
         b.push(vm, &mut stack);
@@ -1152,19 +1159,25 @@ impl <'vm, $($args,)* R: VMType> FunctionType for fn ($($args),*) -> R {
 
 impl <'vm, $($args,)* R> VMFunction<'vm> for fn ($($args),*) -> R
 where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
-    #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
+    #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm VM) -> Status {
         let n_args = Self::arguments();
         let mut stack = vm.current_frame();
         let mut i = 0;
-        $(let $args = {
-            let x = $args::from_value(vm, stack[i].clone()).expect(stringify!(Argument $args));
-            i += 1;
-            x
-        });*;
-        drop(stack);
-        let r = (*self)($($args),*);
-        let mut stack = vm.current_frame();
+        let r = unsafe {
+            $(let $args = {
+                let x = $args::from_value_unsafe(vm, stack[i].clone()).expect(stringify!(Argument $args));
+                i += 1;
+                x
+            });*;
+            // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
+            // rooted
+            let lock = stack.into_lock();
+            let r = (*self)($($args),*);
+            vm.release_lock(lock);
+            stack = vm.current_frame();
+            r
+        };
         r.push(vm, &mut stack)
     }
 }
@@ -1187,19 +1200,25 @@ impl <'s, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's {
 
 impl <'vm, $($args,)* R> VMFunction<'vm> for Fn($($args),*) -> R + 'vm
 where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
-    #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables)]
+    #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm VM) -> Status {
         let n_args = Self::arguments();
         let mut stack = vm.current_frame();
         let mut i = 0;
-        $(let $args = {
-            let x = $args::from_value(vm, stack[i].clone()).expect(stringify!(Argument $args));
-            i += 1;
-            x
-        });*;
-        drop(stack);
-        let r = (*self)($($args),*);
-        let mut stack = vm.current_frame();
+        let r = unsafe {
+            $(let $args = {
+                let x = $args::from_value_unsafe(vm, stack[i].clone()).expect(stringify!(Argument $args));
+                i += 1;
+                x
+            });*;
+            // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
+            // rooted
+            let lock = stack.into_lock();
+            let r = (*self)($($args),*);
+            vm.release_lock(lock);
+            stack = vm.current_frame();
+            r
+        };
         r.push(vm, &mut stack)
     }
 }

@@ -3,7 +3,7 @@ use std::io::{Read, stdin};
 use std::fs::File;
 
 use vm::types::*;
-use vm::stack::StackFrame;
+use vm::stack::{State, StackFrame};
 use vm::vm::{VM, Result, Status, Value, VMInt, RootStr};
 use vm::api::{VMType, IO, WithVM, primitive};
 use vm::api::generic::{A, B};
@@ -133,9 +133,11 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
 fn backtrace(frame_level: usize, stack: &StackFrame) -> String {
     let mut buffer = String::from("Backtrace:\n");
     for frame in &stack.stack.get_frames()[frame_level..] {
-        match frame.function.as_ref().map(|c| c.name()) {
-            Some(name) => buffer.push_str(name.as_ref()),
-            None => buffer.push_str("<unknown>"),
+        match frame.state {
+            State::Closure(ref closure) => buffer.push_str(closure.function.name.as_ref()),
+            State::Extern(ref ext) => buffer.push_str(ext.id.as_ref()),
+            State::Unknown => buffer.push_str("<unknown>"),
+            State::Lock | State::Excess => (),
         }
         buffer.push('\n');
     }

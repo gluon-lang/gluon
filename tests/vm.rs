@@ -3,6 +3,7 @@ extern crate embed_lang;
 
 use embed_lang::vm::vm::{VM, Value};
 use embed_lang::vm::vm::Value::{Float, Int};
+use embed_lang::vm::stack::State;
 use embed_lang::import::Import;
 
 pub fn load_script(vm: &VM, filename: &str, input: &str) -> ::embed_lang::Result<()> {
@@ -167,7 +168,7 @@ fn insert_stack_slice() {
     stack.push(Int(0));
     stack.insert_slice(0, &[Int(2), Int(1)]);
     assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
-    stack = stack.enter_scope(2, None);
+    stack = stack.enter_scope(2, State::Unknown);
     stack.insert_slice(1, &[Int(10)]);
     assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
     stack.insert_slice(1, &[]);
