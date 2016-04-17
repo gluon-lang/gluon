@@ -9,6 +9,7 @@ let { (>>=), return, (>>), join, map, lift2, forM_ }
 let string = import "std/string.hs"
 
 let assert_oieq = assert_eq (prelude.show_Option prelude.show_Int) (prelude.eq_Option prelude.eq_Int)
+let assert_beq = assert_eq prelude.show_Bool prelude.eq_Bool
 
 let slice_tests =
     assert_seq (string.slice "ab" 0 1) "a" >>
@@ -30,6 +31,21 @@ let find_tests =
         assert_oieq (string.rfind "abcdabcd" "b") (Some 5) >> 
         assert_oieq (string.rfind "abcdabcd" "d") (Some 7) >> 
         assert_oieq (string.rfind "abcd1234" "xyz") None
+
+let starts_ends_tests =
+    assert_beq (string.starts_with "abcd1234" "ab") True >>
+        assert_beq (string.starts_with "abcd1234" "b") False >>
+        assert_beq (string.ends_with "abcd1234" "1234") True >>
+        assert_beq (string.ends_with "abcd1234" "4") True >>
+        assert_beq (string.ends_with "abcd1234" "ab") False
+
+let trim_tests =
+    assert_seq (string.trim "ab") "ab" >>
+        assert_seq (string.trim " ab ") "ab" >>
+        assert_seq (string.trim "ab \t") "ab" >>
+        assert_seq (string.trim "\t ab") "ab" >>
+        assert_seq (string.trim_left " ab ") "ab " >>
+        assert_seq (string.trim_right " ab ") " ab"
 
 let tests =
     slice_tests >> append_tests >> find_tests

@@ -238,6 +238,8 @@ pub fn load(vm: &VM) -> Result<()> {
         find => f2(str::find::<&str>),
         rfind => f2(str::rfind::<&str>),
         trim => f1(str::trim),
+        trim_left => f1(str::trim_left),
+        trim_right => f1(str::trim_right),
         compare => f2(str::cmp),
         append => f2(prim::string_append),
         eq => f2(<str as PartialEq>::eq),

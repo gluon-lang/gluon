@@ -27,11 +27,14 @@ in {
     find = string_prim.find,
     rfind = string_prim.rfind,
     trim = string_prim.trim,
+    trim_left = string_prim.trim_left,
+    trim_right = string_prim.trim_right,
     compare = string_prim.compare,
     eq = { (==) = string_prim.eq },
     ord,
     show,
     slice = string_prim.slice,
     starts_with,
+    ends_with,
     monoid
 }
