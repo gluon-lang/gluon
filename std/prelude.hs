@@ -1,4 +1,4 @@
-let { Option, Result, Ordering } = import "std/types.hs"
+let { Bool, Option, Result, Ordering } = import "std/types.hs"
 /// A linked list type
 type List a = | Nil | Cons a (List a)
 /**
@@ -472,6 +472,7 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     Eq,
     Ord,
     Monoid,
+    Bool,
     Ordering,
     Option,
     Result,

@@ -12,7 +12,7 @@ use base::ast::{Typed, ASTType};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol};
 use base::types;
-use base::types::{Type, KindEnv, TypeEnv, TcType, RcKind};
+use base::types::{Type, KindEnv, TypeEnv, PrimitiveEnv, TcType, RcKind};
 use base::macros::MacroEnv;
 use types::*;
 use interner::{Interner, InternedStr};
@@ -581,6 +581,15 @@ impl TypeEnv for VMEnv {
     }
 }
 
+impl PrimitiveEnv for VMEnv {
+    fn get_bool(&self) -> &TcType {
+        self.find_type_info("std.types.Bool")
+            .ok()
+            .and_then(|alias| alias.typ.as_ref())
+            .expect("std.types.Bool")
+    }
+}
+
 impl MetadataEnv for VMEnv {
     fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
         self.globals
@@ -779,7 +788,6 @@ impl GlobalVMState {
         {
             let mut ids = self.typeids.borrow_mut();
             ids.insert(TypeId::of::<()>(), Type::unit());
-            ids.insert(TypeId::of::<bool>(), Type::bool());
             ids.insert(TypeId::of::<VMInt>(), Type::int());
             ids.insert(TypeId::of::<i32>(), Type::int());
             ids.insert(TypeId::of::<u32>(), Type::int());

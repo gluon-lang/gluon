@@ -428,13 +428,6 @@ impl<'a> Compiler<'a> {
                 match *lit {
                     ast::LiteralEnum::Integer(i) => function.emit(PushInt(i as isize)),
                     ast::LiteralEnum::Float(f) => function.emit(PushFloat(f)),
-                    ast::LiteralEnum::Bool(b) => {
-                        function.emit(PushInt(if b {
-                            1
-                        } else {
-                            0
-                        }))
-                    }
                     ast::LiteralEnum::String(ref s) => function.emit_string(self.intern(&s)),
                     ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
                 }

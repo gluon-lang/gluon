@@ -83,6 +83,18 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
     }
 }
 
+pub trait PrimitiveEnv : TypeEnv {
+    fn get_bool(&self) -> &TcType;
+}
+
+impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
+    fn get_bool(&self) -> &TcType { (**self).get_bool() }
+}
+
+impl<'a, T: PrimitiveEnv, U: TypeEnv> PrimitiveEnv for (T, U) {
+    fn get_bool(&self) -> &TcType { self.0.get_bool() }
+}
+
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
     where F: FnMut(&Generic<Symbol>) -> Option<TcType>
 {
@@ -229,7 +241,6 @@ pub enum BuiltinType {
     Char,
     Int,
     Float,
-    Bool,
     Unit,
     Function,
 }
@@ -242,7 +253,6 @@ impl ::std::str::FromStr for BuiltinType {
             "Float" => BuiltinType::Float,
             "String" => BuiltinType::String,
             "Char" => BuiltinType::Char,
-            "Bool" => BuiltinType::Bool,
             _ => return Err(()),
         };
         Ok(t)
@@ -256,7 +266,6 @@ impl BuiltinType {
             BuiltinType::Char => "Char",
             BuiltinType::Int => "Int",
             BuiltinType::Float => "Float",
-            BuiltinType::Bool => "Bool",
             BuiltinType::Unit => "()",
             BuiltinType::Function => "->",
         }
@@ -455,10 +464,6 @@ impl<Id, T> Type<Id, T>
 
     pub fn float() -> T {
         Type::builtin(BuiltinType::Float)
-    }
-
-    pub fn bool() -> T {
-        Type::builtin(BuiltinType::Bool)
     }
 
     pub fn unit() -> T {

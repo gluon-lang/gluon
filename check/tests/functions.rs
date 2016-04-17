@@ -6,7 +6,8 @@ extern crate check;
 
 use base::ast;
 use base::symbol::{Symbols, SymbolModule, Symbol};
-use base::types::{TcIdent, TcType};
+use base::types::{Type, TypeConstructor, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias,
+                  RcKind, Kind};
 
 use check::typecheck::*;
 
@@ -51,12 +52,50 @@ pub fn typecheck(text: &str) -> Result<TcType, Error> {
     let (_, t) = typecheck_expr(text);
     t
 }
+struct EmptyEnv(Alias<Symbol, TcType>);
+impl KindEnv for EmptyEnv {
+    fn find_kind(&self, id: &Symbol) -> Option<RcKind> {
+        match id.as_ref() {
+            "Bool" => Some(Kind::star()),
+            _ => None,
+        }
+    }
+}
+impl TypeEnv for EmptyEnv {
+    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+        match id.as_ref() {
+            "False" | "True" => Some(&self.0.typ.as_ref().unwrap()),
+            _ => None,
+        }
+    }
+    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+        match id.as_ref() {
+            "Bool" => Some(&self.0),
+            _ => None,
+        }
+    }
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+        None
+    }
+}
+
+impl PrimitiveEnv for EmptyEnv {
+    fn get_bool(&self) -> &TcType {
+        self.0.typ.as_ref().unwrap()
+    }
+}
 
 pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>) {
     let mut expr = parse_new(text);
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
-    let env = ();
+    let bool_sym = interner.symbol("Bool");
+    let bool = Type::<_, TcType>::data(TypeConstructor::Data(bool_sym.clone()), vec![]);
+    let env = EmptyEnv(Alias {
+        name: bool_sym,
+        args: vec![],
+        typ: Some(bool.clone()),
+    });
     let mut tc = Typecheck::new("test".into(), &mut interner, &env);
     let result = tc.typecheck_expr(&mut expr);
     (expr, result)

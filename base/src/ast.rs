@@ -254,7 +254,6 @@ pub enum LiteralEnum {
     Float(f64),
     String(String),
     Char(char),
-    Bool(bool),
 }
 
 /// Pattern which contains a location
@@ -348,13 +347,6 @@ impl<Id> LExpr<Id>
                     Float(f) => self.location.line_offset(format!("{}", f).len() as i32),
                     String(ref s) => self.location.line_offset(s.len() as i32 + 2),
                     Char(_) => self.location.line_offset(3),
-                    Bool(b) => {
-                        self.location.line_offset(if b {
-                            4
-                        } else {
-                            5
-                        })
-                    }
                 }
             }
             Call(ref func, ref args) => {
@@ -536,7 +528,6 @@ impl<Id> Typed for Expr<Id>
                     LiteralEnum::Float(_) => Type::float(),
                     LiteralEnum::String(_) => Type::string(),
                     LiteralEnum::Char(_) => Type::char(),
-                    LiteralEnum::Bool(_) => Type::bool(),
                 }
             }
             Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),

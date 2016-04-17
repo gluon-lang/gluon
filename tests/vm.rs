@@ -12,13 +12,26 @@ pub fn load_script(vm: &VM, filename: &str, input: &str) -> ::embed_lang::Result
         .load_script(vm, filename, input)
 }
 
-pub fn run_expr(vm: &VM, s: &str) -> Value {
+pub fn run_expr_(vm: &VM, s: &str, implicit_prelude: bool) -> Value {
     *::embed_lang::Compiler::new()
-        .implicit_prelude(false)
+        .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
 }
 
+pub fn run_expr(vm: &VM, s: &str) -> Value {
+    run_expr_(vm, s, false)
+}
+
 macro_rules! test_expr {
+    (prelude $name: ident, $expr: expr, $value: expr) => {
+        #[test]
+        fn $name() {
+            let _ = ::env_logger::init();
+            let mut vm = make_vm();
+            let value = run_expr_(&mut vm, $expr, true);
+            assert_eq!(value, $value);
+        }
+    };
     ($name: ident, $expr: expr, $value: expr) => {
         #[test]
         fn $name() {
@@ -268,6 +281,15 @@ string_prim.compare "a" "b"
 Int(0)
 }
 
+test_expr!{ prelude match_on_bool,
+r#"
+case True of
+| False -> 10
+| True -> 11
+"#,
+Int(11)
+}
+
 #[test]
 fn non_exhaustive_pattern() {
     let _ = ::env_logger::init();
@@ -401,10 +423,8 @@ in
     assert_eq!(result, vm.new_data(0, &mut [Int(3), Float(3.0)]));
 }
 
-#[test]
-fn through_overloaded_alias() {
-    let _ = ::env_logger::init();
-    let text = r#"
+test_expr!{ through_overloaded_alias,
+r#"
 type Test a = { id : a -> a }
 in
 let test_Int: Test Int = { id = \x -> 0 }
@@ -415,10 +435,8 @@ let { id } = test_Int
 in
 let { id } = test_String
 in id 1
-"#;
-    let mut vm = make_vm();
-    let result = run_expr(&mut vm, text);
-    assert_eq!(result, Int(0));
+"#,
+Int(0)
 }
 
 #[test]

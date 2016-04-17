@@ -108,9 +108,6 @@ fn type_decls(binds: Vec<TypeBinding<String>>, body: PExpr) -> PExpr {
     no_loc(Expr::Type(binds, Box::new(body)))
 }
 
-fn bool(b: bool) -> PExpr {
-    no_loc(Expr::Literal(LiteralEnum::Bool(b)))
-}
 fn record(fields: Vec<(String, Option<PExpr>)>) -> PExpr {
     record_a(Vec::new(), fields)
 }
@@ -186,7 +183,7 @@ fn application() {
 fn if_else_test() {
     let _ = ::env_logger::init();
     let e = parse_new("if True then 1 else 0");
-    let a = if_else(bool(true), int(1), int(0));
+    let a = if_else(id("True"), int(1), int(0));
     assert_eq!(e, a);
 }
 

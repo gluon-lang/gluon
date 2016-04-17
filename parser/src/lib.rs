@@ -482,13 +482,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                      &mut self.float()
                               .map(|f| loc(Expr::Literal(LiteralEnum::Float(f)))),
                      &mut self.ident()
-                              .map(|id| {
-                                  match self.make_ident.borrow().string(&id) {
-                                      "True" => Expr::Literal(LiteralEnum::Bool(true)),
-                                      "False" => Expr::Literal(LiteralEnum::Bool(false)),
-                                      _ => Expr::Identifier(id),
-                                  }
-                              })
+                              .map(Expr::Identifier)
                               .map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::record).map(&loc),
                      &mut between(token(Token::Open(Delimiter::Paren)),

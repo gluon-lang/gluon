@@ -321,6 +321,11 @@ impl<'vm> Getable<'vm> for f64 {
 }
 impl VMType for bool {
     type Type = Self;
+    fn make_type(vm: &VM) -> TcType {
+        let symbol = vm.get_env().find_type_info("std.types.Bool").unwrap().name.clone();
+        let ctor = types::TypeConstructor::Data(symbol);
+        Type::data(ctor, vec![])
+    }
 }
 impl<'vm> Pushable<'vm> for bool {
     fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {

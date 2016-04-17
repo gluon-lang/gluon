@@ -211,9 +211,7 @@ pub fn rename(symbols: &mut SymbolModule,
                                                 .get_all(id.id())
                                                 .iter()
                                                 .flat_map(|binds| {
-                                                    binds.iter().map(|bind| {
-                                                        bind.1.clone()
-                                                    })
+                                                    binds.iter().map(|bind| bind.1.clone())
                                                 })
                                                 .collect(),
                         });

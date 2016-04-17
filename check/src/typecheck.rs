@@ -8,7 +8,7 @@ use base::types;
 use base::types::{RcKind, Type, Generic, Kind};
 use base::error::Errors;
 use base::symbol::{Symbol, SymbolModule, Symbols};
-use base::types::{KindEnv, TypeEnv, TcIdent, Alias, TcType};
+use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, TcType};
 use instantiate::{AliasInstantiator, Instantiator, unroll_app};
 use kindcheck;
 use substitution::Substitution;
@@ -125,7 +125,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
 struct Environment<'a> {
-    environment: &'a (TypeEnv + 'a),
+    environment: &'a (PrimitiveEnv + 'a),
     stack: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, (TcType, Alias<Symbol, TcType>)>,
 }
@@ -181,6 +181,10 @@ impl<'a> TypeEnv for Environment<'a> {
     }
 }
 
+impl<'a> PrimitiveEnv for Environment<'a> {
+    fn get_bool(&self) -> &TcType { self.environment.get_bool() }
+}
+
 enum TailCall {
     Type(TcType),
     TailCall,
@@ -204,7 +208,7 @@ impl<'a> Typecheck<'a> {
     /// Create a new typechecker which typechecks expressions in `module`
     pub fn new(module: String,
                symbols: &'a mut Symbols,
-               environment: &'a (TypeEnv + 'a))
+               environment: &'a (PrimitiveEnv + 'a))
                -> Typecheck<'a> {
         let mut symbols = SymbolModule::new(module, symbols);
         for t in ["Int", "Float"].iter() {
@@ -223,6 +227,10 @@ impl<'a> Typecheck<'a> {
             inst: Instantiator::new(),
             errors: Errors::new(),
         }
+    }
+
+    fn bool(&self) -> TcType {
+        self.environment.get_bool().clone()
     }
 
     fn find(&mut self, id: &Symbol) -> TcResult<TcType> {
@@ -416,7 +424,6 @@ impl<'a> Typecheck<'a> {
                     ast::LiteralEnum::Float(_) => Type::float(),
                     ast::LiteralEnum::String(_) => Type::string(),
                     ast::LiteralEnum::Char(_) => Type::char(),
-                    ast::LiteralEnum::Bool(_) => Type::bool(),
                 }))
             }
             ast::Expr::Call(ref mut func, ref mut args) => {
@@ -440,7 +447,7 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = try!(self.typecheck(&mut **pred));
-                try!(self.unify(&Type::bool(), pred_type));
+                try!(self.unify(&self.bool(), pred_type));
                 let true_type = try!(self.typecheck(&mut **if_true));
                 let false_type = match *if_false {
                     Some(ref mut if_false) => try!(self.typecheck(&mut **if_false)),
@@ -468,15 +475,17 @@ impl<'a> Typecheck<'a> {
                     };
                     match &op_name[1 + offset..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
-                        "==" | "<" => Ok(Type::bool()),
+                        "==" | "<" => Ok(self.bool()),
                         _ => Err(UndefinedVariable(op.name.clone())),
                     }
                 } else {
                     match &*op_name {
                         "&&" | "||" => {
                             try!(self.unify(&lhs_type, rhs_type.clone()));
-                            op.typ = Type::function(vec![Type::bool(), Type::bool()], Type::bool());
-                            self.unify(&Type::bool(), lhs_type)
+                            op.typ = Type::function(vec![self.bool(),
+                                                         self.bool()],
+                                                    self.bool());
+                            self.unify(&self.bool(), lhs_type)
                         }
                         _ => {
                             op.typ = try!(self.find(op.id()));
