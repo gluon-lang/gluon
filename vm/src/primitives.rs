@@ -66,7 +66,7 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
 
 fn string_append(lhs: WithVM<&str>, rhs: &str) -> String {
     use array::Str;
-    pub struct StrAppend<'b> {
+    struct StrAppend<'b> {
         lhs: &'b str,
         rhs: &'b str,
     }

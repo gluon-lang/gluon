@@ -31,8 +31,11 @@ path = "check"
 [dependencies.vm]
 path = "vm"
 
-[dev-dependencies.compiletest_rs]
+[dependencies.compiletest_rs]
 version = "0.1.1"
+optional = true
 
 [features]
 test = ["check/test", "parser/test"]
+nightly = ["compiletest_rs"]
+test_nightly = ["check/test", "parser/test", "nightly"]
