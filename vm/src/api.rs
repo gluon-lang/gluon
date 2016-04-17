@@ -123,7 +123,7 @@ pub trait VMType {
 
 
 /// Trait which allows a rust value to be pushed to the virtual machine
-pub trait Pushable<'vm> : VMType {
+pub trait Pushable<'vm>: VMType {
     fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status;
 }
 
@@ -144,7 +144,9 @@ impl<'vm, T: ?Sized + VMType> VMType for &'vm T {
     }
 }
 
-impl<'vm, T> Getable<'vm> for &'vm T where T: ::vm::Userdata {
+impl<'vm, T> Getable<'vm> for &'vm T
+    where T: ::vm::Userdata
+{
     unsafe fn from_value_unsafe(vm: &'vm VM, value: Value) -> Option<Self> {
         <*const T as Getable<'vm>>::from_value(vm, value).map(|p| &*p)
     }
@@ -163,7 +165,7 @@ impl<'vm> Getable<'vm> for &'vm str {
         unsafe {
             match value {
                 Value::String(ref s) => Some(forget_lifetime(s)),
-                _ => None
+                _ => None,
             }
         }
     }
@@ -349,32 +351,27 @@ impl VMType for Ordering {
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
-    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, _vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
         let tag = match self {
             Ordering::Less => 0,
             Ordering::Equal => 1,
             Ordering::Greater => 2,
         };
-        let value = Value::Data(vm.alloc(&stack.stack,
-                                         Def {
-                                             tag: tag,
-                                             elems: &[],
-                                         }));
-        stack.push(value);
+        stack.push(Value::Int(tag));
         Status::Ok
     }
 }
 impl<'vm> Getable<'vm> for Ordering {
     fn from_value(_: &'vm VM, value: Value) -> Option<Ordering> {
-        match value {
-            Value::Data(data) => {
-                match data.tag {
-                    0 => Some(Ordering::Less),
-                    1 => Some(Ordering::Equal),
-                    2 => Some(Ordering::Greater),
-                    _ => None,
-                }
-            }
+        let tag = match value {
+            Value::Data(data) => data.tag as VMInt,
+            Value::Int(tag) => tag,
+            _ => return None,
+        };
+        match tag {
+            0 => Some(Ordering::Less),
+            1 => Some(Ordering::Equal),
+            2 => Some(Ordering::Greater),
             _ => None,
         }
     }
@@ -536,10 +533,7 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
                 assert!(stack.len() == len);
                 stack.push(value);
             }
-            None => {
-                let value = vm.new_data(0, &[]);
-                stack.push(value);
-            }
+            None => stack.push(Value::Int(0)),
         }
         Status::Ok
     }
@@ -554,6 +548,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
                     T::from_value(vm, data.fields[1]).map(Some)
                 }
             }
+            Value::Int(0) => Some(None),
             _ => None,
         }
     }
@@ -784,7 +779,10 @@ macro_rules! define_tuple {
                 match value {
                     Value::Data(v) => {
                         let mut i = 0;
-                        match ( $({ let a = $id::from_value(vm, v.fields[i].clone()); i += 1; a }),+ ) {
+                        let x = ( $(
+                            { let a = $id::from_value(vm, v.fields[i].clone()); i += 1; a }
+                        ),+ );
+                        match x {
                             ($(Some($id)),+) => Some(( $($id),+ )),
                             _ => None,
                         }
@@ -1118,16 +1116,17 @@ impl<'vm, 's, T: ?Sized> VMFunction<'vm> for &'s T
     }
 }
 
-impl <F> FunctionType for Box<F>
-where F: FunctionType
+impl<F> FunctionType for Box<F>
+    where F: FunctionType
 {
     fn arguments() -> VMIndex {
         F::arguments()
     }
 }
 
-impl <'vm, F: ?Sized> VMFunction<'vm> for Box<F>
-where F: VMFunction<'vm> {
+impl<'vm, F: ?Sized> VMFunction<'vm> for Box<F>
+    where F: VMFunction<'vm>
+{
     fn unpack_and_call(&self, vm: &'vm VM) -> Status {
         (**self).unpack_and_call(vm)
     }
@@ -1183,7 +1182,8 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
         let mut i = 0;
         let r = unsafe {
             $(let $args = {
-                let x = $args::from_value_unsafe(vm, stack[i].clone()).expect(stringify!(Argument $args));
+                let x = $args::from_value_unsafe(vm, stack[i].clone())
+                    .expect(stringify!(Argument $args));
                 i += 1;
                 x
             });*;
@@ -1224,7 +1224,8 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
         let mut i = 0;
         let r = unsafe {
             $(let $args = {
-                let x = $args::from_value_unsafe(vm, stack[i].clone()).expect(stringify!(Argument $args));
+                let x = $args::from_value_unsafe(vm, stack[i].clone())
+                    .expect(stringify!(Argument $args));
                 i += 1;
                 x
             });*;

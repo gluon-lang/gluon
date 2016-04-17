@@ -236,6 +236,38 @@ r#"
 Int('a' as isize)
 }
 
+test_expr!{ zero_argument_variant_is_int,
+r#"
+type Test = | A Int | B
+B
+"#,
+Int(1)
+}
+
+test_expr!{ match_on_zero_argument_variant,
+r#"
+type Test = | A Int | B
+case B of
+| A x -> x
+| B -> 0
+"#,
+Int(0)
+}
+
+test_expr!{ marshalled_option_none_is_int,
+r#"
+string_prim.find "a" "b"
+"#,
+Int(0)
+}
+
+test_expr!{ marshalled_ordering_is_int,
+r#"
+string_prim.compare "a" "b"
+"#,
+Int(0)
+}
+
 #[test]
 fn non_exhaustive_pattern() {
     let _ = ::env_logger::init();

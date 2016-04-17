@@ -1408,7 +1408,11 @@ impl VM {
                     }
                     stack = match stack.exit_scope() {
                         Some(stack) => stack,
-                        None => StackFrame::frame(self.stack.borrow_mut(), args + amount + 1, State::Excess),
+                        None => {
+                            StackFrame::frame(self.stack.borrow_mut(),
+                                              args + amount + 1,
+                                              State::Excess)
+                        }
                     };
                     debug!("{} {} {:?}", stack.len(), amount, &stack[..]);
                     let end = stack.len() - args - 1;
@@ -1440,20 +1444,19 @@ impl VM {
                     }
                 }
                 TestTag(tag) => {
-                    let x = match stack.top() {
-                        Data(ref data) => {
-                            if data.tag == tag {
-                                1
-                            } else {
-                                0
-                            }
-                        }
+                    let data_tag = match stack.top() {
+                        Data(ref data) => data.tag,
+                        Int(tag) => tag as VMTag,
                         _ => {
                             return Err(Error::Message("Op TestTag called on non data type"
                                                           .to_string()))
                         }
                     };
-                    stack.push(Int(x));
+                    stack.push(Int(if data_tag == tag {
+                        1
+                    } else {
+                        0
+                    }));
                 }
                 Split => {
                     match stack.pop() {
@@ -1462,6 +1465,8 @@ impl VM {
                                 stack.push(*field);
                             }
                         }
+                        // Zero argument variant
+                        Int(_) => (),
                         _ => {
                             return Err(Error::Message("Op Split called on non data type"
                                                           .to_string()))
@@ -1584,7 +1589,9 @@ impl VM {
             // the call with the extra arguments
             match stack.pop() {
                 Data(excess) => {
-                    let mut stack = StackFrame::frame(stack, excess.fields.len() as VMIndex, State::Excess);
+                    let mut stack = StackFrame::frame(stack,
+                                                      excess.fields.len() as VMIndex,
+                                                      State::Excess);
                     debug!("Push excess args {:?}", &excess.fields);
                     stack.push(result);
                     for value in &excess.fields {
@@ -1596,7 +1603,11 @@ impl VM {
             }
         } else {
             drop(stack);
-            Ok(if stack_exists { Some(self.current_frame()) } else { None })
+            Ok(if stack_exists {
+                Some(self.current_frame())
+            } else {
+                None
+            })
         }
     }
 }

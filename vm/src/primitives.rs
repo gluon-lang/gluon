@@ -13,8 +13,8 @@ fn array_length(array: Array<generic::A>) -> VMInt {
 }
 
 fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
-                        index: VMInt)
-                        -> MaybeError<Generic<generic::A>, String> {
+                    index: VMInt)
+                    -> MaybeError<Generic<generic::A>, String> {
     match array.get(index) {
         Some(value) => MaybeError::Ok(value),
         None => MaybeError::Err(format!("{} is out of range", index)),
@@ -22,8 +22,8 @@ fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
 }
 
 fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
-                         rhs: Array<'vm, Generic<generic::A>>)
-                         -> Array<'vm, Generic<generic::A>> {
+                     rhs: Array<'vm, Generic<generic::A>>)
+                     -> Array<'vm, Generic<generic::A>> {
     struct Append<'b> {
         lhs: &'b [Value],
         rhs: &'b [Value],
@@ -71,7 +71,7 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> String {
         rhs: &'b str,
     }
 
-    impl<'b> Traverseable for StrAppend<'b> { }
+    impl<'b> Traverseable for StrAppend<'b> {}
 
     unsafe impl<'b> DataDef for StrAppend<'b> {
         type Value = Str;

@@ -183,18 +183,14 @@ impl<'a: 'b, 'b> StackFrame<'b> {
             if frame.state == State::Lock {
                 // Locks must be unlocked manually using release lock
                 None
-            }
-            else {
+            } else {
                 debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
                 Some(self)
             }
         })
     }
 
-    pub fn frame(mut stack: RefMut<'b, Stack>,
-                 args: VMIndex,
-                 state: State)
-                 -> StackFrame<'b> {
+    pub fn frame(mut stack: RefMut<'b, Stack>, args: VMIndex, state: State) -> StackFrame<'b> {
         let frame = StackFrame::add_new_frame(&mut stack, args, state);
         StackFrame {
             stack: stack,

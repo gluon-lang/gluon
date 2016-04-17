@@ -7,7 +7,7 @@ use base::types;
 use base::types::{Type, TcIdent, TcType, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
-use vm::VM;
+use vm::{VM, VMInt};
 use self::Variable::*;
 
 pub type CExpr = LExpr<TcIdent>;
@@ -391,7 +391,8 @@ impl<'a> Compiler<'a> {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             Global(index) => function.emit(PushGlobal(index)),
-            Constructor(tag, 0) => function.emit(Construct(tag, 0)),
+            // Zero argument constructors can be compiled as integers
+            Constructor(tag, 0) => function.emit(PushInt(tag as VMInt)),
             Constructor(..) => panic!("Constructor {:?} is not fully applied", id),
         }
     }

@@ -33,7 +33,7 @@ impl<T> VMType for Reference<T>
     }
 }
 
-impl <'vm, T> Pushable<'vm> for Reference<T>
+impl<'vm, T> Pushable<'vm> for Reference<T>
     where T: Any + VMType,
           T::Type: Sized
 {
