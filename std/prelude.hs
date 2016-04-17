@@ -97,6 +97,10 @@ let eq_Unit: Eq () = {
     (==) = \l r -> True
 }
 
+let eq_Bool: Eq Bool = {
+    (==) = \l r -> if l then r else not r
+}
+
 let eq_Int = {
     (==) = \l r -> l #Int== r
 }
@@ -155,6 +159,21 @@ let monoid_Ordering = {
 /// `Ord a` defines an ordering on `a`
 type Ord a = {
     compare : a -> a -> Ordering
+}
+
+let ord_Unit = {
+    compare = \l r -> EQ
+}
+
+let ord_Bool = {
+    compare = \l r ->
+        if l then
+            if r then
+                EQ
+            else
+                GT
+        else
+            LT
 }
 
 let ord_Int = {
@@ -409,6 +428,10 @@ let show_Unit: Show () = {
     show = const "()"
 }
 
+let show_Bool: Show Bool = {
+    show = \x -> if x then "True" else "False"
+}
+
 let show_Int: Show Int = {
     show = prim.show_Int
 }
@@ -461,8 +484,8 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     Show,
     id, const, flip, not,
     foldl, foldr,
-    ord_Option, ord_Result, ord_Float, ord_Int, make_Ord,
-    eq_Unit, eq_List, eq_Option, eq_Result, eq_Float, eq_Int,
+    ord_Unit, ord_Bool, ord_Option, ord_Result, ord_Float, ord_Int, make_Ord,
+    eq_Unit, eq_Bool, eq_List, eq_Option, eq_Result, eq_Float, eq_Int,
     monoid_Function, monoid_List, monoid_Option,
     monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
     num_Int, num_Float,
@@ -472,6 +495,6 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     make_Alternative,
     monad_Option, monad_List, monad_IO,
     make_Monad,
-    show_Unit, show_Int, show_Float, show_List, show_Option, show_Result
+    show_Unit, show_Bool, show_Int, show_Float, show_List, show_Option, show_Result
 }
 
