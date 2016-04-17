@@ -1,19 +1,18 @@
-use std::cmp::Ordering;
 use std::io::Read;
 use std::string::String as StdString;
 
 use primitives as prim;
-use api::{generic, Generic, Getable, Array, MaybeError, primitive};
+use api::{generic, Generic, Getable, Array, MaybeError, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
-use vm::{VM, DataStruct, VMInt, Status, Value, RootStr, Result};
+use vm::{VM, DataStruct, VMInt, Status, Value, Result};
 
 
-pub fn array_length(array: Array<generic::A>) -> VMInt {
+fn array_length(array: Array<generic::A>) -> VMInt {
     array.len() as VMInt
 }
 
-pub fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
+fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
                         index: VMInt)
                         -> MaybeError<Generic<generic::A>, String> {
     match array.get(index) {
@@ -22,7 +21,7 @@ pub fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
     }
 }
 
-pub fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
+fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
                          rhs: Array<'vm, Generic<generic::A>>)
                          -> Array<'vm, Generic<generic::A>> {
     struct Append<'b> {
@@ -65,53 +64,69 @@ pub fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
     Getable::from_value(lhs.vm(), Value::Data(value)).expect("Array")
 }
 
-pub fn string_length(s: RootStr) -> VMInt {
-    s.len() as VMInt
+fn string_append(lhs: WithVM<&str>, rhs: &str) -> String {
+    use array::Str;
+    pub struct StrAppend<'b> {
+        lhs: &'b str,
+        rhs: &'b str,
+    }
+
+    impl<'b> Traverseable for StrAppend<'b> { }
+
+    unsafe impl<'b> DataDef for StrAppend<'b> {
+        type Value = Str;
+        fn size(&self) -> usize {
+            ::array::Str::size_of(self.lhs.len() + self.rhs.len())
+        }
+        fn initialize<'w>(self, mut result: WriteOnly<'w, Str>) -> &'w mut Str {
+            unsafe {
+                let result = &mut *result.as_mut_ptr();
+                {
+                    let array = Str::as_mut_array(result);
+                    ::array::Array::set_len(array, self.lhs.len() + self.rhs.len());
+                    let (l, r) = array.split_at_mut(self.lhs.len());
+                    l.clone_from_slice(self.lhs.as_bytes());
+                    r.clone_from_slice(self.rhs.as_bytes());
+                }
+                result
+            }
+        }
+    }
+
+    let vm = lhs.vm;
+    let lhs = lhs.value;
+    let value = {
+        let stack = vm.current_frame();
+        vm.alloc(&stack.stack,
+                 StrAppend {
+                     lhs: lhs,
+                     rhs: rhs,
+                 })
+    };
+    Getable::from_value(vm, Value::String(value)).expect("Array")
 }
 
-pub fn string_append(l: RootStr, r: RootStr) -> String {
-    let mut s = String::with_capacity(l.len() + r.len());
-    s.push_str(&l);
-    s.push_str(&r);
-    s
-}
-pub fn string_eq(l: RootStr, r: RootStr) -> bool {
-    *l == *r
+fn string_slice(s: &str, start: VMInt, end: VMInt) -> &str {
+    &s[start as usize..end as usize]
 }
 
-pub fn string_compare(l: RootStr, r: RootStr) -> Ordering {
-    l.cmp(&r)
-}
-pub fn string_slice(s: RootStr, start: VMInt, end: VMInt) -> String {
-    String::from(&s[start as usize..end as usize])
-}
-pub fn string_find(haystack: RootStr, needle: RootStr) -> Option<VMInt> {
-    haystack.find(&needle[..]).map(|i| i as VMInt)
-}
-pub fn string_rfind(haystack: RootStr, needle: RootStr) -> Option<VMInt> {
-    haystack.rfind(&needle[..]).map(|i| i as VMInt)
-}
-pub fn string_trim(s: RootStr) -> String {
-    String::from(s.trim())
-}
-
-pub fn trace(a: Generic<A>) {
+fn trace(a: Generic<A>) {
     println!("{:?}", a.0);
 }
 
-pub fn show_int(i: VMInt) -> String {
+fn show_int(i: VMInt) -> String {
     format!("{}", i)
 }
 
-pub fn show_float(f: f64) -> String {
+fn show_float(f: f64) -> String {
     format!("{}", f)
 }
 
-pub fn show_char(c: char) -> String {
+fn show_char(c: char) -> String {
     format!("{}", c)
 }
 
-pub fn error(_: &VM) -> Status {
+fn error(_: &VM) -> Status {
     // We expect a string as an argument to this function but we only return Status::Error
     // and let the caller take care of printing the message
     Status::Error
@@ -219,13 +234,13 @@ pub fn load(vm: &VM) -> Result<()> {
 
     try!(vm.define_global("string_prim",
                           record!(
-        length => f1(prim::string_length),
-        find => f2(prim::string_find),
-        rfind => f2(prim::string_rfind),
-        trim => f1(prim::string_trim),
-        compare => f2(prim::string_compare),
+        length => f1(str::len),
+        find => f2(str::find::<&str>),
+        rfind => f2(str::rfind::<&str>),
+        trim => f1(str::trim),
+        compare => f2(str::cmp),
         append => f2(prim::string_append),
-        eq => f2(prim::string_eq),
+        eq => f2(<str as PartialEq>::eq),
         slice => f3(prim::string_slice)
     )));
     try!(vm.define_global("prim",

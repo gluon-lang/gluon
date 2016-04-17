@@ -75,6 +75,10 @@ impl<T: Copy> Array<T> {
         mem::size_of::<usize>() + mem::size_of::<T>() * len
     }
 
+    pub unsafe fn set_len(array: &mut Array<T>, len: usize) {
+        array.len = len;
+    }
+
     /// Initializes an Array.
     /// To be safe it is required that the iterators length is known and exactly the same as the
     /// length of the allocated array.
@@ -122,6 +126,15 @@ impl<'a, T: Copy + 'a> IntoIterator for &'a mut Array<T> {
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Str(Array<u8>);
 
+impl Str {
+    pub fn size_of(len: usize) -> usize {
+        Array::<u8>::size_of(len)
+    }
+    pub fn as_mut_array(s: &mut Str) -> &mut Array<u8> {
+        &mut s.0
+    }
+}
+
 impl fmt::Debug for Str {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", &**self)
@@ -145,6 +158,12 @@ impl Deref for Str {
     }
 }
 
+impl DerefMut for Str {
+    fn deref_mut(&mut self) -> &mut str {
+        unsafe { mem::transmute::<&mut [u8], &mut str>(&mut self.0) }
+    }
+}
+
 unsafe impl<'a> DataDef for &'a str {
     type Value = Str;
     fn size(&self) -> usize {
@@ -155,9 +174,7 @@ unsafe impl<'a> DataDef for &'a str {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.0.len = self.len();
-            for (field, value) in result.0.iter_mut().zip(self.as_bytes()) {
-                *field = *value;
-            }
+            result.0.clone_from_slice(self.as_bytes());
             result
         }
     }

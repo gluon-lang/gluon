@@ -266,6 +266,23 @@ impl<'vm> Getable<'vm> for u32 {
         }
     }
 }
+impl VMType for usize {
+    type Type = VMInt;
+}
+impl<'vm> Pushable<'vm> for usize {
+    fn push<'b>(self, _: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
+        stack.push(Value::Int(self as VMInt));
+        Status::Ok
+    }
+}
+impl<'vm> Getable<'vm> for usize {
+    fn from_value(_: &'vm VM, value: Value) -> Option<usize> {
+        match value {
+            Value::Int(i) => Some(i as usize),
+            _ => None,
+        }
+    }
+}
 impl VMType for VMInt {
     type Type = Self;
 }
