@@ -154,9 +154,8 @@ impl<'a> KindCheck<'a> {
                     _ => panic!("Expected kind function"),
                 }
             }
-            Type::Data(types::TypeConstructor::Builtin(_), _) => panic!("Builtin with arguments"),
-            Type::Data(types::TypeConstructor::Data(ref ctor), ref args) => {
-                let mut kind = try!(self.find(ctor));
+            Type::Data(ref ctor, ref args) => {
+                let (mut kind, ctor) = try!(self.kindcheck(ctor));
                 let mut new_args = Vec::new();
                 for arg in args {
                     let f = Kind::function(self.subs.new_var(), self.subs.new_var());
@@ -175,7 +174,7 @@ impl<'a> KindCheck<'a> {
                         }
                     };
                 }
-                Ok((kind, Type::data(types::TypeConstructor::Data(ctor.clone()), new_args)))
+                Ok((kind, Type::data(ctor, new_args)))
             }
             Type::Function(ref args, ref ret) => {
                 let (kind, arg) = try!(self.kindcheck(&args[0]));
@@ -211,6 +210,8 @@ impl<'a> KindCheck<'a> {
                                         .collect());
                 Ok((self.star.clone(), Type::record(types.clone(), fields)))
             }
+            Type::Id(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
+            Type::Alias(ref alias) => self.find(&alias.name).map(|kind| (kind, typ.clone())),
         }
     }
 
@@ -339,7 +340,8 @@ impl<S> unify::Unifiable<S> for RcKind {
         where U: unify::Unifier<S, Self>
     {
         match (&**unifier.subs.real(self), &**unifier.subs.real(other)) {
-            (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
+            (&Kind::Function(ref l1, ref l2),
+             &Kind::Function(ref r1, ref r2)) => {
                 let a = unifier.try_match(l1, r1);
                 let r = unifier.try_match(l2, r2);
                 Ok(merge(l1, a, l2, r, Kind::function))

@@ -6,7 +6,7 @@ extern crate check;
 
 use base::ast;
 use base::symbol::{Symbols, SymbolModule, Symbol};
-use base::types::{Type, TypeConstructor, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias,
+use base::types::{Type, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias,
                   RcKind, Kind};
 
 use check::typecheck::*;
@@ -90,7 +90,7 @@ pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
     let bool_sym = interner.symbol("Bool");
-    let bool = Type::<_, TcType>::data(TypeConstructor::Data(bool_sym.clone()), vec![]);
+    let bool = Type::<_, TcType>::data(Type::id(bool_sym.clone()), vec![]);
     let env = EmptyEnv(Alias {
         name: bool_sym,
         args: vec![],

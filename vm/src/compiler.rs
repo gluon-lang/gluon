@@ -331,9 +331,9 @@ impl<'a> Compiler<'a> {
     fn remove_aliases<'s>(&'s self, typ: &'s Type<Symbol, TcType>) -> &'s Type<Symbol, TcType> {
         let mut typ = typ;
         loop {
-            match *typ {
-                Type::Data(types::TypeConstructor::Data(ref id), _) => {
-                    match self.find_type_info(&id) {
+            match typ.as_alias() {
+                Some((id, _)) => {
+                    match self.find_type_info(id) {
                         Some(&types::Alias { typ: Some(ref real_type), .. }) => {
                             typ = real_type;
                         }
@@ -702,7 +702,7 @@ impl<'a> Compiler<'a> {
             }
             ast::Pattern::Record { ref types, ref fields, .. } => {
                 let mut typ = typ.clone();
-                if let Type::Data(types::TypeConstructor::Data(ref id), _) = *typ.clone() {
+                if let Some((id, _)) = typ.clone().as_alias() {
                     typ = self.find_type_info(&id)
                               .and_then(|alias| alias.typ.clone())
                               .unwrap_or(typ);

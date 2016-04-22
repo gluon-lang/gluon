@@ -51,8 +51,7 @@ pub enum TypeError<I> {
     EmptyCase,
 }
 
-impl<I> From<kindcheck::Error<I>> for TypeError<I>
-    where I: PartialEq + Clone
+impl<I> From<kindcheck::Error<I>> for TypeError<I> where I: PartialEq + Clone
 {
     fn from(e: kindcheck::Error<I>) -> TypeError<I> {
         match e {
@@ -182,7 +181,9 @@ impl<'a> TypeEnv for Environment<'a> {
 }
 
 impl<'a> PrimitiveEnv for Environment<'a> {
-    fn get_bool(&self) -> &TcType { self.environment.get_bool() }
+    fn get_bool(&self) -> &TcType {
+        self.environment.get_bool()
+    }
 }
 
 enum TailCall {
@@ -285,16 +286,23 @@ impl<'a> Typecheck<'a> {
             args: generics,
             typ: real_type,
         };
-        match *typ {
-            Type::Data(types::TypeConstructor::Data(ref alias_id), _) => {
-                alias.name = alias_id.clone();
-                // FIXME: Workaround so that both the types name in this module and its global
-                // name are imported. Without this aliases may not be traversed properly
-                self.environment
-                    .stack_types
-                    .insert(alias_id.clone(), (typ.clone(), alias.clone()));
-            }
-            _ => unreachable!(),
+        {
+            let alias_id = match *typ {
+                Type::Id(ref alias_id) => alias_id,
+                Type::Data(ref alias_id, _) => {
+                    match **alias_id {
+                        Type::Id(ref alias_id) => alias_id,
+                        _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!(),
+            };
+            alias.name = alias_id.clone();
+            // FIXME: Workaround so that both the types name in this module and its global
+            // name are imported. Without this aliases may not be traversed properly
+            self.environment
+                .stack_types
+                .insert(alias_id.clone(), (typ.clone(), alias.clone()));
         }
         self.environment.stack_types.insert(id, (typ, alias));
     }
@@ -482,9 +490,7 @@ impl<'a> Typecheck<'a> {
                     match &*op_name {
                         "&&" | "||" => {
                             try!(self.unify(&lhs_type, rhs_type.clone()));
-                            op.typ = Type::function(vec![self.bool(),
-                                                         self.bool()],
-                                                    self.bool());
+                            op.typ = Type::function(vec![self.bool(), self.bool()], self.bool());
                             self.unify(&self.bool(), lhs_type)
                         }
                         _ => {
@@ -707,9 +713,9 @@ impl<'a> Typecheck<'a> {
                 for bind in bindings {
                     let args = &bind.alias.args;
                     let generic_args = args.iter().cloned().map(Type::generic).collect();
-                    let name = Type::<_, TcType>::data(types::TypeConstructor::Data(bind.alias
-                                                                                        .name
-                                                                                        .clone()),
+                    let name = Type::<_, TcType>::data(Type::id(bind.alias
+                                                                    .name
+                                                                    .clone()),
                                                        generic_args);
                     debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
                     if self.environment.stack_types.get(&bind.name).is_some() {
@@ -902,10 +908,10 @@ impl<'a> Typecheck<'a> {
                                                          .cloned()
                                                          .map(Type::generic)
                                                          .collect();
-                                    let alias_type = Type::data(
-                                        types::TypeConstructor::Data(field_type.typ.name.clone()),
-                                        args
-                                    );
+                                    let alias_type = Type::data(Type::id(field_type.typ
+                                                                                   .name
+                                                                                   .clone()),
+                                                                args);
                                     // This forces refresh_type to remap the name a type was given
                                     // in this module to its actual name
                                     self.original_symbols
@@ -1050,13 +1056,12 @@ impl<'a> Typecheck<'a> {
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
         let mut f = |typ: &Type<_, TcType>| {
             match *typ {
-                Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
+                Type::Id(ref id) => {
                     self.original_symbols
                         .get(&id)
                         .or_else(|| self.environment.find_type_info(id).map(|alias| &alias.name))
-                        .map(|current| {
-                            Type::data(types::TypeConstructor::Data(current.clone()), args.clone())
-                        })
+                        .cloned()
+                        .map(Type::id)
                 }
                 Type::Variants(ref variants) => {
                     let iter = || {
@@ -1195,11 +1200,16 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
         loop {
             let (arg, new) = match *self.typ {
                 Type::Function(ref args, ref ret) => (Some(args[0].clone()), ret.clone()),
-                Type::Data(types::TypeConstructor::Data(ref id), ref args) => {
-                    match self.tc.type_of_alias(id, args) {
-                        Ok(Some(typ)) => (None, typ.clone()),
-                        Ok(None) => return None,
-                        Err(_) => return Some(self.tc.inst.subs.new_var()),
+                Type::Data(ref id, ref args) => {
+                    match **id {
+                        Type::Id(ref id) => {
+                            match self.tc.type_of_alias(id, args) {
+                                Ok(Some(typ)) => (None, typ.clone()),
+                                Ok(None) => return None,
+                                Err(_) => return Some(self.tc.inst.subs.new_var()),
+                            }
+                        }
+                        _ => return Some(self.tc.inst.subs.new_var()),
                     }
                 }
                 _ => return Some(self.tc.inst.subs.new_var()),

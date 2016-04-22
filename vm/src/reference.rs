@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use base::symbol::Symbol;
 use base::types;
-use base::types::TcType;
+use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
 use stack::StackFrame;
 use vm::{VM, Value, Root, Status, Userdata_};
@@ -28,8 +28,8 @@ impl<T> VMType for Reference<T>
     fn make_type(vm: &VM) -> TcType {
         let env = vm.get_env();
         let symbol = env.find_type_info("Ref").unwrap().name.clone();
-        let ctor = types::TypeConstructor::Data(symbol);
-        types::Type::data(ctor, vec![T::make_type(vm)])
+        let ctor = Type::id(symbol);
+        Type::data(ctor, vec![T::make_type(vm)])
     }
 }
 

@@ -4,7 +4,7 @@ use std::collections::hash_map::Entry;
 use std::ops::Deref;
 
 use base::types;
-use base::types::{Type, Generic, TypeConstructor, merge};
+use base::types::{Type, Generic, merge};
 use base::symbol::Symbol;
 use base::types::{TcType, TypeEnv};
 use unify_type::TypeError::UndefinedType;
@@ -37,13 +37,18 @@ impl<'a> AliasInstantiator<'a> {
     }
 
     pub fn maybe_remove_alias(&self, typ: &TcType) -> Option<TcType> {
-        match **typ {
-            Type::Data(TypeConstructor::Data(ref id), ref args) => {
-                self.type_of_alias(id, args)
-                    .unwrap_or_else(|_| None)
+        let (id, args) = match **typ {
+            Type::Id(ref r) => (r, &[][..]),
+            Type::Data(ref r, ref args) => {
+                match **r {
+                    Type::Id(ref r) => (r, &args[..]),
+                    _ => return None,
+                }
             }
-            _ => None,
-        }
+            _ => return None,
+        };
+        self.type_of_alias(id, args)
+            .unwrap_or_else(|_| None)
     }
 
     pub fn type_of_alias(&self,
@@ -102,9 +107,7 @@ impl<'a> AliasInstantiator<'a> {
             _ => arguments.len() == args.len(),
         };
         if !ok_substitution {
-            let expected = Type::data(TypeConstructor::Data(id.clone()),
-                                      arguments.iter().cloned().collect());
-            return Err(unify::Error::TypeMismatch(expected, typ));
+            return Ok(None);
         }
         let typ = self.inst.instantiate_with(typ, arguments, &args);
         Ok(Some(typ))
@@ -248,9 +251,12 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
             let typ = new.as_ref().map(|t| &**t).unwrap_or(typ);
             match *typ {
                 Type::Data(ref id, ref args) => {
-                    walk_move_types(args.iter(), |t| walk_move_type2(t, f))
-                        .map(|args| Type::Data(id.clone(), args))
-                        .map(From::from)
+                    let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
+                    merge(id,
+                          walk_move_type2(id, f),
+                          args,
+                          new_args,
+                          |id, args| Type::data(id, args))
                 }
                 Type::Array(ref inner) => {
                     walk_move_type2(&**inner, f)
@@ -296,7 +302,9 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                 }
                 Type::Builtin(_) |
                 Type::Variable(_) |
-                Type::Generic(_) => None,
+                Type::Generic(_) |
+                Type::Id(_) |
+                Type::Alias(_) => None,
             }
         }
     };

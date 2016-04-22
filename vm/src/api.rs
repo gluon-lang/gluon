@@ -4,7 +4,7 @@ use stack::{State, StackFrame};
 use vm::{VM, Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, Userdata_,
          VMInt, Error, Root, RootStr};
 use base::types;
-use base::types::{TcType, Type, TypeConstructor};
+use base::types::{TcType, Type};
 use types::VMIndex;
 use std::any::Any;
 use std::cmp::Ordering;
@@ -323,8 +323,7 @@ impl VMType for bool {
     type Type = Self;
     fn make_type(vm: &VM) -> TcType {
         let symbol = vm.get_env().find_type_info("std.types.Bool").unwrap().name.clone();
-        let ctor = types::TypeConstructor::Data(symbol);
-        Type::data(ctor, vec![])
+        Type::data(Type::id(symbol), vec![])
     }
 }
 impl<'vm> Pushable<'vm> for bool {
@@ -351,8 +350,7 @@ impl VMType for Ordering {
     type Type = Self;
     fn make_type(vm: &VM) -> TcType {
         let symbol = vm.find_type_info("std.types.Ordering").unwrap().name.clone();
-        let ctor = types::TypeConstructor::Data(symbol);
-        Type::data(ctor, vec![])
+        Type::data(Type::id(symbol), vec![])
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
@@ -522,8 +520,7 @@ impl<T: VMType> VMType for Option<T>
     type Type = Option<T::Type>;
     fn make_type(vm: &VM) -> TcType {
         let symbol = vm.find_type_info("std.types.Option").unwrap().name.clone();
-        let ctor = types::TypeConstructor::Data(symbol);
-        Type::data(ctor, vec![T::make_type(vm)])
+        Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
 }
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
@@ -566,8 +563,7 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
     type Type = Result<T::Type, E::Type>;
     fn make_type(vm: &VM) -> TcType {
         let symbol = vm.find_type_info("std.types.Result").unwrap().name.clone();
-        let ctor = types::TypeConstructor::Data(symbol);
-        Type::data(ctor, vec![E::make_type(vm), T::make_type(vm)])
+        Type::data(Type::id(symbol), vec![E::make_type(vm), T::make_type(vm)])
     }
 }
 
@@ -648,7 +644,7 @@ impl<T> VMType for IO<T>
     fn make_type(vm: &VM) -> TcType {
         let env = vm.get_env();
         let symbol = env.find_type_info("IO").unwrap().name.clone();
-        Type::data(TypeConstructor::Data(symbol), vec![T::make_type(vm)])
+        Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
     fn extra_args() -> VMIndex {
         1

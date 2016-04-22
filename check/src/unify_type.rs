@@ -82,113 +82,227 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
         where U: Unifier<AliasInstantiator<'a>, Self>
     {
         debug!("{:?} <=> {:?}", self, other);
-        match (&**self, &**other) {
-            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
-            (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
-                if l_args.len() == r_args.len() {
-                    let args = walk_move_types(l_args.iter().zip(r_args.iter()),
-                                               |l, r| unifier.try_match(l, r));
-                    let ret = unifier.try_match(l_ret, r_ret);
-                    Ok(merge(l_args,
-                             args,
-                             l_ret,
-                             ret,
-                             |args, ret| Type::function(args, ret)))
-                } else {
-                    Err(UnifyError::TypeMismatch(self.clone(), other.clone()))
+        let (l_temp, r_temp);
+        let (mut l, mut r) = (self, other);
+        let mut through_alias = false;
+        match try_zip_alias(&mut unifier, self, other, &mut through_alias) {
+            Ok((l2, r2)) => {
+                l_temp = l2;
+                r_temp = r2;
+                l = &l_temp;
+                r = &r_temp;
+            }
+            Err(()) => (),
+        }
+        do_zip_match(l, r, unifier)
+            .map(|mut unified_type| {
+                // If the match was done through an alias the unified type is likely less precise
+                // thean just returning `self` or `None`
+                if through_alias {
+                    unified_type.take();
                 }
-            }
-            (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
-                zip_function(&mut unifier, &l_args[0], l_ret, other)
-            }
-            (&Type::App(..), &Type::Function(ref l_args, ref l_ret)) => {
-                zip_function(&mut unifier, &l_args[0], l_ret, self)
-            }
-            (&Type::Array(ref l), &Type::Array(ref r)) => {
-                Ok(unifier.try_match(l, r).map(Type::array))
-            }
-            (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) if l == r &&
-                                                                                l_args.len() ==
-                                                                                r_args.len() => {
+                unified_type
+            })
+    }
+}
+
+fn do_zip_match<'a, 's, U>(self_: &TcType,
+                           other: &TcType,
+                           mut unifier: UnifierState<'a, 's, U>)
+                           -> Result<Option<TcType>, Error<Symbol>>
+    where U: Unifier<AliasInstantiator<'a>, TcType>
+{
+    debug!("Unifying:\n{:?} <=> {:?}", self_, other);
+    match (&**self_, &**other) {
+        (&Type::Function(ref l_args, ref l_ret),
+         &Type::Function(ref r_args, ref r_ret)) => {
+            if l_args.len() == r_args.len() {
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()),
                                            |l, r| unifier.try_match(l, r));
-                Ok(args.map(|args| Type::data(l.clone(), args)))
+                let ret = unifier.try_match(l_ret, r_ret);
+                Ok(merge(l_args,
+                         args,
+                         l_ret,
+                         ret,
+                         |args, ret| Type::function(args, ret)))
+            } else {
+                debug!("Unify error: {} <=> {}", self_, other);
+                Err(UnifyError::TypeMismatch(self_.clone(), other.clone()))
             }
-            (&Type::Record { fields: ref l_args, types: ref l_types },
-             &Type::Record { fields: ref r_args, types: ref r_types }) if l_args.len() ==
-                                                                         r_args.len() &&
-                                                                         l_types == r_types => {
-                // FIXME Take associated types into account when unifying
-                let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
-                    let opt_type = if !l.name.name_eq(&r.name) {
+        }
+        (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
+            zip_function(&mut unifier, &l_args[0], l_ret, other)
+        }
+        (&Type::App(..), &Type::Function(ref l_args, ref l_ret)) => {
+            zip_function(&mut unifier, &l_args[0], l_ret, self_)
+        }
+        (&Type::Array(ref l), &Type::Array(ref r)) => Ok(unifier.try_match(l, r).map(Type::array)),
+        (&Type::Data(ref l, ref l_args),
+         &Type::Data(ref r, ref r_args)) => {
+            if let (&Type::Id(ref l_id), &Type::Id(ref r_id)) = (&**l, &**r) {
+                if l_id != r_id {
 
-                        let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
-                        unifier.report_error(UnifyError::Other(err));
-                        Some(unifier.subs.new_var())
-                    } else {
-                        unifier.try_match(&l.typ, &r.typ)
-                    };
-                    opt_type.map(|typ| {
-                        types::Field {
-                            name: l.name.clone(),
-                            typ: typ,
-                        }
-                    })
-                });
-                Ok(args.map(|args| Type::record(l_types.clone(), args)))
-            }
-            (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
-                let result = unifier.match_either(|unifier| {
-                                                      unify_app(unifier,
-                                                                l,
-                                                                l_args,
-                                                                other,
-                                                                &|unifier, last, r_arg| {
-                                                                    unifier.try_match(r_arg, last)
-                                                                })
-                                                  },
-                                                  |unifier| zip_alias(unifier, other, self));
-                result.map_err(|()| UnifyError::TypeMismatch(self.clone(), other.clone()))
-            }
-            (&Type::App(_, _), &Type::Data(ref r, ref r_args)) => {
-                let result = unifier.match_either(|unifier| {
-                                                      unify_app(unifier,
-                                                                r,
-                                                                r_args,
-                                                                self,
-                                                                &|unifier, last, l_arg| {
-                                                                    unifier.try_match(l_arg, last)
-                                                                })
-                                                  },
-                                                  |unifier| zip_alias(unifier, self, other));
-                result.map_err(|()| UnifyError::TypeMismatch(self.clone(), other.clone()))
-            }
-            (&Type::App(ref l1, ref l2), &Type::App(ref r1, ref r2)) => {
-                let f = unifier.try_match(l1, r1);
-                let a = unifier.try_match(l2, r2);
-                Ok(merge(l1, f, l2, a, Type::app))
-            }
-            _ => {
-                if self == other {
-                    // Successful unification
-                    return Ok(None);
                 }
-                let result = unifier.match_either(|unifier| zip_alias(unifier, self, other),
-                                                  |unifier| zip_alias(unifier, other, self));
-                result.map_err(|()| UnifyError::TypeMismatch(self.clone(), other.clone()))
             }
+            if l_args.len() == r_args.len() {
+                let ctor = unifier.try_match(l, r);
+                let args = walk_move_types(l_args.iter().zip(r_args.iter()),
+                                           |l, r| unifier.try_match(l, r));
+                Ok(merge(l, ctor, l_args, args, Type::data))
+            } else {
+                unify_app(&mut unifier,
+                          l,
+                          l_args,
+                          other,
+                          &|unifier, last, r_arg| unifier.try_match(r_arg, last))
+            }
+        }
+        (&Type::Record { fields: ref l_args, types: ref l_types },
+         &Type::Record { fields: ref r_args, types: ref r_types })
+            if l_args.len() == r_args.len() && l_types == r_types => {
+            let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
+                let opt_type = if !l.name.name_eq(&r.name) {
+
+                    let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
+                    unifier.report_error(UnifyError::Other(err));
+                    Some(unifier.subs.new_var())
+                } else {
+                    unifier.try_match(&l.typ, &r.typ)
+                };
+                opt_type.map(|typ| {
+                    types::Field {
+                        name: l.name.clone(),
+                        typ: typ,
+                    }
+                })
+            });
+            Ok(args.map(|args| Type::record(l_types.clone(), args)))
+        }
+        (&Type::Data(ref l, ref l_args), &Type::App(_, _)) => {
+            let result = unify_app(&mut unifier,
+                                   l,
+                                   l_args,
+                                   other,
+                                   &|unifier, last, r_arg| unifier.try_match(r_arg, last));
+            result.map_err(|()| {
+                debug!("Unify error: {} <=> {}", self_, other);
+                UnifyError::TypeMismatch(self_.clone(), other.clone())
+            })
+        }
+        (&Type::App(_, _), &Type::Data(ref r, ref r_args)) => {
+            let result = unify_app(&mut unifier,
+                                   r,
+                                   r_args,
+                                   self_,
+                                   &|unifier, last, l_arg| unifier.try_match(l_arg, last));
+            result.map_err(|()| {
+                debug!("Unify error: {} <=> {}", self_, other);
+                UnifyError::TypeMismatch(self_.clone(), other.clone())
+            })
+        }
+        (&Type::App(ref l1, ref l2), &Type::App(ref r1, ref r2)) => {
+            let f = unifier.try_match(l1, r1);
+            let a = unifier.try_match(l2, r2);
+            Ok(merge(l1, f, l2, a, Type::app))
+        }
+        _ => {
+            if self_ == other {
+                // Successful unification
+                return Ok(None);
+            }
+            let result = unifier.match_either(|unifier| try_with_alias(unifier, self_, other),
+                                              |unifier| try_with_alias(unifier, other, self_));
+
+            result.map_err(|()| {
+                debug!("Unify error: {} <=> {}", self_, other);
+                UnifyError::TypeMismatch(self_.clone(), other.clone())
+            })
         }
     }
 }
 
-fn zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
-                        expected: &TcType,
-                        actual: &TcType)
-                        -> Result<Option<TcType>, ()>
+
+enum AliasResult {
+    Match(TcType),
+    Type(TcType),
+}
+
+/// Attempt to unify two alias types.
+/// To find a possible successful unification we go through
+fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
+                         mut l: TcType,
+                         r_id: &Symbol)
+                         -> Result<AliasResult, ()>
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
-    match **actual {
-        Type::Data(types::TypeConstructor::Data(ref r), ref r_args) => {
+    loop {
+        l = match l.as_alias() {
+            Some((l_id, l_args)) => {
+                debug!("Looking for alias reduction from `{}` to `{}`", l_id, r_id);
+                if l_id == r_id {
+                    return Ok(AliasResult::Match(l.clone()));
+                }
+                match unifier.state.type_of_alias(l_id, l_args) {
+                    Ok(Some(typ)) => typ,
+                    Ok(None) => break,
+                    Err(err) => {
+                        unifier.report_error(err);
+                        return Err(());
+                    }
+                }
+            }
+            None => break,
+        }
+    }
+    Ok(AliasResult::Type(l))
+}
+
+fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
+                            expected: &TcType,
+                            actual: &TcType,
+                            through_alias: &mut bool)
+                            -> Result<(TcType, TcType), ()>
+    where U: Unifier<AliasInstantiator<'a>, TcType>
+{
+    let mut l = expected.clone();
+    if let Some((r_id, _)) = actual.as_alias() {
+        l = match find_alias(unifier, l, r_id) {
+            Ok(AliasResult::Match(typ)) => {
+                *through_alias = true;
+                return Ok((typ, actual.clone()));
+            }
+            Ok(AliasResult::Type(typ)) => {
+                *through_alias = true;
+                typ
+            }
+            Err(()) => expected.clone(),
+        };
+    }
+    let mut r = actual.clone();
+    if let Some((l_id, _)) = expected.as_alias() {
+        r = match find_alias(unifier, r, l_id) {
+            Ok(AliasResult::Match(typ)) => {
+                *through_alias = true;
+                return Ok((expected.clone(), typ));
+            }
+            Ok(AliasResult::Type(typ)) => {
+                *through_alias = true;
+                typ
+            }
+            Err(()) => actual.clone(),
+        };
+    }
+    Ok((l, r))
+}
+
+fn try_with_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
+                             expected: &TcType,
+                             actual: &TcType)
+                             -> Result<Option<TcType>, ()>
+    where U: Unifier<AliasInstantiator<'a>, TcType>
+{
+    match actual.as_alias() {
+        Some((ref r, ref r_args)) => {
             debug!("Attempt alias {:?} {:?}", r, r_args);
             let r = match unifier.state.type_of_alias(r, r_args) {
                 Ok(typ) => typ,
@@ -206,16 +320,16 @@ fn zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                 None => Err(()),
             }
         }
-        _ => Err(()),
+        None => Err(()),
     }
 }
 
-fn unify_app<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
-                           l: &types::TypeConstructor<Symbol>,
-                           l_args: &[TcType],
-                           r: &TcType,
-                           f: &F)
-                           -> Result<Option<TcType>, ()>
+fn unify_app<'a, 's, F, U, E>(unifier: &mut UnifierState<'a, 's, U>,
+                              l: &TcType,
+                              l_args: &[TcType],
+                              r: &TcType,
+                              f: &F)
+                              -> Result<Option<TcType>, E>
     where F: Fn(&mut UnifierState<'a, 's, U>, &TcType, &TcType) -> Option<TcType>,
           U: Unifier<AliasInstantiator<'a>, TcType>
 {
@@ -229,7 +343,7 @@ fn unify_app<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
 }
 
 fn unify_app_<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
-                            l: &types::TypeConstructor<Symbol>,
+                            l: &TcType,
                             l_args: &[TcType],
                             r: &TcType,
                             replaced: bool,
@@ -259,9 +373,29 @@ fn unify_app_<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
                 }
             }
         }
-        Type::Data(ref r, ref r_args) if l == r && l_args.len() == r_args.len() => {
+        Type::Data(ref r, ref r_args) if l_args.len() == r_args.len() => {
+            unifier.try_match(l, r);
             let args = walk_move_types(l_args.iter().zip(r_args), |l, r| unifier.try_match(l, r));
             match args {
+                Some(args) => {
+                    output.extend(args);
+                    return;
+                }
+                None => None,
+            }
+        }
+        Type::Data(ref r, ref r_args) => {
+            let args_iter = if l_args.len() < r_args.len() {
+                let offset = r_args.len() - l_args.len();
+                unifier.try_match(l, &Type::data(r.clone(), r_args[..offset].into()));
+                l_args.iter().zip(&r_args[offset..])
+            } else {
+                let offset = l_args.len() - r_args.len();
+                unifier.try_match(&Type::data(l.clone(), l_args[..offset].into()), r);
+                r_args.iter().zip(&l_args[offset..])
+            };
+            // Unify the last min(l_args.len(), r_args.len()) arguments
+            match walk_move_types(args_iter, |l, r| unifier.try_match(l, r)) {
                 Some(args) => {
                     output.extend(args);
                     return;
@@ -294,6 +428,7 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
 {
     let error = || {
         let func = Type::function(vec![arg.clone()], ret.clone());
+        debug!("Unify error: {} <=> {}", func, other);
         Err(UnifyError::TypeMismatch(func, other.clone()))
     };
     let subs = unifier.subs;

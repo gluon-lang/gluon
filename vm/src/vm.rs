@@ -871,7 +871,7 @@ impl GlobalVMState {
             let id = TypeId::of::<T>();
             let arg_types = args.iter().map(|g| Type::generic(g.clone())).collect();
             let n = Symbol::new(name);
-            let typ: TcType = Type::data(types::TypeConstructor::Data(n.clone()), arg_types);
+            let typ: TcType = Type::data(Type::id(n.clone()), arg_types);
             self.typeids
                 .borrow_mut()
                 .insert(id, typ.clone());
@@ -1146,7 +1146,7 @@ impl VM {
     ///Calls a module, allowed to to run IO expressions
     pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
         let value = try!(self.call_bytecode(closure));
-        if let Type::Data(types::TypeConstructor::Data(ref id), _) = **typ {
+        if let Some((id, _)) = typ.as_alias() {
             let is_io = {
                 let env = self.env.borrow();
                 env.type_infos

@@ -88,24 +88,19 @@ fn typ(s: &str) -> TcType {
     typ_a(s, Vec::new())
 }
 
-fn type_con2<T>(s: &str, args: Vec<T>) -> Type<Symbol, T> {
+fn typ_a<T>(s: &str, args: Vec<T>) -> T where T: From<Type<Symbol, T>> {
     assert!(s.len() != 0);
     let is_var = s.chars().next().unwrap().is_lowercase();
     match s.parse() {
-        Ok(b) => Type::Builtin(b),
+        Ok(b) => Type::builtin(b),
         Err(()) if is_var => {
-            Type::Generic(types::Generic {
+            Type::generic(types::Generic {
                 kind: types::Kind::star(),
                 id: intern(s),
             })
         }
-        Err(()) => Type::Data(types::TypeConstructor::Data(intern(s)), args),
+        Err(()) => if args.len() == 0 { Type::id(intern(s)) } else { Type::data(Type::id(intern(s)), args) }
     }
-}
-
-fn typ_a(s: &str, args: Vec<TcType>) -> TcType {
-    assert!(s.len() != 0);
-    ast::ASTType::new(type_con2(s, args))
 }
 
 #[test]
@@ -167,7 +162,7 @@ in Test2 (\x -> x #Int+ 2)
 }
 
 #[test]
-fn record_type() {
+fn record_type_simple() {
     let _ = ::env_logger::init();
     let text = r"
 type T = { y: Int } in
@@ -187,8 +182,8 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
     assert_eq!(result, Ok(typ("Float")));
     match expr.value {
         ast::Expr::Let(ref bindings, _) => {
-            assert_eq!(*bindings[0].expression.type_of(),
-                       *Type::function(vec![typ("a"), typ("b")], typ("a")));
+            assert_eq!(bindings[0].expression.type_of(),
+                       Type::function(vec![typ("a"), typ("b")], typ("a")));
         }
         _ => assert!(false),
     }

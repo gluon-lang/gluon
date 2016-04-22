@@ -17,13 +17,13 @@ use std::rc::Rc;
 
 use base::ast;
 use base::ast::*;
-use base::types::{Type, TypeConstructor, Generic, Alias, Field, Kind, TypeVariable};
+use base::types::{Type, Generic, Alias, Field, Kind, TypeVariable};
 use base::symbol::{Name, Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream, SourcePosition};
 use combine::combinator::EnvParser;
-use combine::{between, chainl1, choice, env_parser, many, many1, optional, parser, satisfy,
+use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy,
               sep_by, sep_by1, token, try, value, ParseError, ParseResult, Parser, ParserExt};
 use combine_language::{Assoc, Fixity, expression_parser};
 
@@ -195,7 +195,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     let ident_env = self.make_ident.borrow();
                     match ident_env.string(&s).parse() {
                         Ok(prim) => Type::builtin(prim),
-                        Err(()) => Type::data(TypeConstructor::Data(s.to_id()), Vec::new()),
+                        Err(()) => Type::id(s.to_id()),
                     }
                 }
             })
@@ -232,21 +232,16 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn parse_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
-        let f = parser(|input| {
-            let f = |l: ASTType<Id::Untyped>, r| {
-                match (*l).clone() {
-                    Type::Data(ctor, mut args) => {
-                        args.push(r);
-                        Type::data(ctor, args)
-                    }
-                    _ => Type::app(l, r),
-                }
-            };
-            Ok((f, Consumed::Empty(input)))
-        });
-        (chainl1(self.parser(ParserEnv::<I, F>::type_arg), f),
+        (many1(self.parser(ParserEnv::<I, F>::type_arg)),
          optional(token(Token::RightArrow).with(self.typ())))
-            .map(|(arg, ret)| {
+            .map(|(mut arg, ret): (Vec<_>, _)| {
+                let arg = if arg.len() == 1 {
+                    arg.pop().unwrap()
+                }
+                else {
+                    let x = arg.remove(0);
+                    Type::data(x, arg)
+                };
                 debug!("Parse: {:?} -> {:?}", arg, ret);
                 match ret {
                     Some(ret) => Type::function(vec![arg], ret),
@@ -287,8 +282,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                             })
                         }
                         None => {
-                            let typ = Type::data(TypeConstructor::Data(untyped_id.clone()),
-                                                 Vec::new());
+                            let typ = Type::id(untyped_id.clone());
                             let short_name = String::from(Name::new(ids.string(&id))
                                                               .name()
                                                               .as_str());
@@ -359,7 +353,11 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                         })
                                     })
                                     .collect();
-                let return_type = Type::data(TypeConstructor::Data(name.clone()), arg_types);
+                let return_type = if args.is_empty() {
+                    Type::id(name.clone())
+                } else {
+                    Type::data(Type::id(name.clone()), arg_types)
+                };
                 token(Token::Equal)
                     .with(self.typ()
                               .or(parser(move |input| self.parse_adt(&return_type, input))))

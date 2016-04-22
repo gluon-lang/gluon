@@ -88,11 +88,15 @@ pub trait PrimitiveEnv : TypeEnv {
 }
 
 impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
-    fn get_bool(&self) -> &TcType { (**self).get_bool() }
+    fn get_bool(&self) -> &TcType {
+        (**self).get_bool()
+    }
 }
 
 impl<'a, T: PrimitiveEnv, U: TypeEnv> PrimitiveEnv for (T, U) {
-    fn get_bool(&self) -> &TcType { self.0.get_bool() }
+    fn get_bool(&self) -> &TcType {
+        self.0.get_bool()
+    }
 }
 
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
@@ -110,7 +114,7 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id, T = ASTType<Id>> {
     App(T, T),
-    Data(TypeConstructor<Id>, Vec<T>),
+    Data(T, Vec<T>),
     Variants(Vec<(Id, T)>),
     Variable(TypeVariable),
     Generic(Generic<Id>),
@@ -121,10 +125,11 @@ pub enum Type<Id, T = ASTType<Id>> {
         types: Vec<Field<Id, Alias<Id, T>>>,
         fields: Vec<Field<Id, T>>,
     },
+    Id(Id),
+    Alias(Alias<Id, T>),
 }
 
-impl<Id, T> Type<Id, T>
-    where T: Deref<Target = Type<Id, T>>
+impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
 {
     pub fn is_uninitialized(&self) -> bool {
         match *self {
@@ -144,9 +149,14 @@ impl<Id, T> Type<Id, T>
             }
             Variable(ref var) => var.kind.clone(),
             Generic(ref gen) => gen.kind.clone(),
-            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) | Record { .. } => {
-                RcKind::new(Kind::Star)
-            }
+            Data(_, _) |
+            Variants(..) |
+            Builtin(_) |
+            Function(_, _) |
+            Array(_) |
+            Record { .. } |
+            Type::Id(_) |
+            Type::Alias(_) => RcKind::new(Kind::Star),
         }
     }
 }
@@ -273,21 +283,6 @@ impl BuiltinType {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum TypeConstructor<Id> {
-    Data(Id),
-    Builtin(BuiltinType),
-}
-
-impl<I: fmt::Display> fmt::Display for TypeConstructor<I> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            TypeConstructor::Data(ref d) => d.fmt(f),
-            TypeConstructor::Builtin(b) => b.fmt(f),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Kind {
     Variable(u32),
     Star,
@@ -389,25 +384,7 @@ impl<Id> ConstructorType<Id> {
     }
 }
 
-pub fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
-    where I: Deref<Target = str>
-{
-    assert!(s.len() != 0);
-    let is_var = s.chars().next().unwrap().is_lowercase();
-    match s.parse() {
-        Ok(b) => Type::Builtin(b),
-        Err(()) if is_var => {
-            Type::Generic(Generic {
-                kind: RcKind::new(Kind::Star),
-                id: s,
-            })
-        }
-        Err(()) => Type::Data(TypeConstructor::Data(s), args),
-    }
-}
-
-impl<Id, T> Type<Id, T>
-    where T: From<Type<Id, T>>
+impl<Id, T> Type<Id, T> where T: From<Type<Id, T>>
 {
     pub fn app(l: T, r: T) -> T {
         T::from(Type::App(l, r))
@@ -417,8 +394,12 @@ impl<Id, T> Type<Id, T>
         T::from(Type::Array(typ))
     }
 
-    pub fn data(id: TypeConstructor<Id>, args: Vec<T>) -> T {
-        T::from(Type::Data(id, args))
+    pub fn data(id: T, args: Vec<T>) -> T {
+        if args.is_empty() {
+            id
+        } else {
+            T::from(Type::Data(id, args))
+        }
     }
 
     pub fn variants(vs: Vec<(Id, T)>) -> T {
@@ -450,6 +431,14 @@ impl<Id, T> Type<Id, T>
         T::from(Type::Variable(typ))
     }
 
+    pub fn alias(alias: Alias<Id, T>) -> T {
+        T::from(Type::Alias(alias))
+    }
+
+    pub fn id(id: Id) -> T {
+        T::from(Type::Id(id))
+    }
+
     pub fn string() -> T {
         Type::builtin(BuiltinType::String)
     }
@@ -468,6 +457,22 @@ impl<Id, T> Type<Id, T>
 
     pub fn unit() -> T {
         Type::builtin(BuiltinType::Unit)
+    }
+}
+
+impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
+{
+    pub fn as_alias(&self) -> Option<(&Id, &[T])> {
+        match *self {
+            Type::Data(ref id, ref args) => {
+                match **id {
+                    Type::Id(ref id) => Some((id, args)),
+                    _ => None,
+                }
+            }
+            Type::Id(ref id) => Some((id, &[][..])),
+            _ => None,
+        }
     }
 }
 
@@ -643,10 +648,7 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                 if p >= Prec::Constructor {
                     try!(write!(f, "("));
                 }
-                match *t {
-                    TypeConstructor::Data(ref d) => try!(write!(f, "{}", self.env.string(d))),
-                    TypeConstructor::Builtin(ref b) => try!(write!(f, "{}", b)),
-                }
+                try!(write!(f, "{}", dt(self.env, Prec::Top, t)));
                 for arg in args {
                     try!(write!(f, " {}", dt(self.env, Prec::Constructor, arg)));
                 }
@@ -715,6 +717,8 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                 }
                 write!(f, "}}")
             }
+            Type::Id(ref id) => write!(f, "{}", self.env.string(id)),
+            Type::Alias(ref alias) => write!(f, "{}", self.env.string(&alias.name)),
         }
     }
 }
@@ -776,7 +780,9 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
         }
         Type::Builtin(_) |
         Type::Variable(_) |
-        Type::Generic(_) => (),
+        Type::Generic(_) |
+        Type::Id(_) |
+        Type::Alias(_) => (),
     }
 }
 
@@ -831,9 +837,12 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
         let typ = new.as_ref().map(|t| &**t).unwrap_or(typ);
         match *typ {
             Type::Data(ref id, ref args) => {
-                walk_move_types(args.iter(), |t| walk_move_type2(t, f))
-                    .map(|args| Type::Data(id.clone(), args))
-                    .map(From::from)
+                let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
+                merge(id,
+                      walk_move_type2(id, f),
+                      args,
+                      new_args,
+                      |id, args| Type::data(id, args))
             }
             Type::Array(ref inner) => {
                 walk_move_type2(&**inner, f)
@@ -878,7 +887,9 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
             }
             Type::Builtin(_) |
             Type::Variable(_) |
-            Type::Generic(_) => None,
+            Type::Generic(_) |
+            Type::Id(_) |
+            Type::Alias(_) => None,
         }
     };
     result.or(new)

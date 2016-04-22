@@ -1,7 +1,27 @@
 extern crate base;
 
+use std::ops::Deref;
+
 use base::types::*;
 use base::ast::ASTType;
+
+fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
+    where I: Deref<Target = str>,
+          T: From<Type<I, T>>
+{
+    assert!(s.len() != 0);
+    let is_var = s.chars().next().unwrap().is_lowercase();
+    match s.parse() {
+        Ok(b) => Type::Builtin(b),
+        Err(()) if is_var => {
+            Type::Generic(Generic {
+                kind: RcKind::new(Kind::Star),
+                id: s,
+            })
+        }
+        Err(()) => Type::Data(Type::id(s), args),
+    }
+}
 
 #[test]
 fn show_function() {

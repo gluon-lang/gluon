@@ -2,7 +2,7 @@
 use std::fmt;
 use std::ops::Deref;
 use symbol::Symbol;
-use types::{Alias, Type, TypeVariable, TypeConstructor, Kind, TypeEnv, instantiate};
+use types::{Alias, Type, TypeVariable, Kind, TypeEnv, instantiate};
 
 pub type ASTType<Id> = ::types::ArcType<Id>;
 
@@ -83,8 +83,7 @@ impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
     }
 }
 
-impl<T> IdentEnv for EmptyEnv<T>
-    where T: AsRef<str> + for<'a> From<&'a str>
+impl<T> IdentEnv for EmptyEnv<T> where T: AsRef<str> + for<'a> From<&'a str>
 {
     fn from_str(&mut self, s: &str) -> Self::Ident {
         T::from(s)
@@ -117,8 +116,7 @@ impl<Id> TcIdent<Id> {
     }
 }
 
-impl<Id> AsRef<str> for TcIdent<Id>
-    where Id: AsRef<str>
+impl<Id> AsRef<str> for TcIdent<Id> where Id: AsRef<str>
 {
     fn as_ref(&self) -> &str {
         self.name.as_ref()
@@ -130,8 +128,7 @@ pub struct TcIdentEnv<Id, Env> {
     pub env: Env,
 }
 
-impl<Id> AstId for TcIdent<Id>
-    where Id: Clone + PartialEq + Eq + fmt::Debug + AstId
+impl<Id> AstId for TcIdent<Id> where Id: Clone + PartialEq + Eq + fmt::Debug + AstId
 {
     type Untyped = Id;
 
@@ -144,8 +141,7 @@ impl<Id> AstId for TcIdent<Id>
     }
 }
 
-impl<Id, Env> DisplayEnv for TcIdentEnv<Id, Env>
-    where Env: DisplayEnv<Ident = Id>
+impl<Id, Env> DisplayEnv for TcIdentEnv<Id, Env> where Env: DisplayEnv<Ident = Id>
 {
     type Ident = TcIdent<Id>;
 
@@ -332,8 +328,7 @@ pub struct Binding<Id: AstId> {
     pub expression: LExpr<Id>,
 }
 
-impl<Id> LExpr<Id>
-    where Id: AstId
+impl<Id> LExpr<Id> where Id: AstId
 {
     /// Returns the an approximation of the span of the expression
     pub fn span(&self, env: &DisplayEnv<Ident = Id>) -> Span {
@@ -515,8 +510,7 @@ impl<Id: Clone> Typed for TcIdent<Id> {
         self.typ.clone()
     }
 }
-impl<Id> Typed for Expr<Id>
-    where Id: Typed<Id = Symbol> + AstId<Untyped = Symbol>
+impl<Id> Typed for Expr<Id> where Id: Typed<Id = Symbol> + AstId<Untyped = Symbol>
 {
     type Id = Id::Id;
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
@@ -611,30 +605,37 @@ fn get_return_type(env: &TypeEnv,
     } else {
         match *alias_type {
             Type::Function(_, ref ret) => get_return_type(env, ret.clone(), arg_count - 1),
-            Type::Data(TypeConstructor::Data(ref id), ref arguments) => {
-                let (args, typ) = {
-                    let alias = env.find_type_info(&id)
-                                   .unwrap_or_else(|| panic!("ICE: '{:?}' does not exist", id));
-                    match alias.typ {
-                        Some(ref typ) => (&alias.args, typ.clone()),
-                        None => panic!("Unexpected type {:?} is not a function", alias_type),
-                    }
-                };
-                let typ = instantiate(typ, |gen| {
-                    // Replace the generic variable with the type from the list
-                    // or if it is not found the make a fresh variable
-                    args.iter()
-                        .zip(arguments)
-                        .find(|&(arg, _)| arg.id == gen.id)
-                        .map(|(_, typ)| typ.clone())
-                });
-                get_return_type(env, typ, arg_count)
-
-            }
             _ => {
-                panic!("Expected function with {} more arguments, found {:?}",
-                       arg_count,
-                       alias_type)
+                match alias_type.as_alias() {
+                    Some((id, arguments)) => {
+                        let (args, typ) = {
+                            let alias = env.find_type_info(&id)
+                                           .unwrap_or_else(|| {
+                                               panic!("ICE: '{:?}' does not exist", id)
+                                           });
+                            match alias.typ {
+                                Some(ref typ) => (&alias.args, typ.clone()),
+                                None => {
+                                    panic!("Unexpected type {:?} is not a function", alias_type)
+                                }
+                            }
+                        };
+                        let typ = instantiate(typ, |gen| {
+                            // Replace the generic variable with the type from the list
+                            // or if it is not found the make a fresh variable
+                            args.iter()
+                                .zip(arguments)
+                                .find(|&(arg, _)| arg.id == gen.id)
+                                .map(|(_, typ)| typ.clone())
+                        });
+                        get_return_type(env, typ, arg_count)
+                    }
+                    None => {
+                        panic!("Expected function with {} more arguments, found {:?}",
+                               arg_count,
+                               alias_type)
+                    }
+                }
             }
         }
     }
