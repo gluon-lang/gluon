@@ -5,7 +5,6 @@ authors = ["Markus <marwes91@gmail.com>"]
 
 [dependencies]
 log = "0.3.6"
-env_logger = "0.3.3"
 union-find = "0.3.1"
 
 [dependencies.base]
@@ -15,5 +14,9 @@ path = "../base"
 path = "../parser"
 optional = true
 
+[dependencies.env_logger]
+version = "0.3.3"
+optional = true
+
 [features]
-test = ["parser"]
+test = ["parser", "env_logger"]

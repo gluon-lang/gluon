@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate log;
+#[cfg(feature = "env_logger")]
 extern crate env_logger;
 extern crate clap;
 #[macro_use]
@@ -35,13 +36,24 @@ where I: Iterator<Item = &'s str>
     Ok(())
 }
 
+
+#[cfg(all(not(test), feature = "env_logger"))]
+fn init_env_logger() {
+    ::env_logger::init().unwrap();
+}
+
+#[cfg(all(not(test), not(feature = "env_logger")))]
+fn init_env_logger() {
+}
+
 #[cfg(not(test))]
 fn main() {
     // Need the extra stack size when compiling the program using the msvc compiler
     ::std::thread::Builder::new()
         .stack_size(2 * 1024 * 1024)
         .spawn(|| {
-            let _ = ::env_logger::init();
+            init_env_logger();
+
             let matches = App::new("embed_lang")
                               .about("Executes embed_lang programs")
                               .arg(Arg::with_name("INPUT").multiple(true))

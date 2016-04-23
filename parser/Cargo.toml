@@ -5,8 +5,7 @@ authors = ["Markus <marwes91@gmail.com>"]
 
 
 [dependencies]
-log = "0.3.5"
-env_logger = "0.3.2"
+log = "0.3.6"
 
 [dependencies.combine-language]
 git = "https://github.com/Marwes/combine-language.git"
@@ -20,5 +19,9 @@ features = ["buffered_stream"]
 [dependencies.base]
 path = "../base"
 
+[dependencies.env_logger]
+version = "0.3.3"
+optional = true
+
 [features]
-test = []
+test = ["env_logger"]

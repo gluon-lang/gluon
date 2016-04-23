@@ -6,7 +6,6 @@ authors = ["Markus <marwes91@gmail.com>"]
 
 [dependencies]
 log = "0.3.6"
-env_logger = "0.3.3"
 quick-error = "1.0.0"
 
 [dependencies.mopa]
@@ -14,3 +13,10 @@ git = "https://github.com/Marwes/mopa.git"
 
 [dependencies.base]
 path = "../base"
+
+[dependencies.env_logger]
+version = "0.3.3"
+optional = true
+
+[features]
+test = ["env_logger"]

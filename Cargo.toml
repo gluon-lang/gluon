@@ -18,7 +18,6 @@ path = "src/main.rs"
 
 [dependencies]
 log = "0.3.6"
-env_logger = "0.3.3"
 clap = "2.2.5"
 quick-error = "1.0.0"
 
@@ -35,7 +34,11 @@ path = "vm"
 version = "0.1.1"
 optional = true
 
+[dependencies.env_logger]
+version = "0.3.3"
+optional = true
+
 [features]
-test = ["check/test", "parser/test"]
+test = ["vm/test", "check/test", "parser/test", "env_logger"]
 nightly = ["compiletest_rs"]
-test_nightly = ["check/test", "parser/test", "nightly"]
+test_nightly = ["vm/test", "check/test", "parser/test", "nightly"]
