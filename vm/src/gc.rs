@@ -311,8 +311,15 @@ impl<T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
 }
 
 impl<T: ?Sized> GcPtr<T> {
+    /// Unsafe as it is up to the caller to ensure that this pointer is not referenced somewhere
+    /// else
     pub unsafe fn as_mut(&mut self) -> &mut T {
         &mut *(self.ptr as *mut T)
+    }
+
+    /// Unsafe as `ptr` must have been allocted by this garbage collector
+    pub unsafe fn from_raw(ptr: *const T) -> GcPtr<T> {
+        GcPtr { ptr: ptr }
     }
 
     fn header(&self) -> &GcHeader {

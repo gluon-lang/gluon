@@ -86,6 +86,7 @@ pub extern crate check;
 
 mod io;
 pub mod import;
+pub mod c_api;
 
 pub use vm::vm::VM;
 

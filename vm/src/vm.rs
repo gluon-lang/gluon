@@ -946,6 +946,17 @@ impl VM {
         vm
     }
 
+    pub fn into_raw(self) -> *const Thread {
+        let ptr: *const Thread = &*self.0;
+        ::std::mem::forget(self);
+        ptr
+    }
+
+    pub unsafe fn from_raw(ptr: *const Thread) -> VM {
+        let ptr = GcPtr::from_raw(ptr);
+        VM(ptr)
+    }
+
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
