@@ -58,10 +58,7 @@ impl<'a> AliasInstantiator<'a> {
         let (args, mut typ) = {
             let alias = try!(self.env
                                  .find_type_info(&id)
-                                 .map(|s| Ok(s))
-                                 .unwrap_or_else(|| {
-                                     Err(unify::Error::Other(UndefinedType(id.clone())))
-                                 }));
+                                 .ok_or_else(|| unify::Error::Other(UndefinedType(id.clone()))));
             match alias.typ {
                 Some(ref typ) => {
                     // TODO avoid clones here
@@ -114,6 +111,7 @@ impl<'a> AliasInstantiator<'a> {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct Instantiator {
     pub subs: Substitution<TcType>,
     pub named_variables: RefCell<HashMap<Symbol, TcType>>,
@@ -174,7 +172,7 @@ impl Instantiator {
             Type::Variable(ref id) => {
                 self.subs
                     .find_type_for_var(id.id)
-                    .map(|t| t.clone())
+                    .cloned()
             }
             _ => None,
         }
@@ -248,25 +246,16 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
     let result = match new {
         Some(new_type) => return Some(new_type),
         None => {
-            let typ = new.as_ref().map(|t| &**t).unwrap_or(typ);
+            let typ = new.as_ref().map_or(typ, |t| &**t);
             match *typ {
                 Type::Data(ref id, ref args) => {
                     let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                    merge(id,
-                          walk_move_type2(id, f),
-                          args,
-                          new_args,
-                          |id, args| Type::data(id, args))
+                    merge(id, walk_move_type2(id, f), args, new_args, Type::data)
                 }
-                Type::Array(ref inner) => {
-                    walk_move_type2(&**inner, f)
-                        .map(Type::Array)
-                        .map(From::from)
-                }
+                Type::Array(ref inner) => walk_move_type2(&**inner, f).map(Type::array),
                 Type::Function(ref args, ref ret) => {
                     let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                    merge(args, new_args, ret, walk_move_type2(ret, f), Type::Function)
-                        .map(From::from)
+                    merge(args, new_args, ret, walk_move_type2(ret, f), Type::function)
                 }
                 Type::Record { ref types, ref fields } => {
                     let new_types = None;
@@ -278,27 +267,19 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                             }
                         })
                     });
-                    merge(types, new_types, fields, new_fields, |types, fields| {
-                        Type::Record {
-                            types: types,
-                            fields: fields,
-                        }
-                    })
-                        .map(From::from)
+                    merge(types, new_types, fields, new_fields, Type::record)
                 }
                 Type::App(ref l, ref r) => {
                     merge(l,
                           walk_move_type2(l, f),
                           r,
                           walk_move_type2(r, f),
-                          Type::App)
-                        .map(From::from)
+                          Type::app)
                 }
                 Type::Variants(ref variants) => {
                     walk_move_types(variants.iter(),
                                     |v| walk_move_type2(&v.1, f).map(|t| (v.0.clone(), t)))
-                        .map(Type::Variants)
-                        .map(From::from)
+                        .map(Type::variants)
                 }
                 Type::Builtin(_) |
                 Type::Variable(_) |
@@ -317,7 +298,7 @@ fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
 {
     let mut out = Vec::new();
     walk_move_types2(types, false, &mut out, &mut f);
-    if out.len() == 0 {
+    if out.is_empty() {
         None
     } else {
         out.reverse();
@@ -329,20 +310,17 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
           F: FnMut(&'a T) -> Option<T>,
           T: Clone + 'a
 {
-    match types.next() {
-        Some(typ) => {
-            let new = f(typ);
-            walk_move_types2(types, replaced || new.is_some(), output, f);
-            match new {
-                Some(typ) => {
-                    output.push(typ);
-                }
-                None if replaced || output.len() > 0 => {
-                    output.push(typ.clone());
-                }
-                None => (),
+    if let Some(typ) = types.next() {
+        let new = f(typ);
+        walk_move_types2(types, replaced || new.is_some(), output, f);
+        match new {
+            Some(typ) => {
+                output.push(typ);
             }
+            None if replaced || !output.is_empty() => {
+                output.push(typ.clone());
+            }
+            None => (),
         }
-        None => (),
     }
 }

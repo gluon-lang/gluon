@@ -84,7 +84,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                               expected,
                               actual,
                               errors.len()));
-                if errors.len() == 0 {
+                if errors.is_empty() {
                     return Ok(());
                 }
                 for error in &errors[..errors.len() - 1] {
@@ -211,12 +211,7 @@ impl<'a> Typecheck<'a> {
                symbols: &'a mut Symbols,
                environment: &'a (PrimitiveEnv + 'a))
                -> Typecheck<'a> {
-        let mut symbols = SymbolModule::new(module, symbols);
-        for t in ["Int", "Float"].iter() {
-            for op in "+-*/".chars() {
-                symbols.symbol(format!("#{}{}", t, op));
-            }
-        }
+        let symbols = SymbolModule::new(module, symbols);
         Typecheck {
             environment: Environment {
                 environment: environment,
@@ -374,12 +369,12 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck(&mut self, mut expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
-        // How many scopes that have been entered in this "tailcall" loop
-        let mut scope_count = 0;
-        let returned_type;
         fn moving<T>(t: T) -> T {
             t
         }
+        // How many scopes that have been entered in this "tailcall" loop
+        let mut scope_count = 0;
+        let returned_type;
         loop {
             match self.typecheck_(expr) {
                 Ok(tailcall) => {
@@ -387,7 +382,7 @@ impl<'a> Typecheck<'a> {
                         TailCall::TailCall => {
                             // Call typecheck_ again with the next expression
                             expr = match moving(expr).value {
-                                ast::Expr::Let(_, ref mut new_expr) => new_expr,
+                                ast::Expr::Let(_, ref mut new_expr) |
                                 ast::Expr::Type(_, ref mut new_expr) => new_expr,
                                 _ => panic!("Only Let and Type expressions can tailcall"),
                             };
@@ -467,7 +462,7 @@ impl<'a> Typecheck<'a> {
                 let lhs_type = try!(self.typecheck(&mut **lhs));
                 let rhs_type = try!(self.typecheck(&mut **rhs));
                 let op_name = String::from(self.symbols.string(&op.name));
-                let result = if op_name.starts_with("#") {
+                let result = if op_name.starts_with('#') {
                     let arg_type = try!(self.unify(&lhs_type, rhs_type));
                     let offset;
                     let typ = if op_name[1..].starts_with("Int") {
@@ -537,7 +532,7 @@ impl<'a> Typecheck<'a> {
             ast::Expr::Let(ref mut bindings, _) => {
                 self.enter_scope();
                 let level = self.inst.subs.var_id();
-                let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
+                let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
                 if is_recursive {
                     for bind in bindings.iter_mut() {
                         let mut typ = self.inst.subs.new_var();
@@ -559,7 +554,13 @@ impl<'a> Typecheck<'a> {
                 for bind in bindings.iter_mut() {
                     // Functions which are declared as `let f x = ...` are allowed to be self
                     // recursive
-                    let mut typ = if bind.arguments.len() != 0 {
+                    let mut typ = if bind.arguments.is_empty() {
+                        if let Some(ref mut type_decl) = bind.typ {
+                            *type_decl = self.refresh_symbols_in_type(type_decl.clone());
+                            try!(self.kindcheck(type_decl, &mut []));
+                        }
+                        try!(self.typecheck(&mut bind.expression))
+                    } else {
                         let function_type = match bind.typ {
                             Some(ref typ) => typ.clone(),
                             None => self.inst.subs.new_var(),
@@ -567,12 +568,6 @@ impl<'a> Typecheck<'a> {
                         try!(self.typecheck_lambda(function_type,
                                                    &mut bind.arguments,
                                                    &mut bind.expression))
-                    } else {
-                        if let Some(ref mut type_decl) = bind.typ {
-                            *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                            try!(self.kindcheck(type_decl, &mut []));
-                        }
-                        try!(self.typecheck(&mut bind.expression))
                     };
                     debug!("let {:?} : {}",
                            bind.name,
@@ -635,7 +630,7 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::Array(ref mut a) => {
                 let mut expected_type = self.inst.subs.new_var();
-                for expr in a.expressions.iter_mut() {
+                for expr in &mut a.expressions {
                     let typ = try!(self.typecheck(expr));
                     expected_type = try!(self.unify(&expected_type, typ));
                 }

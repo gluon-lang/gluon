@@ -29,6 +29,12 @@ pub struct FixedMap<K, V> {
     map: RefCell<HashMap<K, Box<V>>>,
 }
 
+impl<K: Eq + Hash, V> Default for FixedMap<K, V> {
+    fn default() -> FixedMap<K, V> {
+        FixedMap::new()
+    }
+}
+
 impl<K: Eq + Hash + fmt::Debug, V: fmt::Debug> fmt::Debug for FixedMap<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.map.borrow().fmt(f)

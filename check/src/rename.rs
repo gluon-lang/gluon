@@ -262,7 +262,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 ast::Expr::Let(ref mut bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
                     self.env.stack.enter_scope();
-                    let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
+                    let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
                     for bind in bindings.iter_mut() {
                         if !is_recursive {
                             self.visit_expr(&mut bind.expression);
@@ -351,12 +351,12 @@ use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
     let inst = Instantiator::new();
     let subs = Substitution::new();
-    let ref mut state = AliasInstantiator::new(&inst, env);
+    let mut state = AliasInstantiator::new(&inst, env);
     let mut map = HashMap::new();
     let mut equiv = true;
     {
         let mut unifier = UnifierState {
-            state: state,
+            state: &mut state,
             subs: &subs,
             unifier: Equivalent {
                 map: &mut map,

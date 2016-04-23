@@ -23,13 +23,12 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
                 ast::Pattern::Identifier(ref mut id) => {
                     let metadata = bind.comment
                                        .as_ref()
-                                       .map(|comment| {
+                                       .map_or(metadata, |comment| {
                                            Metadata {
                                                comment: Some(comment.clone()),
                                                module: BTreeMap::new(),
                                            }
-                                       })
-                                       .unwrap_or(metadata);
+                                       });
                     self.stack_var(id.name.clone(), metadata);
                 }
                 _ => self.new_pattern(metadata, &mut bind.name),
@@ -71,7 +70,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
         fn metadata_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
             match expr.value {
                 ast::Expr::Identifier(ref mut id) => {
-                    self.metadata(id.id()).cloned().unwrap_or_else(|| Metadata::default())
+                    self.metadata(id.id()).cloned().unwrap_or_else(Metadata::default)
                 }
                 ast::Expr::Record { ref mut exprs, ref mut types, .. } => {
                     let mut module = BTreeMap::new();
@@ -105,7 +104,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
                 }
                 ast::Expr::Let(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
-                    let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
+                    let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
                     if is_recursive {
                         for bind in bindings.iter_mut() {
                             self.new_binding(Metadata::default(), bind);

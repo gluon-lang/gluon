@@ -87,28 +87,29 @@ impl<'a> KindCheck<'a> {
     }
 
     fn find(&mut self, id: &Symbol) -> Result<RcKind> {
-        let kind = self.variables
-                       .iter()
-                       .find(|var| var.id == *id)
-                       .map(|t| t.kind.clone())
-                       .or_else(|| {
-                           self.locals
-                               .iter()
-                               .find(|t| t.0 == *id)
-                               .map(|t| t.1.clone())
-                       })
-                       .or_else(|| self.info.find_kind(id))
-                       .map(|t| Ok(t))
-                       .unwrap_or_else(|| {
-                           let id_str = self.idents.string(&id);
-                           if id_str.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
-                               Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
-                           } else {
-                               // Create a new variable
-                               self.locals.push((id.clone(), self.subs.new_var()));
-                               Ok(self.locals.last().unwrap().1.clone())
-                           }
-                       });
+        let kind =
+            self.variables
+                .iter()
+                .find(|var| var.id == *id)
+                .map(|t| t.kind.clone())
+                .or_else(|| {
+                    self.locals
+                        .iter()
+                        .find(|t| t.0 == *id)
+                        .map(|t| t.1.clone())
+                })
+                .or_else(|| self.info.find_kind(id))
+                .map_or_else(|| {
+                                 let id_str = self.idents.string(&id);
+                                 if id_str.chars().next().map_or(false, |c| c.is_uppercase()) {
+                                     Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
+                                 } else {
+                                     // Create a new variable
+                                     self.locals.push((id.clone(), self.subs.new_var()));
+                                     Ok(self.locals.last().unwrap().1.clone())
+                                 }
+                             },
+                             Ok);
         debug!("Find kind: {} => {}",
                self.idents.string(&id),
                kind.as_ref().unwrap());
@@ -333,10 +334,10 @@ impl Substitutable for RcKind {
 impl<S> unify::Unifiable<S> for RcKind {
     type Error = KindError<Symbol>;
 
-    fn zip_match<'s, U>(&self,
-                        other: &Self,
-                        mut unifier: unify::UnifierState<S, Self, U>)
-                        -> ::std::result::Result<Option<Self>, Error<Symbol>>
+    fn zip_match<U>(&self,
+                    other: &Self,
+                    mut unifier: unify::UnifierState<S, Self, U>)
+                    -> ::std::result::Result<Option<Self>, Error<Symbol>>
         where U: unify::Unifier<S, Self>
     {
         match (&**unifier.subs.real(self), &**unifier.subs.real(other)) {

@@ -94,15 +94,14 @@ impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
             }
             Err(()) => (),
         }
-        do_zip_match(l, r, unifier)
-            .map(|mut unified_type| {
-                // If the match was done through an alias the unified type is likely less precise
-                // thean just returning `self` or `None`
-                if through_alias {
-                    unified_type.take();
-                }
-                unified_type
-            })
+        do_zip_match(l, r, unifier).map(|mut unified_type| {
+            // If the match was done through an alias the unified type is likely less precise
+            // thean just returning `self` or `None`
+            if through_alias {
+                unified_type.take();
+            }
+            unified_type
+        })
     }
 }
 
@@ -120,11 +119,7 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()),
                                            |l, r| unifier.try_match(l, r));
                 let ret = unifier.try_match(l_ret, r_ret);
-                Ok(merge(l_args,
-                         args,
-                         l_ret,
-                         ret,
-                         |args, ret| Type::function(args, ret)))
+                Ok(merge(l_args, args, l_ret, ret, Type::function))
             } else {
                 debug!("Unify error: {} <=> {}", self_, other);
                 Err(UnifyError::TypeMismatch(self_.clone(), other.clone()))
@@ -139,11 +134,6 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
         (&Type::Array(ref l), &Type::Array(ref r)) => Ok(unifier.try_match(l, r).map(Type::array)),
         (&Type::Data(ref l, ref l_args),
          &Type::Data(ref r, ref r_args)) => {
-            if let (&Type::Id(ref l_id), &Type::Id(ref r_id)) = (&**l, &**r) {
-                if l_id != r_id {
-
-                }
-            }
             if l_args.len() == r_args.len() {
                 let ctor = unifier.try_match(l, r);
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()),
@@ -412,7 +402,7 @@ fn unify_app_<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
         Some(typ) => {
             output.push(typ);
         }
-        None if replaced || output.len() > 0 => {
+        None if replaced || !output.is_empty() => {
             output.push(r.clone());
         }
         None => (),
@@ -461,7 +451,7 @@ fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
 {
     let mut out = Vec::new();
     walk_move_types2(types, false, &mut out, &mut f);
-    if out.len() == 0 {
+    if out.is_empty() {
         None
     } else {
         out.reverse();
@@ -473,21 +463,18 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
           F: FnMut(&'a T, &'a T) -> Option<T>,
           T: Clone + 'a
 {
-    match types.next() {
-        Some((l, r)) => {
-            let new = f(l, r);
-            walk_move_types2(types, replaced || new.is_some(), output, f);
-            match new {
-                Some(typ) => {
-                    output.push(typ);
-                }
-                None if replaced || output.len() > 0 => {
-                    output.push(l.clone());
-                }
-                None => (),
+    if let Some((l, r)) = types.next() {
+        let new = f(l, r);
+        walk_move_types2(types, replaced || new.is_some(), output, f);
+        match new {
+            Some(typ) => {
+                output.push(typ);
             }
+            None if replaced || !output.is_empty() => {
+                output.push(l.clone());
+            }
+            None => (),
         }
-        None => (),
     }
 }
 

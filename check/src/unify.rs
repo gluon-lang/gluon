@@ -143,7 +143,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 
     fn try_match(unifier: &mut UnifierState<S, T, Self>, l: &T, r: &T) -> Option<T> {
         let subs = unifier.subs;
-        let ref mut errors = unifier.unifier.errors;
+        let mut errors = &mut unifier.unifier.errors;
         let l = subs.real(l);
         let r = subs.real(r);
         match (l.get_var(), r.get_var()) {

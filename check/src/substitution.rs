@@ -17,6 +17,12 @@ pub struct Substitution<T> {
     types: FixedMap<u32, T>,
 }
 
+impl<T: Substitutable> Default for Substitution<T> {
+    fn default() -> Substitution<T> {
+        Substitution::new()
+    }
+}
+
 ///Trait which variables need to implement to allow the substitution to get to the u32 identifying
 ///the variable
 pub trait Variable {
@@ -170,8 +176,8 @@ impl<T: Substitutable> Substitution<T> {
         where T: Clone
     {
         let var_id = self.variables.len() as u32;
-        let _id = self.union.borrow_mut().insert(UnionByLevel::default());
-        assert_eq!(_id, self.variables.len());
+        let id = self.union.borrow_mut().insert(UnionByLevel::default());
+        assert!(id == self.variables.len());
         self.variables.push(T::new(var_id));
         let last = self.variables.len() - 1;
         self.variables[last].clone()
@@ -214,7 +220,7 @@ impl<T: Substitutable> Substitution<T> {
 
     pub fn get_level(&self, mut var: u32) -> u32 {
         if let Some(v) = self.find_type_for_var(var) {
-            var = v.get_var().map(|v| v.get_id()).unwrap_or(var);
+            var = v.get_var().map_or(var, |v| v.get_id());
         }
         let mut union = self.union.borrow_mut();
         let level = &mut union.get_mut(var as usize).level;
@@ -239,8 +245,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         {
             let id_type = self.find_type_for_var(id.get_id());
             let other_type = self.real(typ);
-            if id_type.map(|x| x == other_type)
-                      .unwrap_or(other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())) {
+            if id_type.map_or(false, |x| x == other_type) ||
+               other_type.get_var().map(|y| y.get_id()) == Some(id.get_id()) {
                 return Ok(());
             }
         }
