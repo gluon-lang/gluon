@@ -93,29 +93,12 @@ Let bindings also allow functions to be defined which is done by listing the arg
 let id x = x in id 1 // Returns 1
 ```
 
-Mutually recursive functions can also be defined using `let` by writing `and` between each binding.
+Mutually recursive functions can be defined using `let` by writing `and` before each successive binding.
 
 ```f#
 let f x = g x
 and g x = f x
 in f 1 // Never returns
-```
-
-## Record expressions
-
-TODO
-
-To support grouping of data elements embed_lang has first class records.
-
-```f#
-{ pi = 3.14, add = (+) }
-```
-
-The assignment can be omitted if there is a variable in scope with the same name as the field.
-
-```f#
-let id x = x
-{ id }
 ```
 
 ## If expressions
@@ -127,35 +110,57 @@ first branch if the boolean is evaluated to `True` and the second if it evaluate
 if True then 1 else 0
 ```
 
-## Case expressions
+## Record expressions
 
-
-embed_lang also has `case` expressions which allow values to be branched on and unpacked.
-
-### Patterns
-
-### Variant pattern
-
-Variants can be unpacked through `case` expressions by writing the variants name followed by an identifier for each
-of its arguments.
+To create more complex data types embed_lang has first class records which can be used to group data which belong together easily.
 
 ```f#
-case Some 1 of
+{ pi = 3.14, add = (+) }
+```
+
+To access the fields of a record `.` is used.
+
+```f#
+let record = { pi = 3.14, add = (+) }
+record.pi // Returns 3.14
+```
+
+The assignment to a field can be omitted if there is a variable in scope with the same name as the field.
+
+```f#
+let id x = x
+{ id }
+```
+
+## Variants
+
+While records are great for grouping related data together there is often a need to have data which can be one of several variants. Unlike records, variants need to be defined before their use.
+
+```f#
+type Option a = | Some a | None
+Some 1
+```
+
+## Case expressions
+
+To allow variants to be unpacked so that their contents can be retrieved embed_lang has the `case` expression.
+
+```f#
+case None of
 | Some x -> x
 | None -> 0
 ```
 
-### Variant pattern
+Here we write out a pattern for each of the variant's constructors and the value we pass in (`None` in this case) is matched to each of these patterns. When a matching pattern is found the expression on the right of `->` is evaluated with each of the constructor's arguments bound to variables.
 
-TODO
-Records can be unpacked but not branched on
+`case` expressions can also be used to unpack records.
 
 ```f#
 case { x = 1.0, pi = 3.14 } of
 | { x = y, pi } -> y + pi
 ```
 
-`let` bindings can unpack records letting the expression above be written as.
+`let` bindings can also unpack records letting the expression above be written as.
 
 ```f#
 let { x = y, pi } = { x = 1.0, pi = 3.14 }
@@ -217,19 +222,25 @@ Option Int
 
 TODO Better explanation
 
-If you have been following along this far you may be starting to think that the `let` and `type` syntax seem pretty clunky and
-you wouldn't be wrong. While it is possible to use the syntax given above and it shouldn't be dismissed outright embed_lang does
-have a more convenient way to write bindings by relying on indentation.
+If you have been following along this far you may be thinking think that syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily embed_lang offerrs a more convenient way of writing bindings by relying on indentation.
 
-When writing an expression which starts on the same line as the `let` or `type` binding above, embed_lang allows the `in`
-expression to be omitted.
+When a token starts on the same line as a token on an earlier line, embed_lang implicitly adds inserts a block expression which allows multiple expressions and bindings to be run sequentially with all variables in scope.
 
 ```f#
 let id x = x
 id 1 // `in` can be omitted since `id 1` starts on the same line as `let`
 ```
 
-Same thing works for for indented lines.
+```f#
+do_something1 ()
+do_something2 ()
+type PrivateType = | Private Int
+let x = Private (do_something3 ())
+case x of
+| Private y -> do_something4 x
+```
+
+Indented blocks can can be used to limit the scope of some variables.
 
 ```f#
 let module =
@@ -250,29 +261,66 @@ module.id module.pi
 
 ## Lambda expressions
 
-TODO
+While we have seen that functions can be defined in let expressions it is often valuable to define a function without giving it an explicit name.
 
 ```f#
 // \(<identifier)* -> <expr>
 \x y -> x + y - 10
+// Equivalent to
+let f x y = x + y - 10 in f
 ```
 
 ## Importing modules
 
-TODO
+As is often the case it is convenient to separate code into multiple files which can later be imported and used from multiple other files. To do this we can use the import macro which takes a single string literal as argument and loads that file at compile time before the module importing it gets compiled.
+
+So say that we need the `assert` function from the `test` module which can be found at `std/test.hs`. Then we might write something like this.
+
+```f#
+let { assert } = import "std/test.hs"
+assert (1 == 1)
+```
 
 ## Writing modules
 
-TODO
+Importing standard modules is all well and good but it is also necessary to write your own once a program starts getting to big for a single file. As it turns out, if you have been following along so far, you already know everything about writing a module! Creating and loading a module in embed_lang just entails writing creating a file containing an expression which is then loaded and evaluated using `import`. `import` is then just the value of evaluating the expression.
+
+```f#
+// module.hs
+type Named a = { name: String, value: a }
+let twice f x = f (f x)
+{ twice, Named }
+
+//main.hs
+let { twice, Named } = import "module.hs"
+let addTwice = twice (\x -> x + 1)
+let namedFloat: Named Float = { name = "pi", value = 3.14 }
+addTwice 10
+```
+
+Though modules are most commonly a record this does not have to be the case. If you wanted you could write a module returning any other value as well.
+
+```f#
+// pi.hs
+3.14
+
+//main.hs
+let pi = import "pi.hs"
+2 * pi * 10
+```
 
 ## Standard types and functions
+
+https://github.com/Marwes/embed_lang/tree/master/std
 
 TODO
 
 ### Prelude
 
-TODO
+When compiling a an expression the compiler automatically inserts a small prelude before the expression itself which gives automatic access to basic operators such as `+`, `-`, etc as well as types such as `Option` and `Result`.
 
 ### Threads and channels
+
+embed_lang has support for cooperative threading and communication between them through the `Thread` and `Channel` types.
 
 TODO
