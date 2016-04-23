@@ -7,7 +7,7 @@ use base::types;
 use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
 use stack::StackFrame;
-use vm::{VM, Value, Root, Status, Userdata_};
+use vm::{VM, Value, Status, Userdata_};
 use api::{Generic, Getable, Pushable, VMType};
 use api::generic::A;
 
@@ -56,11 +56,11 @@ impl<'vm, T> Getable<'vm> for Reference<T>
     }
 }
 
-fn set(r: Root<Reference<A>>, a: Generic<A>) {
+fn set(r: &Reference<A>, a: Generic<A>) {
     r.0.set(a.0);
 }
 
-fn get(r: Root<Reference<A>>) -> Generic<A> {
+fn get(r: &Reference<A>) -> Generic<A> {
     Generic::from(r.0.get())
 }
 
