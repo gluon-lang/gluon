@@ -14,7 +14,7 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
     Example:
 
         :i std.prelude.List
-        type std.prelude.List a = | Nil| Cons a (std.prelude.List a)
+        type std.prelude.List a = | Nil | Cons a (std.prelude.List a)
         /// A linked list type
         
 * Exit the REPL by writing `:q`

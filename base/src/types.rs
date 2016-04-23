@@ -630,7 +630,12 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                 if p >= Prec::Constructor {
                     try!(write!(f, "("));
                 }
+                let mut first = true;
                 for variant in variants {
+                    if !first {
+                        try!(write!(f, " "));
+                    }
+                    first = false;
                     try!(write!(f, "| {}", self.env.string(&variant.0)));
                     for arg in arg_iter(&variant.1) {
                         try!(write!(f, " {}", dt(self.env, Prec::Constructor, &arg)));

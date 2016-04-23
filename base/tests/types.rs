@@ -104,6 +104,13 @@ fn show_record() {
 }
 
 #[test]
+fn variants() {
+    let typ: ASTType<&str> = Type::variants(vec![("A", Type::function(vec![Type::int()], Type::id("A"))),
+                                                 ("B", Type::id("A"))]);
+    assert_eq!(format!("{}", typ), "| A Int | B");
+}
+
+#[test]
 fn show_kind() {
     let two_args = Kind::function(Kind::star(), Kind::function(Kind::star(), Kind::star()));
     assert_eq!(format!("{}", two_args), "* -> * -> *");
