@@ -20,7 +20,7 @@ impl<T> Errors<T> {
 
     /// Returns true if `self` contains any errors
     pub fn has_errors(&self) -> bool {
-        self.errors.len() != 0
+        !self.errors.is_empty()
     }
 
     /// Adds an error to `self`
@@ -31,7 +31,7 @@ impl<T> Errors<T> {
 
 impl<T: fmt::Display> fmt::Display for Errors<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for error in self.errors.iter() {
+        for error in &self.errors {
             try!(write!(f, "{}\n", error));
         }
         Ok(())
@@ -86,7 +86,7 @@ impl<E> InFile<E> {
 
 impl<E: fmt::Display> fmt::Display for InFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for error in self.error.errors.iter() {
+        for error in &self.error.errors {
             try!(write!(f, "{}:{}\n{}\n", self.file, error.error, error.context));
             for _ in 1..error.error.span.start.column {
                 try!(write!(f, " "));

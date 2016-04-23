@@ -92,14 +92,13 @@ impl Name {
 
     pub fn module(&self) -> &Name {
         let s = self.0.trim_right_matches(|c| c != '.');
-        Name::new(s.trim_right_matches("."))
+        Name::new(s.trim_right_matches('.'))
     }
 
     pub fn name(&self) -> &Name {
         self.0
             .rfind('.')
-            .map(|i| Name::new(&self.0[i + 1..]))
-            .unwrap_or(self)
+            .map_or(self, |i| Name::new(&self.0[i + 1..]))
     }
 }
 
@@ -183,7 +182,7 @@ impl<'a> From<&'a Name> for NameBuf {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Symbols {
     strings: HashMap<Symbol, NameBuf>,
     indexes: HashMap<NameBuf, Symbol>,
@@ -207,9 +206,8 @@ impl Symbols {
     pub fn symbol<N>(&mut self, name: N) -> Symbol
         where N: Into<NameBuf> + AsRef<Name>
     {
-        match self.indexes.get(name.as_ref()) {
-            Some(symbol) => return symbol.clone(),
-            None => (),
+        if let Some(symbol) =self.indexes.get(name.as_ref()) {
+            return symbol.clone();
         }
         self.make_symbol(name.into())
     }
@@ -251,8 +249,7 @@ impl DisplayEnv for Symbols {
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
         self.strings
             .get(ident)
-            .map(|name| &*name.0)
-            .unwrap_or(ident.as_ref())
+            .map_or(ident.as_ref(), |name| &*name.0)
     }
 }
 

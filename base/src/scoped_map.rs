@@ -26,22 +26,20 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             scopes: Vec::new(),
         }
     }
+
     ///Introduces a new scope
     pub fn enter_scope(&mut self) {
         self.scopes.push(None);
     }
+
     ///Exits the current scope, removing anything inserted since the
     ///matching enter_scope call
     pub fn exit_scope(&mut self) {
-        loop {
-            match self.scopes.pop() {
-                Some(Some(key)) => {
-                    self.map.get_mut(&key).map(|x| x.pop());
-                }
-                _ => break,
-            }
+        while let Some(Some(key)) = self.scopes.pop() {
+            self.map.get_mut(&key).map(|x| x.pop());
         }
     }
+
     ///Removes a previusly inserted value from the map.
     pub fn remove(&mut self, k: &K) -> bool {
         match self.map.get_mut(k).map(|x| x.pop()) {
@@ -70,8 +68,9 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         }
         false
     }
+
     ///Returns an iterator of the (key, values) pairs inserted in the map
-    pub fn iter_mut<'a>(&'a mut self) -> IterMut<'a, K, Vec<V>> {
+    pub fn iter_mut(&mut self) -> IterMut<K, Vec<V>> {
         self.map.iter_mut()
     }
 
@@ -91,6 +90,11 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         self.map.len()
     }
 
+    /// Returns true if this map is empty
+    pub fn is_empty(&self) -> bool {
+        self.map.len() == 0
+    }
+
     ///Removes all elements
     pub fn clear(&mut self) {
         self.map.clear();
@@ -103,16 +107,17 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             Entry::Occupied(v) => v.into_mut(),
             Entry::Vacant(v) => v.insert(Vec::new()),
         };
-        if vec.len() != 0 {
-            let r = vec.pop();
-            vec.push(v);
-            r
-        } else {
+        if vec.is_empty() {
             vec.push(v);
             self.scopes.push(Some(k));
             None
+        } else {
+            let r = vec.pop();
+            vec.push(v);
+            r
         }
     }
+
     pub fn pop(&mut self, k: &K) -> Option<V> {
         match self.map.get_mut(k).and_then(|x| x.pop()) {
             Some(v) => {
@@ -128,12 +133,14 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             None => None,
         }
     }
+
     pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
         self.map.get_mut(key).and_then(|x| {
             let last = x.len() - 1;
             x.get_mut(last)
         })
     }
+
     pub fn insert(&mut self, k: K, v: V) -> bool {
         let vec = match self.map.entry(k.clone()) {
             Entry::Occupied(v) => v.into_mut(),

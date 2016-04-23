@@ -1,4 +1,4 @@
-//! Module containing the types which make up embed_lang's AST (Abstract Syntax Tree)
+//! Module containing the types which make up `embed_lang`'s AST (Abstract Syntax Tree)
 use std::fmt;
 use std::ops::Deref;
 use symbol::Symbol;
@@ -346,21 +346,18 @@ impl<Id> LExpr<Id> where Id: AstId
             }
             Call(ref func, ref args) => {
                 args.last()
-                    .map(|e| e.span(env).end)
-                    .unwrap_or(func.span(env).end)
+                    .map_or_else(|| func.span(env).end, |e| e.span(env).end)
             }
             IfElse(_, ref if_true, ref if_false) => {
                 if_false.as_ref()
-                        .map(|e| e.span(env).end)
-                        .unwrap_or(if_true.span(env).end)
+                        .map_or_else(|| if_true.span(env).end, |e| e.span(env).end)
             }
             Match(_, ref alts) => {
                 alts.last()
-                    .map(|alt| alt.expression.span(env).end)
-                    .unwrap_or(self.location)
+                    .map_or(self.location, |alt| alt.expression.span(env).end)
             }
             BinOp(_, _, ref r) => r.span(env).end,
-            Let(_, ref expr) => expr.span(env).end,
+            Let(_, ref expr) | Type(_, ref expr) => expr.span(env).end,
             FieldAccess(ref expr, ref id) => {
                 let base = expr.span(env).end;
                 base.line_offset(1 + env.string(id).len() as i32)
@@ -368,8 +365,7 @@ impl<Id> LExpr<Id> where Id: AstId
             Array(ref array) => {
                 array.expressions
                      .last()
-                     .map(|expr| expr.span(env).end)
-                     .unwrap_or(self.location)
+                     .map_or(self.location, |expr| expr.span(env).end)
                      .line_offset(1)
             }
             Record { ref exprs, .. } => {
@@ -381,11 +377,9 @@ impl<Id> LExpr<Id> where Id: AstId
             Lambda(ref lambda) => lambda.body.span(env).end,
             Tuple(ref args) => {
                 args.last()
-                    .map(|expr| expr.span(env).end)
-                    .unwrap_or(self.location)
+                    .map_or(self.location, |expr| expr.span(env).end)
                     .line_offset(2)
             }
-            Type(_, ref expr) => expr.span(env).end,
             Block(ref exprs) => exprs.last().expect("Expr in block").span(env).end,
         };
         Span {
@@ -412,9 +406,8 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
         Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
             v.visit_expr(&mut **if_true);
-            match *if_false {
-                Some(ref mut if_false) => v.visit_expr(&mut **if_false),
-                None => (),
+            if let Some(ref mut if_false) = *if_false {
+                v.visit_expr(&mut **if_false);
             }
         }
         Expr::BinOp(ref mut lhs, ref mut id, ref mut rhs) => {
@@ -431,7 +424,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
         }
         Expr::Call(ref mut func, ref mut args) => {
             v.visit_expr(&mut **func);
-            for arg in args.iter_mut() {
+            for arg in args {
                 v.visit_expr(arg);
             }
         }
@@ -448,7 +441,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
         }
         Expr::Array(ref mut a) => {
             v.visit_identifier(&mut a.id);
-            for expr in a.expressions.iter_mut() {
+            for expr in &mut a.expressions {
                 v.visit_expr(expr);
             }
         }
@@ -515,7 +508,7 @@ impl<Id> Typed for Expr<Id> where Id: Typed<Id = Symbol> + AstId<Untyped = Symbo
     type Id = Id::Id;
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         match *self {
-            Expr::Identifier(ref id) => id.env_type_of(env),
+            Expr::Identifier(ref id) | Expr::FieldAccess(_, ref id) => id.env_type_of(env),
             Expr::Literal(ref lit) => {
                 match *lit {
                     LiteralEnum::Integer(_) => Type::int(),
@@ -526,30 +519,24 @@ impl<Id> Typed for Expr<Id> where Id: Typed<Id = Symbol> + AstId<Untyped = Symbo
             }
             Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),
             Expr::Tuple(ref exprs) => {
-                assert!(exprs.len() == 0);
+                assert!(exprs.is_empty());
                 Type::unit()
             }
             Expr::BinOp(_, ref op, _) => {
-                match *op.env_type_of(env) {
-                    Type::Function(_, ref return_type) => {
-                        match **return_type {
-                            Type::Function(_, ref return_type) => return return_type.clone(),
-                            _ => (),
-                        }
+                if let Type::Function(_, ref return_type) = *op.env_type_of(env) {
+                    if let Type::Function(_, ref return_type) = **return_type {
+                        return return_type.clone();
                     }
-                    _ => (),
                 }
                 panic!("Expected function type in binop")
             }
-            Expr::Let(_, ref expr) => expr.env_type_of(env),
+            Expr::Let(_, ref expr) | Expr::Type(_, ref expr) => expr.env_type_of(env),
             Expr::Call(ref func, ref args) => {
                 get_return_type(env, func.env_type_of(env), args.len())
             }
             Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),
-            Expr::FieldAccess(_, ref id) => id.env_type_of(env),
             Expr::Array(ref a) => a.id.env_type_of(env),
             Expr::Lambda(ref lambda) => lambda.id.env_type_of(env),
-            Expr::Type(_, ref expr) => expr.env_type_of(env),
             Expr::Record { ref typ, .. } => typ.env_type_of(env),
             Expr::Block(ref exprs) => exprs.last().expect("Expr in block").env_type_of(env),
         }

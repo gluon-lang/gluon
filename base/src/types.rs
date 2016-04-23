@@ -1,4 +1,4 @@
-//! Module containing types representing embed_lang's type system
+//! Module containing types representing `embed_lang`'s type system
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -353,37 +353,6 @@ pub struct Field<Id, T = ASTType<Id>> {
     pub typ: T,
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub enum ConstructorType<Id> {
-    Tuple(Vec<ASTType<Id>>),
-    Record(Vec<Field<Id>>),
-}
-
-impl<Id> ConstructorType<Id> {
-    pub fn each_type<F>(&self, mut f: F)
-        where F: FnMut(&Type<Id>)
-    {
-        match *self {
-            ConstructorType::Tuple(ref args) => {
-                for t in args.iter() {
-                    f(t);
-                }
-            }
-            ConstructorType::Record(ref fields) => {
-                for field in fields.iter() {
-                    f(&field.typ);
-                }
-            }
-        }
-    }
-    pub fn len(&self) -> usize {
-        match *self {
-            ConstructorType::Tuple(ref args) => args.len(),
-            ConstructorType::Record(ref fields) => fields.len(),
-        }
-    }
-}
-
 impl<Id, T> Type<Id, T> where T: From<Type<Id, T>>
 {
     pub fn app(l: T, r: T) -> T {
@@ -676,7 +645,7 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
             Type::Array(ref t) => write!(f, "[{}]", top(self.env, &**t)),
             Type::Record { ref types, ref fields } => {
                 try!(write!(f, "{{"));
-                if types.len() > 0 {
+                if !types.is_empty() {
                     try!(write!(f, " {} ", self.env.string(&types[0].name)));
                     for arg in &types[0].typ.args {
                         try!(write!(f, "{} ", self.env.string(&arg.id)));
@@ -695,12 +664,12 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                             None => try!(write!(f, "= <abstract>")),
                         }
                     }
-                    if fields.len() == 0 {
+                    if fields.is_empty() {
                         try!(write!(f, " "));
                     }
                 }
-                if fields.len() > 0 {
-                    if types.len() > 0 {
+                if !fields.is_empty() {
+                    if !types.is_empty() {
                         try!(write!(f, ","));
                     }
                     try!(write!(f,
@@ -834,7 +803,7 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
 {
     let new = f(typ);
     let result = {
-        let typ = new.as_ref().map(|t| &**t).unwrap_or(typ);
+        let typ = new.as_ref().map_or(typ, |t| &**t);
         match *typ {
             Type::Data(ref id, ref args) => {
                 let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
@@ -842,12 +811,11 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                       walk_move_type2(id, f),
                       args,
                       new_args,
-                      |id, args| Type::data(id, args))
+                      Type::data)
             }
             Type::Array(ref inner) => {
                 walk_move_type2(&**inner, f)
-                    .map(Type::Array)
-                    .map(From::from)
+                    .map(Type::array)
             }
             Type::Function(ref args, ref ret) => {
                 let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
@@ -901,7 +869,7 @@ fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
 {
     let mut out = Vec::new();
     walk_move_types2(types, false, &mut out, &mut f);
-    if out.len() == 0 {
+    if out.is_empty() {
         None
     } else {
         out.reverse();
@@ -913,20 +881,17 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
           F: FnMut(&'a T) -> Option<T>,
           T: Clone + 'a
 {
-    match types.next() {
-        Some(typ) => {
-            let new = f(typ);
-            walk_move_types2(types, replaced || new.is_some(), output, f);
-            match new {
-                Some(typ) => {
-                    output.push(typ);
-                }
-                None if replaced || output.len() > 0 => {
-                    output.push(typ.clone());
-                }
-                None => (),
+    if let Some(typ) = types.next() {
+        let new = f(typ);
+        walk_move_types2(types, replaced || new.is_some(), output, f);
+        match new {
+            Some(typ) => {
+                output.push(typ);
             }
+            None if replaced || !output.is_empty() => {
+                output.push(typ.clone());
+            }
+            None => (),
         }
-        None => (),
     }
 }

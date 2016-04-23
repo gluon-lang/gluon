@@ -53,9 +53,12 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.map.borrow().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
@@ -86,7 +89,7 @@ impl<T> FixedVec<T> {
 
     #[allow(dead_code)]
     pub fn extend<I: Iterator<Item = T>>(&self, iter: I) {
-        self.vec.borrow_mut().extend(iter.map(|v| Box::new(v)))
+        self.vec.borrow_mut().extend(iter.map(Box::new))
     }
 
     pub fn borrow(&self) -> Ref<Vec<Box<T>>> {
@@ -106,6 +109,10 @@ impl<T> FixedVec<T> {
 
     pub fn len(&self) -> usize {
         self.vec.borrow().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -128,7 +135,7 @@ impl<T> IndexMut<usize> for FixedVec<T> {
 
 impl<A> FromIterator<A> for FixedVec<A> {
     fn from_iter<T: IntoIterator<Item = A>>(iterator: T) -> FixedVec<A> {
-        let vec: Vec<_> = iterator.into_iter().map(|x| Box::new(x)).collect();
+        let vec: Vec<_> = iterator.into_iter().map(Box::new).collect();
         FixedVec { vec: RefCell::new(vec) }
     }
 }
