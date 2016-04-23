@@ -17,7 +17,7 @@ script:
 - |
   cargo build &&
   sh ./test.sh &&
-  travis-cargo --only nightly bench &&
+  travis-cargo --only nightly bench -- --features test &&
   travis-cargo --only stable doc
 after_success:
 - travis-cargo --only stable doc-upload

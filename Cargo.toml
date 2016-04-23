@@ -41,4 +41,4 @@ optional = true
 [features]
 test = ["vm/test", "check/test", "parser/test", "env_logger"]
 nightly = ["compiletest_rs"]
-test_nightly = ["vm/test", "check/test", "parser/test", "nightly"]
+test_nightly = ["test", "nightly"]
