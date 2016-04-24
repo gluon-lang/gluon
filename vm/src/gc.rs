@@ -551,27 +551,42 @@ impl Gc {
         }
     }
 
+    /// Clears out any unmarked pointers and resets marked pointers.
+    ///
+    /// Unsafe as it is up to the caller to make sure that all reachable pointers have been marked
     unsafe fn sweep(&mut self) {
-        // Usage of unsafe are sadly needed to circumvent the borrow checker
+        fn moving<T>(t: T) -> T { t }
+
         let mut first = self.values.take();
         {
+            // Pointer to the current pointer (if it exists)
             let mut maybe_header = &mut first;
             loop {
-                let current: &mut Option<AllocPtr> = mem::transmute(&mut *maybe_header);
-                maybe_header = match *maybe_header {
+                let mut free = false;
+                let mut replaced_next = None;
+                match *maybe_header {
                     Some(ref mut header) => {
+                        // If the current pointer is not marked we take the rest of the list and
+                        // move it to `replaced_next`
                         if !header.marked.get() {
-                            let unreached = mem::replace(current, header.next.take());
-                            self.free(unreached);
-                            continue;
+                            replaced_next = header.next.take();
+                            free = true;
                         } else {
                             header.marked.set(false);
-                            let next: &mut Option<AllocPtr> = mem::transmute(&mut header.next);
-                            next
                         }
                     }
+                    // Reached the end of the list
                     None => break,
-                };
+                }
+                if free {
+                    // Free the current pointer
+                    self.free(maybe_header.take());
+                    *maybe_header = replaced_next;
+                }
+                else {
+                    // Just move to the next pointer
+                    maybe_header = &mut moving(maybe_header).as_mut().unwrap().next;
+                }
             }
         }
         self.values = first;
