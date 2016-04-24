@@ -5,21 +5,21 @@ use embed_lang::vm::api;
 use embed_lang::vm::api::{VMType, Function};
 use embed_lang::vm::gc::Traverseable;
 
-use embed_lang::vm::vm::{VM, VMInt, Value, Root, RootStr};
+use embed_lang::vm::vm::{RootedThread, Thread, VMInt, Value, Root, RootStr};
 use embed_lang::Compiler;
 use embed_lang::import::Import;
 
-fn load_script(vm: &VM, filename: &str, input: &str) -> ::embed_lang::Result<()> {
+fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Result<()> {
     Compiler::new()
         .load_script(vm, filename, input)
 }
 
-fn run_expr(vm: &VM, s: &str) -> Value {
+fn run_expr(vm: &Thread, s: &str) -> Value {
     *Compiler::new()
         .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
 }
 
-fn make_vm() -> VM {
+fn make_vm() -> RootedThread {
     let vm = ::embed_lang::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()

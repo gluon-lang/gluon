@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use base::ast::Typed;
 use base::types::{Kind, TypeEnv};
-use vm::vm::{VM, RootStr};
+use vm::vm::{Thread, RootStr};
 use vm::api::{IO, Function, WithVM};
 
 use embed_lang::{Compiler, new_vm};
@@ -80,7 +80,7 @@ fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
     f
 }
 
-fn compile_repl(vm: &VM) -> Result<(), Box<StdError>> {
+fn compile_repl(vm: &Thread) -> Result<(), Box<StdError>> {
     try!(vm.define_global("repl_prim",
                           record!(
         type_of_expr => f1(type_of_expr),

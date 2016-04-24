@@ -1,25 +1,36 @@
 extern crate env_logger;
 extern crate embed_lang;
 
-use embed_lang::vm::vm::{VM, Value};
+use embed_lang::vm::vm::{RootedThread, Thread, Value};
 use embed_lang::vm::vm::Value::{Float, Int};
 use embed_lang::vm::stack::State;
 use embed_lang::import::Import;
 
-pub fn load_script(vm: &VM, filename: &str, input: &str) -> ::embed_lang::Result<()> {
+pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Result<()> {
     ::embed_lang::Compiler::new()
         .implicit_prelude(false)
         .load_script(vm, filename, input)
 }
 
-pub fn run_expr_(vm: &VM, s: &str, implicit_prelude: bool) -> Value {
+pub fn run_expr_(vm: &Thread, s: &str, implicit_prelude: bool) -> Value {
     *::embed_lang::Compiler::new()
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
 }
 
-pub fn run_expr(vm: &VM, s: &str) -> Value {
+pub fn run_expr(vm: &Thread, s: &str) -> Value {
     run_expr_(vm, s, false)
+}
+
+/// Creates a VM for testing which has the correct paths to import the std library properly
+fn make_vm() -> RootedThread {
+    let vm = ::embed_lang::new_vm();
+    let import = vm.get_macros().get("import");
+    import.as_ref()
+          .and_then(|import| import.downcast_ref::<Import>())
+          .expect("Import macro")
+          .add_path("..");
+    vm
 }
 
 macro_rules! test_expr {
@@ -489,17 +500,6 @@ fn access_field_through_vm() {
     assert_eq!(test_x, Ok(0));
     let test_inner_y = vm.get_global("test.inner.y");
     assert_eq!(test_inner_y, Ok(1.0));
-}
-
-/// Creates a VM for testing which has the correct paths to import the std library properly
-fn make_vm() -> VM {
-    let vm = ::embed_lang::new_vm();
-    let import = vm.get_macros().get("import");
-    import.as_ref()
-          .and_then(|import| import.downcast_ref::<Import>())
-          .expect("Import macro")
-          .add_path("..");
-    vm
 }
 
 #[test]

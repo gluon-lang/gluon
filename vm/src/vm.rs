@@ -503,11 +503,11 @@ impl PartialEq for Thread {
     }
 }
 
-impl VMType for VM {
-    type Type = VM;
+impl VMType for RootedThread {
+    type Type = Self;
 }
 
-impl<'vm> Pushable<'vm> for VM {
+impl<'vm> Pushable<'vm> for RootedThread {
     fn push<'b>(self, _vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Thread(self.0));
         Status::Ok
@@ -515,23 +515,23 @@ impl<'vm> Pushable<'vm> for VM {
 }
 
 
-pub struct VM(GcPtr<Thread>);
+pub struct RootedThread(GcPtr<Thread>);
 
-impl Drop for VM {
+impl Drop for RootedThread {
     fn drop(&mut self) {
         let p = self.roots.borrow_mut().pop().expect("VM ptr");
         assert!(&*p as *const Traverseable as *const () == &*self.0 as *const Thread as *const ())
     }
 }
 
-impl Deref for VM {
+impl Deref for RootedThread {
     type Target = Thread;
     fn deref(&self) -> &Thread {
         &self.0
     }
 }
 
-impl Traverseable for VM {
+impl Traverseable for RootedThread {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
     }
@@ -792,7 +792,7 @@ impl GlobalVMState {
                         }];
         let _ = self.register_type::<IO<Generic<A>>>("IO", args.clone());
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
-        let _ = self.register_type::<VM>("Thread", vec![]);
+        let _ = self.register_type::<RootedThread>("Thread", vec![]);
         Ok(())
     }
 
@@ -898,8 +898,8 @@ impl GlobalVMState {
     }
 }
 
-impl VM {
-    pub fn new() -> VM {
+impl RootedThread {
+    pub fn new() -> RootedThread {
         let thread = Thread {
             global_state: Arc::new(GlobalVMState::new()),
             stack: RefCell::new(Stack::new()),
@@ -907,15 +907,15 @@ impl VM {
             rooted_values: RefCell::new(Vec::new()),
         };
         let mut gc = Gc::new();
-        let vm = VM::from_gc_ptr(gc.alloc(Move(thread)));
+        let vm = RootedThread::from_gc_ptr(gc.alloc(Move(thread)));
         *vm.gc.borrow_mut() = gc;
         // Enter the top level scope
         StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
         vm
     }
 
-    pub fn from_gc_ptr(p: GcPtr<Thread>) -> VM {
-        let vm = VM(p);
+    pub fn from_gc_ptr(p: GcPtr<Thread>) -> RootedThread {
+        let vm = RootedThread(p);
         vm.roots.borrow_mut().push(vm.0.as_traverseable());
         vm
     }
@@ -926,9 +926,8 @@ impl VM {
         ptr
     }
 
-    pub unsafe fn from_raw(ptr: *const Thread) -> VM {
-        let ptr = GcPtr::from_raw(ptr);
-        VM(ptr)
+    pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread {
+        RootedThread(GcPtr::from_raw(ptr))
     }
 }
 
@@ -939,7 +938,7 @@ impl Thread {
         self.rooted_values.borrow().traverse(gc);
     }
 
-    pub fn new_thread(&self) -> VM {
+    pub fn new_thread(&self) -> RootedThread {
         let vm = Thread {
             global_state: self.global_state.clone(),
             stack: RefCell::new(Stack::new()),
@@ -948,7 +947,7 @@ impl Thread {
         };
         // Enter the top level scope
         StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
-        VM::from_gc_ptr(self.alloc(&self.stack.borrow(), Move(vm)))
+        RootedThread::from_gc_ptr(self.alloc(&self.stack.borrow(), Move(vm)))
     }
 
     /// Creates a new global value at `name`.

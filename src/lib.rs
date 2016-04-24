@@ -88,7 +88,7 @@ mod io;
 pub mod import;
 pub mod c_api;
 
-pub use vm::vm::{VM, Thread};
+pub use vm::vm::{RootedThread, Thread};
 
 
 use std::result::Result as StdResult;
@@ -316,8 +316,8 @@ pub fn filename_to_module(filename: &str) -> StdString {
 
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
-pub fn new_vm() -> VM {
-    let vm = VM::new();
+pub fn new_vm() -> RootedThread {
+    let vm = RootedThread::new();
     vm.get_macros().insert(String::from("import"), ::import::Import::new());
     Compiler::new()
         .implicit_prelude(false)

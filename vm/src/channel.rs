@@ -8,7 +8,7 @@ use api::record::{Record, HList};
 use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
 use gc::{Traverseable, Gc};
-use vm::{Error, Thread, Value, VM, Result as VMResult, Status};
+use vm::{Error, Thread, Value, RootedThread, Result as VMResult, Status};
 use stack::State;
 
 struct Sender<T> {
@@ -98,7 +98,7 @@ fn resume(vm: &Thread) -> Status {
     match stack[0] {
         Value::Thread(thread) => {
             drop(stack);
-            let child = VM::from_gc_ptr(thread);
+            let child = RootedThread::from_gc_ptr(thread);
             let result = child.resume();
             stack = vm.current_frame();
             match result {
@@ -129,7 +129,7 @@ fn yield_(_vm: &Thread) -> Status {
     Status::Yield
 }
 
-fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn(())>>) -> VM {
+fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn(())>>) -> RootedThread {
     let thread = value.vm.new_thread();
     {
         let mut stack = thread.current_frame();
@@ -163,7 +163,7 @@ pub fn load(vm: &Thread) -> VMResult<()> {
     try!(vm.define_global("recv", f1(recv)));
     try!(vm.define_global("send", f2(send)));
     try!(vm.define_global("resume",
-                          primitive::<fn(VM) -> Result<(), String>>("resume", resume)));
+                          primitive::<fn(RootedThread) -> Result<(), String>>("resume", resume)));
     try!(vm.define_global("yield", primitive::<fn(())>("yield", yield_)));
     try!(vm.define_global("spawn", f1(spawn)));
     Ok(())

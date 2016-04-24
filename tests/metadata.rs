@@ -1,11 +1,11 @@
 extern crate env_logger;
 extern crate embed_lang;
 
-use embed_lang::vm::vm::VM;
+use embed_lang::vm::vm::RootedThread;
 use embed_lang::import::Import;
 use embed_lang::Compiler;
 
-fn make_vm() -> VM {
+fn make_vm() -> RootedThread {
     let vm = ::embed_lang::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
