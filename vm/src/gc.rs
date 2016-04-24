@@ -360,32 +360,28 @@ pub trait Traverseable {
     }
 }
 
-impl<T> Traverseable for Move<T>
-    where T: Traverseable
+impl<T> Traverseable for Move<T> where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc)
     }
 }
 
-impl<T: ?Sized> Traverseable for Box<T>
-    where T: Traverseable
+impl<T: ?Sized> Traverseable for Box<T> where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc)
     }
 }
 
-impl<'a, T: ?Sized> Traverseable for &'a T
-    where T: Traverseable
+impl<'a, T: ?Sized> Traverseable for &'a T where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
     }
 }
 
-impl<'a, T: ?Sized> Traverseable for &'a mut T
-    where T: Traverseable
+impl<'a, T: ?Sized> Traverseable for &'a mut T where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
@@ -437,16 +433,14 @@ impl<T: ?Sized> Traverseable for *mut T {
     fn traverse(&self, _: &mut Gc) {}
 }
 
-impl<T> Traverseable for Cell<T>
-    where T: Traverseable + Copy
+impl<T> Traverseable for Cell<T> where T: Traverseable + Copy
 {
     fn traverse(&self, f: &mut Gc) {
         self.get().traverse(f);
     }
 }
 
-impl<U> Traverseable for [U]
-    where U: Traverseable
+impl<U> Traverseable for [U] where U: Traverseable
 {
     fn traverse(&self, f: &mut Gc) {
         for x in self.iter() {
@@ -455,16 +449,14 @@ impl<U> Traverseable for [U]
     }
 }
 
-impl<T> Traverseable for Vec<T>
-    where T: Traverseable
+impl<T> Traverseable for Vec<T> where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
     }
 }
 
-impl<T> Traverseable for VecDeque<T>
-    where T: Traverseable
+impl<T> Traverseable for VecDeque<T> where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         self.as_slices().traverse(gc);
@@ -472,8 +464,7 @@ impl<T> Traverseable for VecDeque<T>
 }
 
 ///When traversing a GcPtr we need to mark it
-impl<T: ?Sized> Traverseable for GcPtr<T>
-    where T: Traverseable
+impl<T: ?Sized> Traverseable for GcPtr<T> where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         if !gc.mark(*self) {
@@ -555,7 +546,9 @@ impl Gc {
     ///
     /// Unsafe as it is up to the caller to make sure that all reachable pointers have been marked
     unsafe fn sweep(&mut self) {
-        fn moving<T>(t: T) -> T { t }
+        fn moving<T>(t: T) -> T {
+            t
+        }
 
         let mut first = self.values.take();
         {
@@ -582,8 +575,7 @@ impl Gc {
                     // Free the current pointer
                     self.free(maybe_header.take());
                     *maybe_header = replaced_next;
-                }
-                else {
+                } else {
                     // Just move to the next pointer
                     maybe_header = &mut moving(maybe_header).as_mut().unwrap().next;
                 }

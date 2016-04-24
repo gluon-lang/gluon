@@ -20,6 +20,7 @@ pub mod api;
 pub mod compiler;
 pub mod types;
 pub mod vm;
+pub mod thread;
 pub mod interner;
 pub mod gc;
 pub mod stack;

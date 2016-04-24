@@ -253,7 +253,10 @@ impl<'a> TypeEnv for Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(globals: &'a CompilerEnv, vm: &'a Thread, symbols: SymbolModule<'a>) -> Compiler<'a> {
+    pub fn new(globals: &'a CompilerEnv,
+               vm: &'a Thread,
+               symbols: SymbolModule<'a>)
+               -> Compiler<'a> {
         Compiler {
             globals: globals,
             vm: vm,
