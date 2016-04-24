@@ -44,7 +44,7 @@ pub struct Userdata_ {
 }
 
 impl Userdata_ {
-    pub fn new<T: Userdata>(vm: &VM, v: T) -> Userdata_ {
+    pub fn new<T: Userdata>(vm: &Thread, v: T) -> Userdata_ {
         let v: Box<Userdata> = Box::new(v);
         Userdata_ { data: vm.gc.borrow_mut().alloc(Move(v)) }
     }
@@ -336,7 +336,7 @@ impl fmt::Debug for Value {
 /// A rooted value
 #[derive(Clone)]
 pub struct RootedValue<'vm> {
-    vm: &'vm VM,
+    vm: &'vm Thread,
     value: Value,
 }
 
@@ -361,7 +361,7 @@ impl<'vm> Deref for RootedValue<'vm> {
 }
 
 impl<'vm> RootedValue<'vm> {
-    pub fn vm(&self) -> &'vm VM {
+    pub fn vm(&self) -> &'vm Thread {
         self.vm
     }
 }
@@ -410,7 +410,7 @@ pub enum Status {
 pub struct ExternFunction {
     pub id: Symbol,
     pub args: VMIndex,
-    pub function: Box<Fn(&VM) -> Status + 'static>,
+    pub function: Box<Fn(&Thread) -> Status + 'static>,
 }
 
 impl PartialEq for ExternFunction {
@@ -458,7 +458,7 @@ pub struct GlobalVMState {
     typeids: RefCell<HashMap<TypeId, TcType>>,
     interner: RefCell<Interner>,
     gc: RefCell<Gc>,
-    macros: MacroEnv<VM>,
+    macros: MacroEnv<Thread>,
 }
 
 impl Traverseable for GlobalVMState {
@@ -471,6 +471,10 @@ impl Traverseable for GlobalVMState {
     }
 }
 
+// All threads MUST be allocated in the garbage collected heap. This is necessary as a thread
+// calling collect need to mark itself if it is on the garbage collected heap and it has no way of
+// knowing wheter it is or not. So the only way of allowing it to mark itself is to disallow it to
+// be allocated anywhere else.
 /// Representation of the virtual machine
 pub struct Thread {
     global_state: Arc<GlobalVMState>,
@@ -498,6 +502,18 @@ impl PartialEq for Thread {
         self as *const _ == other as *const _
     }
 }
+
+impl VMType for VM {
+    type Type = VM;
+}
+
+impl<'vm> Pushable<'vm> for VM {
+    fn push<'b>(self, _vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+        stack.push(Value::Thread(self.0));
+        Status::Ok
+    }
+}
+
 
 pub struct VM(GcPtr<Thread>);
 
@@ -723,43 +739,18 @@ impl<'b> Traverseable for Def<'b> {
 }
 
 struct Roots<'b> {
-    vm: &'b VM,
+    vm: GcPtr<Thread>,
     stack: &'b Stack,
 }
 impl<'b> Traverseable for Roots<'b> {
     fn traverse(&self, gc: &mut Gc) {
         // Since this vm's stack is already borrowed in self we need to manually mark it to prevent
         // it from being traversed normally
-        gc.mark(self.vm.0);
+        gc.mark(self.vm);
         self.stack.get_values().traverse(gc);
 
         // Traverse the vm's fields, avoiding the stack which is traversed above
         self.vm.traverse_fields_except_stack(gc);
-    }
-}
-
-impl Thread {
-    /// Pushes a value to the top of the stack
-    pub fn push(&self, v: Value) {
-        self.stack.borrow_mut().push(v)
-    }
-
-    /// Removes the top value from the stack
-    pub fn pop(&self) -> Value {
-        self.stack
-            .borrow_mut()
-            .pop()
-    }
-
-    /// Returns the current stackframe
-    pub fn current_frame(&self) -> StackFrame {
-        StackFrame::current(&self.stack)
-    }
-
-    fn traverse_fields_except_stack(&self, gc: &mut Gc) {
-        self.global_state.traverse(gc);
-        self.roots.borrow().traverse(gc);
-        self.rooted_values.borrow().traverse(gc);
     }
 }
 
@@ -801,7 +792,7 @@ impl GlobalVMState {
                         }];
         let _ = self.register_type::<IO<Generic<A>>>("IO", args.clone());
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
-        let _ = self.register_type::<Thread>("Thread", vec![]);
+        let _ = self.register_type::<VM>("Thread", vec![]);
         Ok(())
     }
 
@@ -886,7 +877,7 @@ impl GlobalVMState {
         }
     }
 
-    pub fn get_macros(&self) -> &MacroEnv<VM> {
+    pub fn get_macros(&self) -> &MacroEnv<Thread> {
         &self.macros
     }
 
@@ -909,35 +900,18 @@ impl GlobalVMState {
 
 impl VM {
     pub fn new() -> VM {
-        let vm = Thread {
+        let thread = Thread {
             global_state: Arc::new(GlobalVMState::new()),
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new()),
             rooted_values: RefCell::new(Vec::new()),
         };
         let mut gc = Gc::new();
-        let vm = VM::from_gc_ptr(gc.alloc(Move(vm)));
+        let vm = VM::from_gc_ptr(gc.alloc(Move(thread)));
         *vm.gc.borrow_mut() = gc;
         // Enter the top level scope
         StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
         vm
-    }
-
-    pub fn new_thread(&self) -> Thread {
-        let vm = Thread {
-            global_state: self.global_state.clone(),
-            stack: RefCell::new(Stack::new()),
-            roots: RefCell::new(Vec::new()),
-            rooted_values: RefCell::new(Vec::new()),
-        };
-        // Enter the top level scope
-        StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
-        vm
-    }
-
-    pub fn new_vm(&self) -> VM {
-        let vm = self.new_thread();
-        VM::from_gc_ptr(self.alloc(&self.stack.borrow(), Move(vm)))
     }
 
     pub fn from_gc_ptr(p: GcPtr<Thread>) -> VM {
@@ -955,6 +929,26 @@ impl VM {
     pub unsafe fn from_raw(ptr: *const Thread) -> VM {
         let ptr = GcPtr::from_raw(ptr);
         VM(ptr)
+    }
+}
+
+impl Thread {
+    fn traverse_fields_except_stack(&self, gc: &mut Gc) {
+        self.global_state.traverse(gc);
+        self.roots.borrow().traverse(gc);
+        self.rooted_values.borrow().traverse(gc);
+    }
+
+    pub fn new_thread(&self) -> VM {
+        let vm = Thread {
+            global_state: self.global_state.clone(),
+            stack: RefCell::new(Stack::new()),
+            roots: RefCell::new(Vec::new()),
+            rooted_values: RefCell::new(Vec::new()),
+        };
+        // Enter the top level scope
+        StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
+        VM::from_gc_ptr(self.alloc(&self.stack.borrow(), Move(vm)))
     }
 
     /// Creates a new global value at `name`.
@@ -1049,7 +1043,7 @@ impl VM {
     }
 
     /// Returns the current stackframe
-    pub fn current_frame<'vm>(&'vm self) -> StackFrame<'vm> {
+    pub fn current_frame(&self) -> StackFrame {
         StackFrame::current(&self.stack)
     }
 
@@ -1113,7 +1107,10 @@ impl VM {
             stack as *const _ as usize <= (&self.stack as *const _).offset(1) as usize
         });
         let roots = Roots {
-            vm: self,
+            vm: unsafe {
+                // Threads must only be on the garbage collectors heap which makes this safe
+                GcPtr::from_raw(self)
+            },
             stack: stack,
         };
         let mut gc = self.gc.borrow_mut();
@@ -1632,7 +1629,7 @@ impl VM {
 }
 
 #[inline]
-fn binop<'b, F, T, R>(vm: &'b VM, stack: &mut StackFrame<'b>, f: F)
+fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> R,
           T: Getable<'b> + fmt::Debug,
           R: Pushable<'b>

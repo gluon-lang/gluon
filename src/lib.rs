@@ -88,7 +88,7 @@ mod io;
 pub mod import;
 pub mod c_api;
 
-pub use vm::vm::VM;
+pub use vm::vm::{VM, Thread};
 
 
 use std::result::Result as StdResult;
@@ -165,7 +165,7 @@ impl Compiler {
     }
 
     pub fn typecheck_expr(&mut self,
-                          vm: &VM,
+                          vm: &Thread,
                           file: &str,
                           expr_str: &str)
                           -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
@@ -184,7 +184,7 @@ impl Compiler {
     }
 
     pub fn compile_script(&mut self,
-                          vm: &VM,
+                          vm: &Thread,
                           filename: &str,
                           expr: &ast::LExpr<ast::TcIdent<Symbol>>)
                           -> CompiledFunction {
@@ -203,7 +203,7 @@ impl Compiler {
     }
 
     pub fn extract_metadata(&mut self,
-                            vm: &VM,
+                            vm: &Thread,
                             file: &str,
                             expr_str: &str)
                             -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
@@ -219,7 +219,7 @@ impl Compiler {
     ///
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
-    pub fn load_script(&mut self, vm: &VM, filename: &str, input: &str) -> Result<()> {
+    pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
         let (expr, typ, metadata) = try!(self.extract_metadata(vm, filename, input));
         let function = self.compile_script(vm, filename, &expr);
         let function = vm.new_function(function);
@@ -233,7 +233,7 @@ impl Compiler {
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
-    pub fn load_file(&mut self, vm: &VM, filename: &str) -> Result<()> {
+    pub fn load_file(&mut self, vm: &Thread, filename: &str) -> Result<()> {
         use std::fs::File;
         use std::io::Read;
         let mut buffer = StdString::new();
@@ -248,7 +248,7 @@ impl Compiler {
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
     pub fn run_expr<'vm>(&mut self,
-                         vm: &'vm VM,
+                         vm: &'vm Thread,
                          name: &str,
                          expr_str: &str)
                          -> Result<RootedValue<'vm>> {

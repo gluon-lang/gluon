@@ -5,7 +5,7 @@ use primitives as prim;
 use api::{generic, Generic, Getable, Array, MaybeError, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
-use vm::{VM, DataStruct, VMInt, Status, Value, Result};
+use vm::{Thread, DataStruct, VMInt, Status, Value, Result};
 
 
 fn array_length(array: Array<generic::A>) -> VMInt {
@@ -126,7 +126,7 @@ fn show_char(c: char) -> String {
     format!("{}", c)
 }
 
-fn error(_: &VM) -> Status {
+fn error(_: &Thread) -> Status {
     // We expect a string as an argument to this function but we only return Status::Error
     // and let the caller take care of printing the message
     Status::Error
@@ -142,7 +142,7 @@ fn f3<A, B, C, R>(f: fn(A, B, C) -> R) -> fn(A, B, C) -> R {
     f
 }
 
-pub fn load(vm: &VM) -> Result<()> {
+pub fn load(vm: &Thread) -> Result<()> {
     use std::f64;
     try!(vm.define_global("float",
                           record!(

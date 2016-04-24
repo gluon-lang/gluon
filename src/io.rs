@@ -4,7 +4,7 @@ use std::fs::File;
 
 use vm::types::*;
 use vm::stack::{State, StackFrame};
-use vm::vm::{VM, Result, Status, Value, VMInt, RootStr};
+use vm::vm::{Thread, Result, Status, Value, VMInt, RootStr};
 use vm::api::{VMType, IO, WithVM, primitive};
 use vm::api::generic::{A, B};
 
@@ -47,7 +47,7 @@ pub fn read_line() -> IO<String> {
 }
 
 /// IO a -> (String -> IO a) -> IO a
-pub fn catch_io(vm: &VM) -> Status {
+pub fn catch_io(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
     let action = stack[0];
@@ -158,7 +158,7 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
     f
 }
 
-pub fn load(vm: &VM) -> Result<()> {
+pub fn load(vm: &Thread) -> Result<()> {
 
     // io_bind m f (): IO a -> (a -> IO b) -> IO b
     //     = f (m ())

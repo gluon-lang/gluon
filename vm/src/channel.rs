@@ -52,7 +52,7 @@ impl<T: VMType> VMType for Sender<T>
     where T::Type: Sized
 {
     type Type = Sender<T::Type>;
-    fn make_type(vm: &VM) -> TcType {
+    fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.get_env().find_type_info("Sender").unwrap().name.clone();
         Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
@@ -62,7 +62,7 @@ impl<T: VMType> VMType for Receiver<T>
     where T::Type: Sized
 {
     type Type = Receiver<T::Type>;
-    fn make_type(vm: &VM) -> TcType {
+    fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.get_env().find_type_info("Receiver").unwrap().name.clone();
         Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
@@ -93,7 +93,7 @@ fn send(sender: *const Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> 
     }
 }
 
-fn resume(vm: &VM) -> Status {
+fn resume(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     match stack[0] {
         Value::Thread(thread) => {
@@ -125,11 +125,11 @@ fn resume(vm: &VM) -> Status {
     }
 }
 
-fn yield_(_vm: &VM) -> Status {
+fn yield_(_vm: &Thread) -> Status {
     Status::Yield
 }
 
-fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn(())>>) -> Thread {
+fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn(())>>) -> VM {
     let thread = value.vm.new_thread();
     {
         let mut stack = thread.current_frame();
@@ -152,7 +152,7 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
     f
 }
 
-pub fn load(vm: &VM) -> VMResult<()> {
+pub fn load(vm: &Thread) -> VMResult<()> {
     let args = vec![types::Generic {
                         id: Symbol::new("a"),
                         kind: types::Kind::star(),
@@ -163,7 +163,7 @@ pub fn load(vm: &VM) -> VMResult<()> {
     try!(vm.define_global("recv", f1(recv)));
     try!(vm.define_global("send", f2(send)));
     try!(vm.define_global("resume",
-                          primitive::<fn(Thread) -> Result<(), String>>("resume", resume)));
+                          primitive::<fn(VM) -> Result<(), String>>("resume", resume)));
     try!(vm.define_global("yield", primitive::<fn(())>("yield", yield_)));
     try!(vm.define_global("spawn", f1(spawn)));
     Ok(())

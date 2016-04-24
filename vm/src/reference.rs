@@ -7,7 +7,7 @@ use base::types;
 use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
 use stack::StackFrame;
-use vm::{VM, Value, Status, Userdata_};
+use vm::{Thread, Value, Status, Userdata_};
 use api::{Generic, Getable, Pushable, VMType};
 use api::generic::A;
 
@@ -25,7 +25,7 @@ impl<T> VMType for Reference<T>
 {
     type Type = Reference<T::Type>;
 
-    fn make_type(vm: &VM) -> TcType {
+    fn make_type(vm: &Thread) -> TcType {
         let env = vm.get_env();
         let symbol = env.find_type_info("Ref").unwrap().name.clone();
         let ctor = Type::id(symbol);
@@ -37,7 +37,7 @@ impl<'vm, T> Pushable<'vm> for Reference<T>
     where T: Any + VMType,
           T::Type: Sized
 {
-    fn push<'b>(self, vm: &'vm VM, stack: &mut StackFrame<'b>) -> Status {
+    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         stack.push(Value::Userdata(Userdata_::new(vm, self)));
         Status::Ok
     }
@@ -46,7 +46,7 @@ impl<'vm, T> Pushable<'vm> for Reference<T>
 impl<'vm, T> Getable<'vm> for Reference<T>
     where T: Any + VMType
 {
-    fn from_value(_: &'vm VM, value: Value) -> Option<Reference<T>> {
+    fn from_value(_: &'vm Thread, value: Value) -> Option<Reference<T>> {
         match value {
             Value::Userdata(v) => {
                 v.data.downcast_ref::<Self>().map(|x| Reference(x.0.clone(), x.1))
@@ -75,7 +75,7 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
     f
 }
 
-pub fn load(vm: &VM) -> ::vm::Result<()> {
+pub fn load(vm: &Thread) -> ::vm::Result<()> {
     let args = vec![types::Generic {
                         id: Symbol::new("a"),
                         kind: types::Kind::star(),

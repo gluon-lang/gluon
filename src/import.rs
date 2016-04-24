@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use base::ast;
 use base::symbol::Symbol;
-use vm::vm::VM;
+use vm::vm::Thread;
 use super::{filename_to_module, Compiler};
 use base::macros::{Macro, Error as MacroError};
 use base::types::TcIdent;
@@ -72,9 +72,9 @@ impl Import {
     }
 }
 
-impl Macro<VM> for Import {
+impl Macro<Thread> for Import {
     fn expand(&self,
-              vm: &VM,
+              vm: &Thread,
               arguments: &mut [ast::LExpr<TcIdent>])
               -> Result<ast::LExpr<TcIdent>, MacroError> {
         if arguments.len() != 1 {

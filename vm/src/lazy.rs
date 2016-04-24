@@ -5,7 +5,7 @@ use gc::{Gc, Traverseable};
 use std::cell::Cell;
 use api::{VMType, Pushable};
 use api::generic::A;
-use vm::{Userdata_, Status, Value, VM, Result};
+use vm::{Userdata_, Status, Value, Thread, Result};
 
 
 #[derive(Clone, PartialEq)]
@@ -37,7 +37,7 @@ impl<T> VMType for Lazy<T>
 {
     type Type = Lazy<T::Type>;
 
-    fn make_type(vm: &VM) -> TcType {
+    fn make_type(vm: &Thread) -> TcType {
         let env = vm.get_env();
         let symbol = env.find_type_info("Lazy").unwrap().name.clone();
         let ctor = Type::id(symbol);
@@ -45,7 +45,7 @@ impl<T> VMType for Lazy<T>
     }
 }
 
-fn force(vm: &VM) -> Status {
+fn force(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     match stack[0] {
         Value::Userdata(lazy) => {
@@ -89,7 +89,7 @@ fn force(vm: &VM) -> Status {
     }
 }
 
-fn lazy(vm: &VM) -> Status {
+fn lazy(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     let f = stack[0];
     let lazy = Userdata_::new(vm,
@@ -101,7 +101,7 @@ fn lazy(vm: &VM) -> Status {
     Status::Ok
 }
 
-pub fn load(vm: &VM) -> Result<()> {
+pub fn load(vm: &Thread) -> Result<()> {
     use api::primitive;
     try!(vm.define_global("lazy",
                           primitive::<fn(fn(()) -> A) -> Lazy<A>>("lazy", ::lazy::lazy)));
