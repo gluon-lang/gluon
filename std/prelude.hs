@@ -24,16 +24,16 @@ let monoid_Function m: Monoid b -> (Monoid (a -> b)) = {
 
 let monoid_List =
     let (<>) xs ys =
-        case xs of
+        match xs with
             | Cons x zs -> Cons x (zs <> ys)
             | Nil -> ys
     { (<>), empty = Nil }
 
 let monoid_Option m: Monoid a -> Monoid (Option a) = {
     (<>) = \l r ->
-        case l of
+        match l with
             | Some x ->
-                (case r of
+                (match r with
                     | Some y -> Some (m.(<>) x y)
                     | None -> l)
             | None -> r,
@@ -72,19 +72,19 @@ let flip f = \x y -> f y x
 let not x = if x then False else True
 
 let concatMap f xs: (a -> List b) -> List a -> List b =
-    case xs of
+    match xs with
         | Cons x ys -> monoid_List.(<>) (f x) (concatMap f ys)
         | Nil -> Nil
 
 /// Folds a lift from the left
 let foldl f x xs =
-    case xs of
+    match xs with
         | Cons y ys -> foldl f (f x y) ys
         | Nil -> x
 
 /// Folds a lift from the right
 let foldr f x xs =
-    case xs of
+    match xs with
         | Cons y ys -> f y (foldr f x ys)
         | Nil -> x
 
@@ -111,46 +111,46 @@ let eq_Float = {
 
 let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
     (==) = \l r ->
-        case l of
+        match l with
             | Some l_val ->
-                (case r of
+                (match r with
                     | Some r_val -> eq_a.(==) l_val r_val
                     | None -> False)
             | None -> 
-                (case r of
+                (match r with
                     | Some _ -> False
                     | None -> True)
 }
 
 let eq_Result: Eq e -> Eq t -> Eq (Result e t) = \eq_e eq_t -> {
     (==) = \l r ->
-        case l of
+        match l with
             | Ok l_val ->
-                (case r of
+                (match r with
                     | Ok r_val -> eq_t.(==) l_val r_val
                     | Err _ -> False)
             | Err l_val -> 
-                (case r of
+                (match r with
                     | Ok _ -> False
                     | Err r_val -> eq_e.(==) l_val r_val)
 }
 
 let eq_List: Eq a -> Eq (List a) = \d ->
     let (==) l r =
-        case l of
+        match l with
             | Nil ->
-                case r of
+                match r with
                     | Nil -> True
                     | Cons x y -> False
             | Cons x xs ->
-                case r of
+                match r with
                     | Nil -> False
                     | Cons y ys -> d.(==) x y && xs == ys
     { (==) }
 
 let monoid_Ordering = {
     (<>) = \x y ->
-        case x of
+        match x with
             | EQ -> y
             | _ -> x,
     empty = EQ
@@ -195,51 +195,51 @@ let ord_Float = {
 }
 let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
     compare = \l r ->
-        case l of
+        match l with
             | Some l_val ->
-                (case r of
+                (match r with
                     | Some r_val -> compare_a.compare l_val r_val
                     | None -> LT)
             | None -> 
-                (case r of
+                (match r with
                     | Some r_val -> GT
                     | None -> EQ)
 }
 
 let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_e ord_t -> {
     compare = \l r ->
-        case l of
+        match l with
             | Ok l_val ->
-                (case r of
+                (match r with
                     | Ok r_val -> ord_t.compare l_val r_val
                     | Err _ -> GT)
             | Err l_val -> 
-                (case r of
+                (match r with
                     | Ok _ -> LT
                     | Err r_val -> ord_e.compare l_val r_val)
 }
 
-/// Creates the `<=`, `<`, `>` and `=>` operators from an instance of `Ord`
+/// Creates the `<=`, `<`, `>` and `=>` operators from an instance with `Ord`
 let make_Ord ord =
     let compare = ord.compare
     {
         (<=) = \l r ->
-            case compare l r of
+            match compare l r with
                 | LT -> True
                 | EQ -> True
                 | GT -> False,
         (<) = \l r ->
-            case compare l r of
+            match compare l r with
                 | LT -> True
                 | EQ -> False
                 | GT -> False,
         (>) = \l r ->
-            case compare l r of
+            match compare l r with
                 | LT -> False
                 | EQ -> False
                 | GT -> True,
         (=>) = \l r ->
-            case compare l r of
+            match compare l r with
                 | LT -> False
                 | EQ -> True
                 | GT -> True
@@ -274,7 +274,7 @@ let num_Float: Num Float = {
 }
 
 /**
-A `Functor` represents an action on a parameterized type which does not change the structure of
+A `Functor` represents an action on a parameterized type which does not change the structure with
 the mapped type.
 */
 type Functor f = {
@@ -282,19 +282,19 @@ type Functor f = {
 }
 
 let functor_Option: Functor Option = {
-    map = \f x -> case x of
+    map = \f x -> match x with
                     | Some y -> Some (f y)
                     | None -> None
 }
 
 let functor_Result: Functor (Result e) = {
-    map = \f x -> case x of
+    map = \f x -> match x with
                     | Ok y -> Ok (f y)
                     | Err _ -> x
 }
 let functor_List: Functor List =
     let map f xs =
-        case xs of
+        match xs with
             | Cons y ys -> Cons (f y) (map f ys)
             | Nil -> Nil
     { map }
@@ -305,9 +305,9 @@ type Applicative f = {
 }
 
 let applicative_Option: Applicative Option = {
-    (<*>) = \f x -> case f of
+    (<*>) = \f x -> match f with
                         | Some g ->
-                            (case x of
+                            (match x with
                                 | Some y -> Some (g y)
                                 | None -> None)
                         | None -> None,
@@ -315,9 +315,9 @@ let applicative_Option: Applicative Option = {
 }
 
 let applicative_Result: Applicative (Result e) = {
-    (<*>) = \f x -> case f of
+    (<*>) = \f x -> match f with
                         | Ok g ->
-                            (case x of
+                            (match x with
                                 | Ok y -> Ok (g y)
                                 | Err _ -> x)
                         | Err x -> Err x,
@@ -326,7 +326,7 @@ let applicative_Result: Applicative (Result e) = {
 
 let applicative_List: Applicative List =
     let (<*>) f xs =
-            case f of
+            match f with
                 | Cons g gs ->
                     monoid_List.(<>) (functor_List.map g xs) (gs <*> xs)
                 | Nil -> Nil
@@ -340,7 +340,7 @@ type Alternative f = {
 
 let alternative_Option: Alternative Option = {
     (<|>) = \x y ->
-        case x of
+        match x with
             | Some _ -> x
             | None -> y,
     empty = None
@@ -375,7 +375,7 @@ type Monad m = {
 }
 
 let monad_Option: Monad Option = {
-    (>>=) = \m f -> case m of
+    (>>=) = \m f -> match m with
                         | Some x -> f x
                         | None -> None,
     return = \x -> Some x
@@ -395,7 +395,7 @@ let make_Monad m =
     let { (>>=), return } = m
     let (>>) l r = l >>= \_ -> r
     let forM_ xs f =
-        case xs of
+        match xs with
             | Cons y ys ->
                 f y >> forM_ ys f
             | Nil -> return ()
@@ -445,9 +445,9 @@ let (++) = string_prim.append
 let show_List: Show a -> Show (List a) = \d ->
     let show xs =
         let show2 ys =
-            case ys of
+            match ys with
                 | Cons y ys2 ->
-                    case ys2 of
+                    match ys2 with
                         | Cons z zs -> d.show y ++ ", " ++ show2 ys2
                         | Nil -> d.show y ++ "]"
                 | Nil -> "]"
@@ -456,14 +456,14 @@ let show_List: Show a -> Show (List a) = \d ->
 
 let show_Option: Show a -> Show (Option a) = \d ->
     let show o =
-        case o of
+        match o with
             | Some x -> "Some (" ++ d.show x ++ ")"
             | None -> "None"
     { show }
 
 let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     let show o =
-        case o of
+        match o with
             | Ok x -> "Ok (" ++ t.show x ++ ")"
             | Err x -> "Err (" ++ e.show x ++ ")"
     { show }

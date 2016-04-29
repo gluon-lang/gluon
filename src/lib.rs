@@ -19,7 +19,7 @@
 //!         else n * factorial (n - 1)
 //!
 //! // `type` is used to declare a new type.
-//! // In this case we declare `Countable` to be a record with a single field (count) which is a
+//! // In this match we declare `Countable` to be a record with a single field (count) which is a
 //! // function taking a single arguemnt and returning an integer
 //! type Countable a = { count: a -> Int }
 //!
@@ -30,14 +30,14 @@
 //!     // Declare a new type which only exists in the current scope
 //!     type List a = | Cons a (List a) | Nil
 //!     let map f xs =
-//!             case xs of
+//!             match xs with
 //!                 | Cons y ys -> Cons (f y) (map f ys)
 //!                 | Nil -> Nil
-//!     // Define a count instance over lists which counts each of the elements and sums
+//!     // Define a count instance over lists which counts each with the elements and sums
 //!     // the results
 //!     let countable_List c: Countable a -> Countable (List a) =
 //!         let count xs =
-//!             case xs of
+//!             match xs with
 //!             | Cons y ys -> c.count y + count ys
 //!             | Nil -> 0
 //!         { count }

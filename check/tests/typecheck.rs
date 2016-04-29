@@ -274,7 +274,7 @@ fn case_constructor() {
     let _ = ::env_logger::init();
     let text = r"
 type Option a = | None | Some a
-in case Some 1 of
+in match Some 1 with
     | Some x -> x
     | None -> 2
 ";
@@ -307,7 +307,7 @@ type Functor f = {
 } in
 type Option a = | None | Some a in
 let option_Functor: Functor Option = {
-    map = \f x -> case x of
+    map = \f x -> match x with
                     | Some y -> Some (f y)
                     | None -> None
 }
@@ -330,7 +330,7 @@ type Test a = | T a
 
 let monad_Test: Monad Test = {
     (>>=) = \ta f ->
-        case ta of
+        match ta with
             | T a -> f a,
     return = \x -> T x
 }
@@ -350,7 +350,7 @@ test
 fn record_missing_field() {
     let _ = ::env_logger::init();
     let text = r"
-case { x = 1 } of
+match { x = 1 } with
 | { x, y } -> 1
 ";
     let result = typecheck(text);
@@ -416,7 +416,7 @@ let make_Ord ord =
     let compare = ord.compare
     in {
         (<=) = \l r ->
-            case compare l r of
+            match compare l r with
                 | LT -> True
                 | EQ -> True
                 | GT -> False
@@ -513,7 +513,7 @@ let test =
     type Test = { x: Int }
     in let y: Test = { x = 0 }
     in y
-in case test of
+in match test with
     | { x } -> x
 "#;
     let result = typecheck(text);
@@ -749,7 +749,7 @@ type SortedList a = | Cons a (SortedList a)
 in \(<) ->
     let empty = Nil
     let insert x xs =
-        case xs of
+        match xs with
         | Nil -> Cons x Nil
         | Cons y ys -> if x < y
                        then Cons x xs

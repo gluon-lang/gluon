@@ -13,13 +13,13 @@ let { (<>), empty } = monoid
 
 let load_file filename: String -> IO String =
     let last_slash =
-        case string.rfind filename "/" of
+        match string.rfind filename "/" with
             | None -> 0
             | Some i -> i + 1
     let modulename = string.slice filename last_slash (string.length filename - 3)
     let read_result = io.catch (io.read_file filename >>= \x -> return (Ok x)) (\err -> return (Err err))
     read_result >>= \result ->
-        case result of
+        match result with
             | Ok expr -> io.load_script modulename expr
             | Err msg -> return msg
 
@@ -28,9 +28,9 @@ type Cmd = { info: String, action: String -> IO Bool }
 let commands: Map String Cmd
     =  singleton "q" { info = "Quit the REPL", action = \_ -> return False }
         <> singleton "t" {
-            info = "Prints the type of an expression",
+            info = "Prints the type with an expression",
             action = \arg -> repl_prim.type_of_expr arg >>= \result ->
-                case result of
+                match result with
                 | Ok x -> io.print x
                 | Err x -> io.print x
                 >> return True
@@ -38,15 +38,15 @@ let commands: Map String Cmd
         <> singleton "i" {
             info = "Prints information about the given name",
             action = \arg -> repl_prim.find_info arg >>= \result ->
-                case result of
+                match result with
                 | Ok x -> io.print x
                 | Err x -> io.print x
                 >> return True
         }
         <> singleton "k" {
-            info = "Prints the kind of the given type",
+            info = "Prints the kind with the given type",
             action = \arg -> repl_prim.find_kind arg >>= \result ->
-                case result of
+                match result with
                 | Ok x -> io.print x
                 | Err x -> io.print x
                 >> return True
@@ -75,13 +75,13 @@ let commands = insert "h" help commands
 let do_command line: String -> IO Bool = 
     let cmd = string.slice line 1 2
     let arg = string.trim (string.slice line 3 (string.length line))
-    case find cmd commands of
+    match find cmd commands with
         | Some command -> command.action arg
         | None -> io.print ("Unknown command '"  ++ cmd ++ "'") >> return True
 
 let store line: String -> IO Bool =
     let line = string.trim line
-    case string.find line " " of
+    match string.find line " " with
         | Some bind_end -> 
             let binding = string.slice line 0 bind_end
             let expr = string.slice line bind_end (string.length line)

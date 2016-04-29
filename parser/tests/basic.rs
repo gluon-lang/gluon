@@ -286,7 +286,7 @@ fn variant_type() {
 fn case_expr() {
     let _ = ::env_logger::init();
     let text = r#"
-case None of
+match None with
     | Some x -> x
     | None -> 0"#;
     let e = parse(text);
@@ -315,7 +315,7 @@ fn operator_expr() {
 #[test]
 fn record_pattern() {
     let _ = ::env_logger::init();
-    let e = parse_new("case x of | { y, x = z } -> z");
+    let e = parse_new("match x with | { y, x = z } -> z");
     let pattern = Pattern::Record {
         id: String::new(),
         types: Vec::new(),
@@ -399,7 +399,7 @@ fn span() {
                });
 
     let e = parse_new(r#"
-case False of
+match False with
     | True -> "asd"
     | False -> ""
 "#);

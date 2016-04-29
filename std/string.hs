@@ -7,11 +7,11 @@ and monoid = {
 }
 in
 let starts_with haystack needle =
-    case string_prim.find haystack needle of
+    match string_prim.find haystack needle with
         | Some i -> i == 0
         | None -> False
 and ends_with haystack needle =
-    case string_prim.rfind haystack needle of
+    match string_prim.rfind haystack needle with
         | Some i -> i == string_prim.length haystack - string_prim.length needle
         | None -> False
 in

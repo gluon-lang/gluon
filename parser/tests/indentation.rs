@@ -112,7 +112,7 @@ fn record_unindented_fields() {
     let text = r#"
 let monad_Test: Monad Test = {
     (>>=) = \ta f ->
-        case ta of
+        match ta with
             | T a -> f a,
     return = \x -> T x
 }
@@ -128,7 +128,7 @@ fn to_much_unindented_case_of() {
     let _ = ::env_logger::init();
     let text = r#"
 let test x =
-    case x of
+    match x with
   | Some y -> y
   | None -> 0
 in test
@@ -138,12 +138,12 @@ in test
 }
 
 #[test]
-fn case_of_alignment() {
+fn match_with_alignment() {
     let _ = ::env_logger::init();
     let text = r#"
-case x of
+match x with
     | Some y ->
-        case x of
+        match x with
             | Some y2 -> y2
             | None -> 0
     | None -> 0

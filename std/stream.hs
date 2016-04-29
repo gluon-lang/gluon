@@ -10,22 +10,22 @@ in
 let from f: (Int -> Option a) -> Stream a =
         let from_ i =
                 lazy (\_ ->
-                    case f i of
+                    match f i with
                         | Some x -> Value x (from_ (i + 1))
                         | None -> Empty
                 )
         in from_ 0
 in
 let next stream: Stream a -> Option a =
-    case force stream of
+    match force stream with
         | Value x _ -> Some x
         | Empty -> None
 and is_empty stream: Stream a -> Bool =
-    case force stream of
+    match force stream with
         | Value _ _ -> False
         | Empty -> True
 and fold f b stream: (a -> b -> b) -> b -> Stream a -> b =
-    case force stream of
+    match force stream with
         | Value x xs -> fold f (f x b) xs
         | Empty -> b
 in

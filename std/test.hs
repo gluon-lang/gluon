@@ -28,7 +28,7 @@ and assert_feq = assert_eq prelude.show_Float prelude.eq_Float
 and assert_seq = assert_eq string.show string.eq
 in
 let run test: Test a -> () =
-        case test.writer of
+        match test.writer with
             | Cons _ _ -> error (prelude.foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
             | Nil -> ()
 in { Test, monad, assert, assert_eq, assert_ieq, assert_feq, assert_seq, run }

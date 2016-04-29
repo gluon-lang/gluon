@@ -569,7 +569,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                               expression: e,
                           }
                       });
-        (token(Token::Case), self.expr(), token(Token::Of), many1(alt))
+        (token(Token::Match), self.expr(), token(Token::With), many1(alt))
             .map(|(_, e, _, alts)| Expr::Match(Box::new(e), alts))
             .parse_state(input)
     }

@@ -271,7 +271,7 @@ Int(1)
 test_expr!{ match_on_zero_argument_variant,
 r#"
 type Test = | A Int | B
-case B of
+match B with
 | A x -> x
 | B -> 0
 "#,
@@ -294,7 +294,7 @@ Int(0)
 
 test_expr!{ prelude match_on_bool,
 r#"
-case True of
+match True with
 | False -> 10
 | True -> 11
 "#,
@@ -306,7 +306,7 @@ fn non_exhaustive_pattern() {
     let _ = ::env_logger::init();
     let text = r"
 type AB = | A | B in
-case A of
+match A with
 | B -> True
 ";
     let mut vm = make_vm();
@@ -316,7 +316,7 @@ case A of
 
 test_expr!{ record_pattern,
 r#"
-case { x = 1, y = "abc" } of
+match { x = 1, y = "abc" } with
 | { x, y = z } -> x #Int+ string_prim.length z
 "#,
 Int(4)
@@ -338,7 +338,7 @@ test_expr!{ partial_record_pattern,
 r#"
 type A = { x: Int, y: Float } in
 let x = { x = 1, y = 2.0 }
-in case x of
+in match x with
 | { y } -> y
 "#,
 Float(2.0)
@@ -413,7 +413,7 @@ test_expr!{ slide_down_case_alternative,
 r#"
 type Test = | Test Int
 let id x = x
-id (case Test 0 of
+id (match Test 0 with
     | Test x -> 1)
 "#,
 Int(1)
