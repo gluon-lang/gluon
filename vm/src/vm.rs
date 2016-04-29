@@ -26,8 +26,7 @@ pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable {}
 
-impl<T> Userdata for T where T: Any + Traverseable
-{}
+impl<T> Userdata for T where T: Any + Traverseable {}
 
 impl fmt::Debug for Userdata {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

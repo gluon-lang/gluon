@@ -206,7 +206,7 @@ impl Symbols {
     pub fn symbol<N>(&mut self, name: N) -> Symbol
         where N: Into<NameBuf> + AsRef<Name>
     {
-        if let Some(symbol) =self.indexes.get(name.as_ref()) {
+        if let Some(symbol) = self.indexes.get(name.as_ref()) {
             return symbol.clone();
         }
         self.make_symbol(name.into())

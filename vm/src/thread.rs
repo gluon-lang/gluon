@@ -16,8 +16,8 @@ use compiler::CompiledFunction;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use stack::{Stack, StackFrame, State};
 use types::*;
-use vm::{Error, Result, GlobalVMState, Value, VMInt, ClosureData, ClosureDataDef, Def, ExternFunction,
-         BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
+use vm::{Error, Result, GlobalVMState, Value, VMInt, ClosureData, ClosureDataDef, Def,
+         ExternFunction, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use vm::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 

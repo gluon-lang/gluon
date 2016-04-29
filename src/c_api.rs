@@ -24,7 +24,12 @@ pub unsafe extern "C" fn free_vm(vm: &Thread) {
     RootedThread::from_raw(vm);
 }
 
-pub unsafe extern "C" fn run_expr(vm: &Thread, module: &u8, module_len: usize, expr: &u8, expr_len: usize) -> Error {
+pub unsafe extern "C" fn run_expr(vm: &Thread,
+                                  module: &u8,
+                                  module_len: usize,
+                                  expr: &u8,
+                                  expr_len: usize)
+                                  -> Error {
     let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -33,15 +38,19 @@ pub unsafe extern "C" fn run_expr(vm: &Thread, module: &u8, module_len: usize, e
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new()
-        .run_expr(&vm, module, expr);
+    let result = Compiler::new().run_expr(&vm, module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,
     }
 }
 
-pub unsafe extern "C" fn load_script(vm: &Thread, module: &u8, module_len: usize, expr: &u8, expr_len: usize) -> Error {
+pub unsafe extern "C" fn load_script(vm: &Thread,
+                                     module: &u8,
+                                     module_len: usize,
+                                     expr: &u8,
+                                     expr_len: usize)
+                                     -> Error {
     let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -50,8 +59,7 @@ pub unsafe extern "C" fn load_script(vm: &Thread, module: &u8, module_len: usize
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new()
-        .load_script(vm, module, expr);
+    let result = Compiler::new().load_script(vm, module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,
@@ -93,7 +101,11 @@ pub unsafe extern "C" fn get_float(vm: &Thread, index: VMIndex, out: &mut f64) -
 
 /// The returned string is garbage collected and may not be valid after the string is removed from
 /// its slot in the stack
-pub unsafe extern "C" fn get_string(vm: &Thread, index: VMIndex, out: &mut &u8, out_len: &mut usize) -> Error {
+pub unsafe extern "C" fn get_string(vm: &Thread,
+                                    index: VMIndex,
+                                    out: &mut &u8,
+                                    out_len: &mut usize)
+                                    -> Error {
     match <&str>::from_value(vm, vm.current_frame()[index]) {
         Some(value) => {
             *out = &*value.as_ptr();

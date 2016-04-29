@@ -341,8 +341,7 @@ impl<S> unify::Unifiable<S> for RcKind {
         where U: unify::Unifier<S, Self>
     {
         match (&**unifier.subs.real(self), &**unifier.subs.real(other)) {
-            (&Kind::Function(ref l1, ref l2),
-             &Kind::Function(ref r1, ref r2)) => {
+            (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
                 let a = unifier.try_match(l1, r1);
                 let r = unifier.try_match(l2, r2);
                 Ok(merge(l1, a, l2, r, Kind::function))

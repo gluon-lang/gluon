@@ -74,18 +74,8 @@ impl Instruction {
             CloseClosure(_) => -1,
             PushUpVar(_) => 1,
             GetIndex => 0,
-            AddInt |
-            SubtractInt |
-            MultiplyInt |
-            DivideInt |
-            IntLT |
-            IntEQ |
-            AddFloat |
-            SubtractFloat |
-            MultiplyFloat |
-            DivideFloat |
-            FloatLT |
-            FloatEQ => -1,
+            AddInt | SubtractInt | MultiplyInt | DivideInt | IntLT | IntEQ | AddFloat |
+            SubtractFloat | MultiplyFloat | DivideFloat | FloatLT | FloatEQ => -1,
         }
     }
 }

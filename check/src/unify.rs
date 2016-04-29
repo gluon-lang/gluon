@@ -63,7 +63,8 @@ pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
     fn zip_match<U>(&self,
                     other: &Self,
                     unifier: UnifierState<S, Self, U>)
-                    -> Result<Option<Self>, Error<Self, Self::Error>> where U: Unifier<S, Self>;
+                    -> Result<Option<Self>, Error<Self, Self::Error>>
+        where U: Unifier<S, Self>;
 }
 
 /// Unify `l` and `r` taking into account and updating the substitution `subs`

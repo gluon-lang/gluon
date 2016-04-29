@@ -83,7 +83,8 @@ impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
     }
 }
 
-impl<T> IdentEnv for EmptyEnv<T> where T: AsRef<str> + for<'a> From<&'a str>
+impl<T> IdentEnv for EmptyEnv<T>
+    where T: AsRef<str> + for<'a> From<&'a str>
 {
     fn from_str(&mut self, s: &str) -> Self::Ident {
         T::from(s)
@@ -116,7 +117,8 @@ impl<Id> TcIdent<Id> {
     }
 }
 
-impl<Id> AsRef<str> for TcIdent<Id> where Id: AsRef<str>
+impl<Id> AsRef<str> for TcIdent<Id>
+    where Id: AsRef<str>
 {
     fn as_ref(&self) -> &str {
         self.name.as_ref()
@@ -128,7 +130,8 @@ pub struct TcIdentEnv<Id, Env> {
     pub env: Env,
 }
 
-impl<Id> AstId for TcIdent<Id> where Id: Clone + PartialEq + Eq + fmt::Debug + AstId
+impl<Id> AstId for TcIdent<Id>
+    where Id: Clone + PartialEq + Eq + fmt::Debug + AstId
 {
     type Untyped = Id;
 
@@ -141,7 +144,8 @@ impl<Id> AstId for TcIdent<Id> where Id: Clone + PartialEq + Eq + fmt::Debug + A
     }
 }
 
-impl<Id, Env> DisplayEnv for TcIdentEnv<Id, Env> where Env: DisplayEnv<Ident = Id>
+impl<Id, Env> DisplayEnv for TcIdentEnv<Id, Env>
+    where Env: DisplayEnv<Ident = Id>
 {
     type Ident = TcIdent<Id>;
 
@@ -328,7 +332,8 @@ pub struct Binding<Id: AstId> {
     pub expression: LExpr<Id>,
 }
 
-impl<Id> LExpr<Id> where Id: AstId
+impl<Id> LExpr<Id>
+    where Id: AstId
 {
     /// Returns the an approximation of the span of the expression
     pub fn span(&self, env: &DisplayEnv<Ident = Id>) -> Span {
@@ -357,7 +362,8 @@ impl<Id> LExpr<Id> where Id: AstId
                     .map_or(self.location, |alt| alt.expression.span(env).end)
             }
             BinOp(_, _, ref r) => r.span(env).end,
-            Let(_, ref expr) | Type(_, ref expr) => expr.span(env).end,
+            Let(_, ref expr) |
+            Type(_, ref expr) => expr.span(env).end,
             FieldAccess(ref expr, ref id) => {
                 let base = expr.span(env).end;
                 base.line_offset(1 + env.string(id).len() as i32)
@@ -503,12 +509,14 @@ impl<Id: Clone> Typed for TcIdent<Id> {
         self.typ.clone()
     }
 }
-impl<Id> Typed for Expr<Id> where Id: Typed<Id = Symbol> + AstId<Untyped = Symbol>
+impl<Id> Typed for Expr<Id>
+    where Id: Typed<Id = Symbol> + AstId<Untyped = Symbol>
 {
     type Id = Id::Id;
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         match *self {
-            Expr::Identifier(ref id) | Expr::FieldAccess(_, ref id) => id.env_type_of(env),
+            Expr::Identifier(ref id) |
+            Expr::FieldAccess(_, ref id) => id.env_type_of(env),
             Expr::Literal(ref lit) => {
                 match *lit {
                     LiteralEnum::Integer(_) => Type::int(),
@@ -530,7 +538,8 @@ impl<Id> Typed for Expr<Id> where Id: Typed<Id = Symbol> + AstId<Untyped = Symbo
                 }
                 panic!("Expected function type in binop")
             }
-            Expr::Let(_, ref expr) | Expr::Type(_, ref expr) => expr.env_type_of(env),
+            Expr::Let(_, ref expr) |
+            Expr::Type(_, ref expr) => expr.env_type_of(env),
             Expr::Call(ref func, ref args) => {
                 get_return_type(env, func.env_type_of(env), args.len())
             }

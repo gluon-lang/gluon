@@ -43,7 +43,8 @@ impl<'vm, T> Pushable<'vm> for Reference<T>
     }
 }
 
-impl<'vm, T> Getable<'vm> for Reference<T> where T: Any + VMType
+impl<'vm, T> Getable<'vm> for Reference<T>
+    where T: Any + VMType
 {
     fn from_value(_: &'vm Thread, value: Value) -> Option<Reference<T>> {
         match value {

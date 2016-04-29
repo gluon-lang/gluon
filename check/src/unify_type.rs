@@ -113,8 +113,7 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
 {
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
     match (&**self_, &**other) {
-        (&Type::Function(ref l_args, ref l_ret),
-         &Type::Function(ref r_args, ref r_ret)) => {
+        (&Type::Function(ref l_args, ref l_ret), &Type::Function(ref r_args, ref r_ret)) => {
             if l_args.len() == r_args.len() {
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()),
                                            |l, r| unifier.try_match(l, r));
@@ -132,8 +131,7 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
             zip_function(&mut unifier, &l_args[0], l_ret, self_)
         }
         (&Type::Array(ref l), &Type::Array(ref r)) => Ok(unifier.try_match(l, r).map(Type::array)),
-        (&Type::Data(ref l, ref l_args),
-         &Type::Data(ref r, ref r_args)) => {
+        (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
             if l_args.len() == r_args.len() {
                 let ctor = unifier.try_match(l, r);
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()),
@@ -148,8 +146,8 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
             }
         }
         (&Type::Record { fields: ref l_args, types: ref l_types },
-         &Type::Record { fields: ref r_args, types: ref r_types })
-            if l_args.len() == r_args.len() && l_types == r_types => {
+         &Type::Record { fields: ref r_args, types: ref r_types }) if l_args.len() == r_args.len() &&
+                                                                     l_types == r_types => {
             let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
                 let opt_type = if !l.name.name_eq(&r.name) {
 

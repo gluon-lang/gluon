@@ -83,7 +83,7 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
     }
 }
 
-pub trait PrimitiveEnv : TypeEnv {
+pub trait PrimitiveEnv: TypeEnv {
     fn get_bool(&self) -> &TcType;
 }
 
@@ -129,7 +129,8 @@ pub enum Type<Id, T = ASTType<Id>> {
     Alias(Alias<Id, T>),
 }
 
-impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
+impl<Id, T> Type<Id, T>
+    where T: Deref<Target = Type<Id, T>>
 {
     pub fn is_uninitialized(&self) -> bool {
         match *self {
@@ -149,14 +150,8 @@ impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
             }
             Variable(ref var) => var.kind.clone(),
             Generic(ref gen) => gen.kind.clone(),
-            Data(_, _) |
-            Variants(..) |
-            Builtin(_) |
-            Function(_, _) |
-            Array(_) |
-            Record { .. } |
-            Type::Id(_) |
-            Type::Alias(_) => RcKind::new(Kind::Star),
+            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) |
+            Record { .. } | Type::Id(_) | Type::Alias(_) => RcKind::new(Kind::Star),
         }
     }
 }
@@ -353,7 +348,8 @@ pub struct Field<Id, T = ASTType<Id>> {
     pub typ: T,
 }
 
-impl<Id, T> Type<Id, T> where T: From<Type<Id, T>>
+impl<Id, T> Type<Id, T>
+    where T: From<Type<Id, T>>
 {
     pub fn app(l: T, r: T) -> T {
         T::from(Type::App(l, r))
@@ -429,7 +425,8 @@ impl<Id, T> Type<Id, T> where T: From<Type<Id, T>>
     }
 }
 
-impl<Id, T> Type<Id, T> where T: Deref<Target = Type<Id, T>>
+impl<Id, T> Type<Id, T>
+    where T: Deref<Target = Type<Id, T>>
 {
     pub fn as_alias(&self) -> Option<(&Id, &[T])> {
         match *self {
@@ -812,16 +809,9 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
         match *typ {
             Type::Data(ref id, ref args) => {
                 let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                merge(id,
-                      walk_move_type2(id, f),
-                      args,
-                      new_args,
-                      Type::data)
+                merge(id, walk_move_type2(id, f), args, new_args, Type::data)
             }
-            Type::Array(ref inner) => {
-                walk_move_type2(&**inner, f)
-                    .map(Type::array)
-            }
+            Type::Array(ref inner) => walk_move_type2(&**inner, f).map(Type::array),
             Type::Function(ref args, ref ret) => {
                 let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
                 merge(args, new_args, ret, walk_move_type2(ret, f), Type::Function).map(From::from)

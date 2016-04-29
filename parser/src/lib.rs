@@ -22,8 +22,8 @@ use base::symbol::{Name, Symbol, SymbolModule};
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream, SourcePosition};
 use combine::combinator::EnvParser;
-use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy,
-              sep_by, sep_by1, token, try, value, ParseError, ParseResult, Parser, ParserExt};
+use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy, sep_by,
+              sep_by1, token, try, value, ParseError, ParseResult, Parser, ParserExt};
 use combine_language::{Assoc, Fixity, expression_parser};
 
 use lexer::{Lexer, Delimiter, Token};
@@ -236,8 +236,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .map(|(mut arg, ret): (Vec<_>, _)| {
                 let arg = if arg.len() == 1 {
                     arg.pop().unwrap()
-                }
-                else {
+                } else {
                     let x = arg.remove(0);
                     Type::data(x, arg)
                 };

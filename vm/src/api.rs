@@ -144,7 +144,8 @@ impl<'vm, T: ?Sized + VMType> VMType for &'vm T {
     }
 }
 
-impl<'vm, T> Getable<'vm> for &'vm T where T: ::vm::Userdata
+impl<'vm, T> Getable<'vm> for &'vm T
+    where T: ::vm::Userdata
 {
     unsafe fn from_value_unsafe(vm: &'vm Thread, value: Value) -> Option<Self> {
         <*const T as Getable<'vm>>::from_value(vm, value).map(|p| &*p)
@@ -176,7 +177,8 @@ pub struct WithVM<'vm, T> {
     pub value: T,
 }
 
-impl<'vm, T> VMType for WithVM<'vm, T> where T: VMType
+impl<'vm, T> VMType for WithVM<'vm, T>
+    where T: VMType
 {
     type Type = T::Type;
 
@@ -189,14 +191,16 @@ impl<'vm, T> VMType for WithVM<'vm, T> where T: VMType
     }
 }
 
-impl<'vm, T> Pushable<'vm> for WithVM<'vm, T> where T: Pushable<'vm>
+impl<'vm, T> Pushable<'vm> for WithVM<'vm, T>
+    where T: Pushable<'vm>
 {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         self.value.push(vm, stack)
     }
 }
 
-impl<'vm, T> Getable<'vm> for WithVM<'vm, T> where T: Getable<'vm>
+impl<'vm, T> Getable<'vm> for WithVM<'vm, T>
+    where T: Getable<'vm>
 {
     fn from_value(vm: &'vm Thread, value: Value) -> Option<WithVM<'vm, T>> {
         T::from_value(vm, value).map(|t| WithVM { vm: vm, value: t })
@@ -498,7 +502,8 @@ impl<'vm, T: Any> Getable<'vm> for *mut T {
         }
     }
 }
-impl<T: VMType> VMType for Option<T> where T::Type: Sized
+impl<T: VMType> VMType for Option<T>
+    where T::Type: Sized
 {
     type Type = Option<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
@@ -506,7 +511,8 @@ impl<T: VMType> VMType for Option<T> where T::Type: Sized
         Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
 }
-impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> where T::Type: Sized
+impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
+    where T::Type: Sized
 {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         match self {
@@ -639,7 +645,8 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for IO<T> {
     }
 }
 
-impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> where T::Type: Sized
+impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T>
+    where T::Type: Sized
 {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         match self {
@@ -691,7 +698,8 @@ impl<'vm, T: Getable<'vm>> Array<'vm, T> {
     }
 }
 
-impl<'vm, T: VMType> VMType for Array<'vm, T> where T::Type: Sized
+impl<'vm, T: VMType> VMType for Array<'vm, T>
+    where T::Type: Sized
 {
     type Type = Array<'static, T::Type>;
     fn make_type(vm: &Thread) -> TcType {
@@ -700,7 +708,8 @@ impl<'vm, T: VMType> VMType for Array<'vm, T> where T::Type: Sized
 }
 
 
-impl<'vm, T: VMType> Pushable<'vm> for Array<'vm, T> where T::Type: Sized
+impl<'vm, T: VMType> Pushable<'vm> for Array<'vm, T>
+    where T::Type: Sized
 {
     fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         stack.push(*self.0);
@@ -836,7 +845,8 @@ pub mod record {
         fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, TcType>>) {}
     }
 
-    impl<F: Field, H: VMType, T> FieldList for HList<(F, H), T> where T: FieldList
+    impl<F: Field, H: VMType, T> FieldList for HList<(F, H), T>
+        where T: FieldList
 {
         fn len() -> VMIndex {
             1 + T::len()
@@ -869,7 +879,8 @@ pub mod record {
         }
     }
 
-    impl<A: VMType, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>> where A::Type: Sized
+    impl<A: VMType, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>>
+        where A::Type: Sized
 {
         type Type = Record<((&'static str, A::Type),)>;
         fn make_type(vm: &Thread) -> TcType {
@@ -997,7 +1008,8 @@ impl<'vm, F> Function<'vm, F> {
     }
 }
 
-impl<'vm, F> VMType for Function<'vm, F> where F: VMType
+impl<'vm, F> VMType for Function<'vm, F>
+    where F: VMType
 {
     type Type = F::Type;
     fn make_type(vm: &Thread) -> TcType {
@@ -1005,7 +1017,8 @@ impl<'vm, F> VMType for Function<'vm, F> where F: VMType
     }
 }
 
-impl<'vm, F: Any> Pushable<'vm> for Function<'vm, F> where F: VMType
+impl<'vm, F: Any> Pushable<'vm> for Function<'vm, F>
+    where F: VMType
 {
     fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         stack.push(*self.value);
@@ -1084,21 +1097,24 @@ impl<'s, T: FunctionType> FunctionType for &'s T {
     }
 }
 
-impl<'vm, 's, T: ?Sized> VMFunction<'vm> for &'s T where T: VMFunction<'vm>
+impl<'vm, 's, T: ?Sized> VMFunction<'vm> for &'s T
+    where T: VMFunction<'vm>
 {
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
         (**self).unpack_and_call(vm)
     }
 }
 
-impl<F> FunctionType for Box<F> where F: FunctionType
+impl<F> FunctionType for Box<F>
+    where F: FunctionType
 {
     fn arguments() -> VMIndex {
         F::arguments()
     }
 }
 
-impl<'vm, F: ?Sized> VMFunction<'vm> for Box<F> where F: VMFunction<'vm>
+impl<'vm, F: ?Sized> VMFunction<'vm> for Box<F>
+    where F: VMFunction<'vm>
 {
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
         (**self).unpack_and_call(vm)

@@ -48,7 +48,8 @@ impl<T> Receiver<T> {
     }
 }
 
-impl<T: VMType> VMType for Sender<T> where T::Type: Sized
+impl<T: VMType> VMType for Sender<T>
+    where T::Type: Sized
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
@@ -57,7 +58,8 @@ impl<T: VMType> VMType for Sender<T> where T::Type: Sized
     }
 }
 
-impl<T: VMType> VMType for Receiver<T> where T::Type: Sized
+impl<T: VMType> VMType for Receiver<T>
+    where T::Type: Sized
 {
     type Type = Receiver<T::Type>;
     fn make_type(vm: &Thread) -> TcType {

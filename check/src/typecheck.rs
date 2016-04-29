@@ -51,7 +51,8 @@ pub enum TypeError<I> {
     EmptyCase,
 }
 
-impl<I> From<kindcheck::Error<I>> for TypeError<I> where I: PartialEq + Clone
+impl<I> From<kindcheck::Error<I>> for TypeError<I>
+    where I: PartialEq + Clone
 {
     fn from(e: kindcheck::Error<I>) -> TypeError<I> {
         match e {
