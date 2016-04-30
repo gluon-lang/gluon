@@ -674,7 +674,13 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                     _ => (),
                 }
             }
-            Context::Expr | Context::MatchClause | Context::Lambda => {
+            Context::Lambda => {
+                if ordering != Ordering::Greater {
+                    lexer.indent_levels.pop();
+                    continue;
+                }
+            }
+            Context::Expr | Context::MatchClause => {
                 if ordering == Ordering::Less {
                     lexer.indent_levels.pop();
                     continue;

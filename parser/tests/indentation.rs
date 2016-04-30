@@ -169,3 +169,18 @@ f
     let result = parse(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn close_lambda_on_implicit_statement() {
+    let _ = ::env_logger::init();
+    let text = r#"
+\x -> x
+1
+"#;
+    let result = parse(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    match result.unwrap().value {
+        Expr::Block(ref exprs) if exprs.len() == 2 => (),
+        expr => assert!(false, "{:?}", expr),
+    }
+}
