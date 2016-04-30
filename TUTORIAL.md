@@ -19,9 +19,9 @@ io.print "Hello world"
 
 embed_lang is a functional language at heart, basing its syntax on languages such as F#, OCaml and Haskell.
 The syntax may thus look strange if you are coming from C-like languages but don't be discouraged!
-There is actually very little syntax to learn.................
-Something, something know functional syntax
+There is actually very little syntax to learn.
 
+If, on the other hand, you are familiar with functional languages you will be right at home. Roughly speaking, embed_lang takes the expression syntax from F# and OCaml but uses the type syntax of Haskell.
 
 ### Identifiers and Literals
 
@@ -122,14 +122,14 @@ To access the fields of a record `.` is used.
 
 ```f#,rust
 let record = { pi = 3.14, add1 = (+) 1.0 }
-record.pi // Returns 3.14
+in record.pi // Returns 3.14
 ```
 
 The assignment to a field can be omitted if there is a variable in scope with the same name as the field.
 
 ```f#,rust
 let id x = x
-{ id }
+in { id }
 ```
 
 ## Variants
@@ -227,8 +227,8 @@ If you have been following along this far you may be thinking think that syntax 
 When a token starts on the same line as a token on an earlier line, embed_lang implicitly adds inserts a block expression which allows multiple expressions and bindings to be run sequentially with all variables in scope.
 
 ```f#,rust
-let id x = x
-id 1 // `in` can be omitted since `id 1` starts on the same line as `let`
+let add1 x = x + 1
+add1 11 // `in` can be omitted since `id 1` starts on the same line as `let`
 ```
 
 ```f#
