@@ -778,3 +778,50 @@ in f "123"
         end: ast::Location { row: 3, column: 11, absolute: 0 },
     });
 }
+
+/// Test that overload resolution selects the closest implementation that matches even if another
+/// overload has a better match. If this wasn't the case it would be possible to get diffferent
+/// selection depending on the order that types are infered.
+#[test]
+fn overloaded_with_equal_aliases() {
+    use base::ast::*;
+    let _ = ::env_logger::init();
+    let text = r"
+type Test = Int
+let test x: Int -> Int = 1
+let test x: Test -> Test = 0
+test 1
+";
+    let (expr, result) = typecheck_expr(text);
+    assert!(result.is_ok());
+    let (bind, call) = match expr.value {
+        Expr::Type(_, ref body) => {
+            match body.value {
+                Expr::Let(_, ref body) => {
+                    match body.value {
+                        Expr::Let(ref binds, ref body) => {
+                            (&binds[0], body)
+                        }
+                        _ => panic!()
+                    }
+                }
+                _ => panic!()
+            }
+        }
+        _ => panic!()
+    };
+    let call_id = match call.value {
+        Expr::Call(ref f, _) => {
+            match f.value {
+                Expr::Identifier(ref id) => id,
+                _ => panic!(),
+            }
+        }
+        _ => panic!(),
+    };
+    let test_id = match *bind.name {
+        Pattern::Identifier(ref id) => id,
+        _ => panic!(),
+    };
+    assert_eq!(test_id.name, call_id.name);
+}
