@@ -3,7 +3,7 @@
 name = "embed_lang"
 version = "0.0.1"
 authors = ["Markus <marwes91@gmail.com>"]
-
+build = "build.rs"
 
 [lib]
 
@@ -37,6 +37,12 @@ optional = true
 [dependencies.env_logger]
 version = "0.3.3"
 optional = true
+
+[build-dependencies]
+skeptic = "0.4"
+
+[dev-dependencies]
+skeptic = "0.4"
 
 [features]
 test = ["vm/test", "check/test", "parser/test", "env_logger"]

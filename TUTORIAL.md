@@ -11,7 +11,7 @@ This tutorial aims the explain the basics of embed_lang's syntax and semantics.
 
 In traditional form we will begin with the classic hello world program.
 
-```f#
+```f#,rust
 io.print "Hello world"
 ```
 
@@ -60,16 +60,16 @@ separated by whitespace.
 
 Another way of calling a function is through infix notation since embed_lang implements all operators as just functions.
 
-```f#
+```f#,rust
 1 + 2 // Calls the + function on 1 and 2
 ```
-```f#
+```f#,rust
 (+) 1 2 // Parenthesizing an operator makes it possible to use in a normal function call
 ```
 
 It is important to note that function application binds harder than any binary operator.
 
-```f#
+```f#,rust
 (+) 0 1 - (+) 2 3 // Equivalent to (0 + 1) - (2 + 3)
 ```
 
@@ -78,7 +78,7 @@ It is important to note that function application binds harder than any binary o
 Any language more complex than Hello world is bound to require variable bindings which serve to bind some value to a name
 allowing it to be used later.
 
-```f#
+```f#,rust
 let x = 1 + 2 in x // Returns 3
 ```
 
@@ -88,7 +88,7 @@ what defines the actual value returned from the `let` expression.
 
 Let bindings also allow functions to be defined which is done by listing the arguments between the bound identifier and `=`
 
-```f#
+```f#,rust
 // Defines the `id` function which takes a single argument and returns it.
 let id x = x in id 1 // Returns 1
 ```
@@ -106,7 +106,7 @@ in f 1 // Never returns
 The simplest control flow expression is the `if` expression which evaluates a boolean expression and then takes the
 first branch if the boolean is evaluated to `True` and the second if it evaluates to `False`
 
-```f#
+```f#,rust
 if True then 1 else 0
 ```
 
@@ -114,20 +114,20 @@ if True then 1 else 0
 
 To create more complex data types embed_lang has first class records which can be used to group data which belong together easily.
 
-```f#
-{ pi = 3.14, add = (+) }
+```f#,rust
+{ pi = 3.14, add1 = (+) 1.0 }
 ```
 
 To access the fields of a record `.` is used.
 
-```f#
-let record = { pi = 3.14, add = (+) }
+```f#,rust
+let record = { pi = 3.14, add1 = (+) 1.0 }
 record.pi // Returns 3.14
 ```
 
 The assignment to a field can be omitted if there is a variable in scope with the same name as the field.
 
-```f#
+```f#,rust
 let id x = x
 { id }
 ```
@@ -136,8 +136,8 @@ let id x = x
 
 While records are great for grouping related data together there is often a need to have data which can be one of several variants. Unlike records, variants need to be defined before their use.
 
-```f#
-type Option a = | Some a | None
+```f#,rust
+type MyOption a = | Some a | None
 Some 1
 ```
 
@@ -145,7 +145,7 @@ Some 1
 
 To allow variants to be unpacked so that their contents can be retrieved embed_lang has the `case` expression.
 
-```f#
+```f#,rust
 match None with
 | Some x -> x
 | None -> 0
@@ -155,14 +155,14 @@ Here we write out a pattern for each of the variant's constructors and the value
 
 `case` expressions can also be used to unpack records.
 
-```f#
+```f#,rust
 match { x = 1.0, pi = 3.14 } with
 | { x = y, pi } -> y + pi
 ```
 
 `let` bindings can also unpack records letting the expression above be written as.
 
-```f#
+```f#,rust
 let { x = y, pi } = { x = 1.0, pi = 3.14 }
 in y + pi
 ```
@@ -171,16 +171,16 @@ in y + pi
 
 embed_lang allows new types to be defined through the `type` expression.
 
-```f#
+```f#,rust
 // type <identifier> <identifier>* = <type> in <expression>
-type Option a = | None | Some a
+type MyOption a = | None | Some a
 in 0
 ```
 
 `type` requires `in <expression>` just like `let` to ensure that that a value is returned. Mutually recursive types can
 be defined by writing `and` between each definition.
 
-```f#
+```f#,rust
 type SExpr_ = | Atom String | Cons SExpr SExpr
 and SExpr = { location: Int, expr: SExpr_ }
 in Atom "name"
@@ -226,7 +226,7 @@ If you have been following along this far you may be thinking think that syntax 
 
 When a token starts on the same line as a token on an earlier line, embed_lang implicitly adds inserts a block expression which allows multiple expressions and bindings to be run sequentially with all variables in scope.
 
-```f#
+```f#,rust
 let id x = x
 id 1 // `in` can be omitted since `id 1` starts on the same line as `let`
 ```
@@ -242,16 +242,16 @@ match x with
 
 Indented blocks can can be used to limit the scope of some variables.
 
-```f#
+```f#,rust
 let module =
     let id x = x
     type MyInt = Int
     { MyInt, id, pi = 3.14 }
 
 module.id module.pi
-
-// The above is equivalent to
-
+```
+Which is equivalent to:
+```f#,rust
 let module =
     let id x = x
     in { id, pi = 3.14 }
@@ -263,7 +263,7 @@ module.id module.pi
 
 While we have seen that functions can be defined in let expressions it is often valuable to define a function without giving it an explicit name.
 
-```f#
+```f#,rust
 // \(<identifier)* -> <expr>
 \x y -> x + y - 10
 // Equivalent to
@@ -276,7 +276,7 @@ As is often the case it is convenient to separate code into multiple files which
 
 So say that we need the `assert` function from the `test` module which can be found at `std/test.hs`. Then we might write something like this.
 
-```f#
+```f#,rust
 let { assert } = import "std/test.hs"
 assert (1 == 1)
 ```

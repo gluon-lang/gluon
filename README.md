@@ -30,13 +30,13 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 
 ## Hello world
 
-```f#
+```f#,rust
 io.print "Hello world!"
 ```
 
 ## Factorial
 
-```f#
+```f#,rust
 let factorial n : Int -> Int =
     if n < 2
     then 1
@@ -49,7 +49,7 @@ factorial 10
 
 Larger example which display most if not all of the syntactical elements in the language.
 
-```f#
+```f#,rust
 // `let` declares new variables.
 let id x = x
 
@@ -70,14 +70,14 @@ let list_module =
     // Declare a new type which only exists in the current scope
     type List a = | Cons a (List a) | Nil
     let map f xs =
-            case xs of
+            match xs with
                 | Cons y ys -> Cons (f y) (map f ys)
                 | Nil -> Nil
     // Define a count instance over lists which counts each of the elements and sums
     // the results
     let countable_List c: Countable a -> Countable (List a) =
         let count xs =
-            case xs of
+            match xs with
             | Cons y ys -> c.count y + count ys
             | Nil -> 0
         { count }
