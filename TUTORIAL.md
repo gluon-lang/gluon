@@ -146,7 +146,7 @@ Some 1
 To allow variants to be unpacked so that their contents can be retrieved embed_lang has the `case` expression.
 
 ```f#
-case None of
+match None with
 | Some x -> x
 | None -> 0
 ```
@@ -156,7 +156,7 @@ Here we write out a pattern for each of the variant's constructors and the value
 `case` expressions can also be used to unpack records.
 
 ```f#
-case { x = 1.0, pi = 3.14 } of
+match { x = 1.0, pi = 3.14 } with
 | { x = y, pi } -> y + pi
 ```
 
@@ -236,7 +236,7 @@ do_something1 ()
 do_something2 ()
 type PrivateType = | Private Int
 let x = Private (do_something3 ())
-case x of
+match x with
 | Private y -> do_something4 x
 ```
 
