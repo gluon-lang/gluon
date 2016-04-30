@@ -23,7 +23,7 @@ fn prelude(b: &mut ::test::Bencher) {
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
         let mut text = String::new();
         File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
-        ::parser::parse_tc(&mut symbols, &text).unwrap_or_else(|err| panic!("{:?}", err))
+        ::parser::parse_tc(&mut symbols, &text).unwrap_or_else(|err| panic!("{}", err))
     };
     vm.get_macros().run(&vm, &mut expr).unwrap();
     b.iter(|| {
@@ -34,5 +34,24 @@ fn prelude(b: &mut ::test::Bencher) {
             assert!(false);
         }
         ::test::black_box(result)
+    })
+}
+
+#[bench]
+fn clone_prelude(b: &mut ::test::Bencher) {
+    let vm = new_vm();
+    let env = vm.get_env();
+    let mut symbols = Symbols::new();
+    let mut expr = {
+        let mut symbols = SymbolModule::new("".into(), &mut symbols);
+        let mut text = String::new();
+        File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        ::parser::parse_tc(&mut symbols, &text).unwrap_or_else(|err| panic!("{}", err))
+    };
+    vm.get_macros().run(&vm, &mut expr).unwrap();
+    let mut tc = Typecheck::new("".into(), &mut symbols, &*env);
+    tc.typecheck_expr(&mut expr).unwrap_or_else(|err| panic!("{}", err));
+    b.iter(|| {
+        ::test::black_box(expr.clone())
     })
 }
