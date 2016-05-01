@@ -379,8 +379,10 @@ pub struct GlobalVMState {
     generics: RefCell<HashMap<StdString, TcType>>,
     typeids: RefCell<HashMap<TypeId, TcType>>,
     interner: RefCell<Interner>,
-    pub gc: RefCell<Gc>,
     macros: MacroEnv<Thread>,
+    // FIXME These fields should not be public
+    pub gc: RefCell<Gc>,
+    pub rooted_threads: RefCell<Vec<GcPtr<Thread>>>,
 }
 
 impl Traverseable for GlobalVMState {
@@ -390,6 +392,7 @@ impl Traverseable for GlobalVMState {
         }
         // Also need to check the interned string table
         self.interner.borrow().traverse(gc);
+        self.rooted_threads.borrow().traverse(gc);
     }
 }
 
@@ -607,6 +610,7 @@ impl GlobalVMState {
             interner: RefCell::new(Interner::new()),
             gc: RefCell::new(Gc::new()),
             macros: MacroEnv::new(),
+            rooted_threads: RefCell::new(Vec::new()),
         };
         vm.add_types()
           .unwrap();

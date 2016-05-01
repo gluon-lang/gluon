@@ -159,8 +159,21 @@ pub struct RootedThread(GcPtr<Thread>);
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
-        let p = self.roots.borrow_mut().pop().expect("VM ptr");
-        assert!(&*p as *const Traverseable as *const () == &*self.0 as *const Thread as *const ())
+        let is_empty = {
+            let mut roots = self.rooted_threads.borrow_mut();
+            let p = roots.pop().expect("VM ptr");
+            assert!(&*p as *const Traverseable as *const () == &*self.0 as *const Thread as *const ());
+            roots.is_empty()
+        };
+        if is_empty {
+            // The last RootedThread was dropped, drop the entire thread
+            let mut gc_ref = self.0.gc.borrow_mut();
+            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new());
+            // Make sure that the RefMut is dropped before the Gc itself as the RefCell is dropped
+            // when the Gc is dropped
+            drop(gc_ref);
+            drop(gc_to_drop);
+        }
     }
 }
 
@@ -195,7 +208,7 @@ impl RootedThread {
 
     pub fn from_gc_ptr(p: GcPtr<Thread>) -> RootedThread {
         let vm = RootedThread(p);
-        vm.roots.borrow_mut().push(vm.0.as_traverseable());
+        vm.rooted_threads.borrow_mut().push(vm.0);
         vm
     }
 

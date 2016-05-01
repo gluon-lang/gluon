@@ -172,8 +172,9 @@ struct AllocPtr {
 impl AllocPtr {
     fn new<T>(value_size: usize) -> AllocPtr {
         unsafe fn drop<T>(t: *mut ()) {
-            ptr::drop_in_place(t as *mut T)
+            ptr::drop_in_place(t as *mut T);
         }
+        debug_assert!(mem::align_of::<T>() <= mem::align_of::<f64>());
         unsafe {
             let alloc_size = GcHeader::value_offset() + value_size;
             let ptr = allocate(alloc_size) as *mut GcHeader;
@@ -230,9 +231,9 @@ impl DerefMut for AllocPtr {
 }
 
 impl GcHeader {
-    fn value(&self) -> *mut () {
+    fn value(&mut self) -> *mut () {
         unsafe {
-            let ptr: *const GcHeader = self;
+            let ptr: *mut GcHeader = self;
             (ptr as *mut u8).offset(GcHeader::value_offset() as isize) as *mut ()
         }
     }
@@ -685,7 +686,7 @@ mod tests {
         let mut gc: Gc = Gc::new();
         let ptr = gc.alloc(Def { elems: &[Int(1)] });
         let header: *const _ = ptr.header();
-        let other: &GcHeader = gc.values.as_ref().unwrap();
+        let other: &mut GcHeader = gc.values.as_mut().unwrap();
         assert_eq!(&*ptr as *const _ as *const (), other.value());
         assert_eq!(header, other as *const _);
     }
