@@ -82,6 +82,220 @@ pub struct Compiler {
     implicit_prelude: bool,
 }
 
+/// Advanced compiler pipeline which ensures that the compilation phases are run in order even if
+/// not the entire compilation procedure is needed
+pub mod compiler_pipeline {
+    use super::*;
+
+    use base::ast;
+    use base::types::TcType;
+    use base::symbol::Symbol;
+
+    use vm::compiler::CompiledFunction;
+    use vm::thread::{RootedValue, ThreadInternal};
+    use vm::internal::ClosureDataDef;
+
+    pub struct MacroValue(pub ast::LExpr<ast::TcIdent<Symbol>>);
+
+    pub trait MacroExpandable {
+        fn expand_macro(self,
+                        compiler: &mut Compiler,
+                        thread: &Thread,
+                        file: &str)
+                        -> Result<MacroValue>;
+    }
+
+    impl<'s> MacroExpandable for &'s str {
+        fn expand_macro(self,
+                        compiler: &mut Compiler,
+                        thread: &Thread,
+                        file: &str)
+                        -> Result<MacroValue> {
+            compiler.parse_expr(file, self)
+                    .map_err(From::from)
+                    .and_then(|expr| expr.expand_macro(compiler, thread, file))
+        }
+    }
+
+    impl MacroExpandable for ast::LExpr<ast::TcIdent<Symbol>> {
+        fn expand_macro(mut self,
+                        compiler: &mut Compiler,
+                        thread: &Thread,
+                        file: &str)
+                        -> Result<MacroValue> {
+            if compiler.implicit_prelude {
+                compiler.include_implicit_prelude(file, &mut self);
+            }
+            try!(thread.get_macros().run(thread, &mut self));
+            Ok(MacroValue(self))
+        }
+    }
+
+    pub struct TypecheckValue(pub ast::LExpr<ast::TcIdent<Symbol>>, pub TcType);
+
+    pub trait Typecheckable {
+        fn typecheck(self,
+                     compiler: &mut Compiler,
+                     thread: &Thread,
+                     file: &str,
+                     expr_str: &str)
+                     -> Result<TypecheckValue>
+            where Self: Sized
+        {
+            self.typecheck_expected(compiler, thread, file, expr_str, None)
+        }
+        fn typecheck_expected(self,
+                              compiler: &mut Compiler,
+                              thread: &Thread,
+                              file: &str,
+                              expr_str: &str,
+                              expected_type: Option<&TcType>)
+                              -> Result<TypecheckValue>;
+    }
+    impl<T> Typecheckable for T
+        where T: MacroExpandable
+{
+        fn typecheck_expected(self,
+                              compiler: &mut Compiler,
+                              thread: &Thread,
+                              file: &str,
+                              expr_str: &str,
+                              expected_type: Option<&TcType>)
+                              -> Result<TypecheckValue>
+            where Self: Sized
+        {
+            self.expand_macro(compiler, thread, file)
+                .and_then(|expr| {
+                    expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
+                })
+        }
+    }
+    impl Typecheckable for MacroValue {
+        fn typecheck_expected(mut self,
+                              compiler: &mut Compiler,
+                              thread: &Thread,
+                              file: &str,
+                              expr_str: &str,
+                              expected_type: Option<&TcType>)
+                              -> Result<TypecheckValue>
+            where Self: Sized
+        {
+            compiler.typecheck_expr_expected(thread, file, expr_str, &mut self.0, expected_type)
+                    .map(move |typ| TypecheckValue(self.0, typ))
+        }
+    }
+
+    pub struct CompileValue(pub ast::LExpr<ast::TcIdent<Symbol>>, pub TcType, pub CompiledFunction);
+
+    pub trait Compileable<Extra> {
+        fn compile(self,
+                   compiler: &mut Compiler,
+                   thread: &Thread,
+                   file: &str,
+                   arg: Extra)
+                   -> Result<CompileValue>;
+    }
+    impl<'a, 'b, T> Compileable<(&'a str, Option<&'b TcType>)> for T
+        where T: Typecheckable
+{
+        fn compile(self,
+                   compiler: &mut Compiler,
+                   thread: &Thread,
+                   file: &str,
+                   (expr_str, expected_type): (&'a str, Option<&'b TcType>))
+                   -> Result<CompileValue> {
+            self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
+                .and_then(|tc_value| tc_value.compile(compiler, thread, file, ()))
+        }
+    }
+    impl<Extra> Compileable<Extra> for TypecheckValue {
+        fn compile(self,
+                   compiler: &mut Compiler,
+                   thread: &Thread,
+                   file: &str,
+                   _: Extra)
+                   -> Result<CompileValue> {
+            let function = compiler.compile_script(thread, file, &self.0);
+            Ok(CompileValue(self.0, self.1, function))
+        }
+    }
+
+    pub trait Executable<Extra> {
+        fn run_expr<'vm>(self,
+                         compiler: &mut Compiler,
+                         vm: &'vm Thread,
+                         name: &str,
+                         arg: Extra)
+                         -> Result<(RootedValue<&'vm Thread>, TcType)>;
+        fn load_script(self,
+                       compiler: &mut Compiler,
+                       vm: &Thread,
+                       filename: &str,
+                       arg: Extra)
+                       -> Result<()>;
+    }
+    impl<C, Extra> Executable<Extra> for C
+        where C: Compileable<Extra>
+{
+        fn run_expr<'vm>(self,
+                         compiler: &mut Compiler,
+                         vm: &'vm Thread,
+                         name: &str,
+                         arg: Extra)
+                         -> Result<(RootedValue<&'vm Thread>, TcType)> {
+
+            self.compile(compiler, vm, name, arg)
+                .and_then(|v| v.run_expr(compiler, vm, name, ()))
+        }
+        fn load_script(self,
+                       compiler: &mut Compiler,
+                       vm: &Thread,
+                       filename: &str,
+                       arg: Extra)
+                       -> Result<()> {
+            self.compile(compiler, vm, filename, arg)
+                .and_then(|v| v.load_script(compiler, vm, filename, ()))
+        }
+    }
+    impl Executable<()> for CompileValue {
+        fn run_expr<'vm>(self,
+                         _compiler: &mut Compiler,
+                         vm: &'vm Thread,
+                         name: &str,
+                         _: ())
+                         -> Result<(RootedValue<&'vm Thread>, TcType)> {
+            let CompileValue(_, typ, mut function) = self;
+            function.id = Symbol::new(name);
+            let function = vm.global_env().new_function(function);
+            let closure = {
+                let stack = vm.current_frame();
+                vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
+            };
+            let value = try!(vm.call_module(&typ, closure));
+            Ok((vm.root_value_ref(value), typ))
+        }
+        fn load_script(self,
+                       _compiler: &mut Compiler,
+                       vm: &Thread,
+                       _filename: &str,
+                       _: ())
+                       -> Result<()> {
+            use check::metadata;
+
+            let CompileValue(mut expr, typ, function) = self;
+            let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
+            let function = vm.global_env().new_function(function);
+            let closure = {
+                let stack = vm.current_frame();
+                vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
+            };
+            let value = try!(vm.call_module(&typ, closure));
+            try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
+            Ok(())
+        }
+    }
+}
+
 impl Compiler {
     /// Creates a new compiler with default settings
     pub fn new() -> Compiler {
@@ -112,28 +326,40 @@ impl Compiler {
     pub fn typecheck_expr(&mut self,
                           vm: &Thread,
                           file: &str,
-                          expr_str: &str)
-                          -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
-        self.typecheck_expr_expected(vm, file, expr_str, None)
+                          expr_str: &str,
+                          expr: &mut ast::LExpr<ast::TcIdent<Symbol>>)
+                          -> Result<TcType> {
+        self.typecheck_expr_expected(vm, file, expr_str, expr, None)
     }
 
     fn typecheck_expr_expected(&mut self,
                                vm: &Thread,
                                file: &str,
                                expr_str: &str,
+                               expr: &mut ast::LExpr<ast::TcIdent<Symbol>>,
                                expected_type: Option<&TcType>)
-                               -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
+                               -> Result<TcType> {
         use check::typecheck::Typecheck;
         use base::error;
+        let env = vm.get_env();
+        let mut tc = Typecheck::new(file.into(), &mut self.symbols, &*env);
+        let typ = try!(tc.typecheck_expr_expected(expr, expected_type)
+                         .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
+        Ok(typ)
+    }
+
+    pub fn typecheck_str(&mut self,
+                         vm: &Thread,
+                         file: &str,
+                         expr_str: &str,
+                         expected_type: Option<&TcType>)
+                         -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
         let mut expr = try!(self.parse_expr(file, expr_str));
         if self.implicit_prelude {
             self.include_implicit_prelude(file, &mut expr);
         }
         try!(vm.get_macros().run(vm, &mut expr));
-        let env = vm.get_env();
-        let mut tc = Typecheck::new(file.into(), &mut self.symbols, &*env);
-        let typ = try!(tc.typecheck_expr_expected(&mut expr, expected_type)
-                         .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
+        let typ = try!(self.typecheck_expr_expected(vm, file, expr_str, &mut expr, expected_type));
         Ok((expr, typ))
     }
 
@@ -165,7 +391,7 @@ impl Compiler {
                             expr_str: &str)
                             -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
         use check::metadata;
-        let (mut expr, typ) = try!(self.typecheck_expr(vm, file, expr_str));
+        let (mut expr, typ) = try!(self.typecheck_str(vm, file, expr_str, None));
 
         let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
         Ok((expr, typ, metadata))
@@ -208,7 +434,7 @@ impl Compiler {
                       expr_str: &str,
                       expected_type: Option<&TcType>)
                       -> Result<(RootedValue<&'vm Thread>, TcType)> {
-        let (expr, typ) = try!(self.typecheck_expr_expected(vm, name, expr_str, expected_type));
+        let (expr, typ) = try!(self.typecheck_str(vm, name, expr_str, expected_type));
         let mut function = self.compile_script(vm, name, &expr);
         function.id = Symbol::new(name);
         let function = vm.global_env().new_function(function);

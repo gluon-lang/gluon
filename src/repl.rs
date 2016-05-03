@@ -9,7 +9,7 @@ use gluon::{Compiler, new_vm};
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
     let mut compiler = Compiler::new().implicit_prelude(false);
-    IO::Value(match compiler.typecheck_expr(vm, "<repl>", &args) {
+    IO::Value(match compiler.typecheck_str(vm, "<repl>", &args, None) {
         Ok((expr, _)) => {
             let env = vm.get_env();
             Ok(format!("{}", expr.env_type_of(&*env)))
