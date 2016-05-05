@@ -8,7 +8,7 @@ use base::ast;
 use base::ast::Location;
 use base::types::{Type, TcType};
 
-use check::completion::find;
+use check::completion;
 
 mod functions;
 use functions::*;
@@ -16,20 +16,30 @@ use functions::*;
 fn find_type(s: &str, location: Location) -> Result<TcType, ()> {
     let (mut expr, result) = typecheck_expr(s);
     assert!(result.is_ok(), "{}", result.unwrap_err());
-    find(&ast::EmptyEnv::new(), &mut expr, location)
+    completion::find(&ast::EmptyEnv::new(), &mut expr, location)
+}
+
+fn suggest(s: &str, location: Location) -> Result<Vec<String>, ()> {
+    let (mut expr, _result) = typecheck_expr(s);
+    completion::suggest(&ast::EmptyEnv::new(), &mut expr, location)
+        .map(|vec| {
+            let mut vec: Vec<String> = vec.into_iter().map(|sym| sym.to_string()).collect();
+            vec.sort();
+            vec
+        })
 }
 
 #[test]
 fn identifier() {
     let (mut expr, result) = typecheck_expr("let abc = 1 in abc");
     assert!(result.is_ok(), "{}", result.unwrap_err());
-    let result = find(&ast::EmptyEnv::new(), &mut expr, Location { row: 1, column: 16, absolute: 0 });
+    let result = completion::find(&ast::EmptyEnv::new(), &mut expr, Location { row: 1, column: 16, absolute: 0 });
     assert_eq!(result, Ok(typ("Int")));
-    let result = find(&ast::EmptyEnv::new(), &mut expr, Location { row: 1, column: 17, absolute: 0 });
+    let result = completion::find(&ast::EmptyEnv::new(), &mut expr, Location { row: 1, column: 17, absolute: 0 });
     assert_eq!(result, Ok(typ("Int")));
-    let result = find(&ast::EmptyEnv::new(), &mut expr, Location { row: 1, column: 18, absolute: 0 });
+    let result = completion::find(&ast::EmptyEnv::new(), &mut expr, Location { row: 1, column: 18, absolute: 0 });
     assert_eq!(result, Ok(typ("Int")));
-    let result = find(&ast::EmptyEnv::new(), &mut expr, Location { row: 1, column: 19, absolute: 0 });
+    let result = completion::find(&ast::EmptyEnv::new(), &mut expr, Location { row: 1, column: 19, absolute: 0 });
     assert_eq!(result, Ok(typ("Int")));
 }
 
@@ -71,11 +81,11 @@ let (++) l r =
 1 ++ 2.0
 "#);
     assert!(result.is_ok(), "{}", result.unwrap_err());
-    let result = find(&ast::EmptyEnv::new(), &mut expr, Location { row: 6, column: 4, absolute: 0 });
+    let result = completion::find(&ast::EmptyEnv::new(), &mut expr, Location { row: 6, column: 4, absolute: 0 });
     assert_eq!(result, Ok(Type::function(vec![typ("Int"), typ("Float")], typ("Int"))));
-    let result = find(&ast::EmptyEnv::new(), &mut expr, Location { row: 6, column: 1, absolute: 0 });
+    let result = completion::find(&ast::EmptyEnv::new(), &mut expr, Location { row: 6, column: 1, absolute: 0 });
     assert_eq!(result, Ok(typ("Int")));
-    let result = find(&ast::EmptyEnv::new(), &mut expr, Location { row: 6, column: 6, absolute: 0 });
+    let result = completion::find(&ast::EmptyEnv::new(), &mut expr, Location { row: 6, column: 6, absolute: 0 });
     assert_eq!(result, Ok(typ("Float")));
 }
 
@@ -89,4 +99,41 @@ r#"
 }
 "#, Location { row: 3, column: 14, absolute: 0 });
     assert_eq!(result, Ok(typ("Int")));
+}
+
+#[test]
+fn suggest_identifier_when_prefix() {
+    let result = suggest(
+r#"
+let test = 1
+let tes = ""
+let aaa = ""
+te
+"#,
+Location { row: 5, column: 1, absolute: 0 });
+    assert_eq!(result, Ok(vec!["tes".into(), "test".into()]));
+}
+
+#[test]
+fn suggest_arguments() {
+    let result = suggest(
+r#"
+let f test =
+    \test2 -> tes
+123
+"#,
+Location { row: 3, column: 17, absolute: 0 });
+    assert_eq!(result, Ok(vec!["test".into(), "test2".into()]));
+}
+
+#[test]
+fn suggest_after_unrelated_type_error() {
+    let result = suggest(
+r#"
+let record = { aa = 1, ab = 2, c = "" }
+1.0 #Int+ 2
+record.a
+"#,
+Location { row: 4, column: 8, absolute: 0 });
+    assert_eq!(result, Ok(vec!["aa".into(), "ab".into()]));
 }
