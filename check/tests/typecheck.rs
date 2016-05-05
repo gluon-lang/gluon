@@ -6,8 +6,7 @@ extern crate check;
 
 use base::ast;
 use base::ast::Typed;
-use base::symbol::Symbol;
-use base::types::{Type, TcType};
+use base::types::Type;
 use base::types;
 
 mod functions;
@@ -81,26 +80,6 @@ macro_rules! assert_unify_err {
             }
         }
     }}
-}
-
-fn typ(s: &str) -> TcType {
-    assert!(s.len() != 0);
-    typ_a(s, Vec::new())
-}
-
-fn typ_a<T>(s: &str, args: Vec<T>) -> T where T: From<Type<Symbol, T>> {
-    assert!(s.len() != 0);
-    let is_var = s.chars().next().unwrap().is_lowercase();
-    match s.parse() {
-        Ok(b) => Type::builtin(b),
-        Err(()) if is_var => {
-            Type::generic(types::Generic {
-                kind: types::Kind::star(),
-                id: intern(s),
-            })
-        }
-        Err(()) => if args.len() == 0 { Type::id(intern(s)) } else { Type::data(Type::id(intern(s)), args) }
-    }
 }
 
 #[test]

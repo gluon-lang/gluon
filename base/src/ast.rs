@@ -1,4 +1,5 @@
 //! Module containing the types which make up `embed_lang`'s AST (Abstract Syntax Tree)
+use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
 use symbol::Symbol;
@@ -167,10 +168,10 @@ impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
 }
 
 /// Representation of a location in a source file
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
 pub struct Location {
-    pub column: i32,
     pub row: i32,
+    pub column: i32,
     pub absolute: i32,
 }
 
@@ -200,6 +201,25 @@ impl fmt::Display for Location {
 pub struct Span {
     pub start: Location,
     pub end: Location,
+}
+
+impl Span {
+    pub fn containment(&self, location: &Location) -> Ordering {
+        use std::cmp::Ordering::*;
+        match (location.cmp(&self.start), location.cmp(&self.end)) {
+            (_, Equal) | (Equal, _) | (Greater, Less) => Equal,
+            (Less, _) => Less,
+            (_, Greater) => Greater,
+        }
+    }
+    pub fn containment_exclusive(&self, location: &Location) -> Ordering {
+        if self.end == *location {
+            Ordering::Greater
+        }
+        else {
+            self.containment(location)
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -336,7 +356,7 @@ impl<Id> LExpr<Id>
     where Id: AstId
 {
     /// Returns the an approximation of the span of the expression
-    pub fn span(&self, env: &DisplayEnv<Ident = Id>) -> Span {
+    pub fn span<'a>(&self, env: &(DisplayEnv<Ident = Id> + 'a)) -> Span {
         use self::Expr::*;
         let end = match self.value {
             Identifier(ref id) => self.location.line_offset(env.string(id).len() as i32),

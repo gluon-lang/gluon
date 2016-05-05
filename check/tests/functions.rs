@@ -6,7 +6,7 @@ extern crate check;
 
 use base::ast;
 use base::symbol::{Symbols, SymbolModule, Symbol};
-use base::types::{Type, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias,
+use base::types::{Generic, Type, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias,
                   RcKind, Kind};
 
 use check::typecheck::*;
@@ -100,3 +100,26 @@ pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>
     let result = tc.typecheck_expr(&mut expr);
     (expr, result)
 }
+
+#[allow(dead_code)]
+pub fn typ(s: &str) -> TcType {
+    assert!(s.len() != 0);
+    typ_a(s, Vec::new())
+}
+
+#[allow(dead_code)]
+pub fn typ_a<T>(s: &str, args: Vec<T>) -> T where T: From<Type<Symbol, T>> {
+    assert!(s.len() != 0);
+    let is_var = s.chars().next().unwrap().is_lowercase();
+    match s.parse() {
+        Ok(b) => Type::builtin(b),
+        Err(()) if is_var => {
+            Type::generic(Generic {
+                kind: Kind::star(),
+                id: intern(s),
+            })
+        }
+        Err(()) => if args.len() == 0 { Type::id(intern(s)) } else { Type::data(Type::id(intern(s)), args) }
+    }
+}
+
