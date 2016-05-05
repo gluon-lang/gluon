@@ -240,6 +240,14 @@ in f 10 2 1 #Int+ g 2
 Int(40)
 }
 
+test_expr!{ excess_arguments_larger_than_stack,
+r#"
+let f a b c = c
+(\x -> f) 1 2 3 4
+"#,
+Int(4)
+}
+
 test_expr!{ print_int,
 r"
 io.print_int 123

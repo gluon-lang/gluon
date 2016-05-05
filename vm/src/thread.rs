@@ -887,7 +887,7 @@ impl Thread {
             match stack.pop() {
                 Data(excess) => {
                     let mut stack = StackFrame::frame(stack,
-                                                      excess.fields.len() as VMIndex,
+                                                      0,
                                                       State::Excess);
                     debug!("Push excess args {:?}", &excess.fields);
                     stack.push(result);
