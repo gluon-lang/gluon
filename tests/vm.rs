@@ -203,6 +203,21 @@ fn insert_stack_slice() {
                [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
 }
 
+
+test_expr!{ primitive_char_eq,
+r"
+'a' #Char== 'a'
+",
+Int(1)
+}
+
+test_expr!{ primitive_char_lt,
+r"
+'a' #Char< 'a'
+",
+Int(0)
+}
+
 test_expr!{ partial_application,
 r"
 let f x y = x #Int+ y in

@@ -474,6 +474,10 @@ impl<'a> Typecheck<'a> {
                         offset = "Float".len();
                         op.typ = Type::function(vec![Type::float(), Type::float()], Type::float());
                         try!(self.unify(&Type::float(), arg_type))
+                    } else if op_name[1..].starts_with("Char") {
+                        offset = "Char".len();
+                        op.typ = Type::function(vec![Type::char(), Type::char()], Type::char());
+                        try!(self.unify(&Type::char(), arg_type))
                     } else {
                         panic!("ICE: Unknown primitive type")
                     };

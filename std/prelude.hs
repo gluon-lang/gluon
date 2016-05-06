@@ -109,6 +109,10 @@ let eq_Float = {
     (==) = \l r -> l #Float== r
 }
 
+let eq_Char = {
+    (==) = \l r -> l #Char== r
+}
+
 let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
     (==) = \l r ->
         match l with
@@ -193,6 +197,16 @@ let ord_Float = {
         then EQ
         else GT
 }
+
+let ord_Char = {
+    compare = \l r ->
+        if l #Char< r
+        then LT
+        else if l #Char== r
+        then EQ
+        else GT
+}
+
 let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
     compare = \l r ->
         match l with
@@ -485,8 +499,8 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     Show,
     id, const, flip, not,
     foldl, foldr,
-    ord_Unit, ord_Bool, ord_Option, ord_Result, ord_Float, ord_Int, make_Ord,
-    eq_Unit, eq_Bool, eq_List, eq_Option, eq_Result, eq_Float, eq_Int,
+    ord_Unit, ord_Bool, ord_Option, ord_Result, ord_Float, ord_Int, ord_Char, make_Ord,
+    eq_Unit, eq_Bool, eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_Char,
     monoid_Function, monoid_List, monoid_Option,
     monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
     num_Int, num_Float,
