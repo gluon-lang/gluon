@@ -10,6 +10,7 @@ pub extern crate parser;
 pub extern crate check;
 
 mod io;
+pub mod string_builder;
 pub mod import;
 pub mod c_api;
 
@@ -200,14 +201,18 @@ impl Compiler {
         let prelude_import = r#"
     let __implicit_prelude = import "std/prelude.hs"
     and { Num, Eq, Ord, Show, Functor, Monad, Bool, Option, Result, not } = __implicit_prelude
-    in
+
     let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
     and { (==) } = __implicit_prelude.eq_Int
     and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Int
-    in
+
     let { (+), (-), (*), (/) } = __implicit_prelude.num_Float
     and { (==) } = __implicit_prelude.eq_Float
     and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
+
+    let { (==) } = __implicit_prelude.eq_Char
+    and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Char
+
     in 0
     "#;
         let prelude_expr = self.parse_expr("", prelude_import).unwrap();

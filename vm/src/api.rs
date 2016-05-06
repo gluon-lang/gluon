@@ -7,6 +7,7 @@ use base::types;
 use base::types::{TcType, Type};
 use types::VMIndex;
 use std::any::Any;
+use std::cell::Ref;
 use std::cmp::Ordering;
 use std::fmt;
 use std::marker::PhantomData;
@@ -374,6 +375,11 @@ impl VMType for str {
 impl VMType for String {
     type Type = String;
 }
+impl<'vm, 's> Pushable<'vm> for &'s String {
+    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+        <&str as Pushable>::push(self, vm, stack)
+    }
+}
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         let s = vm.alloc(&stack.stack, self);
@@ -391,9 +397,7 @@ impl<'vm> Getable<'vm> for String {
 }
 impl<'vm> Pushable<'vm> for String {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
-        let s = vm.alloc(&stack.stack, &self[..]);
-        stack.push(Value::String(s));
-        Status::Ok
+        <&str as Pushable>::push(&self, vm, stack)
     }
 }
 
@@ -412,6 +416,22 @@ impl<'vm> Getable<'vm> for char {
             Value::Int(x) => ::std::char::from_u32(x as u32),
             _ => None,
         }
+    }
+}
+
+impl<'s, T: VMType> VMType for Ref<'s, T> {
+    type Type = T::Type;
+    fn make_type(vm: &Thread) -> TcType {
+        T::make_type(vm)
+    }
+}
+
+impl<'s, 'vm, T> Pushable<'vm> for Ref<'s, T>
+    where for<'t> &'t T: Pushable<'vm>,
+          T: VMType
+{
+    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+        <&T as Pushable>::push(&*self, vm, stack)
     }
 }
 
