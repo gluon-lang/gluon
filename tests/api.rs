@@ -48,7 +48,7 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
         assert_eq!(result, 12);
     }
     let mut f: Function<fn(f64, f64) -> f64> = vm.get_global("mul").unwrap();
-    let result = f.call2(4., 5.).unwrap();
+    let result = f.call(4., 5.).unwrap();
     assert_eq!(result, 20.);
 }
 

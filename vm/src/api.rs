@@ -1054,51 +1054,6 @@ impl<'vm, F> Getable<'vm> for Function<'vm, F> {
     }
 }
 
-impl<'vm, A, R> Function<'vm, fn(A) -> R>
-    where A: Pushable<'vm>,
-          R: VMType + Getable<'vm>
-{
-    pub fn call(&mut self, a: A) -> Result<R, Error> {
-        let vm = self.value.vm();
-        let mut stack = vm.current_frame();
-        stack = stack.enter_scope(0, State::Unknown);
-        stack.push(*self.value);
-        a.push(vm, &mut stack);
-        for _ in 0..R::extra_args() {
-            0.push(vm, &mut stack);
-        }
-        let args = stack.len() - 1;
-        stack = try!(vm.call_function(stack, args)).unwrap();
-        match R::from_value(vm, stack.pop()) {
-            Some(x) => Ok(x),
-            None => Err(Error::Message("Wrong type".to_string())),
-        }
-    }
-}
-impl<'vm, A, B, R> Function<'vm, fn(A, B) -> R>
-    where A: Pushable<'vm>,
-          B: Pushable<'vm>,
-          R: VMType + Getable<'vm>
-{
-    pub fn call2(&mut self, a: A, b: B) -> Result<R, Error> {
-        let vm = self.value.vm();
-        let mut stack = vm.current_frame();
-        stack = stack.enter_scope(0, State::Unknown);
-        stack.push(*self.value);
-        a.push(vm, &mut stack);
-        b.push(vm, &mut stack);
-        for _ in 0..R::extra_args() {
-            0.push(vm, &mut stack);
-        }
-        let args = stack.len() - 1;
-        stack = try!(vm.call_function(stack, args)).unwrap();
-        match R::from_value(vm, stack.pop()) {
-            Some(x) => Ok(x),
-            None => Err(Error::Message("Wrong type".to_string())),
-        }
-    }
-}
-
 /// Trait which represents a function
 pub trait FunctionType {
     /// Returns how many arguments the function needs to be provided to call it
@@ -1247,6 +1202,31 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
             r
         };
         r.push(vm, &mut stack)
+    }
+}
+
+impl<'vm, $($args,)* R> Function<'vm, fn($($args),*) -> R>
+    where $($args: Pushable<'vm>,)*
+          R: VMType + Getable<'vm>
+{
+    #[allow(non_snake_case)]
+    pub fn call(&mut self $(, $args: $args)*) -> Result<R, Error> {
+        let vm = self.value.vm();
+        let mut stack = vm.current_frame();
+        stack = stack.enter_scope(0, State::Unknown);
+        stack.push(*self.value);
+        $(
+            $args.push(vm, &mut stack);
+        )*
+        for _ in 0..R::extra_args() {
+            0.push(vm, &mut stack);
+        }
+        let args = stack.len() - 1;
+        stack = try!(vm.call_function(stack, args)).unwrap();
+        match R::from_value(vm, stack.pop()) {
+            Some(x) => Ok(x),
+            None => Err(Error::Message("Wrong type".to_string())),
+        }
     }
 }
     )
