@@ -667,7 +667,7 @@ impl Thread {
                    stack.frame);
         }
         while let Some(&instr) = instructions.get(index) {
-            debug_instruction(&stack, index, instr);
+            debug_instruction(&stack, index, instr, function);
             match instr {
                 Push(i) => {
                     let v = stack[i].clone();
@@ -926,12 +926,22 @@ fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     }
 }
 
-fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
-    debug!("{:?}: {:?} {:?}",
+fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction, function: &BytecodeFunction) {
+    debug!("{:?}: {:?} -> {:?} {:?}",
            index,
            instr,
+           stack.len(),
            match instr {
-               Push(i) => stack.get(i as usize).cloned(),
+               Push(i) => {
+                   let x = stack.get(i as usize).cloned();
+                   if x.is_none() {
+                       debug!("{:?}", &stack[..])
+                   }
+                   x
+                }
+               PushGlobal(i) => {
+                    function.globals.get(i as usize).cloned()
+               }
                NewClosure(..) => Some(Int(stack.len() as isize)),
                MakeClosure(..) => Some(Int(stack.len() as isize)),
                _ => None,

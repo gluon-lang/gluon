@@ -33,7 +33,20 @@ pub fn read_file(s: RootStr) -> IO<String> {
     }
 }
 
-pub fn read_line() -> IO<String> {
+fn read_char() -> IO<char> {
+    match stdin().bytes().next() {
+        Some(result) => {
+            match result {
+                Ok(b) => ::std::char::from_u32(b as u32).map(IO::Value)
+                        .unwrap_or_else(|| IO::Exception("Not a valid char".into())),
+                Err(err) => IO::Exception(format!("{}", err)),
+            }
+        }
+        None => IO::Exception("No read".into()),
+    }
+}
+
+fn read_line() -> IO<String> {
     let mut buffer = String::new();
     match stdin().read_line(&mut buffer) {
         Ok(_) => IO::Value(buffer),
@@ -176,6 +189,7 @@ pub fn load(vm: &Thread) -> Result<()> {
                           record!(
         print_int => f1(print_int),
         read_file => f1(read_file),
+        read_char => f0(read_char),
         read_line => f0(read_line),
         print => f1(print),
         catch =>

@@ -305,10 +305,9 @@ impl fmt::Debug for Value {
                     Closure(ref closure) => {
                         let p: *const _ = &*closure.function;
                         write!(f,
-                               "<{:?} {:?} {:?}>",
+                               "<{:?} {:?}>",
                                closure.function.name,
-                               p,
-                               LevelSlice(level - 1, &closure.upvars))
+                               p)
                     }
                     PartialApplication(ref app) => {
                         let name = match app.function {

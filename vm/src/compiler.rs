@@ -442,6 +442,9 @@ impl<'a> Compiler<'a> {
                 function.emit(CJump(0));
                 if let Some(ref if_false) = *if_false {
                     self.compile(&**if_false, function, tail_position);
+                    // The stack size of the true branch should not be increased by the false
+                    // branch
+                    function.stack_size -= 1;
                 }
                 let false_jump_index = function.function.instructions.len();
                 function.emit(Jump(0));

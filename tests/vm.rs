@@ -404,6 +404,17 @@ array.index arr 0 #Int== 1
 Int(1)
 }
 
+test_expr!{ prelude true_branch_not_affected_by_false_branc,
+r#"
+if True then
+    let x = 1
+    x
+else
+    0
+"#,
+Int(1)
+}
+
 test_expr!{ access_only_a_few_fields_from_large_record,
 r#"
 let record = { a = 0, b = 1, c = 2, d = 3, e = 4, f = 5, g = 6, h = 7, i = 8, j = 9, k = 10, l = 11, m = 12 }
