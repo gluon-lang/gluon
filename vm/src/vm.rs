@@ -276,11 +276,12 @@ impl fmt::Debug for Value {
         impl<'b> fmt::Debug for LevelSlice<'b> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let level = self.0;
-                if level <= 0 {
+                if level <= 0 || self.1.is_empty() {
                     return Ok(());
                 }
-                for v in self.1 {
-                    try!(write!(f, "{:?}", Level(level - 1, v)));
+                try!(write!(f, "{:?}", Level(level - 1, &self.1[0])));
+                for v in &self.1[1..] {
+                    try!(write!(f, ", {:?}", Level(level - 1, v)));
                 }
                 Ok(())
             }
@@ -297,7 +298,7 @@ impl fmt::Debug for Value {
                     String(x) => write!(f, "{:?}", &*x),
                     Data(ref data) => {
                         write!(f,
-                               "{{{:?} {:?}}}",
+                               "{{{:?}: {:?}}}",
                                data.tag,
                                LevelSlice(level - 1, &data.fields))
                     }
@@ -315,7 +316,7 @@ impl fmt::Debug for Value {
                             Callable::Extern(_) => "<EXTERN>",
                         };
                         write!(f,
-                               "<App {:?} {:?}>",
+                               "<App {:?}{:?}>",
                                name,
                                LevelSlice(level - 1, &app.arguments))
                     }
