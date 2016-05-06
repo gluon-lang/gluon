@@ -10,7 +10,6 @@ pub extern crate parser;
 pub extern crate check;
 
 mod io;
-pub mod string_builder;
 pub mod import;
 pub mod c_api;
 
