@@ -184,3 +184,41 @@ fn close_lambda_on_implicit_statement() {
         expr => assert!(false, "{:?}", expr),
     }
 }
+
+#[test]
+fn if_expr_else_is_block() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let f x = ()
+if True then
+    1
+else
+    f 2
+    2
+"#;
+    let result = parse(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    if let Expr::Let(_, ref expr) = result.as_ref().unwrap().value {
+        if let Expr::IfElse(_, _, ref if_false) = expr.value {
+            if let Expr::Block(_) = if_false.as_ref().unwrap().value {
+                return;
+            }
+        }
+    }
+    assert!(false, "{:?}", result.unwrap());
+}
+
+#[test]
+fn if_else_if_else() {
+    let _ = ::env_logger::init();
+    let text = r#"
+if True then
+    1
+else if True then
+    2
+else
+    3
+"#;
+    let result = parse(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

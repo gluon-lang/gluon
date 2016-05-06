@@ -603,7 +603,7 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             }
             lexer.indent_levels.pop();
             match (&token.token, &offside.context) {
-                (&Token::Else, &Context::If) => return Ok(token.token),
+                (&Token::Else, &Context::If) => (),
                 (&Token::Close(close_delim), &Context::Delimiter(context_delim))
                     if close_delim == context_delim => return Ok(token.token),
                 (&Token::In, &Context::Let) |
@@ -749,6 +749,27 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                                              }));
                 }
             }
+            Token::Else => {
+                let next = lexer.next_token();
+                // Need to allow "else if" expressions so avoid inserting a block for those cases
+                // (A block would be inserted at column 5 and we would then get unindentation
+                // errors on the branches)
+                // if x then
+                //     1
+                // else if y then
+                //     2
+                // else
+                //     3
+                let add_block = next.token != Token::If || next.location.line != token.location.line;
+                lexer.unprocessed_tokens.push(next);
+                if add_block {
+                    try!(scan_for_next_block(lexer,
+                                             Context::Block {
+                                                 emit_semi: false,
+                                                 needs_close: true,
+                                             }));
+                }
+            }
             Token::Then => {
                 try!(scan_for_next_block(lexer,
                                          Context::Block {
@@ -815,7 +836,9 @@ impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
                 Ok(token)
             }
             Err(err) => {
-                self.input.take();
+                if let Some(input) = self.input.take() {
+                    self.end_position = input.position();
+                }
                 Err(err)
             }
         }
