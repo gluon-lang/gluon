@@ -106,8 +106,7 @@ fn record() {
 ";
     let mut vm = make_vm();
     let value = run_expr(&mut vm, text);
-    let unit = vm.new_data(0, &mut []);
-    assert_eq!(value, vm.new_data(0, &mut [Int(0), Float(1.0), unit]));
+    assert_eq!(value, vm.new_data(0, &mut [Int(0), Float(1.0), Int(0)]));
 }
 
 #[test]

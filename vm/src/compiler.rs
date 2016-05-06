@@ -678,13 +678,23 @@ impl<'a> Compiler<'a> {
                         None => self.load_identifier(&field.0, function),
                     }
                 }
-                function.emit(Construct(0, fields.len() as u32));
+                if fields.is_empty() {
+                    function.emit(PushInt(0));
+                }
+                else {
+                    function.emit(Construct(0, fields.len() as u32));
+                }
             }
             Expr::Tuple(ref exprs) => {
                 for expr in exprs {
                     self.compile(expr, function, false);
                 }
-                function.emit(Construct(0, exprs.len() as u32));
+                if exprs.is_empty() {
+                    function.emit(PushInt(0));
+                }
+                else {
+                    function.emit(Construct(0, exprs.len() as u32));
+                }
             }
             Expr::Block(ref exprs) => {
                 let (last, exprs) = exprs.split_last().expect("Expr in block");
