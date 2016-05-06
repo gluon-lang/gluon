@@ -173,49 +173,38 @@ pub fn rename(symbols: &mut SymbolModule,
             self.env.stack_types.insert(id, alias);
         }
 
-        fn rename(&self, id: &Symbol, expected: &TcType) -> Option<Symbol> {
-            self.env
-                .stack
-                .get_all(&id)
-                .and_then(|bindings| {
-                    if bindings.len() == 1 {
-                        Some(bindings[0].0.clone())
-                    } else {
-                        bindings.iter()
-                                .rev()
-                                .find(|bind| equivalent(&self.env, &bind.1, expected))
-                                .map(|bind| bind.0.clone())
+        fn rename(&self, id: &Symbol, expected: &TcType) -> Result<Option<Symbol>, RenameError> {
+            let locals = self.env
+                             .stack
+                             .get_all(&id);
+            let global = self.env.find_type(&id).map(|typ| (id, typ));
+            let candidates = || {
+                locals.iter()
+                      .flat_map(|bindings| bindings.iter().rev().map(|bind| (&bind.0, &bind.1)))
+                      .chain(global.clone())
+            };
+            // If there is a single binding (or no binding in case of primitives such as #Int+)
+            // there is no need to check for equivalency as typechecker couldnt have infered a
+            // different binding
+            if candidates().count() <= 1 {
+                return Ok(None);
+            }
+            candidates()
+                .find(|tup| equivalent(&self.env, tup.1, expected))
+                .map(|tup| Some(tup.0.clone()))
+                .ok_or_else(|| {
+                    RenameError::NoMatchingType {
+                        symbol: String::from(self.symbols.string(id)),
+                        expected: expected.clone(),
+                        possible_types: candidates().map(|tup| tup.1.clone()).collect(),
                     }
-                })
-                .or_else(|| {
-                    self.env.find_type(&id).and_then(|typ| {
-                        if equivalent(&self.env, typ, &expected) {
-                            Some(id.clone())
-                        } else {
-                            None
-                        }
-                    })
                 })
         }
 
         fn rename_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<(), RenameError> {
             match expr.value {
                 ast::Expr::Identifier(ref mut id) => {
-                    let new_id = self.rename(id.id(), &id.typ);
-                    if new_id.is_none() {
-                        return Err(RenameError::NoMatchingType {
-                            symbol: String::from(self.symbols.string(&id.name)),
-                            expected: id.typ.clone(),
-                            possible_types: self.env
-                                                .stack
-                                                .get_all(id.id())
-                                                .iter()
-                                                .flat_map(|binds| {
-                                                    binds.iter().map(|bind| bind.1.clone())
-                                                })
-                                                .collect(),
-                        });
-                    }
+                    let new_id = try!(self.rename(id.id(), &id.typ));
                     debug!("Rename identifier {} = {}",
                            self.symbols.string(&id.name),
                            self.symbols.string(new_id.as_ref().unwrap_or(&id.name)));
@@ -228,7 +217,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         match *maybe_expr {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
-                                let new_id = self.rename(id, &field.typ);
+                                let new_id = try!(self.rename(id, &field.typ));
                                 *maybe_expr =
                                     Some(ast::no_loc(ast::Expr::Identifier(ast::TcIdent {
                                         name: new_id.unwrap_or_else(|| id.clone()),
@@ -239,7 +228,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 ast::Expr::BinOp(ref mut l, ref mut id, ref mut r) => {
-                    let new_id = self.rename(id.id(), &id.typ);
+                    let new_id = try!(self.rename(id.id(), &id.typ));
                     debug!("Rename {} = {}",
                            self.symbols.string(&id.name),
                            self.symbols.string(new_id.as_ref().unwrap_or(&id.name)));

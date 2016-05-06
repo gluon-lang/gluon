@@ -693,6 +693,18 @@ in f ""
 }
 
 #[test]
+fn no_matching_binop_binding() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let (++) x y = x #Int+ y
+let (++) x y = x #Float+ y
+"" ++ ""
+"#;
+    let result = typecheck(text);
+    assert_err!(result, Rename(..));
+}
+
+#[test]
 fn not_enough_information_to_decide_overload() {
     let _ = ::env_logger::init();
     let text = r#"
