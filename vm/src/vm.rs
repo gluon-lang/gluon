@@ -17,7 +17,6 @@ use types::*;
 use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable, Move};
 use compiler::{CompiledFunction, Variable, CompilerEnv};
-use api::IO;
 use lazy::Lazy;
 
 use value::BytecodeFunction;
@@ -342,7 +341,6 @@ impl GlobalVMState {
             ids.insert(TypeId::of::<::std::string::String>(), Type::string());
             ids.insert(TypeId::of::<char>(), Type::char());
         }
-        let _ = self.register_type::<IO<Generic<A>>>("IO", &["a"]);
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"]);
         let _ = self.register_type::<RootedThread>("Thread", &[]);
         Ok(())

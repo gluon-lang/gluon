@@ -1,27 +1,27 @@
 use std::error::Error as StdError;
 use base::ast::Typed;
 use base::types::Kind;
-use vm::api::{IO, Function, WithVM};
+use vm::api::{Function, WithVM};
 use vm::thread::{Thread, RootStr};
 
 use gluon::{Compiler, new_vm};
 
-fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
+fn type_of_expr(args: WithVM<RootStr>) -> Result<String, String> {
     let WithVM { vm, value: args } = args;
     let mut compiler = Compiler::new().implicit_prelude(false);
-    IO::Value(match compiler.typecheck_str(vm, "<repl>", &args, None) {
+    match compiler.typecheck_str(vm, "<repl>", &args, None) {
         Ok((expr, _)) => {
             let env = vm.get_env();
             Ok(format!("{}", expr.env_type_of(&*env)))
         }
         Err(msg) => Err(format!("{}", msg)),
-    })
+    }
 }
 
-fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
+fn find_kind(args: WithVM<RootStr>) -> Result<String, String> {
     let vm = args.vm;
     let args = args.value.trim();
-    IO::Value(match vm.find_type_info(args) {
+    match vm.find_type_info(args) {
         Ok(ref alias) => {
             let kind = alias.args.iter().rev().fold(Kind::star(), |acc, arg| {
                 Kind::function(arg.kind.clone(), acc)
@@ -29,10 +29,10 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
             Ok(format!("{}", kind))
         }
         Err(err) => Err(format!("{}", err)),
-    })
+    }
 }
 
-fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
+fn find_info(args: WithVM<RootStr>) -> Result<String, String> {
     use std::fmt::Write;
     let vm = args.vm;
     let args = args.value.trim();
@@ -61,7 +61,7 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
                 Ok((_, typ)) => {
                     write!(&mut buffer, "{}: {}", args, typ).unwrap();
                 }
-                Err(_) => return IO::Value(Err(format!("{}", err))),
+                Err(_) => return Err(format!("{}", err)),
             }
         }
     }
@@ -73,12 +73,12 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
             write!(&mut buffer, "\n/// {}", line).unwrap();
         }
     }
-    IO::Value(Ok(buffer))
+    Ok(buffer)
 }
 
 fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
-    fn input(s: &str) -> IO<Option<String>> {
-        IO::Value(::linenoise::input(s))
+    fn input(s: &str) -> Option<String> {
+        ::linenoise::input(s)
     }
     try!(vm.define_global("repl_prim",
                           record!(
@@ -97,7 +97,7 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
 pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
     let vm = new_vm();
     try!(compile_repl(&vm));
-    let mut repl: Function<&Thread, fn(()) -> IO<()>> = try!(vm.get_global("std.repl"));
+    let mut repl: Function<&Thread, fn(()) -> ()> = try!(vm.get_global("std.repl"));
     try!(repl.call(()));
     Ok(())
 }
@@ -106,18 +106,18 @@ pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
 mod tests {
     use gluon::new_vm;
     use super::compile_repl;
-    use vm::api::{IO, FunctionRef};
+    use vm::api::FunctionRef;
 
     #[test]
     fn compile_repl_test() {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
+        let repl: Result<FunctionRef<fn(()) -> ()>, _> = vm.get_global("std.repl");
         assert!(repl.is_ok(), "{}", repl.err().unwrap());
     }
 
-    type QueryFn = fn(&'static str) -> IO<Result<String, String>>;
+    type QueryFn = fn(&'static str) -> Result<String, String>;
 
     #[test]
     fn type_of_expr() {
@@ -134,7 +134,7 @@ mod tests {
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
-        assert_eq!(find_kind.call("std.prelude.Option"), Ok(IO::Value(Ok("* -> *".into()))));
+        assert_eq!(find_kind.call("std.prelude.Option"), Ok(Ok("* -> *".into())));
     }
 
     #[test]
@@ -144,15 +144,15 @@ mod tests {
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut find_info: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_info").unwrap();
         match find_info.call("std.prelude.Option") {
-            Ok(IO::Value(Ok(_))) => (),
+            Ok(Ok(_)) => (),
             x => assert!(false, "{:?}", x),
         }
         match find_info.call("std.prelude.id") {
-            Ok(IO::Value(Ok(_))) => (),
+            Ok(Ok(_)) => (),
             x => assert!(false, "{:?}", x),
         }
         match find_info.call("float") {
-            Ok(IO::Value(Ok(_))) => (),
+            Ok(Ok(_)) => (),
             x => assert!(false, "{:?}", x),
         }
     }

@@ -57,22 +57,6 @@ macro_rules! test_expr {
             equiv(&value, &$value);
         }
     };
-    (io $name: ident, $expr: expr, $value: expr) => {
-        #[test]
-        fn $name() {
-            let _ = ::env_logger::init();
-            let mut vm = make_vm();
-            let value = Compiler::new()
-                .implicit_prelude(false)
-                .run_io_expr(&mut vm, "<top>", $expr)
-                .unwrap_or_else(|err| panic!("{}", err));
-            assert_eq!(value, $value);
-
-            // Help out the type inference by forcing that left and right are the same types
-            fn equiv<T>(_: &T, _: &T) { }
-            equiv(&value, &$value);
-        }
-    };
     ($name: ident, $expr: expr, $value: expr) => {
         #[test]
         fn $name() {
@@ -317,18 +301,11 @@ let f a b c = c
 4i32
 }
 
-test_expr!{ io print_int,
+test_expr!{ print_int,
 r"
 io.print_int 123
 ",
 ()
-}
-
-test_expr!{ no_io_eval,
-r#"
-let x = io_bind (io.print_int 1) (\x -> error "NOOOOOOOO")
-in { x }
-"#
 }
 
 test_expr!{ char,
@@ -633,12 +610,15 @@ fn run_expr_int() {
     let _ = ::env_logger::init();
     let text = r#"io.run_expr "123" "#;
     let mut vm = make_vm();
-    let result = Compiler::new().run_io_expr::<String>(&mut vm, "<top>", text).unwrap();
+    let result = Compiler::new().run_expr::<String>(&mut vm, "<top>", text).unwrap();
     assert_eq!(result, String::from("123"));
 }
 
-test_expr!{ io run_expr_io,
-r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
+test_expr!{ run_expr_io,
+r#"
+io.run_expr "io.print_int 123"
+100
+"#,
 100i32
 }
 

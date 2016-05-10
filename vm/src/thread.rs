@@ -611,38 +611,9 @@ impl ThreadInternal for Thread {
     }
 
 
-    ///Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
-        let value = try!(self.call_bytecode(closure));
-        if let Some((id, _)) = typ.as_alias() {
-            let is_io = {
-                let env = self.get_env();
-                env.find_type_info("IO")
-                   .map(|alias| *id == alias.name)
-                   .unwrap_or(false)
-            };
-            if is_io {
-                debug!("Run IO {:?}", value);
-                let mut stack = self.stack.lock().unwrap();
-                stack.push(Int(0));// Dummy value to fill the place of the function for TailCall
-                stack.push(value);
-                stack.push(Int(0));
-                let mut context = Context {
-                    thread: self,
-                    gc: self.local_gc.lock().unwrap(),
-                    stack: StackFrame::frame(stack, 2, State::Unknown),
-                };
-                context = try!(self.call_context(context, 1))
-                              .expect("call_module to have the stack remaining");
-                let result = context.stack.pop();
-                while context.stack.len() > 0 {
-                    context.stack.pop();
-                }
-                context.exit_scope();
-                return Ok(result);
-            }
-        }
-        Ok(value)
+    ///Calls a module
+    fn call_module(&self, _typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
+        self.call_bytecode(closure)
     }
 
     /// Calls a function on the stack.
