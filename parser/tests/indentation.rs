@@ -222,3 +222,21 @@ else
     let result = parse(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn block_match() {
+    let _ = ::env_logger::init();
+    let text = r#"
+match True with
+| True -> 1
+| False -> 0
+2
+"#;
+    let result = parse(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    if let Expr::Block(ref exprs) = result.as_ref().unwrap().value {
+        assert_eq!(2, exprs.len());
+        return;
+    }
+    assert!(false, "{:?}", result.unwrap());
+}
