@@ -95,6 +95,7 @@ impl<E: fmt::Display> fmt::Display for InFile<E> {
             for _ in error.error.span.start.column..(error.error.span.end.column - 1) {
                 try!(write!(f, "~"));
             }
+            try!(writeln!(f, ""));
         }
         Ok(())
     }
