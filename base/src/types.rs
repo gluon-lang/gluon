@@ -90,7 +90,8 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
     }
 }
 
-/// Trait which is a `TypeEnv` which also provides access to the type representation of some primitive types
+/// Trait which is a `TypeEnv` which also provides access to the type representation of some
+/// primitive types
 pub trait PrimitiveEnv: TypeEnv {
     fn get_bool(&self) -> &TcType;
 }

@@ -236,8 +236,23 @@ impl<'a> Typecheck<'a> {
         }
     }
 
+    fn error(&mut self, span: ast::Span, error: TypeError<Symbol>) -> TcType {
+        self.errors.error(ast::Spanned {
+            span: span,
+            value: error,
+        });
+        self.inst.subs.new_var()
+    }
+
     fn bool(&self) -> TcType {
         self.environment.get_bool().clone()
+    }
+
+    fn find_at(&mut self, span: ast::Span, id: &Symbol) -> TcType {
+        match self.find(id) {
+            Ok(typ) => typ,
+            Err(err) => self.error(span, err),
+        }
     }
 
     fn find(&mut self, id: &Symbol) -> TcResult<TcType> {
@@ -371,7 +386,7 @@ impl<'a> Typecheck<'a> {
         self.inst.subs.clear();
         self.environment.stack.clear();
 
-        let mut typ = self.typecheck(expr).unwrap();
+        let mut typ = self.typecheck(expr);
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
         } else {
@@ -395,7 +410,7 @@ impl<'a> Typecheck<'a> {
 
     /// Main typechecking function. Returns the type of the expression if typechecking was
     /// successful
-    fn typecheck(&mut self, mut expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
+    fn typecheck(&mut self, mut expr: &mut ast::LExpr<TcIdent>) -> TcType {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -434,7 +449,7 @@ impl<'a> Typecheck<'a> {
         for _ in 0..scope_count {
             self.exit_scope();
         }
-        Ok(returned_type)
+        returned_type
     }
 
     fn typecheck_(&mut self,
@@ -457,7 +472,7 @@ impl<'a> Typecheck<'a> {
                 }))
             }
             ast::Expr::Call(ref mut func, ref mut args) => {
-                let mut func_type = try!(self.typecheck(&mut **func));
+                let mut func_type = self.typecheck(&mut **func);
                 for arg in args.iter_mut() {
                     let f = Type::function(vec![self.inst.subs.new_var()],
                                            self.inst.subs.new_var());
@@ -465,7 +480,7 @@ impl<'a> Typecheck<'a> {
                     func_type = match *func_type {
                         Type::Function(ref arg_type, ref ret) => {
                             assert!(arg_type.len() == 1);
-                            let actual = try!(self.typecheck(arg));
+                            let actual = self.typecheck(arg);
                             let span = arg.span(&ast::TcIdentEnvWrapper(&self.symbols));
                             self.unify_span(span, &arg_type[0], actual);
                             ret.clone()
@@ -476,19 +491,21 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(func_type))
             }
             ast::Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
-                let pred_type = try!(self.typecheck(&mut **pred));
-                try!(self.unify(&self.bool(), pred_type));
-                let true_type = try!(self.typecheck(&mut **if_true));
+                let pred_type = self.typecheck(&mut **pred);
+                let span = pred.span(&ast::TcIdentEnvWrapper(&self.symbols));
+                let bool_type = self.bool();
+                self.unify_span(span, &bool_type, pred_type);
+                let true_type = self.typecheck(&mut **if_true);
                 let false_type = match *if_false {
-                    Some(ref mut if_false) => try!(self.typecheck(&mut **if_false)),
+                    Some(ref mut if_false) => self.typecheck(&mut **if_false),
                     None => Type::unit(),
                 };
                 // Both branches must unify to the same type
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
             ast::Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
-                let lhs_type = try!(self.typecheck(&mut **lhs));
-                let rhs_type = try!(self.typecheck(&mut **rhs));
+                let lhs_type = self.typecheck(&mut **lhs);
+                let rhs_type = self.typecheck(&mut **rhs);
                 let op_name = String::from(self.symbols.string(&op.name));
                 let result = if op_name.starts_with('#') {
                     // Handle primitives
@@ -546,13 +563,13 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(Type::unit()))
             }
             ast::Expr::Match(ref mut expr, ref mut alts) => {
-                let typ = try!(self.typecheck(&mut **expr));
+                let typ = self.typecheck(&mut **expr);
                 let mut expected_alt_type = None;
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
-                    try!(self.typecheck_pattern(&mut alt.pattern, typ.clone()));
-                    let mut alt_type = try!(self.typecheck(&mut alt.expression));
+                    self.typecheck_pattern(&mut alt.pattern, typ.clone());
+                    let mut alt_type = self.typecheck(&mut alt.expression);
                     self.exit_scope();
                     // All alternatives must unify to the same type
                     if let Some(ref expected) = expected_alt_type {
@@ -575,9 +592,9 @@ impl<'a> Typecheck<'a> {
                             *type_decl = self.refresh_symbols_in_type(type_decl.clone());
                             try!(self.kindcheck(type_decl, &mut []));
                             let decl = self.inst.instantiate(type_decl);
-                            typ = try!(self.unify(&decl, typ));
+                            typ = self.unify_span(bind.name.span(), &decl, typ);
                         }
-                        try!(self.typecheck_pattern(&mut bind.name, typ));
+                        self.typecheck_pattern(&mut bind.name, typ);
                         if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
                             if let ast::Pattern::Identifier(ref name) = bind.name.value {
                                 lambda.id.name = name.name.clone();
@@ -594,26 +611,26 @@ impl<'a> Typecheck<'a> {
                             *type_decl = self.refresh_symbols_in_type(type_decl.clone());
                             try!(self.kindcheck(type_decl, &mut []));
                         }
-                        try!(self.typecheck(&mut bind.expression))
+                        self.typecheck(&mut bind.expression)
                     } else {
                         let function_type = match bind.typ {
                             Some(ref typ) => typ.clone(),
                             None => self.inst.subs.new_var(),
                         };
-                        try!(self.typecheck_lambda(function_type,
-                                                   &mut bind.arguments,
-                                                   &mut bind.expression))
+                        self.typecheck_lambda(function_type,
+                                              &mut bind.arguments,
+                                              &mut bind.expression)
                     };
                     debug!("let {:?} : {}",
                            bind.name,
                            types::display_type(&self.symbols, &typ));
                     if let Some(ref type_decl) = bind.typ {
-                        typ = try!(self.unify(type_decl, typ));
+                        typ = self.unify_span(bind.name.span(), type_decl, typ);
                     }
                     if !is_recursive {
                         // Merge the type declaration and the actual type
                         self.generalize_variables(level, &mut bind.expression);
-                        try!(self.typecheck_pattern(&mut bind.name, typ));
+                        self.typecheck_pattern(&mut bind.name, typ);
                     } else {
                         types.push(typ);
                     }
@@ -622,7 +639,7 @@ impl<'a> Typecheck<'a> {
                     for (typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
                         // Merge the variable we bound to the name and the type inferred
                         // in the expression
-                        try!(self.unify(&bind.type_of().clone(), typ));
+                        self.unify_span(bind.name.span(), &bind.type_of().clone(), typ);
                     }
                 }
                 // Once all variables inside the let has been unified we can quantify them
@@ -635,7 +652,7 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::TailCall)
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
-                let mut typ = try!(self.typecheck(&mut **expr));
+                let mut typ = self.typecheck(&mut **expr);
                 debug!("FieldAccess {} . {:?}",
                        types::display_type(&self.symbols, &typ),
                        self.symbols.string(&field_access.name));
@@ -668,8 +685,9 @@ impl<'a> Typecheck<'a> {
             ast::Expr::Array(ref mut a) => {
                 let mut expected_type = self.inst.subs.new_var();
                 for expr in &mut a.expressions {
-                    let typ = try!(self.typecheck(expr));
-                    expected_type = try!(self.unify(&expected_type, typ));
+                    let typ = self.typecheck(expr);
+                    let span = expr.span(&ast::TcIdentEnvWrapper(&self.symbols));
+                    expected_type = self.unify_span(span, &expected_type, typ);
                 }
                 a.id.typ = Type::array(expected_type);
                 Ok(TailCall::Type(a.id.typ.clone()))
@@ -678,9 +696,9 @@ impl<'a> Typecheck<'a> {
                 let loc = format!("lambda:{}", expr.location);
                 lambda.id.name = self.symbols.symbol(loc);
                 let function_type = self.inst.subs.new_var();
-                let typ = try!(self.typecheck_lambda(function_type,
-                                                     &mut lambda.arguments,
-                                                     &mut lambda.body));
+                let typ = self.typecheck_lambda(function_type,
+                                                &mut lambda.arguments,
+                                                &mut lambda.body);
                 lambda.id.typ = typ.clone();
                 Ok(TailCall::Type(typ))
             }
@@ -783,7 +801,7 @@ impl<'a> Typecheck<'a> {
                 let fields = try!(fields.iter_mut()
                                         .map(|field| {
                                             match field.1 {
-                                                Some(ref mut expr) => self.typecheck(expr),
+                                                Some(ref mut expr) => Ok(self.typecheck(expr)),
                                                 None => self.find(&field.0),
                                             }
                                             .map(|typ| {
@@ -814,9 +832,9 @@ impl<'a> Typecheck<'a> {
             ast::Expr::Block(ref mut exprs) => {
                 let (last, exprs) = exprs.split_last_mut().expect("Expr in block");
                 for expr in exprs {
-                    try!(self.typecheck(expr));
+                    self.typecheck(expr);
                 }
-                self.typecheck(last).map(TailCall::Type)
+                Ok(TailCall::Type(self.typecheck(last)))
             }
         }
     }
@@ -825,7 +843,7 @@ impl<'a> Typecheck<'a> {
                         function_type: TcType,
                         arguments: &mut [TcIdent],
                         body: &mut ast::LExpr<TcIdent>)
-                        -> TcResult<TcType> {
+                        -> TcType {
         self.enter_scope();
         let mut arg_types = Vec::new();
         {
@@ -837,24 +855,28 @@ impl<'a> Typecheck<'a> {
                 iter1.tc.stack_var(arg.name.clone(), arg.typ.clone());
             }
         }
-        let body_type = try!(self.typecheck(body));
+        let body_type = self.typecheck(body);
         self.exit_scope();
-        Ok(Type::function(arg_types, body_type))
+        Type::function(arg_types, body_type)
     }
 
     fn typecheck_pattern(&mut self,
                          pattern: &mut ast::LPattern<TcIdent>,
                          match_type: TcType)
-                         -> TcResult<TcType> {
+                         -> TcType {
+        let span = pattern.span();
         match pattern.value {
             ast::Pattern::Constructor(ref mut id, ref mut args) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
                 // Find the enum constructor and return the types for its arguments
-                let ctor_type = try!(self.find(&id.name));
-                let return_type = try!(self.typecheck_pattern_rec(args, ctor_type));
-                self.unify(&match_type, return_type)
+                let ctor_type = self.find_at(span, &id.name);
+                let return_type = match self.typecheck_pattern_rec(args, ctor_type) {
+                    Ok(return_type) => return_type,
+                    Err(err) => self.error(span, err),
+                };
+                self.unify_span(span, &match_type, return_type)
             }
             ast::Pattern::Record { ref mut id, types: ref mut associated_types, ref fields } => {
                 id.typ = match_type.clone();
@@ -863,18 +885,23 @@ impl<'a> Typecheck<'a> {
                 let new_type = match *match_type {
                     Type::Record { fields: ref expected_fields, .. } => {
                         for pattern_field in fields {
-                            let expected_field = try!(expected_fields.iter()
-                                                    .find(|expected_field| {
-                                                        pattern_field.0
+                            let found_field = expected_fields.iter()
+                                                             .find(|expected_field| {
+                                                                 pattern_field.0
                                                                      .name_eq(&expected_field.name)
-                                                    })
-                                                    .ok_or_else(|| {
-                                                        UndefinedField(match_type.clone(),
-                                                                       pattern_field.0.clone())
-                                                    }));
+                                                             });
+                            let expected_field = match found_field {
+                                Some(expected) => expected,
+                                None => {
+                                    self.error(span,
+                                               UndefinedField(match_type.clone(),
+                                                              pattern_field.0.clone()));
+                                    continue;
+                                }
+                            };
                             let var = self.inst.subs.new_var();
                             types.push(var.clone());
-                            try!(self.unify(&var, expected_field.typ.clone()));
+                            self.unify_span(span, &var, expected_field.typ.clone());
                         }
                         None
                     }
@@ -901,7 +928,7 @@ impl<'a> Typecheck<'a> {
                         };
                         typ = self.inst.instantiate_(&typ);
                         actual_type = self.inst.instantiate_(&actual_type);
-                        try!(self.unify(&match_type, typ));
+                        self.unify_span(span, &match_type, typ);
                         match *actual_type {
                             Type::Record { fields: ref record_types, .. } => {
                                 types.extend(record_types.iter().map(|f| f.typ.clone()));
@@ -954,18 +981,20 @@ impl<'a> Typecheck<'a> {
                                                     field_type.typ.args.clone(),
                                                     field_type.typ.typ.clone());
                                 }
-                                None => return Err(UndefinedField(match_type.clone(), name)),
+                                None => {
+                                    self.error(span, UndefinedField(match_type.clone(), name));
+                                }
                             }
                         }
                     }
                     _ => panic!("Expected a record"),
                 }
-                Ok(match_type)
+                match_type
             }
             ast::Pattern::Identifier(ref mut id) => {
                 self.stack_var(id.id().clone(), match_type.clone());
                 id.typ = match_type.clone();
-                Ok(match_type)
+                match_type
             }
         }
     }

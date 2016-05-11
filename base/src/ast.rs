@@ -215,8 +215,7 @@ impl Span {
     pub fn containment_exclusive(&self, location: &Location) -> Ordering {
         if self.end == *location {
             Ordering::Greater
-        }
-        else {
+        } else {
             self.containment(location)
         }
     }
@@ -407,6 +406,39 @@ impl<Id> LExpr<Id>
                     .line_offset(2)
             }
             Block(ref exprs) => exprs.last().expect("Expr in block").span(env).end,
+        };
+        Span {
+            start: self.location,
+            end: end,
+        }
+    }
+}
+impl<Id> LPattern<Id>
+    where Id: AstId + AsRef<str>,
+          Id::Untyped: AsRef<str>
+{
+    /// Returns the an approximation of the span of the expression
+    pub fn span(&self) -> Span {
+        // FIXME Use exact spans instead of approximations
+        let end = match self.value {
+            Pattern::Constructor(ref id, ref args) => {
+                let offset = args.iter().fold(0, |acc, arg| acc + arg.as_ref().len() + " ".len());
+                self.location.line_offset((id.as_ref().len() + offset) as i32)
+            }
+            Pattern::Record { ref fields, ref types, .. } => {
+                let field_offset = fields.iter().fold(0, |acc, t| {
+                    acc + t.0.as_ref().len() +
+                    t.1.as_ref().map(|id| id.as_ref().len()).unwrap_or(0) +
+                    ",".len()
+                });
+                let type_offset = types.iter().fold(0, |acc, t| {
+                    acc + t.0.as_ref().len() +
+                    t.1.as_ref().map(|id| id.as_ref().len()).unwrap_or(0) +
+                    ",".len()
+                });
+                self.location.line_offset((field_offset + type_offset + "{".len()) as i32)
+            }
+            Pattern::Identifier(ref id) => self.location.line_offset(id.as_ref().len() as i32),
         };
         Span {
             start: self.location,
