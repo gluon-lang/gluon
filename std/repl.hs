@@ -33,7 +33,7 @@ let commands: Map String Cmd
                 match result with
                 | Ok x -> io.print x
                 | Err x -> io.print x
-                >> return True
+                    >> return True
         }
         <> singleton "i" {
             info = "Prints information about the given name",
@@ -41,7 +41,7 @@ let commands: Map String Cmd
                 match result with
                 | Ok x -> io.print x
                 | Err x -> io.print x
-                >> return True
+                    >> return True
         }
         <> singleton "k" {
             info = "Prints the kind with the given type",
@@ -49,7 +49,7 @@ let commands: Map String Cmd
                 match result with
                 | Ok x -> io.print x
                 | Err x -> io.print x
-                >> return True
+                    >> return True
         }
         <> singleton "l" {
             info = "Loads the file at 'folder/module.ext' and stores it at 'module'",
