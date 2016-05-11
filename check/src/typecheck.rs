@@ -1,3 +1,6 @@
+//! The main typechecking interface which is responsible for typechecking expressions, patterns,
+//! etc. Only checks which need to be aware of expressions are handled here the actual unifying and
+//! checking of types are done in the `unify_type` and `kindcheck` modules.
 use std::fmt;
 use std::mem;
 
@@ -125,8 +128,11 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
 struct Environment<'a> {
+    /// The global environment which the typechecker extracts types from
     environment: &'a (PrimitiveEnv + 'a),
+    /// Stack allocated variables
     stack: ScopedMap<Symbol, TcType>,
+    /// Types which exist in some scope (`type Test = ... in ...`)
     stack_types: ScopedMap<Symbol, (TcType, Alias<Symbol, TcType>)>,
 }
 
@@ -187,8 +193,12 @@ impl<'a> PrimitiveEnv for Environment<'a> {
     }
 }
 
+/// Type returned from the main typecheck function to make sure that nested `type` and `let`
+/// expressions dont overflow the stack
 enum TailCall {
     Type(TcType),
+    /// Returned from typechecking a `let` or `type` expresion to indicate that the expression body
+    /// should be typechecked now.
     TailCall,
 }
 
@@ -315,6 +325,20 @@ impl<'a> Typecheck<'a> {
         self.original_symbols.exit_scope();
     }
 
+    /// Generalizing updates all variables which are above `level` into "generic variables". A
+    /// generic variable is instantiated with a fresh type variable each time it is refered to.
+    ///
+    /// Generalzing is a crucial part when inferring types as types will otherwise be less general
+    /// than they need to. Consider the following expression.
+    /// ```f#
+    /// let id x = x
+    /// in id 2
+    /// ```
+    /// If the variable in `id` was not generalized before the `id 2` call the variable would be
+    /// unified to an `Int` which is not what we want. Generalazing before checking the body of the
+    /// `let` basically infers that the variables in `id` does not refer to anything outside the
+    /// `let` scope and can thus be "generalized" into `a -> a` which is instantiated with a fresh
+    /// type variable in the `id 2` call.
     fn generalize_variables(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
         // Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b: 'a> {
@@ -369,6 +393,8 @@ impl<'a> Typecheck<'a> {
         }
     }
 
+    /// Main typechecking function. Returns the type of the expression if typechecking was
+    /// successful
     fn typecheck(&mut self, mut expr: &mut ast::LExpr<TcIdent>) -> TcResult<TcType> {
         fn moving<T>(t: T) -> T {
             t
@@ -457,6 +483,7 @@ impl<'a> Typecheck<'a> {
                     Some(ref mut if_false) => try!(self.typecheck(&mut **if_false)),
                     None => Type::unit(),
                 };
+                // Both branches must unify to the same type
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
             ast::Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
@@ -464,6 +491,7 @@ impl<'a> Typecheck<'a> {
                 let rhs_type = try!(self.typecheck(&mut **rhs));
                 let op_name = String::from(self.symbols.string(&op.name));
                 let result = if op_name.starts_with('#') {
+                    // Handle primitives
                     let arg_type = try!(self.unify(&lhs_type, rhs_type));
                     let offset;
                     let typ = if op_name[1..].starts_with("Int") {
@@ -526,6 +554,7 @@ impl<'a> Typecheck<'a> {
                     try!(self.typecheck_pattern(&mut alt.pattern, typ.clone()));
                     let mut alt_type = try!(self.typecheck(&mut alt.expression));
                     self.exit_scope();
+                    // All alternatives must unify to the same type
                     if let Some(ref expected) = expected_alt_type {
                         alt_type = try!(self.unify(expected, alt_type));
                     }
@@ -538,6 +567,7 @@ impl<'a> Typecheck<'a> {
                 self.enter_scope();
                 let level = self.inst.subs.var_id();
                 let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
+                // When the decfinitions are allowed to be mutually recursive
                 if is_recursive {
                     for bind in bindings.iter_mut() {
                         let mut typ = self.inst.subs.new_var();
@@ -611,6 +641,8 @@ impl<'a> Typecheck<'a> {
                        self.symbols.string(&field_access.name));
                 self.inst.subs.make_real(&mut typ);
                 if let Type::Variable(_) = *typ {
+                    // Attempt to find a record with `field_access` since inferring to a record
+                    // with only `field_access` as the field is probably useless
                     let (record_type, _) = try!(self.find_record(&[field_access.name.clone()])
                                                     .map(|t| (t.0.clone(), t.1.clone())));
                     let record_type = self.inst.instantiate(&record_type);
@@ -654,6 +686,8 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::Type(ref mut bindings, ref expr) => {
                 self.enter_scope();
+                // Rename the types so they get a name which is distinct from types from other
+                // modules
                 for bind in bindings.iter_mut() {
                     let s = String::from(self.symbols.string(&bind.alias.name));
                     let new = self.symbols.scoped_symbol(&s);
@@ -760,12 +794,11 @@ impl<'a> Typecheck<'a> {
                                             })
                                         })
                                         .collect::<TcResult<Vec<_>>>());
-                let (id_type, record_type) = match self.find_record(&fields.iter()
-                                                                           .map(|f| {
-                                                                               f.name.clone()
-                                                                           })
-                                                                           .collect::<Vec<_>>())
-                                                       .map(|t| (t.0.clone(), t.1.clone())) {
+                let result = self.find_record(&fields.iter()
+                                                     .map(|f| f.name.clone())
+                                                     .collect::<Vec<_>>())
+                                 .map(|t| (t.0.clone(), t.1.clone()));
+                let (id_type, record_type) = match result {
                     Ok(x) => x,
                     Err(_) => {
                         id.typ = Type::record(types.clone(), fields);
@@ -1011,6 +1044,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
+    /// Finish a type by replacing all unbound type variables above `level` with generics
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
         let generic = {
             let vars = self.inst.named_variables.borrow();

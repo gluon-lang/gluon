@@ -415,7 +415,9 @@ impl<Id> LExpr<Id>
     }
 }
 
-
+/// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By
+/// default the `visit_*` functions just walk the tree. If they are overriden the user will need to
+/// call `walk_mut_*` to continue traversing the tree.
 pub trait MutVisitor {
     type T: AstId;
     fn visit_expr(&mut self, e: &mut LExpr<Self::T>) {
@@ -499,6 +501,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
     }
 }
 
+/// Walks a pattern, calling `visit_*` on all relevant elements
 pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>) {
     match *p {
         Pattern::Constructor(ref mut id, ref mut args) => {

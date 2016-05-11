@@ -11,7 +11,9 @@ use symbol::Symbol;
 pub type TcType = ast::ASTType<Symbol>;
 pub type TcIdent = ast::TcIdent<Symbol>;
 
+/// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
+    /// Returns the kind of the type `type_name`
     fn find_kind(&self, type_name: &Symbol) -> Option<RcKind>;
 }
 
@@ -35,9 +37,14 @@ impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
     }
 }
 
+/// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
+    /// Returns the type of the value bound at `id`
     fn find_type(&self, id: &Symbol) -> Option<&TcType>;
+    /// Returns information about the type `id`
     fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>>;
+    /// Returns a record which contains all `fields`. The first element is the record type and the
+    /// second is the alias type.
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
 }
 
@@ -83,6 +90,7 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
     }
 }
 
+/// Trait which is a `TypeEnv` which also provides access to the type representation of some primitive types
 pub trait PrimitiveEnv: TypeEnv {
     fn get_bool(&self) -> &TcType;
 }
@@ -111,20 +119,42 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
                    })
 }
 
+/// The representation of embed_lang's types.
+///
+/// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
+/// `Type` is used to enable types to be shared. It is recommended to use the static functions on
+/// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
+/// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id, T = ASTType<Id>> {
+    /// An application which applies the first argument on the second.
+    /// `Option Int` would be represented as `App(Option, Int)`
     App(T, T),
+    /// An application with multiple arguments
     Data(T, Vec<T>),
+    /// A variant type `| A Int Float | B`.
+    /// The second element of the tuple is the function type which the constructor has which in the
+    /// above example means that A's type is `Int -> Float -> A` and B's is `B`
     Variants(Vec<(Id, T)>),
+    /// Representation for type variables
     Variable(TypeVariable),
+    /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
+    /// etc and are what unbound type variables are eventually made into.
     Generic(Generic<Id>),
+    /// A function type `<type> -> <type>`
     Function(Vec<T>, T),
+    /// A builtin type
     Builtin(BuiltinType),
+    /// An array type `Array T`
     Array(T),
+    /// A record type
     Record {
+        /// The associated types of this record type
         types: Vec<Field<Id, Alias<Id, T>>>,
+        /// The fields of this record type
         fields: Vec<Field<Id, T>>,
     },
+    /// An identifier type. Anything which is not a builting type.
     Id(Id),
     Alias(Alias<Id, T>),
 }
@@ -156,6 +186,7 @@ impl<Id, T> Type<Id, T>
     }
 }
 
+/// A shared type which is atomically reference counted
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ArcType<Id> {
     typ: Arc<Type<Id, ArcType<Id>>>,
@@ -240,6 +271,7 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
     }
 }
 
+/// All the builtin types of embed_lang
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType {
     String,
@@ -277,10 +309,20 @@ impl BuiltinType {
     }
 }
 
+/// Kind representation
+///
+/// All types in embed_lang has a kind. Most types encountered are of the `Star` (*) kind which
+/// includes things like `Int`, `String` and `Option Int`. There are however other types which
+/// are said to be "higher kinded" and these use the `Function` (a -> b) variant.
+/// These types include `Option` and `->` which both have the kind `* -> *` as well as `Functor`
+/// which has the kind `(* -> *) -> *`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Kind {
+    /// Representation for a kind which is yet to be infered
     Variable(u32),
+    /// The simplest possible kind. All values in a program have this kind.
     Star,
+    /// Constructor which takes two kinds, taking the first as argument and returning the second
     Function(RcKind, RcKind),
 }
 
@@ -296,6 +338,7 @@ impl Kind {
     }
 }
 
+/// Reference counted kind type.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct RcKind(Rc<Kind>);
 
@@ -329,6 +372,7 @@ pub struct TypeVariable {
     pub kind: RcKind,
     pub id: u32,
 }
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Generic<Id> {
     pub kind: RcKind,
@@ -337,8 +381,11 @@ pub struct Generic<Id> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Alias<Id, T> {
+    /// Name of the Alias
     pub name: Id,
+    /// Arguments to the alias
     pub args: Vec<Generic<Id>>,
+    /// The type which is being aliased or `None` if the type is abstract
     pub typ: Option<T>,
 }
 
@@ -443,9 +490,12 @@ impl<Id, T> Type<Id, T>
 }
 
 pub struct ArgIterator<'a, T: 'a> {
+    /// The current type being iterated over. After `None` has been returned this is the return
+    /// type.
     pub typ: &'a T,
 }
 
+/// Constructs an iterator over a functions arguments
 pub fn arg_iter<Id, T>(typ: &T) -> ArgIterator<T>
     where T: Deref<Target = Type<Id, T>>
 {
@@ -469,6 +519,7 @@ impl<'a, Id, T> Iterator for ArgIterator<'a, T>
 }
 
 impl<Id> ASTType<Id> {
+    /// Returns the type which this type would return if it was fully applied.
     pub fn return_type(&self) -> &ASTType<Id> {
         match **self {
             Type::Function(_, ref return_type) => return_type.return_type(),
@@ -484,6 +535,8 @@ impl<Id> ASTType<Id> {
         }
     }
 
+    /// Returns the lowest level which this type contains. The level informs from where type
+    /// variables where created.
     pub fn level(&self) -> u32 {
         use std::cmp::min;
         fold_type(self,
@@ -696,8 +749,13 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
 
 #[derive(PartialEq, Copy, Clone, PartialOrd)]
 enum Prec {
+    /// The type exists in the top context, no parentheses needed.
     Top,
+    /// The type exists in a function argument `Type -> a`, parentheses are needed if the type is a
+    /// function `(b -> c) -> a`
     Function,
+    /// The type exists in a constructor argument `Option Type`, parentheses are needed for
+    /// functions or other constructors `Option (a -> b)` `Option (Result a b)`
     Constructor,
 }
 
@@ -770,6 +828,7 @@ pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
     a.expect("fold_type")
 }
 
+/// Walks through a type calling `f` on each inner type. If `f` return `Some` the type is replaced.
 pub fn walk_move_type<F, I, T>(typ: T, f: &mut F) -> T
     where F: FnMut(&Type<I, T>) -> Option<T>,
           T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
