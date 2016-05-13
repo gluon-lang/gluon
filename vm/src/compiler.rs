@@ -680,8 +680,7 @@ impl<'a> Compiler<'a> {
                 }
                 if fields.is_empty() {
                     function.emit(PushInt(0));
-                }
-                else {
+                } else {
                     function.emit(Construct(0, fields.len() as u32));
                 }
             }
@@ -691,8 +690,7 @@ impl<'a> Compiler<'a> {
                 }
                 if exprs.is_empty() {
                     function.emit(PushInt(0));
-                }
-                else {
+                } else {
                     function.emit(Construct(0, exprs.len() as u32));
                 }
             }

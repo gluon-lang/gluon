@@ -3,9 +3,9 @@ use base::types::{Type, TcType};
 use std::marker::PhantomData;
 use gc::{Gc, Traverseable};
 use std::cell::Cell;
-use api::{VMType, Pushable};
+use api::{Userdata, VMType, Pushable};
 use api::generic::A;
-use vm::{Userdata_, Status, Value, Thread, Result};
+use vm::{Status, Value, Thread, Result};
 
 
 #[derive(Clone, PartialEq)]
@@ -49,7 +49,7 @@ fn force(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     match stack[0] {
         Value::Userdata(lazy) => {
-            let lazy = lazy.data.downcast_ref::<Lazy<A>>().expect("Lazy");
+            let lazy = lazy.downcast_ref::<Lazy<A>>().expect("Lazy");
             match lazy.value.get() {
                 Lazy_::Blackhole => {
                     "<<loop>>".push(vm, &mut stack);
@@ -92,13 +92,11 @@ fn force(vm: &Thread) -> Status {
 fn lazy(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     let f = stack[0];
-    let lazy = Userdata_::new(vm,
-                              Lazy::<A> {
-                                  value: Cell::new(Lazy_::Thunk(f)),
-                                  _marker: PhantomData,
-                              });
-    stack.push(Value::Userdata(lazy));
-    Status::Ok
+    let lazy = Userdata(Lazy::<A> {
+        value: Cell::new(Lazy_::Thunk(f)),
+        _marker: PhantomData,
+    });
+    lazy.push(vm, &mut stack)
 }
 
 pub fn load(vm: &Thread) -> Result<()> {

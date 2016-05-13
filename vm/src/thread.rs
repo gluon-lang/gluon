@@ -162,7 +162,8 @@ impl Drop for RootedThread {
         let is_empty = {
             let mut roots = self.rooted_threads.borrow_mut();
             let p = roots.pop().expect("VM ptr");
-            assert!(&*p as *const Traverseable as *const () == &*self.0 as *const Thread as *const ());
+            assert!(&*p as *const Traverseable as *const () ==
+                    &*self.0 as *const Thread as *const ());
             roots.is_empty()
         };
         if is_empty {
@@ -886,9 +887,7 @@ impl Thread {
             // the call with the extra arguments
             match stack.pop() {
                 Data(excess) => {
-                    let mut stack = StackFrame::frame(stack,
-                                                      0,
-                                                      State::Excess);
+                    let mut stack = StackFrame::frame(stack, 0, State::Excess);
                     debug!("Push excess args {:?}", &excess.fields);
                     stack.push(result);
                     for value in &excess.fields {
@@ -926,7 +925,10 @@ fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     }
 }
 
-fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction, function: &BytecodeFunction) {
+fn debug_instruction(stack: &StackFrame,
+                     index: usize,
+                     instr: Instruction,
+                     function: &BytecodeFunction) {
     debug!("{:?}: {:?} -> {:?} {:?}",
            index,
            instr,
@@ -938,10 +940,8 @@ fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction, funct
                        debug!("{:?}", &stack[..])
                    }
                    x
-                }
-               PushGlobal(i) => {
-                    function.globals.get(i as usize).cloned()
                }
+               PushGlobal(i) => function.globals.get(i as usize).cloned(),
                NewClosure(..) => Some(Int(stack.len() as isize)),
                MakeClosure(..) => Some(Int(stack.len() as isize)),
                _ => None,

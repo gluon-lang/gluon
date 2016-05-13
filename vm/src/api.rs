@@ -1,7 +1,7 @@
 use gc::{Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, StackFrame};
-use vm::{Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, Userdata_, VMInt,
+use vm::{Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, VMInt,
          Error, Root, RootStr};
 use base::types;
 use base::types::{TcType, Type};
@@ -476,14 +476,15 @@ impl<T: VMType> VMType for Userdata<T> {
 }
 impl<'vm, T: ::vm::Userdata + VMType> Pushable<'vm> for Userdata<T> {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
-        stack.push(Value::Userdata(Userdata_::new(vm, self.0)));
+        let data: Box<::vm::Userdata> = Box::new(self.0);
+        stack.push(Value::Userdata(vm.gc.borrow_mut().alloc(Move(data))));
         Status::Ok
     }
 }
 impl<'vm, T: Clone + ::vm::Userdata> Getable<'vm> for Userdata<T> {
     fn from_value(_: &'vm Thread, value: Value) -> Option<Userdata<T>> {
         match value {
-            Value::Userdata(v) => v.data.downcast_ref::<T>().map(|x| Userdata(x.clone())),
+            Value::Userdata(data) => data.downcast_ref::<T>().map(|x| Userdata(x.clone())),
             _ => None,
         }
     }
@@ -499,7 +500,7 @@ impl<'s, T: VMType> VMType for *const T {
 impl<'vm, T: ::vm::Userdata> Getable<'vm> for *const T {
     fn from_value(_: &'vm Thread, value: Value) -> Option<*const T> {
         match value {
-            Value::Userdata(v) => v.data.downcast_ref::<T>().map(|x| x as *const T),
+            Value::Userdata(data) => data.downcast_ref::<T>().map(|x| x as *const T),
             _ => None,
         }
     }
@@ -510,14 +511,13 @@ impl<T: VMType> VMType for *mut T {
 }
 impl<'vm, T: VMType + Any> Pushable<'vm> for *mut T {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
-        stack.push(Value::Userdata(Userdata_::new(vm, self)));
-        Status::Ok
+        Userdata(self).push(vm, stack)
     }
 }
 impl<'vm, T: Any> Getable<'vm> for *mut T {
     fn from_value(_: &'vm Thread, value: Value) -> Option<*mut T> {
         match value {
-            Value::Userdata(v) => v.data.downcast_ref::<*mut T>().map(|x| *x),
+            Value::Userdata(data) => data.downcast_ref::<*mut T>().map(|x| *x),
             _ => None,
         }
     }
@@ -749,7 +749,7 @@ impl<'vm, T: Any> VMType for Root<'vm, T> {
 impl<'vm, T: ::vm::Userdata> Getable<'vm> for Root<'vm, T> {
     fn from_value(vm: &'vm Thread, value: Value) -> Option<Root<'vm, T>> {
         match value {
-            Value::Userdata(v) => vm.root::<T>(v.data).map(From::from),
+            Value::Userdata(data) => vm.root::<T>(data).map(From::from),
             _ => None,
         }
     }

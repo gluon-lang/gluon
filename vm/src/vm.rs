@@ -26,33 +26,17 @@ pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable {}
 
+impl PartialEq for Userdata {
+    fn eq(&self, other: &Userdata) -> bool {
+        self as *const _ == other as *const _
+    }
+}
+
 impl<T> Userdata for T where T: Any + Traverseable {}
 
 impl fmt::Debug for Userdata {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Userdata")
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct Userdata_ {
-    pub data: GcPtr<Box<Userdata>>,
-}
-
-impl Userdata_ {
-    pub fn new<T: Userdata>(vm: &Thread, v: T) -> Userdata_ {
-        let v: Box<Userdata> = Box::new(v);
-        Userdata_ { data: vm.gc.borrow_mut().alloc(Move(v)) }
-    }
-
-    fn ptr(&self) -> *const () {
-        let p: *const _ = &*self.data;
-        p as *const ()
-    }
-}
-impl PartialEq for Userdata_ {
-    fn eq(&self, o: &Userdata_) -> bool {
-        self.ptr() == o.ptr()
     }
 }
 
@@ -169,7 +153,7 @@ pub enum Value {
     Function(GcPtr<ExternFunction>),
     Closure(GcPtr<ClosureData>),
     PartialApplication(GcPtr<PartialApplicationData>),
-    Userdata(Userdata_),
+    Userdata(GcPtr<Box<Userdata>>),
     Thread(GcPtr<Thread>),
 }
 
@@ -261,7 +245,7 @@ impl Traverseable for Value {
             Data(ref data) => data.traverse(gc),
             Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
-            Value::Userdata(ref data) => data.data.traverse(gc),
+            Value::Userdata(ref data) => data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
             Value::Thread(ref thread) => thread.traverse(gc),
             Int(_) | Float(_) => (),
@@ -305,10 +289,7 @@ impl fmt::Debug for Value {
                     Function(ref func) => write!(f, "<EXTERN {:?}>", &**func),
                     Closure(ref closure) => {
                         let p: *const _ = &*closure.function;
-                        write!(f,
-                               "<{:?} {:?}>",
-                               closure.function.name,
-                               p)
+                        write!(f, "<{:?} {:?}>", closure.function.name, p)
                     }
                     PartialApplication(ref app) => {
                         let name = match app.function {
@@ -320,7 +301,7 @@ impl fmt::Debug for Value {
                                name,
                                LevelSlice(level - 1, &app.arguments))
                     }
-                    Value::Userdata(ref data) => write!(f, "<Userdata {:?}>", data.ptr()),
+                    Value::Userdata(ref data) => write!(f, "<Userdata {:p}>", &**data),
                     Value::Thread(_) => write!(f, "<thread>"),
                 }
             }

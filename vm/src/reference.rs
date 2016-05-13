@@ -7,8 +7,8 @@ use base::types;
 use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
 use stack::StackFrame;
-use vm::{Thread, Value, Status, Userdata_};
-use api::{Generic, Getable, Pushable, VMType};
+use vm::{Thread, Value, Status};
+use api::{Generic, Getable, Pushable, Userdata, VMType};
 use api::generic::A;
 
 struct Reference<T>(Cell<Value>, PhantomData<T>);
@@ -38,8 +38,7 @@ impl<'vm, T> Pushable<'vm> for Reference<T>
           T::Type: Sized
 {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
-        stack.push(Value::Userdata(Userdata_::new(vm, self)));
-        Status::Ok
+        Userdata(self).push(vm, stack)
     }
 }
 
@@ -48,8 +47,8 @@ impl<'vm, T> Getable<'vm> for Reference<T>
 {
     fn from_value(_: &'vm Thread, value: Value) -> Option<Reference<T>> {
         match value {
-            Value::Userdata(v) => {
-                v.data.downcast_ref::<Self>().map(|x| Reference(x.0.clone(), x.1))
+            Value::Userdata(data) => {
+                data.downcast_ref::<Self>().map(|x| Reference(x.0.clone(), x.1))
             }
             _ => None,
         }
