@@ -10,6 +10,7 @@ use base::symbol::{Name, Symbol};
 use base::types::{TcType, Type, TypeEnv};
 use base::types;
 
+use ::Variants;
 use api::{Getable, Pushable, VMType};
 use array::Str;
 use compiler::CompiledFunction;
@@ -313,7 +314,7 @@ impl Thread {
 
         // Finally check that type of the returned value is correct
         if *typ == T::make_type(self) {
-            T::from_value(self, value)
+            T::from_value(self, Variants(&value))
                 .ok_or_else(|| Error::Message(format!("Could not retrieve global `{}`", name)))
         } else {
             Err(Error::Message(format!("Could not retrieve global `{}` as the types did not \
@@ -916,7 +917,7 @@ fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 {
     let r = stack.pop();
     let l = stack.pop();
-    match (T::from_value(vm, l), T::from_value(vm, r)) {
+    match (T::from_value(vm, Variants(&l)), T::from_value(vm, Variants(&r))) {
         (Some(l), Some(r)) => {
             let result = f(l, r);
             result.push(vm, stack);

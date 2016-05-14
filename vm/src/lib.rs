@@ -29,3 +29,16 @@ pub mod channel;
 mod reference;
 mod lazy;
 mod array;
+
+use api::ValueRef;
+use vm::Value;
+
+#[derive(Debug)]
+pub struct Variants<'a>(&'a Value);
+
+impl<'a> Variants<'a> {
+    pub fn as_ref(&self) -> ValueRef {
+        ValueRef::new(self.0)
+    }
+}
+

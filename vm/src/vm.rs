@@ -19,7 +19,7 @@ use compiler::{CompiledFunction, Variable, CompilerEnv};
 use api::IO;
 use lazy::Lazy;
 
-use self::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
+use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
 
 pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 
@@ -242,7 +242,7 @@ impl Traverseable for Value {
     fn traverse(&self, gc: &mut Gc) {
         match *self {
             String(ref data) => data.traverse(gc),
-            Data(ref data) => data.traverse(gc),
+            Value::Data(ref data) => data.traverse(gc),
             Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
             Value::Userdata(ref data) => data.traverse(gc),
@@ -280,7 +280,7 @@ impl fmt::Debug for Value {
                     Int(i) => write!(f, "{:?}", i),
                     Float(x) => write!(f, "{:?}f", x),
                     String(x) => write!(f, "{:?}", &*x),
-                    Data(ref data) => {
+                    Value::Data(ref data) => {
                         write!(f,
                                "{{{:?}: {:?}}}",
                                data.tag,
@@ -716,7 +716,7 @@ impl GlobalVMState {
     }
 
     pub fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value {
-        Data(self.gc.borrow_mut().alloc(Def {
+        Value::Data(self.gc.borrow_mut().alloc(Def {
             tag: tag,
             elems: fields,
         }))

@@ -106,7 +106,8 @@ pub unsafe extern "C" fn get_string(vm: &Thread,
                                     out: &mut &u8,
                                     out_len: &mut usize)
                                     -> Error {
-    match <&str>::from_value(vm, vm.current_frame()[index]) {
+    let stack = vm.current_frame();
+    match stack.get_variants(index).and_then(|value| <&str>::from_value(vm, value)) {
         Some(value) => {
             *out = &*value.as_ptr();
             *out_len = value.len();
@@ -119,7 +120,8 @@ pub unsafe extern "C" fn get_string(vm: &Thread,
 unsafe fn get_value<T>(vm: &Thread, index: VMIndex, out: &mut T) -> Error
     where T: for<'vm> Getable<'vm>
 {
-    match T::from_value(vm, vm.current_frame()[index]) {
+    let stack = vm.current_frame();
+    match stack.get_variants(index).and_then(|value| T::from_value(vm, value)) {
         Some(value) => {
             *out = value;
             Error::Ok

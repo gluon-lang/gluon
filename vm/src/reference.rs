@@ -5,10 +5,11 @@ use std::marker::PhantomData;
 use base::symbol::Symbol;
 use base::types;
 use base::types::{Type, TcType};
+use ::Variants;
 use gc::{Gc, Traverseable};
 use stack::StackFrame;
 use vm::{Thread, Value, Status};
-use api::{Generic, Getable, Pushable, Userdata, VMType};
+use api::{Generic, Getable, Pushable, Userdata, ValueRef, VMType};
 use api::generic::A;
 
 struct Reference<T>(Cell<Value>, PhantomData<T>);
@@ -45,9 +46,9 @@ impl<'vm, T> Pushable<'vm> for Reference<T>
 impl<'vm, T> Getable<'vm> for Reference<T>
     where T: Any + VMType
 {
-    fn from_value(_: &'vm Thread, value: Value) -> Option<Reference<T>> {
-        match value {
-            Value::Userdata(data) => {
+    fn from_value(_: &'vm Thread, value: Variants) -> Option<Reference<T>> {
+        match value.as_ref() {
+            ValueRef::Userdata(data) => {
                 data.downcast_ref::<Self>().map(|x| Reference(x.0.clone(), x.1))
             }
             _ => None,

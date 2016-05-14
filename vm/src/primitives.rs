@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::string::String as StdString;
 
+use ::Variants;
 use primitives as prim;
 use api::{generic, Generic, Getable, Array, MaybeError, primitive, WithVM};
 use api::generic::A;
@@ -61,7 +62,7 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
                      rhs: &rhs.fields,
                  })
     };
-    Getable::from_value(lhs.vm(), Value::Data(value)).expect("Array")
+    Getable::from_value(lhs.vm(), Variants(&Value::Data(value))).expect("Array")
 }
 
 fn string_append(lhs: WithVM<&str>, rhs: &str) -> String {
@@ -103,7 +104,7 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> String {
                      rhs: rhs,
                  })
     };
-    Getable::from_value(vm, Value::String(value)).expect("Array")
+    Getable::from_value(vm, Variants(&Value::String(value))).expect("Array")
 }
 
 fn string_slice(s: &str, start: VMInt, end: VMInt) -> &str {
