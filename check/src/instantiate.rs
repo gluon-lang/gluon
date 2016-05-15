@@ -8,7 +8,6 @@ use base::types::{Type, Generic, merge};
 use base::symbol::Symbol;
 use base::types::{TcType, TypeEnv};
 use unify_type::TypeError::UndefinedType;
-use substitution::Substitution;
 use unify;
 
 pub struct AliasInstantiator<'a> {
@@ -113,23 +112,22 @@ impl<'a> AliasInstantiator<'a> {
 
 #[derive(Debug, Default)]
 pub struct Instantiator {
-    pub subs: Substitution<TcType>,
     pub named_variables: RefCell<HashMap<Symbol, TcType>>,
 }
 
 impl Instantiator {
     pub fn new() -> Instantiator {
-        Instantiator {
-            subs: Substitution::new(),
-            named_variables: RefCell::new(HashMap::new()),
-        }
+        Instantiator { named_variables: RefCell::new(HashMap::new()) }
     }
 
-    fn variable_for(&self, generic: &Generic<Symbol>) -> TcType {
+    fn variable_for(&self,
+                    generic: &Generic<Symbol>,
+                    on_unbound: &mut FnMut(&Symbol) -> TcType)
+                    -> TcType {
         let mut variables = self.named_variables.borrow_mut();
         let var = match variables.entry(generic.id.clone()) {
             Entry::Vacant(entry) => {
-                let t = self.subs.new_var();
+                let t = on_unbound(&generic.id);
                 entry.insert(t).clone()
             }
             Entry::Occupied(entry) => entry.get().clone(),
@@ -142,13 +140,18 @@ impl Instantiator {
     }
 
     ///Instantiates a type, replacing all generic variables with fresh type variables
-    pub fn instantiate(&mut self, typ: &TcType) -> TcType {
+    pub fn instantiate<F>(&mut self, typ: &TcType, on_unbound: F) -> TcType
+        where F: FnMut(&Symbol) -> TcType
+    {
         self.named_variables.borrow_mut().clear();
-        self.instantiate_(typ)
+        self.instantiate_(typ, on_unbound)
     }
 
-    pub fn instantiate_(&mut self, typ: &TcType) -> TcType {
-        instantiate(typ.clone(), |id| Some(self.variable_for(id)))
+    pub fn instantiate_<F>(&mut self, typ: &TcType, mut on_unbound: F) -> TcType
+        where F: FnMut(&Symbol) -> TcType
+    {
+        instantiate(typ.clone(),
+                    |id| Some(self.variable_for(id, &mut on_unbound)))
     }
 
     fn instantiate_with(&self,
@@ -165,32 +168,6 @@ impl Instantiator {
                 .find(|&(arg, _)| arg.id == gen.id)
                 .map(|(_, typ)| typ.clone())
         })
-    }
-
-    pub fn replace_variable(&self, typ: &Type<Symbol>) -> Option<TcType> {
-        match *typ {
-            Type::Variable(ref id) => {
-                self.subs
-                    .find_type_for_var(id.id)
-                    .cloned()
-            }
-            _ => None,
-        }
-    }
-
-    pub fn set_type(&self, t: TcType) -> TcType {
-        types::walk_move_type(t,
-                              &mut |typ| {
-                                  let replacement = self.replace_variable(typ);
-                                  let result = {
-                                      let mut typ = typ;
-                                      if let Some(ref t) = replacement {
-                                          typ = &**t;
-                                      }
-                                      unroll_app(typ)
-                                  };
-                                  result.or(replacement)
-                              })
     }
 }
 

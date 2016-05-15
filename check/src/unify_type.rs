@@ -483,9 +483,10 @@ mod tests {
     use super::TypeError::FieldMismatch;
     use unify::Error::*;
     use unify::unify;
+    use substitution::Substitution;
     use instantiate::{AliasInstantiator, Instantiator};
     use base::types;
-    use base::types::Type;
+    use base::types::{TcType, Type};
     use tests::*;
 
 
@@ -493,15 +494,15 @@ mod tests {
     fn detect_multiple_type_errors_in_single_type() {
         let _ = ::env_logger::init();
         let (x, y, z, w) = (intern("x"), intern("y"), intern("z"), intern("w"));
-        let l = Type::record(vec![],
-                             vec![types::Field {
-                                      name: x.clone(),
-                                      typ: Type::int(),
-                                  },
-                                  types::Field {
-                                      name: y.clone(),
-                                      typ: Type::string(),
-                                  }]);
+        let l: TcType = Type::record(vec![],
+                                     vec![types::Field {
+                                              name: x.clone(),
+                                              typ: Type::int(),
+                                          },
+                                          types::Field {
+                                              name: y.clone(),
+                                              typ: Type::string(),
+                                          }]);
         let r = Type::record(vec![],
                              vec![types::Field {
                                       name: z.clone(),
@@ -512,9 +513,10 @@ mod tests {
                                       typ: Type::string(),
                                   }]);
         let inst = Instantiator::new();
+        let subs = Substitution::new();
         let unit = ();
         let mut alias = AliasInstantiator::new(&inst, &unit);
-        let result = unify(&inst.subs, &mut alias, &l, &r);
+        let result = unify(&subs, &mut alias, &l, &r);
         assert_eq!(result,
                    Err(Errors {
                        errors: vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))],

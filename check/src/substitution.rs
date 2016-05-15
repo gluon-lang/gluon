@@ -1,8 +1,15 @@
 use std::cell::RefCell;
 use std::default::Default;
 use std::fmt;
+
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
+
 use base::fixed::{FixedMap, FixedVec};
+use base::types;
+use base::types::{TcType, Type};
+use base::symbol::Symbol;
+
+use instantiate::unroll_app;
 
 pub struct Substitution<T> {
     ///Union-find data structure used to store the relationships of all variables in the
@@ -69,6 +76,12 @@ fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
     occurs
 }
 
+/// Specialized union implementation which makes sure that variables with a higher level always
+/// point to the lower level variable.
+///
+/// map.union(1, 2);
+/// map.find(2) -> 1
+/// map.find(1) -> 1
 #[derive(Debug)]
 struct UnionByLevel {
     rank: UnionByRank,
@@ -226,6 +239,33 @@ impl<T: Substitutable> Substitution<T> {
         let level = &mut union.get_mut(var as usize).level;
         *level = ::std::cmp::min(*level, var);
         *level
+    }
+}
+
+impl Substitution<TcType> {
+    pub fn replace_variable(&self, typ: &Type<Symbol>) -> Option<TcType> {
+        match *typ {
+            Type::Variable(ref id) => {
+                self.find_type_for_var(id.id)
+                    .cloned()
+            }
+            _ => None,
+        }
+    }
+
+    pub fn set_type(&self, t: TcType) -> TcType {
+        types::walk_move_type(t,
+                              &mut |typ| {
+                                  let replacement = self.replace_variable(typ);
+                                  let result = {
+                                      let mut typ = typ;
+                                      if let Some(ref t) = replacement {
+                                          typ = &**t;
+                                      }
+                                      unroll_app(typ)
+                                  };
+                                  result.or(replacement)
+                              })
     }
 }
 
