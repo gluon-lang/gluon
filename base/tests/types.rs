@@ -53,14 +53,14 @@ fn show_record() {
     let test = data("Test", vec![data("a", vec![])]);
     let typ = Type::record(vec![Field {
                                     name: "Test",
-                                    typ: Alias {
-                                        name: "Test",
-                                        args: vec![Generic {
+                                    typ: Alias::new(
+                                        "Test",
+                                        vec![Generic {
                                                        kind: Kind::star(),
                                                        id: "a",
                                                    }],
-                                        typ: Some(f.clone()),
-                                    },
+                                        f.clone(),
+                                    ),
                                 }],
                            vec![Field {
                                     name: "x",
@@ -69,14 +69,14 @@ fn show_record() {
     assert_eq!(format!("{}", typ), "{ Test a = a -> String, x: Int }");
     let typ = Type::record(vec![Field {
                                     name: "Test",
-                                    typ: Alias {
-                                        name: "Test",
-                                        args: vec![Generic {
+                                    typ: Alias::new(
+                                        "Test",
+                                        vec![Generic {
                                                        kind: Kind::star(),
                                                        id: "a",
                                                    }],
-                                        typ: Some(f.clone()),
-                                    },
+                                        f.clone(),
+                                    ),
                                 }],
                            vec![Field {
                                     name: "x",
@@ -90,14 +90,14 @@ fn show_record() {
                "{ Test a = a -> String, x: Int, test: Test a }");
     let typ = Type::record(vec![Field {
                                     name: "Test",
-                                    typ: Alias {
-                                        name: "Test",
-                                        args: vec![Generic {
+                                    typ: Alias::new(
+                                        "Test",
+                                        vec![Generic {
                                                        kind: Kind::star(),
                                                        id: "a",
                                                    }],
-                                        typ: Some(f.clone()),
-                                    },
+                                        f.clone(),
+                                    ),
                                 }],
                            vec![]);
     assert_eq!(format!("{}", typ), "{ Test a = a -> String }");

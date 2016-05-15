@@ -5,7 +5,7 @@ use base::ast::{Typed, DisplayEnv, MutVisitor};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule};
 use base::types;
-use base::types::{TcType, Type, Generic, TcIdent, RcKind, KindEnv, TypeEnv};
+use base::types::{Alias, TcType, Type, TcIdent, RcKind, KindEnv, TypeEnv};
 use base::error::Errors;
 
 pub type Error = Errors<ast::Spanned<RenameError>>;
@@ -110,10 +110,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         let field_type = imported_types.iter()
                                                        .find(|field| field.name.name_eq(name))
                                                        .expect("field_type");
-                        self.stack_type(name.clone(),
-                                        field_type.typ.name.clone(),
-                                        field_type.typ.args.clone(),
-                                        field_type.typ.typ.clone());
+                        self.stack_type(name.clone(), &field_type.typ);
                     }
                 }
                 ast::Pattern::Identifier(ref mut id) => {
@@ -149,28 +146,19 @@ pub fn rename(symbols: &mut SymbolModule,
 
         }
 
-        fn stack_type(&mut self,
-                      id: Symbol,
-                      scoped_id: Symbol,
-                      generics: Vec<Generic<Symbol>>,
-                      real_type: Option<TcType>) {
+        fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, TcType>) {
             // Insert variant constructors into the local scope
-            if let Some(ref real_type) = real_type {
+            if let Some(ref real_type) = alias.typ {
                 if let Type::Variants(ref variants) = **real_type {
                     for &(ref name, ref typ) in variants {
                         self.env.stack.insert(name.clone(), (name.clone(), typ.clone()));
                     }
                 }
             }
-            let alias = types::Alias {
-                name: id.clone(),
-                args: generics,
-                typ: real_type,
-            };
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
-            self.env.stack_types.insert(scoped_id, alias.clone());
-            self.env.stack_types.insert(id, alias);
+            self.env.stack_types.insert(alias.name.clone(), alias.clone());
+            self.env.stack_types.insert(id, alias.clone());
         }
 
         fn rename(&self, id: &Symbol, expected: &TcType) -> Result<Option<Symbol>, RenameError> {
@@ -287,10 +275,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 ast::Expr::Type(ref bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
-                        self.stack_type(bind.name.clone(),
-                                        bind.alias.name.clone(),
-                                        bind.alias.args.clone(),
-                                        bind.alias.typ.clone());
+                        self.stack_type(bind.name.clone(), &bind.alias);
                     }
                     self.visit_expr(expr);
                     self.env.stack_types.exit_scope();

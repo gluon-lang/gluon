@@ -337,8 +337,11 @@ impl<'a> Compiler<'a> {
             match typ.as_alias() {
                 Some((id, _)) => {
                     match self.find_type_info(id) {
-                        Some(&types::Alias { typ: Some(ref real_type), .. }) => {
-                            typ = real_type;
+                        Some(alias) => {
+                            match alias.typ {
+                                Some(ref real_type) => typ = real_type,
+                                None => break,
+                            }
                         }
                         _ => break,
                     }

@@ -693,11 +693,11 @@ impl GlobalVMState {
                 .insert(id, typ.clone());
             let t = self.typeids.borrow().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(name.into(),
-                                         types::Alias {
+                                         types::Alias::from(types::AliasData {
                                              name: n,
                                              args: args,
                                              typ: None,
-                                         });
+                                         }));
             Ok(t)
         }
     }

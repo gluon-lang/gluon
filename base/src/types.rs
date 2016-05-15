@@ -3,6 +3,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::marker::PhantomData;
 
 use ast;
 use ast::{ASTType, DisplayEnv};
@@ -157,7 +158,7 @@ pub enum Type<Id, T = ASTType<Id>> {
     },
     /// An identifier type. Anything which is not a builting type.
     Id(Id),
-    Alias(Alias<Id, T>),
+    Alias(AliasData<Id, T>),
 }
 
 impl<Id, T> Type<Id, T>
@@ -382,6 +383,65 @@ pub struct Generic<Id> {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Alias<Id, T> {
+    _typ: T,
+    _marker: PhantomData<Id>,
+}
+
+impl<Id, T> Deref for Alias<Id, T>
+    where T: Deref<Target = Type<Id, T>>
+{
+    type Target = AliasData<Id, T>;
+    fn deref(&self) -> &AliasData<Id, T> {
+        match *self._typ {
+            Type::Alias(ref alias) => alias,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
+where T: From<Type<Id, T>>
+{
+    fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
+        Alias {
+            _typ: T::from(Type::Alias(data)),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<Id, T> AsRef<T> for Alias<Id, T> {
+    fn as_ref(&self) -> &T {
+        &self._typ
+    }
+}
+
+impl<Id, T> Alias<Id, T>
+    where T: From<Type<Id, T>>
+{
+    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
+        Alias {
+            _typ: Type::alias(name, args, typ),
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn into_type(self) -> T {
+        self._typ
+    }
+}
+
+impl<Id> Alias<Id, ASTType<Id>> where Id: Clone {
+    pub fn make_mut(alias: &mut Alias<Id, ASTType<Id>>) -> &mut AliasData<Id, ASTType<Id>> {
+        match *Arc::make_mut(&mut alias._typ.typ) {
+            Type::Alias(ref mut alias) => alias,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct AliasData<Id, T> {
     /// Name of the Alias
     pub name: Id,
     /// Arguments to the alias
@@ -444,8 +504,12 @@ impl<Id, T> Type<Id, T>
         T::from(Type::Variable(typ))
     }
 
-    pub fn alias(alias: Alias<Id, T>) -> T {
-        T::from(Type::Alias(alias))
+    pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
+        T::from(Type::Alias(AliasData {
+            name: name,
+            args: args,
+            typ: Some(typ),
+        }))
     }
 
     pub fn id(id: Id) -> T {
@@ -481,10 +545,12 @@ impl<Id, T> Type<Id, T>
             Type::Data(ref id, ref args) => {
                 match **id {
                     Type::Id(ref id) => Some((id, args)),
+                    Type::Alias(ref alias) => Some((&alias.name, args)),
                     _ => None,
                 }
             }
             Type::Id(ref id) => Some((id, &[][..])),
+            Type::Alias(ref alias) => Some((&alias.name, &[][..])),
             _ => None,
         }
     }

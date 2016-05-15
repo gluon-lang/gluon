@@ -94,11 +94,10 @@ fn type_decl(name: String, args: Vec<Generic<String>>, typ: ASTType<String>, bod
     type_decls(vec![TypeBinding {
                         comment: None,
                         name: name.clone(),
-                        alias: Alias {
-                            name: name,
-                            args: args,
-                            typ: Some(typ),
-                        },
+                        alias: Alias::new(
+                            name,
+                            args,
+                            typ),
                     }],
                body)
 }
@@ -232,12 +231,12 @@ fn type_mutually_recursive() {
         TypeBinding {
             comment: None,
             name: intern("Test"),
-            alias: Alias { name: intern("Test"), args: Vec::new(), typ: Some(test), }
+            alias: Alias::new(intern("Test"), Vec::new(), test),
         },
         TypeBinding {
             comment: None,
             name: intern("Test2"),
-            alias: Alias { name: intern("Test2"), args: Vec::new(), typ: Some(test2) }
+            alias: Alias::new(intern("Test2"), Vec::new(), test2),
         },
         ];
     assert_eq!(e, type_decls(binds, int(1)));
@@ -349,11 +348,11 @@ fn associated_record() {
 
     let test_type = Type::record(vec![Field {
                                           name: String::from("Fn"),
-                                          typ: Alias {
-                                              name: String::from("Fn"),
-                                              args: vec![],
-                                              typ: Some(typ("Fn")),
-                                          },
+                                          typ: Alias::new(
+                                              String::from("Fn"),
+                                              vec![],
+                                              typ("Fn")
+                                          ),
                                       }],
                                  vec![Field {
                                           name: intern("x"),
@@ -455,11 +454,11 @@ id
                type_decls(vec![TypeBinding {
                                    comment: Some("Test type ".into()),
                                    name: intern("Test"),
-                                   alias: Alias {
-                                       name: intern("Test"),
-                                       args: Vec::new(),
-                                       typ: Some(typ("Int")),
-                                   },
+                                   alias: Alias::new(
+                                       intern("Test"),
+                                       Vec::new(),
+                                       typ("Int")
+                                   ),
                                }],
                           id("id")));
 }
@@ -482,11 +481,10 @@ id
                      type_decls(vec![TypeBinding {
                                          comment: Some("Test type ".into()),
                                          name: intern("Test"),
-                                         alias: Alias {
-                                             name: intern("Test"),
-                                             args: Vec::new(),
-                                             typ: Some(typ("Int")),
-                                         },
+                                         alias: Alias::new(
+                                             intern("Test"),
+                                             Vec::new(),
+                                             typ("Int")),
                                      }],
                                 id("id"))));
 }
@@ -506,11 +504,10 @@ id
                type_decls(vec![TypeBinding {
                                    comment: Some("Merge\nconsecutive\nline comments.".into()),
                                    name: intern("Test"),
-                                   alias: Alias {
-                                       name: intern("Test"),
-                                       args: Vec::new(),
-                                       typ: Some(typ("Int")),
-                                   },
+                                   alias: Alias::new(
+                                       intern("Test"),
+                                       Vec::new(),
+                                       typ("Int")),
                                }],
                           id("id")));
 }

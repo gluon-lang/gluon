@@ -290,13 +290,9 @@ impl<'a> Typecheck<'a> {
         self.environment.stack.insert(id, typ);
     }
 
-    fn stack_type(&mut self,
-                  id: Symbol,
-                  typ: TcType,
-                  generics: Vec<Generic<Symbol>>,
-                  real_type: Option<TcType>) {
+    fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, TcType>) {
         // Insert variant constructors into the local scope
-        if let Some(ref real_type) = real_type {
+        if let Some(ref real_type) = alias.typ {
             if let Type::Variants(ref variants) = **real_type {
                 for (name, typ) in variants.iter().cloned() {
                     let symbol = self.symbols.symbol(name.as_ref());
@@ -305,30 +301,16 @@ impl<'a> Typecheck<'a> {
                 }
             }
         }
-        let mut alias = Alias {
-            name: id.clone(),
-            args: generics,
-            typ: real_type,
-        };
+        let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
+        let typ = Type::<_, TcType>::data(alias.as_ref().clone(), generic_args);
         {
-            let alias_id = match *typ {
-                Type::Id(ref alias_id) => alias_id,
-                Type::Data(ref alias_id, _) => {
-                    match **alias_id {
-                        Type::Id(ref alias_id) => alias_id,
-                        _ => unreachable!(),
-                    }
-                }
-                _ => unreachable!(),
-            };
-            alias.name = alias_id.clone();
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
             self.environment
                 .stack_types
-                .insert(alias_id.clone(), (typ.clone(), alias.clone()));
+                .insert(alias.name.clone(), (typ.clone(), alias.clone()));
         }
-        self.environment.stack_types.insert(id, (typ, alias));
+        self.environment.stack_types.insert(id, (typ, alias.clone()));
     }
 
     fn enter_scope(&mut self) {
@@ -713,10 +695,10 @@ impl<'a> Typecheck<'a> {
                     let new = self.symbols.scoped_symbol(&s);
                     self.original_symbols.insert(bind.alias.name.clone(), new.clone());
                     // Rename the aliase's name to its global name
-                    bind.alias.name = new;
+                    Alias::make_mut(&mut bind.alias).name = new;
                 }
                 for bind in bindings.iter_mut() {
-                    let typ = bind.alias
+                    let typ = Alias::make_mut(&mut bind.alias)
                                   .typ
                                   .as_mut()
                                   .expect("Expected binding to have an aliased type");
@@ -735,17 +717,18 @@ impl<'a> Typecheck<'a> {
                         // and bind the same variables to the arguments of the type binding
                         // ('a' and 'b' in the example)
                         let mut id_kind = check.star();
-                        for gen in bind.alias.args.iter_mut().rev() {
+                        let alias = Alias::make_mut(&mut bind.alias);
+                        for gen in alias.args.iter_mut().rev() {
                             gen.kind = check.subs.new_var();
                             id_kind = Kind::function(gen.kind.clone(), id_kind);
                         }
-                        check.add_local(bind.alias.name.clone(), id_kind);
+                        check.add_local(alias.name.clone(), id_kind);
                     }
 
                     // Kindcheck all the types in the environment
                     for bind in bindings.iter_mut() {
                         check.set_variables(&bind.alias.args);
-                        let typ = bind.alias
+                        let typ = Alias::make_mut(&mut bind.alias)
                                       .typ
                                       .as_mut()
                                       .expect("Expected binding to have an aliased type");
@@ -754,10 +737,11 @@ impl<'a> Typecheck<'a> {
 
                     // All kinds are now inferred so replace the kinds store in the AST
                     for bind in bindings.iter_mut() {
-                        if let Some(ref mut typ) = bind.alias.typ {
+                        let alias = Alias::make_mut(&mut bind.alias);
+                        if let Some(ref mut typ) = alias.typ {
                             *typ = check.finalize_type(typ.clone());
                         }
-                        for arg in &mut bind.alias.args {
+                        for arg in &mut alias.args {
                             *arg = check.finalize_generic(&arg);
                         }
                     }
@@ -766,11 +750,6 @@ impl<'a> Typecheck<'a> {
                 // Finally insert the declared types into the global scope
                 for bind in bindings {
                     let args = &bind.alias.args;
-                    let generic_args = args.iter().cloned().map(Type::generic).collect();
-                    let name = Type::<_, TcType>::data(Type::id(bind.alias
-                                                                    .name
-                                                                    .clone()),
-                                                       generic_args);
                     debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
                     if self.environment.stack_types.get(&bind.name).is_some() {
                         self.errors.error(ast::Spanned {
@@ -778,10 +757,7 @@ impl<'a> Typecheck<'a> {
                             value: DuplicateTypeDefinition(bind.name.clone()),
                         });
                     } else {
-                        self.stack_type(bind.name.clone(),
-                                        name.clone(),
-                                        args.clone(),
-                                        bind.alias.typ.clone());
+                        self.stack_type(bind.name.clone(), &bind.alias);
                     }
                 }
                 Ok(TailCall::TailCall)
@@ -964,24 +940,11 @@ impl<'a> Typecheck<'a> {
                                                   .find(|field| field.name.name_eq(&name));
                             match field_type {
                                 Some(field_type) => {
-                                    let args = field_type.typ
-                                                         .args
-                                                         .iter()
-                                                         .cloned()
-                                                         .map(Type::generic)
-                                                         .collect();
-                                    let alias_type = Type::data(Type::id(field_type.typ
-                                                                                   .name
-                                                                                   .clone()),
-                                                                args);
                                     // This forces refresh_type to remap the name a type was given
                                     // in this module to its actual name
                                     self.original_symbols
                                         .insert(name.clone(), field_type.typ.name.clone());
-                                    self.stack_type(name,
-                                                    alias_type,
-                                                    field_type.typ.args.clone(),
-                                                    field_type.typ.typ.clone());
+                                    self.stack_type(name, &field_type.typ);
                                 }
                                 None => {
                                     self.error(span, UndefinedField(match_type.clone(), name));
@@ -1118,6 +1081,21 @@ impl<'a> Typecheck<'a> {
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
         let mut f = |typ: &Type<_, TcType>| {
             match *typ {
+                Type::Alias(ref alias) => {
+                    self.original_symbols
+                        .get(&alias.name)
+                        .or_else(|| {
+                            self.environment
+                                .find_type_info(&alias.name)
+                                .map(|found_alias| &found_alias.name)
+                        })
+                        .cloned()
+                        .map(|new_id| {
+                            Type::alias(new_id,
+                                        alias.args.clone(),
+                                        alias.typ.clone().expect("Type"))
+                        })
+                }
                 Type::Id(ref id) => {
                     self.original_symbols
                         .get(&id)

@@ -125,7 +125,14 @@ fn type_decl() {
 type Test = { x: Int } in { x = 0 }
 ";
     let result = typecheck(text);
-    assert_eq!(result, Ok(typ("Test")));
+    assert_eq!(result,
+               Ok(alias("Test",
+                        &[],
+                        Type::record(vec![],
+                                     vec![types::Field {
+                                              name: intern("x"),
+                                              typ: typ("Int"),
+                                          }]))));
 }
 
 #[test]
@@ -148,7 +155,13 @@ type T = { y: Int } in
 let f: T -> Int = \x -> x.y in { y = f { y = 123 } }
 ";
     let result = typecheck(text);
-    assert_eq!(result, Ok(typ("T")));
+    assert_eq!(result, Ok(alias("T",
+                        &[],
+                        Type::record(vec![],
+                                     vec![types::Field {
+                                              name: intern("y"),
+                                              typ: typ("Int"),
+                                          }]))));
 }
 
 #[test]
@@ -457,11 +470,7 @@ type Test = | Test String Int in { Test, x = 1 }
     assert_eq!(result,
                Ok(Type::record(vec![types::Field {
                                         name: intern_unscoped("Test"),
-                                        typ: types::Alias {
-                                            name: intern("Test"),
-                                            args: vec![],
-                                            typ: Some(test),
-                                        },
+                                        typ: types::Alias::new(intern("Test"), vec![], test),
                                     }],
                                vec![types::Field {
                                         name: intern("x"),
@@ -764,10 +773,19 @@ in f "123"
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert_eq!(err.errors.len(), 1);
-    assert_eq!(err.errors[0].span, ast::Span {
-        start: ast::Location { row: 3, column: 6, absolute: 0 },
-        end: ast::Location { row: 3, column: 11, absolute: 0 },
-    });
+    assert_eq!(err.errors[0].span,
+               ast::Span {
+                   start: ast::Location {
+                       row: 3,
+                       column: 6,
+                       absolute: 0,
+                   },
+                   end: ast::Location {
+                       row: 3,
+                       column: 11,
+                       absolute: 0,
+                   },
+               });
 }
 
 /// Test that overload resolution selects the closest implementation that matches even if another
@@ -790,16 +808,14 @@ test 1
             match body.value {
                 Expr::Let(_, ref body) => {
                     match body.value {
-                        Expr::Let(ref binds, ref body) => {
-                            (&binds[0], body)
-                        }
-                        _ => panic!()
+                        Expr::Let(ref binds, ref body) => (&binds[0], body),
+                        _ => panic!(),
                     }
                 }
-                _ => panic!()
+                _ => panic!(),
             }
         }
-        _ => panic!()
+        _ => panic!(),
     };
     let call_id = match call.value {
         Expr::Call(ref f, _) => {

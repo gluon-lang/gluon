@@ -6,8 +6,8 @@ extern crate check;
 
 use base::ast;
 use base::symbol::{Symbols, SymbolModule, Symbol};
-use base::types::{Generic, Type, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias,
-                  RcKind, Kind};
+use base::types::{Generic, Type, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias, RcKind,
+                  Kind};
 
 use check::typecheck::*;
 
@@ -91,11 +91,7 @@ pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>
     let mut interner = interner.borrow_mut();
     let bool_sym = interner.symbol("Bool");
     let bool = Type::<_, TcType>::data(Type::id(bool_sym.clone()), vec![]);
-    let env = EmptyEnv(Alias {
-        name: bool_sym,
-        args: vec![],
-        typ: Some(bool.clone()),
-    });
+    let env = EmptyEnv(Alias::new(bool_sym, vec![], bool.clone()));
     let mut tc = Typecheck::new("test".into(), &mut interner, &env);
     let result = tc.typecheck_expr(&mut expr);
     (expr, result)
@@ -108,7 +104,9 @@ pub fn typ(s: &str) -> TcType {
 }
 
 #[allow(dead_code)]
-pub fn typ_a<T>(s: &str, args: Vec<T>) -> T where T: From<Type<Symbol, T>> {
+pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
+    where T: From<Type<Symbol, T>>
+{
     assert!(s.len() != 0);
     let is_var = s.chars().next().unwrap().is_lowercase();
     match s.parse() {
@@ -119,7 +117,27 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T where T: From<Type<Symbol, T>> {
                 id: intern(s),
             })
         }
-        Err(()) => if args.len() == 0 { Type::id(intern(s)) } else { Type::data(Type::id(intern(s)), args) }
+        Err(()) => {
+            if args.len() == 0 {
+                Type::id(intern(s))
+            } else {
+                Type::data(Type::id(intern(s)), args)
+            }
+        }
     }
 }
 
+#[allow(dead_code)]
+pub fn alias(s: &str, args: &[&str], typ: TcType) -> TcType {
+    assert!(s.len() != 0);
+    Type::alias(intern(s),
+                args.iter()
+                    .map(|id| {
+                        Generic {
+                            kind: Kind::star(),
+                            id: intern(id),
+                        }
+                    })
+                    .collect(),
+                typ)
+}

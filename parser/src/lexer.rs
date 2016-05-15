@@ -682,7 +682,8 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             }
             Context::MatchClause => {
                 // Must allow `|` to be on the same line
-                if ordering == Ordering::Less || (ordering == Ordering::Equal && token.token != Token::Pipe) {
+                if ordering == Ordering::Less ||
+                   (ordering == Ordering::Equal && token.token != Token::Pipe) {
                     lexer.indent_levels.pop();
                     continue;
                 }
@@ -761,7 +762,8 @@ fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                 //     2
                 // else
                 //     3
-                let add_block = next.token != Token::If || next.location.line != token.location.line;
+                let add_block = next.token != Token::If ||
+                                next.location.line != token.location.line;
                 lexer.unprocessed_tokens.push(next);
                 if add_block {
                     try!(scan_for_next_block(lexer,

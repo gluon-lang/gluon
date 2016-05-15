@@ -36,15 +36,9 @@ impl<'a> AliasInstantiator<'a> {
     }
 
     pub fn maybe_remove_alias(&self, typ: &TcType) -> Option<TcType> {
-        let (id, args) = match **typ {
-            Type::Id(ref r) => (r, &[][..]),
-            Type::Data(ref r, ref args) => {
-                match **r {
-                    Type::Id(ref r) => (r, &args[..]),
-                    _ => return None,
-                }
-            }
-            _ => return None,
+        let (id, args) = match typ.as_alias() {
+            Some(x) => x,
+            None => return None,
         };
         self.type_of_alias(id, args)
             .unwrap_or_else(|_| None)

@@ -286,11 +286,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                                               .as_str());
                             associated.push(Field {
                                 name: ids.from_str(&short_name).to_id(),
-                                typ: Alias {
-                                    name: untyped_id,
-                                    args: vec![],
-                                    typ: Some(typ),
-                                },
+                                typ: Alias::new(untyped_id, vec![], typ),
                             });
                         }
                     }
@@ -363,18 +359,16 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                         TypeBinding {
                             comment: None,
                             name: name.clone(),
-                            alias: Alias {
-                                name: name.clone(),
-                                args: args.iter()
-                                          .map(|id| {
-                                              Generic {
-                                                  kind: Kind::variable(0),
-                                                  id: id.clone(),
-                                              }
-                                          })
-                                          .collect(),
-                                typ: Some(rhs_type),
-                            },
+                            alias: Alias::new(name.clone(),
+                                              args.iter()
+                                                  .map(|id| {
+                                                      Generic {
+                                                          kind: Kind::variable(0),
+                                                          id: id.clone(),
+                                                      }
+                                                  })
+                                                  .collect(),
+                                              rhs_type),
                         }
                     })
             })

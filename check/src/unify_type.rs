@@ -193,6 +193,10 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
             let a = unifier.try_match(l2, r2);
             Ok(merge(l1, f, l2, a, Type::app))
         }
+        (&Type::Id(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
+            Ok(Some(other.clone()))
+        }
+        (&Type::Alias(ref alias), &Type::Id(ref id)) if *id == alias.name => Ok(None),
         _ => {
             if self_ == other {
                 // Successful unification

@@ -5,15 +5,16 @@ use embed_lang::vm::vm::{RootedThread, Thread, Value};
 use embed_lang::vm::vm::Value::{Float, Int};
 use embed_lang::vm::stack::State;
 use embed_lang::import::Import;
+use embed_lang::Compiler;
 
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Result<()> {
-    ::embed_lang::Compiler::new()
+    Compiler::new()
         .implicit_prelude(false)
         .load_script(vm, filename, input)
 }
 
 pub fn run_expr_(vm: &Thread, s: &str, implicit_prelude: bool) -> Value {
-    ::embed_lang::Compiler::new()
+    Compiler::new()
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
 }
@@ -332,7 +333,7 @@ match A with
 | B -> True
 ";
     let mut vm = make_vm();
-    let result = ::embed_lang::Compiler::new().run_expr::<bool>(&mut vm, "<top>", text);
+    let result = Compiler::new().run_expr::<bool>(&mut vm, "<top>", text);
     assert!(result.is_err());
 }
 
@@ -508,7 +509,7 @@ and { (==) }: Eq (List Int) = prelude.eq_List { (==) }
 in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
-    let value = ::embed_lang::Compiler::new()
+    let value = Compiler::new()
         .run_expr::<Value>(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(value, Int(0));
 }
@@ -518,7 +519,7 @@ fn test_implicit_prelude() {
     let _ = ::env_logger::init();
     let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
     let mut vm = make_vm();
-    ::embed_lang::Compiler::new()
+    Compiler::new()
         .run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
 }
 
