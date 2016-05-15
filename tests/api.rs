@@ -15,7 +15,7 @@ fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Result
 }
 
 fn run_expr(vm: &Thread, s: &str) -> Value {
-    *Compiler::new()
+    Compiler::new()
         .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
 }
 
@@ -90,6 +90,7 @@ let id : Test -> Test = \x -> x in id
     assert!(result);
     assert_eq!(test.x, 123 * 2);
 }
+
 #[test]
 fn root_data() {
     let _ = ::env_logger::init();
@@ -120,6 +121,7 @@ fn root_data() {
                           .unwrap();
     assert_eq!(result, 124);
 }
+
 #[test]
 fn root_string() {
     let _ = ::env_logger::init();

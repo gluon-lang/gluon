@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use base::symbol::Symbol;
 use base::types;
 use base::types::{Type, TcType};
-use ::Variants;
+use Variants;
 use gc::{Gc, Traverseable};
 use stack::StackFrame;
 use vm::{Thread, Value, Status};

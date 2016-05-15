@@ -37,8 +37,11 @@ use vm::Value;
 pub struct Variants<'a>(&'a Value);
 
 impl<'a> Variants<'a> {
+    pub unsafe fn new(value: &Value) -> Variants {
+        Variants(value)
+    }
+
     pub fn as_ref(&self) -> ValueRef {
         ValueRef::new(self.0)
     }
 }
-

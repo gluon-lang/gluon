@@ -13,7 +13,7 @@ mod io;
 pub mod import;
 pub mod c_api;
 
-pub use vm::vm::{RootedThread, Thread};
+pub use vm::vm::{RootedThread, RootedValue, Thread};
 
 
 use std::result::Result as StdResult;
@@ -24,7 +24,10 @@ use base::ast;
 use base::types::TcType;
 use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
 use base::metadata::Metadata;
-use vm::vm::{ClosureDataDef, RootedValue};
+
+use vm::Variants;
+use vm::api::Getable;
+use vm::vm::{ClosureDataDef, Error as VMError};
 use vm::compiler::CompiledFunction;
 
 quick_error! {
@@ -170,13 +173,7 @@ impl Compiler {
         self.load_script(vm, &name, &buffer)
     }
 
-    /// Compiles and runs the expression in `expr_str`. If successful the value from running the
-    /// expression is returned
-    pub fn run_expr<'vm>(&mut self,
-                         vm: &'vm Thread,
-                         name: &str,
-                         expr_str: &str)
-                         -> Result<RootedValue<'vm>> {
+    fn run_expr_<'vm>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<RootedValue<'vm>> {
         let (expr, typ) = try!(self.typecheck_expr(vm, name, expr_str));
         let mut function = self.compile_script(vm, name, &expr);
         function.id = Symbol::new(name);
@@ -187,6 +184,18 @@ impl Compiler {
         };
         let value = try!(vm.call_module(&typ, closure));
         Ok(vm.root_value(value))
+    }
+
+    /// Compiles and runs the expression in `expr_str`. If successful the value from running the
+    /// expression is returned
+    pub fn run_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<T>
+        where T: Getable<'vm>
+    {
+        let value = try!(self.run_expr_(vm, name, expr_str));
+        unsafe {
+            T::from_value(vm, Variants::new(&value))
+                .ok_or_else(|| Error::from(VMError::Message("Wrong type".to_string())))
+        }
     }
 
     fn include_implicit_prelude(&mut self,
@@ -250,7 +259,7 @@ pub fn new_vm() -> RootedThread {
     vm.get_macros().insert(String::from("import"), ::import::Import::new());
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr(&vm, "", r#" import "std/types.hs" "#)
+        .run_expr::<()>(&vm, "", r#" import "std/types.hs" "#)
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::vm::channel::load(&vm).expect("Loaded channel library");

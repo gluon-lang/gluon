@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::string::String as StdString;
 
-use ::Variants;
+use Variants;
 use primitives as prim;
 use api::{generic, Generic, Getable, Array, MaybeError, primitive, WithVM};
 use api::generic::A;

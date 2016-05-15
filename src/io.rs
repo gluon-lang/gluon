@@ -1,4 +1,5 @@
 use std::string::String as StdString;
+use std::result::Result as StdResult;
 use std::io::{Read, stdin};
 use std::fs::File;
 
@@ -37,8 +38,11 @@ fn read_char() -> IO<char> {
     match stdin().bytes().next() {
         Some(result) => {
             match result {
-                Ok(b) => ::std::char::from_u32(b as u32).map(IO::Value)
-                        .unwrap_or_else(|| IO::Exception("Not a valid char".into())),
+                Ok(b) => {
+                    ::std::char::from_u32(b as u32)
+                        .map(IO::Value)
+                        .unwrap_or_else(|| IO::Exception("Not a valid char".into()))
+                }
                 Err(err) => IO::Exception(format!("{}", err)),
             }
         }
@@ -101,7 +105,7 @@ pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
     drop(stack);
-    let run_result = Compiler::new().run_expr(vm, "<top>", &expr);
+    let run_result: StdResult<Value, _> = Compiler::new().run_expr(vm, "<top>", &expr);
     stack = vm.current_frame();
     match run_result {
         Ok(value) => IO::Value(format!("{:?}", value)),

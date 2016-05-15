@@ -10,7 +10,7 @@ use base::symbol::{Name, Symbol};
 use base::types::{TcType, Type, TypeEnv};
 use base::types;
 
-use ::Variants;
+use Variants;
 use api::{Getable, Pushable, VMType};
 use array::Str;
 use compiler::CompiledFunction;
@@ -33,7 +33,7 @@ pub enum Status {
 }
 
 /// A rooted value
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct RootedValue<'vm> {
     vm: &'vm Thread,
     value: Value,

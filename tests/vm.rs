@@ -13,7 +13,7 @@ pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Re
 }
 
 pub fn run_expr_(vm: &Thread, s: &str, implicit_prelude: bool) -> Value {
-    *::embed_lang::Compiler::new()
+    ::embed_lang::Compiler::new()
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
 }
@@ -332,7 +332,7 @@ match A with
 | B -> True
 ";
     let mut vm = make_vm();
-    let result = ::embed_lang::Compiler::new().run_expr(&mut vm, "<top>", text);
+    let result = ::embed_lang::Compiler::new().run_expr::<bool>(&mut vm, "<top>", text);
     assert!(result.is_err());
 }
 
@@ -509,8 +509,8 @@ in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
     let value = ::embed_lang::Compiler::new()
-        .run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
-    assert_eq!(*value, Int(0));
+        .run_expr::<Value>(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(value, Int(0));
 }
 
 #[test]

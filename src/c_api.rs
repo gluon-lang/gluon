@@ -38,7 +38,7 @@ pub unsafe extern "C" fn run_expr(vm: &Thread,
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new().run_expr(&vm, module, expr);
+    let result: Result<Value, _> = Compiler::new().run_expr(&vm, module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,

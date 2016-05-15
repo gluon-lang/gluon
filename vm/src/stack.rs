@@ -1,7 +1,7 @@
 use std::cell::{RefCell, RefMut};
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
-use ::Variants;
+use Variants;
 use gc::GcPtr;
 use vm::{ClosureData, Value, DataStruct, ExternFunction};
 use types::VMIndex;
@@ -126,8 +126,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     pub fn get_variants(&self, index: VMIndex) -> Option<Variants> {
         if index < self.len() {
             Some(Variants(&self[index]))
-        }
-        else {
+        } else {
             None
         }
     }

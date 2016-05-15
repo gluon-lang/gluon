@@ -1,9 +1,9 @@
-use ::Variants;
+use Variants;
 use gc::{Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, StackFrame};
-use vm::{Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, VMInt,
-         Error, Root, RootStr};
+use vm::{Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, VMInt, Error, Root,
+         RootStr};
 use base::types;
 use base::types::{TcType, Type};
 use types::{VMIndex, VMTag};
@@ -38,7 +38,10 @@ impl<'a> ValueRef<'a> {
             Value::String(ref s) => ValueRef::String(s),
             Value::Data(ref data) => ValueRef::Data(Data(data)),
             Value::Userdata(ref data) => ValueRef::Userdata(&***data),
-            Value::Thread(_) | Value::Function(_) | Value::Closure(_) | Value::PartialApplication(_) => ValueRef::Internal,
+            Value::Thread(_) |
+            Value::Function(_) |
+            Value::Closure(_) |
+            Value::PartialApplication(_) => ValueRef::Internal,
         }
     }
 }
@@ -176,6 +179,12 @@ pub trait Getable<'vm>: Sized {
         Self::from_value(vm, value)
     }
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self>;
+}
+
+impl<'vm> Getable<'vm> for Value {
+    fn from_value(_vm: &'vm Thread, value: Variants) -> Option<Self> {
+        Some(*value.0)
+    }
 }
 
 impl<'vm, T: ?Sized + VMType> VMType for &'vm T {
