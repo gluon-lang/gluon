@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use base::metadata::Metadata;
 use base::symbol::Symbol;
-use base::types::{TcType, TypeEnv};
+use base::types::TcType;
 use base::types;
 
 use Variants;

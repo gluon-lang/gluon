@@ -818,7 +818,10 @@ impl<'vm> Getable<'vm> for RootStr<'vm> {
 
 macro_rules! define_tuple {
     ($($id: ident)+) => {
-        impl<$($id: VMType),+> VMType for ($($id),+) {
+        impl<$($id),+> VMType for ($($id),+)
+        where $($id: VMType),+,
+              $($id::Type: Sized),+
+        {
             type Type = ($($id::Type),+);
 
             fn make_type(vm: &Thread) -> TcType {
@@ -849,7 +852,10 @@ macro_rules! define_tuple {
                 }
             }
         }
-        impl<'vm, $($id: Pushable<'vm>),+> Pushable<'vm> for ($($id),+) {
+        impl<'vm, $($id),+> Pushable<'vm> for ($($id),+)
+        where $($id: Pushable<'vm>),+,
+              $($id::Type: Sized),+
+        {
             fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
                 let ( $($id),+ ) = self;
                 $(

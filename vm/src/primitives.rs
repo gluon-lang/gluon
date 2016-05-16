@@ -1,4 +1,3 @@
-use std::io::Read;
 use std::string::String as StdString;
 
 use Variants;

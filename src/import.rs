@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::error::Error as StdError;
 use std::fs::File;
 use std::io;
 use std::io::Read;

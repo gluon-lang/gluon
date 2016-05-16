@@ -18,7 +18,6 @@ pub use vm::vm::{RootedThread, RootedValue, Thread};
 
 use std::result::Result as StdResult;
 use std::string::String as StdString;
-use std::error::Error as StdError;
 
 use base::ast;
 use base::types::TcType;
