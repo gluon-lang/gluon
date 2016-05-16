@@ -271,7 +271,7 @@ type Num a = {
     negate: a -> a
 }
 
-let num_Int: Num Int = {
+let num_Int = {
     (+) = monoid_Int_Add.(<>),
     (-) = \l r -> l #Int- r,
     (*) = monoid_Int_Mul.(<>),

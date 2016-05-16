@@ -57,8 +57,8 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
         }
         Err(err) => {
             // Try to find a value at `args` to print its type and documentation comment (if any)
-            match env.get_binding_type(args) {
-                Ok(typ) => {
+            match env.get_binding(args) {
+                Ok((_, typ)) => {
                     write!(&mut buffer, "{}: {}", args, typ).unwrap();
                 }
                 Err(_) => return IO::Value(Err(format!("{}", err))),

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::{RefCell, Ref};
 use std::fmt;
 use std::any::{Any, TypeId};
@@ -441,7 +442,10 @@ impl PrimitiveEnv for VMEnv {
     fn get_bool(&self) -> &TcType {
         self.find_type_info("std.types.Bool")
             .ok()
-            .and_then(|alias| alias.typ.as_ref())
+            .and_then(|alias| match alias {
+                Cow::Borrowed(alias) => alias.typ.as_ref(),
+                Cow::Owned(_) => panic!("Expected to be able to retrieve a borrowed bool type"),
+            })
             .expect("std.types.Bool")
     }
 }
@@ -454,22 +458,35 @@ impl MetadataEnv for VMEnv {
     }
 }
 
+fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
+where T: Clone,
+      U: Clone,
+      F: FnOnce(&T) -> Option<&U>
+{
+    match cow {
+        Cow::Borrowed(b) => f(b).map(Cow::Borrowed),
+        Cow::Owned(o) => f(&o).map(|u| Cow::Owned(u.clone())),
+    }
+}
+
 impl VMEnv {
-    pub fn find_type_info(&self, name: &str) -> Result<&types::Alias<Symbol, TcType>> {
+    pub fn find_type_info(&self, name: &str) -> Result<Cow<types::Alias<Symbol, TcType>>> {
         if let Some(alias) = self.type_infos.id_to_type.get(name) {
-            return Ok(alias);
+            return Ok(Cow::Borrowed(alias));
         }
         let name = Name::new(name);
-        let typ = try!(self.get_binding_type(name.module().as_str()));
-        let maybe_type_info = match **typ {
-            Type::Record { ref types, .. } => {
-                let field_name = name.name();
-                types.iter()
-                     .find(|field| field.name.as_ref() == field_name.as_str())
-                     .map(|field| &field.typ)
+        let (_, typ) = try!(self.get_binding(name.module().as_str()));
+        let maybe_type_info = map_cow_option(typ.clone(), |typ| {
+            match **typ {
+                Type::Record { ref types, .. } => {
+                    let field_name = name.name();
+                    types.iter()
+                         .find(|field| field.name.as_ref() == field_name.as_str())
+                         .map(|field| &field.typ)
+                }
+                _ => None,
             }
-            _ => None,
-        };
+        });
         maybe_type_info.ok_or_else(|| {
             Error::Message(format!("'{}' cannot be accessed by the field '{}'",
                                    typ,
@@ -477,7 +494,8 @@ impl VMEnv {
         })
     }
 
-    pub fn get_binding_type(&self, name: &str) -> Result<&TcType> {
+    pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<TcType>)> {
+        use base::instantiate::{Instantiator, AliasInstantiator};
         let globals = &self.globals;
         let mut module = Name::new(name);
         let global;
@@ -500,27 +518,53 @@ impl VMEnv {
         let remaining_offset = module.as_str().len() + 1;//Add 1 byte for the '.'
         if remaining_offset >= name.len() {
             // No fields left
-            return Ok(&global.typ);
+            return Ok((global.value, Cow::Borrowed(&global.typ)));
         }
         let remaining_fields = Name::new(&name[remaining_offset..]);
+        let instantiator = Instantiator::new();
+        let instantiator = AliasInstantiator::new(&instantiator, self);
 
-        let mut typ = &global.typ;
-        for field_name in remaining_fields.components() {
-            let next = match **typ {
-                Type::Record { ref fields, .. } => {
-                    fields.iter()
-                          .find(|field| field.name.as_ref() == field_name)
-                          .map(|field| &field.typ)
-                }
-                _ => None,
+        let mut typ = Cow::Borrowed(&global.typ);
+        let mut value = global.value;
+
+        for mut field_name in remaining_fields.components() {
+            if field_name.starts_with('(') && field_name.ends_with(')') {
+                field_name = &field_name[1..field_name.len() - 1];
+            }
+            else if field_name.chars().any(|c| "+-*/&|=<>".chars().any(|x| x == c)) {
+                return Err(Error::Message(format!("Operators cannot be used as fields directly. Please enclose the operator with parentheses before passing it in. (test.(+) instead of test.+)")));
+            }
+            typ = match typ {
+                Cow::Borrowed(typ) => instantiator.remove_aliases_cow(typ),
+                Cow::Owned(typ) => Cow::Owned(instantiator.remove_aliases(typ)),
             };
-            typ = try!(next.ok_or_else(|| {
-                Error::Message(format!("'{}' cannot be accessed by the field '{}'",
+            // HACK Can't return the data directly due to the use of cow on the type
+            let next_type = map_cow_option(typ.clone(), |typ| {
+                match **typ {
+                    Type::Record { ref fields, .. } => {
+                        fields.iter()
+                              .enumerate()
+                              .find(|&(_, field)| field.name.as_ref() == field_name)
+                              .map(|(index, field)| {
+                                  match value {
+                                      Value::Data(data) => {
+                                          value = data.fields[index];
+                                          &field.typ
+                                      }
+                                      _ => panic!("Unexpected value {:?}", value)
+                                  }
+                              })
+                    }
+                    _ => None,
+                }
+            });
+            typ = try!(next_type.ok_or_else(|| {
+                Error::Message(format!("'{:?}' cannot be accessed by the field '{}'",
                                        typ,
                                        field_name))
             }));
         }
-        Ok(typ)
+        Ok((value, typ))
     }
 
     pub fn get_metadata(&self, name: &str) -> Result<&Metadata> {

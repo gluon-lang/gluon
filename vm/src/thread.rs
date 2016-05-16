@@ -6,8 +6,8 @@ use std::string::String as StdString;
 use std::sync::Arc;
 
 use base::metadata::Metadata;
-use base::symbol::{Name, Symbol};
-use base::types::{TcType, Type, TypeEnv};
+use base::symbol::Symbol;
+use base::types::{TcType, TypeEnv};
 use base::types;
 
 use Variants;
@@ -268,50 +268,8 @@ impl Thread {
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
         where T: Getable<'vm> + VMType
     {
-        let mut components = Name::new(name).components();
         let env = self.get_env();
-        let globals = &env.globals;
-        let global = match components.next() {
-            Some(comp) => {
-                try!(globals.get(comp)
-                            .or_else(|| {
-                                // We access by the the full name so no components should be left
-                                // to walk through
-                                for _ in components.by_ref() {
-                                }
-                                globals.get(name)
-                            })
-                            .ok_or_else(|| {
-                                Error::Message(format!("Could not retrieve global `{}`", name))
-                            }))
-            }
-            None => return Err(Error::Message(format!("'{}' is not a valid name", name))),
-        };
-        let mut typ = &global.typ;
-        let mut value = global.value;
-        // If there are any remaining components iterate through them, accessing each field
-        for field_name in components {
-            let next = match **typ {
-                Type::Record { ref fields, .. } => {
-                    fields.iter()
-                          .enumerate()
-                          .find(|&(_, field)| field.name.as_ref() == field_name)
-                          .map(|(offset, field)| (offset, &field.typ))
-                }
-                _ => None,
-            };
-            let (offset, next_type) = try!(next.ok_or_else(|| {
-                Error::Message(format!("'{}' cannot be accessed by the field '{}'",
-                                       typ,
-                                       field_name))
-            }));
-            typ = next_type;
-            value = match value {
-                Value::Data(data) => data.fields[offset],
-                _ => panic!(),
-            };
-        }
-
+        let (value, typ) = try!(env.get_binding(name));
         // Finally check that type of the returned value is correct
         if *typ == T::make_type(self) {
             T::from_value(self, Variants(&value))
@@ -326,7 +284,7 @@ impl Thread {
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, TcType>> {
         let env = self.get_env();
         env.find_type_info(name)
-           .map(|alias| alias.clone())
+           .map(|alias| alias.into_owned())
     }
 
     /// Returns the current stackframe

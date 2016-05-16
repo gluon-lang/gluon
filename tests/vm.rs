@@ -1,6 +1,7 @@
 extern crate env_logger;
 extern crate embed_lang;
 
+use embed_lang::vm::api::Function;
 use embed_lang::vm::vm::{RootedThread, Thread, Value};
 use embed_lang::vm::vm::Value::{Float, Int};
 use embed_lang::vm::stack::State;
@@ -534,6 +535,30 @@ fn access_field_through_vm() {
     assert_eq!(test_x, Ok(0));
     let test_inner_y = vm.get_global("test.inner.y");
     assert_eq!(test_inner_y, Ok(1.0));
+}
+
+#[test]
+fn access_field_through_alias() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+    Compiler::new()
+        .run_expr::<Value>(&vm, "example", r#" import "std/prelude.hs" "#)
+        .unwrap();
+    let mut add: Function<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
+        .unwrap();
+    let result = add.call(1, 2);
+    assert_eq!(result, Ok(3));
+}
+
+#[test]
+fn access_operator_without_parentheses() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+    Compiler::new()
+        .run_expr::<Value>(&vm, "example", r#" import "std/prelude.hs" "#)
+        .unwrap();
+    let result: Result<Function<fn (i32, i32) -> i32>, _> = vm.get_global("std.prelude.num_Int.+");
+    assert!(result.is_err());
 }
 
 #[test]
