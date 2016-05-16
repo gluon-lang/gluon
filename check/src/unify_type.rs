@@ -5,10 +5,10 @@ use base::types::{Type, merge};
 use base::ast::ASTType;
 use base::types::{TcType, TypeVariable};
 use base::symbol::Symbol;
+use base::instantiate::AliasInstantiator;
 
 use unify;
 use unify::{Error as UnifyError, Unifier, Unifiable};
-use instantiate::AliasInstantiator;
 use substitution::{Variable, Substitutable};
 
 pub type Error<I> = UnifyError<ASTType<I>, TypeError<I>>;
@@ -229,15 +229,16 @@ fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
 {
     loop {
         l = match l.as_alias() {
-            Some((l_id, l_args)) => {
+            Some((l_id, _l_args)) => {
                 debug!("Looking for alias reduction from `{}` to `{}`", l_id, r_id);
                 if l_id == r_id {
                     return Ok(AliasResult::Match(l.clone()));
                 }
-                match unifier.state.type_of_alias(l_id, l_args) {
+                match unifier.state.maybe_remove_alias(&l) {
                     Ok(Some(typ)) => typ,
                     Ok(None) => break,
-                    Err(err) => {
+                    Err(()) => {
+                        let err = UnifyError::Other(TypeError::UndefinedType(l_id.clone()));
                         unifier.report_error(err);
                         return Err(());
                     }
@@ -293,24 +294,23 @@ fn try_with_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                              -> Result<Option<TcType>, ()>
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
-    match actual.as_alias() {
-        Some((ref r, ref r_args)) => {
-            debug!("Attempt alias {:?} {:?}", r, r_args);
-            let r = match unifier.state.type_of_alias(r, r_args) {
-                Ok(typ) => typ,
-                Err(err) => {
-                    unifier.report_error(err);
+    let r = match unifier.state.maybe_remove_alias(actual) {
+        Ok(typ) => typ,
+        Err(()) => {
+            match actual.as_alias() {
+                Some((id, _)) => {
+                    unifier.report_error(UnifyError::Other(TypeError::UndefinedType(id.clone())));
                     return Err(());
                 }
-            };
-            match r {
-                Some(r) => {
-                    debug!("Found {:?}", r);
-                    unifier.try_match(expected, &r);
-                    Ok(None)
-                }
-                None => Err(()),
+                None => return Ok(None),
             }
+        }
+    };
+    match r {
+        Some(r) => {
+            debug!("Found {:?}", r);
+            unifier.try_match(expected, &r);
+            Ok(None)
         }
         None => Err(()),
     }
@@ -483,12 +483,12 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
 #[cfg(test)]
 mod tests {
     use base::error::Errors;
+    use base::instantiate::{AliasInstantiator, Instantiator};
 
     use super::TypeError::FieldMismatch;
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
-    use instantiate::{AliasInstantiator, Instantiator};
     use base::types;
     use base::types::{TcType, Type};
     use tests::*;

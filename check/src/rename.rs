@@ -317,9 +317,9 @@ pub fn rename(symbols: &mut SymbolModule,
 
 
 use std::collections::HashMap;
+use base::instantiate::{Instantiator, AliasInstantiator};
 use unify_type::TypeError;
 use substitution::Substitution;
-use instantiate::{Instantiator, AliasInstantiator};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
 pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {

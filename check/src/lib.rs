@@ -12,7 +12,6 @@ extern crate union_find;
 
 extern crate base;
 
-mod instantiate;
 pub mod typecheck;
 pub mod unify_type;
 pub mod unify;

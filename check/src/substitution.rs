@@ -9,7 +9,7 @@ use base::types;
 use base::types::{TcType, Type};
 use base::symbol::Symbol;
 
-use instantiate::unroll_app;
+use base::instantiate::unroll_app;
 
 pub struct Substitution<T> {
     ///Union-find data structure used to store the relationships of all variables in the

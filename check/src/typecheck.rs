@@ -11,8 +11,8 @@ use base::types;
 use base::types::{RcKind, Type, Generic, Kind};
 use base::error::Errors;
 use base::symbol::{Symbol, SymbolModule, Symbols};
-use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, TcType};
-use instantiate::{AliasInstantiator, Instantiator, unroll_app};
+use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType};
+use base::instantiate::{AliasInstantiator, Instantiator, unroll_app};
 use kindcheck;
 use substitution::Substitution;
 use unify::Error as UnifyError;
@@ -1172,10 +1172,12 @@ impl<'a> Typecheck<'a> {
     }
 
     fn type_of_alias(&self,
-                     id: &Symbol,
+                     id: &AliasData<Symbol, TcType>,
                      arguments: &[TcType])
                      -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
-        AliasInstantiator::new(&self.inst, &self.environment).type_of_alias(id, arguments)
+        AliasInstantiator::new(&self.inst, &self.environment)
+            .type_of_alias(id, arguments)
+            .map_err(|()| UnifyError::Other(::unify_type::TypeError::UndefinedType(id.name.clone())))
     }
 
     fn instantiate(&mut self, typ: &TcType) -> TcType {
@@ -1239,6 +1241,24 @@ pub fn extract_generics(args: &[TcType]) -> Vec<Generic<Symbol>> {
         .collect()
 }
 
+fn get_alias_app<'a>(env: &'a TypeEnv, typ: &'a TcType) -> Option<(&'a AliasData<Symbol, TcType>, &'a [TcType])> {
+    match **typ {
+        Type::Alias(ref alias) => Some((alias, &[][..])),
+        Type::Data(ref alias, ref args) => {
+            match **alias {
+                Type::Alias(ref alias) => Some((alias, args)),
+                _ => None,
+            }
+        }
+        _ => {
+            typ.as_alias()
+               .and_then(|(id, args)| {
+                   env.find_type_info(id).map(|alias| (&**alias, &args[..]))
+               })
+        }
+    }
+}
+
 struct FunctionArgIter<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
     typ: TcType,
@@ -1250,19 +1270,18 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
         loop {
             let (arg, new) = match *self.typ {
                 Type::Function(ref args, ref ret) => (Some(args[0].clone()), ret.clone()),
-                Type::Data(ref id, ref args) => {
-                    match **id {
-                        Type::Id(ref id) => {
-                            match self.tc.type_of_alias(id, args) {
+                _ => {
+                    match get_alias_app(&self.tc.environment, &self.typ) {
+                        Some((alias, args)) => {
+                            match self.tc.type_of_alias(alias, args) {
                                 Ok(Some(typ)) => (None, typ.clone()),
                                 Ok(None) => return None,
                                 Err(_) => return Some(self.tc.subs.new_var()),
                             }
                         }
-                        _ => return Some(self.tc.subs.new_var()),
+                        None => return Some(self.tc.subs.new_var()),
                     }
                 }
-                _ => return Some(self.tc.subs.new_var()),
             };
             self.typ = new;
             if let Some(arg) = arg {

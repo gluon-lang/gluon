@@ -1,14 +1,12 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::ops::Deref;
 
-use base::types;
-use base::types::{Type, Generic, merge};
-use base::symbol::Symbol;
-use base::types::{TcType, TypeEnv};
-use unify_type::TypeError::UndefinedType;
-use unify;
+use types;
+use types::{AliasData, Type, Generic, TcType, TypeEnv, merge};
+use symbol::Symbol;
 
 pub struct AliasInstantiator<'a> {
     pub inst: &'a Instantiator,
@@ -25,40 +23,59 @@ impl<'a> AliasInstantiator<'a> {
 
     /// Removes type aliases from `typ` until it is an actual type
     pub fn remove_aliases(&self, mut typ: TcType) -> TcType {
-        while let Some(new) = self.maybe_remove_alias(&typ) {
+        while let Ok(Some(new)) = self.maybe_remove_alias(&typ) {
             typ = new;
         }
         typ
     }
 
-    pub fn remove_alias(&self, typ: TcType) -> TcType {
-        self.maybe_remove_alias(&typ).unwrap_or(typ)
+    pub fn remove_aliases_cow<'t>(&self, typ: &'t TcType) -> Cow<'t, TcType> {
+        let mut typ = match self.maybe_remove_alias(typ) {
+            Ok(Some(new)) => new,
+            _ => return Cow::Borrowed(typ),
+        };
+        while let Ok(Some(new)) = self.maybe_remove_alias(&typ) {
+            typ = new;
+        }
+        Cow::Owned(typ)
     }
 
-    pub fn maybe_remove_alias(&self, typ: &TcType) -> Option<TcType> {
+    pub fn remove_alias(&self, typ: TcType) -> TcType {
+        self.maybe_remove_alias(&typ).unwrap_or(None).unwrap_or(typ)
+    }
+
+    pub fn maybe_remove_alias(&self, typ: &TcType) -> Result<Option<TcType>, ()> {
+        let maybe_alias = match **typ {
+            Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
+            Type::Data(ref alias, ref args) => {
+                match **alias {
+                    Type::Alias(ref alias) if alias.args.len() == args.len() => Some(alias),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         let (id, args) = match typ.as_alias() {
             Some(x) => x,
-            None => return None,
+            None => return Ok(None),
         };
-        self.type_of_alias(id, args)
-            .unwrap_or_else(|_| None)
+        let maybe_alias = maybe_alias.or_else(|| {
+                                  self.env
+                                      .find_type_info(&id)
+                                      .map(|a| &**a)
+                              });
+        let alias = match maybe_alias {
+            Some(alias) => alias,
+            None => return Ok(None),
+        };
+        self.type_of_alias(alias, args)
     }
 
-    pub fn type_of_alias(&self,
-                         id: &Symbol,
-                         arguments: &[TcType])
-                         -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
-        let (args, mut typ) = {
-            let alias = try!(self.env
-                                 .find_type_info(&id)
-                                 .ok_or_else(|| unify::Error::Other(UndefinedType(id.clone()))));
-            match alias.typ {
-                Some(ref typ) => {
-                    // TODO avoid clones here
-                    (alias.args.clone(), typ.clone())
-                }
-                None => return Ok(None),
-            }
+    pub fn type_of_alias(&self, alias: &AliasData<Symbol, TcType>, arguments: &[TcType]) -> Result<Option<TcType>, ()> {
+        let args = &alias.args;
+        let mut typ = match alias.typ {
+            Some(ref typ) => typ.clone(),
+            None => return Ok(None),
         };
         // It is ok to take the aliased type only if the alias is fully applied or if it
         // the missing argument only appear in order at the end of the alias
