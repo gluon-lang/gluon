@@ -1,11 +1,22 @@
 # Tutorial
 
-(Everything is TODO here but some parts are more TODO than others...)
+[Introduction](#introduction)
+
+[Syntax and semantics](#syntax-and-semantics)
+
+[Indentation](#indentation)
+
+[Importing modules](#importing-modules)
+
+[Writing modules](#writing-modules)
+
+[Embedding API](#embedding-api)
+
+[Standard types and functions](#standard-types-and-functions)
 
 ## Introduction
 
 This tutorial aims the explain the basics of embed_lang's syntax and semantics.
-
 
 ## Hello world
 
@@ -101,7 +112,7 @@ and g x = f x
 in f 1 // Never returns
 ```
 
-## If expressions
+### If expressions
 
 The simplest control flow expression is the `if` expression which evaluates a boolean expression and then takes the
 first branch if the boolean is evaluated to `True` and the second if it evaluates to `False`
@@ -110,7 +121,7 @@ first branch if the boolean is evaluated to `True` and the second if it evaluate
 if True then 1 else 0
 ```
 
-## Record expressions
+### Record expressions
 
 To create more complex data types embed_lang has first class records which can be used to group data which belong together easily.
 
@@ -132,7 +143,7 @@ let id x = x
 in { id }
 ```
 
-## Variants
+### Variants
 
 While records are great for grouping related data together there is often a need to have data which can be one of several variants. Unlike records, variants need to be defined before their use.
 
@@ -141,7 +152,7 @@ type MyOption a = | Some a | None
 Some 1
 ```
 
-## Case expressions
+### Case expressions
 
 To allow variants to be unpacked so that their contents can be retrieved embed_lang has the `case` expression.
 
@@ -167,7 +178,18 @@ let { x = y, pi } = { x = 1.0, pi = 3.14 }
 in y + pi
 ```
 
-## Type expressions
+### Lambda expressions
+
+While we have seen that functions can be defined in let expressions it is often valuable to define a function without giving it an explicit name.
+
+```f#,rust
+// \(<identifier)* -> <expr>
+\x y -> x + y - 10
+// Equivalent to
+let f x y = x + y - 10 in f
+```
+
+### Type expressions
 
 embed_lang allows new types to be defined through the `type` expression.
 
@@ -218,9 +240,7 @@ Float
 Option Int
 ```
 
-## Indentation
-
-TODO Better explanation
+### Indentation
 
 If you have been following along this far you may be thinking think that syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily embed_lang offerrs a more convenient way of writing bindings by relying on indentation.
 
@@ -257,17 +277,6 @@ let module =
     in { id, pi = 3.14 }
 in
 module.id module.pi
-```
-
-## Lambda expressions
-
-While we have seen that functions can be defined in let expressions it is often valuable to define a function without giving it an explicit name.
-
-```f#,rust
-// \(<identifier)* -> <expr>
-\x y -> x + y - 10
-// Equivalent to
-let f x y = x + y - 10 in f
 ```
 
 ## Importing modules
@@ -313,11 +322,11 @@ let pi = import "pi.hs"
 
 The API with which the host language interacts with embed_lang is very important part of the library. While the complete API can be found in the [Rustdoc][] this section will explain the most important parts. Please note that the API can change at any point and there are still some public functions which should actually be internal.
 
-## Creating a virtual machine
+### Creating a virtual machine
 
 Before you are able to do anything with the library you will need to create a virtual machine. The virtual machine is responsible for running embed_lang programs and can be created with the [new_vm][] function.
 
-## Compiling and running embed_lang code
+### Compiling and running embed_lang code
 
 Once in possession of a [RootedThread][] you can compile and execute code using the [run_expr][] method on the [Compiler][] builder type.
 
@@ -342,7 +351,7 @@ let result = add.call(1, 2);
 assert_eq!(result, Ok(3));
 ```
 
-## Calling Rust functions from embed_lang
+### Calling Rust functions from embed_lang
 
 embed_lang also allows native functions to be called from embed_lang. To do this we first need to define the function so it is available when running embed_lang code.
 
