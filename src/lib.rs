@@ -30,28 +30,34 @@ use vm::vm::{ClosureDataDef, Error as VMError};
 use vm::compiler::CompiledFunction;
 
 quick_error! {
+    /// Error type wrapping all possible errors that can be generated from embed_lang
     #[derive(Debug)]
     pub enum Error {
+        /// Error found when parsing embed_lang code
         Parse(err: ::parser::Error) {
             description(err.description())
             display("{}", err)
             from()
         }
+        /// Error found when typechecking embed_lang code
         Typecheck(err: ::base::error::InFile<::check::typecheck::TypeError<Symbol>>) {
             description(err.description())
             display("{}", err)
             from()
         }
+        /// Error found when performing an IO action such as loading a file
         IO(err: ::std::io::Error) {
             description(err.description())
             display("{}", err)
             from()
         }
+        /// Error found when executing code in the virtual machine
         VM(err: ::vm::vm::Error) {
             description(err.description())
             display("{}", err)
             from()
         }
+        /// Error found when expanding macros
         Macro(err: ::base::error::Errors<::base::macros::Error>) {
             description(err.description())
             display("{}", err)
@@ -60,8 +66,10 @@ quick_error! {
     }
 }
 
+/// Type alias for results returned by embed_lang
 pub type Result<T> = StdResult<T, Error>;
 
+/// Type which makes parsing, typechecking and compiling an AST into bytecode
 pub struct Compiler {
     symbols: Symbols,
     implicit_prelude: bool,
@@ -83,6 +91,7 @@ impl Compiler {
         self
     }
 
+    /// Parse `input`, returning an expression if successful
     pub fn parse_expr(&mut self,
                       file: &str,
                       input: &str)
@@ -91,6 +100,8 @@ impl Compiler {
                                    input)))
     }
 
+    /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
+    /// expression
     pub fn typecheck_expr(&mut self,
                           vm: &Thread,
                           file: &str,
@@ -110,6 +121,7 @@ impl Compiler {
         Ok((expr, typ))
     }
 
+    /// Compiles `expr` into a function which can be added and run by the `vm`
     pub fn compile_script(&mut self,
                           vm: &Thread,
                           filename: &str,
@@ -129,6 +141,8 @@ impl Compiler {
         function
     }
 
+    /// Parses and typechecks `expr_str` followed by extracting metadata from the created
+    /// expression
     pub fn extract_metadata(&mut self,
                             vm: &Thread,
                             file: &str,

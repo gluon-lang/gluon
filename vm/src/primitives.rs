@@ -235,6 +235,8 @@ pub fn load(vm: &Thread) -> Result<()> {
     try!(vm.define_global("string_prim",
                           record!(
         length => f1(str::len),
+        is_empty => f1(str::is_empty),
+        split_at => f2(str::split_at),
         find => f2(str::find::<&str>),
         rfind => f2(str::rfind::<&str>),
         trim => f1(str::trim),

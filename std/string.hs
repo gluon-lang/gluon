@@ -24,6 +24,8 @@ let show: Show String = {
 }
 in {
     length = string_prim.length,
+    is_empty = string_prim.is_empty,
+    split_at = string_prim.split_at,
     find = string_prim.find,
     rfind = string_prim.rfind,
     trim = string_prim.trim,

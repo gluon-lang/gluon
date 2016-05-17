@@ -309,6 +309,77 @@ let pi = import "pi.hs"
 2 * pi * 10
 ```
 
+## Embedding API
+
+The API with which the host language interacts with embed_lang is very important part of the library. While the complete API can be found in the [Rustdoc][] this section will explain the most important parts. Please note that the API can change at any point and there are still some public functions which should actually be internal.
+
+## Creating a virtual machine
+
+Before you are able to do anything with the library you will need to create a virtual machine. The virtual machine is responsible for running embed_lang programs and can be created with the [new_vm][] function.
+
+## Compiling and running embed_lang code
+
+Once in possession of a [RootedThread][] you can compile and execute code using the [run_expr][] method on the [Compiler][] builder type.
+
+```rust,ignore
+let vm = new_vm();
+let result = Compiler::new()
+    .run_expr(&vm, "example", "1 + 2")
+    .ok();
+assert_eq!(result, Some(3i32));
+```
+
+Often it is either inconvenient or inefficient to compile and run code directly from source code. To write the above example in a more efficient way we could instead load the `(+)` function and call it directly.
+
+```rust,ignore
+let vm = new_vm();
+Compiler::new()
+    .run_expr::<Value>(&vm, "example", " import \"std/prelude.hs\" ")
+    .unwrap();
+let mut add: Function<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
+    .unwrap();
+let result = add.call(1, 2);
+assert_eq!(result, Ok(3));
+```
+
+## Calling Rust functions from embed_lang
+
+embed_lang also allows native functions to be called from embed_lang. To do this we first need to define the function so it is available when running embed_lang code.
+
+```rust,ignore
+fn factorial(x: i32) -> i32 {
+    if x <= 1 { 1 } else { x * factorial(x - 1) }
+}
+let vm = new_vm();
+vm.define_global("factorial", factorial as fn (_) -> _)
+    .unwrap();
+let result = Compiler::new()
+    .run_expr::<i32>(&vm, "example", "factorial 5")
+    .unwrap();
+assert_eq!(result, 120);
+```
+
+[define_global][] can do more than just exposing simple functions. For instance, the [primitives][] module export large parts of Rust's [string][] and [float][] modules directly as records in embed_lang under the `str` and `float` modules respectively.
+
+```rust,ignore
+let vm = new_vm();
+let result = Compiler::new()
+    .run_expr::<String>(&vm, "example", " let string = import \"std/string.hs\" in string.trim \"  Hello world  \t\" ")
+    .unwrap();
+assert_eq!(result, "Hello world");
+```
+
+[Rustdoc]:https://marwes.github.io/embed_lang/embed_lang/index.html
+[new_vm]:https://marwes.github.io/embed_lang/embed_lang/fn.new_vm.html
+[RootedThread]:https://marwes.github.io/embed_lang/embed_lang/struct.RootedThread.html
+[Thread]:https://marwes.github.io/embed_lang/embed_lang/struct.Thread.html
+[run_expr]:https://marwes.github.io/embed_lang/embed_lang/struct.Compiler.html#method.run_expr
+[Compiler struct]:https://marwes.github.io/embed_lang/embed_lang/struct.Compiler.html
+[define_global]:https://marwes.github.io/embed_lang/vm/thread/struct.Thread.html#method.define_global
+[primitives]:https://github.com/Marwes/embed_lang/blob/master/vm/src/primitives.rs
+[string]:http://doc.rust-lang.org/std/primitive.str.html
+[float]:http://doc.rust-lang.org/std/primitive.f64.html
+
 ## Standard types and functions
 
 https://github.com/Marwes/embed_lang/tree/master/std
