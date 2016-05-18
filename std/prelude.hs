@@ -233,7 +233,7 @@ let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_e ord_t -> {
                     | Err r_val -> ord_e.compare l_val r_val)
 }
 
-/// Creates the `<=`, `<`, `>` and `=>` operators from an instance with `Ord`
+/// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
 let make_Ord ord =
     let compare = ord.compare
     {
@@ -252,7 +252,7 @@ let make_Ord ord =
                 | LT -> False
                 | EQ -> False
                 | GT -> True,
-        (=>) = \l r ->
+        (>=) = \l r ->
             match compare l r with
                 | LT -> False
                 | EQ -> True

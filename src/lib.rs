@@ -225,14 +225,14 @@ impl Compiler {
 
     let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
     and { (==) } = __implicit_prelude.eq_Int
-    and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Int
+    and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Int
 
     let { (+), (-), (*), (/) } = __implicit_prelude.num_Float
     and { (==) } = __implicit_prelude.eq_Float
-    and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
+    and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
 
     let { (==) } = __implicit_prelude.eq_Char
-    and { (<), (<=), (=>), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Char
+    and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Char
 
     in 0
     "#;
