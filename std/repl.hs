@@ -88,16 +88,19 @@ let store line: String -> IO Bool =
             io.load_script binding expr >> return True
         | None -> io.print "Expected binding in definition" >> return True
 
-let loop x: () -> IO () = io.read_line >>= \line ->
-    (if string.starts_with line ":" then
-        do_command line
-    else if string.starts_with line "def " then
-        store (string.slice line 4 (string.length line))
-    else
-        io.catch (io.run_expr line) return >>= io.print >> return True) >>= \continue -> 
-            if continue then
-                loop ()
-            else
-                return ()
+let loop x: () -> IO () = repl_prim.input ">>" >>= \line_opt ->
+    match line_opt with
+    | None -> loop ()
+    | Some line ->
+        (if string.starts_with line ":" then
+            do_command line
+        else if string.starts_with line "def " then
+            store (string.slice line 4 (string.length line))
+        else
+            io.catch (io.run_expr line) return >>= io.print >> return True) >>= \continue -> 
+                if continue then
+                    loop ()
+                else
+                    return ()
 
 loop
