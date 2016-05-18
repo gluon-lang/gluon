@@ -74,7 +74,7 @@ let help =
 let commands = insert "h" help commands
 let do_command line: String -> IO Bool = 
     let cmd = string.slice line 1 2
-    let arg = string.trim (string.slice line 3 (string.length line))
+    let arg = if string.length line >= 3 then string.trim (string.slice line 3 (string.length line)) else ""
     match find cmd commands with
         | Some command -> command.action arg
         | None -> io.print ("Unknown command '"  ++ cmd ++ "'") >> return True
