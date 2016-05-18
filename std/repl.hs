@@ -25,53 +25,52 @@ let load_file filename: String -> IO String =
 
 type Cmd = { info: String, action: String -> IO Bool }
 
-let commands: Map String Cmd
-    =  singleton "q" { info = "Quit the REPL", action = \_ -> return False }
-        <> singleton "t" {
-            info = "Prints the type with an expression",
-            action = \arg -> repl_prim.type_of_expr arg >>= \result ->
-                match result with
-                | Ok x -> io.print x
-                | Err x -> io.print x
-                    >> return True
-        }
-        <> singleton "i" {
-            info = "Prints information about the given name",
-            action = \arg -> repl_prim.find_info arg >>= \result ->
-                match result with
-                | Ok x -> io.print x
-                | Err x -> io.print x
-                    >> return True
-        }
-        <> singleton "k" {
-            info = "Prints the kind with the given type",
-            action = \arg -> repl_prim.find_kind arg >>= \result ->
-                match result with
-                | Ok x -> io.print x
-                | Err x -> io.print x
-                    >> return True
-        }
-        <> singleton "l" {
-            info = "Loads the file at 'folder/module.ext' and stores it at 'module'",
-            action = \arg -> load_file arg >>= io.print >> return True
-        }
+let commands: Map String Cmd =
+    let commands = ref empty
+    let cmds =
+        singleton "q" { info = "Quit the REPL", action = \_ -> return False }
+            <> singleton "t" {
+                info = "Prints the type with an expression",
+                action = \arg -> repl_prim.type_of_expr arg >>= \result ->
+                    match result with
+                    | Ok x -> io.print x
+                    | Err x -> io.print x
+                        >> return True
+            }
+            <> singleton "i" {
+                info = "Prints information about the given name",
+                action = \arg -> repl_prim.find_info arg >>= \result ->
+                    match result with
+                    | Ok x -> io.print x
+                    | Err x -> io.print x
+                        >> return True
+            }
+            <> singleton "k" {
+                info = "Prints the kind with the given type",
+                action = \arg -> repl_prim.find_kind arg >>= \result ->
+                    match result with
+                    | Ok x -> io.print x
+                    | Err x -> io.print x
+                        >> return True
+            }
+            <> singleton "l" {
+                info = "Loads the file at 'folder/module.ext' and stores it at 'module'",
+                action = \arg -> load_file arg >>= io.print >> return True
+            }
+            <> singleton "h" {
+                info = "Print this help",
+                action = \_ ->
+                    io.print "Available commands\n" >>
+                        forM_ (to_list (load commands)) (\cmd ->
+                            //FIXME This type declaration should not be needed
+                            let cmd: { key: String, value: Cmd } = cmd
+                            io.print ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
+                        ) >>
+                        return True
+            }
+    commands <- cmds
+    load commands
 
-let help =
-    let info = "Print this help"
-    {
-        info,
-        action = \_ ->
-            io.print "Available commands\n" >>
-                io.print ("    :h " ++ info) >>
-                forM_ (to_list commands) (\cmd ->
-                    //FIXME This type declaration should not be needed
-                    let cmd: { key: String, value: Cmd } = cmd
-                    io.print ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
-                ) >>
-                return True
-    }
-
-let commands = insert "h" help commands
 let do_command line: String -> IO Bool = 
     let cmd = string.slice line 1 2
     let arg = if string.length line >= 3 then string.trim (string.slice line 3 (string.length line)) else ""
