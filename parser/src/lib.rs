@@ -22,8 +22,8 @@ use base::symbol::{Name, Symbol, SymbolModule};
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream, SourcePosition};
 use combine::combinator::EnvParser;
-use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy, sep_by,
-              sep_by1, token, try, value, ParseError, ParseResult, Parser, ParserExt};
+use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy,
+              sep_by1, sep_end_by, token, try, value, ParseError, ParseResult, Parser, ParserExt};
 use combine_language::{Assoc, Fixity, expression_parser};
 
 use lexer::{Lexer, Delimiter, Token};
@@ -265,7 +265,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                         });
         between(token(Token::Open(Delimiter::Brace)),
                 token(Token::Close(Delimiter::Brace)),
-                sep_by(field, token(Token::Comma)))
+                sep_end_by(field, token(Token::Comma)))
             .map(|fields: Vec<(Id, _)>| {
                 let mut associated = Vec::new();
                 let mut types = Vec::new();
@@ -489,7 +489,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                               .map(|s| loc(Expr::Literal(LiteralEnum::Char(s)))),
                      &mut between(token(Token::Open(Delimiter::Bracket)),
                                   token(Token::Close(Delimiter::Bracket)),
-                                  sep_by(self.expr(), token(Token::Comma)))
+                                  sep_end_by(self.expr(), token(Token::Comma)))
                               .map(|exprs| {
                                   loc(Expr::Array(Array {
                                       id: self.empty_id.clone(),
@@ -714,7 +714,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                             });
         let mut parser = between(token(Token::Open(Delimiter::Brace)),
                                  token(Token::Close(Delimiter::Brace)),
-                                 sep_by(&mut field, token(Token::Comma)));
+                                 sep_end_by(&mut field, token(Token::Comma)));
         f(&mut parser)
     }
 }

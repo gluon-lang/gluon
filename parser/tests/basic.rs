@@ -312,6 +312,20 @@ fn operator_expr() {
 }
 
 #[test]
+fn record_trailing_comma() {
+    let _ = ::env_logger::init();
+    let e = parse_new("{ y, x = z,}");
+    assert_eq!(e, record(vec![("y".into(), None), ("x".into(), Some(id("z")))]));
+}
+
+#[test]
+fn array_trailing_comma() {
+    let _ = ::env_logger::init();
+    let e = parse_new("[y, 1, 2,]");
+    assert_eq!(e, array(vec![id("y"), int(1), int(2)]));
+}
+
+#[test]
 fn record_pattern() {
     let _ = ::env_logger::init();
     let e = parse_new("match x with | { y, x = z } -> z");
