@@ -53,6 +53,8 @@ skeptic = "0.4"
 skeptic = "0.4"
 
 [features]
+default = ["repl"]
+
 repl = ["env_logger", "lazy_static", "linenoise-rust"]
 test = ["vm/test", "check/test", "parser/test", "repl"]
 nightly = ["compiletest_rs"]
