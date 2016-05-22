@@ -526,7 +526,8 @@ impl<T: VMType> VMType for Userdata<T> {
 impl<'vm, T: ::vm::Userdata + VMType> Pushable<'vm> for Userdata<T> {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         let data: Box<::vm::Userdata> = Box::new(self.0);
-        stack.push(Value::Userdata(vm.gc.borrow_mut().alloc(Move(data))));
+        let userdata = vm.alloc(&stack.stack, Move(data));
+        stack.push(Value::Userdata(userdata));
         Status::Ok
     }
 }

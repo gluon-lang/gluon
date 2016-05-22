@@ -147,7 +147,7 @@ pub mod tests {
     ///Returns a reference to the interner stored in TLD
     pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
         thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>>
-                      = Rc::new(RefCell::new((Interner::new(), Gc::new()))));
+                      = Rc::new(RefCell::new((Interner::new(), Gc::new(0)))));
         INTERNER.with(|interner| interner.clone())
     }
 

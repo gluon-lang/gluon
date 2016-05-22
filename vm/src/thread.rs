@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt;
@@ -119,8 +120,10 @@ impl<'b> Traverseable for Roots<'b> {
 /// Representation of the virtual machine
 pub struct Thread {
     global_state: Arc<GlobalVMState>,
+    local_gc: RefCell<Gc>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value>>,
+    rooted_threads: RefCell<Vec<GcPtr<Thread>>>,
     stack: RefCell<Stack>,
 }
 
@@ -135,6 +138,7 @@ impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
         self.stack.borrow().get_values().traverse(gc);
+        self.rooted_threads.borrow().traverse(gc);
     }
 }
 
@@ -161,16 +165,18 @@ pub struct RootedThread(GcPtr<Thread>);
 impl Drop for RootedThread {
     fn drop(&mut self) {
         let is_empty = {
-            let mut roots = self.rooted_threads.borrow_mut();
-            let p = roots.pop().expect("VM ptr");
-            assert!(&*p as *const Traverseable as *const () ==
-                    &*self.0 as *const Thread as *const ());
+            let mut roots = self.allocated_threads.borrow_mut();
+            let index = roots.iter()
+                             .position(|p| &**p as *const Thread == &*self.0 as *const Thread)
+                             .expect("VM ptr");
+            roots.swap_remove(index);
             roots.is_empty()
         };
         if is_empty {
-            // The last RootedThread was dropped, drop the entire thread
+            // The last RootedThread was dropped, there is no way to refer to the global state any
+            // longer so drop everything
             let mut gc_ref = self.0.gc.borrow_mut();
-            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new());
+            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new(0));
             // Make sure that the RefMut is dropped before the Gc itself as the RefCell is dropped
             // when the Gc is dropped
             drop(gc_ref);
@@ -196,11 +202,13 @@ impl RootedThread {
     pub fn new() -> RootedThread {
         let thread = Thread {
             global_state: Arc::new(GlobalVMState::new()),
+            local_gc: RefCell::new(Gc::new(1)),
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new()),
             rooted_values: RefCell::new(Vec::new()),
+            rooted_threads: RefCell::new(Vec::new()),
         };
-        let mut gc = Gc::new();
+        let mut gc = Gc::new(0);
         let vm = RootedThread::from_gc_ptr(gc.alloc(Move(thread)));
         *vm.gc.borrow_mut() = gc;
         // Enter the top level scope
@@ -210,7 +218,7 @@ impl RootedThread {
 
     pub fn from_gc_ptr(p: GcPtr<Thread>) -> RootedThread {
         let vm = RootedThread(p);
-        vm.rooted_threads.borrow_mut().push(vm.0);
+        vm.allocated_threads.borrow_mut().push(vm.0);
         vm
     }
 
@@ -235,9 +243,11 @@ impl Thread {
     pub fn new_thread(&self) -> RootedThread {
         let vm = Thread {
             global_state: self.global_state.clone(),
+            local_gc: RefCell::new(self.local_gc.borrow().new_child_gc()),
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new()),
             rooted_values: RefCell::new(Vec::new()),
+            rooted_threads: RefCell::new(Vec::new()),
         };
         // Enter the top level scope
         StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
@@ -342,7 +352,7 @@ impl Thread {
     /// Takes the stack as it may collect if the collection limit has been reached.
     pub fn alloc<D>(&self, stack: &Stack, def: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable,
-              D::Value: Sized
+              D::Value: Sized + Any
     {
         self.with_roots(stack,
                         |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
@@ -364,8 +374,15 @@ impl Thread {
             },
             stack: stack,
         };
-        let mut gc = self.gc.borrow_mut();
+        let mut gc = self.local_gc.borrow_mut();
         f(&mut gc, roots)
+    }
+
+    pub fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value {
+        Value::Data(self.local_gc.borrow_mut().alloc(Def {
+            tag: tag,
+            elems: fields,
+        }))
     }
 
     pub fn add_bytecode(&self,

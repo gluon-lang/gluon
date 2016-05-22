@@ -158,6 +158,49 @@ pub enum Value {
     Thread(GcPtr<Thread>),
 }
 
+impl Value {
+    pub fn deep_clone(&self, gc: &mut Gc) -> Result<Value> {
+        Ok(match *self {
+            String(ref data) => String(gc.alloc(&data[..])),
+            Value::Data(ref data) => {
+                // FIXME Don't alloc a vec
+                let fields = try!(data.fields
+                                      .iter()
+                                      .map(|v| v.deep_clone(gc))
+                                      .collect::<Result<Vec<_>>>());
+                Value::Data(gc.alloc(Def {
+                    tag: data.tag,
+                    elems: &fields,
+                }))
+            }
+            Closure(ref data) => {
+                let upvars = try!(data.upvars
+                                      .iter()
+                                      .map(|v| v.deep_clone(gc))
+                                      .collect::<Result<Vec<_>>>());
+                Closure(gc.alloc(ClosureDataDef(data.function, &upvars)))
+            }
+            PartialApplication(ref data) => {
+                let arguments = try!(data.arguments
+                                         .iter()
+                                         .map(|v| v.deep_clone(gc))
+                                         .collect::<Result<Vec<_>>>());
+                let ptr = gc.alloc(PartialApplicationDataDef(data.function, &arguments));
+                PartialApplication(ptr)
+            }
+            Function(_) |
+            Value::Userdata(_) |
+            Value::Thread(_) => {
+                return Err(Error::Message("Threads, Userdata and Extern functions cannot be deep \
+                                           cloned yet"
+                                              .into()))
+            }
+            Int(i) => Int(i),
+            Float(f) => Float(f),
+        })
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum Callable {
     Closure(GcPtr<ClosureData>),
@@ -364,7 +407,9 @@ pub struct GlobalVMState {
     macros: MacroEnv<Thread>,
     // FIXME These fields should not be public
     pub gc: RefCell<Gc>,
-    pub rooted_threads: RefCell<Vec<GcPtr<Thread>>>,
+    // List of all allocated threads. Needed so that the global garbage collector can traverse all
+    // threads for reachable values as global (generation 0) values could live in any thread
+    pub allocated_threads: RefCell<Vec<GcPtr<Thread>>>,
 }
 
 impl Traverseable for GlobalVMState {
@@ -374,7 +419,7 @@ impl Traverseable for GlobalVMState {
         }
         // Also need to check the interned string table
         self.interner.borrow().traverse(gc);
-        self.rooted_threads.borrow().traverse(gc);
+        self.allocated_threads.borrow().traverse(gc);
     }
 }
 
@@ -459,9 +504,9 @@ impl MetadataEnv for VMEnv {
 }
 
 fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
-where T: Clone,
-      U: Clone,
-      F: FnOnce(&T) -> Option<&U>
+    where T: Clone,
+          U: Clone,
+          F: FnOnce(&T) -> Option<&U>
 {
     match cow {
         Cow::Borrowed(b) => f(b).map(Cow::Borrowed),
@@ -530,9 +575,11 @@ impl VMEnv {
         for mut field_name in remaining_fields.components() {
             if field_name.starts_with('(') && field_name.ends_with(')') {
                 field_name = &field_name[1..field_name.len() - 1];
-            }
-            else if field_name.chars().any(|c| "+-*/&|=<>".chars().any(|x| x == c)) {
-                return Err(Error::Message(format!("Operators cannot be used as fields directly. Please enclose the operator with parentheses before passing it in. (test.(+) instead of test.+)")));
+            } else if field_name.chars().any(|c| "+-*/&|=<>".chars().any(|x| x == c)) {
+                return Err(Error::Message(format!("Operators cannot be used as fields \
+                                                   directly. Please enclose the operator with \
+                                                   parentheses before passing it in. (test.(+) \
+                                                   instead of test.+)")));
             }
             typ = match typ {
                 Cow::Borrowed(typ) => instantiator.remove_aliases_cow(typ),
@@ -551,7 +598,7 @@ impl VMEnv {
                                           value = data.fields[index];
                                           &field.typ
                                       }
-                                      _ => panic!("Unexpected value {:?}", value)
+                                      _ => panic!("Unexpected value {:?}", value),
                                   }
                               })
                     }
@@ -633,9 +680,9 @@ impl GlobalVMState {
             generics: RefCell::new(HashMap::new()),
             typeids: RefCell::new(HashMap::new()),
             interner: RefCell::new(Interner::new()),
-            gc: RefCell::new(Gc::new()),
+            gc: RefCell::new(Gc::new(0)),
             macros: MacroEnv::new(),
-            rooted_threads: RefCell::new(Vec::new()),
+            allocated_threads: RefCell::new(Vec::new()),
         };
         vm.add_types()
           .unwrap();
@@ -757,13 +804,6 @@ impl GlobalVMState {
     /// Returns a borrowed structure which implements `CompilerEnv`
     pub fn get_env<'b>(&'b self) -> Ref<'b, VMEnv> {
         self.env.borrow()
-    }
-
-    pub fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value {
-        Value::Data(self.gc.borrow_mut().alloc(Def {
-            tag: tag,
-            elems: fields,
-        }))
     }
 }
 
