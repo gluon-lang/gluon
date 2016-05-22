@@ -144,6 +144,7 @@ fn f3<A, B, C, R>(f: fn(A, B, C) -> R) -> fn(A, B, C) -> R {
 
 pub fn load(vm: &Thread) -> Result<()> {
     use std::f64;
+    use std::char;
     try!(vm.define_global("float",
                           record!(
         digits => f64::DIGITS,
@@ -246,6 +247,20 @@ pub fn load(vm: &Thread) -> Result<()> {
         append => f2(prim::string_append),
         eq => f2(<str as PartialEq>::eq),
         slice => f3(prim::string_slice)
+    )));
+    try!(vm.define_global("char",
+                          record!(
+        is_digit => f2(char::is_digit),
+        to_digit => f2(char::to_digit),
+        len_utf8 => f1(char::len_utf8),
+        len_utf16 => f1(char::len_utf16),
+        is_alphabetic => f1(char::is_alphabetic),
+        is_lowercase => f1(char::is_lowercase),
+        is_uppercase => f1(char::is_uppercase),
+        is_whitespace => f1(char::is_whitespace),
+        is_alphanumeric => f1(char::is_alphanumeric),
+        is_control => f1(char::is_control),
+        is_numeric => f1(char::is_numeric)
     )));
     try!(vm.define_global("prim",
                           record!(
