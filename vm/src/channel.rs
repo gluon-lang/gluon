@@ -7,11 +7,14 @@ use base::types;
 use api::record::{Record, HList};
 use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
-use gc::{Traverseable, Gc};
+use gc::{Traverseable, Gc, GcPtr};
 use vm::{Error, Thread, Value, RootedThread, Result as VMResult, Status};
 use stack::State;
 
 struct Sender<T> {
+    // No need to traverse this thread reference as any thread having a reference to this `Sender`
+    // would also directly own a reference to the `Thread`
+    thread: GcPtr<Thread>,
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
@@ -70,27 +73,25 @@ impl<T: VMType> VMType for Receiver<T>
 
 field_decl!{ sender, receiver }
 
-fn channel(_: ())
+fn channel(WithVM { vm, .. }: WithVM<()>)
            -> Record<HList<(_field::sender, Userdata<Sender<Generic<A>>>),
                            HList<(_field::receiver, Userdata<Receiver<Generic<A>>>), ()>>> {
-    let sender = Sender { queue: Arc::new(Mutex::new(VecDeque::new())) };
+    let sender = Sender {
+        thread: unsafe { GcPtr::from_raw(vm) },
+        queue: Arc::new(Mutex::new(VecDeque::new())),
+    };
     let receiver = Receiver { queue: sender.queue.clone() };
     record_no_decl!(sender => Userdata(sender), receiver => Userdata(receiver))
 }
 
-fn recv(receiver: *const Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
-    unsafe {
-        let receiver = &*receiver;
-        receiver.try_recv()
-                .map_err(|_| ())
-    }
+fn recv(receiver: &Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
+    receiver.try_recv()
+            .map_err(|_| ())
 }
 
-fn send(sender: *const Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
-    unsafe {
-        let sender = &*sender;
-        Ok(sender.send(value))
-    }
+fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
+    let value = try!(sender.thread.deep_clone(value.0).map_err(|_| ()));
+    Ok(sender.send(Generic::from(value)))
 }
 
 fn resume(vm: &Thread) -> Status {

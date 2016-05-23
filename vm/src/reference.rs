@@ -5,18 +5,21 @@ use std::marker::PhantomData;
 use base::symbol::Symbol;
 use base::types;
 use base::types::{Type, TcType};
-use Variants;
-use gc::{Gc, Traverseable};
+use gc::{Gc, GcPtr, Traverseable};
 use stack::StackFrame;
 use vm::{Thread, Value, Status};
-use api::{Generic, Getable, Pushable, Userdata, ValueRef, VMType};
+use api::{MaybeError, Generic, Pushable, Userdata, VMType, WithVM};
 use api::generic::A;
 
-struct Reference<T>(Cell<Value>, PhantomData<T>);
+struct Reference<T> {
+    value: Cell<Value>,
+    thread: GcPtr<Thread>,
+    _marker: PhantomData<T>,
+}
 
 impl<T> Traverseable for Reference<T> {
     fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc)
+        self.value.traverse(gc)
     }
 }
 
@@ -43,29 +46,26 @@ impl<'vm, T> Pushable<'vm> for Reference<T>
     }
 }
 
-impl<'vm, T> Getable<'vm> for Reference<T>
-    where T: Any + VMType
-{
-    fn from_value(_: &'vm Thread, value: Variants) -> Option<Reference<T>> {
-        match value.as_ref() {
-            ValueRef::Userdata(data) => {
-                data.downcast_ref::<Self>().map(|x| Reference(x.0.clone(), x.1))
-            }
-            _ => None,
+fn set(r: &Reference<A>, a: Generic<A>) -> MaybeError<(), String> {
+    match r.thread.deep_clone(a.0) {
+        Ok(a) => {
+            r.value.set(a);
+            MaybeError::Ok(())
         }
+        Err(err) => MaybeError::Err(format!("{}", err)),
     }
 }
 
-fn set(r: &Reference<A>, a: Generic<A>) {
-    r.0.set(a.0);
-}
-
 fn get(r: &Reference<A>) -> Generic<A> {
-    Generic::from(r.0.get())
+    Generic::from(r.value.get())
 }
 
-fn make_ref(a: Generic<A>) -> Reference<A> {
-    Reference(Cell::new(a.0), PhantomData)
+fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
+    Reference {
+        value: Cell::new(a.value.0),
+        thread: unsafe { GcPtr::from_raw(a.vm) },
+        _marker: PhantomData,
+    }
 }
 
 fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {

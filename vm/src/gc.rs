@@ -351,6 +351,10 @@ impl<T: ?Sized> GcPtr<T> {
         GcPtr { ptr: ptr }
     }
 
+    pub fn generation(&self) -> usize {
+        self.header().generation()
+    }
+
     fn header(&self) -> &GcHeader {
         // Use of transmute_copy allows us to get the pointer
         // to the data regardless of wether T is unsized or not
@@ -522,6 +526,10 @@ impl Gc {
             type_infos: HashMap::new(),
             generation: generation,
         }
+    }
+
+    pub fn generation(&self) -> usize {
+        self.generation
     }
 
     pub fn new_child_gc(&self) -> Gc {

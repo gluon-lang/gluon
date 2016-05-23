@@ -159,45 +159,17 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn deep_clone(&self, gc: &mut Gc) -> Result<Value> {
-        Ok(match *self {
-            String(ref data) => String(gc.alloc(&data[..])),
-            Value::Data(ref data) => {
-                // FIXME Don't alloc a vec
-                let fields = try!(data.fields
-                                      .iter()
-                                      .map(|v| v.deep_clone(gc))
-                                      .collect::<Result<Vec<_>>>());
-                Value::Data(gc.alloc(Def {
-                    tag: data.tag,
-                    elems: &fields,
-                }))
-            }
-            Closure(ref data) => {
-                let upvars = try!(data.upvars
-                                      .iter()
-                                      .map(|v| v.deep_clone(gc))
-                                      .collect::<Result<Vec<_>>>());
-                Closure(gc.alloc(ClosureDataDef(data.function, &upvars)))
-            }
-            PartialApplication(ref data) => {
-                let arguments = try!(data.arguments
-                                         .iter()
-                                         .map(|v| v.deep_clone(gc))
-                                         .collect::<Result<Vec<_>>>());
-                let ptr = gc.alloc(PartialApplicationDataDef(data.function, &arguments));
-                PartialApplication(ptr)
-            }
-            Function(_) |
-            Value::Userdata(_) |
-            Value::Thread(_) => {
-                return Err(Error::Message("Threads, Userdata and Extern functions cannot be deep \
-                                           cloned yet"
-                                              .into()))
-            }
-            Int(i) => Int(i),
-            Float(f) => Float(f),
-        })
+    pub fn generation(self) -> usize {
+        match self {
+            String(p) => p.generation(),
+            Value::Data(p) => p.generation(),
+            Function(p) => p.generation(),
+            Closure(p) => p.generation(),
+            PartialApplication(p) => p.generation(),
+            Value::Userdata(p) => p.generation(),
+            Value::Thread(p) => p.generation(),
+            Int(_) | Float(_) => 0,
+        }
     }
 }
 
