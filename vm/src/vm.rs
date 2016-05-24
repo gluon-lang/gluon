@@ -379,9 +379,10 @@ pub struct GlobalVMState {
     macros: MacroEnv<Thread>,
     // FIXME These fields should not be public
     pub gc: RefCell<Gc>,
-    // List of all allocated threads. Needed so that the global garbage collector can traverse all
-    // threads for reachable values as global (generation 0) values could live in any thread
-    pub allocated_threads: RefCell<Vec<GcPtr<Thread>>>,
+    // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
+    // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
+    // thread
+    pub generation_0_threads: RefCell<Vec<GcPtr<Thread>>>,
 }
 
 impl Traverseable for GlobalVMState {
@@ -391,7 +392,7 @@ impl Traverseable for GlobalVMState {
         }
         // Also need to check the interned string table
         self.interner.borrow().traverse(gc);
-        self.allocated_threads.borrow().traverse(gc);
+        self.generation_0_threads.borrow().traverse(gc);
     }
 }
 
@@ -654,7 +655,7 @@ impl GlobalVMState {
             interner: RefCell::new(Interner::new()),
             gc: RefCell::new(Gc::new(0)),
             macros: MacroEnv::new(),
-            allocated_threads: RefCell::new(Vec::new()),
+            generation_0_threads: RefCell::new(Vec::new()),
         };
         vm.add_types()
           .unwrap();

@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Sub, Mul, Div, Deref};
@@ -121,10 +121,16 @@ impl<'b> Traverseable for Roots<'b> {
 /// Representation of the virtual machine
 pub struct Thread {
     global_state: Arc<GlobalVMState>,
+    // The parent of this thread, if it exists must live at least as long as this thread as this
+    // thread can refer to any value in the parent thread
+    parent: Option<RootedThread>,
     local_gc: RefCell<Gc>,
     roots: RefCell<Vec<GcPtr<Traverseable>>>,
     rooted_values: RefCell<Vec<Value>>,
-    rooted_threads: RefCell<Vec<GcPtr<Thread>>>,
+    /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
+    /// the roots of all its children as well since those may contain references to this threads
+    /// garbage collected values
+    child_threads: RefCell<Vec<GcPtr<Thread>>>,
     stack: RefCell<Stack>,
 }
 
@@ -139,7 +145,7 @@ impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
         self.stack.borrow().get_values().traverse(gc);
-        self.rooted_threads.borrow().traverse(gc);
+        self.child_threads.borrow().traverse(gc);
     }
 }
 
@@ -166,14 +172,14 @@ pub struct RootedThread(GcPtr<Thread>);
 impl Drop for RootedThread {
     fn drop(&mut self) {
         let is_empty = {
-            let mut roots = self.allocated_threads.borrow_mut();
+            let mut roots = self.parent_threads();
             let index = roots.iter()
                              .position(|p| &**p as *const Thread == &*self.0 as *const Thread)
                              .expect("VM ptr");
             roots.swap_remove(index);
             roots.is_empty()
         };
-        if is_empty {
+        if self.parent.is_none() && is_empty {
             // The last RootedThread was dropped, there is no way to refer to the global state any
             // longer so drop everything
             let mut gc_ref = self.0.gc.borrow_mut();
@@ -203,11 +209,12 @@ impl RootedThread {
     pub fn new() -> RootedThread {
         let thread = Thread {
             global_state: Arc::new(GlobalVMState::new()),
+            parent: None,
             local_gc: RefCell::new(Gc::new(1)),
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new()),
             rooted_values: RefCell::new(Vec::new()),
-            rooted_threads: RefCell::new(Vec::new()),
+            child_threads: RefCell::new(Vec::new()),
         };
         let mut gc = Gc::new(0);
         let vm = RootedThread::from_gc_ptr(gc.alloc(Move(thread)));
@@ -219,7 +226,7 @@ impl RootedThread {
 
     pub fn from_gc_ptr(p: GcPtr<Thread>) -> RootedThread {
         let vm = RootedThread(p);
-        vm.allocated_threads.borrow_mut().push(vm.0);
+        vm.parent_threads().push(vm.0);
         vm
     }
 
@@ -241,14 +248,22 @@ impl Thread {
         self.rooted_values.borrow().traverse(gc);
     }
 
+    fn parent_threads(&self) -> RefMut<Vec<GcPtr<Thread>>> {
+        match self.parent {
+            Some(ref parent) => parent.child_threads.borrow_mut(),
+            None => self.global_state.generation_0_threads.borrow_mut(),
+        }
+    }
+
     pub fn new_thread(&self) -> RootedThread {
         let vm = Thread {
             global_state: self.global_state.clone(),
+            parent: unsafe { Some(RootedThread::from_gc_ptr(GcPtr::from_raw(self))) },
             local_gc: RefCell::new(self.local_gc.borrow().new_child_gc()),
             stack: RefCell::new(Stack::new()),
             roots: RefCell::new(Vec::new()),
             rooted_values: RefCell::new(Vec::new()),
-            rooted_threads: RefCell::new(Vec::new()),
+            child_threads: RefCell::new(Vec::new()),
         };
         // Enter the top level scope
         StackFrame::frame(vm.stack.borrow_mut(), 0, State::Unknown);
