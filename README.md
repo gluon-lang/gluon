@@ -110,15 +110,13 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Embeddable** - Similiar to [Lua][Lua] it is meant to be able to be included in another program which can use the virtual machine to extend its own functionality.
 
-* **Statically typed** - It currently uses the Hindley-Milner type system with some extensions.
+* **Statically typed** - The language uses a Hindley-Milner based type system with some extensions which allows for simple and general type inference.
 
-* **Tiny** - The language should be as small as possible while still remaining practical. As having a static typesystem already demands a good chunk of extra code it becomes even more important to have a very small set of features as every feature added is likely to need code added to the parser, typechecker as well as the compiler causing even small additions to add a larger amount of code than it would in a dynamic language.
+* **Tiny** - By being tiny the langauge is easy to learn and makes the implementation small.
 
-  As an example, there is no concept of modules as a concept of grouping code. Instead the basic records fills the same role (Caveat: Types currently always globally exported though this should change). Now instead of files being compiled as modules they are just expressions which return a record of the functions they export! See the [prelude][] for an example.
+* **Strict** - Strict langauges are usually easier to reason about, especially considering that is what most people are accustomed with. For cases where lazines is desired an explict type is provied.
 
-* **Strict** - Laziness is supported through an explicit type but being strict by default leads to easier to debug code.
-
-* **Modular** - The library is split into parser, typechecker and virtual machine + compiler currently all of which can be used independently. Certain language agonstic things are also likely candidates for separation from the main library. For instance the garbage collector is currently quite unaware of the rest of the code and might be made into separate crate (if you see something useful separately from the library please don't hesitate to open an issue!).
+* **Modular** - The library is split into parser, typechecker and virtual machine + compiler. Each of these components can be use independently of each other allowing applications to pick and choose exactly what they need.
 
 [prelude]:https://github.com/Marwes/embed_lang/blob/master/std/prelude.hs
 
