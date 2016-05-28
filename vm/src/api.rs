@@ -556,22 +556,6 @@ impl<'vm, T: ::vm::Userdata> Getable<'vm> for *const T {
     }
 }
 
-impl<T: VMType> VMType for *mut T {
-    type Type = T::Type;
-}
-impl<'vm, T: VMType + Any> Pushable<'vm> for *mut T {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
-        Userdata(self).push(vm, stack)
-    }
-}
-impl<'vm, T: Any> Getable<'vm> for *mut T {
-    fn from_value(_: &'vm Thread, value: Variants) -> Option<*mut T> {
-        match value.as_ref() {
-            ValueRef::Userdata(data) => data.downcast_ref::<*mut T>().map(|x| *x),
-            _ => None,
-        }
-    }
-}
 impl<T: VMType> VMType for Option<T>
     where T::Type: Sized
 {
@@ -1048,13 +1032,15 @@ impl<F: VMType> VMType for Primitive<F> {
     }
 }
 
-impl<'vm, F: FunctionType + VMType> Pushable<'vm> for Primitive<F> {
+impl<'vm, F> Pushable<'vm> for Primitive<F>
+where F: FunctionType + VMType + Send + Sync
+{
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         let extern_function = unsafe {
             // The VM guarantess that it only ever calls this function with itself which should
             // make sure that ignoring the lifetime is safe
-            ::std::mem::transmute::<Box<Fn(&'vm Thread) -> Status + 'static>,
-                                      Box<Fn(&Thread) -> Status + 'static>>(Box::new(self.function))
+            ::std::mem::transmute::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
+                                      Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(self.function))
         };
         let id = Symbol::new(self.name);
         let value = Value::Function(vm.alloc(&stack.stack,
@@ -1172,8 +1158,8 @@ where $($args: Getable<'vm> + VMType + 'vm,)* R: Pushable<'vm> + 'vm {
             //The VM guarantess that it only ever calls this function with itself which should
             //make sure that ignoring the lifetime is safe
             ::std::mem::transmute
-                    ::<Box<Fn(&'vm Thread) -> Status>,
-                       Box<Fn(&Thread) -> Status>>(f)
+                    ::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
+                       Box<Fn(&Thread) -> Status + Send + Sync>>(f)
         };
         let id = Symbol::new("<extern>");
         let value = Value::Function(vm.alloc(&stack.stack, Move(

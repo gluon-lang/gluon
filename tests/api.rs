@@ -53,45 +53,6 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
 }
 
 #[test]
-fn pass_userdata() {
-    let _ = ::env_logger::init();
-    let s = r"
-let id : Test -> Test = \x -> x in id
-";
-    let mut vm = make_vm();
-    fn test(test: *mut Test) -> bool {
-        let test = unsafe { &mut *test };
-        let x = test.x == 123;
-        test.x *= 2;
-        x
-    }
-    let test: fn(_) -> _ = test;
-    impl VMType for Test {
-        type Type = Test;
-    }
-    impl Traverseable for Test { }
-    struct Test {
-        x: VMInt,
-    }
-    vm.register_type::<Test>("Test", vec![])
-      .unwrap_or_else(|_| panic!("Could not add type"));
-    vm.define_global("test", test).unwrap_or_else(|err| panic!("{}", err));
-    load_script(&mut vm, "id", &s).unwrap_or_else(|err| panic!("{}", err));
-
-    let mut test = Test { x: 123 };
-    {
-        let mut f: Function<fn(*mut Test) -> *mut Test> = vm.get_global("id").unwrap();
-        let result = f.call(&mut test).unwrap();
-        let p: *mut _ = &mut test;
-        assert!(result == p);
-    }
-    let mut f: Function<fn(*mut Test) -> bool> = vm.get_global("test").unwrap();
-    let result = f.call(&mut test).unwrap();
-    assert!(result);
-    assert_eq!(test.x, 123 * 2);
-}
-
-#[test]
 fn root_data() {
     let _ = ::env_logger::init();
 

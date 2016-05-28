@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::cell::{RefCell, Ref};
+use std::sync::{Mutex, RwLock, RwLockReadGuard};
 use std::fmt;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -25,7 +25,7 @@ use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
 pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 
 mopafy!(Userdata);
-pub trait Userdata: ::mopa::Any + Traverseable {}
+pub trait Userdata: ::mopa::Any + Traverseable + Send + Sync {}
 
 impl PartialEq for Userdata {
     fn eq(&self, other: &Userdata) -> bool {
@@ -33,7 +33,7 @@ impl PartialEq for Userdata {
     }
 }
 
-impl<T> Userdata for T where T: Any + Traverseable {}
+impl<T> Userdata for T where T: Any + Traverseable + Send + Sync {}
 
 impl fmt::Debug for Userdata {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -113,7 +113,7 @@ impl BytecodeFunction {
             inner_functions: fs,
             strings: strings,
             globals: module_globals.into_iter()
-                                   .map(|index| vm.env.borrow().globals[index.as_ref()].value)
+                                   .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
                                    .collect(),
         }))
     }
@@ -329,7 +329,7 @@ impl fmt::Debug for Value {
 pub struct ExternFunction {
     pub id: Symbol,
     pub args: VMIndex,
-    pub function: Box<Fn(&Thread) -> Status + 'static>,
+    pub function: Box<Fn(&Thread) -> Status + Send + Sync>,
 }
 
 impl PartialEq for ExternFunction {
@@ -372,27 +372,27 @@ impl Typed for Global {
 }
 
 pub struct GlobalVMState {
-    env: RefCell<VMEnv>,
-    generics: RefCell<HashMap<StdString, TcType>>,
-    typeids: RefCell<HashMap<TypeId, TcType>>,
-    interner: RefCell<Interner>,
+    env: RwLock<VMEnv>,
+    generics: RwLock<HashMap<StdString, TcType>>,
+    typeids: RwLock<HashMap<TypeId, TcType>>,
+    interner: RwLock<Interner>,
     macros: MacroEnv<Thread>,
     // FIXME These fields should not be public
-    pub gc: RefCell<Gc>,
+    pub gc: Mutex<Gc>,
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
     // thread
-    pub generation_0_threads: RefCell<Vec<GcPtr<Thread>>>,
+    pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 }
 
 impl Traverseable for GlobalVMState {
     fn traverse(&self, gc: &mut Gc) {
-        for g in self.env.borrow().globals.values() {
+        for g in self.env.read().unwrap().globals.values() {
             g.traverse(gc);
         }
         // Also need to check the interned string table
-        self.interner.borrow().traverse(gc);
-        self.generation_0_threads.borrow().traverse(gc);
+        self.interner.read().unwrap().traverse(gc);
+        self.generation_0_threads.read().unwrap().traverse(gc);
     }
 }
 
@@ -646,16 +646,16 @@ impl GlobalVMState {
     /// Creates a new virtual machine
     pub fn new() -> GlobalVMState {
         let vm = GlobalVMState {
-            env: RefCell::new(VMEnv {
+            env: RwLock::new(VMEnv {
                 globals: HashMap::new(),
                 type_infos: TypeInfos::new(),
             }),
-            generics: RefCell::new(HashMap::new()),
-            typeids: RefCell::new(HashMap::new()),
-            interner: RefCell::new(Interner::new()),
-            gc: RefCell::new(Gc::new(0)),
+            generics: RwLock::new(HashMap::new()),
+            typeids: RwLock::new(HashMap::new()),
+            interner: RwLock::new(Interner::new()),
+            gc: Mutex::new(Gc::new(0)),
             macros: MacroEnv::new(),
-            generation_0_threads: RefCell::new(Vec::new()),
+            generation_0_threads: RwLock::new(Vec::new()),
         };
         vm.add_types()
           .unwrap();
@@ -666,7 +666,7 @@ impl GlobalVMState {
         use api::generic::A;
         use api::Generic;
         {
-            let mut ids = self.typeids.borrow_mut();
+            let mut ids = self.typeids.write().unwrap();
             ids.insert(TypeId::of::<()>(), Type::unit());
             ids.insert(TypeId::of::<VMInt>(), Type::int());
             ids.insert(TypeId::of::<i32>(), Type::int());
@@ -686,13 +686,13 @@ impl GlobalVMState {
     }
 
     pub fn new_function(&self, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
-        BytecodeFunction::new(&mut self.gc.borrow_mut(), self, f)
+        BytecodeFunction::new(&mut self.gc.lock().unwrap(), self, f)
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> TcType {
         let id = TypeId::of::<T>();
         self.typeids
-            .borrow()
+            .read().unwrap()
             .get(&id)
             .cloned()
             .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call"))
@@ -700,7 +700,7 @@ impl GlobalVMState {
 
     /// Checks if a global exists called `name`
     pub fn global_exists(&self, name: &str) -> bool {
-        self.env.borrow().globals.get(name).is_some()
+        self.env.read().unwrap().globals.get(name).is_some()
     }
 
     /// TODO dont expose this directly
@@ -710,7 +710,7 @@ impl GlobalVMState {
                       metadata: Metadata,
                       value: Value)
                       -> Result<()> {
-        let mut env = self.env.borrow_mut();
+        let mut env = self.env.write().unwrap();
         let globals = &mut env.globals;
         if globals.contains_key(id.as_ref()) {
             return Err(Error::Message(format!("{} is already defined", id)));
@@ -726,7 +726,7 @@ impl GlobalVMState {
     }
 
     pub fn get_generic(&self, name: &str) -> TcType {
-        let mut generics = self.generics.borrow_mut();
+        let mut generics = self.generics.write().unwrap();
         if let Some(g) = generics.get(name) {
             return g.clone();
         }
@@ -743,7 +743,7 @@ impl GlobalVMState {
                                           name: &str,
                                           args: Vec<types::Generic<Symbol>>)
                                           -> Result<TcType> {
-        let mut env = self.env.borrow_mut();
+        let mut env = self.env.write().unwrap();
         let type_infos = &mut env.type_infos;
         if type_infos.id_to_type.contains_key(name) {
             Err(Error::Message(format!("Type '{}' has already been registered", name)))
@@ -753,9 +753,9 @@ impl GlobalVMState {
             let n = Symbol::new(name);
             let typ: TcType = Type::data(Type::id(n.clone()), arg_types);
             self.typeids
-                .borrow_mut()
+                .write().unwrap()
                 .insert(id, typ.clone());
-            let t = self.typeids.borrow().get(&id).unwrap().clone();
+            let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(name.into(),
                                          types::Alias::from(types::AliasData {
                                              name: n,
@@ -771,12 +771,12 @@ impl GlobalVMState {
     }
 
     pub fn intern(&self, s: &str) -> InternedStr {
-        self.interner.borrow_mut().intern(&mut *self.gc.borrow_mut(), s)
+        self.interner.write().unwrap().intern(&mut *self.gc.lock().unwrap(), s)
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`
-    pub fn get_env<'b>(&'b self) -> Ref<'b, VMEnv> {
-        self.env.borrow()
+    pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VMEnv> {
+        self.env.read().unwrap()
     }
 }
 

@@ -1,16 +1,16 @@
+use std::marker::PhantomData;
+use std::sync::Mutex;
+
 use base::types;
 use base::types::{Type, TcType};
-use std::marker::PhantomData;
 use gc::{Gc, Traverseable};
-use std::cell::Cell;
 use api::{Userdata, VMType, Pushable};
 use api::generic::A;
 use vm::{Status, Value, Thread, Result};
 
 
-#[derive(Clone, PartialEq)]
 pub struct Lazy<T> {
-    value: Cell<Lazy_>,
+    value: Mutex<Lazy_>,
     _marker: PhantomData<T>,
 }
 
@@ -23,7 +23,7 @@ enum Lazy_ {
 
 impl<T> Traverseable for Lazy<T> {
     fn traverse(&self, gc: &mut Gc) {
-        match self.value.get() {
+        match *self.value.lock().unwrap() {
             Lazy_::Blackhole => (),
             Lazy_::Thunk(value) => value.traverse(gc),
             Lazy_::Value(value) => value.traverse(gc),
@@ -50,7 +50,8 @@ fn force(vm: &Thread) -> Status {
     match stack[0] {
         Value::Userdata(lazy) => {
             let lazy = lazy.downcast_ref::<Lazy<A>>().expect("Lazy");
-            match lazy.value.get() {
+            let value = *lazy.value.lock().unwrap();
+            match value {
                 Lazy_::Blackhole => {
                     "<<loop>>".push(vm, &mut stack);
                     Status::Error
@@ -58,7 +59,7 @@ fn force(vm: &Thread) -> Status {
                 Lazy_::Thunk(value) => {
                     stack.push(value);
                     stack.push(Value::Int(0));
-                    lazy.value.set(Lazy_::Blackhole);
+                    *lazy.value.lock().unwrap() = Lazy_::Blackhole;
                     let result = vm.call_function(stack, 1);
                     match result {
                         Ok(None) => panic!("Expected stack"),
@@ -67,7 +68,7 @@ fn force(vm: &Thread) -> Status {
                             while stack.len() > 1 {
                                 stack.pop();
                             }
-                            lazy.value.set(Lazy_::Value(value));
+                            *lazy.value.lock().unwrap() = Lazy_::Value(value);
                             stack.push(value);
                             Status::Ok
                         }
@@ -93,7 +94,7 @@ fn lazy(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     let f = stack[0];
     let lazy = Userdata(Lazy::<A> {
-        value: Cell::new(Lazy_::Thunk(f)),
+        value: Mutex::new(Lazy_::Thunk(f)),
         _marker: PhantomData,
     });
     lazy.push(vm, &mut stack)

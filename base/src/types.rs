@@ -1,9 +1,9 @@
 //! Module containing types representing `embed_lang`'s type system
 use std::fmt;
 use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 use ast;
 use ast::{ASTType, DisplayEnv};
@@ -333,16 +333,16 @@ impl Kind {
         RcKind::new(Kind::Variable(v))
     }
     pub fn star() -> RcKind {
-        RcKind(Rc::new(Kind::Star))
+        RcKind::new(Kind::Star)
     }
     pub fn function(l: RcKind, r: RcKind) -> RcKind {
-        RcKind(Rc::new(Kind::Function(l, r)))
+        RcKind::new(Kind::Function(l, r))
     }
 }
 
 /// Reference counted kind type.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct RcKind(Rc<Kind>);
+pub struct RcKind(Arc<Kind>);
 
 impl Deref for RcKind {
     type Target = Kind;
@@ -365,7 +365,7 @@ impl fmt::Display for RcKind {
 
 impl RcKind {
     pub fn new(k: Kind) -> RcKind {
-        RcKind(Rc::new(k))
+        RcKind(Arc::new(k))
     }
 }
 

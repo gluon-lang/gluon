@@ -196,6 +196,8 @@ struct AllocPtr {
     ptr: *mut GcHeader,
 }
 
+unsafe impl Send for AllocPtr {}
+
 impl AllocPtr {
     fn new<T>(type_info: *const TypeInfo, value_size: usize) -> AllocPtr {
         debug_assert!(mem::align_of::<T>() <= mem::align_of::<f64>());
@@ -281,6 +283,9 @@ pub struct GcPtr<T: ?Sized> {
     // TODO Use NonZero to allow for better optimizing
     ptr: *const T,
 }
+
+unsafe impl<T: ?Sized + Send + Sync> Send for GcPtr<T> {}
+unsafe impl<T: ?Sized + Send + Sync> Sync for GcPtr<T> {}
 
 impl<T: ?Sized> Copy for GcPtr<T> {}
 
@@ -369,18 +374,18 @@ impl<T: ?Sized> GcPtr<T> {
     }
 }
 
-impl<'a, T: Traverseable + 'a> GcPtr<T> {
+impl<'a, T: Traverseable + Send + Sync + 'a> GcPtr<T> {
     /// Coerces `self` to a `Traverseable` trait object
-    pub fn as_traverseable(self) -> GcPtr<Traverseable + 'a> {
-        GcPtr { ptr: self.ptr as *const Traverseable }
+    pub fn as_traverseable(self) -> GcPtr<Traverseable + Send + Sync + 'a> {
+        GcPtr { ptr: self.ptr as *const (Traverseable + Send + Sync) }
     }
 }
 impl GcPtr<str> {
     /// Coerces `self` to a `Traverseable` trait object
-    pub fn as_traverseable_string(self) -> GcPtr<Traverseable> {
+    pub fn as_traverseable_string(self) -> GcPtr<Traverseable + Send + Sync> {
         // As there is nothing to traverse in a str we can safely cast it to *const u8 and use
         // u8's Traverseable impl
-        GcPtr { ptr: self.as_ptr() as *const Traverseable }
+        GcPtr { ptr: self.as_ptr() as *const (Traverseable + Send + Sync) }
     }
 }
 

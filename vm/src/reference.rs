@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::Cell;
+use std::sync::Mutex;
 use std::marker::PhantomData;
 
 use base::symbol::Symbol;
@@ -12,14 +12,14 @@ use api::{MaybeError, Generic, Pushable, Userdata, VMType, WithVM};
 use api::generic::A;
 
 struct Reference<T> {
-    value: Cell<Value>,
+    value: Mutex<Value>,
     thread: GcPtr<Thread>,
     _marker: PhantomData<T>,
 }
 
 impl<T> Traverseable for Reference<T> {
     fn traverse(&self, gc: &mut Gc) {
-        self.value.traverse(gc)
+        self.value.lock().unwrap().traverse(gc)
     }
 }
 
@@ -38,7 +38,7 @@ impl<T> VMType for Reference<T>
 }
 
 impl<'vm, T> Pushable<'vm> for Reference<T>
-    where T: Any + VMType,
+    where T: Any + Send + Sync + VMType,
           T::Type: Sized
 {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
@@ -49,7 +49,7 @@ impl<'vm, T> Pushable<'vm> for Reference<T>
 fn set(r: &Reference<A>, a: Generic<A>) -> MaybeError<(), String> {
     match r.thread.deep_clone(a.0) {
         Ok(a) => {
-            r.value.set(a);
+            *r.value.lock().unwrap() = a;
             MaybeError::Ok(())
         }
         Err(err) => MaybeError::Err(format!("{}", err)),
@@ -57,12 +57,12 @@ fn set(r: &Reference<A>, a: Generic<A>) -> MaybeError<(), String> {
 }
 
 fn get(r: &Reference<A>) -> Generic<A> {
-    Generic::from(r.value.get())
+    Generic::from(*r.value.lock().unwrap())
 }
 
 fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
     Reference {
-        value: Cell::new(a.value.0),
+        value: Mutex::new(a.value.0),
         thread: unsafe { GcPtr::from_raw(a.vm) },
         _marker: PhantomData,
     }

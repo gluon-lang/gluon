@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::sync::RwLock;
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -52,22 +52,22 @@ static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!("prelude",
 /// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
 /// already loaded and then a global access to the loaded module
 pub struct Import {
-    visited: RefCell<Vec<String>>,
-    paths: RefCell<Vec<PathBuf>>,
+    visited: RwLock<Vec<String>>,
+    paths: RwLock<Vec<PathBuf>>,
 }
 
 impl Import {
     /// Creates a new import macro
     pub fn new() -> Import {
         Import {
-            visited: RefCell::new(Vec::new()),
-            paths: RefCell::new(vec![PathBuf::from(".")]),
+            visited: RwLock::new(Vec::new()),
+            paths: RwLock::new(vec![PathBuf::from(".")]),
         }
     }
 
     /// Adds a path to the list of paths which the importer uses to find files
     pub fn add_path<P: Into<PathBuf>>(&self, path: P) {
-        self.paths.borrow_mut().push(path.into());
+        self.paths.write().unwrap().push(path.into());
     }
 }
 
@@ -87,16 +87,16 @@ impl Macro<Thread> for Import {
                 let name = Symbol::new(&*modulename);
                 debug!("Import '{}' {:?}", modulename, self.visited);
                 if !vm.global_exists(&modulename) {
-                    if self.visited.borrow().iter().any(|m| **m == **filename) {
+                    if self.visited.read().unwrap().iter().any(|m| **m == **filename) {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
-                    self.visited.borrow_mut().push(filename.clone());
+                    self.visited.write().unwrap().push(filename.clone());
                     let mut buffer = String::new();
                     let file_contents = match STD_LIBS.iter().find(|tup| tup.0 == filename) {
                         Some(tup) => tup.1,
                         None => {
                             let file = self.paths
-                                           .borrow()
+                                           .read().unwrap()
                                            .iter()
                                            .filter_map(|p| {
                                                let mut base = p.clone();
@@ -117,7 +117,7 @@ impl Macro<Thread> for Import {
                     // FIXME Remove this hack
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
                     try!(compiler.load_script(vm, &modulename, file_contents));
-                    self.visited.borrow_mut().pop();
+                    self.visited.write().unwrap().pop();
                 }
                 // FIXME Does not handle shadowing
                 Ok(ast::located(arguments[0].location,
@@ -125,5 +125,12 @@ impl Macro<Thread> for Import {
             }
             _ => return Err(Error::String("Expected a string literal to import").into()),
         }
+    }
+
+    fn clone(&self) -> Box<Macro<Thread>> {
+        Box::new(Import {
+            visited: RwLock::new(Vec::new()),
+            paths: RwLock::new(self.paths.read().unwrap().clone()),
+        })
     }
 }

@@ -1,8 +1,7 @@
 //! Module providing the building blocks to create macros and expand them.
-use std::cell::RefCell;
+use std::sync::RwLock;
 use std::collections::HashMap;
 use std::error::Error as StdError;
-use std::rc::Rc;
 
 use ast;
 use ast::MutVisitor;
@@ -14,15 +13,16 @@ pub type Error = Box<StdError>;
 /// A trait which abstracts over macros.
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
-pub trait Macro<Env>: ::mopa::Any {
+pub trait Macro<Env>: ::mopa::Any + Send + Sync {
     fn expand(&self,
               env: &Env,
               arguments: &mut [ast::LExpr<TcIdent>])
               -> Result<ast::LExpr<TcIdent>, Error>;
+    fn clone(&self) -> Box<Macro<Env>>;
 }
 mopafy!(Macro<Env>);
 
-impl<F: ::mopa::Any, Env> Macro<Env> for F
+impl<F: ::mopa::Any + Clone + Send + Sync, Env> Macro<Env> for F
     where F: Fn(&Env, &mut [ast::LExpr<TcIdent>]) -> Result<ast::LExpr<TcIdent>, Error>
 {
     fn expand(&self,
@@ -31,30 +31,33 @@ impl<F: ::mopa::Any, Env> Macro<Env> for F
               -> Result<ast::LExpr<TcIdent>, Error> {
         self(env, arguments)
     }
+    fn clone(&self) -> Box<Macro<Env>> {
+        Box::new(Clone::clone(self))
+    }
 }
 
 /// Type containing macros bound to symbols which can be applied on an AST expression to transform
 /// it.
 pub struct MacroEnv<Env> {
-    macros: RefCell<HashMap<String, Rc<Macro<Env>>>>,
+    macros: RwLock<HashMap<String, Box<Macro<Env>>>>,
 }
 
 impl<Env> MacroEnv<Env> {
     /// Creates a new `MacroEnv`
     pub fn new() -> MacroEnv<Env> {
-        MacroEnv { macros: RefCell::new(HashMap::new()) }
+        MacroEnv { macros: RwLock::new(HashMap::new()) }
     }
 
     /// Inserts a `Macro` which acts on any occurance of `symbol` when applied to an expression.
     pub fn insert<M>(&self, name: String, mac: M)
         where M: Macro<Env> + 'static
     {
-        self.macros.borrow_mut().insert(name, Rc::new(mac));
+        self.macros.write().unwrap().insert(name, Box::new(mac));
     }
 
     /// Retrieves the macro bound to `symbol`
-    pub fn get(&self, name: &str) -> Option<Rc<Macro<Env>>> {
-        self.macros.borrow().get(name).cloned()
+    pub fn get(&self, name: &str) -> Option<Box<Macro<Env>>> {
+        self.macros.read().unwrap().get(name).map(|x| (**x).clone())
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
