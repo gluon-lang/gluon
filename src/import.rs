@@ -22,7 +22,7 @@ quick_error! {
             display("Module '{}' occurs in a cyclic dependency", module)
         }
         /// Generic message error
-        String(message: &'static str) {
+        String(message: String) {
             description(message)
             display("{}", message)
         }
@@ -41,7 +41,8 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
-static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!("prelude",
+static STD_LIBS: [(&'static str, &'static str); 8] = std_libs!("prelude",
+                                                               "types",
                                                                "map",
                                                                "repl",
                                                                "string",
@@ -77,7 +78,7 @@ impl Macro<Thread> for Import {
               arguments: &mut [ast::LExpr<TcIdent>])
               -> Result<ast::LExpr<TcIdent>, MacroError> {
         if arguments.len() != 1 {
-            return Err(Error::String("Expected import to get 1 argument").into());
+            return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
         match *arguments[0] {
             ast::Expr::Literal(ast::LiteralEnum::String(ref filename)) => {
@@ -108,7 +109,7 @@ impl Macro<Thread> for Import {
                                            })
                                            .next();
                             let mut file = try!(file.ok_or_else(|| {
-                                Error::String("Could not find file")
+                                Error::String(format!("Could not find file '{}'", filename))
                             }));
                             try!(file.read_to_string(&mut buffer));
                             &*buffer
@@ -123,7 +124,7 @@ impl Macro<Thread> for Import {
                 Ok(ast::located(arguments[0].location,
                                 ast::Expr::Identifier(TcIdent::new(name))))
             }
-            _ => return Err(Error::String("Expected a string literal to import").into()),
+            _ => return Err(Error::String("Expected a string literal to import".into()).into()),
         }
     }
 
