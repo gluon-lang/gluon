@@ -131,7 +131,7 @@ pub struct Thread {
     /// the roots of all its children as well since those may contain references to this threads
     /// garbage collected values
     child_threads: RwLock<Vec<GcPtr<Thread>>>,
-    stack: RwLock<Stack>,
+    stack: Mutex<Stack>,
 }
 
 impl Deref for Thread {
@@ -144,7 +144,7 @@ impl Deref for Thread {
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
-        self.stack.read().unwrap().get_values().traverse(gc);
+        self.stack.lock().unwrap().get_values().traverse(gc);
         self.child_threads.read().unwrap().traverse(gc);
     }
 }
@@ -211,7 +211,7 @@ impl RootedThread {
             global_state: Arc::new(GlobalVMState::new()),
             parent: None,
             local_gc: Mutex::new(Gc::new(1)),
-            stack: RwLock::new(Stack::new()),
+            stack: Mutex::new(Stack::new()),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
@@ -220,7 +220,7 @@ impl RootedThread {
         let vm = RootedThread::from_gc_ptr(gc.alloc(Move(thread)));
         *vm.gc.lock().unwrap() = gc;
         // Enter the top level scope
-        StackFrame::frame(vm.stack.write().unwrap(), 0, State::Unknown);
+        StackFrame::frame(vm.stack.lock().unwrap(), 0, State::Unknown);
         vm
     }
 
@@ -260,14 +260,14 @@ impl Thread {
             global_state: self.global_state.clone(),
             parent: unsafe { Some(RootedThread::from_gc_ptr(GcPtr::from_raw(self))) },
             local_gc: Mutex::new(self.local_gc.lock().unwrap().new_child_gc()),
-            stack: RwLock::new(Stack::new()),
+            stack: Mutex::new(Stack::new()),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
         };
         // Enter the top level scope
-        StackFrame::frame(vm.stack.write().unwrap(), 0, State::Unknown);
-        RootedThread::from_gc_ptr(self.alloc(&self.stack.read().unwrap(), Move(vm)))
+        StackFrame::frame(vm.stack.lock().unwrap(), 0, State::Unknown);
+        RootedThread::from_gc_ptr(self.alloc(&self.stack.lock().unwrap(), Move(vm)))
     }
 
     /// Creates a new global value at `name`.
@@ -315,7 +315,7 @@ impl Thread {
 
     /// Returns the current stackframe
     pub fn release_lock<'vm>(&'vm self, lock: ::stack::Lock) -> StackFrame<'vm> {
-        self.stack.write().unwrap().release_lock(lock);
+        self.stack.lock().unwrap().release_lock(lock);
         self.current_frame()
     }
 
@@ -326,7 +326,7 @@ impl Thread {
 
     /// Runs a garbage collection.
     pub fn collect(&self) {
-        let stack = self.stack.read().unwrap();
+        let stack = self.stack.lock().unwrap();
         self.with_roots(&stack, |gc, roots| {
             unsafe {
                 gc.collect(roots);
@@ -410,19 +410,20 @@ impl Thread {
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
         let f = self.new_function(compiled_fn);
-        let closure = self.alloc(&self.stack.read().unwrap(), ClosureDataDef(f, &[]));
+        let closure = self.alloc(&self.stack.lock().unwrap(), ClosureDataDef(f, &[]));
         self.set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
     }
 
     /// Pushes a value to the top of the stack
     pub fn push(&self, v: Value) {
-        self.stack.write().unwrap().push(v)
+        self.stack.lock().unwrap().push(v)
     }
 
     /// Removes the top value from the stack
     pub fn pop(&self) -> Value {
         self.stack
-            .write().unwrap()
+            .lock()
+            .unwrap()
             .pop()
     }
 
@@ -441,7 +442,7 @@ impl Thread {
                 self.push(Int(0));// Dummy value to fill the place of the function for TailCall
                 self.push(value);
                 self.push(Int(0));
-                let mut stack = StackFrame::frame(self.stack.write().unwrap(), 2, State::Unknown);
+                let mut stack = StackFrame::frame(self.stack.lock().unwrap(), 2, State::Unknown);
                 stack = try!(self.call_function(stack, 1))
                             .expect("call_module to have the stack remaining");
                 let result = stack.pop();
@@ -483,9 +484,9 @@ impl Thread {
 
     fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
         self.push(Closure(closure));
-        let stack = StackFrame::frame(self.stack.write().unwrap(), 0, State::Closure(closure));
+        let stack = StackFrame::frame(self.stack.lock().unwrap(), 0, State::Closure(closure));
         try!(self.execute(stack));
-        let mut stack = self.stack.write().unwrap();
+        let mut stack = self.stack.lock().unwrap();
         Ok(stack.pop())
     }
 
@@ -704,7 +705,7 @@ impl Thread {
                     stack = match stack.exit_scope() {
                         Some(stack) => stack,
                         None => {
-                            StackFrame::frame(self.stack.write().unwrap(),
+                            StackFrame::frame(self.stack.lock().unwrap(),
                                               args + amount + 1,
                                               State::Excess)
                         }
@@ -872,7 +873,7 @@ impl Thread {
         let frame_has_excess = stack.frame.excess;
         // We might not get access to the frame above the current as it could be locked
         let stack_exists = stack.exit_scope().is_some();
-        let mut stack = self.stack.write().unwrap();
+        let mut stack = self.stack.lock().unwrap();
         stack.pop();
         for _ in 0..len {
             stack.pop();

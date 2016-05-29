@@ -1,5 +1,5 @@
 use std::fmt;
-use std::sync::{RwLock, RwLockWriteGuard};
+use std::sync::{Mutex, MutexGuard};
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
 use Variants;
@@ -95,7 +95,7 @@ impl Stack {
 }
 
 pub struct StackFrame<'b> {
-    pub stack: RwLockWriteGuard<'b, Stack>,
+    pub stack: MutexGuard<'b, Stack>,
     pub frame: Frame,
 }
 
@@ -208,7 +208,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         })
     }
 
-    pub fn frame(mut stack: RwLockWriteGuard<'b, Stack>, args: VMIndex, state: State) -> StackFrame<'b> {
+    pub fn frame(mut stack: MutexGuard<'b, Stack>, args: VMIndex, state: State) -> StackFrame<'b> {
         let frame = StackFrame::add_new_frame(&mut stack, args, state);
         StackFrame {
             stack: stack,
@@ -216,8 +216,8 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         }
     }
 
-    pub fn current(stack: &RwLock<Stack>) -> StackFrame {
-        let stack = stack.write().unwrap();
+    pub fn current(stack: &Mutex<Stack>) -> StackFrame {
+        let stack = stack.lock().unwrap();
         StackFrame {
             frame: stack.get_frames().last().expect("Frame").clone(),
             stack: stack,
@@ -327,7 +327,7 @@ impl<'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'b> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::RwLock;
+    use std::sync::Mutex;
 
     use super::*;
     use vm::Value::*;
@@ -336,8 +336,8 @@ mod tests {
     fn remove_range() {
         let _ = ::env_logger::init();
 
-        let stack = RwLock::new(Stack::new());
-        let stack = stack.write().unwrap();
+        let stack = Mutex::new(Stack::new());
+        let stack = stack.lock().unwrap();
         let mut frame = StackFrame::frame(stack, 0, State::Unknown);
         frame.push(Int(0));
         frame.push(Int(1));
@@ -361,30 +361,30 @@ mod tests {
     fn attempt_take_locked_range() {
         let _ = ::env_logger::init();
 
-        let stack = RwLock::new(Stack::new());
-        let mut frame = StackFrame::frame(stack.write().unwrap(), 0, State::Unknown);
+        let stack = Mutex::new(Stack::new());
+        let mut frame = StackFrame::frame(stack.lock().unwrap(), 0, State::Unknown);
         frame.push(Int(0));
         frame.push(Int(1));
         let frame = frame.enter_scope(2, State::Unknown);
         let _lock = frame.into_lock();
         // Panic as it attempts to access past the lock
-        StackFrame::frame(stack.write().unwrap(), 1, State::Unknown);
+        StackFrame::frame(stack.lock().unwrap(), 1, State::Unknown);
     }
 
     #[test]
     fn lock_unlock() {
         let _ = ::env_logger::init();
 
-        let stack = RwLock::new(Stack::new());
-        let mut frame = StackFrame::frame(stack.write().unwrap(), 0, State::Unknown);
+        let stack = Mutex::new(Stack::new());
+        let mut frame = StackFrame::frame(stack.lock().unwrap(), 0, State::Unknown);
         frame.push(Int(0));
         frame.push(Int(1));
         frame = frame.enter_scope(2, State::Unknown);
         let lock = frame.into_lock();
-        frame = StackFrame::frame(stack.write().unwrap(), 0, State::Unknown);
+        frame = StackFrame::frame(stack.lock().unwrap(), 0, State::Unknown);
         frame.push(Int(2));
         frame.exit_scope();
-        stack.write().unwrap().release_lock(lock);
+        stack.lock().unwrap().release_lock(lock);
         frame = StackFrame::current(&stack);
         assert_eq!(frame.pop(), Int(2));
     }
