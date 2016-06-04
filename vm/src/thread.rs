@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::sync::{Mutex, RwLock, RwLockWriteGuard};
+use std::sync::{Mutex, RwLock, RwLockWriteGuard, MutexGuard};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Sub, Mul, Div, Deref};
@@ -19,8 +19,8 @@ use compiler::CompiledFunction;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use stack::{Stack, StackFrame, State};
 use types::*;
-use vm::{Error, Result, GlobalVMState, Value, VMInt, ClosureData, ClosureInitDef, ClosureDataDef, Def,
-         ExternFunction, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
+use vm::{Error, Result, GlobalVMState, Value, VMInt, ClosureData, ClosureInitDef, ClosureDataDef,
+         Def, ExternFunction, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use vm::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
@@ -112,6 +112,44 @@ impl<'b> Traverseable for Roots<'b> {
         // Traverse the vm's fields, avoiding the stack which is traversed above
         self.vm.traverse_fields_except_stack(gc);
     }
+}
+
+struct Context<'b> {
+    stack: StackFrame<'b>,
+    gc: MutexGuard<'b, Gc>,
+}
+
+impl<'b> Context<'b> {
+    fn enter_scope(self, args: VMIndex, state: State) -> Context<'b> {
+        Context {
+            gc: self.gc,
+            stack: self.stack.enter_scope(args, state),
+        }
+    }
+
+    fn exit_scope(self) -> Option<Context<'b>> {
+        let Context { stack, gc } = self;
+        stack.exit_scope()
+             .map(move |stack| {
+                 Context {
+                     stack: stack,
+                     gc: gc,
+                 }
+             })
+    }
+}
+fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> GcPtr<D::Value>
+    where D: DataDef + Traverseable,
+          D::Value: Sized + Any
+{
+    let roots = Roots {
+        vm: unsafe {
+            // Threads must only be on the garbage collectors heap which makes this safe
+            GcPtr::from_raw(thread)
+        },
+        stack: stack,
+    };
+    unsafe { gc.alloc_and_collect(roots, def) }
 }
 
 // All threads MUST be allocated in the garbage collected heap. This is necessary as a thread
@@ -324,6 +362,13 @@ impl Thread {
         StackFrame::current(&self.stack)
     }
 
+    fn current_context(&self) -> Context {
+        Context {
+            gc: self.local_gc.lock().unwrap(),
+            stack: StackFrame::current(&self.stack),
+        }
+    }
+
     /// Runs a garbage collection.
     pub fn collect(&self) {
         let stack = self.stack.lock().unwrap();
@@ -442,14 +487,17 @@ impl Thread {
                 self.push(Int(0));// Dummy value to fill the place of the function for TailCall
                 self.push(value);
                 self.push(Int(0));
-                let mut stack = StackFrame::frame(self.stack.lock().unwrap(), 2, State::Unknown);
-                stack = try!(self.call_function(stack, 1))
-                            .expect("call_module to have the stack remaining");
-                let result = stack.pop();
-                while stack.len() > 0 {
-                    stack.pop();
+                let mut context = Context {
+                    gc: self.local_gc.lock().unwrap(),
+                    stack: StackFrame::frame(self.stack.lock().unwrap(), 2, State::Unknown),
+                };
+                context = try!(self.call_context(context, 1))
+                              .expect("call_module to have the stack remaining");
+                let result = context.stack.pop();
+                while context.stack.len() > 0 {
+                    context.stack.pop();
                 }
-                stack.exit_scope();
+                context.exit_scope();
                 return Ok(result);
             }
         }
@@ -460,20 +508,32 @@ impl Thread {
     /// When this function is called it is expected that the function exists at
     /// `stack.len() - args - 1` and that the arguments are of the correct type
     pub fn call_function<'b>(&'b self,
-                             mut stack: StackFrame<'b>,
+                             stack: StackFrame<'b>,
                              args: VMIndex)
                              -> Result<Option<StackFrame<'b>>> {
-        stack = try!(self.do_call(stack, args));
-        self.execute(stack)
+        let context = Context {
+            gc: self.local_gc.lock().unwrap(),
+            stack: stack,
+        };
+        self.call_context(context, args)
+            .map(|context| context.map(|context| context.stack))
+    }
+
+    fn call_context<'b>(&'b self,
+                        mut context: Context<'b>,
+                        args: VMIndex)
+                        -> Result<Option<Context<'b>>> {
+        context = try!(self.do_call(context, args));
+        self.execute(context)
     }
 
     pub fn resume(&self) -> Result<()> {
-        let stack = self.current_frame();
-        if stack.stack.get_frames().len() == 1 {
+        let context = self.current_context();
+        if context.stack.stack.get_frames().len() == 1 {
             // Only the top level frame left means that the thread has finished
             return Err(Error::Dead);
         }
-        self.execute(stack)
+        self.execute(context)
             .map(|_| ())
     }
 
@@ -484,59 +544,62 @@ impl Thread {
 
     fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
         self.push(Closure(closure));
-        let stack = StackFrame::frame(self.stack.lock().unwrap(), 0, State::Closure(closure));
-        try!(self.execute(stack));
+        let context = Context {
+            gc: self.local_gc.lock().unwrap(),
+            stack: StackFrame::frame(self.stack.lock().unwrap(), 0, State::Closure(closure)),
+        };
+        try!(self.execute(context));
         let mut stack = self.stack.lock().unwrap();
         Ok(stack.pop())
     }
 
     fn execute_callable<'b>(&'b self,
-                            mut stack: StackFrame<'b>,
+                            mut context: Context<'b>,
                             function: &Callable,
                             excess: bool)
-                            -> Result<StackFrame<'b>> {
+                            -> Result<Context<'b>> {
         match *function {
             Callable::Closure(closure) => {
-                stack = stack.enter_scope(closure.function.args, State::Closure(closure));
-                stack.frame.excess = excess;
-                Ok(stack)
+                context = context.enter_scope(closure.function.args, State::Closure(closure));
+                context.stack.frame.excess = excess;
+                Ok(context)
             }
             Callable::Extern(ref ext) => {
-                assert!(stack.len() >= ext.args + 1);
-                let function_index = stack.len() - ext.args - 1;
-                debug!("------- {} {:?}", function_index, &stack[..]);
-                Ok(stack.enter_scope(ext.args, State::Extern(*ext)))
+                assert!(context.stack.len() >= ext.args + 1);
+                let function_index = context.stack.len() - ext.args - 1;
+                debug!("------- {} {:?}", function_index, &context.stack[..]);
+                Ok(context.enter_scope(ext.args, State::Extern(*ext)))
             }
         }
     }
 
     fn execute_function<'b>(&'b self,
-                            mut stack: StackFrame<'b>,
+                            mut context: Context<'b>,
                             function: &ExternFunction)
-                            -> Result<StackFrame<'b>> {
+                            -> Result<Context<'b>> {
         debug!("CALL EXTERN {}", function.id);
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
-        drop(stack);
+        drop(context);
         let status = (function.function)(self);
-        stack = self.current_frame();
-        let result = stack.pop();
-        while stack.len() > 0 {
-            debug!("{} {:?}", stack.len(), &stack[..]);
-            stack.pop();
+        context = self.current_context();
+        let result = context.stack.pop();
+        while context.stack.len() > 0 {
+            debug!("{} {:?}", context.stack.len(), &context.stack[..]);
+            context.stack.pop();
         }
-        stack = try!(stack.exit_scope()
-                          .ok_or_else(|| {
-                              Error::Message(StdString::from("Poped the last frame in \
-                                                              execute_function"))
-                          }));
-        stack.pop();// Pop function
-        stack.push(result);
+        context = try!(context.exit_scope()
+                              .ok_or_else(|| {
+                                  Error::Message(StdString::from("Poped the last frame in \
+                                                                  execute_function"))
+                              }));
+        context.stack.pop();// Pop function
+        context.stack.push(result);
         match status {
-            Status::Ok => Ok(stack),
+            Status::Ok => Ok(context),
             Status::Yield => Err(Error::Yield),
             Status::Error => {
-                match stack.pop() {
+                match context.stack.pop() {
                     String(s) => Err(Error::Message(s.to_string())),
                     _ => Err(Error::Message("Unexpected panic in VM".to_string())),
                 }
@@ -545,202 +608,217 @@ impl Thread {
     }
 
     fn call_function_with_upvars<'b>(&'b self,
-                                     mut stack: StackFrame<'b>,
+                                     mut context: Context<'b>,
                                      args: VMIndex,
                                      required_args: VMIndex,
                                      callable: Callable)
-                                     -> Result<StackFrame<'b>> {
+                                     -> Result<Context<'b>> {
         debug!("cmp {} {} {:?} {:?}", args, required_args, callable, {
-            let function_index = stack.len() - 1 - args;
-            &(*stack)[(function_index + 1) as usize..]
+            let function_index = context.stack.len() - 1 - args;
+            &(*context.stack)[(function_index + 1) as usize..]
         });
         match args.cmp(&required_args) {
-            Ordering::Equal => self.execute_callable(stack, &callable, false),
+            Ordering::Equal => self.execute_callable(context, &callable, false),
             Ordering::Less => {
                 let app = {
-                    let fields = &stack[stack.len() - args..];
+                    let fields = &context.stack[context.stack.len() - args..];
                     let def = PartialApplicationDataDef(callable, fields);
-                    PartialApplication(self.alloc(&stack.stack, def))
+                    PartialApplication(alloc(&mut context.gc, self, &context.stack.stack, def))
                 };
                 for _ in 0..(args + 1) {
-                    stack.pop();
+                    context.stack.pop();
                 }
-                stack.push(app);
-                Ok(stack)
+                context.stack.push(app);
+                Ok(context)
             }
             Ordering::Greater => {
                 let excess_args = args - required_args;
                 let d = {
-                    let fields = &stack[stack.len() - excess_args..];
-                    self.alloc(&stack.stack,
-                               Def {
-                                   tag: 0,
-                                   elems: fields,
-                               })
+                    let fields = &context.stack[context.stack.len() - excess_args..];
+                    alloc(&mut context.gc,
+                          self,
+                          &context.stack.stack,
+                          Def {
+                              tag: 0,
+                              elems: fields,
+                          })
                 };
                 for _ in 0..excess_args {
-                    stack.pop();
+                    context.stack.pop();
                 }
                 // Insert the excess args before the actual closure so it does not get
                 // collected
-                let offset = stack.len() - required_args - 1;
-                stack.insert_slice(offset, &[Data(d)]);
-                debug!("xxxxxx {:?}\n{:?}", &(*stack)[..], stack.stack.get_frames());
-                self.execute_callable(stack, &callable, true)
+                let offset = context.stack.len() - required_args - 1;
+                context.stack.insert_slice(offset, &[Data(d)]);
+                debug!("xxxxxx {:?}\n{:?}",
+                       &(*context.stack)[..],
+                       context.stack.stack.get_frames());
+                self.execute_callable(context, &callable, true)
             }
         }
     }
 
-    fn do_call<'b>(&'b self, mut stack: StackFrame<'b>, args: VMIndex) -> Result<StackFrame<'b>> {
-        let function_index = stack.len() - 1 - args;
+    fn do_call<'b>(&'b self, mut context: Context<'b>, args: VMIndex) -> Result<Context<'b>> {
+        let function_index = context.stack.len() - 1 - args;
         debug!("Do call {:?} {:?}",
-               stack[function_index],
-               &(*stack)[(function_index + 1) as usize..]);
-        match stack[function_index].clone() {
+               context.stack[function_index],
+               &(*context.stack)[(function_index + 1) as usize..]);
+        match context.stack[function_index].clone() {
             Function(ref f) => {
                 let callable = Callable::Extern(f.clone());
-                self.call_function_with_upvars(stack, args, f.args, callable)
+                self.call_function_with_upvars(context, args, f.args, callable)
             }
             Closure(ref closure) => {
                 let callable = Callable::Closure(closure.clone());
-                self.call_function_with_upvars(stack, args, closure.function.args, callable)
+                self.call_function_with_upvars(context, args, closure.function.args, callable)
             }
             PartialApplication(app) => {
                 let total_args = app.arguments.len() as VMIndex + args;
-                let offset = stack.len() - args;
-                stack.insert_slice(offset, &app.arguments);
-                self.call_function_with_upvars(stack, total_args, app.function.args(), app.function)
+                let offset = context.stack.len() - args;
+                context.stack.insert_slice(offset, &app.arguments);
+                self.call_function_with_upvars(context,
+                                               total_args,
+                                               app.function.args(),
+                                               app.function)
             }
             x => return Err(Error::Message(format!("Cannot call {:?}", x))),
         }
     }
 
-    fn execute<'b>(&'b self, stack: StackFrame<'b>) -> Result<Option<StackFrame<'b>>> {
-        let mut maybe_stack = Some(stack);
-        while let Some(mut stack) = maybe_stack {
-            debug!("STACK\n{:?}", stack.stack.get_frames());
-            maybe_stack = match stack.frame.state {
-                State::Lock | State::Unknown => return Ok(Some(stack)),
-                State::Excess => stack.exit_scope(),
+    fn execute<'b>(&'b self, context: Context<'b>) -> Result<Option<Context<'b>>> {
+        let mut maybe_context = Some(context);
+        while let Some(mut context) = maybe_context {
+            debug!("STACK\n{:?}", context.stack.stack.get_frames());
+            maybe_context = match context.stack.frame.state {
+                State::Lock | State::Unknown => return Ok(Some(context)),
+                State::Excess => context.exit_scope(),
                 State::Extern(ext) => {
-                    if stack.frame.instruction_index != 0 {
+                    if context.stack.frame.instruction_index != 0 {
                         // This function was already called
-                        return Ok(Some(stack));
+                        return Ok(Some(context));
                     } else {
-                        stack.frame.instruction_index = 1;
-                        Some(try!(self.execute_function(stack, &ext)))
+                        context.stack.frame.instruction_index = 1;
+                        Some(try!(self.execute_function(context, &ext)))
                     }
                 }
                 State::Closure(closure) => {
                     // Tail calls into extern functions at the top level will drop the last
                     // stackframe so just return immedietly
-                    if stack.stack.get_frames().len() == 0 {
-                        return Ok(Some(stack));
+                    if context.stack.stack.get_frames().len() == 0 {
+                        return Ok(Some(context));
                     }
-                    let instruction_index = stack.frame.instruction_index;
+                    let instruction_index = context.stack.frame.instruction_index;
                     debug!("Continue with {}\nAt: {}/{}",
                            closure.function.name,
                            instruction_index,
                            closure.function.instructions.len());
-                    let new_stack = try!(self.execute_(stack,
-                                                       instruction_index,
-                                                       &closure.function.instructions,
-                                                       &closure.function));
-                    new_stack
+                    let new_context = try!(self.execute_(context,
+                                                         instruction_index,
+                                                         &closure.function.instructions,
+                                                         &closure.function));
+                    new_context
                 }
             };
         }
-        Ok(maybe_stack)
+        Ok(maybe_context)
     }
 
     fn execute_<'b>(&'b self,
-                    mut stack: StackFrame<'b>,
+                    mut context: Context<'b>,
                     mut index: usize,
                     instructions: &[Instruction],
                     function: &BytecodeFunction)
-                    -> Result<Option<StackFrame<'b>>> {
+                    -> Result<Option<Context<'b>>> {
         {
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
                    function.name,
-                   &stack[..],
-                   stack.frame);
+                   &context.stack[..],
+                   context.stack.frame);
         }
         while let Some(&instr) = instructions.get(index) {
-            debug_instruction(&stack, index, instr, function);
+            debug_instruction(&context.stack, index, instr, function);
             match instr {
                 Push(i) => {
-                    let v = stack[i].clone();
-                    stack.push(v);
+                    let v = context.stack[i].clone();
+                    context.stack.push(v);
                 }
                 PushInt(i) => {
-                    stack.push(Int(i));
+                    context.stack.push(Int(i));
                 }
                 PushString(string_index) => {
-                    stack.push(String(function.strings[string_index as usize].inner()));
+                    context.stack.push(String(function.strings[string_index as usize].inner()));
                 }
                 PushGlobal(i) => {
                     let x = function.globals[i as usize];
-                    stack.push(x);
+                    context.stack.push(x);
                 }
-                PushFloat(f) => stack.push(Float(f)),
+                PushFloat(f) => context.stack.push(Float(f)),
                 Call(args) => {
-                    stack.frame.instruction_index = index + 1;
-                    return self.do_call(stack, args).map(Some);
+                    context.stack.frame.instruction_index = index + 1;
+                    return self.do_call(context, args).map(Some);
                 }
                 TailCall(mut args) => {
-                    let mut amount = stack.len() - args;
-                    if stack.frame.excess {
+                    let mut amount = context.stack.len() - args;
+                    if context.stack.frame.excess {
                         amount += 1;
-                        match stack.excess_args() {
+                        match context.stack.excess_args() {
                             Some(excess) => {
                                 debug!("TailCall: Push excess args {:?}", excess.fields);
                                 for value in &excess.fields {
-                                    stack.push(*value);
+                                    context.stack.push(*value);
                                 }
                                 args += excess.fields.len() as VMIndex;
                             }
                             None => panic!("Expected excess args"),
                         }
                     }
-                    stack = match stack.exit_scope() {
-                        Some(stack) => stack,
+                    context = match context.exit_scope() {
+                        Some(context) => context,
                         None => {
-                            StackFrame::frame(self.stack.lock().unwrap(),
-                                              args + amount + 1,
-                                              State::Excess)
+                            Context {
+                                gc: self.local_gc.lock().unwrap(),
+                                stack: StackFrame::frame(self.stack.lock().unwrap(),
+                                                         args + amount + 1,
+                                                         State::Excess),
+                            }
                         }
                     };
-                    debug!("{} {} {:?}", stack.len(), amount, &stack[..]);
-                    let end = stack.len() - args - 1;
-                    stack.remove_range(end - amount, end);
-                    debug!("{:?}", &stack[..]);
-                    return self.do_call(stack, args).map(Some);
+                    debug!("{} {} {:?}",
+                           context.stack.len(),
+                           amount,
+                           &context.stack[..]);
+                    let end = context.stack.len() - args - 1;
+                    context.stack.remove_range(end - amount, end);
+                    debug!("{:?}", &context.stack[..]);
+                    return self.do_call(context, args).map(Some);
                 }
                 Construct(tag, args) => {
                     let d = {
-                        let fields = &stack[stack.len() - args..];
-                        self.alloc(&stack.stack,
-                                   Def {
-                                       tag: tag,
-                                       elems: fields,
-                                   })
+                        let fields = &context.stack[context.stack.len() - args..];
+                        alloc(&mut context.gc,
+                              self,
+                              &context.stack.stack,
+                              Def {
+                                  tag: tag,
+                                  elems: fields,
+                              })
                     };
                     for _ in 0..args {
-                        stack.pop();
+                        context.stack.pop();
                     }
-                    stack.push(Data(d));
+                    context.stack.push(Data(d));
                 }
                 GetField(i) => {
-                    match stack.pop() {
+                    match context.stack.pop() {
                         Data(data) => {
                             let v = data.fields[i as usize];
-                            stack.push(v);
+                            context.stack.push(v);
                         }
                         x => return Err(Error::Message(format!("GetField on {:?}", x))),
                     }
                 }
                 TestTag(tag) => {
-                    let data_tag = match stack.top() {
+                    let data_tag = match context.stack.top() {
                         Data(ref data) => data.tag,
                         Int(tag) => tag as VMTag,
                         _ => {
@@ -748,17 +826,17 @@ impl Thread {
                                                           .to_string()))
                         }
                     };
-                    stack.push(Int(if data_tag == tag {
+                    context.stack.push(Int(if data_tag == tag {
                         1
                     } else {
                         0
                     }));
                 }
                 Split => {
-                    match stack.pop() {
+                    match context.stack.pop() {
                         Data(data) => {
                             for field in &data.fields {
-                                stack.push(*field);
+                                context.stack.push(*field);
                             }
                         }
                         // Zero argument variant
@@ -774,7 +852,7 @@ impl Thread {
                     continue;
                 }
                 CJump(i) => {
-                    match stack.pop() {
+                    match context.stack.pop() {
                         Int(0) => (),
                         _ => {
                             index = i as usize;
@@ -784,24 +862,24 @@ impl Thread {
                 }
                 Pop(n) => {
                     for _ in 0..n {
-                        stack.pop();
+                        context.stack.pop();
                     }
                 }
                 Slide(n) => {
-                    debug!("{:?}", &stack[..]);
-                    let v = stack.pop();
+                    debug!("{:?}", &context.stack[..]);
+                    let v = context.stack.pop();
                     for _ in 0..n {
-                        stack.pop();
+                        context.stack.pop();
                     }
-                    stack.push(v);
+                    context.stack.push(v);
                 }
                 GetIndex => {
-                    let index = stack.pop();
-                    let array = stack.pop();
+                    let index = context.stack.pop();
+                    let array = context.stack.pop();
                     match (array, index) {
                         (Data(array), Int(index)) => {
                             let v = array.fields[index as usize];
-                            stack.push(v);
+                            context.stack.push(v);
                         }
                         (x, y) => {
                             return Err(Error::Message(format!("Op GetIndex called on invalid \
@@ -813,65 +891,71 @@ impl Thread {
                 }
                 MakeClosure(fi, n) => {
                     let closure = {
-                        let args = &stack[stack.len() - n..];
+                        let args = &context.stack[context.stack.len() - n..];
                         let func = function.inner_functions[fi as usize];
-                        Closure(self.alloc(&stack.stack, ClosureDataDef(func, args)))
+                        Closure(alloc(&mut context.gc,
+                                      self,
+                                      &context.stack.stack,
+                                      ClosureDataDef(func, args)))
                     };
                     for _ in 0..n {
-                        stack.pop();
+                        context.stack.pop();
                     }
-                    stack.push(closure);
+                    context.stack.push(closure);
                 }
                 NewClosure(fi, n) => {
                     let closure = {
                         // Use dummy variables until it is filled
                         let func = function.inner_functions[fi as usize];
-                        Closure(self.alloc(&stack.stack, ClosureInitDef(func, n as usize)))
+                        Closure(alloc(&mut context.gc,
+                                      self,
+                                      &context.stack.stack,
+                                      ClosureInitDef(func, n as usize)))
                     };
-                    stack.push(closure);
+                    context.stack.push(closure);
                 }
                 CloseClosure(n) => {
-                    let i = stack.len() - n - 1;
-                    match stack[i] {
+                    let i = context.stack.len() - n - 1;
+                    match context.stack[i] {
                         Closure(mut closure) => {
                             // Unique access should be safe as this closure should not be shared as
                             // it has just been allocated and havent even had its upvars set yet
                             // (which is done here).
                             unsafe {
                                 for var in closure.as_mut().upvars.iter_mut().rev() {
-                                    *var = stack.pop();
+                                    *var = context.stack.pop();
                                 }
                             }
-                            stack.pop();//Remove the closure
+                            context.stack.pop();//Remove the closure
                         }
                         x => panic!("Expected closure, got {:?}", x),
                     }
                 }
                 PushUpVar(i) => {
-                    let v = stack.get_upvar(i).clone();
-                    stack.push(v);
+                    let v = context.stack.get_upvar(i).clone();
+                    context.stack.push(v);
                 }
-                AddInt => binop(self, &mut stack, VMInt::add),
-                SubtractInt => binop(self, &mut stack, VMInt::sub),
-                MultiplyInt => binop(self, &mut stack, VMInt::mul),
-                DivideInt => binop(self, &mut stack, VMInt::div),
-                IntLT => binop(self, &mut stack, |l: VMInt, r| l < r),
-                IntEQ => binop(self, &mut stack, |l: VMInt, r| l == r),
-                AddFloat => binop(self, &mut stack, f64::add),
-                SubtractFloat => binop(self, &mut stack, f64::sub),
-                MultiplyFloat => binop(self, &mut stack, f64::mul),
-                DivideFloat => binop(self, &mut stack, f64::div),
-                FloatLT => binop(self, &mut stack, |l: f64, r| l < r),
-                FloatEQ => binop(self, &mut stack, |l: f64, r| l == r),
+                AddInt => binop(self, &mut context.stack, VMInt::add),
+                SubtractInt => binop(self, &mut context.stack, VMInt::sub),
+                MultiplyInt => binop(self, &mut context.stack, VMInt::mul),
+                DivideInt => binop(self, &mut context.stack, VMInt::div),
+                IntLT => binop(self, &mut context.stack, |l: VMInt, r| l < r),
+                IntEQ => binop(self, &mut context.stack, |l: VMInt, r| l == r),
+                AddFloat => binop(self, &mut context.stack, f64::add),
+                SubtractFloat => binop(self, &mut context.stack, f64::sub),
+                MultiplyFloat => binop(self, &mut context.stack, f64::mul),
+                DivideFloat => binop(self, &mut context.stack, f64::div),
+                FloatLT => binop(self, &mut context.stack, |l: f64, r| l < r),
+                FloatEQ => binop(self, &mut context.stack, |l: f64, r| l == r),
             }
             index += 1;
         }
-        let result = stack.top();
+        let result = context.stack.top();
         debug!("Return {:?}", result);
-        let len = stack.len();
-        let frame_has_excess = stack.frame.excess;
+        let len = context.stack.len();
+        let frame_has_excess = context.stack.frame.excess;
         // We might not get access to the frame above the current as it could be locked
-        let stack_exists = stack.exit_scope().is_some();
+        let stack_exists = context.exit_scope().is_some();
         let mut stack = self.stack.lock().unwrap();
         stack.pop();
         for _ in 0..len {
@@ -884,20 +968,23 @@ impl Thread {
             // the call with the extra arguments
             match stack.pop() {
                 Data(excess) => {
-                    let mut stack = StackFrame::frame(stack, 0, State::Excess);
+                    context = Context {
+                        gc: self.local_gc.lock().unwrap(),
+                        stack: StackFrame::frame(stack, 0, State::Excess),
+                    };
                     debug!("Push excess args {:?}", &excess.fields);
-                    stack.push(result);
+                    context.stack.push(result);
                     for value in &excess.fields {
-                        stack.push(*value);
+                        context.stack.push(*value);
                     }
-                    self.do_call(stack, excess.fields.len() as VMIndex).map(Some)
+                    self.do_call(context, excess.fields.len() as VMIndex).map(Some)
                 }
                 x => panic!("Expected excess arguments found {:?}", x),
             }
         } else {
             drop(stack);
             Ok(if stack_exists {
-                Some(self.current_frame())
+                Some(self.current_context())
             } else {
                 None
             })
@@ -1063,7 +1150,7 @@ mod tests {
 
     #[test]
     fn send_vm() {
-        fn send<T: Send>(_: T) { }
+        fn send<T: Send>(_: T) {}
         send(RootedThread::new());
     }
 }

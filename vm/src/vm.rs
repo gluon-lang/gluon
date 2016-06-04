@@ -142,7 +142,9 @@ impl BytecodeFunction {
             inner_functions: fs,
             strings: strings,
             globals: module_globals.into_iter()
-                                   .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
+                                   .map(|index| {
+                                       vm.env.read().unwrap().globals[index.as_ref()].value
+                                   })
                                    .collect(),
         }))
     }
@@ -721,7 +723,8 @@ impl GlobalVMState {
     pub fn get_type<T: ?Sized + Any>(&self) -> TcType {
         let id = TypeId::of::<T>();
         self.typeids
-            .read().unwrap()
+            .read()
+            .unwrap()
             .get(&id)
             .cloned()
             .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call"))
@@ -782,7 +785,8 @@ impl GlobalVMState {
             let n = Symbol::new(name);
             let typ: TcType = Type::data(Type::id(n.clone()), arg_types);
             self.typeids
-                .write().unwrap()
+                .write()
+                .unwrap()
                 .insert(id, typ.clone());
             let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(name.into(),

@@ -109,9 +109,9 @@ impl<'b> Drop for StackFrame<'b> {
 impl<'b> fmt::Debug for StackFrame<'b> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StackFrame")
-            .field("stack", &*self.stack)
-            .field("frame", &self.frame)
-            .finish()
+         .field("stack", &*self.stack)
+         .field("frame", &self.frame)
+         .finish()
     }
 }
 
