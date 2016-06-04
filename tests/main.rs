@@ -1,12 +1,12 @@
 
 extern crate env_logger;
 
-extern crate embed_lang;
+extern crate gluon;
 extern crate vm;
 
-use embed_lang::vm::api::generic::A;
-use embed_lang::vm::api::Generic;
-use embed_lang::{new_vm, Compiler};
+use gluon::vm::api::generic::A;
+use gluon::vm::api::Generic;
+use gluon::{new_vm, Compiler};
 
 use std::io::Read;
 use std::fmt;

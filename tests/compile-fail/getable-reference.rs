@@ -1,7 +1,7 @@
-extern crate embed_lang;
-use embed_lang::new_vm;
-use embed_lang::vm::gc::{Gc, Traverseable};
-use embed_lang::vm::api::{Pushable, VMType};
+extern crate gluon;
+use gluon::new_vm;
+use gluon::vm::gc::{Gc, Traverseable};
+use gluon::vm::api::{Pushable, VMType};
 
 struct Test;
 

@@ -1,7 +1,7 @@
-extern crate embed_lang;
-use embed_lang::new_vm;
-use embed_lang::vm::vm::Value;
-use embed_lang::vm::api::Getable;
+extern crate gluon;
+use gluon::new_vm;
+use gluon::vm::vm::Value;
+use gluon::vm::api::Getable;
 
 fn f(_: &'static str) { }
 

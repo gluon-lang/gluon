@@ -7,11 +7,11 @@ use std::path::Path;
 const TEMPLATE: &'static str = r##"
 ```rust,skeptic-template
 extern crate env_logger;
-extern crate embed_lang;
+extern crate gluon;
 
-use embed_lang::vm::api::generic::A;
-use embed_lang::vm::api::Generic;
-use embed_lang::{{new_vm, Compiler}};
+use gluon::vm::api::generic::A;
+use gluon::vm::api::Generic;
+use gluon::{{new_vm, Compiler}};
 
 fn main() {{
     let _ = ::env_logger::init();

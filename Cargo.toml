@@ -1,13 +1,13 @@
 [package]
 
-name = "embed_lang"
+name = "gluon"
 version = "0.0.1"
 authors = ["Markus <marwes91@gmail.com>"]
 build = "build.rs"
 
 [lib]
 
-name = "embed_lang"
+name = "gluon"
 path = "src/lib.rs"
 
 

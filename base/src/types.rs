@@ -1,4 +1,4 @@
-//! Module containing types representing `embed_lang`'s type system
+//! Module containing types representing `gluon`'s type system
 use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -121,7 +121,7 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
                    })
 }
 
-/// The representation of embed_lang's types.
+/// The representation of gluon's types.
 ///
 /// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
 /// `Type` is used to enable types to be shared. It is recommended to use the static functions on
@@ -273,7 +273,7 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
     }
 }
 
-/// All the builtin types of embed_lang
+/// All the builtin types of gluon
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType {
     String,
@@ -313,7 +313,7 @@ impl BuiltinType {
 
 /// Kind representation
 ///
-/// All types in embed_lang has a kind. Most types encountered are of the `Star` (*) kind which
+/// All types in gluon has a kind. Most types encountered are of the `Star` (*) kind which
 /// includes things like `Int`, `String` and `Option Int`. There are however other types which
 /// are said to be "higher kinded" and these use the `Function` (a -> b) variant.
 /// These types include `Option` and `->` which both have the kind `* -> *` as well as `Functor`

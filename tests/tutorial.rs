@@ -1,14 +1,14 @@
 extern crate env_logger;
-extern crate embed_lang;
+extern crate gluon;
 
-use embed_lang::vm::api::generic::A;
-use embed_lang::vm::api::{FunctionRef, Generic};
-use embed_lang::vm::vm::RootedThread;
-use embed_lang::import::Import;
-use embed_lang::Compiler;
+use gluon::vm::api::generic::A;
+use gluon::vm::api::{FunctionRef, Generic};
+use gluon::vm::vm::RootedThread;
+use gluon::import::Import;
+use gluon::Compiler;
 
 fn new_vm() -> RootedThread {
-    let vm = ::embed_lang::new_vm();
+    let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
           .and_then(|import| import.downcast_ref::<Import>())
@@ -30,7 +30,7 @@ fn access_field_through_alias() {
     assert_eq!(result, Ok(3));
 }
 #[test]
-fn call_rust_from_embed_lang() {
+fn call_rust_from_gluon() {
     let _ = ::env_logger::init();
     fn factorial(x: i32) -> i32 {
         if x <= 1 { 1 } else { x * factorial(x - 1) }

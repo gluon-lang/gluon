@@ -1,12 +1,12 @@
-extern crate embed_lang;
+extern crate gluon;
 
 use std::thread::spawn;
 
-use embed_lang::vm::channel::{ChannelRecord, Sender, Receiver};
-use embed_lang::vm::api::OpaqueValue;
-use embed_lang::vm::api::FunctionRef;
-use embed_lang::vm::vm::RootedThread;
-use embed_lang::{new_vm, Compiler, Error};
+use gluon::vm::channel::{ChannelRecord, Sender, Receiver};
+use gluon::vm::api::OpaqueValue;
+use gluon::vm::api::FunctionRef;
+use gluon::vm::vm::RootedThread;
+use gluon::{new_vm, Compiler, Error};
 
 #[test]
 fn parallel() {

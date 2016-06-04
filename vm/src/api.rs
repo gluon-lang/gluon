@@ -64,7 +64,7 @@ impl<'a> Data<'a> {
     }
 }
 
-/// Type representing embed_lang's IO type#[derive(Debug)]
+/// Type representing gluon's IO type#[derive(Debug)]
 #[derive(Debug, PartialEq)]
 pub enum IO<T> {
     Value(T),
@@ -129,7 +129,7 @@ impl<T> Traverseable for Generic<T> {
     }
 }
 
-/// Module containing types which represent generic variables in embed_lang's type system
+/// Module containing types which represent generic variables in gluon's type system
 pub mod generic {
     use super::VMType;
     use base::types::TcType;
@@ -155,12 +155,12 @@ pub mod generic {
     make_generics!{A B C D E F G H I J K L M N O P Q R X Y Z}
 }
 
-/// Trait which maps a type in rust to a type in embed_lang
+/// Trait which maps a type in rust to a type in gluon
 pub trait VMType {
     /// A version of `Self` which implements `Any` allowing a `TypeId` to be retrieved
     type Type: ?Sized + Any;
 
-    /// Creates an embed_lang type which maps to `Self` in rust
+    /// Creates an gluon type which maps to `Self` in rust
     fn make_type(vm: &Thread) -> TcType {
         vm.get_type::<Self::Type>()
     }
@@ -723,6 +723,7 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T>
     }
 }
 
+/// Type which represents an array in gluon
 /// Type implementing both `Pushable` and `Getable` of values of `V`.
 /// The actual value, `V` is not accessible directly but is only intended to be transferred between
 /// two different threads.
@@ -1152,9 +1153,10 @@ fn make_type<T: ?Sized + VMType>(vm: &Thread) -> TcType {
     <T as VMType>::make_type(vm)
 }
 
+/// Type which represents a function reference in gluon
 pub type FunctionRef<'vm, F> = Function<&'vm Thread, F>;
 
-/// Type which represents an function in embed_lang
+/// Type which represents an function in gluon
 pub struct Function<T, F>
     where T: Deref<Target = Thread>
 {

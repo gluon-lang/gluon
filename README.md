@@ -1,5 +1,5 @@
-# embed_lang (working title)
-[![Build Status](https://travis-ci.org/Marwes/embed_lang.svg?branch=master)](https://travis-ci.org/Marwes/embed_lang)
+# gluon (working title)
+[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/embed_lang)
 
 This library is a complete compiler and virtual machine for an embeddable langauge implemented in pure [Rust][Rust]. As both syntax and semantics are not fully nailed down yet it is not recommended for serious use.
 
@@ -22,9 +22,9 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 
 ## Documentation
 
-[Tutorial (WIP)](https://github.com/Marwes/embed_lang/blob/master/TUTORIAL.md)
+[Tutorial (WIP)](https://github.com/Marwes/gluon/blob/master/TUTORIAL.md)
 
-[Rustdoc](https://marwes.github.io/embed_lang/embed_lang/index.html)
+[Rustdoc](https://marwes.github.io/gluon/embed_lang/index.html)
 
 ## Examples
 
@@ -103,7 +103,7 @@ else
 
 If you are interested in contributing to this project there are a few issues open marked as [beginner][] which should be possible to for someone unfamiliar with the code. If you find something that looks interesting leave a comment on the issue so I know about it annd can give some assistance if needed.
 
-[beginner]:https://github.com/Marwes/embed_lang/labels/Beginner
+[beginner]:https://github.com/Marwes/gluon/labels/Beginner
 
 ## Goals/Features
 These goals may change or be refined over time as I experiment with what is possible to with the language.
@@ -118,7 +118,7 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Modular** - The library is split into parser, typechecker and virtual machine + compiler. Each of these components can be use independently of each other allowing applications to pick and choose exactly what they need.
 
-[prelude]:https://github.com/Marwes/embed_lang/blob/master/std/prelude.hs
+[prelude]:https://github.com/Marwes/gluon/blob/master/std/prelude.hs
 
 ## Inspiration
 

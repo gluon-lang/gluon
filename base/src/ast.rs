@@ -1,4 +1,4 @@
-//! Module containing the types which make up `embed_lang`'s AST (Abstract Syntax Tree)
+//! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;

@@ -16,7 +16,7 @@
 
 ## Introduction
 
-This tutorial aims the explain the basics of embed_lang's syntax and semantics.
+This tutorial aims the explain the basics of gluon's syntax and semantics.
 
 ## Hello world
 
@@ -28,15 +28,15 @@ io.print "Hello world"
 
 ## Syntax and semantics
 
-embed_lang is a functional language at heart, basing its syntax on languages such as F#, OCaml and Haskell.
+gluon is a functional language at heart, basing its syntax on languages such as F#, OCaml and Haskell.
 The syntax may thus look strange if you are coming from C-like languages but don't be discouraged!
 There is actually very little syntax to learn.
 
-If, on the other hand, you are familiar with functional languages you will be right at home. Roughly speaking, embed_lang takes the expression syntax from F# and OCaml but uses the type syntax of Haskell.
+If, on the other hand, you are familiar with functional languages you will be right at home. Roughly speaking, gluon takes the expression syntax from F# and OCaml but uses the type syntax of Haskell.
 
 ### Identifiers and Literals
 
-The simplest syntactical elements in embed_lang are identifiers and literals and none of them should be especially 
+The simplest syntactical elements in gluon are identifiers and literals and none of them should be especially 
 surprising if you are experienced in programming. Identifiers are a sequence of alphanumeric characters including 
 underscore ('_') which has to start with a letter or an underscore. Literals come in four different forms
 integer, float, string and character literals.
@@ -69,7 +69,7 @@ Being a functional language functions are everywhere and because of this calling
 syntax where there is no need to enclose the arguments in a parenthesized list of arguments. Instead arguments are just 
 separated by whitespace.
 
-Another way of calling a function is through infix notation since embed_lang implements all operators as just functions.
+Another way of calling a function is through infix notation since gluon implements all operators as just functions.
 
 ```f#,rust
 1 + 2 // Calls the + function on 1 and 2
@@ -93,7 +93,7 @@ allowing it to be used later.
 let x = 1 + 2 in x // Returns 3
 ```
 
-You may rightly be wondering about the `in x` part. embed_lang takes a strong stance against statements in an effort to keep
+You may rightly be wondering about the `in x` part. gluon takes a strong stance against statements in an effort to keep
 things consistent. Thus only writing `let x = 1 + 2` will be met with a syntax error about a missing `in` keyword which is
 what defines the actual value returned from the `let` expression.
 
@@ -123,7 +123,7 @@ if True then 1 else 0
 
 ### Record expressions
 
-To create more complex data types embed_lang has first class records which can be used to group data which belong together easily.
+To create more complex data types gluon has first class records which can be used to group data which belong together easily.
 
 ```f#,rust
 { pi = 3.14, add1 = (+) 1.0 }
@@ -154,7 +154,7 @@ Some 1
 
 ### Case expressions
 
-To allow variants to be unpacked so that their contents can be retrieved embed_lang has the `case` expression.
+To allow variants to be unpacked so that their contents can be retrieved gluon has the `case` expression.
 
 ```f#,rust
 match None with
@@ -191,7 +191,7 @@ let f x y = x + y - 10 in f
 
 ### Type expressions
 
-embed_lang allows new types to be defined through the `type` expression.
+gluon allows new types to be defined through the `type` expression.
 
 ```f#,rust
 // type <identifier> <identifier>* = <type> in <expression>
@@ -242,9 +242,9 @@ Option Int
 
 ### Indentation
 
-If you have been following along this far you may be thinking think that syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily embed_lang offerrs a more convenient way of writing bindings by relying on indentation.
+If you have been following along this far you may be thinking think that syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily gluon offerrs a more convenient way of writing bindings by relying on indentation.
 
-When a token starts on the same line as a token on an earlier line, embed_lang implicitly adds inserts a block expression which allows multiple expressions and bindings to be run sequentially with all variables in scope.
+When a token starts on the same line as a token on an earlier line, gluon implicitly adds inserts a block expression which allows multiple expressions and bindings to be run sequentially with all variables in scope.
 
 ```f#,rust
 let add1 x = x + 1
@@ -292,7 +292,7 @@ assert (1 == 1)
 
 ## Writing modules
 
-Importing standard modules is all well and good but it is also necessary to write your own once a program starts getting to big for a single file. As it turns out, if you have been following along so far, you already know everything about writing a module! Creating and loading a module in embed_lang just entails writing creating a file containing an expression which is then loaded and evaluated using `import`. `import` is then just the value of evaluating the expression.
+Importing standard modules is all well and good but it is also necessary to write your own once a program starts getting to big for a single file. As it turns out, if you have been following along so far, you already know everything about writing a module! Creating and loading a module in gluon just entails writing creating a file containing an expression which is then loaded and evaluated using `import`. `import` is then just the value of evaluating the expression.
 
 ```f#
 // module.hs
@@ -320,13 +320,13 @@ let pi = import "pi.hs"
 
 ## Embedding API
 
-The API with which the host language interacts with embed_lang is very important part of the library. While the complete API can be found in the [Rustdoc][] this section will explain the most important parts. Please note that the API can change at any point and there are still some public functions which should actually be internal.
+The API with which the host language interacts with gluon is very important part of the library. While the complete API can be found in the [Rustdoc][] this section will explain the most important parts. Please note that the API can change at any point and there are still some public functions which should actually be internal.
 
 ### Creating a virtual machine
 
-Before you are able to do anything with the library you will need to create a virtual machine. The virtual machine is responsible for running embed_lang programs and can be created with the [new_vm][] function.
+Before you are able to do anything with the library you will need to create a virtual machine. The virtual machine is responsible for running gluon programs and can be created with the [new_vm][] function.
 
-### Compiling and running embed_lang code
+### Compiling and running gluon code
 
 Once in possession of a [RootedThread][] you can compile and execute code using the [run_expr][] method on the [Compiler][] builder type.
 
@@ -352,9 +352,9 @@ let result = add.call(1, 2);
 assert_eq!(result, Ok(3));
 ```
 
-### Calling Rust functions from embed_lang
+### Calling Rust functions from gluon
 
-embed_lang also allows native functions to be called from embed_lang. To do this we first need to define the function so it is available when running embed_lang code.
+gluon also allows native functions to be called from embed_lang. To do this we first need to define the function so it is available when running embed_lang code.
 
 ```rust,ignore
 fn factorial(x: i32) -> i32 {
@@ -369,7 +369,7 @@ let result = Compiler::new()
 assert_eq!(result, 120);
 ```
 
-[define_global][] can do more than just exposing simple functions. For instance, the [primitives][] module export large parts of Rust's [string][] and [float][] modules directly as records in embed_lang under the `str` and `float` modules respectively.
+[define_global][] can do more than just exposing simple functions. For instance, the [primitives][] module export large parts of Rust's [string][] and [float][] modules directly as records in gluon under the `str` and `float` modules respectively.
 
 ```rust,ignore
 let vm = new_vm();
@@ -379,20 +379,20 @@ let result = Compiler::new()
 assert_eq!(result, "Hello world");
 ```
 
-[Rustdoc]:https://marwes.github.io/embed_lang/embed_lang/index.html
-[new_vm]:https://marwes.github.io/embed_lang/embed_lang/fn.new_vm.html
-[RootedThread]:https://marwes.github.io/embed_lang/embed_lang/struct.RootedThread.html
-[Thread]:https://marwes.github.io/embed_lang/embed_lang/struct.Thread.html
-[run_expr]:https://marwes.github.io/embed_lang/embed_lang/struct.Compiler.html#method.run_expr
-[Compiler struct]:https://marwes.github.io/embed_lang/embed_lang/struct.Compiler.html
-[define_global]:https://marwes.github.io/embed_lang/vm/thread/struct.Thread.html#method.define_global
-[primitives]:https://github.com/Marwes/embed_lang/blob/master/vm/src/primitives.rs
+[Rustdoc]:https://marwes.github.io/gluon/embed_lang/index.html
+[new_vm]:https://marwes.github.io/gluon/embed_lang/fn.new_vm.html
+[RootedThread]:https://marwes.github.io/gluon/embed_lang/struct.RootedThread.html
+[Thread]:https://marwes.github.io/gluon/embed_lang/struct.Thread.html
+[run_expr]:https://marwes.github.io/gluon/embed_lang/struct.Compiler.html#method.run_expr
+[Compiler struct]:https://marwes.github.io/gluon/embed_lang/struct.Compiler.html
+[define_global]:https://marwes.github.io/gluon/vm/thread/struct.Thread.html#method.define_global
+[primitives]:https://github.com/Marwes/gluon/blob/master/vm/src/primitives.rs
 [string]:http://doc.rust-lang.org/std/primitive.str.html
 [float]:http://doc.rust-lang.org/std/primitive.f64.html
 
 ## Standard types and functions
 
-https://github.com/Marwes/embed_lang/tree/master/std
+https://github.com/Marwes/gluon/tree/master/std
 
 TODO
 
@@ -402,6 +402,6 @@ When compiling a an expression the compiler automatically inserts a small prelud
 
 ### Threads and channels
 
-embed_lang has support for cooperative threading and communication between them through the `Thread` and `Channel` types.
+gluon has support for cooperative threading and communication between them through the `Thread` and `Channel` types.
 
 TODO

@@ -1,12 +1,12 @@
 extern crate env_logger;
-extern crate embed_lang;
+extern crate gluon;
 
-use embed_lang::vm::vm::RootedThread;
-use embed_lang::import::Import;
-use embed_lang::Compiler;
+use gluon::vm::vm::RootedThread;
+use gluon::import::Import;
+use gluon::Compiler;
 
 fn make_vm() -> RootedThread {
-    let vm = ::embed_lang::new_vm();
+    let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
           .and_then(|import| import.downcast_ref::<Import>())

@@ -1,16 +1,16 @@
 extern crate env_logger;
-extern crate embed_lang;
+extern crate gluon;
 
-use embed_lang::vm::api;
-use embed_lang::vm::api::generic::A;
-use embed_lang::vm::api::{Generic, VMType, FunctionRef};
-use embed_lang::vm::gc::Traverseable;
+use gluon::vm::api;
+use gluon::vm::api::generic::A;
+use gluon::vm::api::{Generic, VMType, FunctionRef};
+use gluon::vm::gc::Traverseable;
 
-use embed_lang::vm::vm::{RootedThread, Thread, VMInt, Value, Root, RootStr};
-use embed_lang::Compiler;
-use embed_lang::import::Import;
+use gluon::vm::vm::{RootedThread, Thread, VMInt, Value, Root, RootStr};
+use gluon::Compiler;
+use gluon::import::Import;
 
-fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Result<()> {
+fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
         .load_script(vm, filename, input)
 }
@@ -23,7 +23,7 @@ fn run_expr(vm: &Thread, s: &str) -> Value {
 }
 
 fn make_vm() -> RootedThread {
-    let vm = ::embed_lang::new_vm();
+    let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
           .and_then(|import| import.downcast_ref::<Import>())

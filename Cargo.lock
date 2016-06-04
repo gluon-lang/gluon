@@ -1,5 +1,5 @@
 [root]
-name = "embed_lang"
+name = "gluon"
 version = "0.0.1"
 dependencies = [
  "base 0.1.0",

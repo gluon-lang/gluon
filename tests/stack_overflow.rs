@@ -1,5 +1,5 @@
-extern crate embed_lang;
-use embed_lang::{new_vm, Compiler};
+extern crate gluon;
+use gluon::{new_vm, Compiler};
 
 #[test]
 fn dont_stack_overflow_on_let_bindings() {

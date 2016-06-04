@@ -31,16 +31,16 @@ use vm::vm::{ClosureDataDef, Error as VMError};
 use vm::compiler::CompiledFunction;
 
 quick_error! {
-    /// Error type wrapping all possible errors that can be generated from embed_lang
+    /// Error type wrapping all possible errors that can be generated from gluon
     #[derive(Debug)]
     pub enum Error {
-        /// Error found when parsing embed_lang code
+        /// Error found when parsing gluon code
         Parse(err: ::parser::Error) {
             description(err.description())
             display("{}", err)
             from()
         }
-        /// Error found when typechecking embed_lang code
+        /// Error found when typechecking gluon code
         Typecheck(err: ::base::error::InFile<::check::typecheck::TypeError<Symbol>>) {
             description(err.description())
             display("{}", err)
@@ -67,7 +67,7 @@ quick_error! {
     }
 }
 
-/// Type alias for results returned by embed_lang
+/// Type alias for results returned by gluon
 pub type Result<T> = StdResult<T, Error>;
 
 /// Type which makes parsing, typechecking and compiling an AST into bytecode

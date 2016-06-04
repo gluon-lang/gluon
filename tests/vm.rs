@@ -1,16 +1,16 @@
 extern crate env_logger;
-extern crate embed_lang;
+extern crate gluon;
 
-use embed_lang::vm::api::generic::A;
-use embed_lang::vm::api::{FunctionRef, Generic, Getable, VMType, OpaqueValue};
-use embed_lang::vm::vm::{RootedThread, Thread, Value};
-use embed_lang::vm::vm::Value::{Float, Int};
-use embed_lang::vm::stack::State;
-use embed_lang::vm::channel::Sender;
-use embed_lang::import::Import;
-use embed_lang::{Compiler, Error};
+use gluon::vm::api::generic::A;
+use gluon::vm::api::{FunctionRef, Generic, Getable, VMType, OpaqueValue};
+use gluon::vm::vm::{RootedThread, Thread, Value};
+use gluon::vm::vm::Value::{Float, Int};
+use gluon::vm::stack::State;
+use gluon::vm::channel::Sender;
+use gluon::import::Import;
+use gluon::{Compiler, Error};
 
-pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Result<()> {
+pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
         .implicit_prelude(false)
         .load_script(vm, filename, input)
@@ -33,7 +33,7 @@ pub fn run_expr<'vm, T>(vm: &'vm Thread, s: &str) -> T
 
 /// Creates a VM for testing which has the correct paths to import the std library properly
 fn make_vm() -> RootedThread {
-    let vm = ::embed_lang::new_vm();
+    let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
           .and_then(|import| import.downcast_ref::<Import>())

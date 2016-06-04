@@ -4,7 +4,7 @@ use base::types::Kind;
 use vm::vm::{Thread, RootStr};
 use vm::api::{IO, Function, WithVM};
 
-use embed_lang::{Compiler, new_vm};
+use gluon::{Compiler, new_vm};
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
@@ -105,7 +105,7 @@ pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
 
 #[cfg(test)]
 mod tests {
-    use embed_lang::new_vm;
+    use gluon::new_vm;
     use super::compile_repl;
     use vm::api::{IO, FunctionRef};
 

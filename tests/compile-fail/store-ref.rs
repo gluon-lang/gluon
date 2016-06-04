@@ -1,8 +1,8 @@
-extern crate embed_lang;
-use embed_lang::new_vm;
-use embed_lang::vm::vm::Value;
-use embed_lang::vm::api::{VMType, Getable};
-use embed_lang::vm::gc::Traverseable;
+extern crate gluon;
+use gluon::new_vm;
+use gluon::vm::vm::Value;
+use gluon::vm::api::{VMType, Getable};
+use gluon::vm::gc::Traverseable;
 
 use std::cell::Cell;
 

@@ -1,6 +1,6 @@
-extern crate embed_lang;
-use embed_lang::new_vm;
-use embed_lang::vm::api::Pushable;
+extern crate gluon;
+use gluon::new_vm;
+use gluon::vm::api::Pushable;
 
 fn f(_: &'static str) { }
 

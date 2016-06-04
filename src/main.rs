@@ -10,7 +10,7 @@ extern crate lazy_static;
 extern crate linenoise;
 
 extern crate base;
-extern crate embed_lang;
+extern crate gluon;
 extern crate check;
 extern crate parser;
 #[macro_use]
@@ -20,7 +20,7 @@ extern crate vm;
 #[cfg(not(test))]
 use std::error::Error as StdError;
 #[cfg(not(test))]
-use embed_lang::{new_vm, Compiler};
+use gluon::{new_vm, Compiler};
 #[cfg(not(test))]
 use clap::{Arg, App};
 
@@ -57,8 +57,8 @@ fn main() {
         .spawn(|| {
             init_env_logger();
 
-            let matches = App::new("embed_lang")
-                              .about("Executes embed_lang programs")
+            let matches = App::new("gluon")
+                              .about("Executes gluon programs")
                               .arg(Arg::with_name("INPUT").multiple(true))
                               .arg(Arg::with_name("REPL")
                                        .short("i")
