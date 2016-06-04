@@ -75,8 +75,8 @@ impl<T: Copy> Array<T> {
         mem::size_of::<usize>() + mem::size_of::<T>() * len
     }
 
-    pub unsafe fn set_len(array: &mut Array<T>, len: usize) {
-        array.len = len;
+    pub unsafe fn set_len(&mut self, len: usize) {
+        self.len = len;
     }
 
     /// Initializes an Array.

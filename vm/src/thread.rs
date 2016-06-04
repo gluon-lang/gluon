@@ -19,7 +19,7 @@ use compiler::CompiledFunction;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use stack::{Stack, StackFrame, State};
 use types::*;
-use vm::{Error, Result, GlobalVMState, Value, VMInt, ClosureData, ClosureDataDef, Def,
+use vm::{Error, Result, GlobalVMState, Value, VMInt, ClosureData, ClosureInitDef, ClosureDataDef, Def,
          ExternFunction, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use vm::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
@@ -825,9 +825,8 @@ impl Thread {
                 NewClosure(fi, n) => {
                     let closure = {
                         // Use dummy variables until it is filled
-                        let args = [Int(0); 128];
                         let func = function.inner_functions[fi as usize];
-                        Closure(self.alloc(&stack.stack, ClosureDataDef(func, &args[..n as usize])))
+                        Closure(self.alloc(&stack.stack, ClosureInitDef(func, n as usize)))
                     };
                     stack.push(closure);
                 }

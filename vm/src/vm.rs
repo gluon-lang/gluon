@@ -84,6 +84,35 @@ unsafe impl<'b> DataDef for ClosureDataDef<'b> {
     }
 }
 
+pub struct ClosureInitDef(pub GcPtr<BytecodeFunction>, pub usize);
+
+impl Traverseable for ClosureInitDef {
+    fn traverse(&self, gc: &mut Gc) {
+        self.0.traverse(gc);
+    }
+}
+
+unsafe impl DataDef for ClosureInitDef {
+    type Value = ClosureData;
+    fn size(&self) -> usize {
+        use std::mem::size_of;
+        size_of::<GcPtr<BytecodeFunction>>() + Array::<Value>::size_of(self.1)
+    }
+    fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData>) -> &'w mut ClosureData {
+        use std::ptr;
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.function = self.0;
+            result.upvars.set_len(self.1);
+            for var in &mut result.upvars {
+                ptr::write(var, Int(0));
+            }
+            result
+        }
+    }
+}
+
+
 #[derive(Debug)]
 pub struct BytecodeFunction {
     pub name: Symbol,
