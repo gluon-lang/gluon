@@ -190,7 +190,6 @@ pub fn load(vm: &Thread) -> Result<()> {
         to_radians => f1(f64::to_radians),
         max => f2(f64::max),
         min => f2(f64::min),
-        abs_sub => f2(f64::abs_sub),
         cbrt => f1(f64::cbrt),
         hypot => f2(f64::hypot),
         sin => f1(f64::sin),
