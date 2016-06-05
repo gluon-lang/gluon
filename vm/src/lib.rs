@@ -10,10 +10,6 @@ extern crate quick_error;
 extern crate mopa;
 
 extern crate base;
-#[cfg(feature = "parser")]
-extern crate parser;
-#[cfg(feature = "check")]
-extern crate check;
 
 #[macro_use]
 pub mod api;
