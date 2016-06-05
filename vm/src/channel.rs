@@ -11,7 +11,7 @@ use gc::{Traverseable, Gc, GcPtr};
 use vm::{Error, Thread, Value, RootedThread, Result as VMResult, Status};
 use stack::State;
 
-struct Sender<T> {
+pub struct Sender<T> {
     // No need to traverse this thread reference as any thread having a reference to this `Sender`
     // would also directly own a reference to the `Thread`
     thread: GcPtr<Thread>,
@@ -37,7 +37,7 @@ impl<T: Traverseable> Traverseable for Receiver<T> {
 }
 
 
-struct Receiver<T> {
+pub struct Receiver<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
@@ -130,7 +130,7 @@ fn yield_(_vm: &Thread) -> Status {
     Status::Yield
 }
 
-fn spawn<'vm>(value: WithVM<'vm, Function<'vm, fn(())>>) -> RootedThread {
+fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> RootedThread {
     let thread = value.vm.new_thread();
     {
         let mut stack = thread.current_frame();

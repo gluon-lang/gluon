@@ -80,7 +80,7 @@ fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
     f
 }
 
-fn compile_repl(vm: &Thread) -> Result<(), Box<StdError>> {
+fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
     try!(vm.define_global("repl_prim",
                           record!(
         type_of_expr => f1(type_of_expr),
@@ -95,10 +95,10 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError>> {
 }
 
 #[allow(dead_code)]
-pub fn run() -> Result<(), Box<StdError>> {
+pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
     let vm = new_vm();
     try!(compile_repl(&vm));
-    let mut repl: Function<fn(()) -> IO<()>> = try!(vm.get_global("std.repl"));
+    let mut repl: Function<&Thread, fn(()) -> IO<()>> = try!(vm.get_global("std.repl"));
     try!(repl.call(()));
     Ok(())
 }
@@ -107,14 +107,14 @@ pub fn run() -> Result<(), Box<StdError>> {
 mod tests {
     use embed_lang::new_vm;
     use super::compile_repl;
-    use vm::api::{IO, Function};
+    use vm::api::{IO, FunctionRef};
 
     #[test]
     fn compile_repl_test() {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let repl: Result<Function<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
+        let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
         assert!(repl.is_ok());
     }
 
@@ -125,7 +125,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut type_of: Function<QueryFn> = vm.get_global("repl_prim.type_of_expr").unwrap();
+        let mut type_of: FunctionRef<QueryFn> = vm.get_global("repl_prim.type_of_expr").unwrap();
         assert!(type_of.call("std.prelude.Option").is_ok());
     }
 
@@ -134,7 +134,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut find_kind: Function<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
+        let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
         assert_eq!(find_kind.call("std.prelude.Option"), Ok(IO::Value(Ok("* -> *".into()))));
     }
 
@@ -143,7 +143,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut find_info: Function<QueryFn> = vm.get_global("repl_prim.find_info").unwrap();
+        let mut find_info: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_info").unwrap();
         match find_info.call("std.prelude.Option") {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),

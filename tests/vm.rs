@@ -1,7 +1,7 @@
 extern crate env_logger;
 extern crate embed_lang;
 
-use embed_lang::vm::api::Function;
+use embed_lang::vm::api::{FunctionRef, Getable};
 use embed_lang::vm::vm::{RootedThread, Thread, Value};
 use embed_lang::vm::vm::Value::{Float, Int};
 use embed_lang::vm::stack::State;
@@ -14,10 +14,11 @@ pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Re
         .load_script(vm, filename, input)
 }
 
-pub fn run_expr_(vm: &Thread, s: &str, implicit_prelude: bool) -> Value {
+pub fn run_expr_<'vm, T: Getable<'vm>>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T {
     Compiler::new()
         .implicit_prelude(implicit_prelude)
-        .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
+        .run_expr(vm, "<top>", s)
+        .unwrap_or_else(|err| panic!("{}", err))
 }
 
 pub fn run_expr(vm: &Thread, s: &str) -> Value {
@@ -41,7 +42,7 @@ macro_rules! test_expr {
         fn $name() {
             let _ = ::env_logger::init();
             let mut vm = make_vm();
-            let value = run_expr_(&mut vm, $expr, true);
+            let value = run_expr_::<Value>(&mut vm, $expr, true);
             assert_eq!(value, $value);
         }
     };
@@ -198,8 +199,7 @@ fn insert_stack_slice() {
     assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
     stack.insert_slice(1, &[]);
     assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
-    stack.insert_slice(2,
-                       &[Int(4), Int(5), Int(6)]);
+    stack.insert_slice(2, &[Int(4), Int(5), Int(6)]);
     assert_eq!(&stack[..],
                [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
 }
@@ -491,7 +491,8 @@ fn run_expr_int() {
     let text = r#"io.run_expr "123" "#;
     let mut vm = make_vm();
     let result = run_expr(&mut vm, text);
-    assert_eq!(result, Value::String(vm.alloc(&vm.current_frame().stack, "123")));
+    assert_eq!(result,
+               Value::String(vm.alloc(&vm.current_frame().stack, "123")));
 }
 
 test_expr!{ run_expr_io,
@@ -511,7 +512,8 @@ in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
     let value = Compiler::new()
-        .run_expr::<Value>(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
+                    .run_expr::<Value>(&mut vm, "<top>", text)
+                    .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(value, Int(0));
 }
 
@@ -521,7 +523,8 @@ fn test_implicit_prelude() {
     let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
     let mut vm = make_vm();
     Compiler::new()
-        .run_expr(&mut vm, "<top>", text).unwrap_or_else(|err| panic!("{}", err));
+        .run_expr(&mut vm, "<top>", text)
+        .unwrap_or_else(|err| panic!("{}", err));
 }
 
 #[test]
@@ -529,8 +532,7 @@ fn access_field_through_vm() {
     let _ = ::env_logger::init();
     let text = r#" { x = 0, inner = { y = 1.0 } } "#;
     let mut vm = make_vm();
-    load_script(&mut vm, "test", text)
-        .unwrap_or_else(|err| panic!("{}", err));
+    load_script(&mut vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
     let test_x = vm.get_global("test.x");
     assert_eq!(test_x, Ok(0));
     let test_inner_y = vm.get_global("test.inner.y");
@@ -544,7 +546,8 @@ fn access_operator_without_parentheses() {
     Compiler::new()
         .run_expr::<Value>(&vm, "example", r#" import "std/prelude.hs" "#)
         .unwrap();
-    let result: Result<Function<fn (i32, i32) -> i32>, _> = vm.get_global("std.prelude.num_Int.+");
+    let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> = vm.get_global("std.prelude.num_Int.\
+                                                                             +");
     assert!(result.is_err());
 }
 
@@ -566,8 +569,7 @@ fn access_types_by_path() {
     assert!(vm.find_type_info("std.prelude.Result").is_ok());
 
     let text = r#" type T a = | T a in { x = 0, inner = { T, y = 1.0 } } "#;
-    load_script(&vm, "test", text)
-        .unwrap_or_else(|err| panic!("{}", err));
+    load_script(&vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
     let result = vm.find_type_info("test.inner.T");
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }

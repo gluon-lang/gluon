@@ -36,33 +36,49 @@ pub enum Status {
 
 /// A rooted value
 #[derive(Clone, PartialEq)]
-pub struct RootedValue<'vm> {
-    vm: &'vm Thread,
+pub struct RootedValue<T>
+    where T: Deref<Target = Thread>
+{
+    vm: T,
     value: Value,
 }
 
-impl<'vm> Drop for RootedValue<'vm> {
+impl<T> Drop for RootedValue<T>
+    where T: Deref<Target = Thread>
+{
     fn drop(&mut self) {
         // TODO not safe if the root changes order of being dropped with another root
         self.vm.rooted_values.write().unwrap().pop();
     }
 }
 
-impl<'vm> fmt::Debug for RootedValue<'vm> {
+impl<T> fmt::Debug for RootedValue<T>
+    where T: Deref<Target = Thread>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.value)
     }
 }
 
-impl<'vm> Deref for RootedValue<'vm> {
+impl<T> Deref for RootedValue<T>
+    where T: Deref<Target = Thread>
+{
     type Target = Value;
     fn deref(&self) -> &Value {
         &self.value
     }
 }
 
-impl<'vm> RootedValue<'vm> {
-    pub fn vm(&self) -> &'vm Thread {
+impl<T> RootedValue<T>
+    where T: Deref<Target = Thread>
+{
+    pub fn vm(&self) -> &Thread {
+        &self.vm
+    }
+}
+
+impl<'vm> RootedValue<&'vm Thread> {
+    pub fn vm_(&self) -> &'vm Thread {
         self.vm
     }
 }
@@ -237,6 +253,12 @@ impl Deref for RootedThread {
     }
 }
 
+impl Clone for RootedThread {
+    fn clone(&self) -> RootedThread {
+        RootedThread::from_gc_ptr(self.0)
+    }
+}
+
 impl Traverseable for RootedThread {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
@@ -268,12 +290,17 @@ impl RootedThread {
         vm
     }
 
+    /// Converts a `RootedThread` into a raw pointer allowing to be passed through a C api.
+    /// The reference count for the thread is not modified
     pub fn into_raw(self) -> *const Thread {
         let ptr: *const Thread = &*self.0;
         ::std::mem::forget(self);
         ptr
     }
 
+    /// Converts a raw pointer into a `RootedThread`.
+    /// The reference count for the thread is not modified so it is up to the caller to ensure that
+    /// the count is correct.
     pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread {
         RootedThread(GcPtr::from_raw(ptr))
     }
@@ -401,7 +428,16 @@ impl Thread {
     }
 
     /// Roots a value
-    pub fn root_value(&self, value: Value) -> RootedValue {
+    pub fn root_value(&self, value: Value) -> RootedValue<RootedThread> {
+        self.rooted_values.write().unwrap().push(value);
+        RootedValue {
+            vm: unsafe { RootedThread::from_gc_ptr(GcPtr::from_raw(self)) },
+            value: value,
+        }
+    }
+
+    /// Roots a value
+    pub fn root_value_ref(&self, value: Value) -> RootedValue<&Thread> {
         self.rooted_values.write().unwrap().push(value);
         RootedValue {
             vm: self,

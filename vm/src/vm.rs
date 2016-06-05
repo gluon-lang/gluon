@@ -820,6 +820,9 @@ quick_error! {
         }
         Dead {
         }
+        TypeMismatch(expected: TcType, actual: TcType) {
+            display("Could not extract value as a `{}` because a `{}` was found", expected, actual)
+        }
         Message(err: StdString) {
             display("{}", err)
         }

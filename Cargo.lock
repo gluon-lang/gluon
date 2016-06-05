@@ -69,7 +69,7 @@ dependencies = [
 [[package]]
 name = "combine"
 version = "1.3.0"
-source = "git+https://github.com/Marwes/combine.git?branch=2.0.0#b9ff9607c6a0464fe5d86543fb2d045ad8d79f4b"
+source = "git+https://github.com/Marwes/combine.git?branch=2.0.0#22add3eca62ff5e6f4d58122a4b366290b1d9385"
 
 [[package]]
 name = "combine-language"

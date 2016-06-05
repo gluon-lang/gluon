@@ -345,7 +345,7 @@ let vm = new_vm();
 Compiler::new()
     .run_expr::<Value>(&vm, "example", " import \"std/prelude.hs\" ")
     .unwrap();
-let mut add: Function<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
+let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
     .unwrap();
 let result = add.call(1, 2);
 assert_eq!(result, Ok(3));

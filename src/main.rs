@@ -28,7 +28,7 @@ mod repl;
 
 
 #[cfg(not(test))]
-fn run_files<'s, I>(files: I) -> Result<(), Box<StdError>>
+fn run_files<'s, I>(files: I) -> Result<(), Box<StdError + Send + Sync>>
 where I: Iterator<Item = &'s str>
 {
     let vm = new_vm();

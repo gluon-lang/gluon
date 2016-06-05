@@ -4,6 +4,7 @@ use base::symbol::Symbol;
 use stack::{State, StackFrame};
 use vm::{Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, VMInt, Error, Root,
          RootStr};
+use thread::RootedThread;
 use base::types;
 use base::types::{TcType, Type};
 use types::{VMIndex, VMTag};
@@ -716,8 +717,48 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T>
     }
 }
 
+/// Type implementing both `Pushable` and `Getable` of values of `V`.
+/// The actual value, `V` is not accessible directly but is only intended to be transferred between
+/// two different threads.
+pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>) where T: Deref<Target = Thread>;
+
+impl<T, V> VMType for OpaqueValue<T, V>
+    where T: Deref<Target = Thread>,
+          V: VMType,
+          V::Type: Sized
+{
+    type Type = V::Type;
+    fn make_type(vm: &Thread) -> TcType {
+        V::make_type(vm)
+    }
+}
+
+impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
+    where T: Deref<Target = Thread>,
+          V: VMType,
+          V::Type: Sized
+{
+    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+        stack.push(*self.0);
+        Status::Ok
+    }
+}
+
+impl<'vm, V> Getable<'vm> for OpaqueValue<&'vm Thread, V> {
+    fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<&'vm Thread, V>> {
+        Some(OpaqueValue(vm.root_value_ref(*value.0), PhantomData))
+    }
+}
+
+impl<'vm, V> Getable<'vm> for OpaqueValue<RootedThread, V> {
+    fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<RootedThread, V>> {
+        Some(OpaqueValue(vm.root_value(*value.0), PhantomData))
+    }
+}
+
+
 /// Type which represents an array in embed_lang
-pub struct Array<'vm, T>(RootedValue<'vm>, PhantomData<T>);
+pub struct Array<'vm, T>(RootedValue<&'vm Thread>, PhantomData<T>);
 
 impl<'vm, T> Deref for Array<'vm, T> {
     type Target = DataStruct;
@@ -731,7 +772,7 @@ impl<'vm, T> Deref for Array<'vm, T> {
 
 impl<'vm, T> Array<'vm, T> {
     pub fn vm(&self) -> &'vm Thread {
-        self.0.vm()
+        self.0.vm_()
     }
 
     pub fn len(&self) -> VMIndex {
@@ -739,7 +780,7 @@ impl<'vm, T> Array<'vm, T> {
     }
 }
 
-impl<'vm, T: Getable<'vm>> Array<'vm, T> {
+impl<'vm, T: for<'vm2> Getable<'vm2>> Array<'vm, T> {
     pub fn get(&self, index: VMInt) -> Option<T> {
         match *self.0 {
             Value::Data(data) => {
@@ -773,7 +814,7 @@ impl<'vm, T: VMType> Pushable<'vm> for Array<'vm, T>
 
 impl<'vm, T> Getable<'vm> for Array<'vm, T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Array<'vm, T>> {
-        Some(Array(vm.root_value(*value.0), PhantomData))
+        Some(Array(vm.root_value_ref(*value.0), PhantomData))
     }
 }
 
@@ -1058,20 +1099,27 @@ fn make_type<T: ?Sized + VMType>(vm: &Thread) -> TcType {
     <T as VMType>::make_type(vm)
 }
 
+pub type FunctionRef<'vm, F> = Function<&'vm Thread, F>;
+
 /// Type which represents an function in embed_lang
-pub struct Function<'vm, F> {
-    value: RootedValue<'vm>,
+pub struct Function<T, F>
+    where T: Deref<Target = Thread>
+{
+    value: RootedValue<T>,
     _marker: PhantomData<F>,
 }
 
-impl<'vm, F> Function<'vm, F> {
+impl<T, F> Function<T, F>
+    where T: Deref<Target = Thread>
+{
     pub fn value(&self) -> Value {
         *self.value
     }
 }
 
-impl<'vm, F> VMType for Function<'vm, F>
-    where F: VMType
+impl<T, F> VMType for Function<T, F>
+    where T: Deref<Target = Thread>,
+          F: VMType
 {
     type Type = F::Type;
     fn make_type(vm: &Thread) -> TcType {
@@ -1079,18 +1127,19 @@ impl<'vm, F> VMType for Function<'vm, F>
     }
 }
 
-impl<'vm, F: Any> Pushable<'vm> for Function<'vm, F>
-    where F: VMType
+impl<'vm, T, F: Any> Pushable<'vm> for Function<T, F>
+    where T: Deref<Target = Thread>,
+          F: VMType
 {
     fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
         stack.push(*self.value);
         Status::Ok
     }
 }
-impl<'vm, F> Getable<'vm> for Function<'vm, F> {
-    fn from_value(vm: &'vm Thread, value: Variants) -> Option<Function<'vm, F>> {
+impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
+    fn from_value(vm: &'vm Thread, value: Variants) -> Option<Function<&'vm Thread, F>> {
         Some(Function {
-            value: vm.root_value(*value.0),
+            value: vm.root_value_ref(*value.0),
             _marker: PhantomData,
         })//TODO not type safe
     }
@@ -1247,12 +1296,13 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
     }
 }
 
-impl<'vm, $($args,)* R> Function<'vm, fn($($args),*) -> R>
+impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     where $($args: Pushable<'vm>,)*
+          T: Deref<Target = Thread>,
           R: VMType + Getable<'vm>
 {
     #[allow(non_snake_case)]
-    pub fn call(&mut self $(, $args: $args)*) -> Result<R, Error> {
+    pub fn call(&'vm mut self $(, $args: $args)*) -> Result<R, Error> {
         let vm = self.value.vm();
         let mut stack = vm.current_frame();
         stack = stack.enter_scope(0, State::Unknown);

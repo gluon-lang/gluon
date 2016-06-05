@@ -186,7 +186,7 @@ impl Compiler {
         self.load_script(vm, &name, &buffer)
     }
 
-    fn run_expr_<'vm>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<RootedValue<'vm>> {
+    fn run_expr_<'vm>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<RootedValue<&'vm Thread>> {
         let (expr, typ) = try!(self.typecheck_expr(vm, name, expr_str));
         let mut function = self.compile_script(vm, name, &expr);
         function.id = Symbol::new(name);
@@ -196,7 +196,7 @@ impl Compiler {
             vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
         };
         let value = try!(vm.call_module(&typ, closure));
-        Ok(vm.root_value(value))
+        Ok(vm.root_value_ref(value))
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the

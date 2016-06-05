@@ -2,7 +2,7 @@ extern crate env_logger;
 extern crate embed_lang;
 
 use embed_lang::vm::api;
-use embed_lang::vm::api::{VMType, Function};
+use embed_lang::vm::api::{VMType, FunctionRef};
 use embed_lang::vm::gc::Traverseable;
 
 use embed_lang::vm::vm::{RootedThread, Thread, VMInt, Value, Root, RootStr};
@@ -42,12 +42,12 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
     load_script(&mut vm, "add10", &add10).unwrap_or_else(|err| panic!("{}", err));
     load_script(&mut vm, "mul", &mul).unwrap_or_else(|err| panic!("{}", err));
     {
-        let mut f: Function<fn(VMInt) -> VMInt> = vm.get_global("add10")
+        let mut f: FunctionRef<fn(VMInt) -> VMInt> = vm.get_global("add10")
                                                     .unwrap();
         let result = f.call(2).unwrap();
         assert_eq!(result, 12);
     }
-    let mut f: Function<fn(f64, f64) -> f64> = vm.get_global("mul").unwrap();
+    let mut f: FunctionRef<fn(f64, f64) -> f64> = vm.get_global("mul").unwrap();
     let result = f.call(4., 5.).unwrap();
     assert_eq!(result, 20.);
 }
@@ -77,7 +77,7 @@ fn root_data() {
       })
       .unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
-    let mut script_fn: Function<fn(api::Userdata<Test>) -> VMInt> = vm.get_global("script_fn").unwrap();
+    let mut script_fn: FunctionRef<fn(api::Userdata<Test>) -> VMInt> = vm.get_global("script_fn").unwrap();
     let result = script_fn.call(api::Userdata(Test(123)))
                           .unwrap();
     assert_eq!(result, 124);
