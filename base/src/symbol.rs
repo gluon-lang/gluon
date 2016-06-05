@@ -10,12 +10,18 @@ use std::ops::Deref;
 use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
 
 // FIXME Don't have a double indirection (Arc + String)
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Eq)]
 pub struct Symbol(Arc<NameBuf>);
 
 impl AsRef<str> for Symbol {
     fn as_ref(&self) -> &str {
         self.0.as_str()
+    }
+}
+
+impl fmt::Debug for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:p}:{}", &*self.0, self.0)
     }
 }
 
