@@ -85,7 +85,14 @@ pub fn primitive<F>(name: &'static str, function: fn(&Thread) -> Status) -> Prim
     }
 }
 
+#[derive(PartialEq)]
 pub struct Generic<T>(pub Value, PhantomData<T>);
+
+impl<T> fmt::Debug for Generic<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl<T> From<Value> for Generic<T> {
     fn from(v: Value) -> Generic<T> {
@@ -131,7 +138,7 @@ pub mod generic {
     macro_rules! make_generics {
         ($($i: ident)+) => {
             $(
-            #[derive(Clone, Copy)]
+            #[derive(Clone, Copy, PartialEq)]
             pub enum $i { }
             impl VMType for $i {
                 type Type = $i;
@@ -361,8 +368,7 @@ impl<'vm> Getable<'vm> for f64 {
 impl VMType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> TcType {
-        let symbol = vm.get_env().find_type_info("std.types.Bool").unwrap().name.clone();
-        Type::data(Type::id(symbol), vec![])
+        (*vm.get_env().find_type_info("std.types.Bool").unwrap()).clone().into_type()
     }
 }
 impl<'vm> Pushable<'vm> for bool {
@@ -917,18 +923,26 @@ pub mod record {
     use base::types::{Type, TcType};
     use base::symbol::Symbol;
 
+    use Variants;
     use stack::StackFrame;
     use types::VMIndex;
-    use vm::{Thread, Status};
-    use super::{VMType, Pushable};
+    use vm::{Thread, Status, Value};
+    use super::{VMType, Getable, Pushable};
 
     pub struct Record<T> {
         pub fields: T,
     }
 
+    impl<FA, A, FB, B> Record<HList<(FA, A), HList<(FB, B), ()>>> {
+        pub fn split(self) -> (A, B) {
+            let Record { fields: HList((_, a), HList((_, b), ())) } = self;
+            (a, b)
+        }
+    }
+
     pub struct HList<H, T>(pub H, pub T);
 
-    pub trait Field {
+    pub trait Field: Default {
         fn name() -> &'static str;
     }
 
@@ -980,6 +994,29 @@ pub mod record {
         }
     }
 
+    pub trait GetableFieldList<'vm>: FieldList + Sized {
+        fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self>;
+    }
+
+    impl<'vm> GetableFieldList<'vm> for () {
+        fn from_value(_vm: &'vm Thread, values: &[Value]) -> Option<Self> {
+            debug_assert!(values.is_empty());
+            Some(())
+        }
+    }
+    impl<'vm, F, H, T> GetableFieldList<'vm> for HList<(F, H), T>
+        where F: Field,
+              H: Getable<'vm> + VMType,
+              T: GetableFieldList<'vm>
+{
+        fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self> {
+            let head = unsafe { H::from_value(vm, Variants::new(&values[0])) };
+            head.and_then(|head| {
+                T::from_value(vm, &values[1..]).map(move |tail| HList((F::default(), head), tail))
+            })
+        }
+    }
+
     impl<A: VMType, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>>
         where A::Type: Sized
 {
@@ -1009,6 +1046,21 @@ pub mod record {
             Status::Ok
         }
     }
+    impl<'vm, A, F, T> Getable<'vm> for Record<HList<(F, A), T>>
+        where A: Getable<'vm> + VMType,
+              F: Field,
+              T: GetableFieldList<'vm>
+{
+        fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
+            match *value.0 {
+                Value::Data(ref data) => {
+                    HList::<(F, A), T>::from_value(vm, &data.fields)
+                        .map(|fields| Record { fields: fields })
+                }
+                _ => None,
+            }
+        }
+    }
 }
 
 #[macro_export]
@@ -1016,6 +1068,7 @@ macro_rules! types {
     ($($field: ident),*) => {
         $(
         #[allow(non_camel_case_types)]
+        #[derive(Default)]
         pub struct $field;
         impl $crate::api::record::Field for $field {
             fn name() -> &'static str {

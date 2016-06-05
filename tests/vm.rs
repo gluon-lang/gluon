@@ -1,12 +1,14 @@
 extern crate env_logger;
 extern crate embed_lang;
 
-use embed_lang::vm::api::{FunctionRef, Getable};
+use embed_lang::vm::api::generic::A;
+use embed_lang::vm::api::{FunctionRef, Generic, Getable, VMType, OpaqueValue};
 use embed_lang::vm::vm::{RootedThread, Thread, Value};
 use embed_lang::vm::vm::Value::{Float, Int};
 use embed_lang::vm::stack::State;
+use embed_lang::vm::channel::Sender;
 use embed_lang::import::Import;
-use embed_lang::Compiler;
+use embed_lang::{Compiler, Error};
 
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Result<()> {
     Compiler::new()
@@ -14,14 +16,18 @@ pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Re
         .load_script(vm, filename, input)
 }
 
-pub fn run_expr_<'vm, T: Getable<'vm>>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T {
+pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
+    where T: Getable<'vm> + VMType
+{
     Compiler::new()
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s)
         .unwrap_or_else(|err| panic!("{}", err))
 }
 
-pub fn run_expr(vm: &Thread, s: &str) -> Value {
+pub fn run_expr<'vm, T>(vm: &'vm Thread, s: &str) -> T
+    where T: Getable<'vm> + VMType
+{
     run_expr_(vm, s, false)
 }
 
@@ -42,8 +48,28 @@ macro_rules! test_expr {
         fn $name() {
             let _ = ::env_logger::init();
             let mut vm = make_vm();
-            let value = run_expr_::<Value>(&mut vm, $expr, true);
+            let value = run_expr_(&mut vm, $expr, true);
             assert_eq!(value, $value);
+
+            // Help out the type inference by forcing that left and right are the same types
+            fn equiv<T>(_: &T, _: &T) { }
+            equiv(&value, &$value);
+        }
+    };
+    (io $name: ident, $expr: expr, $value: expr) => {
+        #[test]
+        fn $name() {
+            let _ = ::env_logger::init();
+            let mut vm = make_vm();
+            let value = Compiler::new()
+                .implicit_prelude(false)
+                .run_io_expr(&mut vm, "<top>", $expr)
+                .unwrap_or_else(|err| panic!("{}", err));
+            assert_eq!(value, $value);
+
+            // Help out the type inference by forcing that left and right are the same types
+            fn equiv<T>(_: &T, _: &T) { }
+            equiv(&value, &$value);
         }
     };
     ($name: ident, $expr: expr, $value: expr) => {
@@ -53,6 +79,10 @@ macro_rules! test_expr {
             let mut vm = make_vm();
             let value = run_expr(&mut vm, $expr);
             assert_eq!(value, $value);
+
+            // Help out the type inference by forcing that left and right are the same types
+            fn equiv<T>(_: &T, _: &T) { }
+            equiv(&value, &$value);
         }
     };
     ($name: ident, $expr: expr) => {
@@ -60,7 +90,7 @@ macro_rules! test_expr {
         fn $name() {
             let _ = ::env_logger::init();
             let mut vm = make_vm();
-            run_expr(&mut vm, $expr);
+            run_expr::<Generic<A>>(&mut vm, $expr);
         }
     }
 }
@@ -71,7 +101,7 @@ let lazy: () -> Int = \x -> 42 in
 let test: (() -> Int) -> Int = \f -> f () #Int+ 10
 in test lazy
 ",
-Int(52)
+52i32
 }
 
 test_expr!{ lambda,
@@ -80,25 +110,25 @@ let y = 100 in
 let f = \x -> y #Int+ x #Int+ 1
 in f(22)
 ",
-Int(123)
+123i32
 }
 
 test_expr!{ add_operator,
 r"
 let (+) = \x y -> x #Int+ y in 1 + 2 + 3
 ",
-Int(6)
+6i32
 }
 test_expr!{ divide_int,
 r" 120 #Int/ 4
 ",
-Int(30)
+30i32
 }
 
 test_expr!{ divide_float,
 r" 120.0 #Float/ 4.0
 ",
-Float(30.)
+30.0f64
 }
 
 #[test]
@@ -108,8 +138,8 @@ fn record() {
 { x = 0, y = 1.0, z = {} }
 ";
     let mut vm = make_vm();
-    let value = run_expr(&mut vm, text);
-    assert_eq!(value, vm.new_data(0, &mut [Int(0), Float(1.0), Int(0)]));
+    let value = run_expr::<Generic<A>>(&mut vm, text);
+    assert_eq!(value.0, vm.new_data(0, &mut [Int(0), Float(1.0), Int(0)]));
 }
 
 #[test]
@@ -121,8 +151,8 @@ let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
     let mut vm = make_vm();
-    let value = run_expr(&mut vm, text);
-    assert_eq!(value, vm.new_data(0, &mut [Int(1), Int(2)]));
+    let value = run_expr::<Generic<A>>(&mut vm, text);
+    assert_eq!(value.0, vm.new_data(0, &mut [Int(1), Int(2)]));
 }
 #[test]
 fn script() {
@@ -140,8 +170,8 @@ let sub = \l r -> { x = l.x #Int- r.x, y = l.y #Int- r.y } in
 let { T, add, sub } = Vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
-    let value = run_expr(&mut vm, script);
-    assert_eq!(value, vm.new_data(0, &mut [Int(11), Int(7)]));
+    let value = run_expr::<Generic<A>>(&mut vm, script);
+    assert_eq!(value.0, vm.new_data(0, &mut [Int(11), Int(7)]));
 }
 #[test]
 fn adt() {
@@ -151,8 +181,8 @@ type Option a = | None | Some a
 in Some 1
 ";
     let mut vm = make_vm();
-    let value = run_expr(&mut vm, text);
-    assert_eq!(value, vm.new_data(1, &mut [Int(1)]));
+    let value = run_expr::<Generic<A>>(&mut vm, text);
+    assert_eq!(value.0, vm.new_data(1, &mut [Int(1)]));
 }
 
 
@@ -163,7 +193,7 @@ let fib x = if x #Int< 3
         else fib (x #Int- 1) #Int+ fib (x #Int- 2)
 in fib 7
 ",
-Int(13)
+13i32
 }
 
 test_expr!{ mutually_recursive_function,
@@ -174,7 +204,7 @@ let f x = if x #Int< 0
 and g x = f (x #Int- 1)
 in g 3
 ",
-Int(-1)
+-1
 }
 
 test_expr!{ no_capture_self_function,
@@ -183,7 +213,7 @@ let x = 2 in
 let f y = x
 in f 4
 ",
-Int(2)
+2i32
 }
 
 #[test]
@@ -209,14 +239,14 @@ test_expr!{ primitive_char_eq,
 r"
 'a' #Char== 'a'
 ",
-Int(1)
+true
 }
 
 test_expr!{ primitive_char_lt,
 r"
 'a' #Char< 'a'
 ",
-Int(0)
+false
 }
 
 test_expr!{ partial_application,
@@ -225,7 +255,7 @@ let f x y = x #Int+ y in
 let g = f 10
 in g 2 #Int+ g 3
 ",
-Int(25)
+25i32
 }
 
 test_expr!{ partial_application2,
@@ -235,7 +265,7 @@ let g = f 10 in
 let h = g 20
 in h 2 #Int+ g 10 3
 ",
-Int(55)
+55i32
 }
 
 test_expr!{ to_many_args_application,
@@ -244,7 +274,7 @@ let f x = \y -> x #Int+ y in
 let g = f 20
 in f 10 2 #Int+ g 3
 ",
-Int(35)
+35i32
 }
 
 test_expr!{ to_many_args_partial_application_twice,
@@ -253,7 +283,7 @@ let f x = \y z -> x #Int+ y #Int+ z in
 let g = f 20 5
 in f 10 2 1 #Int+ g 2
 ",
-Int(40)
+40i32
 }
 
 test_expr!{ excess_arguments_larger_than_stack,
@@ -261,13 +291,14 @@ r#"
 let f a b c = c
 (\x -> f) 1 2 3 4
 "#,
-Int(4)
+4i32
 }
 
-test_expr!{ print_int,
+test_expr!{ io print_int,
 r"
 io.print_int 123
-"
+",
+()
 }
 
 test_expr!{ no_io_eval,
@@ -281,7 +312,7 @@ test_expr!{ char,
 r#"
 'a'
 "#,
-Int('a' as isize)
+'a'
 }
 
 test_expr!{ zero_argument_variant_is_int,
@@ -289,7 +320,7 @@ r#"
 type Test = | A Int | B
 B
 "#,
-Int(1)
+Generic::<A>::from(Int(1))
 }
 
 test_expr!{ match_on_zero_argument_variant,
@@ -299,21 +330,21 @@ match B with
 | A x -> x
 | B -> 0
 "#,
-Int(0)
+0i32
 }
 
 test_expr!{ marshalled_option_none_is_int,
 r#"
 string_prim.find "a" "b"
 "#,
-Int(0)
+Generic::<A>::from(Int(0))
 }
 
 test_expr!{ marshalled_ordering_is_int,
 r#"
 string_prim.compare "a" "b"
 "#,
-Int(0)
+Generic::<A>::from(Int(0))
 }
 
 test_expr!{ prelude match_on_bool,
@@ -322,7 +353,7 @@ match True with
 | False -> 10
 | True -> 11
 "#,
-Int(11)
+11i32
 }
 
 #[test]
@@ -343,7 +374,7 @@ r#"
 match { x = 1, y = "abc" } with
 | { x, y = z } -> x #Int+ string_prim.length z
 "#,
-Int(4)
+4i32
 }
 
 test_expr!{ let_record_pattern,
@@ -355,7 +386,7 @@ in
 let {x, y = z} = a
 in x + string_prim.length z
 "#,
-Int(13)
+13i32
 }
 
 test_expr!{ partial_record_pattern,
@@ -365,7 +396,7 @@ let x = { x = 1, y = 2.0 }
 in match x with
 | { y } -> y
 "#,
-Float(2.0)
+2.0f64
 }
 
 test_expr!{ record_let_adjust,
@@ -374,7 +405,7 @@ let x = \z -> let { x, y } = { x = 1, y = 2 } in z in
 let a = 3
 in a
 "#,
-Int(3)
+3i32
 }
 
 test_expr!{ unit_expr,
@@ -383,14 +414,14 @@ let x = ()
 and y = 1
 in y
 "#,
-Int(1)
+1i32
 }
 
 test_expr!{ let_not_in_tail_position,
 r#"
 1 #Int+ let x = 2 in x
 "#,
-Int(3)
+3i32
 }
 
 test_expr!{ field_access_not_in_tail_position,
@@ -398,12 +429,12 @@ r#"
 let id x = x
 in (id { x = 1 }).x
 "#,
-Int(1)
+1i32
 }
 
 test_expr!{ module_function,
 r#"let x = string_prim.length "test" in x"#,
-Int(4)
+4i32
 }
 
 test_expr!{ io_print,
@@ -417,7 +448,7 @@ let arr = [1,2,3]
 array.index arr 0 #Int== 1
     && array.length arr #Int== 3
     && array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
-Int(1)
+true
 }
 
 test_expr!{ prelude true_branch_not_affected_by_false_branc,
@@ -428,18 +459,19 @@ if True then
 else
     0
 "#,
-Int(1)
+1i32
 }
 
 test_expr!{ access_only_a_few_fields_from_large_record,
 r#"
-let record = { a = 0, b = 1, c = 2, d = 3, e = 4, f = 5, g = 6, h = 7, i = 8, j = 9, k = 10, l = 11, m = 12 }
+let record = { a = 0, b = 1, c = 2, d = 3, e = 4, f = 5, g = 6,
+               h = 7, i = 8, j = 9, k = 10, l = 11, m = 12 }
 let { a } = record
 let { i, m } = record
 
 a #Int+ i #Int+ m
 "#,
-Int(20)
+20i32
 }
 
 // Without a slide instruction after the alternatives code this code would try to call `x 1`
@@ -451,7 +483,7 @@ let id x = x
 id (match Test 0 with
     | Test x -> 1)
 "#,
-Int(1)
+1i32
 }
 
 #[test]
@@ -465,8 +497,8 @@ in
 { x = 1 + 2, y = 1.0 + 2.0 }
 "#;
     let mut vm = make_vm();
-    let result = run_expr(&mut vm, text);
-    assert_eq!(result, vm.new_data(0, &mut [Int(3), Float(3.0)]));
+    let result = run_expr::<Generic<A>>(&mut vm, text);
+    assert_eq!(result.0, vm.new_data(0, &mut [Int(3), Float(3.0)]));
 }
 
 test_expr!{ through_overloaded_alias,
@@ -482,7 +514,7 @@ in
 let { id } = test_String
 in id 1
 "#,
-Int(0)
+0i32
 }
 
 #[test]
@@ -490,14 +522,13 @@ fn run_expr_int() {
     let _ = ::env_logger::init();
     let text = r#"io.run_expr "123" "#;
     let mut vm = make_vm();
-    let result = run_expr(&mut vm, text);
-    assert_eq!(result,
-               Value::String(vm.alloc(&vm.current_frame().stack, "123")));
+    let result = Compiler::new().run_io_expr::<String>(&mut vm, "<top>", text).unwrap();
+    assert_eq!(result, String::from("123"));
 }
 
-test_expr!{ run_expr_io,
+test_expr!{ io run_expr_io,
 r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
-Int(100)
+100i32
 }
 
 #[test]
@@ -512,9 +543,9 @@ in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
     let value = Compiler::new()
-                    .run_expr::<Value>(&mut vm, "<top>", text)
+                    .run_expr::<bool>(&mut vm, "<top>", text)
                     .unwrap_or_else(|err| panic!("{}", err));
-    assert_eq!(value, Int(0));
+    assert_eq!(value, false);
 }
 
 #[test]
@@ -523,7 +554,7 @@ fn test_implicit_prelude() {
     let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
     let mut vm = make_vm();
     Compiler::new()
-        .run_expr(&mut vm, "<top>", text)
+        .run_expr::<Generic<A>>(&mut vm, "<top>", text)
         .unwrap_or_else(|err| panic!("{}", err));
 }
 
@@ -544,7 +575,7 @@ fn access_operator_without_parentheses() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     Compiler::new()
-        .run_expr::<Value>(&vm, "example", r#" import "std/prelude.hs" "#)
+        .run_expr::<Generic<A>>(&vm, "example", r#" import "std/prelude.hs" "#)
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> = vm.get_global("std.prelude.num_Int.\
                                                                              +");
@@ -555,7 +586,7 @@ fn access_operator_without_parentheses() {
 fn test_prelude() {
     let _ = ::env_logger::init();
     let vm = make_vm();
-    run_expr(&vm, r#" import "std/prelude.hs" "#);
+    run_expr::<Generic<A>>(&vm, r#" import "std/prelude.hs" "#);
 }
 
 #[test]
@@ -563,7 +594,7 @@ fn access_types_by_path() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr(&vm, r#" import "std/prelude.hs" "#);
+    run_expr::<Generic<A>>(&vm, r#" import "std/prelude.hs" "#);
 
     assert!(vm.find_type_info("std.prelude.Option").is_ok());
     assert!(vm.find_type_info("std.prelude.Result").is_ok());
@@ -572,6 +603,25 @@ fn access_types_by_path() {
     load_script(&vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
     let result = vm.find_type_info("test.inner.T");
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn opaque_value_type_mismatch() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+    let expr = r#"
+let { sender, receiver } = channel 0
+send sender 1
+sender
+"#;
+    let result = Compiler::new()
+                     .implicit_prelude(false)
+                     .run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
+    match result {
+        Err(Error::Typecheck(..)) => (),
+        Err(err) => panic!("Unexpected error `{}`", err),
+        Ok(_) => panic!("Expected an error"),
+    }
 }
 
 #[test]

@@ -11,7 +11,7 @@ let assert_any_err =
     assert_eq (prelude.show_Result string.show prelude.show_Unit)
               (prelude.eq_Result { (==) = \x y -> True } prelude.eq_Unit)
 
-let { sender, receiver } = channel ()
+let { sender, receiver } = channel 0
 
 let thread = spawn (\_ ->
         send sender 0

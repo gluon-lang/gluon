@@ -25,7 +25,8 @@ use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
 use base::metadata::Metadata;
 
 use vm::Variants;
-use vm::api::Getable;
+use vm::api::generic::A;
+use vm::api::{Getable, VMType, Generic, IO};
 use vm::vm::{ClosureDataDef, Error as VMError};
 use vm::compiler::CompiledFunction;
 
@@ -107,6 +108,15 @@ impl Compiler {
                           file: &str,
                           expr_str: &str)
                           -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
+        self.typecheck_expr_expected(vm, file, expr_str, None)
+    }
+
+    fn typecheck_expr_expected(&mut self,
+                               vm: &Thread,
+                               file: &str,
+                               expr_str: &str,
+                               expected_type: Option<&TcType>)
+                               -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
         use check::typecheck::Typecheck;
         use base::error;
         let mut expr = try!(self.parse_expr(file, expr_str));
@@ -116,7 +126,7 @@ impl Compiler {
         try!(vm.get_macros().run(vm, &mut expr));
         let env = vm.get_env();
         let mut tc = Typecheck::new(file.into(), &mut self.symbols, &*env);
-        let typ = try!(tc.typecheck_expr(&mut expr)
+        let typ = try!(tc.typecheck_expr_expected(&mut expr, expected_type)
                          .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
         Ok((expr, typ))
     }
@@ -186,8 +196,13 @@ impl Compiler {
         self.load_script(vm, &name, &buffer)
     }
 
-    fn run_expr_<'vm>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<RootedValue<&'vm Thread>> {
-        let (expr, typ) = try!(self.typecheck_expr(vm, name, expr_str));
+    fn run_expr_<'vm>(&mut self,
+                      vm: &'vm Thread,
+                      name: &str,
+                      expr_str: &str,
+                      expected_type: Option<&TcType>)
+                      -> Result<RootedValue<&'vm Thread>> {
+        let (expr, typ) = try!(self.typecheck_expr_expected(vm, name, expr_str, expected_type));
         let mut function = self.compile_script(vm, name, &expr);
         function.id = Symbol::new(name);
         let function = vm.new_function(function);
@@ -202,9 +217,20 @@ impl Compiler {
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
     pub fn run_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<T>
-        where T: Getable<'vm>
+        where T: Getable<'vm> + VMType
     {
-        let value = try!(self.run_expr_(vm, name, expr_str));
+        let value = try!(self.run_expr_(vm, name, expr_str, Some(&T::make_type(vm))));
+        unsafe {
+            T::from_value(vm, Variants::new(&value))
+                .ok_or_else(|| Error::from(VMError::Message("Wrong type".to_string())))
+        }
+    }
+
+    pub fn run_io_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<T>
+        where T: Getable<'vm> + VMType,
+              T::Type: Sized
+    {
+        let value = try!(self.run_expr_(vm, name, expr_str, Some(&IO::<T>::make_type(vm))));
         unsafe {
             T::from_value(vm, Variants::new(&value))
                 .ok_or_else(|| Error::from(VMError::Message("Wrong type".to_string())))
@@ -272,7 +298,7 @@ pub fn new_vm() -> RootedThread {
     vm.get_macros().insert(String::from("import"), ::import::Import::new());
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr::<()>(&vm, "", r#" import "std/types.hs" "#)
+        .run_expr::<Generic<A>>(&vm, "", r#" import "std/types.hs" "#)
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::vm::channel::load(&vm).expect("Loaded channel library");

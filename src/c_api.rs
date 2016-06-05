@@ -1,7 +1,8 @@
 use std::str;
 use std::slice;
 
-use vm::api::{Getable, Pushable};
+use vm::api::generic::A;
+use vm::api::{Getable, Pushable, Generic};
 use vm::types::VMIndex;
 use vm::vm::{RootedThread, Thread, Value, VMInt};
 
@@ -38,7 +39,7 @@ pub unsafe extern "C" fn run_expr(vm: &Thread,
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result: Result<Value, _> = Compiler::new().run_expr(&vm, module, expr);
+    let result: Result<Generic<A>, _> = Compiler::new().run_expr(&vm, module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,

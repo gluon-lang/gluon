@@ -6,7 +6,7 @@ use std::fs::File;
 use vm::types::*;
 use vm::stack::{State, StackFrame};
 use vm::vm::{Thread, Result, Status, Value, VMInt, RootStr};
-use vm::api::{VMType, IO, WithVM, primitive};
+use vm::api::{Generic, VMType, IO, WithVM, primitive};
 use vm::api::generic::{A, B};
 
 use super::Compiler;
@@ -105,10 +105,10 @@ pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
     drop(stack);
-    let run_result: StdResult<Value, _> = Compiler::new().run_expr(vm, "<top>", &expr);
+    let run_result: StdResult<Generic<A>, _> = Compiler::new().run_expr(vm, "<top>", &expr);
     stack = vm.current_frame();
     match run_result {
-        Ok(value) => IO::Value(format!("{:?}", value)),
+        Ok(value) => IO::Value(format!("{:?}", value.0)),
         Err(err) => {
             let trace = backtrace(frame_level, &stack);
             let fmt = format!("{}\n{}", err, trace);

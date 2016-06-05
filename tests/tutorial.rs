@@ -1,8 +1,9 @@
 extern crate env_logger;
 extern crate embed_lang;
 
-use embed_lang::vm::api::FunctionRef;
-use embed_lang::vm::vm::{RootedThread, Value};
+use embed_lang::vm::api::generic::A;
+use embed_lang::vm::api::{FunctionRef, Generic};
+use embed_lang::vm::vm::RootedThread;
 use embed_lang::import::Import;
 use embed_lang::Compiler;
 
@@ -21,7 +22,7 @@ fn access_field_through_alias() {
     let _ = ::env_logger::init();
     let vm = new_vm();
     Compiler::new()
-        .run_expr::<Value>(&vm, "example", " import \"std/prelude.hs\" ")
+        .run_expr::<Generic<A>>(&vm, "example", " import \"std/prelude.hs\" ")
         .unwrap();
     let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
         .unwrap();

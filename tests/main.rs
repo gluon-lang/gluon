@@ -4,7 +4,8 @@ extern crate env_logger;
 extern crate embed_lang;
 extern crate vm;
 
-use embed_lang::vm::vm::Value;
+use embed_lang::vm::api::generic::A;
+use embed_lang::vm::api::Generic;
 use embed_lang::{new_vm, Compiler};
 
 use std::io::Read;
@@ -62,7 +63,7 @@ fn main_() -> Result<(), Box<Error>> {
         try!(file.read_to_string(&mut text));
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        try!(compiler.run_expr(&vm, name, &text));
+        try!(compiler.run_expr::<Generic<A>>(&vm, name, &text));
     }
     for filename in try!(test_files("tests/fail")) {
         let mut file = try!(File::open(&filename));
@@ -70,7 +71,7 @@ fn main_() -> Result<(), Box<Error>> {
         try!(file.read_to_string(&mut text));
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        match compiler.run_expr::<Value>(&vm, name, &text) {
+        match compiler.run_expr::<Generic<A>>(&vm, name, &text) {
             Ok(x) => {
                 return Err(StringError(format!("Expected test '{}' to fail got {:?}",
                                                filename.to_str().unwrap(),

@@ -1,9 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
-use base::symbol::Symbol;
 use base::types::{TcType, Type};
-use base::types;
 use api::record::{Record, HList};
 use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
@@ -73,9 +71,13 @@ impl<T: VMType> VMType for Receiver<T>
 
 field_decl!{ sender, receiver }
 
-fn channel(WithVM { vm, .. }: WithVM<()>)
-           -> Record<HList<(_field::sender, Userdata<Sender<Generic<A>>>),
-                           HList<(_field::receiver, Userdata<Receiver<Generic<A>>>), ()>>> {
+
+pub type ChannelRecord<S, R> = Record<HList<(_field::sender, S), HList<(_field::receiver, R), ()>>>;
+
+/// FIXME The dummy `a` argument should not be needed to ensure that the channel can only be used
+/// with a single type
+fn channel(WithVM { vm, .. }: WithVM<Generic<A>>)
+           -> ChannelRecord<Userdata<Sender<Generic<A>>>, Userdata<Receiver<Generic<A>>>> {
     let sender = Sender {
         thread: unsafe { GcPtr::from_raw(vm) },
         queue: Arc::new(Mutex::new(VecDeque::new())),
@@ -154,12 +156,8 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
 }
 
 pub fn load(vm: &Thread) -> VMResult<()> {
-    let args = vec![types::Generic {
-                        id: Symbol::new("a"),
-                        kind: types::Kind::star(),
-                    }];
-    let _ = vm.register_type::<Sender<A>>("Sender", args.clone());
-    let _ = vm.register_type::<Receiver<A>>("Receiver", args);
+    let _ = vm.register_type::<Sender<A>>("Sender", &["a"]);
+    let _ = vm.register_type::<Receiver<A>>("Receiver", &["a"]);
     try!(vm.define_global("channel", f1(channel)));
     try!(vm.define_global("recv", f1(recv)));
     try!(vm.define_global("send", f2(send)));

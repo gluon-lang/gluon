@@ -7,7 +7,7 @@ let assert =
     assert_eq (prelude.show_Result prelude.show_Unit prelude.show_Int )
               (prelude.eq_Result prelude.eq_Unit prelude.eq_Int)
 
-let { sender, receiver } = channel ()
+let { sender, receiver } = channel 0
 
 send sender 0
 send sender 1

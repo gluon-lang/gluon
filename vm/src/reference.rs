@@ -2,8 +2,6 @@ use std::any::Any;
 use std::sync::Mutex;
 use std::marker::PhantomData;
 
-use base::symbol::Symbol;
-use base::types;
 use base::types::{Type, TcType};
 use gc::{Gc, GcPtr, Traverseable};
 use stack::StackFrame;
@@ -76,11 +74,7 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
 }
 
 pub fn load(vm: &Thread) -> ::vm::Result<()> {
-    let args = vec![types::Generic {
-                        id: Symbol::new("a"),
-                        kind: types::Kind::star(),
-                    }];
-    let _ = vm.register_type::<Reference<A>>("Ref", args.clone());
+    let _ = vm.register_type::<Reference<A>>("Ref", &["a"]);
     try!(vm.define_global("<-", f2(set)));
     try!(vm.define_global("load", f1(get)));
     try!(vm.define_global("ref", f1(make_ref)));

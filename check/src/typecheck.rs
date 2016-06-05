@@ -368,10 +368,22 @@ impl<'a> Typecheck<'a> {
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
     pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, Error> {
+        self.typecheck_expr_expected(expr, None)
+    }
+
+    pub fn typecheck_expr_expected(&mut self,
+                                   expr: &mut ast::LExpr<TcIdent>,
+                                   expected_type: Option<&TcType>)
+                                   -> Result<TcType, Error> {
         self.subs.clear();
         self.environment.stack.clear();
 
         let mut typ = self.typecheck(expr);
+        if let Some(expected) = expected_type {
+            let span = expr.span(&ast::TcIdentEnvWrapper(&self.symbols));
+            let expected = self.instantiate(expected);
+            typ = self.unify_span(span, &expected, typ)
+        }
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
         } else {
@@ -379,7 +391,10 @@ impl<'a> Typecheck<'a> {
             typ = types::walk_move_type(typ, &mut unroll_app);
             self.generalize_variables(0, expr);
             match ::rename::rename(&mut self.symbols, &self.environment, expr) {
-                Ok(()) => Ok(typ),
+                Ok(()) => {
+                    debug!("Typecheck result: {}", typ);
+                    Ok(typ)
+                }
                 Err(errors) => {
                     for ast::Spanned { span, value } in errors.errors {
                         self.errors.error(ast::Spanned {
@@ -1177,7 +1192,9 @@ impl<'a> Typecheck<'a> {
                      -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
         AliasInstantiator::new(&self.inst, &self.environment)
             .type_of_alias(id, arguments)
-            .map_err(|()| UnifyError::Other(::unify_type::TypeError::UndefinedType(id.name.clone())))
+            .map_err(|()| {
+                UnifyError::Other(::unify_type::TypeError::UndefinedType(id.name.clone()))
+            })
     }
 
     fn instantiate(&mut self, typ: &TcType) -> TcType {
@@ -1241,7 +1258,9 @@ pub fn extract_generics(args: &[TcType]) -> Vec<Generic<Symbol>> {
         .collect()
 }
 
-fn get_alias_app<'a>(env: &'a TypeEnv, typ: &'a TcType) -> Option<(&'a AliasData<Symbol, TcType>, &'a [TcType])> {
+fn get_alias_app<'a>(env: &'a TypeEnv,
+                     typ: &'a TcType)
+                     -> Option<(&'a AliasData<Symbol, TcType>, &'a [TcType])> {
     match **typ {
         Type::Alias(ref alias) => Some((alias, &[][..])),
         Type::Data(ref alias, ref args) => {
@@ -1252,9 +1271,7 @@ fn get_alias_app<'a>(env: &'a TypeEnv, typ: &'a TcType) -> Option<(&'a AliasData
         }
         _ => {
             typ.as_alias()
-               .and_then(|(id, args)| {
-                   env.find_type_info(id).map(|alias| (&**alias, &args[..]))
-               })
+               .and_then(|(id, args)| env.find_type_info(id).map(|alias| (&**alias, &args[..])))
         }
     }
 }

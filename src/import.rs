@@ -97,7 +97,8 @@ impl Macro<Thread> for Import {
                         Some(tup) => tup.1,
                         None => {
                             let file = self.paths
-                                           .read().unwrap()
+                                           .read()
+                                           .unwrap()
                                            .iter()
                                            .filter_map(|p| {
                                                let mut base = p.clone();

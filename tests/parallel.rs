@@ -2,7 +2,7 @@ extern crate embed_lang;
 
 use std::thread::spawn;
 
-use embed_lang::vm::channel::{Sender, Receiver};
+use embed_lang::vm::channel::{ChannelRecord, Sender, Receiver};
 use embed_lang::vm::api::OpaqueValue;
 use embed_lang::vm::api::FunctionRef;
 use embed_lang::vm::vm::RootedThread;
@@ -18,9 +18,9 @@ fn parallel() {
 fn parallel_() -> Result<(), Error> {
     let vm = new_vm();
     let mut compiler = Compiler::new();
-    let value = try!(compiler.run_expr(&vm, "<top>", " channel () "));
-    let (sender, receiver): (OpaqueValue<RootedThread, Sender<i32>>,
-                             OpaqueValue<RootedThread, Receiver<i32>>) = value;
+    let value = try!(compiler.run_expr(&vm, "<top>", " channel 0 "));
+    let value: ChannelRecord<OpaqueValue<RootedThread, Sender<i32>>, OpaqueValue<RootedThread, Receiver<i32>>> = value;
+    let (sender, receiver) = value.split();
 
     let child = vm.new_thread();
     let handle1 = spawn(move || -> Result<(), Error> {

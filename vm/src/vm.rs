@@ -706,13 +706,9 @@ impl GlobalVMState {
             ids.insert(TypeId::of::<::std::string::String>(), Type::string());
             ids.insert(TypeId::of::<char>(), Type::char());
         }
-        let args = vec![types::Generic {
-                            id: Symbol::new("a"),
-                            kind: types::Kind::star(),
-                        }];
-        let _ = self.register_type::<IO<Generic<A>>>("IO", args.clone());
-        let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", args);
-        let _ = self.register_type::<RootedThread>("Thread", vec![]);
+        let _ = self.register_type::<IO<Generic<A>>>("IO", &["a"]);
+        let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"]);
+        let _ = self.register_type::<RootedThread>("Thread", &[]);
         Ok(())
     }
 
@@ -771,17 +767,20 @@ impl GlobalVMState {
     }
 
     /// Registers a new type called `name`
-    pub fn register_type<T: ?Sized + Any>(&self,
-                                          name: &str,
-                                          args: Vec<types::Generic<Symbol>>)
-                                          -> Result<TcType> {
+    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<TcType> {
         let mut env = self.env.write().unwrap();
         let type_infos = &mut env.type_infos;
         if type_infos.id_to_type.contains_key(name) {
             Err(Error::Message(format!("Type '{}' has already been registered", name)))
         } else {
             let id = TypeId::of::<T>();
-            let arg_types = args.iter().map(|g| Type::generic(g.clone())).collect();
+            let arg_types: Vec<_> = args.iter().map(|g| self.get_generic(g)).collect();
+            let args = arg_types.iter()
+                                .map(|g| match **g {
+                                    Type::Generic(ref g) => g.clone(),
+                                    _ => unreachable!(),
+                                })
+                                .collect();
             let n = Symbol::new(name);
             let typ: TcType = Type::data(Type::id(n.clone()), arg_types);
             self.typeids
@@ -819,9 +818,6 @@ quick_error! {
         Yield {
         }
         Dead {
-        }
-        TypeMismatch(expected: TcType, actual: TcType) {
-            display("Could not extract value as a `{}` because a `{}` was found", expected, actual)
         }
         Message(err: StdString) {
             display("{}", err)

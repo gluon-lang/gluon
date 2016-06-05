@@ -2,7 +2,8 @@ extern crate env_logger;
 extern crate embed_lang;
 
 use embed_lang::vm::api;
-use embed_lang::vm::api::{VMType, FunctionRef};
+use embed_lang::vm::api::generic::A;
+use embed_lang::vm::api::{Generic, VMType, FunctionRef};
 use embed_lang::vm::gc::Traverseable;
 
 use embed_lang::vm::vm::{RootedThread, Thread, VMInt, Value, Root, RootStr};
@@ -16,7 +17,9 @@ fn load_script(vm: &Thread, filename: &str, input: &str) -> ::embed_lang::Result
 
 fn run_expr(vm: &Thread, s: &str) -> Value {
     Compiler::new()
-        .run_expr(vm, "<top>", s).unwrap_or_else(|err| panic!("{}", err))
+        .run_expr::<Generic<A>>(vm, "<top>", s)
+        .unwrap_or_else(|err| panic!("{}", err))
+        .0
 }
 
 fn make_vm() -> RootedThread {
@@ -69,7 +72,7 @@ fn root_data() {
     fn test(r: Root<Test>, i: VMInt) -> VMInt {
         r.0 + i
     }
-    vm.register_type::<Test>("Test", vec![])
+    vm.register_type::<Test>("Test", &[])
       .unwrap_or_else(|_| panic!("Could not add type"));
     vm.define_global("test", {
           let test: fn(_, _) -> _ = test;

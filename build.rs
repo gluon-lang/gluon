@@ -8,13 +8,16 @@ const TEMPLATE: &'static str = r##"
 ```rust,skeptic-template
 extern crate env_logger;
 extern crate embed_lang;
-use embed_lang::vm::vm::Value;
+
+use embed_lang::vm::api::generic::A;
+use embed_lang::vm::api::Generic;
 use embed_lang::{{new_vm, Compiler}};
+
 fn main() {{
     let _ = ::env_logger::init();
     let text = r#\"{}\"#;
     let vm = new_vm();
-    match Compiler::new().run_expr::<Value>(&vm, \"example\", text) {{
+    match Compiler::new().run_expr::<Generic<A>>(&vm, \"example\", text) {{
         Ok(_value) => (),
         Err(err) => {{
             panic!(\"{{}}\", err);
