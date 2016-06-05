@@ -333,17 +333,18 @@ Once in possession of a [RootedThread][] you can compile and execute code using 
 ```rust,ignore
 let vm = new_vm();
 let result = Compiler::new()
-    .run_expr(&vm, "example", "1 + 2")
+    .run_expr::<i32>(&vm, "example", "1 + 2")
     .ok();
-assert_eq!(result, Some(3i32));
+assert_eq!(result, Some(3));
 ```
 
 Often it is either inconvenient or inefficient to compile and run code directly from source code. To write the above example in a more efficient way we could instead load the `(+)` function and call it directly.
 
 ```rust,ignore
 let vm = new_vm();
+// Ensure that the prelude module is loaded before trying to access something from it
 Compiler::new()
-    .run_expr::<Value>(&vm, "example", " import \"std/prelude.hs\" ")
+    .run_expr::<Generic<A>>(&vm, "example", " import \"std/prelude.hs\" ")
     .unwrap();
 let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
     .unwrap();
