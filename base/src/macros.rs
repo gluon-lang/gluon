@@ -8,7 +8,7 @@ use ast::MutVisitor;
 use types::TcIdent;
 use error::Errors;
 
-pub type Error = Box<StdError>;
+pub type Error = Box<StdError + Send + Sync>;
 
 /// A trait which abstracts over macros.
 ///
