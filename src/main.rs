@@ -29,7 +29,7 @@ mod repl;
 
 #[cfg(not(test))]
 fn run_files<'s, I>(files: I) -> Result<(), Box<StdError + Send + Sync>>
-where I: Iterator<Item = &'s str>
+    where I: Iterator<Item = &'s str>
 {
     let vm = new_vm();
     let mut compiler = Compiler::new();
@@ -46,8 +46,7 @@ fn init_env_logger() {
 }
 
 #[cfg(all(not(test), not(feature = "env_logger")))]
-fn init_env_logger() {
-}
+fn init_env_logger() {}
 
 #[cfg(not(test))]
 fn main() {
@@ -59,7 +58,9 @@ fn main() {
 
             let matches = App::new("gluon")
                               .about("Executes gluon programs")
-                              .arg(Arg::with_name("INPUT").multiple(true))
+                              .arg(Arg::with_name("INPUT")
+                                       .multiple(true)
+                                       .help("Executes each file as a gluon program"))
                               .arg(Arg::with_name("REPL")
                                        .short("i")
                                        .long("interactive")

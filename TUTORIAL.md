@@ -354,7 +354,7 @@ assert_eq!(result, Ok(3));
 
 ### Calling Rust functions from gluon
 
-gluon also allows native functions to be called from embed_lang. To do this we first need to define the function so it is available when running embed_lang code.
+gluon also allows native functions to be called from gluon. To do this we first need to define the function so it is available when running embed_lang code.
 
 ```rust,ignore
 fn factorial(x: i32) -> i32 {
@@ -379,12 +379,12 @@ let result = Compiler::new()
 assert_eq!(result, "Hello world");
 ```
 
-[Rustdoc]:https://marwes.github.io/gluon/embed_lang/index.html
-[new_vm]:https://marwes.github.io/gluon/embed_lang/fn.new_vm.html
-[RootedThread]:https://marwes.github.io/gluon/embed_lang/struct.RootedThread.html
-[Thread]:https://marwes.github.io/gluon/embed_lang/struct.Thread.html
-[run_expr]:https://marwes.github.io/gluon/embed_lang/struct.Compiler.html#method.run_expr
-[Compiler struct]:https://marwes.github.io/gluon/embed_lang/struct.Compiler.html
+[Rustdoc]:https://marwes.github.io/gluon/gluon/index.html
+[new_vm]:https://marwes.github.io/gluon/gluon/fn.new_vm.html
+[RootedThread]:https://marwes.github.io/gluon/gluon/struct.RootedThread.html
+[Thread]:https://marwes.github.io/gluon/gluon/struct.Thread.html
+[run_expr]:https://marwes.github.io/gluon/gluon/struct.Compiler.html#method.run_expr
+[Compiler struct]:https://marwes.github.io/gluon/gluon/struct.Compiler.html
 [define_global]:https://marwes.github.io/gluon/vm/thread/struct.Thread.html#method.define_global
 [primitives]:https://github.com/Marwes/gluon/blob/master/vm/src/primitives.rs
 [string]:http://doc.rust-lang.org/std/primitive.str.html

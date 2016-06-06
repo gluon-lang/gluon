@@ -4,6 +4,10 @@ use std::io::prelude::*;
 use std::fs::File;
 use std::path::Path;
 
+/// skeptic templates look for `rust` after the opening code fences so writing
+/// ```f#,rust
+/// ```
+/// gives f# syntax highlight while still running the tests through the template
 const TEMPLATE: &'static str = r##"
 ```rust,skeptic-template
 extern crate env_logger;

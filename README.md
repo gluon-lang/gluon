@@ -1,12 +1,46 @@
-# gluon (working title)
-[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/embed_lang)
+# gluon
+[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon)
 
-This library is a complete compiler and virtual machine for an embeddable langauge implemented in pure [Rust][Rust]. As both syntax and semantics are not fully nailed down yet it is not recommended for serious use.
+Gluon is a small, statically-typed, functional programming language designed for application embedding.
+
+## Features
+
+* **Statically typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
+
+* **Type inference** - Type inference ensures that types rarely have to be written explicitly giving the all the benefits of static typing with none of the typing.
+
+* **Simple embedding** - Marshalling values to and from gluon requires next to no boiler plate allowing functions defined in [Rust][] to be [directly passed to gluon][easy_embed].
+
+* **Separate heaps** - Gluon is a garbage collected language but uses a separate heap for each executing gluon thread. This keeps each heap small, reducing the overhead of the garbage collector.
+
+* **Thread safe** - Gluon is written in Rust which guarantees thread safety and gluon keeps the same guarantees allowing multiple gluon programs to run in parallel ([example][parallel])\*
+
+[easy_embed]:https://github.com/Marwes/embed_lang/blob/master/TUTORIAL.md#embedding-api
+[parallel]:https://github.com/Marwes/gluon/blob/master/tests/parallel.rs
+
+\* Parallel execution of gluon programs is a recent addition and may still have issues such as deadlocks.
 
 ## Usage
 
+### Installation
+
+#### Rust
+Gluon is available at [crates.io](https://crates.io/crates/gluon) and can easily be included as a library in Rust projects.
+
+```toml
+[dependencies]
+gluon = "0.1.0"
+```
+
+#### Other langauges
+Currently the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust api.
+
+[C api]: https://github.com/Marwes/gluon/blob/master/src/c_api.rs
+
 ### REPL
-There is a rudimentary REPL which can be used by passing the `-i` flag to the built repl executable which can be run through `cargo run -- -i`). The REPL is capable of:
+Gluon has a small executable which can be used to run gluon programs directly or to run a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run through `cargo run -- -i`).
+
+REPL features:
 * Evaluating expressions (expressions of type IO will be evaluated in the IO context).
 * Printing help about available commands with `:h`
 * Loading files with `:l path_to_file` the result of evaluating the expression in the loaded file is stored in a variable named after the filename without an extension.
@@ -24,7 +58,7 @@ There is a rudimentary REPL which can be used by passing the `-i` flag to the bu
 
 [Tutorial (WIP)](https://github.com/Marwes/gluon/blob/master/TUTORIAL.md)
 
-[Rustdoc](https://marwes.github.io/gluon/embed_lang/index.html)
+[Rustdoc](https://marwes.github.io/gluon/gluon/index.html)
 
 ## Examples
 
@@ -105,7 +139,7 @@ If you are interested in contributing to this project there are a few issues ope
 
 [beginner]:https://github.com/Marwes/gluon/labels/Beginner
 
-## Goals/Features
+## Goals
 These goals may change or be refined over time as I experiment with what is possible to with the language.
 
 * **Embeddable** - Similiar to [Lua][Lua] it is meant to be able to be included in another program which can use the virtual machine to extend its own functionality.
