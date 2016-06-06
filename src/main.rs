@@ -9,12 +9,12 @@ extern crate quick_error;
 extern crate lazy_static;
 extern crate linenoise;
 
-extern crate base;
+extern crate gluon_base as base;
 extern crate gluon;
-extern crate check;
-extern crate parser;
+extern crate gluon_check as check;
+extern crate gluon_parser as parser;
 #[macro_use]
-extern crate vm;
+extern crate gluon_vm as vm;
 
 
 #[cfg(not(test))]

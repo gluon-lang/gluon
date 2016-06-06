@@ -1,8 +1,14 @@
 [package]
-name = "base"
+name = "gluon_base"
 version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
 
+license = "MIT"
+
+description = "Basic type definitions and functions for the gluon programming language"
+
+repository = "https://github.com/Marwes/gluon"
+documentation = "https://marwes.github.io/gluon/gluon/index.html"
 
 [dependencies]
 log = "0.3.6"

@@ -9,7 +9,7 @@ extern crate quick_error;
 #[macro_use]
 extern crate mopa;
 
-extern crate base;
+extern crate gluon_base as base;
 
 #[macro_use]
 pub mod api;

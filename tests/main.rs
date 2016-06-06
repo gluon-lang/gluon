@@ -2,7 +2,6 @@
 extern crate env_logger;
 
 extern crate gluon;
-extern crate vm;
 
 use gluon::vm::api::generic::A;
 use gluon::vm::api::Generic;

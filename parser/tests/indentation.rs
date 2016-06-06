@@ -2,8 +2,8 @@ extern crate env_logger;
 #[macro_use]
 extern crate log;
 
-extern crate base;
-extern crate parser;
+extern crate gluon_base as base;
+extern crate gluon_parser as parser;
 extern crate combine;
 
 use combine::ParseError;

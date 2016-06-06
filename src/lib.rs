@@ -4,10 +4,10 @@ extern crate log;
 extern crate quick_error;
 
 #[macro_use]
-pub extern crate vm;
-pub extern crate base;
-pub extern crate parser;
-pub extern crate check;
+pub extern crate gluon_vm as vm;
+pub extern crate gluon_base as base;
+pub extern crate gluon_parser as parser;
+pub extern crate gluon_check as check;
 
 mod io;
 pub mod import;

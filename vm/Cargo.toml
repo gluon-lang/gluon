@@ -1,8 +1,14 @@
 [package]
-name = "vm"
+name = "gluon_vm"
 version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
 
+license = "MIT"
+
+description = "The virtual machine for executing the gluon programming language"
+
+repository = "https://github.com/Marwes/gluon"
+documentation = "https://marwes.github.io/gluon/gluon/index.html"
 
 [dependencies]
 log = "0.3.6"
@@ -11,7 +17,7 @@ quick-error = "1.0.0"
 [dependencies.mopa]
 git = "https://github.com/Marwes/mopa.git"
 
-[dependencies.base]
+[dependencies.gluon_base]
 path = "../base"
 
 [dependencies.env_logger]

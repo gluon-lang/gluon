@@ -10,7 +10,7 @@ extern crate log;
 extern crate env_logger;
 extern crate union_find;
 
-extern crate base;
+extern crate gluon_base as base;
 
 pub mod typecheck;
 pub mod unify_type;

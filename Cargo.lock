@@ -2,18 +2,18 @@
 name = "gluon"
 version = "0.1.0"
 dependencies = [
- "base 0.1.0",
- "check 0.1.0",
  "clap 2.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "compiletest_rs 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gluon_base 0.1.0",
+ "gluon_check 0.1.0",
+ "gluon_parser 0.1.0",
+ "gluon_vm 0.1.0",
  "lazy_static 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "linenoise-rust 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser 0.1.0",
  "quick-error 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "skeptic 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "vm 0.1.0",
 ]
 
 [[package]]
@@ -30,28 +30,9 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "base"
-version = "0.1.0"
-dependencies = [
- "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "mopa 0.2.0 (git+https://github.com/Marwes/mopa.git)",
-]
-
-[[package]]
 name = "bitflags"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "check"
-version = "0.1.0"
-dependencies = [
- "base 0.1.0",
- "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "parser 0.1.0",
- "union-find 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "clap"
@@ -107,6 +88,47 @@ version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "gluon_base"
+version = "0.1.0"
+dependencies = [
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mopa 0.2.0 (git+https://github.com/Marwes/mopa.git)",
+]
+
+[[package]]
+name = "gluon_check"
+version = "0.1.0"
+dependencies = [
+ "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gluon_base 0.1.0",
+ "gluon_parser 0.1.0",
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "union-find 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "gluon_parser"
+version = "0.1.0"
+dependencies = [
+ "combine 1.3.0 (git+https://github.com/Marwes/combine.git?branch=2.0.0)",
+ "combine-language 0.9.0 (git+https://github.com/Marwes/combine-language.git?branch=2.0.0)",
+ "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gluon_base 0.1.0",
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "gluon_vm"
+version = "0.1.0"
+dependencies = [
+ "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gluon_base 0.1.0",
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mopa 0.2.0 (git+https://github.com/Marwes/mopa.git)",
+ "quick-error 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "kernel32-sys"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -151,17 +173,6 @@ dependencies = [
 name = "mopa"
 version = "0.2.0"
 source = "git+https://github.com/Marwes/mopa.git#0c5da15a19a1d31b6ad4b560a0623bf61f6cf8cf"
-
-[[package]]
-name = "parser"
-version = "0.1.0"
-dependencies = [
- "base 0.1.0",
- "combine 1.3.0 (git+https://github.com/Marwes/combine.git?branch=2.0.0)",
- "combine-language 0.9.0 (git+https://github.com/Marwes/combine-language.git?branch=2.0.0)",
- "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "pulldown-cmark"
@@ -259,17 +270,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "vec_map"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "vm"
-version = "0.1.0"
-dependencies = [
- "base 0.1.0",
- "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "mopa 0.2.0 (git+https://github.com/Marwes/mopa.git)",
- "quick-error 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "winapi"

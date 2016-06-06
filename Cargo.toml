@@ -5,6 +5,14 @@ version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
 build = "build.rs"
 
+license = "MIT"
+
+description = "A static, type inferred programming langauge for application embedding"
+
+repository = "https://github.com/Marwes/gluon"
+documentation = "https://marwes.github.io/gluon/gluon/index.html"
+readme = "README.md"
+
 [lib]
 
 name = "gluon"
@@ -21,19 +29,19 @@ log = "0.3.6"
 clap = "2.2.5"
 quick-error = "1.0.0"
 
-[dependencies.base]
+[dependencies.gluon_base]
 path = "base"
 version = "0.1.0"
 
-[dependencies.parser]
+[dependencies.gluon_parser]
 path = "parser"
 version = "0.1.0"
 
-[dependencies.check]
+[dependencies.gluon_check]
 path = "check"
 version = "0.1.0"
 
-[dependencies.vm]
+[dependencies.gluon_vm]
 path = "vm"
 version = "0.1.0"
 
@@ -63,6 +71,6 @@ skeptic = "0.4"
 default = ["repl"]
 
 repl = ["env_logger", "lazy_static", "linenoise-rust"]
-test = ["vm/test", "check/test", "parser/test", "repl"]
+test = ["gluon_vm/test", "gluon_check/test", "gluon_parser/test", "repl"]
 nightly = ["compiletest_rs"]
 test_nightly = ["test", "nightly"]

@@ -1,4 +1,4 @@
-extern crate base;
+extern crate gluon_base as base;
 
 use std::ops::Deref;
 

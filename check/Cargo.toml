@@ -1,16 +1,23 @@
 [package]
-name = "check"
+name = "gluon_check"
 version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
+
+license = "MIT"
+
+description = "The typechecker for the gluon programming language"
+
+repository = "https://github.com/Marwes/gluon"
+documentation = "https://marwes.github.io/gluon/gluon/index.html"
 
 [dependencies]
 log = "0.3.6"
 union-find = "0.3.1"
 
-[dependencies.base]
+[dependencies.gluon_base]
 path = "../base"
 
-[dependencies.parser]
+[dependencies.gluon_parser]
 path = "../parser"
 optional = true
 
@@ -19,4 +26,4 @@ version = "0.3.3"
 optional = true
 
 [features]
-test = ["parser", "env_logger"]
+test = ["gluon_parser", "env_logger"]

@@ -1,7 +1,7 @@
 extern crate env_logger;
 
-extern crate base;
-extern crate parser;
+extern crate gluon_base as base;
+extern crate gluon_parser as parser;
 
 use base::ast::{LExpr, EmptyEnv};
 use parser::{parse_string, Error};

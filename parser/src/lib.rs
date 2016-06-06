@@ -3,7 +3,7 @@
 //! string interner and therefore also garbage collector needs to compiled before the parser.
 #[macro_use]
 extern crate log;
-extern crate base;
+extern crate gluon_base as base;
 extern crate combine;
 extern crate combine_language;
 

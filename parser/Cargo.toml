@@ -1,8 +1,14 @@
 [package]
-name = "parser"
+name = "gluon_parser"
 version = "0.1.0"
 authors = ["Markus <marwes91@gmail.com>"]
 
+license = "MIT"
+
+description = "The parser for the gluon programming language"
+
+repository = "https://github.com/Marwes/gluon"
+documentation = "https://marwes.github.io/gluon/gluon/index.html"
 
 [dependencies]
 log = "0.3.6"
@@ -16,7 +22,7 @@ git = "https://github.com/Marwes/combine.git"
 branch = "2.0.0"
 features = ["buffered_stream"]
 
-[dependencies.base]
+[dependencies.gluon_base]
 path = "../base"
 
 [dependencies.env_logger]
