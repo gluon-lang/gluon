@@ -625,6 +625,23 @@ sender
 }
 
 #[test]
+fn invalid_string_slice_dont_panic() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let string = import "std/string.hs"
+let s = "åäö"
+string.slice s 1 (string.length s)
+"#;
+    let mut vm = make_vm();
+    let result = Compiler::new().run_expr::<String>(&mut vm, "<top>", text);
+    match result {
+        Err(Error::VM(..)) => (),
+        Err(err) => panic!("Unexpected error `{}`", err),
+        Ok(_) => panic!("Expected an error"),
+    }
+}
+
+#[test]
 fn value_size() {
     assert!(::std::mem::size_of::<Value>() <= 16);
 }

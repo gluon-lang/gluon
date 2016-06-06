@@ -106,8 +106,19 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> String {
     Getable::from_value(vm, Variants(&Value::String(value))).expect("Array")
 }
 
-fn string_slice(s: &str, start: VMInt, end: VMInt) -> &str {
-    &s[start as usize..end as usize]
+fn string_slice(s: &str, start: usize, end: usize) -> MaybeError<&str, String> {
+    if s.is_char_boundary(start) && s.is_char_boundary(end) {
+        MaybeError::Ok(&s[start..end])
+    } else {
+        // Limit the amount of characters to print in the error message
+        let mut iter = s.chars();
+        for _ in iter.by_ref().take(256) {
+        }
+        MaybeError::Err(format!("index {} and/or {} in `{}` does not lie on a character boundary",
+                                start,
+                                end,
+                                &s[..(s.len() - iter.as_str().len())]))
+    }
 }
 
 fn trace(a: Generic<A>) {
