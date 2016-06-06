@@ -15,9 +15,9 @@ before_script:
   export PATH=$HOME/.local/bin:$PATH
 script:
 - |
-  cargo build &&
   travis_wait sh ./test.sh &&
-  travis_wait travis-cargo --only nightly bench -- --features test &&
+  cargo build --release &&
+  travis_wait travis-cargo --only nightly bench &&
   travis-cargo --only stable doc
 after_success:
 - travis-cargo --only stable doc-upload

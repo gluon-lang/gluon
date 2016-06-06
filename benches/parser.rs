@@ -2,8 +2,8 @@
 
 extern crate test;
 
-extern crate base;
-extern crate parser;
+extern crate gluon_base as base;
+extern crate gluon_parser as parser;
 
 use base::symbol::{Symbols, SymbolModule};
 
