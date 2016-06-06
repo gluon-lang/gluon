@@ -14,13 +14,10 @@ documentation = "https://marwes.github.io/gluon/gluon/index.html"
 log = "0.3.6"
 
 [dependencies.combine-language]
-git = "https://github.com/Marwes/combine-language.git"
-branch = "2.0.0"
+version = "=2.0.0-beta"
 
 [dependencies.combine]
-git = "https://github.com/Marwes/combine.git"
-branch = "2.0.0"
-features = ["buffered_stream"]
+version = "=2.0.0-beta"
 
 [dependencies.gluon_base]
 path = "../base"
