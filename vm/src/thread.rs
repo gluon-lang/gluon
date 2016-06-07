@@ -360,15 +360,14 @@ impl Thread {
         where T: Getable<'vm> + VMType
     {
         let env = self.get_env();
-        let (value, typ) = try!(env.get_binding(name));
+        let (value, actual) = try!(env.get_binding(name));
         // Finally check that type of the returned value is correct
-        if *typ == T::make_type(self) {
+        let expected = T::make_type(self);
+        if expected == *actual {
             T::from_value(self, Variants(&value))
-                .ok_or_else(|| Error::Message(format!("Could not retrieve global `{}`", name)))
+                .ok_or_else(|| Error::UndefinedBinding(name.into()))
         } else {
-            Err(Error::Message(format!("Could not retrieve global `{}` as the types did not \
-                                        match",
-                                       name)))
+            Err(Error::WrongType(expected, actual.into_owned()))
         }
     }
 

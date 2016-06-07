@@ -1131,11 +1131,12 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
     where F: FunctionType + VMType + Send + Sync
 {
     fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+        use std::mem::transmute;
         let extern_function = unsafe {
             // The VM guarantess that it only ever calls this function with itself which should
             // make sure that ignoring the lifetime is safe
-            ::std::mem::transmute::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
-                                    Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(self.function))
+            transmute::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
+                        Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(self.function))
         };
         let id = Symbol::new(self.name);
         let value = Value::Function(vm.alloc(&stack.stack,

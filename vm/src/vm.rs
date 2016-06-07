@@ -536,10 +536,8 @@ impl VMEnv {
                 _ => None,
             }
         });
-        maybe_type_info.ok_or_else(|| {
-            Error::Message(format!("'{}' cannot be accessed by the field '{}'",
-                                   typ,
-                                   name.name()))
+        maybe_type_info.ok_or_else(move || {
+            Error::UndefinedField(typ.into_owned(), name.name().as_str().into())
         })
     }
 
@@ -556,7 +554,7 @@ impl VMEnv {
         // Test: -> Error
         loop {
             if module.as_str() == "" {
-                return Err(Error::Message(format!("Could not retrieve binding `{}`", name)));
+                return Err(Error::UndefinedBinding(name.into()));
             }
             if let Some(g) = globals.get(module.as_str()) {
                 global = g;
@@ -581,9 +579,10 @@ impl VMEnv {
                 field_name = &field_name[1..field_name.len() - 1];
             } else if field_name.chars().any(|c| "+-*/&|=<>".chars().any(|x| x == c)) {
                 return Err(Error::Message(format!("Operators cannot be used as fields \
-                                                   directly. Please enclose the operator with \
-                                                   parentheses before passing it in. (test.(+) \
-                                                   instead of test.+)")));
+                                                   directly. To access an operator field, \
+                                                   enclose the operator with parentheses \
+                                                   before passing it in. (test.(+) instead of \
+                                                   test.+)")));
             }
             typ = match typ {
                 Cow::Borrowed(typ) => instantiator.remove_aliases_cow(typ),
@@ -609,18 +608,16 @@ impl VMEnv {
                     _ => None,
                 }
             });
-            typ = try!(next_type.ok_or_else(|| {
-                Error::Message(format!("'{:?}' cannot be accessed by the field '{}'",
-                                       typ,
-                                       field_name))
+            typ = try!(next_type.ok_or_else(move || {
+                Error::UndefinedField(typ.into_owned(), field_name.into())
             }));
         }
         Ok((value, typ))
     }
 
-    pub fn get_metadata(&self, name: &str) -> Result<&Metadata> {
+    pub fn get_metadata(&self, name_str: &str) -> Result<&Metadata> {
         let globals = &self.globals;
-        let name = Name::new(name);
+        let name = Name::new(name_str);
         let mut components = name.components();
         let global = match components.next() {
             Some(comp) => {
@@ -629,18 +626,16 @@ impl VMEnv {
                                 components = name.name().components();
                                 globals.get(name.module().as_str())
                             })
-                            .ok_or_else(|| {
-                                Error::Message(format!("There is no metadata for '{}'", name))
-                            }))
+                            .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into())))
             }
-            None => return Err(Error::Message(format!("There is no metadata for '{}'", name))),
+            None => return Err(Error::MetadataDoesNotExist(name_str.into())),
         };
 
         let mut metadata = &global.metadata;
         for field_name in components {
-            metadata = try!(metadata.module.get(field_name).ok_or_else(|| {
-                Error::Message(format!("There is no metadata for '{}'", name))
-            }));
+            metadata = try!(metadata.module
+                                    .get(field_name)
+                                    .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into())));
         }
         Ok(metadata)
     }
@@ -741,7 +736,7 @@ impl GlobalVMState {
         let mut env = self.env.write().unwrap();
         let globals = &mut env.globals;
         if globals.contains_key(id.as_ref()) {
-            return Err(Error::Message(format!("{} is already defined", id)));
+            return Err(Error::GlobalAlreadyExists(id));
         }
         let global = Global {
             id: id.clone(),
@@ -771,7 +766,7 @@ impl GlobalVMState {
         let mut env = self.env.write().unwrap();
         let type_infos = &mut env.type_infos;
         if type_infos.id_to_type.contains_key(name) {
-            Err(Error::Message(format!("Type '{}' has already been registered", name)))
+            Err(Error::TypeAlreadyExists(name.into()))
         } else {
             let id = TypeId::of::<T>();
             let arg_types: Vec<_> = args.iter().map(|g| self.get_generic(g)).collect();
@@ -818,6 +813,24 @@ quick_error! {
         Yield {
         }
         Dead {
+        }
+        UndefinedBinding(symbol: StdString) {
+            display("Binding `{}` is not defined", symbol)
+        }
+        UndefinedField(typ: TcType, field: StdString) {
+            display("Type `{}` does not have the field `{}`", typ, field)
+        }
+        TypeAlreadyExists(symbol: StdString) {
+            display("Type `{}` already exists", symbol)
+        }
+        GlobalAlreadyExists(symbol: Symbol) {
+            display("Global `{}` already exists", symbol)
+        }
+        MetadataDoesNotExist(symbol: StdString) {
+            display("No metadata exists for `{}`", symbol)
+        }
+        WrongType(expected: TcType, actual: TcType) {
+            display("Expected a value of type `{}` but the inferred type was `{}`", expected, actual)
         }
         Message(err: StdString) {
             display("{}", err)

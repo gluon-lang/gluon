@@ -201,7 +201,7 @@ impl Compiler {
                       name: &str,
                       expr_str: &str,
                       expected_type: Option<&TcType>)
-                      -> Result<RootedValue<&'vm Thread>> {
+                      -> Result<(RootedValue<&'vm Thread>, TcType)> {
         let (expr, typ) = try!(self.typecheck_expr_expected(vm, name, expr_str, expected_type));
         let mut function = self.compile_script(vm, name, &expr);
         function.id = Symbol::new(name);
@@ -211,7 +211,7 @@ impl Compiler {
             vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
         };
         let value = try!(vm.call_module(&typ, closure));
-        Ok(vm.root_value_ref(value))
+        Ok((vm.root_value_ref(value), typ))
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -219,10 +219,11 @@ impl Compiler {
     pub fn run_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<T>
         where T: Getable<'vm> + VMType
     {
-        let value = try!(self.run_expr_(vm, name, expr_str, Some(&T::make_type(vm))));
+        let expected = T::make_type(vm);
+        let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
         unsafe {
             T::from_value(vm, Variants::new(&value))
-                .ok_or_else(|| Error::from(VMError::Message("Wrong type".to_string())))
+                .ok_or_else(move || Error::from(VMError::WrongType(expected, actual)))
         }
     }
 
@@ -230,10 +231,11 @@ impl Compiler {
         where T: Getable<'vm> + VMType,
               T::Type: Sized
     {
-        let value = try!(self.run_expr_(vm, name, expr_str, Some(&IO::<T>::make_type(vm))));
+        let expected = IO::<T>::make_type(vm);
+        let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
         unsafe {
             T::from_value(vm, Variants::new(&value))
-                .ok_or_else(|| Error::from(VMError::Message("Wrong type".to_string())))
+                .ok_or_else(move || Error::from(VMError::WrongType(expected, actual)))
         }
     }
 
