@@ -830,7 +830,8 @@ quick_error! {
             display("No metadata exists for `{}`", symbol)
         }
         WrongType(expected: TcType, actual: TcType) {
-            display("Expected a value of type `{}` but the inferred type was `{}`", expected, actual)
+            display("Expected a value of type `{}` but the inferred type was `{}`",
+                    expected, actual)
         }
         Message(err: StdString) {
             display("{}", err)
