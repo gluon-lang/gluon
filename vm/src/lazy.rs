@@ -53,7 +53,7 @@ fn force(vm: &Thread) -> Status {
             let value = *lazy.value.lock().unwrap();
             match value {
                 Lazy_::Blackhole => {
-                    "<<loop>>".push(vm, &mut stack);
+                    "<<loop>>".push(vm, &mut stack.stack);
                     Status::Error
                 }
                 Lazy_::Thunk(value) => {
@@ -73,7 +73,7 @@ fn force(vm: &Thread) -> Status {
                             Status::Ok
                         }
                         Err(err) => {
-                            let mut stack = vm.current_frame();
+                            let mut stack = vm.get_stack();
                             let err = format!("{}", err);
                             err.push(vm, &mut stack);
                             Status::Error
@@ -97,7 +97,7 @@ fn lazy(vm: &Thread) -> Status {
         value: Mutex::new(Lazy_::Thunk(f)),
         _marker: PhantomData,
     });
-    lazy.push(vm, &mut stack)
+    lazy.push(vm, &mut stack.stack)
 }
 
 pub fn load(vm: &Thread) -> Result<()> {

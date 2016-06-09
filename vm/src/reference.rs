@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use base::types::{Type, TcType};
 use gc::{Gc, GcPtr, Traverseable};
-use stack::StackFrame;
+use stack::Stack;
 use vm::{Thread, Value, Status};
 use api::{MaybeError, Generic, Pushable, Userdata, VMType, WithVM};
 use api::generic::A;
@@ -39,7 +39,7 @@ impl<'vm, T> Pushable<'vm> for Reference<T>
     where T: Any + Send + Sync + VMType,
           T::Type: Sized
 {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         Userdata(self).push(vm, stack)
     }
 }

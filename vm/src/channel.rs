@@ -7,7 +7,7 @@ use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
 use vm::{Error, Thread, Value, RootedThread, Result as VMResult, Status};
-use stack::State;
+use stack::{State, StackFrame};
 
 pub struct Sender<T> {
     // No need to traverse this thread reference as any thread having a reference to this `Sender`
@@ -108,12 +108,12 @@ fn resume(vm: &Thread) -> Status {
                 Ok(()) |
                 Err(Error::Yield) => {
                     let value: Result<(), &str> = Ok(());
-                    value.push(vm, &mut stack);
+                    value.push(vm, &mut stack.stack);
                     Status::Ok
                 }
                 Err(Error::Dead) => {
                     let value: Result<(), &str> = Err("Attempted to resume a dead thread");
-                    value.push(vm, &mut stack);
+                    value.push(vm, &mut stack.stack);
                     Status::Ok
                 }
                 Err(err) => {
@@ -135,7 +135,7 @@ fn yield_(_vm: &Thread) -> Status {
 fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> RootedThread {
     let thread = value.vm.new_thread();
     {
-        let mut stack = thread.current_frame();
+        let mut stack = thread.get_stack();
         let callable = match value.value.value() {
             Value::Closure(c) => State::Closure(c),
             Value::Function(c) => State::Extern(c),
@@ -143,7 +143,7 @@ fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> RootedThread
         };
         value.value.push(value.vm, &mut stack);
         stack.push(Value::Int(0));
-        stack.enter_scope(1, callable);
+        StackFrame::current(stack).enter_scope(1, callable);
     }
     thread
 }

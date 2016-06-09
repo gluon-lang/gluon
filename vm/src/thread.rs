@@ -217,7 +217,7 @@ impl VMType for RootedThread {
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
-    fn push<'b>(self, _vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _vm: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Thread(self.0));
         Status::Ok
     }
@@ -344,7 +344,7 @@ impl Thread {
         where T: Pushable<'vm>
     {
         let (status, value) = {
-            let mut stack = self.current_frame();
+            let mut stack = self.get_stack();
             let status = value.push(self, &mut stack);
             (status, stack.pop())
         };
@@ -383,19 +383,23 @@ impl Thread {
     /// Returns the current stackframe
     pub fn release_lock<'vm>(&'vm self, lock: ::stack::Lock) -> StackFrame<'vm> {
         self.stack.lock().unwrap().release_lock(lock);
-        self.current_frame()
+        StackFrame::current(self.get_stack())
     }
 
     /// Returns the current stackframe
+    pub fn get_stack(&self) -> MutexGuard<Stack> {
+        self.stack.lock().unwrap()
+    }
+
     pub fn current_frame(&self) -> StackFrame {
-        StackFrame::current(&self.stack)
+        StackFrame::current(self.get_stack())
     }
 
     fn current_context(&self) -> Context {
         Context {
             thread: self,
             gc: self.local_gc.lock().unwrap(),
-            stack: StackFrame::current(&self.stack),
+            stack: StackFrame::current(self.stack.lock().unwrap()),
         }
     }
 
@@ -1036,7 +1040,7 @@ fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     match (T::from_value(vm, Variants(&l)), T::from_value(vm, Variants(&r))) {
         (Some(l), Some(r)) => {
             let result = f(l, r);
-            result.push(vm, stack);
+            result.push(vm, &mut stack.stack);
         }
         (l, r) => panic!("{:?} `op` {:?}", l, r),
     }

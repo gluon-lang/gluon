@@ -81,7 +81,7 @@ pub unsafe extern "C" fn push_string(vm: &Thread, s: &u8, len: usize) -> Error {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    s.push(vm, &mut vm.current_frame());
+    s.push(vm, &mut vm.get_stack());
     Error::Ok
 }
 
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn push_string(vm: &Thread, s: &u8, len: usize) -> Error {
 /// behaviour.
 pub unsafe extern "C" fn push_string_unchecked(vm: &Thread, s: &u8, len: usize) {
     let s = str::from_utf8_unchecked(slice::from_raw_parts(s, len));
-    s.push(vm, &mut vm.current_frame());
+    s.push(vm, &mut vm.get_stack());
 }
 
 pub unsafe extern "C" fn get_int(vm: &Thread, index: VMIndex, out: &mut VMInt) -> Error {

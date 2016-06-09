@@ -1,5 +1,5 @@
 use std::fmt;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::MutexGuard;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
 use Variants;
@@ -91,6 +91,33 @@ impl Stack {
     /// Panics if the lock is not the top-most lock
     pub fn release_lock(&mut self, lock: Lock) {
         assert!(self.frames.pop().map(|frame| frame.offset) == Some(lock.0));
+    }
+}
+
+impl Index<VMIndex> for Stack {
+    type Output = Value;
+    fn index(&self, index: VMIndex) -> &Value {
+        &self.values[index as usize]
+    }
+}
+
+impl IndexMut<VMIndex> for Stack {
+    fn index_mut(&mut self, index: VMIndex) -> &mut Value {
+        &mut self.values[index as usize]
+    }
+}
+
+impl Index<RangeFrom<VMIndex>> for Stack {
+    type Output = [Value];
+    fn index(&self, range: RangeFrom<VMIndex>) -> &[Value] {
+        &self.values[range.start as usize..]
+    }
+}
+
+impl Index<RangeTo<VMIndex>> for Stack {
+    type Output = [Value];
+    fn index(&self, range: RangeTo<VMIndex>) -> &[Value] {
+        &self.values[..range.end as usize]
     }
 }
 
@@ -216,8 +243,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         }
     }
 
-    pub fn current(stack: &Mutex<Stack>) -> StackFrame {
-        let stack = stack.lock().unwrap();
+    pub fn current(stack: MutexGuard<Stack>) -> StackFrame {
         StackFrame {
             frame: stack.get_frames().last().expect("Frame").clone(),
             stack: stack,
@@ -385,7 +411,7 @@ mod tests {
         frame.push(Int(2));
         frame.exit_scope();
         stack.lock().unwrap().release_lock(lock);
-        frame = StackFrame::current(&stack);
+        frame = StackFrame::current(stack.lock().unwrap());
         assert_eq!(frame.pop(), Int(2));
     }
 }

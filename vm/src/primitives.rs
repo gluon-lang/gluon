@@ -54,8 +54,8 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
     }
     let vm = lhs.vm();
     let value = {
-        let stack = vm.current_frame();
-        vm.alloc(&stack.stack,
+        let stack = vm.get_stack();
+        vm.alloc(&stack,
                  Append {
                      lhs: &lhs.fields,
                      rhs: &rhs.fields,
@@ -96,8 +96,8 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> String {
     let vm = lhs.vm;
     let lhs = lhs.value;
     let value = {
-        let stack = vm.current_frame();
-        vm.alloc(&stack.stack,
+        let stack = vm.get_stack();
+        vm.alloc(&stack,
                  StrAppend {
                      lhs: lhs,
                      rhs: rhs,

@@ -1,7 +1,7 @@
 use Variants;
 use gc::{Gc, Traverseable, Move};
 use base::symbol::Symbol;
-use stack::{State, StackFrame};
+use stack::{State, Stack, StackFrame};
 use vm::{Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, VMInt, Error, Root,
          RootStr};
 use thread::RootedThread;
@@ -112,7 +112,7 @@ impl<T: VMType> VMType for Generic<T> {
     }
 }
 impl<'vm, T: VMType> Pushable<'vm> for Generic<T> {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(self.0);
         Status::Ok
     }
@@ -176,7 +176,7 @@ pub trait VMType {
 
 /// Trait which allows a rust value to be pushed to the virtual machine
 pub trait Pushable<'vm>: VMType {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status;
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status;
 }
 
 /// Trait which allows rust values to be retrieved from the virtual machine
@@ -252,7 +252,7 @@ impl<'vm, T> VMType for WithVM<'vm, T>
 impl<'vm, T> Pushable<'vm> for WithVM<'vm, T>
     where T: Pushable<'vm>
 {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         self.value.push(vm, stack)
     }
 }
@@ -269,7 +269,7 @@ impl VMType for () {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for () {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Int(0));
         Status::Ok
     }
@@ -284,7 +284,7 @@ impl VMType for i32 {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for i32 {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Int(self as VMInt));
         Status::Ok
     }
@@ -301,7 +301,7 @@ impl VMType for u32 {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for u32 {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Int(self as VMInt));
         Status::Ok
     }
@@ -318,7 +318,7 @@ impl VMType for usize {
     type Type = VMInt;
 }
 impl<'vm> Pushable<'vm> for usize {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Int(self as VMInt));
         Status::Ok
     }
@@ -335,7 +335,7 @@ impl VMType for VMInt {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for VMInt {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Int(self));
         Status::Ok
     }
@@ -352,7 +352,7 @@ impl VMType for f64 {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for f64 {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Float(self));
         Status::Ok
     }
@@ -372,7 +372,7 @@ impl VMType for bool {
     }
 }
 impl<'vm> Pushable<'vm> for bool {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Int(if self {
             1
         } else {
@@ -399,7 +399,7 @@ impl VMType for Ordering {
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
-    fn push<'b>(self, _vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _vm: &'vm Thread, stack: &mut Stack) -> Status {
         let tag = match self {
             Ordering::Less => 0,
             Ordering::Equal => 1,
@@ -432,13 +432,13 @@ impl VMType for String {
     type Type = String;
 }
 impl<'vm, 's> Pushable<'vm> for &'s String {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         <&str as Pushable>::push(self, vm, stack)
     }
 }
 impl<'vm, 's> Pushable<'vm> for &'s str {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
-        let s = vm.alloc(&stack.stack, self);
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
+        let s = vm.alloc(stack, self);
         stack.push(Value::String(s));
         Status::Ok
     }
@@ -452,7 +452,7 @@ impl<'vm> Getable<'vm> for String {
     }
 }
 impl<'vm> Pushable<'vm> for String {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         <&str as Pushable>::push(&self, vm, stack)
     }
 }
@@ -461,7 +461,7 @@ impl VMType for char {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for char {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(Value::Int(self as VMInt));
         Status::Ok
     }
@@ -486,7 +486,7 @@ impl<'s, 'vm, T> Pushable<'vm> for Ref<'s, T>
     where for<'t> &'t T: Pushable<'vm>,
           T: VMType
 {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         <&T as Pushable>::push(&*self, vm, stack)
     }
 }
@@ -502,7 +502,7 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
     where T: Pushable<'vm>,
           T::Type: Sized
 {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let len = self.len() as VMIndex;
         for v in self {
             if v.push(vm, stack) == Status::Error {
@@ -511,7 +511,7 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
         }
         let result = {
             let values = &stack[stack.len() - len..];
-            vm.alloc(&stack.stack,
+            vm.alloc(stack,
                      Def {
                          tag: 0,
                          elems: values,
@@ -531,9 +531,9 @@ impl<T: VMType> VMType for Userdata<T> {
     type Type = T::Type;
 }
 impl<'vm, T: ::vm::Userdata + VMType> Pushable<'vm> for Userdata<T> {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let data: Box<::vm::Userdata> = Box::new(self.0);
-        let userdata = vm.alloc(&stack.stack, Move(data));
+        let userdata = vm.alloc(stack, Move(data));
         stack.push(Value::Userdata(userdata));
         Status::Ok
     }
@@ -575,7 +575,7 @@ impl<T: VMType> VMType for Option<T>
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
     where T::Type: Sized
 {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
             Some(value) => {
                 let len = stack.len();
@@ -620,7 +620,7 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for Result<T, E>
     where T::Type: Sized,
           E::Type: Sized
 {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let tag = match self {
             Ok(ok) => {
                 ok.push(vm, stack);
@@ -632,7 +632,7 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for Result<T, E>
             }
         };
         let value = stack.pop();
-        let data = vm.alloc(&stack.stack,
+        let data = vm.alloc(stack,
                             Def {
                                 tag: tag,
                                 elems: &[value],
@@ -669,7 +669,7 @@ impl<T: VMType, E> VMType for MaybeError<T, E> {
     }
 }
 impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for MaybeError<T, E> {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
             MaybeError::Ok(value) => {
                 value.push(vm, stack);
@@ -677,7 +677,7 @@ impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for MaybeError<T, E> 
             }
             MaybeError::Err(err) => {
                 let msg = format!("{}", err);
-                let s = vm.alloc(&stack.stack, &msg[..]);
+                let s = vm.alloc(stack, &msg[..]);
                 stack.push(Value::String(s));
                 Status::Error
             }
@@ -709,7 +709,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for IO<T> {
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T>
     where T::Type: Sized
 {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
             IO::Value(value) => {
                 value.push(vm, stack);
@@ -745,7 +745,7 @@ impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
           V: VMType,
           V::Type: Sized
 {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(*self.0);
         Status::Ok
     }
@@ -813,7 +813,7 @@ impl<'vm, T: VMType> VMType for Array<'vm, T>
 impl<'vm, T: VMType> Pushable<'vm> for Array<'vm, T>
     where T::Type: Sized
 {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(*self.0);
         Status::Ok
     }
@@ -889,7 +889,7 @@ macro_rules! define_tuple {
         where $($id: Pushable<'vm>),+,
               $($id::Type: Sized),+
         {
-            fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+            fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
                 let ( $($id),+ ) = self;
                 $(
                     $id.push(vm, stack);
@@ -925,7 +925,7 @@ pub mod record {
     use base::symbol::Symbol;
 
     use Variants;
-    use stack::StackFrame;
+    use stack::Stack;
     use types::VMIndex;
     use vm::{Thread, Status, Value};
     use super::{VMType, Getable, Pushable};
@@ -978,17 +978,17 @@ pub mod record {
     }
 
     pub trait PushableFieldList<'vm>: FieldList {
-        fn push<'b>(self, vm: &'vm Thread, fields: &mut StackFrame<'b>);
+        fn push(self, vm: &'vm Thread, fields: &mut Stack);
     }
 
     impl<'vm> PushableFieldList<'vm> for () {
-        fn push<'b>(self, _: &'vm Thread, _: &mut StackFrame<'b>) {}
+        fn push(self, _: &'vm Thread, _: &mut Stack) {}
     }
 
     impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HList<(F, H), T>
         where T: PushableFieldList<'vm>
 {
-        fn push<'b>(self, vm: &'vm Thread, fields: &mut StackFrame<'b>) {
+        fn push(self, vm: &'vm Thread, fields: &mut Stack) {
             let HList((_, head), tail) = self;
             head.push(vm, fields);
             tail.push(vm, fields);
@@ -1035,7 +1035,7 @@ pub mod record {
               T: PushableFieldList<'vm>,
               A::Type: Sized
 {
-        fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+        fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
             self.fields.push(vm, stack);
             let len = HList::<(F, A), T>::len();
             let offset = stack.len() - len;
@@ -1130,7 +1130,7 @@ impl<F: VMType> VMType for Primitive<F> {
 impl<'vm, F> Pushable<'vm> for Primitive<F>
     where F: FunctionType + VMType + Send + Sync
 {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         use std::mem::transmute;
         let extern_function = unsafe {
             // The VM guarantess that it only ever calls this function with itself which should
@@ -1139,7 +1139,7 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
                         Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(self.function))
         };
         let id = Symbol::new(self.name);
-        let value = Value::Function(vm.alloc(&stack.stack,
+        let value = Value::Function(vm.alloc(stack,
                                              Move(ExternFunction {
                                                  id: id,
                                                  args: F::arguments(),
@@ -1187,7 +1187,7 @@ impl<'vm, T, F: Any> Pushable<'vm> for Function<T, F>
     where T: Deref<Target = Thread>,
           F: VMType
 {
-    fn push<'b>(self, _: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
         stack.push(*self.value);
         Status::Ok
     }
@@ -1257,7 +1257,7 @@ impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
 
 impl <'vm, $($args,)* R> Pushable<'vm> for fn ($($args),*) -> R
 where $($args: Getable<'vm> + VMType + 'vm,)* R: Pushable<'vm> + 'vm {
-    fn push<'b>(self, vm: &'vm Thread, stack: &mut StackFrame<'b>) -> Status {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let f = Box::new(move |vm| self.unpack_and_call(vm));
         let extern_function = unsafe {
             //The VM guarantess that it only ever calls this function with itself which should
@@ -1267,7 +1267,7 @@ where $($args: Getable<'vm> + VMType + 'vm,)* R: Pushable<'vm> + 'vm {
                        Box<Fn(&Thread) -> Status + Send + Sync>>(f)
         };
         let id = Symbol::new("<extern>");
-        let value = Value::Function(vm.alloc(&stack.stack, Move(
+        let value = Value::Function(vm.alloc(stack, Move(
             ExternFunction {
                 id: id,
                 args: count!($($args),*) + R::extra_args(),
@@ -1306,7 +1306,7 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
             stack = vm.current_frame();
             r
         };
-        r.push(vm, &mut stack)
+        r.push(vm, &mut stack.stack)
     }
 }
 
@@ -1348,7 +1348,7 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
             stack = vm.current_frame();
             r
         };
-        r.push(vm, &mut stack)
+        r.push(vm, &mut stack.stack)
     }
 }
 
@@ -1360,8 +1360,9 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     #[allow(non_snake_case)]
     pub fn call(&'vm mut self $(, $args: $args)*) -> Result<R, Error> {
         let vm = self.value.vm();
-        let mut stack = vm.current_frame();
-        stack = stack.enter_scope(0, State::Unknown);
+        let mut stack = vm.get_stack();
+        StackFrame::current(stack).enter_scope(0, State::Unknown);
+        stack = vm.get_stack();
         stack.push(*self.value);
         $(
             $args.push(vm, &mut stack);
@@ -1370,7 +1371,7 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
             0.push(vm, &mut stack);
         }
         let args = stack.len() - 1;
-        stack = try!(vm.call_function(stack, args)).unwrap();
+        let mut stack = try!(vm.call_function(StackFrame::current(stack), args)).unwrap();
         let result = stack.pop();
         R::from_value(vm, Variants(&result))
             .ok_or_else(|| {
