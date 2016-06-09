@@ -1,4 +1,6 @@
 # gluon
+(Previously called embed_lang)
+
 [![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
@@ -25,11 +27,12 @@ Gluon is a small, statically-typed, functional programming language designed for
 ### Installation
 
 #### Rust
-Gluon is available at [crates.io](https://crates.io/crates/gluon) and can easily be included as a library in Rust projects.
+
+Gluon is currently available only here on github but will soon be added to crates.io. To include it in a Rust project you can add the lines below.
 
 ```toml
-[dependencies]
-gluon = "0.1.0"
+[dependencies.gluon]
+git = "https://github.com/Marwes/gluon.git"
 ```
 
 #### Other langauges
