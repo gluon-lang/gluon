@@ -309,8 +309,8 @@ pub mod compiler_pipeline {
             function.id = Symbol::new(name);
             let function = try!(vm.global_env().new_function(function));
             let closure = {
-                let stack = vm.current_frame();
-                try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
+                let stack = vm.get_stack();
+                try!(vm.alloc(&stack, ClosureDataDef(function, &[])))
             };
             let value = try!(vm.call_module(&typ, closure));
             Ok((vm.root_value_ref(value), typ))
@@ -327,8 +327,8 @@ pub mod compiler_pipeline {
             let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
             let function = try!(vm.global_env().new_function(function));
             let closure = {
-                let stack = vm.current_frame();
-                try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
+                let stack = vm.get_stack();
+                try!(vm.alloc(&stack, ClosureDataDef(function, &[])))
             };
             let value = try!(vm.call_module(&typ, closure));
             try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
@@ -461,8 +461,8 @@ impl Compiler {
         let function = try!(self.compile_script(vm, filename, &expr));
         let function = try!(vm.global_env().new_function(function));
         let closure = {
-            let stack = vm.current_frame();
-            try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
+            let stack = vm.get_stack();
+            try!(vm.alloc(&stack, ClosureDataDef(function, &[])))
         };
         let value = try!(vm.call_module(&typ, closure));
         try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
@@ -494,8 +494,8 @@ impl Compiler {
         function.id = Symbol::new(name);
         let function = try!(vm.global_env().new_function(function));
         let closure = {
-            let stack = vm.current_frame();
-            try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
+            let stack = vm.get_stack();
+            try!(vm.alloc(&stack, ClosureDataDef(function, &[])))
         };
         let value = try!(vm.call_module(&typ, closure));
         Ok((vm.root_value_ref(value), typ))

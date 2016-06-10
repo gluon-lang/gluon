@@ -1444,25 +1444,28 @@ where $($args: Getable<'vm> + 'vm,)*
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
         let n_args = Self::arguments();
-        let mut stack = vm.current_frame();
+        let mut stack = vm.get_stack();
         let mut i = 0;
         let r = unsafe {
-            $(let $args = {
-                let x = $args::from_value_unsafe(vm, Variants(&stack[i]))
-                    .expect(stringify!(Argument $args));
-                i += 1;
-                x
-            });*;
-            // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
-            // rooted
-            let lock = stack.into_lock();
+            let (lock, ($($args,)*)) = {
+                let stack = StackFrame::current(&mut stack);
+                $(let $args = {
+                    let x = $args::from_value_unsafe(vm, Variants(&stack[i]))
+                        .expect(stringify!(Argument $args));
+                    i += 1;
+                    x
+                });*;
+                // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
+                // rooted
+                (stack.into_lock(), ($($args,)*))
+            };
+            drop(stack);
             let r = (*self)($($args),*);
-            let mut s = vm.get_stack();
-            s.release_lock(lock);
-            stack = StackFrame::current(s);
+            stack = vm.get_stack();
+            stack.release_lock(lock);
             r
         };
-        r.status_push(vm, &mut stack.stack)
+        r.status_push(vm, &mut stack)
     }
 }
 
@@ -1489,25 +1492,28 @@ where $($args: Getable<'vm> + 'vm,)*
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
         let n_args = Self::arguments();
-        let mut stack = vm.current_frame();
+        let mut stack = vm.get_stack();
         let mut i = 0;
         let r = unsafe {
-            $(let $args = {
-                let x = $args::from_value_unsafe(vm, Variants(&stack[i]))
-                    .expect(stringify!(Argument $args));
-                i += 1;
-                x
-            });*;
-            // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
-            // rooted
-            let lock = stack.into_lock();
+            let (lock, ($($args,)*)) = {
+                let stack = StackFrame::current(&mut stack);
+                $(let $args = {
+                    let x = $args::from_value_unsafe(vm, Variants(&stack[i]))
+                        .expect(stringify!(Argument $args));
+                    i += 1;
+                    x
+                });*;
+                // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
+                // rooted
+                (stack.into_lock(), ($($args,)*))
+            };
+            drop(stack);
             let r = (*self)($($args),*);
-            let mut s = vm.get_stack();
-            s.release_lock(lock);
-            stack = StackFrame::current(s);
+            stack = vm.get_stack();
+            stack.release_lock(lock);
             r
         };
-        r.status_push(vm, &mut stack.stack)
+        r.status_push(vm, &mut stack)
     }
 }
 
@@ -1520,8 +1526,7 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     pub fn call(&'vm mut self $(, $args: $args)*) -> Result<R> {
         let vm = self.value.vm();
         let mut stack = vm.get_stack();
-        StackFrame::current(stack).enter_scope(0, State::Unknown);
-        stack = vm.get_stack();
+        StackFrame::current(&mut stack).enter_scope(0, State::Unknown);
         stack.push(*self.value);
         $(
             try!($args.push(vm, &mut stack));
@@ -1529,8 +1534,8 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
         for _ in 0..R::extra_args() {
             0.push(vm, &mut stack).unwrap();
         }
-        let args = stack.len() - 1;
-        let mut stack = try!(vm.call_function(StackFrame::current(stack), args)).unwrap();
+        let args = count!($($args),*) + R::extra_args();
+        let mut stack = try!(vm.call_function(stack, args)).unwrap();
         let result = stack.pop();
         R::from_value(vm, Variants(&result))
             .ok_or_else(|| {

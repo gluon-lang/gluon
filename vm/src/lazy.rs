@@ -11,6 +11,7 @@ use api::generic::A;
 use vm::{Status, Thread};
 use Result;
 use value::Value;
+use stack::StackFrame;
 use thread::ThreadInternal;
 
 pub struct Lazy<T> {
@@ -58,8 +59,9 @@ impl<T> VmType for Lazy<T>
 }
 
 fn force(vm: &Thread) -> Status {
-    let mut stack = vm.current_frame();
-    match stack[0] {
+    let mut stack = vm.get_stack();
+    let value = StackFrame::current(&mut stack)[0];
+    match value {
         Value::Userdata(lazy) => {
             let lazy = lazy.downcast_ref::<Lazy<A>>().expect("Lazy");
             let value = *lazy.value.lock().unwrap();
@@ -77,6 +79,7 @@ fn force(vm: &Thread) -> Status {
                     match result {
                         Ok(None) => panic!("Expected stack"),
                         Ok(Some(mut stack)) => {
+                            let mut stack = StackFrame::current(&mut stack);
                             let value = stack.pop();
                             while stack.len() > 1 {
                                 stack.pop();
@@ -95,7 +98,7 @@ fn force(vm: &Thread) -> Status {
                     }
                 }
                 Lazy_::Value(value) => {
-                    stack[0] = value;
+                    StackFrame::current(&mut stack)[0] = value;
                     Status::Ok
                 }
             }

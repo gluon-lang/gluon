@@ -11,6 +11,7 @@ use vm::thread::ThreadInternal;
 use vm::thread::{Thread, Status, RootStr};
 use vm::api::{Array, Generic, VmType, Getable, Pushable, IO, WithVM, Userdata, primitive};
 use vm::api::generic::{A, B};
+use vm::stack::StackFrame;
 
 use vm::internal::Value;
 
@@ -118,32 +119,35 @@ fn read_line() -> IO<String> {
 
 /// IO a -> (String -> IO a) -> IO a
 fn catch_io(vm: &Thread) -> Status {
-    let mut stack = vm.current_frame();
-    let frame_level = stack.stack.get_frames().len();
-    let action = stack[0];
+    let mut stack = vm.get_stack();
+    let frame_level = stack.get_frames().len();
+    let action = StackFrame::current(&mut stack)[0];
     stack.push(action);
-    0.push(vm, &mut stack.stack).unwrap();
+    0.push(vm, &mut stack).unwrap();
     match vm.call_function(stack, 1) {
         Ok(_) => Status::Ok,
         Err(err) => {
-            stack = vm.current_frame();
-            while stack.stack.get_frames().len() > frame_level {
-                match stack.exit_scope() {
-                    Some(new_stack) => stack = new_stack,
-                    None => return Status::Error,
+            let mut stack = vm.get_stack();
+            {
+                let mut stack = StackFrame::current(&mut stack);
+                while stack.stack.get_frames().len() > frame_level {
+                    match stack.exit_scope() {
+                        Ok(new_stack) => stack = new_stack,
+                        Err(_) => return Status::Error,
+                    }
                 }
+                let callback = stack[1];
+                stack.push(callback);
             }
-            let callback = stack[1];
-            stack.push(callback);
             let fmt = format!("{}", err);
-            let _ = fmt.push(vm, &mut stack.stack);
-            0.push(vm, &mut stack.stack).unwrap();
+            let _ = fmt.push(vm, &mut stack);
+            0.push(vm, &mut stack).unwrap();
             match vm.call_function(stack, 2) {
                 Ok(_) => Status::Ok,
                 Err(err) => {
-                    stack = vm.current_frame();
+                    stack = vm.get_stack();
                     let fmt = format!("{}", err);
-                    let _ = fmt.push(vm, &mut stack.stack);
+                    let _ = fmt.push(vm, &mut stack);
                     Status::Error
                 }
             }
@@ -153,11 +157,10 @@ fn catch_io(vm: &Thread) -> Status {
 
 fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     let WithVM { vm, value: expr } = expr;
-    let mut stack = vm.current_frame();
-    let frame_level = stack.stack.get_frames().len();
-    drop(stack);
+    let frame_level = vm.get_stack().get_frames().len();
     let run_result = Compiler::new().run_expr::<Generic<A>>(vm, "<top>", &expr);
-    stack = vm.current_frame();
+    let mut stack = vm.get_stack();
+    let mut stack = StackFrame::current(&mut stack);
     match run_result {
         Ok((value, typ)) => IO::Value(format!("{:?} : {}", value.0, typ)),
         Err(err) => {
@@ -165,8 +168,8 @@ fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
             let fmt = format!("{}\n{}", err, trace);
             while stack.stack.get_frames().len() > frame_level {
                 match stack.exit_scope() {
-                    Some(new_stack) => stack = new_stack,
-                    None => return IO::Exception(fmt),
+                    Ok(new_stack) => stack = new_stack,
+                    Err(_) => return IO::Exception(fmt),
                 }
             }
             IO::Exception(fmt)
@@ -176,11 +179,10 @@ fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
 
 fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
     let WithVM { vm, value: name } = name;
-    let mut stack = vm.current_frame();
-    let frame_level = stack.stack.get_frames().len();
-    drop(stack);
+    let frame_level = vm.get_stack().get_frames().len();
     let run_result = Compiler::new().load_script(vm, &name[..], &expr);
-    stack = vm.current_frame();
+    let mut stack = vm.get_stack();
+    let mut stack = StackFrame::current(&mut stack);
     match run_result {
         Ok(()) => IO::Value(format!("Loaded {}", &name[..])),
         Err(err) => {
@@ -188,8 +190,8 @@ fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
             let fmt = format!("{}\n{}", err, trace);
             while stack.stack.get_frames().len() > frame_level {
                 match stack.exit_scope() {
-                    Some(new_stack) => stack = new_stack,
-                    None => return IO::Exception(fmt),
+                    Ok(new_stack) => stack = new_stack,
+                    Err(_) => return IO::Exception(fmt),
                 }
             }
             IO::Exception(fmt)

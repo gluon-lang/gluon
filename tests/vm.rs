@@ -6,7 +6,7 @@ use gluon::vm::api::{FunctionRef, Generic, Getable, VmType, OpaqueValue};
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
 use gluon::vm::internal::Value;
 use gluon::vm::internal::Value::{Float, Int};
-use gluon::vm::stack::State;
+use gluon::vm::stack::{State, StackFrame};
 use gluon::vm::channel::Sender;
 use gluon::vm::Error as VMError;
 use gluon::import::Import;
@@ -222,7 +222,8 @@ in f 4
 fn insert_stack_slice() {
     let _ = ::env_logger::init();
     let vm = make_vm();
-    let mut stack = vm.current_frame();
+    let mut stack = vm.get_stack();
+    let mut stack = StackFrame::current(&mut stack);
     stack.push(Int(0));
     stack.insert_slice(0, &[Int(2), Int(1)]);
     assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
