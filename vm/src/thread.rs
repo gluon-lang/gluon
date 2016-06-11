@@ -677,7 +677,7 @@ impl ThreadInternal for Thread {
 
     fn deep_clone(&self, value: Value) -> Result<Value> {
         let mut visited = HashMap::new();
-        ::value::deep_clone(&value, &mut visited, &mut self.local_gc.lock().unwrap())
+        ::value::deep_clone(value, &mut visited, &mut self.local_gc.lock().unwrap())
     }
 }
 

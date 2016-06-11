@@ -385,16 +385,14 @@ impl Traverseable for ExternFunction {
 }
 
 
+/// Representation of values which can be stored directly in an array
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum ValueType {
+pub enum Repr {
     Int,
     Float,
     String,
-    Data,
     Array,
-    Function,
-    Closure,
-    PartialApplication,
+    Unknown,
     Userdata,
     Thread,
 }
@@ -405,18 +403,13 @@ macro_rules! on_array {
             let ref array = $array;
             unsafe {
                 match array.typ {
-                    ValueType::Int => $f(array.unsafe_array::<VMInt>()),
-                    ValueType::Float => $f(array.unsafe_array::<f64>()),
-                    ValueType::String => $f(array.unsafe_array::<GcPtr<Str>>()),
-                    ValueType::Data => $f(array.unsafe_array::<GcPtr<DataStruct>>()),
-                    ValueType::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
-                    ValueType::Function => $f(array.unsafe_array::<GcPtr<ExternFunction>>()),
-                    ValueType::Closure => $f(array.unsafe_array::<GcPtr<ClosureData>>()),
-                    ValueType::PartialApplication => {
-                        $f(array.unsafe_array::<GcPtr<PartialApplicationData>>())
-                    }
-                    ValueType::Userdata => $f(array.unsafe_array::<GcPtr<Box<Userdata>>>()),
-                    ValueType::Thread => $f(array.unsafe_array::<GcPtr<Thread>>()),
+                    Repr::Int => $f(array.unsafe_array::<VMInt>()),
+                    Repr::Float => $f(array.unsafe_array::<f64>()),
+                    Repr::String => $f(array.unsafe_array::<GcPtr<Str>>()),
+                    Repr::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
+                    Repr::Unknown => $f(array.unsafe_array::<Value>()),
+                    Repr::Userdata => $f(array.unsafe_array::<GcPtr<Box<Userdata>>>()),
+                    Repr::Thread => $f(array.unsafe_array::<GcPtr<Thread>>()),
                 }
             }
         }
@@ -426,7 +419,7 @@ macro_rules! on_array {
 
 #[derive(Debug)]
 pub struct ValueArray {
-    pub typ: ValueType,
+    pub typ: Repr,
     array: Array<()>,
 }
 
@@ -463,16 +456,13 @@ impl ValueArray {
     pub fn get(&self, index: usize) -> Value {
         unsafe {
             match self.typ {
-                ValueType::Int => Value::Int(self.unsafe_get(index)),
-                ValueType::Float => Value::Float(self.unsafe_get(index)),
-                ValueType::String => Value::String(self.unsafe_get(index)),
-                ValueType::Data => Value::Data(self.unsafe_get(index)),
-                ValueType::Array => Value::Array(self.unsafe_get(index)),
-                ValueType::Function => Value::Function(self.unsafe_get(index)),
-                ValueType::Closure => Value::Closure(self.unsafe_get(index)),
-                ValueType::PartialApplication => Value::PartialApplication(self.unsafe_get(index)),
-                ValueType::Userdata => Value::Userdata(self.unsafe_get(index)),
-                ValueType::Thread => Value::Thread(self.unsafe_get(index)),
+                Repr::Int => Value::Int(self.unsafe_get(index)),
+                Repr::Float => Value::Float(self.unsafe_get(index)),
+                Repr::String => Value::String(self.unsafe_get(index)),
+                Repr::Array => Value::Array(self.unsafe_get(index)),
+                Repr::Unknown => self.unsafe_get(index),
+                Repr::Userdata => Value::Userdata(self.unsafe_get(index)),
+                Repr::Thread => Value::Thread(self.unsafe_get(index)),
             }
         }
     }
@@ -553,9 +543,9 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
                     Value::String(ref x) => size_of_val(x),
                     Value::Data(ref x) => size_of_val(x),
                     Value::Array(ref x) => size_of_val(x),
-                    Value::Function(ref x) => size_of_val(x),
-                    Value::Closure(ref x) => size_of_val(x),
-                    Value::PartialApplication(ref x) => size_of_val(x),
+                    Value::Function(_) |
+                    Value::Closure(_) |
+                    Value::PartialApplication(_) => size_of::<Value>(),
                     Value::Userdata(ref x) => size_of_val(x),
                     Value::Thread(ref x) => size_of_val(x),
                 };
@@ -572,7 +562,7 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
                 Some(value) => {
                     match *value {
                         Value::Int(_) => {
-                            result.typ = ValueType::Int;
+                            result.typ = Repr::Int;
                             let iter = self.0.iter().map(|v| match *v {
                                 Value::Int(x) => x,
                                 _ => unreachable!(),
@@ -580,7 +570,7 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
                             result.initialize(iter);
                         }
                         Value::Float(_) => {
-                            result.typ = ValueType::Float;
+                            result.typ = Repr::Float;
                             let iter = self.0.iter().map(|v| match *v {
                                 Value::Float(x) => x,
                                 _ => unreachable!(),
@@ -588,55 +578,31 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
                             result.initialize(iter);
                         }
                         Value::String(_) => {
-                            result.typ = ValueType::String;
+                            result.typ = Repr::String;
                             let iter = self.0.iter().map(|v| match *v {
                                 Value::String(x) => x,
                                 _ => unreachable!(),
                             });
                             result.initialize(iter);
                         }
-                        Value::Data(_) => {
-                            result.typ = ValueType::Data;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::Data(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
                         Value::Array(_) => {
-                            result.typ = ValueType::Array;
+                            result.typ = Repr::Array;
                             let iter = self.0.iter().map(|v| match *v {
                                 Value::Array(x) => x,
                                 _ => unreachable!(),
                             });
                             result.initialize(iter);
                         }
-                        Value::Function(_) => {
-                            result.typ = ValueType::Function;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::Function(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
-                        Value::Closure(_) => {
-                            result.typ = ValueType::Closure;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::Closure(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
+                        Value::Data(_) |
+                        Value::Function(_) |
+                        Value::Closure(_) |
                         Value::PartialApplication(_) => {
-                            result.typ = ValueType::PartialApplication;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::PartialApplication(x) => x,
-                                _ => unreachable!(),
-                            });
+                            result.typ = Repr::Unknown;
+                            let iter = self.0.iter().cloned();
                             result.initialize(iter);
                         }
                         Value::Userdata(_) => {
-                            result.typ = ValueType::Userdata;
+                            result.typ = Repr::Userdata;
                             let iter = self.0.iter().map(|v| match *v {
                                 Value::Userdata(x) => x,
                                 _ => unreachable!(),
@@ -644,7 +610,7 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
                             result.initialize(iter);
                         }
                         Value::Thread(_) => {
-                            result.typ = ValueType::Thread;
+                            result.typ = Repr::Thread;
                             let iter = self.0.iter().map(|v| match *v {
                                 Value::Thread(x) => x,
                                 _ => unreachable!(),
@@ -653,7 +619,7 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
                         }
                     }
                 }
-                None => result.typ = ValueType::Int,
+                None => result.typ = Repr::Int,
             }
             result
         }
@@ -708,7 +674,7 @@ fn deep_clone_data(data: GcPtr<DataStruct>,
             {
                 let new_fields = unsafe { &mut new_data.as_mut().fields };
                 for (new, old) in new_fields.iter_mut().zip(&data.fields) {
-                    *new = try!(deep_clone(old, visited, gc));
+                    *new = try!(deep_clone(*old, visited, gc));
                 }
             }
             Ok(new_data)
@@ -720,13 +686,13 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
                     visited: &mut HashMap<*const (), Value>,
                     gc: &mut Gc)
                     -> Result<GcPtr<ValueArray>> {
-    type CloneFn<T> = fn(GcPtr<T>, &mut HashMap<*const (), Value>, &mut Gc) -> Result<GcPtr<T>>;
-    unsafe fn deep_clone_elems<T>(deep_clone: CloneFn<T>,
-                                  mut new_array: GcPtr<ValueArray>,
-                                  visited: &mut HashMap<*const (), Value>,
-                                  gc: &mut Gc)
-                                  -> Result<()> {
-        let new_array = new_array.as_mut().unsafe_array_mut::<GcPtr<T>>();
+    type CloneFn<T> = fn(T, &mut HashMap<*const (), Value>, &mut Gc) -> Result<T>;
+    unsafe fn deep_clone_elems<T: Copy>(deep_clone: CloneFn<T>,
+                                        mut new_array: GcPtr<ValueArray>,
+                                        visited: &mut HashMap<*const (), Value>,
+                                        gc: &mut Gc)
+                                        -> Result<()> {
+        let new_array = new_array.as_mut().unsafe_array_mut::<T>();
         for field in new_array.iter_mut() {
             *field = try!(deep_clone(*field, visited, gc));
         }
@@ -743,16 +709,12 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
         Err(new_array) => {
             unsafe {
                 try!(match new_array.typ {
-                    ValueType::Int | ValueType::Float | ValueType::String => Ok(()),
-                    ValueType::Data => deep_clone_elems(deep_clone_data, new_array, visited, gc),
-                    ValueType::Array => deep_clone_elems(deep_clone_array, new_array, visited, gc),
-                    ValueType::Closure => {
-                        deep_clone_elems(deep_clone_closure, new_array, visited, gc)
+                    Repr::Int | Repr::Float | Repr::String => Ok(()),
+                    Repr::Array => deep_clone_elems(deep_clone_array, new_array, visited, gc),
+                    Repr::Unknown => {
+                        deep_clone_elems(deep_clone, new_array, visited, gc)
                     }
-                    ValueType::PartialApplication => {
-                        deep_clone_elems(deep_clone_app, new_array, visited, gc)
-                    }
-                    ValueType::Function | ValueType::Userdata | ValueType::Thread => {
+                    Repr::Userdata | Repr::Thread => {
                         return Err(Error::Message("Threads, Userdata and Extern functions cannot \
                                                    be deep cloned yet"
                                                       .into()))
@@ -779,7 +741,7 @@ fn deep_clone_closure(data: GcPtr<ClosureData>,
             {
                 let new_upvars = unsafe { &mut new_data.as_mut().upvars };
                 for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
-                    *new = try!(deep_clone(old, visited, gc));
+                    *new = try!(deep_clone(*old, visited, gc));
                 }
             }
             Ok(new_data)
@@ -802,23 +764,23 @@ fn deep_clone_app(data: GcPtr<PartialApplicationData>,
                 let new_arguments = unsafe { &mut new_data.as_mut().arguments };
                 for (new, old) in new_arguments.iter_mut()
                                                .zip(&data.arguments) {
-                    *new = try!(deep_clone(old, visited, gc));
+                    *new = try!(deep_clone(*old, visited, gc));
                 }
             }
             Ok(new_data)
         }
     }
 }
-pub fn deep_clone(value: &Value,
+pub fn deep_clone(value: Value,
                   visited: &mut HashMap<*const (), Value>,
                   gc: &mut Gc)
                   -> Result<Value> {
     // Only need to clone values which belong to a younger generation than the gc that the new
     // value will live in
     if value.generation() <= gc.generation() {
-        return Ok(*value);
+        return Ok(value);
     }
-    match *value {
+    match value {
         String(data) => deep_clone_str(data, visited, gc),
         Value::Data(data) => deep_clone_data(data, visited, gc).map(Value::Data),
         Value::Array(data) => deep_clone_array(data, visited, gc).map(Value::Array),
