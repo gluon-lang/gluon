@@ -19,6 +19,7 @@ pub enum Instruction {
     Call(VMIndex),
     TailCall(VMIndex),
     Construct(VMIndex, VMIndex),
+    ConstructArray(VMIndex),
     GetField(VMIndex),
     Split,
     TestTag(VMTag),
@@ -60,7 +61,8 @@ impl Instruction {
             PushInt(_) | PushFloat(_) | PushString(_) | Push(_) | PushGlobal(_) => 1,
             Call(n) => -(n as i32),
             TailCall(n) => -(n as i32),
-            Construct(_, n) => 1 - n as i32,
+            Construct(_, n) |
+            ConstructArray(n) => 1 - n as i32,
             GetField(_) => 0,
             // The number of added stack slots are handled separately as the type is needed to
             // calculate the number of slots needed

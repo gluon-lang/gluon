@@ -925,6 +925,19 @@ impl<'b> Context<'b> {
                     }
                     self.stack.push(Data(d));
                 }
+                ConstructArray(args) => {
+                    let d = {
+                        let fields = &self.stack[self.stack.len() - args..];
+                        alloc(&mut self.gc,
+                              self.thread,
+                              &self.stack.stack,
+                              ::value::ArrayDef(fields))
+                    };
+                    for _ in 0..args {
+                        self.stack.pop();
+                    }
+                    self.stack.push(Value::Array(d));
+                }
                 GetField(i) => {
                     match self.stack.pop() {
                         Data(data) => {

@@ -452,6 +452,40 @@ array.index arr 0 #Int== 1
 true
 }
 
+test_expr!{ array_float,
+r#"
+let arr = [1.0,2.0,3.0]
+
+let b = array.index arr 2 #Float== 2.0 && array.length arr #Int== 3
+let arr2 = array.append arr arr
+b && array.length arr2 #Int== array.length arr #Int* 2
+  && array.index arr2 1 #Float== array.index arr2 4
+"#,
+true
+}
+
+test_expr!{ array_data,
+r#"
+let arr = [{x = 1, y = "a" }, { x = 2, y = "b" }]
+
+let b = (array.index arr 1).x #Int== 2 && array.length arr #Int== 2
+let arr2 = array.append arr arr
+b && array.length arr2 #Int== array.length arr #Int* 2
+"#,
+true
+}
+
+test_expr!{ array_array,
+r#"
+let arr = [[], [1], [2, 3]]
+
+let b = array.length (array.index arr 1) #Int== 1 && array.length arr #Int== 3
+let arr2 = array.append arr arr
+b && array.length arr2 #Int== array.length arr #Int* 2
+"#,
+true
+}
+
 test_expr!{ prelude true_branch_not_affected_by_false_branc,
 r#"
 if True then

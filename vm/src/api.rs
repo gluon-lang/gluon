@@ -4,7 +4,7 @@ use gc::{Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, Stack, StackFrame};
 use vm::{Thread, Status, RootStr, RootedValue, Root};
-use value::{DataStruct, ExternFunction, Value, Def};
+use value::{DataStruct, ExternFunction, Value, ValueArray, Def};
 use thread::RootedThread;
 use thread::ThreadInternal;
 use base::types;
@@ -825,11 +825,11 @@ impl<'vm, V> Getable<'vm> for OpaqueValue<RootedThread, V> {
 pub struct Array<'vm, T>(RootedValue<&'vm Thread>, PhantomData<T>);
 
 impl<'vm, T> Deref for Array<'vm, T> {
-    type Target = DataStruct;
-    fn deref(&self) -> &DataStruct {
+    type Target = ValueArray;
+    fn deref(&self) -> &ValueArray {
         match *self.0 {
-            Value::Data(ref data) => data,
-            _ => panic!("Expected data"),
+            Value::Array(ref data) => data,
+            _ => panic!("Expected an array found {:?}", self.0),
         }
     }
 }
@@ -838,19 +838,14 @@ impl<'vm, T> Array<'vm, T> {
     pub fn vm(&self) -> &'vm Thread {
         self.0.vm_()
     }
-
-    pub fn len(&self) -> VMIndex {
-        self.fields.len() as VMIndex
-    }
 }
 
 impl<'vm, T: for<'vm2> Getable<'vm2>> Array<'vm, T> {
     pub fn get(&self, index: VMInt) -> Option<T> {
         match *self.0 {
-            Value::Data(data) => {
-                data.fields
-                    .get(index as usize)
-                    .and_then(|v| T::from_value(self.0.vm(), Variants(v)))
+            Value::Array(data) => {
+                let v = data.get(index as usize);
+                T::from_value(self.0.vm(), Variants(&v))
             }
             _ => None,
         }

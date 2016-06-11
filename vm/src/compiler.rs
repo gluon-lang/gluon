@@ -462,7 +462,6 @@ impl<'a> Compiler<'a> {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
-                    function.emit(PushInt(0));
                     function.emit(Jump(0));//lhs false, jump to after rhs
                     // Dont count the integer added added above as the next part of the code never
                     // pushed it
@@ -660,7 +659,7 @@ impl<'a> Compiler<'a> {
                 for expr in a.expressions.iter() {
                     self.compile(expr, function, false);
                 }
-                function.emit(Construct(0, a.expressions.len() as VMIndex));
+                function.emit(ConstructArray(a.expressions.len() as VMIndex));
             }
             Expr::Lambda(ref lambda) => {
                 let (function_index, vars, cf) = self.compile_lambda(&lambda.id,

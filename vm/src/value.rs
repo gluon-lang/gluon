@@ -397,12 +397,43 @@ pub enum Repr {
     Thread,
 }
 
+impl Repr {
+    fn from_value(value: Value) -> Repr {
+        match value {
+            Value::Int(_) => Repr::Int,
+            Value::Float(_) => Repr::Float,
+            Value::String(_) => Repr::String,
+            Value::Array(_) => Repr::Array,
+            Value::Data(_) |
+            Value::Function(_) |
+            Value::Closure(_) |
+            Value::PartialApplication(_) => Repr::Unknown,
+            Value::Userdata(_) => Repr::Userdata,
+            Value::Thread(_) => Repr::Thread,
+        }
+    }
+
+    fn size_of(self) -> usize {
+        use std::mem::size_of;
+        match self {
+            Repr::Int => size_of::<VMInt>(),
+            Repr::Float => size_of::<f64>(),
+            Repr::String => size_of::<GcPtr<Str>>(),
+            Repr::Array => size_of::<GcPtr<ValueArray>>(),
+            Repr::Unknown => size_of::<Value>(),
+            Repr::Userdata => size_of::<GcPtr<Box<Userdata>>>(),
+            Repr::Thread => size_of::<GcPtr<Thread>>(),
+        }
+    }
+}
+
+#[macro_export]
 macro_rules! on_array {
     ($array: expr, $f: expr) => {
         {
             let ref array = $array;
             unsafe {
-                match array.typ {
+                match array.repr() {
                     Repr::Int => $f(array.unsafe_array::<VMInt>()),
                     Repr::Float => $f(array.unsafe_array::<f64>()),
                     Repr::String => $f(array.unsafe_array::<GcPtr<Str>>()),
@@ -419,13 +450,13 @@ macro_rules! on_array {
 
 #[derive(Debug)]
 pub struct ValueArray {
-    pub typ: Repr,
+    repr: Repr,
     array: Array<()>,
 }
 
 impl PartialEq for ValueArray {
     fn eq(&self, other: &ValueArray) -> bool {
-        self.typ == other.typ && self.iter().zip(other.iter()).all(|(l, r)| l == r)
+        self.repr == other.repr && self.iter().zip(other.iter()).all(|(l, r)| l == r)
     }
 }
 
@@ -444,6 +475,11 @@ impl<'a> Iterator for Iter<'a> {
             None
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let i = self.array.len() - self.index;
+        (i, Some(i))
+    }
 }
 
 impl Traverseable for ValueArray {
@@ -455,7 +491,7 @@ impl Traverseable for ValueArray {
 impl ValueArray {
     pub fn get(&self, index: usize) -> Value {
         unsafe {
-            match self.typ {
+            match self.repr {
                 Repr::Int => Value::Int(self.unsafe_get(index)),
                 Repr::Float => Value::Float(self.unsafe_get(index)),
                 Repr::String => Value::String(self.unsafe_get(index)),
@@ -478,6 +514,69 @@ impl ValueArray {
         }
     }
 
+    pub fn size_of(repr: Repr, len: usize) -> usize {
+        ::std::mem::size_of::<ValueArray>() + repr.size_of() * len
+    }
+
+    pub fn repr(&self) -> Repr {
+        self.repr
+    }
+
+    pub unsafe fn set_repr(&mut self, repr: Repr) {
+        self.repr = repr;
+    }
+
+    pub unsafe fn initialize<I>(&mut self, iter: I) where I: IntoIterator<Item=Value> {
+        let iter = iter.into_iter();
+        match self.repr {
+            Repr::Int => {
+                let iter = iter.map(|v| match v {
+                    Value::Int(x) => x,
+                    _ => unreachable!(),
+                });
+                self.unsafe_array_mut().initialize(iter);
+            }
+            Repr::Float => {
+                let iter = iter.map(|v| match v {
+                    Value::Float(x) => x,
+                    _ => unreachable!(),
+                });
+                self.unsafe_array_mut().initialize(iter);
+            }
+            Repr::String => {
+                let iter = iter.map(|v| match v {
+                    Value::String(x) => x,
+                    _ => unreachable!(),
+                });
+                self.unsafe_array_mut().initialize(iter);
+            }
+            Repr::Array => {
+                let iter = iter.map(|v| match v {
+                    Value::Array(x) => x,
+                    _ => unreachable!(),
+                });
+                self.unsafe_array_mut().initialize(iter);
+            }
+            Repr::Unknown => {
+                self.unsafe_array_mut().initialize(iter);
+            }
+            Repr::Userdata => {
+                let iter = iter.map(|v| match v {
+                    Value::Userdata(x) => x,
+                    _ => unreachable!(),
+                });
+                self.unsafe_array_mut().initialize(iter);
+            }
+            Repr::Thread => {
+                let iter = iter.map(|v| match v {
+                    Value::Thread(x) => x,
+                    _ => unreachable!(),
+                });
+                self.unsafe_array_mut().initialize(iter);
+            }
+        }
+    }
+
     unsafe fn unsafe_get<T: Copy>(&self, index: usize) -> T {
         ::std::mem::transmute::<&Array<()>, &Array<T>>(&self.array)[index]
     }
@@ -489,33 +588,19 @@ impl ValueArray {
     pub unsafe fn unsafe_array_mut<T: Copy>(&mut self) -> &mut Array<T> {
         ::std::mem::transmute::<&mut Array<()>, &mut Array<T>>(&mut self.array)
     }
-
-    unsafe fn initialize<I>(&mut self, iterable: I)
-        where I: IntoIterator,
-              I::Item: Copy
-    {
-        self.unsafe_array_mut().initialize(iterable)
-    }
 }
 
 unsafe impl<'a> DataDef for &'a ValueArray {
     type Value = ValueArray;
     fn size(&self) -> usize {
-        use std::mem::size_of;
-        fn size_of_opt<T>(_: Option<&T>) -> usize {
-            size_of::<T>()
-        }
-        let array_elems_size = on_array!(self, |array: &Array<_>| {
-            array.len() * size_of_opt(array.first())
-        });
-        size_of::<ValueArray>() + array_elems_size
+        ValueArray::size_of(self.repr, self.len())
     }
     
     #[allow(unused_unsafe)]
     fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
         unsafe {
             let result = &mut *result.as_mut_ptr();
-            result.typ = self.typ;
+            result.repr = self.repr;
             on_array!(self, |array: &Array<_>| {
                 result.unsafe_array_mut().initialize(array.iter().cloned())
             });
@@ -534,23 +619,9 @@ impl<'b> Traverseable for ArrayDef<'b> {
 unsafe impl<'b> DataDef for ArrayDef<'b> {
     type Value = ValueArray;
     fn size(&self) -> usize {
-        use std::mem::{size_of, size_of_val};
+        use std::mem::size_of;
         let size = match self.0.first() {
-            Some(value) => {
-                let size = match *value {
-                    Value::Int(ref x) => size_of_val(x),
-                    Value::Float(ref x) => size_of_val(x),
-                    Value::String(ref x) => size_of_val(x),
-                    Value::Data(ref x) => size_of_val(x),
-                    Value::Array(ref x) => size_of_val(x),
-                    Value::Function(_) |
-                    Value::Closure(_) |
-                    Value::PartialApplication(_) => size_of::<Value>(),
-                    Value::Userdata(ref x) => size_of_val(x),
-                    Value::Thread(ref x) => size_of_val(x),
-                };
-                self.0.len() * size
-            }
+            Some(value) => Repr::from_value(*value).size_of() * self.0.len(),
             None => 0,
         };
         size_of::<ValueArray>() + size
@@ -560,66 +631,13 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
             let result = &mut *result.as_mut_ptr();
             match self.0.first() {
                 Some(value) => {
-                    match *value {
-                        Value::Int(_) => {
-                            result.typ = Repr::Int;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::Int(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
-                        Value::Float(_) => {
-                            result.typ = Repr::Float;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::Float(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
-                        Value::String(_) => {
-                            result.typ = Repr::String;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::String(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
-                        Value::Array(_) => {
-                            result.typ = Repr::Array;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::Array(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
-                        Value::Data(_) |
-                        Value::Function(_) |
-                        Value::Closure(_) |
-                        Value::PartialApplication(_) => {
-                            result.typ = Repr::Unknown;
-                            let iter = self.0.iter().cloned();
-                            result.initialize(iter);
-                        }
-                        Value::Userdata(_) => {
-                            result.typ = Repr::Userdata;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::Userdata(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
-                        Value::Thread(_) => {
-                            result.typ = Repr::Thread;
-                            let iter = self.0.iter().map(|v| match *v {
-                                Value::Thread(x) => x,
-                                _ => unreachable!(),
-                            });
-                            result.initialize(iter);
-                        }
-                    }
+                    result.repr = Repr::from_value(*value);
+                    result.initialize(self.0.iter().cloned());
                 }
-                None => result.typ = Repr::Int,
+                None => {
+                    result.repr = Repr::Int;
+                    result.initialize(None);
+                }
             }
             result
         }
@@ -708,12 +726,10 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
         Ok(_) => unreachable!(),
         Err(new_array) => {
             unsafe {
-                try!(match new_array.typ {
+                try!(match new_array.repr() {
                     Repr::Int | Repr::Float | Repr::String => Ok(()),
                     Repr::Array => deep_clone_elems(deep_clone_array, new_array, visited, gc),
-                    Repr::Unknown => {
-                        deep_clone_elems(deep_clone, new_array, visited, gc)
-                    }
+                    Repr::Unknown => deep_clone_elems(deep_clone, new_array, visited, gc),
                     Repr::Userdata | Repr::Thread => {
                         return Err(Error::Message("Threads, Userdata and Extern functions cannot \
                                                    be deep cloned yet"
