@@ -29,6 +29,7 @@ pub enum ValueRef<'a> {
     Float(f64),
     String(&'a str),
     Data(Data<'a>),
+    Tag(VMTag),
     Userdata(&'a ::vm::Userdata),
     Internal,
 }
@@ -41,6 +42,7 @@ impl<'a> ValueRef<'a> {
             Value::String(ref s) => ValueRef::String(s),
             Value::Data(ref data) => ValueRef::Data(Data(data)),
             Value::Userdata(ref data) => ValueRef::Userdata(&***data),
+            Value::Tag(tag) => ValueRef::Tag(tag),
             Value::Thread(_) |
             Value::Function(_) |
             Value::Closure(_) |
@@ -435,7 +437,7 @@ impl VMType for bool {
 }
 impl<'vm> Pushable<'vm> for bool {
     fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
-        stack.push(Value::Int(if self {
+        stack.push(Value::Tag(if self {
             1
         } else {
             0
@@ -446,8 +448,8 @@ impl<'vm> Pushable<'vm> for bool {
 impl<'vm> Getable<'vm> for bool {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<bool> {
         match value.as_ref() {
-            ValueRef::Int(1) => Some(true),
-            ValueRef::Int(0) => Some(false),
+            ValueRef::Tag(1) => Some(true),
+            ValueRef::Tag(0) => Some(false),
             _ => None,
         }
     }
@@ -467,15 +469,15 @@ impl<'vm> Pushable<'vm> for Ordering {
             Ordering::Equal => 1,
             Ordering::Greater => 2,
         };
-        stack.push(Value::Int(tag));
+        stack.push(Value::Tag(tag));
         Status::Ok
     }
 }
 impl<'vm> Getable<'vm> for Ordering {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Ordering> {
         let tag = match value.as_ref() {
-            ValueRef::Data(data) => data.tag() as VMInt,
-            ValueRef::Int(tag) => tag,
+            ValueRef::Data(data) => data.tag(),
+            ValueRef::Tag(tag) => tag,
             _ => return None,
         };
         match tag {
@@ -644,7 +646,7 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
                 assert!(stack.len() == len);
                 stack.push(value);
             }
-            None => stack.push(Value::Int(0)),
+            None => stack.push(Value::Tag(0)),
         }
         Status::Ok
     }
@@ -659,7 +661,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
                     T::from_value(vm, Variants(&data.fields[1])).map(Some)
                 }
             }
-            Value::Int(0) => Some(None),
+            Value::Tag(0) => Some(None),
             _ => None,
         }
     }

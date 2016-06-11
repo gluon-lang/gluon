@@ -911,19 +911,23 @@ impl<'b> Context<'b> {
                 }
                 Construct(tag, args) => {
                     let d = {
-                        let fields = &self.stack[self.stack.len() - args..];
-                        alloc(&mut self.gc,
-                              self.thread,
-                              &self.stack.stack,
-                              Def {
-                                  tag: tag,
-                                  elems: fields,
-                              })
+                        if args == 0 {
+                            Value::Tag(tag)
+                        } else {
+                            let fields = &self.stack[self.stack.len() - args..];
+                            Data(alloc(&mut self.gc,
+                                       self.thread,
+                                       &self.stack.stack,
+                                       Def {
+                                           tag: tag,
+                                           elems: fields,
+                                       }))
+                        }
                     };
                     for _ in 0..args {
                         self.stack.pop();
                     }
-                    self.stack.push(Data(d));
+                    self.stack.push(d);
                 }
                 ConstructArray(args) => {
                     let d = {
@@ -950,13 +954,13 @@ impl<'b> Context<'b> {
                 TestTag(tag) => {
                     let data_tag = match self.stack.top() {
                         Data(ref data) => data.tag,
-                        Int(tag) => tag as VMTag,
+                        Value::Tag(tag) => tag,
                         _ => {
                             return Err(Error::Message("Op TestTag called on non data type"
                                                           .to_string()))
                         }
                     };
-                    self.stack.push(Int(if data_tag == tag {
+                    self.stack.push(Value::Tag(if data_tag == tag {
                         1
                     } else {
                         0
@@ -970,7 +974,7 @@ impl<'b> Context<'b> {
                             }
                         }
                         // Zero argument variant
-                        Int(_) => (),
+                        Value::Tag(_) => (),
                         _ => {
                             return Err(Error::Message("Op Split called on non data type"
                                                           .to_string()))
@@ -983,7 +987,7 @@ impl<'b> Context<'b> {
                 }
                 CJump(i) => {
                     match self.stack.pop() {
-                        Int(0) => (),
+                        Value::Tag(0) => (),
                         _ => {
                             index = i as usize;
                             continue;

@@ -169,6 +169,7 @@ pub enum Value {
     Int(VMInt),
     Float(f64),
     String(GcPtr<Str>),
+    Tag(VMTag),
     Data(GcPtr<DataStruct>),
     Array(GcPtr<ValueArray>),
     Function(GcPtr<ExternFunction>),
@@ -189,7 +190,7 @@ impl Value {
             PartialApplication(p) => p.generation(),
             Value::Userdata(p) => p.generation(),
             Value::Thread(p) => p.generation(),
-            Int(_) | Float(_) => 0,
+            Value::Tag(_) | Int(_) | Float(_) => 0,
         }
     }
 }
@@ -286,7 +287,7 @@ impl Traverseable for Value {
             Value::Userdata(ref data) => data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
             Value::Thread(ref thread) => thread.traverse(gc),
-            Int(_) | Float(_) => (),
+            Value::Tag(_) | Int(_) | Float(_) => (),
         }
     }
 }
@@ -318,6 +319,7 @@ impl fmt::Debug for Value {
                     Int(i) => write!(f, "{:?}", i),
                     Float(x) => write!(f, "{:?}f", x),
                     String(x) => write!(f, "{:?}", &*x),
+                    Value::Tag(tag) => write!(f, "{{{:?}: }}", tag),
                     Value::Data(ref data) => {
                         write!(f,
                                "{{{:?}: {:?}}}",
@@ -405,6 +407,7 @@ impl Repr {
             Value::String(_) => Repr::String,
             Value::Array(_) => Repr::Array,
             Value::Data(_) |
+            Value::Tag(_) |
             Value::Function(_) |
             Value::Closure(_) |
             Value::PartialApplication(_) => Repr::Unknown,
@@ -526,7 +529,9 @@ impl ValueArray {
         self.repr = repr;
     }
 
-    pub unsafe fn initialize<I>(&mut self, iter: I) where I: IntoIterator<Item=Value> {
+    pub unsafe fn initialize<I>(&mut self, iter: I)
+        where I: IntoIterator<Item = Value>
+    {
         let iter = iter.into_iter();
         match self.repr {
             Repr::Int => {
@@ -635,7 +640,7 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
                     result.initialize(self.0.iter().cloned());
                 }
                 None => {
-                    result.repr = Repr::Int;
+                    result.repr = Repr::Unknown;
                     result.initialize(None);
                 }
             }
@@ -811,6 +816,7 @@ pub fn deep_clone(value: Value,
                                        cloned yet"
                                           .into()))
         }
+        Value::Tag(i) => Ok(Value::Tag(i)),
         Int(i) => Ok(Int(i)),
         Float(f) => Ok(Float(f)),
     }

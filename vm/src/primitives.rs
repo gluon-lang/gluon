@@ -21,7 +21,7 @@ fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
                     -> MaybeError<Generic<generic::A>, String> {
     match array.get(index) {
         Some(value) => MaybeError::Ok(value),
-        None => MaybeError::Err(format!("{} is out of range", index)),
+        None => MaybeError::Err(format!("Index {} is out of range", index)),
     }
 }
 
@@ -48,10 +48,16 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
             size_of::<usize>() + ::array::Array::<Value>::size_of(len)
         }
         fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
-            debug_assert!(self.lhs.repr() == self.rhs.repr());
+            // Empty arrays don't have the correct representation set so choose the representation
+            // of `rhs` if it is empty. (And if both are empty the representation does not matter).
+            let repr = if self.lhs.len() == 0 {
+                self.rhs.repr()
+            } else {
+                self.lhs.repr()
+            };
             unsafe {
                 let result = &mut *result.as_mut_ptr();
-                result.set_repr(self.lhs.repr());
+                result.set_repr(repr);
                 result.initialize(self.lhs.iter().chain(self.rhs.iter()));
                 result
             }

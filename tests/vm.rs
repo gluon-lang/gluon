@@ -140,7 +140,7 @@ fn record() {
 ";
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0, vm.new_data(0, &mut [Int(0), Float(1.0), Int(0)]));
+    assert_eq!(value.0, vm.new_data(0, &mut [Int(0), Float(1.0), Value::Tag(0)]));
 }
 
 #[test]
@@ -321,7 +321,7 @@ r#"
 type Test = | A Int | B
 B
 "#,
-Generic::<A>::from(Int(1))
+Generic::<A>::from(Value::Tag(1))
 }
 
 test_expr!{ match_on_zero_argument_variant,
@@ -338,14 +338,14 @@ test_expr!{ marshalled_option_none_is_int,
 r#"
 string_prim.find "a" "b"
 "#,
-Generic::<A>::from(Int(0))
+Generic::<A>::from(Value::Tag(0))
 }
 
 test_expr!{ marshalled_ordering_is_int,
 r#"
 string_prim.compare "a" "b"
 "#,
-Generic::<A>::from(Int(0))
+Generic::<A>::from(Value::Tag(0))
 }
 
 test_expr!{ prelude match_on_bool,
@@ -456,7 +456,7 @@ test_expr!{ array_float,
 r#"
 let arr = [1.0,2.0,3.0]
 
-let b = array.index arr 2 #Float== 2.0 && array.length arr #Int== 3
+let b = array.index arr 2 #Float== 3.0 && array.length arr #Int== 3
 let arr2 = array.append arr arr
 b && array.length arr2 #Int== array.length arr #Int* 2
   && array.index arr2 1 #Float== array.index arr2 4
@@ -537,6 +537,30 @@ let b2 = False
 b
 "#,
 true
+}
+
+// Test that empty variants are handled correctly in arrays
+test_expr!{ array_empty_variant,
+r#"
+type Test = | Empty | Some Int
+let arr = [Empty, Some 1]
+match array.index arr 0 with
+| Empty -> 0
+| Some x -> x
+"#,
+0i32
+}
+
+// Test that array append handles array types correctly
+test_expr!{ array_empty_append,
+r#"
+type Test = | Empty | Some Int
+let arr = array.append [] [Empty, Some 1]
+match array.index arr 0 with
+| Empty -> 0
+| Some x -> x
+"#,
+0i32
 }
 
 #[test]
