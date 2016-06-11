@@ -44,6 +44,7 @@ impl<'a> ValueRef<'a> {
             Value::Thread(_) |
             Value::Function(_) |
             Value::Closure(_) |
+            Value::Array(_) | // FIXME Expose arrays safely
             Value::PartialApplication(_) => ValueRef::Internal,
         }
     }

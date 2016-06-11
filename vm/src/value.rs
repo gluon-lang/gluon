@@ -170,6 +170,7 @@ pub enum Value {
     Float(f64),
     String(GcPtr<Str>),
     Data(GcPtr<DataStruct>),
+    Array(GcPtr<ValueArray>),
     Function(GcPtr<ExternFunction>),
     Closure(GcPtr<ClosureData>),
     PartialApplication(GcPtr<PartialApplicationData>),
@@ -184,6 +185,7 @@ impl Value {
             Value::Data(p) => p.generation(),
             Function(p) => p.generation(),
             Closure(p) => p.generation(),
+            Value::Array(p) => p.generation(),
             PartialApplication(p) => p.generation(),
             Value::Userdata(p) => p.generation(),
             Value::Thread(p) => p.generation(),
@@ -278,6 +280,7 @@ impl Traverseable for Value {
         match *self {
             String(ref data) => data.traverse(gc),
             Value::Data(ref data) => data.traverse(gc),
+            Value::Array(ref data) => data.traverse(gc),
             Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
             Value::Userdata(ref data) => data.traverse(gc),
@@ -320,6 +323,18 @@ impl fmt::Debug for Value {
                                "{{{:?}: {:?}}}",
                                data.tag,
                                LevelSlice(level - 1, &data.fields))
+                    }
+                    Value::Array(ref array) => {
+                        let mut first = true;
+                        try!(write!(f, "["));
+                        for value in array.iter() {
+                            if !first {
+                                try!(write!(f, ", "));
+                            }
+                            first = false;
+                            try!(write!(f, "{:?}", Level(level - 1, &value)));
+                        }
+                        write!(f, "]")
                     }
                     Function(ref func) => write!(f, "<EXTERN {:?}>", &**func),
                     Closure(ref closure) => {
@@ -368,6 +383,283 @@ impl fmt::Debug for ExternFunction {
 impl Traverseable for ExternFunction {
     fn traverse(&self, _: &mut Gc) {}
 }
+
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum ValueType {
+    Int,
+    Float,
+    String,
+    Data,
+    Array,
+    Function,
+    Closure,
+    PartialApplication,
+    Userdata,
+    Thread,
+}
+
+macro_rules! on_array {
+    ($array: expr, $f: expr) => {
+        {
+            let ref array = $array;
+            unsafe {
+                match array.typ {
+                    ValueType::Int => $f(array.unsafe_array::<VMInt>()),
+                    ValueType::Float => $f(array.unsafe_array::<f64>()),
+                    ValueType::String => $f(array.unsafe_array::<GcPtr<Str>>()),
+                    ValueType::Data => $f(array.unsafe_array::<GcPtr<DataStruct>>()),
+                    ValueType::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
+                    ValueType::Function => $f(array.unsafe_array::<GcPtr<ExternFunction>>()),
+                    ValueType::Closure => $f(array.unsafe_array::<GcPtr<ClosureData>>()),
+                    ValueType::PartialApplication => {
+                        $f(array.unsafe_array::<GcPtr<PartialApplicationData>>())
+                    }
+                    ValueType::Userdata => $f(array.unsafe_array::<GcPtr<Box<Userdata>>>()),
+                    ValueType::Thread => $f(array.unsafe_array::<GcPtr<Thread>>()),
+                }
+            }
+        }
+    }
+}
+
+
+#[derive(Debug)]
+pub struct ValueArray {
+    pub typ: ValueType,
+    array: Array<()>,
+}
+
+impl PartialEq for ValueArray {
+    fn eq(&self, other: &ValueArray) -> bool {
+        self.typ == other.typ && self.iter().zip(other.iter()).all(|(l, r)| l == r)
+    }
+}
+
+pub struct Iter<'a> {
+    array: &'a ValueArray,
+    index: usize,
+}
+impl<'a> Iterator for Iter<'a> {
+    type Item = Value;
+    fn next(&mut self) -> Option<Value> {
+        if self.index < self.array.len() {
+            let value = self.array.get(self.index);
+            self.index += 1;
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+impl Traverseable for ValueArray {
+    fn traverse(&self, gc: &mut Gc) {
+        on_array!(*self, |array: &Array<_>| array.traverse(gc))
+    }
+}
+
+impl ValueArray {
+    pub fn get(&self, index: usize) -> Value {
+        unsafe {
+            match self.typ {
+                ValueType::Int => Value::Int(self.unsafe_get(index)),
+                ValueType::Float => Value::Float(self.unsafe_get(index)),
+                ValueType::String => Value::String(self.unsafe_get(index)),
+                ValueType::Data => Value::Data(self.unsafe_get(index)),
+                ValueType::Array => Value::Array(self.unsafe_get(index)),
+                ValueType::Function => Value::Function(self.unsafe_get(index)),
+                ValueType::Closure => Value::Closure(self.unsafe_get(index)),
+                ValueType::PartialApplication => Value::PartialApplication(self.unsafe_get(index)),
+                ValueType::Userdata => Value::Userdata(self.unsafe_get(index)),
+                ValueType::Thread => Value::Thread(self.unsafe_get(index)),
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.array.len()
+    }
+
+    pub fn iter(&self) -> Iter {
+        Iter {
+            array: self,
+            index: 0,
+        }
+    }
+
+    unsafe fn unsafe_get<T: Copy>(&self, index: usize) -> T {
+        ::std::mem::transmute::<&Array<()>, &Array<T>>(&self.array)[index]
+    }
+
+    unsafe fn unsafe_array<T: Copy>(&self) -> &Array<T> {
+        ::std::mem::transmute::<&Array<()>, &Array<T>>(&self.array)
+    }
+
+    pub unsafe fn unsafe_array_mut<T: Copy>(&mut self) -> &mut Array<T> {
+        ::std::mem::transmute::<&mut Array<()>, &mut Array<T>>(&mut self.array)
+    }
+
+    unsafe fn initialize<I>(&mut self, iterable: I)
+        where I: IntoIterator,
+              I::Item: Copy
+    {
+        self.unsafe_array_mut().initialize(iterable)
+    }
+}
+
+unsafe impl<'a> DataDef for &'a ValueArray {
+    type Value = ValueArray;
+    fn size(&self) -> usize {
+        use std::mem::size_of;
+        fn size_of_opt<T>(_: Option<&T>) -> usize {
+            size_of::<T>()
+        }
+        let array_elems_size = on_array!(self, |array: &Array<_>| {
+            array.len() * size_of_opt(array.first())
+        });
+        size_of::<ValueArray>() + array_elems_size
+    }
+    
+    #[allow(unused_unsafe)]
+    fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.typ = self.typ;
+            on_array!(self, |array: &Array<_>| {
+                result.unsafe_array_mut().initialize(array.iter().cloned())
+            });
+            result
+        }
+    }
+}
+
+pub struct ArrayDef<'b>(pub &'b [Value]);
+impl<'b> Traverseable for ArrayDef<'b> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.0.traverse(gc);
+    }
+}
+
+unsafe impl<'b> DataDef for ArrayDef<'b> {
+    type Value = ValueArray;
+    fn size(&self) -> usize {
+        use std::mem::{size_of, size_of_val};
+        let size = match self.0.first() {
+            Some(value) => {
+                let size = match *value {
+                    Value::Int(ref x) => size_of_val(x),
+                    Value::Float(ref x) => size_of_val(x),
+                    Value::String(ref x) => size_of_val(x),
+                    Value::Data(ref x) => size_of_val(x),
+                    Value::Array(ref x) => size_of_val(x),
+                    Value::Function(ref x) => size_of_val(x),
+                    Value::Closure(ref x) => size_of_val(x),
+                    Value::PartialApplication(ref x) => size_of_val(x),
+                    Value::Userdata(ref x) => size_of_val(x),
+                    Value::Thread(ref x) => size_of_val(x),
+                };
+                self.0.len() * size
+            }
+            None => 0,
+        };
+        size_of::<ValueArray>() + size
+    }
+    fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            match self.0.first() {
+                Some(value) => {
+                    match *value {
+                        Value::Int(_) => {
+                            result.typ = ValueType::Int;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::Int(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::Float(_) => {
+                            result.typ = ValueType::Float;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::Float(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::String(_) => {
+                            result.typ = ValueType::String;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::String(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::Data(_) => {
+                            result.typ = ValueType::Data;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::Data(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::Array(_) => {
+                            result.typ = ValueType::Array;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::Array(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::Function(_) => {
+                            result.typ = ValueType::Function;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::Function(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::Closure(_) => {
+                            result.typ = ValueType::Closure;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::Closure(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::PartialApplication(_) => {
+                            result.typ = ValueType::PartialApplication;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::PartialApplication(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::Userdata(_) => {
+                            result.typ = ValueType::Userdata;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::Userdata(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                        Value::Thread(_) => {
+                            result.typ = ValueType::Thread;
+                            let iter = self.0.iter().map(|v| match *v {
+                                Value::Thread(x) => x,
+                                _ => unreachable!(),
+                            });
+                            result.initialize(iter);
+                        }
+                    }
+                }
+                None => result.typ = ValueType::Int,
+            }
+            result
+        }
+    }
+}
+
 
 fn deep_clone_ptr<T, A>(value: GcPtr<T>,
                         visited: &mut HashMap<*const (), Value>,
@@ -420,6 +712,54 @@ fn deep_clone_data(data: GcPtr<DataStruct>,
                 }
             }
             Ok(new_data)
+        }
+    }
+}
+
+fn deep_clone_array(array: GcPtr<ValueArray>,
+                    visited: &mut HashMap<*const (), Value>,
+                    gc: &mut Gc)
+                    -> Result<GcPtr<ValueArray>> {
+    type CloneFn<T> = fn(GcPtr<T>, &mut HashMap<*const (), Value>, &mut Gc) -> Result<GcPtr<T>>;
+    unsafe fn deep_clone_elems<T>(deep_clone: CloneFn<T>,
+                                  mut new_array: GcPtr<ValueArray>,
+                                  visited: &mut HashMap<*const (), Value>,
+                                  gc: &mut Gc)
+                                  -> Result<()> {
+        let new_array = new_array.as_mut().unsafe_array_mut::<GcPtr<T>>();
+        for field in new_array.iter_mut() {
+            *field = try!(deep_clone(*field, visited, gc));
+        }
+        Ok(())
+    }
+
+    let result = deep_clone_ptr(array, visited, |array| {
+        let ptr = gc.alloc(array);
+        (Value::Array(ptr), ptr)
+    });
+    match result {
+        Ok(Value::Array(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(new_array) => {
+            unsafe {
+                try!(match new_array.typ {
+                    ValueType::Int | ValueType::Float | ValueType::String => Ok(()),
+                    ValueType::Data => deep_clone_elems(deep_clone_data, new_array, visited, gc),
+                    ValueType::Array => deep_clone_elems(deep_clone_array, new_array, visited, gc),
+                    ValueType::Closure => {
+                        deep_clone_elems(deep_clone_closure, new_array, visited, gc)
+                    }
+                    ValueType::PartialApplication => {
+                        deep_clone_elems(deep_clone_app, new_array, visited, gc)
+                    }
+                    ValueType::Function | ValueType::Userdata | ValueType::Thread => {
+                        return Err(Error::Message("Threads, Userdata and Extern functions cannot \
+                                                   be deep cloned yet"
+                                                      .into()))
+                    }
+                });
+            }
+            Ok(new_array)
         }
     }
 }
@@ -481,6 +821,7 @@ pub fn deep_clone(value: &Value,
     match *value {
         String(data) => deep_clone_str(data, visited, gc),
         Value::Data(data) => deep_clone_data(data, visited, gc).map(Value::Data),
+        Value::Array(data) => deep_clone_array(data, visited, gc).map(Value::Array),
         Closure(data) => deep_clone_closure(data, visited, gc).map(Value::Closure),
         PartialApplication(data) => {
             deep_clone_app(data, visited, gc).map(Value::PartialApplication)
