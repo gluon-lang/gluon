@@ -486,6 +486,24 @@ id (match Test 0 with
 1i32
 }
 
+test_expr!{ prelude and_operator_stack,
+r#"
+let b = True && True
+let b2 = False
+b
+"#,
+true
+}
+
+test_expr!{ prelude or_operator_stack,
+r#"
+let b = False || True
+let b2 = False
+b
+"#,
+true
+}
+
 #[test]
 fn overloaded_bindings() {
     let _ = ::env_logger::init();

@@ -464,6 +464,9 @@ impl<'a> Compiler<'a> {
                     function.emit(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
                     function.emit(PushInt(0));
                     function.emit(Jump(0));//lhs false, jump to after rhs
+                    // Dont count the integer added added above as the next part of the code never
+                    // pushed it
+                    function.stack_size -= 1;
                     self.compile(&**rhs, function, tail_position);
                     // replace jump instruction
                     function.function.instructions[lhs_end + 2] =
@@ -477,6 +480,8 @@ impl<'a> Compiler<'a> {
                     function.function.instructions[lhs_end] =
                         CJump(function.function.instructions.len() as VMIndex);
                     function.emit(PushInt(1));
+                    // Dont count the integer above
+                    function.stack_size -= 1;
                     let end = function.function.instructions.len();
                     function.function.instructions[end - 2] = Jump(end as VMIndex);
                 } else {
