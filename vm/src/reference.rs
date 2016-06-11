@@ -5,7 +5,8 @@ use std::marker::PhantomData;
 use base::types::{Type, TcType};
 use gc::{Gc, GcPtr, Traverseable};
 use stack::Stack;
-use vm::{Thread, Value, Status};
+use vm::{Thread, Status};
+use value::Value;
 use api::{MaybeError, Generic, Pushable, Userdata, VMType, WithVM};
 use api::generic::A;
 

@@ -5,8 +5,8 @@ use primitives as prim;
 use api::{generic, Generic, Getable, Array, MaybeError, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
-use vm::{Thread, DataStruct, VMInt, Status, Value, Result};
-
+use vm::{Thread, VMInt, Status, Result};
+use value::{DataStruct, Value};
 
 fn array_length(array: Array<generic::A>) -> VMInt {
     array.len() as VMInt

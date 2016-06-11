@@ -2,8 +2,8 @@ use Variants;
 use gc::{Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, Stack, StackFrame};
-use vm::{Thread, Status, DataStruct, ExternFunction, RootedValue, Value, Def, VMInt, Error, Root,
-         RootStr};
+use vm::{Thread, Status, RootStr, RootedValue, Error, Root};
+use value::{DataStruct, ExternFunction, Value, Def, VMInt};
 use thread::RootedThread;
 use base::types;
 use base::types::{TcType, Type};
@@ -927,7 +927,8 @@ pub mod record {
     use Variants;
     use stack::Stack;
     use types::VMIndex;
-    use vm::{Thread, Status, Value};
+    use vm::{Thread, Status};
+    use value::Value;
     use super::{VMType, Getable, Pushable};
 
     pub struct Record<T> {

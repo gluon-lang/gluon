@@ -6,7 +6,8 @@ use api::record::{Record, HList};
 use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
-use vm::{Error, Thread, Value, RootedThread, Result as VMResult, Status};
+use vm::{Error, Thread, RootedThread, Result as VMResult, Status};
+use value::Value;
 use stack::{State, StackFrame};
 
 pub struct Sender<T> {

@@ -4,7 +4,7 @@ use std::slice;
 use vm::api::generic::A;
 use vm::api::{Getable, Pushable, Generic};
 use vm::types::VMIndex;
-use vm::vm::{RootedThread, Thread, Value, VMInt};
+use vm::vm::{RootedThread, Thread, VMInt};
 
 use super::Compiler;
 
@@ -68,11 +68,11 @@ pub unsafe extern "C" fn load_script(vm: &Thread,
 }
 
 pub extern "C" fn push_int(vm: &Thread, int: VMInt) {
-    Thread::push(vm, Value::Int(int));
+    Thread::push(vm, int);
 }
 
 pub extern "C" fn push_float(vm: &Thread, float: f64) {
-    Thread::push(vm, Value::Float(float));
+    Thread::push(vm, float);
 }
 
 /// Push a string to the stack. The string must be valid utf-8 or an error will be returned

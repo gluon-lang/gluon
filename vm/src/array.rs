@@ -83,8 +83,7 @@ impl<T: Copy> Array<T> {
     /// To be safe it is required that the iterators length is known and exactly the same as the
     /// length of the allocated array.
     pub unsafe fn initialize<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = T>,
-              T: Clone
+        where I: IntoIterator<Item = T>
     {
         let iter = iterable.into_iter();
         self.len = iter.size_hint().1.expect("initialize expected a known length");

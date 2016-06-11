@@ -19,10 +19,12 @@ use compiler::CompiledFunction;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use stack::{Stack, StackFrame, State};
 use types::*;
-use vm::{Error, Result, GlobalVMState, Value, VMInt, ClosureData, ClosureInitDef, ClosureDataDef,
-         Def, ExternFunction, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
+use vm::{Error, Result, GlobalVMState, VMInt};
+use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef,
+         Def, ExternFunction, BytecodeFunction, Callable, PartialApplicationData,
+         PartialApplicationDataDef, Userdata, DataStruct};
 
-use vm::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
+use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
 /// Enum signaling a successful or unsuccess ful call to an extern function.
 /// If an error occured the error message is expected to be on the top of the stack.
@@ -503,8 +505,9 @@ impl Thread {
     }
 
     /// Pushes a value to the top of the stack
-    pub fn push(&self, v: Value) {
-        self.stack.lock().unwrap().push(v)
+    pub fn push<'vm, T>(&'vm self, v: T) where T: Pushable<'vm> {
+        let mut stack = self.stack.lock().unwrap();
+        v.push(self, &mut stack);
     }
 
     /// Removes the top value from the stack
@@ -527,13 +530,14 @@ impl Thread {
             };
             if is_io {
                 debug!("Run IO {:?}", value);
-                self.push(Int(0));// Dummy value to fill the place of the function for TailCall
-                self.push(value);
-                self.push(Int(0));
+                let mut stack = self.stack.lock().unwrap();
+                stack.push(Int(0));// Dummy value to fill the place of the function for TailCall
+                stack.push(value);
+                stack.push(Int(0));
                 let mut context = Context {
                     thread: self,
                     gc: self.local_gc.lock().unwrap(),
-                    stack: StackFrame::frame(self.stack.lock().unwrap(), 2, State::Unknown),
+                    stack: StackFrame::frame(stack, 2, State::Unknown),
                 };
                 context = try!(self.call_context(context, 1))
                               .expect("call_module to have the stack remaining");
@@ -588,7 +592,7 @@ impl Thread {
     }
 
     fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
-        self.push(Closure(closure));
+        self.stack.lock().unwrap().push(Closure(closure));
         let context = Context {
             thread: self,
             gc: self.local_gc.lock().unwrap(),
@@ -1091,6 +1095,87 @@ fn deep_clone_ptr<T, A>(value: GcPtr<T>,
     Err(new_ptr)
 }
 
+fn deep_clone_str(data: GcPtr<Str>,
+                  visited: &mut HashMap<*const (), Value>,
+                  gc: &mut Gc)
+                  -> Result<Value> {
+    Ok(deep_clone_ptr(data, visited, |data| {
+           let ptr = gc.alloc(&data[..]);
+           (String(ptr), ptr)
+       })
+           .unwrap_or_else(String))
+}
+fn deep_clone_data(data: GcPtr<DataStruct>,
+                   visited: &mut HashMap<*const (), Value>,
+                   gc: &mut Gc)
+                   -> Result<GcPtr<DataStruct>> {
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(Def {
+            tag: data.tag,
+            elems: &data.fields,
+        });
+        (Value::Data(ptr), ptr)
+    });
+    match result {
+        Ok(Value::Data(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_fields = unsafe { &mut new_data.as_mut().fields };
+                for (new, old) in new_fields.iter_mut().zip(&data.fields) {
+                    *new = try!(deep_clone(old, visited, gc));
+                }
+            }
+            Ok(new_data)
+        }
+    }
+}
+
+fn deep_clone_closure(data: GcPtr<ClosureData>,
+                      visited: &mut HashMap<*const (), Value>,
+                      gc: &mut Gc)
+                      -> Result<GcPtr<ClosureData>> {
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars));
+        (Closure(ptr), ptr)
+    });
+    match result {
+        Ok(Value::Closure(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_upvars = unsafe { &mut new_data.as_mut().upvars };
+                for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
+                    *new = try!(deep_clone(old, visited, gc));
+                }
+            }
+            Ok(new_data)
+        }
+    }
+}
+fn deep_clone_app(data: GcPtr<PartialApplicationData>,
+                  visited: &mut HashMap<*const (), Value>,
+                  gc: &mut Gc)
+                  -> Result<GcPtr<PartialApplicationData>> {
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.arguments));
+        (PartialApplication(ptr), ptr)
+    });
+    match result {
+        Ok(Value::PartialApplication(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_arguments = unsafe { &mut new_data.as_mut().arguments };
+                for (new, old) in new_arguments.iter_mut()
+                                               .zip(&data.arguments) {
+                    *new = try!(deep_clone(old, visited, gc));
+                }
+            }
+            Ok(new_data)
+        }
+    }
+}
 fn deep_clone(value: &Value,
               visited: &mut HashMap<*const (), Value>,
               gc: &mut Gc)
@@ -1101,72 +1186,11 @@ fn deep_clone(value: &Value,
         return Ok(*value);
     }
     match *value {
-        String(data) => {
-            Ok(deep_clone_ptr(data, visited, |data| {
-                   let ptr = gc.alloc(&data[..]);
-                   (String(ptr), ptr)
-               })
-                   .unwrap_or_else(String))
-        }
-        Value::Data(data) => {
-            let result = deep_clone_ptr(data, visited, |data| {
-                let ptr = gc.alloc(Def {
-                    tag: data.tag,
-                    elems: &data.fields,
-                });
-                (Value::Data(ptr), ptr)
-            });
-            match result {
-                Ok(x) => Ok(x),
-                Err(mut new_data) => {
-                    {
-                        let new_fields = unsafe { &mut new_data.as_mut().fields };
-                        for (new, old) in new_fields.iter_mut().zip(&data.fields) {
-                            *new = try!(deep_clone(old, visited, gc));
-                        }
-                    }
-                    Ok(Value::Data(new_data))
-                }
-            }
-        }
-        Closure(data) => {
-            // Closures may be mutually recursive with other closures so allocate it first and then
-            // fill in the real values
-            let result = deep_clone_ptr(data, visited, |data| {
-                let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars));
-                (Closure(ptr), ptr)
-            });
-            match result {
-                Ok(x) => Ok(x),
-                Err(mut new_data) => {
-                    {
-                        let new_upvars = unsafe { &mut new_data.as_mut().upvars };
-                        for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
-                            *new = try!(deep_clone(old, visited, gc));
-                        }
-                    }
-                    Ok(Closure(new_data))
-                }
-            }
-        }
+        String(data) => deep_clone_str(data, visited, gc),
+        Value::Data(data) => deep_clone_data(data, visited, gc).map(Value::Data),
+        Closure(data) => deep_clone_closure(data, visited, gc).map(Value::Closure),
         PartialApplication(data) => {
-            let result = deep_clone_ptr(data, visited, |data| {
-                let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.arguments));
-                (PartialApplication(ptr), ptr)
-            });
-            match result {
-                Ok(x) => Ok(x),
-                Err(mut new_data) => {
-                    {
-                        let new_arguments = unsafe { &mut new_data.as_mut().arguments };
-                        for (new, old) in new_arguments.iter_mut()
-                                                       .zip(&data.arguments) {
-                            *new = try!(deep_clone(old, visited, gc));
-                        }
-                    }
-                    Ok(PartialApplication(new_data))
-                }
-            }
+            deep_clone_app(data, visited, gc).map(Value::PartialApplication)
         }
         Function(_) |
         Value::Userdata(_) |

@@ -451,21 +451,15 @@ macro_rules! tuple_traverse {
 
 tuple_traverse!(A B C D E F G H I J);
 
-impl Traverseable for () {
-    fn traverse(&self, _: &mut Gc) {}
+macro_rules! empty_traverse {
+    ($($id: ty)*) => {
+        $(impl Traverseable for $id {
+            fn traverse(&self, _: &mut Gc) {}
+        })*
+    }
 }
 
-impl Traverseable for Any {
-    fn traverse(&self, _: &mut Gc) {}
-}
-
-impl Traverseable for u8 {
-    fn traverse(&self, _: &mut Gc) {}
-}
-
-impl Traverseable for str {
-    fn traverse(&self, _: &mut Gc) {}
-}
+empty_traverse! { () Any u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str }
 
 impl<T: ?Sized> Traverseable for *const T {
     fn traverse(&self, _: &mut Gc) {}

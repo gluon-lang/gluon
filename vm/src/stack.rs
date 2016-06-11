@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, Rang
 
 use Variants;
 use gc::GcPtr;
-use vm::{ClosureData, Value, DataStruct, ExternFunction};
+use value::{ClosureData, Value, DataStruct, ExternFunction};
 use types::VMIndex;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -356,7 +356,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use vm::Value::*;
+    use value::Value::*;
 
     #[test]
     fn remove_range() {

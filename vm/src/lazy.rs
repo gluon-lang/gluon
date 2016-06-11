@@ -6,7 +6,8 @@ use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
 use api::{Userdata, VMType, Pushable};
 use api::generic::A;
-use vm::{Status, Value, Thread, Result};
+use vm::{Status, Thread, Result};
+use value::Value;
 
 
 pub struct Lazy<T> {

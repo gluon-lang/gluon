@@ -5,8 +5,8 @@ use std::fs::File;
 
 use vm::types::*;
 use vm::stack::{State, StackFrame};
-use vm::vm::{Thread, Result, Status, Value, VMInt, RootStr};
-use vm::api::{Generic, VMType, IO, WithVM, primitive};
+use vm::vm::{Thread, Result, Status, VMInt, RootStr};
+use vm::api::{Generic, VMType, Pushable, IO, WithVM, primitive};
 use vm::api::generic::{A, B};
 
 use super::Compiler;
@@ -69,7 +69,7 @@ pub fn catch_io(vm: &Thread) -> Status {
     let frame_level = stack.stack.get_frames().len();
     let action = stack[0];
     stack.push(action);
-    stack.push(Value::Int(0));
+    0.push(vm, &mut stack.stack);
     match vm.call_function(stack, 1) {
         Ok(_) => Status::Ok,
         Err(err) => {
@@ -83,16 +83,14 @@ pub fn catch_io(vm: &Thread) -> Status {
             let callback = stack[1];
             stack.push(callback);
             let fmt = format!("{}", err);
-            let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
-            stack.push(result);
-            stack.push(Value::Int(0));
+            fmt.push(vm, &mut stack.stack);
+            0.push(vm, &mut stack.stack);
             match vm.call_function(stack, 2) {
                 Ok(_) => Status::Ok,
                 Err(err) => {
                     stack = vm.current_frame();
                     let fmt = format!("{}", err);
-                    let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
-                    stack.push(result);
+                    fmt.push(vm, &mut stack.stack);
                     Status::Error
                 }
             }
@@ -156,7 +154,7 @@ fn backtrace(frame_level: usize, stack: &StackFrame) -> String {
             State::Unknown => buffer.push_str("<unknown>"),
             State::Lock | State::Excess => (),
         }
-        buffer.push('\n');
+        String::push(&mut buffer, '\n');
     }
     if !stack.stack.get_frames().is_empty() {
         // Remove last newline

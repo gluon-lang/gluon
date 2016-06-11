@@ -25,9 +25,10 @@ pub mod channel;
 mod reference;
 mod lazy;
 mod array;
+mod value;
 
 use api::ValueRef;
-use vm::Value;
+use value::Value;
 
 #[derive(Debug)]
 pub struct Variants<'a>(&'a Value);
