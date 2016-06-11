@@ -1,10 +1,10 @@
 use std::any::Any;
+use std::collections::HashMap;
 use std::sync::{Mutex, RwLock, RwLockWriteGuard, MutexGuard};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Sub, Mul, Div, Deref};
 use std::string::String as StdString;
-use std::result::Result as StdResult;
 use std::sync::Arc;
 
 use base::metadata::Metadata;
@@ -20,9 +20,8 @@ use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use stack::{Stack, StackFrame, State};
 use types::*;
 use vm::{Error, Result, GlobalVMState, VMInt};
-use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef,
-         Def, ExternFunction, BytecodeFunction, Callable, PartialApplicationData,
-         PartialApplicationDataDef, Userdata, DataStruct};
+use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction,
+            BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
@@ -505,7 +504,9 @@ impl Thread {
     }
 
     /// Pushes a value to the top of the stack
-    pub fn push<'vm, T>(&'vm self, v: T) where T: Pushable<'vm> {
+    pub fn push<'vm, T>(&'vm self, v: T)
+        where T: Pushable<'vm>
+    {
         let mut stack = self.stack.lock().unwrap();
         v.push(self, &mut stack);
     }
@@ -588,7 +589,7 @@ impl Thread {
 
     pub fn deep_clone(&self, value: Value) -> Result<Value> {
         let mut visited = HashMap::new();
-        deep_clone(&value, &mut visited, &mut self.local_gc.lock().unwrap())
+        ::value::deep_clone(&value, &mut visited, &mut self.local_gc.lock().unwrap())
     }
 
     fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
@@ -1072,138 +1073,6 @@ fn debug_instruction(stack: &StackFrame,
                _ => None,
            });
 }
-
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
-
-fn deep_clone_ptr<T, A>(value: GcPtr<T>,
-                        visited: &mut HashMap<*const (), Value>,
-                        alloc: A)
-                        -> StdResult<Value, GcPtr<T>>
-    where A: FnOnce(&T) -> (Value, GcPtr<T>)
-{
-    let key = &*value as *const T as *const ();
-    let new_ptr = match visited.entry(key) {
-        Entry::Occupied(entry) => return Ok(*entry.get()),
-        Entry::Vacant(entry) => {
-            // FIXME Should allocate the real `Value` and possibly fill it later
-            let (value, new_ptr) = alloc(&value);
-            entry.insert(value);
-            new_ptr
-        }
-    };
-    Err(new_ptr)
-}
-
-fn deep_clone_str(data: GcPtr<Str>,
-                  visited: &mut HashMap<*const (), Value>,
-                  gc: &mut Gc)
-                  -> Result<Value> {
-    Ok(deep_clone_ptr(data, visited, |data| {
-           let ptr = gc.alloc(&data[..]);
-           (String(ptr), ptr)
-       })
-           .unwrap_or_else(String))
-}
-fn deep_clone_data(data: GcPtr<DataStruct>,
-                   visited: &mut HashMap<*const (), Value>,
-                   gc: &mut Gc)
-                   -> Result<GcPtr<DataStruct>> {
-    let result = deep_clone_ptr(data, visited, |data| {
-        let ptr = gc.alloc(Def {
-            tag: data.tag,
-            elems: &data.fields,
-        });
-        (Value::Data(ptr), ptr)
-    });
-    match result {
-        Ok(Value::Data(ptr)) => Ok(ptr),
-        Ok(_) => unreachable!(),
-        Err(mut new_data) => {
-            {
-                let new_fields = unsafe { &mut new_data.as_mut().fields };
-                for (new, old) in new_fields.iter_mut().zip(&data.fields) {
-                    *new = try!(deep_clone(old, visited, gc));
-                }
-            }
-            Ok(new_data)
-        }
-    }
-}
-
-fn deep_clone_closure(data: GcPtr<ClosureData>,
-                      visited: &mut HashMap<*const (), Value>,
-                      gc: &mut Gc)
-                      -> Result<GcPtr<ClosureData>> {
-    let result = deep_clone_ptr(data, visited, |data| {
-        let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars));
-        (Closure(ptr), ptr)
-    });
-    match result {
-        Ok(Value::Closure(ptr)) => Ok(ptr),
-        Ok(_) => unreachable!(),
-        Err(mut new_data) => {
-            {
-                let new_upvars = unsafe { &mut new_data.as_mut().upvars };
-                for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
-                    *new = try!(deep_clone(old, visited, gc));
-                }
-            }
-            Ok(new_data)
-        }
-    }
-}
-fn deep_clone_app(data: GcPtr<PartialApplicationData>,
-                  visited: &mut HashMap<*const (), Value>,
-                  gc: &mut Gc)
-                  -> Result<GcPtr<PartialApplicationData>> {
-    let result = deep_clone_ptr(data, visited, |data| {
-        let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.arguments));
-        (PartialApplication(ptr), ptr)
-    });
-    match result {
-        Ok(Value::PartialApplication(ptr)) => Ok(ptr),
-        Ok(_) => unreachable!(),
-        Err(mut new_data) => {
-            {
-                let new_arguments = unsafe { &mut new_data.as_mut().arguments };
-                for (new, old) in new_arguments.iter_mut()
-                                               .zip(&data.arguments) {
-                    *new = try!(deep_clone(old, visited, gc));
-                }
-            }
-            Ok(new_data)
-        }
-    }
-}
-fn deep_clone(value: &Value,
-              visited: &mut HashMap<*const (), Value>,
-              gc: &mut Gc)
-              -> Result<Value> {
-    // Only need to clone values which belong to a younger generation than the gc that the new
-    // value will live in
-    if value.generation() <= gc.generation() {
-        return Ok(*value);
-    }
-    match *value {
-        String(data) => deep_clone_str(data, visited, gc),
-        Value::Data(data) => deep_clone_data(data, visited, gc).map(Value::Data),
-        Closure(data) => deep_clone_closure(data, visited, gc).map(Value::Closure),
-        PartialApplication(data) => {
-            deep_clone_app(data, visited, gc).map(Value::PartialApplication)
-        }
-        Function(_) |
-        Value::Userdata(_) |
-        Value::Thread(_) => {
-            return Err(Error::Message("Threads, Userdata and Extern functions cannot be deep \
-                                       cloned yet"
-                                          .into()))
-        }
-        Int(i) => Ok(Int(i)),
-        Float(f) => Ok(Float(f)),
-    }
-}
-
 
 #[cfg(test)]
 mod tests {

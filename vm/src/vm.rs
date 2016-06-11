@@ -43,9 +43,7 @@ fn new_bytecode(gc: &mut Gc, vm: &GlobalVMState, f: CompiledFunction) -> GcPtr<B
         inner_functions: fs,
         strings: strings,
         globals: module_globals.into_iter()
-                               .map(|index| {
-                                   vm.env.read().unwrap().globals[index.as_ref()].value
-                               })
+                               .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
                                .collect(),
     }))
 }

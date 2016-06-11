@@ -1,5 +1,8 @@
 use std::fmt;
 use std::any::Any;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::result::Result as StdResult;
 
 use base::symbol::Symbol;
 use types::*;
@@ -7,6 +10,7 @@ use interner::InternedStr;
 use gc::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};
 use array::{Array, Str};
 use thread::{Thread, Status};
+use vm::{Error, Result};
 
 use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
 
@@ -366,4 +370,132 @@ impl fmt::Debug for ExternFunction {
 
 impl Traverseable for ExternFunction {
     fn traverse(&self, _: &mut Gc) {}
+}
+
+fn deep_clone_ptr<T, A>(value: GcPtr<T>,
+                        visited: &mut HashMap<*const (), Value>,
+                        alloc: A)
+                        -> StdResult<Value, GcPtr<T>>
+    where A: FnOnce(&T) -> (Value, GcPtr<T>)
+{
+    let key = &*value as *const T as *const ();
+    let new_ptr = match visited.entry(key) {
+        Entry::Occupied(entry) => return Ok(*entry.get()),
+        Entry::Vacant(entry) => {
+            // FIXME Should allocate the real `Value` and possibly fill it later
+            let (value, new_ptr) = alloc(&value);
+            entry.insert(value);
+            new_ptr
+        }
+    };
+    Err(new_ptr)
+}
+
+fn deep_clone_str(data: GcPtr<Str>,
+                  visited: &mut HashMap<*const (), Value>,
+                  gc: &mut Gc)
+                  -> Result<Value> {
+    Ok(deep_clone_ptr(data, visited, |data| {
+           let ptr = gc.alloc(&data[..]);
+           (String(ptr), ptr)
+       })
+           .unwrap_or_else(String))
+}
+fn deep_clone_data(data: GcPtr<DataStruct>,
+                   visited: &mut HashMap<*const (), Value>,
+                   gc: &mut Gc)
+                   -> Result<GcPtr<DataStruct>> {
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(Def {
+            tag: data.tag,
+            elems: &data.fields,
+        });
+        (Value::Data(ptr), ptr)
+    });
+    match result {
+        Ok(Value::Data(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_fields = unsafe { &mut new_data.as_mut().fields };
+                for (new, old) in new_fields.iter_mut().zip(&data.fields) {
+                    *new = try!(deep_clone(old, visited, gc));
+                }
+            }
+            Ok(new_data)
+        }
+    }
+}
+
+fn deep_clone_closure(data: GcPtr<ClosureData>,
+                      visited: &mut HashMap<*const (), Value>,
+                      gc: &mut Gc)
+                      -> Result<GcPtr<ClosureData>> {
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars));
+        (Closure(ptr), ptr)
+    });
+    match result {
+        Ok(Value::Closure(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_upvars = unsafe { &mut new_data.as_mut().upvars };
+                for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
+                    *new = try!(deep_clone(old, visited, gc));
+                }
+            }
+            Ok(new_data)
+        }
+    }
+}
+fn deep_clone_app(data: GcPtr<PartialApplicationData>,
+                  visited: &mut HashMap<*const (), Value>,
+                  gc: &mut Gc)
+                  -> Result<GcPtr<PartialApplicationData>> {
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.arguments));
+        (PartialApplication(ptr), ptr)
+    });
+    match result {
+        Ok(Value::PartialApplication(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_arguments = unsafe { &mut new_data.as_mut().arguments };
+                for (new, old) in new_arguments.iter_mut()
+                                               .zip(&data.arguments) {
+                    *new = try!(deep_clone(old, visited, gc));
+                }
+            }
+            Ok(new_data)
+        }
+    }
+}
+pub fn deep_clone(value: &Value,
+                  visited: &mut HashMap<*const (), Value>,
+                  gc: &mut Gc)
+                  -> Result<Value> {
+    // Only need to clone values which belong to a younger generation than the gc that the new
+    // value will live in
+    if value.generation() <= gc.generation() {
+        return Ok(*value);
+    }
+    match *value {
+        String(data) => deep_clone_str(data, visited, gc),
+        Value::Data(data) => deep_clone_data(data, visited, gc).map(Value::Data),
+        Closure(data) => deep_clone_closure(data, visited, gc).map(Value::Closure),
+        PartialApplication(data) => {
+            deep_clone_app(data, visited, gc).map(Value::PartialApplication)
+        }
+        Function(_) |
+        Value::Userdata(_) |
+        Value::Thread(_) => {
+            return Err(Error::Message("Threads, Userdata and Extern functions cannot be deep \
+                                       cloned yet"
+                                          .into()))
+        }
+        Int(i) => Ok(Int(i)),
+        Float(f) => Ok(Float(f)),
+    }
 }
