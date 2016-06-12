@@ -7,7 +7,7 @@ use base::ast::{LExpr, EmptyEnv};
 use parser::{parse_string, Error};
 
 fn parse(text: &str) -> Result<LExpr<String>, Error> {
-    parse_string(None, &mut EmptyEnv::new(), text)
+    parse_string(&mut EmptyEnv::new(), text)
 }
 
 #[test]

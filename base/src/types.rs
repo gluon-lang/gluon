@@ -400,7 +400,7 @@ impl<Id, T> Deref for Alias<Id, T>
 }
 
 impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
-where T: From<Type<Id, T>>
+    where T: From<Type<Id, T>>
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
@@ -431,7 +431,9 @@ impl<Id, T> Alias<Id, T>
     }
 }
 
-impl<Id> Alias<Id, ASTType<Id>> where Id: Clone {
+impl<Id> Alias<Id, ASTType<Id>>
+    where Id: Clone
+{
     pub fn make_mut(alias: &mut Alias<Id, ASTType<Id>>) -> &mut AliasData<Id, ASTType<Id>> {
         match *Arc::make_mut(&mut alias._typ.typ) {
             Type::Alias(ref mut alias) => alias,

@@ -6,9 +6,10 @@ use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
 use api::{Userdata, VMType, Pushable};
 use api::generic::A;
-use vm::{Status, Thread, Result};
+use vm::{Status, Thread};
+use Result;
 use value::Value;
-
+use thread::ThreadInternal;
 
 pub struct Lazy<T> {
     value: Mutex<Lazy_>,
@@ -39,7 +40,7 @@ impl<T> VMType for Lazy<T>
     type Type = Lazy<T::Type>;
 
     fn make_type(vm: &Thread) -> TcType {
-        let env = vm.get_env();
+        let env = vm.global_env().get_env();
         let symbol = env.find_type_info("Lazy").unwrap().name.clone();
         let ctor = Type::id(symbol);
         types::Type::data(ctor, vec![T::make_type(vm)])

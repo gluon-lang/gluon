@@ -1,7 +1,7 @@
 extern crate env_logger;
 extern crate gluon;
 
-use gluon::vm::vm::RootedThread;
+use gluon::vm::thread::RootedThread;
 use gluon::import::Import;
 use gluon::Compiler;
 

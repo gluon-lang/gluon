@@ -2,11 +2,14 @@ use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
 use base::types::{TcType, Type};
+
+use {Error, Result as VMResult};
 use api::record::{Record, HList};
 use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
-use vm::{Error, Thread, RootedThread, Result as VMResult, Status};
+use vm::{Thread, RootedThread, Status};
+use thread::ThreadInternal;
 use value::Value;
 use stack::{State, StackFrame};
 
@@ -55,7 +58,7 @@ impl<T: VMType> VMType for Sender<T>
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
-        let symbol = vm.get_env().find_type_info("Sender").unwrap().name.clone();
+        let symbol = vm.global_env().get_env().find_type_info("Sender").unwrap().name.clone();
         Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
 }
@@ -65,7 +68,7 @@ impl<T: VMType> VMType for Receiver<T>
 {
     type Type = Receiver<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
-        let symbol = vm.get_env().find_type_info("Receiver").unwrap().name.clone();
+        let symbol = vm.global_env().get_env().find_type_info("Receiver").unwrap().name.clone();
         Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
 }
@@ -100,11 +103,12 @@ fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
 fn resume(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     match stack[0] {
-        Value::Thread(thread) => {
-            drop(stack);
-            let child = RootedThread::from_gc_ptr(thread);
+        Value::Thread(child) => {
+            let lock = stack.into_lock();
             let result = child.resume();
-            stack = vm.current_frame();
+            let mut s = vm.get_stack();
+            s.release_lock(lock);
+            stack = StackFrame::current(s);
             match result {
                 Ok(()) |
                 Err(Error::Yield) => {

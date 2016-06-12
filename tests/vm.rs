@@ -3,8 +3,9 @@ extern crate gluon;
 
 use gluon::vm::api::generic::A;
 use gluon::vm::api::{FunctionRef, Generic, Getable, VMType, OpaqueValue};
-use gluon::vm::vm::{RootedThread, Thread, Value};
-use gluon::vm::vm::Value::{Float, Int};
+use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
+use gluon::vm::internal::Value;
+use gluon::vm::internal::Value::{Float, Int};
 use gluon::vm::stack::State;
 use gluon::vm::channel::Sender;
 use gluon::import::Import;

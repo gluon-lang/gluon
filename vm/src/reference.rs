@@ -6,6 +6,7 @@ use base::types::{Type, TcType};
 use gc::{Gc, GcPtr, Traverseable};
 use stack::Stack;
 use vm::{Thread, Status};
+use thread::ThreadInternal;
 use value::Value;
 use api::{MaybeError, Generic, Pushable, Userdata, VMType, WithVM};
 use api::generic::A;
@@ -29,7 +30,7 @@ impl<T> VMType for Reference<T>
     type Type = Reference<T::Type>;
 
     fn make_type(vm: &Thread) -> TcType {
-        let env = vm.get_env();
+        let env = vm.global_env().get_env();
         let symbol = env.find_type_info("Ref").unwrap().name.clone();
         let ctor = Type::id(symbol);
         Type::data(ctor, vec![T::make_type(vm)])
@@ -74,7 +75,7 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
     f
 }
 
-pub fn load(vm: &Thread) -> ::vm::Result<()> {
+pub fn load(vm: &Thread) -> ::Result<()> {
     let _ = vm.register_type::<Reference<A>>("Ref", &["a"]);
     try!(vm.define_global("<-", f2(set)));
     try!(vm.define_global("load", f1(get)));

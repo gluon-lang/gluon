@@ -5,7 +5,7 @@ use std::thread::spawn;
 use gluon::vm::channel::{ChannelRecord, Sender, Receiver};
 use gluon::vm::api::OpaqueValue;
 use gluon::vm::api::FunctionRef;
-use gluon::vm::vm::RootedThread;
+use gluon::RootedThread;
 use gluon::{new_vm, Compiler, Error};
 
 #[test]

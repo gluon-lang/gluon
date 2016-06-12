@@ -129,7 +129,7 @@ fn array(fields: Vec<PExpr>) -> PExpr {
 }
 
 fn parse(input: &str) -> Result<LExpr<String>, Error> {
-    parse_string(None, &mut ast::EmptyEnv::new(), input)
+    parse_string(&mut ast::EmptyEnv::new(), input)
 }
 
 fn parse_new(input: &str) -> LExpr<String> {

@@ -251,7 +251,6 @@ pub struct Lexer<'a, I, F>
     pub unprocessed_tokens: Vec<PToken<F::Ident>>,
     pub indent_levels: Contexts,
     end_position: SourcePosition,
-    layout: fn(&mut Lexer<'a, I, F>, PToken<F::Ident>) -> Result<Token<F::Ident>, Error<F::Ident>>,
 }
 
 impl<'a, 's, I, Id, F> Lexer<'a, I, F>
@@ -260,11 +259,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
           Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
-    pub fn new(layout: Option<fn(&mut Lexer<'a, I, F>, PToken<F::Ident>)
-                                 -> Result<Token<F::Ident>, Error<F::Ident>>>,
-               input: I,
-               make_ident: Rc<RefCell<F>>)
-               -> Lexer<'a, I, F> {
+    pub fn new(input: I, make_ident: Rc<RefCell<F>>) -> Lexer<'a, I, F> {
         let env = LanguageEnv::new(LanguageDef {
             ident: Identifier {
                 start: letter().or(char('_')),
@@ -295,7 +290,6 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 column: -1,
                 line: -1,
             },
-            layout: layout.unwrap_or(layout_),
         }
     }
 
@@ -348,7 +342,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     fn layout_independent_token(&mut self, token: PToken<Id>) -> Result<Token<Id>, Error<Id>> {
-        (self.layout)(self, token)
+        layout(self, token)
     }
 
     fn id_to_keyword(&self, id: Token<Id>) -> Token<Id> {
@@ -552,9 +546,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 }
 
-fn layout_<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
-                         mut token: PToken<Id>)
-                         -> Result<Token<Id>, Error<Id>>
+fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
+                        mut token: PToken<Id>)
+                        -> Result<Token<Id>, Error<Id>>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
           Id: Clone + PartialEq + fmt::Debug,

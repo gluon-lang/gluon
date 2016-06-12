@@ -4,9 +4,9 @@ extern crate gluon;
 use gluon::vm::api;
 use gluon::vm::api::generic::A;
 use gluon::vm::api::{Generic, VMType, FunctionRef};
-use gluon::vm::gc::Traverseable;
-
-use gluon::vm::vm::{RootedThread, Thread, VMInt, Value, Root, RootStr};
+use gluon::vm::thread::{RootedThread, Thread, Traverseable, Root, RootStr};
+use gluon::vm::internal::Value;
+use gluon::vm::types::VMInt;
 use gluon::Compiler;
 use gluon::import::Import;
 

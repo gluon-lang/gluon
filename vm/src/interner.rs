@@ -84,12 +84,6 @@ impl Interner {
         self.indexes.insert(key, gc_str);
         gc_str
     }
-
-    pub fn with_env<'a, F, R>(&'a mut self, gc: &'a mut Gc, f: F) -> R
-        where F: FnOnce(InternerEnv<'a>) -> R
-    {
-        f(InternerEnv(self, gc))
-    }
 }
 
 impl fmt::Debug for InternedStr {
@@ -135,27 +129,4 @@ impl AstId for InternedStr {
         self
     }
     fn set_type(&mut self, _: ASTType<Self::Untyped>) {}
-}
-
-#[cfg(test)]
-pub mod tests {
-    use std::rc::Rc;
-    use std::cell::RefCell;
-    use super::*;
-    use gc::Gc;
-
-    ///Returns a reference to the interner stored in TLD
-    pub fn get_local_interner() -> Rc<RefCell<(Interner, Gc)>> {
-        thread_local!(static INTERNER: Rc<RefCell<(Interner, Gc)>>
-                      = Rc::new(RefCell::new((Interner::new(), Gc::new(0)))));
-        INTERNER.with(|interner| interner.clone())
-    }
-
-    pub fn intern(s: &str) -> InternedStr {
-        let i = get_local_interner();
-        let mut i = i.borrow_mut();
-        let &mut (ref mut i, ref mut gc) = &mut *i;
-        i.intern(gc, s)
-    }
-
 }

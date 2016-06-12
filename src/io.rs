@@ -3,9 +3,11 @@ use std::result::Result as StdResult;
 use std::io::{Read, stdin};
 use std::fs::File;
 
+use vm::Result;
 use vm::types::*;
+use vm::thread::ThreadInternal;
 use vm::stack::{State, StackFrame};
-use vm::vm::{Thread, Result, Status, VMInt, RootStr};
+use vm::thread::{Thread, Status, RootStr};
 use vm::api::{Generic, VMType, Pushable, IO, WithVM, primitive};
 use vm::api::generic::{A, B};
 

@@ -3,7 +3,7 @@ extern crate gluon;
 
 use gluon::vm::api::generic::A;
 use gluon::vm::api::{FunctionRef, Generic};
-use gluon::vm::vm::RootedThread;
+use gluon::RootedThread;
 use gluon::import::Import;
 use gluon::Compiler;
 

@@ -10,7 +10,7 @@ use interner::InternedStr;
 use gc::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};
 use array::{Array, Str};
 use thread::{Thread, Status};
-use vm::{Error, Result};
+use {Error, Result};
 
 use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
 
@@ -163,9 +163,6 @@ impl<'b> Traverseable for Def<'b> {
         self.elems.traverse(gc);
     }
 }
-
-
-pub type VMInt = isize;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Value {

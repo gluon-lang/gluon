@@ -1,8 +1,8 @@
 use std::error::Error as StdError;
 use base::ast::Typed;
 use base::types::Kind;
-use vm::vm::{Thread, RootStr};
 use vm::api::{IO, Function, WithVM};
+use vm::thread::{Thread, RootStr};
 
 use gluon::{Compiler, new_vm};
 

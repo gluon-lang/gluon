@@ -7,6 +7,7 @@ pub use self::Instruction::*;
 
 pub type VMIndex = u32;
 pub type VMTag = u32;
+pub type VMInt = isize;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Instruction {

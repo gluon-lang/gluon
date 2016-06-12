@@ -7,7 +7,7 @@ use base::types;
 use base::types::{Type, TcIdent, TcType, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
-use vm::{Thread, VMInt};
+use vm::GlobalVMState;
 use self::Variable::*;
 
 pub type CExpr = LExpr<TcIdent>;
@@ -227,7 +227,7 @@ impl CompilerEnv for TypeInfos {
 
 pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
-    vm: &'a Thread,
+    vm: &'a GlobalVMState,
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, types::Alias<Symbol, TcType>>,
@@ -254,7 +254,7 @@ impl<'a> TypeEnv for Compiler<'a> {
 
 impl<'a> Compiler<'a> {
     pub fn new(globals: &'a CompilerEnv,
-               vm: &'a Thread,
+               vm: &'a GlobalVMState,
                symbols: SymbolModule<'a>)
                -> Compiler<'a> {
         Compiler {

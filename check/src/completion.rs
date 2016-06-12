@@ -1,3 +1,4 @@
+//! Primitive auto completion and type quering on ASTs
 use std::iter::once;
 
 use base::ast;

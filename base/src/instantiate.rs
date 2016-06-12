@@ -60,10 +60,10 @@ impl<'a> AliasInstantiator<'a> {
             None => return Ok(None),
         };
         let maybe_alias = maybe_alias.or_else(|| {
-                                  self.env
-                                      .find_type_info(&id)
-                                      .map(|a| &**a)
-                              });
+            self.env
+                .find_type_info(&id)
+                .map(|a| &**a)
+        });
         let alias = match maybe_alias {
             Some(alias) => alias,
             None => return Ok(None),
@@ -71,7 +71,10 @@ impl<'a> AliasInstantiator<'a> {
         self.type_of_alias(alias, args)
     }
 
-    pub fn type_of_alias(&self, alias: &AliasData<Symbol, TcType>, arguments: &[TcType]) -> Result<Option<TcType>, ()> {
+    pub fn type_of_alias(&self,
+                         alias: &AliasData<Symbol, TcType>,
+                         arguments: &[TcType])
+                         -> Result<Option<TcType>, ()> {
         let args = &alias.args;
         let mut typ = match alias.typ {
             Some(ref typ) => typ.clone(),

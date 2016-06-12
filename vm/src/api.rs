@@ -1,13 +1,15 @@
-use Variants;
+//! The marshalling api
+use {Variants, Error};
 use gc::{Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, Stack, StackFrame};
-use vm::{Thread, Status, RootStr, RootedValue, Error, Root};
-use value::{DataStruct, ExternFunction, Value, Def, VMInt};
+use vm::{Thread, Status, RootStr, RootedValue, Root};
+use value::{DataStruct, ExternFunction, Value, Def};
 use thread::RootedThread;
+use thread::ThreadInternal;
 use base::types;
 use base::types::{TcType, Type};
-use types::{VMIndex, VMTag};
+use types::{VMIndex, VMTag, VMInt};
 use std::any::Any;
 use std::cell::Ref;
 use std::cmp::Ordering;
@@ -134,6 +136,7 @@ pub mod generic {
     use super::VMType;
     use base::types::TcType;
     use vm::Thread;
+    use thread::ThreadInternal;
 
     macro_rules! make_generics {
         ($($i: ident)+) => {
@@ -146,7 +149,7 @@ pub mod generic {
                     let s = stringify!($i);
                     let lower  = [s.as_bytes()[0] + 32];
                     let lower_str = unsafe { ::std::str::from_utf8_unchecked(&lower) };
-                    vm.get_generic(lower_str)
+                    vm.global_env().get_generic(lower_str)
                 }
             }
             )+
@@ -176,6 +179,9 @@ pub trait VMType {
 
 /// Trait which allows a rust value to be pushed to the virtual machine
 pub trait Pushable<'vm>: VMType {
+    /// Pushes `self` to `stack`. If the call is successful a single element should have been added
+    /// to the stack and `Status::Ok` should be returned. If the call is unsuccessful `Status:Error`
+    /// should be returned and the stack should be left intact
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status;
 }
 
@@ -368,7 +374,7 @@ impl<'vm> Getable<'vm> for f64 {
 impl VMType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> TcType {
-        (*vm.get_env().find_type_info("std.types.Bool").unwrap()).clone().into_type()
+        (*vm.global_env().get_env().find_type_info("std.types.Bool").unwrap()).clone().into_type()
     }
 }
 impl<'vm> Pushable<'vm> for bool {
@@ -691,7 +697,7 @@ impl<T> VMType for IO<T>
 {
     type Type = IO<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
-        let env = vm.get_env();
+        let env = vm.global_env().get_env();
         let symbol = env.find_type_info("IO").unwrap().name.clone();
         Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
@@ -926,6 +932,7 @@ pub mod record {
 
     use Variants;
     use stack::Stack;
+    use thread::ThreadInternal;
     use types::VMIndex;
     use vm::{Thread, Status};
     use value::Value;
@@ -1111,6 +1118,11 @@ macro_rules! record_no_decl {
     }
 }
 
+/// Macro that creates a record that can be passed to gluon
+///
+/// ```rust,ignore
+/// record!(x => 1, y => 2, name => "Gluon")
+/// ```
 #[macro_export]
 macro_rules! record {
     ($($field: ident => $value: expr),*) => {
@@ -1303,8 +1315,9 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
             // rooted
             let lock = stack.into_lock();
             let r = (*self)($($args),*);
-            vm.release_lock(lock);
-            stack = vm.current_frame();
+            let mut s = vm.get_stack();
+            s.release_lock(lock);
+            stack = StackFrame::current(s);
             r
         };
         r.push(vm, &mut stack.stack)
@@ -1345,8 +1358,9 @@ where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
             // rooted
             let lock = stack.into_lock();
             let r = (*self)($($args),*);
-            vm.release_lock(lock);
-            stack = vm.current_frame();
+            let mut s = vm.get_stack();
+            s.release_lock(lock);
+            stack = StackFrame::current(s);
             r
         };
         r.push(vm, &mut stack.stack)

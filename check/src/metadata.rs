@@ -1,4 +1,3 @@
-
 use std::collections::BTreeMap;
 
 use base::ast;
@@ -13,6 +12,7 @@ struct Environment<'b> {
     stack: ScopedMap<Symbol, Metadata>,
 }
 
+/// Queries `expr` for the metadata which it contains.
 pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
     struct MetadataVisitor<'b> {
         env: Environment<'b>,

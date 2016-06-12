@@ -11,6 +11,8 @@ use base::symbol::{Name, Symbol};
 use base::types;
 use base::types::{Type, KindEnv, TypeEnv, PrimitiveEnv, TcType, RcKind};
 use base::macros::MacroEnv;
+
+use {Error, Result};
 use types::*;
 use interner::{Interner, InternedStr};
 use gc::{Gc, GcPtr, Traverseable, Move};
@@ -20,7 +22,7 @@ use lazy::Lazy;
 
 use value::BytecodeFunction;
 
-pub use value::{ClosureDataDef, Userdata, VMInt};
+pub use value::{ClosureDataDef, Userdata};
 pub use value::Value;//FIXME Value should not be exposed
 pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 
@@ -94,9 +96,6 @@ impl Traverseable for GlobalVMState {
         self.generation_0_threads.read().unwrap().traverse(gc);
     }
 }
-
-/// Type returned from vm functions which may fail
-pub type Result<T> = StdResult<T, Error>;
 
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
 /// typechecker and compiler to lookup things in the virtual machine.
@@ -445,37 +444,5 @@ impl GlobalVMState {
     /// Returns a borrowed structure which implements `CompilerEnv`
     pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VMEnv> {
         self.env.read().unwrap()
-    }
-}
-
-quick_error! {
-    #[derive(Debug, PartialEq)]
-    pub enum Error {
-        Yield {
-        }
-        Dead {
-        }
-        UndefinedBinding(symbol: StdString) {
-            display("Binding `{}` is not defined", symbol)
-        }
-        UndefinedField(typ: TcType, field: StdString) {
-            display("Type `{}` does not have the field `{}`", typ, field)
-        }
-        TypeAlreadyExists(symbol: StdString) {
-            display("Type `{}` already exists", symbol)
-        }
-        GlobalAlreadyExists(symbol: Symbol) {
-            display("Global `{}` already exists", symbol)
-        }
-        MetadataDoesNotExist(symbol: StdString) {
-            display("No metadata exists for `{}`", symbol)
-        }
-        WrongType(expected: TcType, actual: TcType) {
-            display("Expected a value of type `{}` but the inferred type was `{}`",
-                    expected, actual)
-        }
-        Message(err: StdString) {
-            display("{}", err)
-        }
     }
 }

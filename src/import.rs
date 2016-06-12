@@ -1,3 +1,4 @@
+//! Implementation of the `import` macro.
 use std::sync::RwLock;
 use std::fs::File;
 use std::io;
@@ -6,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use base::ast;
 use base::symbol::Symbol;
-use vm::vm::Thread;
+use vm::thread::{Thread, ThreadInternal};
 use super::{filename_to_module, Compiler};
 use base::macros::{Macro, Error as MacroError};
 use base::types::TcIdent;
@@ -87,7 +88,7 @@ impl Macro<Thread> for Import {
                 // Only load the script if it is not already loaded
                 let name = Symbol::new(&*modulename);
                 debug!("Import '{}' {:?}", modulename, self.visited);
-                if !vm.global_exists(&modulename) {
+                if !vm.global_env().global_exists(&modulename) {
                     if self.visited.read().unwrap().iter().any(|m| **m == **filename) {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }

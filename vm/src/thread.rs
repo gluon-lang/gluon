@@ -1,29 +1,33 @@
+//! The thread/vm type
 use std::any::Any;
 use std::collections::HashMap;
-use std::sync::{Mutex, RwLock, RwLockWriteGuard, MutexGuard};
+use std::sync::{Mutex, RwLock, RwLockWriteGuard, RwLockReadGuard, MutexGuard};
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Sub, Mul, Div, Deref};
 use std::string::String as StdString;
 use std::sync::Arc;
 
+use base::macros::MacroEnv;
 use base::metadata::Metadata;
 use base::symbol::Symbol;
 use base::types::TcType;
 use base::types;
 
-use Variants;
+use {Variants, Error, Result};
 use api::{Getable, Pushable, VMType};
 use array::Str;
 use compiler::CompiledFunction;
-use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
+use gc::{DataDef, Gc, GcPtr, Move};
 use stack::{Stack, StackFrame, State};
 use types::*;
-use vm::{Error, Result, GlobalVMState, VMInt};
+use vm::{GlobalVMState, VMEnv};
 use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction,
             BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
+
+pub use gc::Traverseable;
 
 /// Enum signaling a successful or unsuccess ful call to an extern function.
 /// If an error occured the error message is expected to be on the top of the stack.
@@ -192,13 +196,6 @@ pub struct Thread {
     stack: Mutex<Stack>,
 }
 
-impl Deref for Thread {
-    type Target = GlobalVMState;
-    fn deref(&self) -> &GlobalVMState {
-        &self.global_state
-    }
-}
-
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
@@ -224,7 +221,8 @@ impl<'vm> Pushable<'vm> for RootedThread {
     }
 }
 
-
+/// An instance of `Thread` which is rooted. See the `Thread` type for documentation on interacting
+/// with the type.
 pub struct RootedThread(GcPtr<Thread>);
 
 impl Drop for RootedThread {
@@ -240,7 +238,7 @@ impl Drop for RootedThread {
         if self.parent.is_none() && is_empty {
             // The last RootedThread was dropped, there is no way to refer to the global state any
             // longer so drop everything
-            let mut gc_ref = self.0.gc.lock().unwrap();
+            let mut gc_ref = self.0.global_state.gc.lock().unwrap();
             let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new(0));
             // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
             // when the Gc is dropped
@@ -270,6 +268,7 @@ impl Traverseable for RootedThread {
 }
 
 impl RootedThread {
+    /// Creates a new virtual machine with an empty global environment
     pub fn new() -> RootedThread {
         let thread = Thread {
             global_state: Arc::new(GlobalVMState::new()),
@@ -282,15 +281,9 @@ impl RootedThread {
         };
         let mut gc = Gc::new(0);
         let vm = RootedThread::from_gc_ptr(gc.alloc(Move(thread)));
-        *vm.gc.lock().unwrap() = gc;
+        *vm.global_state.gc.lock().unwrap() = gc;
         // Enter the top level scope
         StackFrame::frame(vm.stack.lock().unwrap(), 0, State::Unknown);
-        vm
-    }
-
-    pub fn from_gc_ptr(p: GcPtr<Thread>) -> RootedThread {
-        let vm = RootedThread(p);
-        vm.parent_threads().push(vm.0);
         vm
     }
 
@@ -308,22 +301,17 @@ impl RootedThread {
     pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread {
         RootedThread(GcPtr::from_raw(ptr))
     }
+
+    fn from_gc_ptr(p: GcPtr<Thread>) -> RootedThread {
+        let vm = RootedThread(p);
+        vm.parent_threads().push(vm.0);
+        vm
+    }
 }
 
 impl Thread {
-    fn traverse_fields_except_stack(&self, gc: &mut Gc) {
-        self.global_state.traverse(gc);
-        self.roots.read().unwrap().traverse(gc);
-        self.rooted_values.read().unwrap().traverse(gc);
-    }
-
-    fn parent_threads(&self) -> RwLockWriteGuard<Vec<GcPtr<Thread>>> {
-        match self.parent {
-            Some(ref parent) => parent.child_threads.write().unwrap(),
-            None => self.global_state.generation_0_threads.write().unwrap(),
-        }
-    }
-
+    /// Spawns a new gluon thread with its own stack and heap but while still sharing the same
+    /// global environment
     pub fn new_thread(&self) -> RootedThread {
         let vm = Thread {
             global_state: self.global_state.clone(),
@@ -352,10 +340,10 @@ impl Thread {
         if status == Status::Error {
             return Err(Error::Message(format!("{:?}", value)));
         }
-        self.set_global(Symbol::new(name),
-                        T::make_type(self),
-                        Metadata::default(),
-                        value)
+        self.global_env().set_global(Symbol::new(name),
+                                     T::make_type(self),
+                                     Metadata::default(),
+                                     value)
     }
 
     /// Retrieves the global called `name`.
@@ -375,33 +363,37 @@ impl Thread {
         }
     }
 
+    /// Retrieves type information about the type `name`. Types inside records can be accessed
+    /// using dot notation (std.prelude.Option)
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, TcType>> {
         let env = self.get_env();
         env.find_type_info(name)
            .map(|alias| alias.into_owned())
     }
 
-    /// Returns the current stackframe
-    pub fn release_lock<'vm>(&'vm self, lock: ::stack::Lock) -> StackFrame<'vm> {
-        self.stack.lock().unwrap().release_lock(lock);
-        StackFrame::current(self.get_stack())
+    /// Returns the gluon type that was bound to `T`
+    pub fn get_type<T: ?Sized + Any>(&self) -> TcType {
+        self.global_env().get_type::<T>()
     }
 
-    /// Returns the current stackframe
+    /// Registers the type `T` as being a gluon type called `name` with generic arguments `args`
+    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<TcType> {
+        self.global_env().register_type::<T>(name, args)
+    }
+
+    /// Locks and retrieves the global environment of the vm
+    pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VMEnv> {
+        self.global_env().get_env()
+    }
+
+    /// Locks and retrives this threads stack
     pub fn get_stack(&self) -> MutexGuard<Stack> {
         self.stack.lock().unwrap()
     }
 
-    pub fn current_frame(&self) -> StackFrame {
-        StackFrame::current(self.get_stack())
-    }
-
-    fn current_context(&self) -> Context {
-        Context {
-            thread: self,
-            gc: self.local_gc.lock().unwrap(),
-            stack: StackFrame::current(self.stack.lock().unwrap()),
-        }
+    /// Retrieves the macros defined for this vm
+    pub fn get_macros(&self) -> &MacroEnv<Thread> {
+        self.global_env().get_macros()
     }
 
     /// Runs a garbage collection.
@@ -414,53 +406,41 @@ impl Thread {
         })
     }
 
-    /// Roots a userdata
-    pub fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
-        v.downcast_ref::<T>()
-         .map(|ptr| {
-             self.roots.write().unwrap().push(v.as_traverseable());
-             Root {
-                 roots: &self.roots,
-                 ptr: ptr,
-             }
-         })
-    }
-
-    /// Roots a string
-    pub fn root_string<'vm>(&'vm self, ptr: GcPtr<Str>) -> RootStr<'vm> {
-        self.roots.write().unwrap().push(ptr.as_traverseable());
-        RootStr(Root {
-            roots: &self.roots,
-            ptr: &*ptr,
-        })
-    }
-
-    /// Roots a value
-    pub fn root_value(&self, value: Value) -> RootedValue<RootedThread> {
-        self.rooted_values.write().unwrap().push(value);
-        RootedValue {
-            vm: unsafe { RootedThread::from_gc_ptr(GcPtr::from_raw(self)) },
-            value: value,
-        }
-    }
-
-    /// Roots a value
-    pub fn root_value_ref(&self, value: Value) -> RootedValue<&Thread> {
-        self.rooted_values.write().unwrap().push(value);
-        RootedValue {
-            vm: self,
-            value: value,
-        }
-    }
-
-    /// Allocates a new value from a given `DataDef`.
-    /// Takes the stack as it may collect if the collection limit has been reached.
-    pub fn alloc<D>(&self, stack: &Stack, def: D) -> GcPtr<D::Value>
-        where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+    /// Pushes a value to the top of the stack
+    pub fn push<'vm, T>(&'vm self, v: T)
+        where T: Pushable<'vm>
     {
-        self.with_roots(stack,
-                        |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
+        let mut stack = self.stack.lock().unwrap();
+        v.push(self, &mut stack);
+    }
+
+    /// Removes the top value from the stack
+    pub fn pop(&self) {
+        self.stack
+            .lock()
+            .unwrap()
+            .pop();
+    }
+
+    fn current_context(&self) -> Context {
+        Context {
+            thread: self,
+            gc: self.local_gc.lock().unwrap(),
+            stack: StackFrame::current(self.stack.lock().unwrap()),
+        }
+    }
+
+    fn traverse_fields_except_stack(&self, gc: &mut Gc) {
+        self.global_state.traverse(gc);
+        self.roots.read().unwrap().traverse(gc);
+        self.rooted_values.read().unwrap().traverse(gc);
+    }
+
+    fn parent_threads(&self) -> RwLockWriteGuard<Vec<GcPtr<Thread>>> {
+        match self.parent {
+            Some(ref parent) => parent.child_threads.write().unwrap(),
+            None => self.global_state.generation_0_threads.write().unwrap(),
+        }
     }
 
     fn with_roots<F, R>(&self, stack: &Stack, f: F) -> R
@@ -483,44 +463,156 @@ impl Thread {
         f(&mut gc, roots)
     }
 
-    pub fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value {
+    fn call_context<'b>(&'b self,
+                        mut context: Context<'b>,
+                        args: VMIndex)
+                        -> Result<Option<Context<'b>>> {
+        context = try!(context.do_call(args));
+        context.execute()
+    }
+
+    fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
+        self.stack.lock().unwrap().push(Closure(closure));
+        let context = Context {
+            thread: self,
+            gc: self.local_gc.lock().unwrap(),
+            stack: StackFrame::frame(self.stack.lock().unwrap(), 0, State::Closure(closure)),
+        };
+        try!(context.execute());
+        let mut stack = self.stack.lock().unwrap();
+        Ok(stack.pop())
+    }
+}
+
+/// Internal functions for interacting with threads. These functions should be considered both
+/// unsafe and unstable
+pub trait ThreadInternal {
+    /// Returns the current stackframe
+    fn current_frame(&self) -> StackFrame;
+
+    /// Roots a userdata
+    fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>>;
+
+    /// Roots a string
+    fn root_string<'vm>(&'vm self, ptr: GcPtr<Str>) -> RootStr<'vm>;
+
+    /// Roots a value
+    fn root_value(&self, value: Value) -> RootedValue<RootedThread>;
+
+    /// Roots a value
+    fn root_value_ref(&self, value: Value) -> RootedValue<&Thread>;
+
+    /// Allocates a new value from a given `DataDef`.
+    /// Takes the stack as it may collect if the collection limit has been reached.
+    fn alloc<D>(&self, stack: &Stack, def: D) -> GcPtr<D::Value>
+        where D: DataDef + Traverseable,
+              D::Value: Sized + Any;
+
+    fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value;
+
+    fn add_bytecode(&self,
+                    name: &str,
+                    typ: TcType,
+                    args: VMIndex,
+                    instructions: Vec<Instruction>);
+
+    ///Calls a module, allowed to to run IO expressions
+    fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value>;
+
+    /// Calls a function on the stack.
+    /// When this function is called it is expected that the function exists at
+    /// `stack.len() - args - 1` and that the arguments are of the correct type
+    fn call_function<'b>(&'b self,
+                         stack: StackFrame<'b>,
+                         args: VMIndex)
+                         -> Result<Option<StackFrame<'b>>>;
+
+    fn resume(&self) -> Result<()>;
+
+    fn global_env(&self) -> &Arc<GlobalVMState>;
+
+    fn deep_clone(&self, value: Value) -> Result<Value>;
+}
+
+
+impl ThreadInternal for Thread {
+    /// Returns the current stackframe
+    fn current_frame(&self) -> StackFrame {
+        StackFrame::current(self.get_stack())
+    }
+
+    /// Roots a userdata
+    fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
+        v.downcast_ref::<T>()
+         .map(|ptr| {
+             self.roots.write().unwrap().push(v.as_traverseable());
+             Root {
+                 roots: &self.roots,
+                 ptr: ptr,
+             }
+         })
+    }
+
+    /// Roots a string
+    fn root_string<'vm>(&'vm self, ptr: GcPtr<Str>) -> RootStr<'vm> {
+        self.roots.write().unwrap().push(ptr.as_traverseable());
+        RootStr(Root {
+            roots: &self.roots,
+            ptr: &*ptr,
+        })
+    }
+
+    /// Roots a value
+    fn root_value(&self, value: Value) -> RootedValue<RootedThread> {
+        self.rooted_values.write().unwrap().push(value);
+        RootedValue {
+            vm: unsafe { RootedThread::from_gc_ptr(GcPtr::from_raw(self)) },
+            value: value,
+        }
+    }
+
+    /// Roots a value
+    fn root_value_ref(&self, value: Value) -> RootedValue<&Thread> {
+        self.rooted_values.write().unwrap().push(value);
+        RootedValue {
+            vm: self,
+            value: value,
+        }
+    }
+
+    /// Allocates a new value from a given `DataDef`.
+    /// Takes the stack as it may collect if the collection limit has been reached.
+    fn alloc<D>(&self, stack: &Stack, def: D) -> GcPtr<D::Value>
+        where D: DataDef + Traverseable,
+              D::Value: Sized + Any
+    {
+        self.with_roots(stack,
+                        |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
+    }
+
+    fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value {
         Value::Data(self.local_gc.lock().unwrap().alloc(Def {
             tag: tag,
             elems: fields,
         }))
     }
 
-    pub fn add_bytecode(&self,
-                        name: &str,
-                        typ: TcType,
-                        args: VMIndex,
-                        instructions: Vec<Instruction>) {
+    fn add_bytecode(&self,
+                    name: &str,
+                    typ: TcType,
+                    args: VMIndex,
+                    instructions: Vec<Instruction>) {
         let id = Symbol::new(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
-        let f = self.new_function(compiled_fn);
+        let f = self.global_env().new_function(compiled_fn);
         let closure = self.alloc(&self.stack.lock().unwrap(), ClosureDataDef(f, &[]));
-        self.set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
+        self.global_env().set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
     }
 
-    /// Pushes a value to the top of the stack
-    pub fn push<'vm, T>(&'vm self, v: T)
-        where T: Pushable<'vm>
-    {
-        let mut stack = self.stack.lock().unwrap();
-        v.push(self, &mut stack);
-    }
-
-    /// Removes the top value from the stack
-    pub fn pop(&self) -> Value {
-        self.stack
-            .lock()
-            .unwrap()
-            .pop()
-    }
 
     ///Calls a module, allowed to to run IO expressions
-    pub fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
+    fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
         let value = try!(self.call_bytecode(closure));
         if let Some((id, _)) = typ.as_alias() {
             let is_io = {
@@ -556,10 +648,10 @@ impl Thread {
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
     /// `stack.len() - args - 1` and that the arguments are of the correct type
-    pub fn call_function<'b>(&'b self,
-                             stack: StackFrame<'b>,
-                             args: VMIndex)
-                             -> Result<Option<StackFrame<'b>>> {
+    fn call_function<'b>(&'b self,
+                         stack: StackFrame<'b>,
+                         args: VMIndex)
+                         -> Result<Option<StackFrame<'b>>> {
         let context = Context {
             thread: self,
             gc: self.local_gc.lock().unwrap(),
@@ -569,15 +661,7 @@ impl Thread {
             .map(|context| context.map(|context| context.stack))
     }
 
-    fn call_context<'b>(&'b self,
-                        mut context: Context<'b>,
-                        args: VMIndex)
-                        -> Result<Option<Context<'b>>> {
-        context = try!(context.do_call(args));
-        context.execute()
-    }
-
-    pub fn resume(&self) -> Result<()> {
+    fn resume(&self) -> Result<()> {
         let context = self.current_context();
         if context.stack.stack.get_frames().len() == 1 {
             // Only the top level frame left means that the thread has finished
@@ -587,23 +671,16 @@ impl Thread {
                .map(|_| ())
     }
 
-    pub fn deep_clone(&self, value: Value) -> Result<Value> {
+    fn global_env(&self) -> &Arc<GlobalVMState> {
+        &self.global_state
+    }
+
+    fn deep_clone(&self, value: Value) -> Result<Value> {
         let mut visited = HashMap::new();
         ::value::deep_clone(&value, &mut visited, &mut self.local_gc.lock().unwrap())
     }
-
-    fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
-        self.stack.lock().unwrap().push(Closure(closure));
-        let context = Context {
-            thread: self,
-            gc: self.local_gc.lock().unwrap(),
-            stack: StackFrame::frame(self.stack.lock().unwrap(), 0, State::Closure(closure)),
-        };
-        try!(context.execute());
-        let mut stack = self.stack.lock().unwrap();
-        Ok(stack.pop())
-    }
 }
+
 
 impl<'b> Context<'b> {
     fn execute_callable(mut self, function: &Callable, excess: bool) -> Result<Context<'b>> {

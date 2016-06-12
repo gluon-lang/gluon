@@ -13,7 +13,7 @@ use parser::parse_string;
 use parser::lexer::Token;
 
 fn parse(text: &str) -> Result<LExpr<String>, ::parser::Error> {
-    parse_string(None, &mut EmptyEnv::new(), text)
+    parse_string(&mut EmptyEnv::new(), text)
 }
 
 #[test]

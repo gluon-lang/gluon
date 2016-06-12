@@ -546,31 +546,6 @@ return 1
     assert_eq!(result, Ok(typ_a("IdT", vec![typ("Test"), typ("Int")])));
 }
 
-// TODO Uncomment when backtracking is working when unifying #[test]
-fn unify_transformer2() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Option a = | None | Some a in
-type Monad m = {
-    return : a -> m a
-} in
-let monad_Option: Monad Option = {
-    return = \x -> Some x
-} in
-type OptionT m a = m (Option a)
-in
-let monad_OptionT m: Monad m1 -> Monad (OptionT m1) =
-    let return x: b -> OptionT m1 b = m.return (Some x)
-    in {
-        return
-    }
-in 1
-"#;
-    let result = typecheck(text);
-    println!("{}", result.as_ref().unwrap_err());
-    assert_eq!(result, Ok(typ("Int")));
-}
-
 #[test]
 fn mutually_recursive_types() {
     let _ = ::env_logger::init();

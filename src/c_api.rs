@@ -1,10 +1,11 @@
+//! A (WIP) C API allowing use of gluon in other langauges than Rust.
 use std::str;
 use std::slice;
 
 use vm::api::generic::A;
 use vm::api::{Getable, Pushable, Generic};
-use vm::types::VMIndex;
-use vm::vm::{RootedThread, Thread, VMInt};
+use vm::types::{VMIndex, VMInt};
+use vm::thread::{RootedThread, Thread, ThreadInternal};
 
 use super::Compiler;
 

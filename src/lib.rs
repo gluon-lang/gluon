@@ -1,3 +1,9 @@
+//! This crate contains contains the implementation for the gluon programming language.
+//!
+//! Gluon is a programming language suitable for embedding in an existing application to extend its
+//! behaviour. For information about how to use this library the best resource currently is the
+//! [tutorial](https://github.com/Marwes/gluon/blob/master/TUTORIAL.md) which contains examples on
+//! how to write gluon programs as well as how to run them using this library.
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -13,8 +19,7 @@ mod io;
 pub mod import;
 pub mod c_api;
 
-pub use vm::vm::{RootedThread, RootedValue, Thread};
-
+pub use vm::thread::{RootedThread, Thread};
 
 use std::result::Result as StdResult;
 use std::string::String as StdString;
@@ -27,8 +32,10 @@ use base::metadata::Metadata;
 use vm::Variants;
 use vm::api::generic::A;
 use vm::api::{Getable, VMType, Generic, IO};
-use vm::vm::{ClosureDataDef, Error as VMError};
+use vm::Error as VMError;
 use vm::compiler::CompiledFunction;
+use vm::thread::{RootedValue, ThreadInternal};
+use vm::internal::ClosureDataDef;
 
 quick_error! {
     /// Error type wrapping all possible errors that can be generated from gluon
@@ -53,7 +60,7 @@ quick_error! {
             from()
         }
         /// Error found when executing code in the virtual machine
-        VM(err: ::vm::vm::Error) {
+        VM(err: ::vm::Error) {
             description(err.description())
             display("{}", err)
             from()
@@ -144,7 +151,7 @@ impl Compiler {
             let name = Name::new(filename);
             let name = NameBuf::from(name.module());
             let symbols = SymbolModule::new(StdString::from(name.as_ref()), &mut self.symbols);
-            let mut compiler = Compiler::new(&*env, vm, symbols);
+            let mut compiler = Compiler::new(&*env, vm.global_env(), symbols);
             compiler.compile_expr(&expr)
         };
         function.id = Symbol::new(filename);
@@ -166,20 +173,20 @@ impl Compiler {
     }
 
     /// Compiles `input` and if it is successful runs the resulting code and stores the resulting
-    /// value in the global variable named by running `filename_to_module` on `filename`.
+    /// value in the vm.
     ///
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
     pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
         let (expr, typ, metadata) = try!(self.extract_metadata(vm, filename, input));
         let function = self.compile_script(vm, filename, &expr);
-        let function = vm.new_function(function);
+        let function = vm.global_env().new_function(function);
         let closure = {
             let stack = vm.current_frame();
             vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
         };
         let value = try!(vm.call_module(&typ, closure));
-        try!(vm.set_global(function.name.clone(), typ, metadata, value));
+        try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
         Ok(())
     }
 
@@ -205,7 +212,7 @@ impl Compiler {
         let (expr, typ) = try!(self.typecheck_expr_expected(vm, name, expr_str, expected_type));
         let mut function = self.compile_script(vm, name, &expr);
         function.id = Symbol::new(name);
-        let function = vm.new_function(function);
+        let function = vm.global_env().new_function(function);
         let closure = {
             let stack = vm.current_frame();
             vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
@@ -279,7 +286,7 @@ impl Compiler {
     }
 }
 
-pub fn filename_to_module(filename: &str) -> StdString {
+fn filename_to_module(filename: &str) -> StdString {
     use std::path::Path;
     let path = Path::new(filename);
     let name = path.extension()

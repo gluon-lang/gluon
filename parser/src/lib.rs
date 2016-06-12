@@ -22,8 +22,8 @@ use base::symbol::{Name, Symbol, SymbolModule};
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream, SourcePosition};
 use combine::combinator::EnvParser;
-use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy,
-              sep_by1, sep_end_by, token, try, value, ParseError, ParseResult, Parser, ParserExt};
+use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy, sep_by1,
+              sep_end_by, token, try, value, ParseError, ParseResult, Parser, ParserExt};
 use combine_language::{Assoc, Fixity, expression_parser};
 
 use lexer::{Lexer, Delimiter, Token};
@@ -719,8 +719,6 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 }
 
-use lexer::PToken;
-
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
 ///type information. The type will just be a dummy value until the AST has passed typechecking
 pub fn parse_tc(symbols: &mut SymbolModule, input: &str) -> Result<LExpr<TcIdent<Symbol>>, Error> {
@@ -731,33 +729,24 @@ pub fn parse_tc(symbols: &mut SymbolModule, input: &str) -> Result<LExpr<TcIdent
         }),
         env: symbols,
     };
-    parse_module(None, &mut env, input)
+    parse_expr(&mut env, input)
 }
 
 #[cfg(feature = "test")]
-pub fn parse_string<'a, 's>(layout: Option<fn(&mut Lexer<'s,
-                                                         &'s str,
-                                                         &'a mut IdentEnv<Ident = String>>,
-                                              PToken<String>)
-                                              -> Result<Token<String>, ::lexer::Error<String>>>,
-                            make_ident: &'a mut IdentEnv<Ident = String>,
+pub fn parse_string<'a, 's>(make_ident: &'a mut IdentEnv<Ident = String>,
                             input: &'s str)
                             -> Result<LExpr<String>, Error> {
-    parse_module(layout, make_ident, input)
+    parse_expr(make_ident, input)
 }
 
-pub fn parse_module<'a, 's, Id>(layout: Option<fn(&mut Lexer<'s,
-                                                             &'s str,
-                                                             &'a mut IdentEnv<Ident = Id>>,
-                                                  PToken<Id>)
-                                                  -> Result<Token<Id>, ::lexer::Error<Id>>>,
-                                make_ident: &'a mut IdentEnv<Ident = Id>,
-                                input: &'s str)
-                                -> Result<LExpr<Id>, Error>
+/// Parses a gluon expression
+pub fn parse_expr<'a, 's, Id>(make_ident: &'a mut IdentEnv<Ident = Id>,
+                              input: &'s str)
+                              -> Result<LExpr<Id>, Error>
     where Id: AstId + Clone + PartialEq + fmt::Debug
 {
     let make_ident = Rc::new(RefCell::new(make_ident));
-    let lexer = Lexer::<&str, &mut IdentEnv<Ident = Id>>::new(layout, input, make_ident.clone());
+    let lexer = Lexer::<&str, &mut IdentEnv<Ident = Id>>::new(input, make_ident.clone());
     let empty_id = make_ident.borrow_mut().from_str("");
     let env = ParserEnv {
         empty_id: empty_id,
