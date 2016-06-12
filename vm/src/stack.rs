@@ -2,6 +2,8 @@ use std::fmt;
 use std::sync::MutexGuard;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
+use base::symbol::Symbol;
+
 use Variants;
 use gc::GcPtr;
 use value::{ClosureData, Value, DataStruct, ExternFunction};
@@ -257,6 +259,19 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         Lock(offset)
     }
 
+    /// Creates a stackrace starting from `frame_level`
+    pub fn stacktrace(&self, frame_level: usize) -> Stacktrace {
+        let frames = self.stack.get_frames()[frame_level..].iter().filter_map(|frame| {
+            match frame.state {
+                State::Closure(ref closure) => Some(Some(closure.function.name.clone())),
+                State::Extern(ref ext) => Some(Some(ext.id.clone())),
+                State::Unknown => Some(None),
+                State::Lock | State::Excess => None,
+            }
+        }).collect();
+        Stacktrace { frames: frames }
+    }
+
     fn add_new_frame(stack: &mut Stack, args: VMIndex, state: State) -> Frame {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
@@ -350,6 +365,23 @@ impl<'b> IndexMut<RangeFrom<VMIndex>> for StackFrame<'b> {
         &mut self.stack.values[(range.start + self.frame.offset) as usize..]
     }
 }
+
+#[derive(Debug)]
+pub struct Stacktrace {
+    frames: Vec<Option<Symbol>>,
+}
+
+impl fmt::Display for Stacktrace {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(writeln!(f, "Stacktrace:\n"));
+        for (i, frame) in self.frames.iter().enumerate() {
+            let name = frame.as_ref().map_or("<unknown>", |frame| frame.as_ref());
+            try!(writeln!(f, "{}: {}", i, name));
+        }
+        Ok(())
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

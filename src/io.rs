@@ -6,7 +6,6 @@ use std::fs::File;
 use vm::Result;
 use vm::types::*;
 use vm::thread::ThreadInternal;
-use vm::stack::{State, StackFrame};
 use vm::thread::{Thread, Status, RootStr};
 use vm::api::{Generic, VMType, Pushable, IO, WithVM, primitive};
 use vm::api::generic::{A, B};
@@ -110,7 +109,7 @@ pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     match run_result {
         Ok(value) => IO::Value(format!("{:?}", value.0)),
         Err(err) => {
-            let trace = backtrace(frame_level, &stack);
+            let trace = stack.stacktrace(frame_level);
             let fmt = format!("{}\n{}", err, trace);
             while stack.stack.get_frames().len() > frame_level {
                 match stack.exit_scope() {
@@ -133,7 +132,7 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
     match run_result {
         Ok(()) => IO::Value(format!("Loaded {}", &name[..])),
         Err(err) => {
-            let trace = backtrace(frame_level, &stack);
+            let trace = stack.stacktrace(frame_level);
             let fmt = format!("{}\n{}", err, trace);
             while stack.stack.get_frames().len() > frame_level {
                 match stack.exit_scope() {
@@ -144,25 +143,6 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
             IO::Exception(fmt)
         }
     }
-}
-
-/// Creates a backtraces starting from `frame_level`
-fn backtrace(frame_level: usize, stack: &StackFrame) -> String {
-    let mut buffer = String::from("Backtrace:\n");
-    for frame in &stack.stack.get_frames()[frame_level..] {
-        match frame.state {
-            State::Closure(ref closure) => buffer.push_str(closure.function.name.as_ref()),
-            State::Extern(ref ext) => buffer.push_str(ext.id.as_ref()),
-            State::Unknown => buffer.push_str("<unknown>"),
-            State::Lock | State::Excess => (),
-        }
-        String::push(&mut buffer, '\n');
-    }
-    if !stack.stack.get_frames().is_empty() {
-        // Remove last newline
-        buffer.pop();
-    }
-    buffer
 }
 
 pub fn load(vm: &Thread) -> Result<()> {

@@ -76,10 +76,6 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     IO::Value(Ok(buffer))
 }
 
-fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
-    f
-}
-
 fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
     fn input(s: &str) -> IO<Option<String>> {
         IO::Value(::linenoise::input(s))
