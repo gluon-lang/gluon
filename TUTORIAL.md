@@ -145,7 +145,7 @@ in { id }
 
 ### Variants
 
-While records are great for grouping related data together there is often a need to have data which can be one of several variants. Unlike records, variants need to be defined before their use.
+While records are great for grouping related data together there is often a need to have data which can be one of several variants. Unlike records, variants need to be defined before they can be used.
 
 ```f#,rust
 type MyOption a = | Some a | None
@@ -191,16 +191,32 @@ let f x y = x + y - 10 in f
 
 ### Type expressions
 
-gluon allows new types to be defined through the `type` expression.
+gluon allows new types to be defined through the `type` expression which just like `let` requires `in <expression>` to be written at the end to ensure it returns a value.
 
 ```f#,rust
 // type <identifier> <identifier>* = <type> in <expression>
 type MyOption a = | None | Some a
-in 0
+let divide x y: Int -> Int -> MyOption Int =
+    if (x / y) * y == x then
+        Some (x / y)
+    else
+        None
+in divide 10 4
 ```
 
-`type` requires `in <expression>` just like `let` to ensure that that a value is returned. Mutually recursive types can
-be defined by writing `and` between each definition.
+An important difference from many languages however is that `type` only defines aliases. This means that all types in the example below are actually equivalent to eachother.
+
+```f#,rust
+type Type1 = { x: Int }
+type Type2 = Type1
+type Type3 = { x: Int }
+let r1: Type1 = { x = 0 }
+let r2: Type2 = r1
+let r3: Type3 = r2
+in r1
+```
+
+Mutually recursive types can be defined by writing `and` between each definition.
 
 ```f#,rust
 type SExpr_ = | Atom String | Cons SExpr SExpr
@@ -208,7 +224,7 @@ and SExpr = { location: Int, expr: SExpr_ }
 in Atom "name"
 ```
 
-### Type syntax (TODO)
+### Types
 
 #### Function types
 
@@ -216,12 +232,16 @@ in Atom "name"
 <type> -> <type>
 ```
 
+Function types are written using the `->` operator which is right associtive. This means that the type of `(+)` which is usually written as `Int -> Int -> Int` is parsed as `Int -> (Int -> Int)` (A function taking one argument of `Int` and returning a function of `Int -> Int`).
+
 #### Record type
 
 ```
 { (<identifier> : <type>)* }
 { pi: Float, sin: Float -> Float }
 ```
+
+Records are gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records can neither add more fields or change the values of existing fields.
 
 #### Enumeration type
 
@@ -231,6 +251,8 @@ in Atom "name"
 | Err e | Ok t
 ```
 
+Gluon also has a second wy of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of gluons standard `Result` type which represents either the value having been successfully computed (`Ok t`) or that an error occured (`Err e`).
+
 #### Alias type
 
 ```
@@ -238,17 +260,24 @@ in Atom "name"
 Int
 Float
 Option Int
+Ref String
 ```
+
+The last kind of type which gluon has is the alias type. An alias type is a type which explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract then the type is only considered equivalent to its own alias (ie if you define an abstract type of `MyInt` which has the same representation as `Int` the typechecker still considers these two types as being not equal to eachother).
+
+#### Higher-kinded types (TODO)
+
+Gluon has higher kinded types.
 
 ### Indentation
 
-If you have been following along this far you may be thinking think that syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily gluon offerrs a more convenient way of writing bindings by relying on indentation.
+If you have been following along this far you may be thinking think that the syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily gluon offerrs a more convenient way of writing bindings by relying on indentation.
 
 When a token starts on the same line as a token on an earlier line, gluon implicitly adds inserts a block expression which allows multiple expressions and bindings to be run sequentially with all variables in scope.
 
 ```f#,rust
 let add1 x = x + 1
-add1 11 // `in` can be omitted since `id 1` starts on the same line as `let`
+add1 11 // `in` will be inserted automatically since `id 1` starts on the same line as the opening `let`
 ```
 
 ```f#
@@ -274,6 +303,8 @@ Which is equivalent to:
 ```f#,rust
 let module =
     let id x = x
+    in
+    type MyInt = Int
     in { id, pi = 3.14 }
 in
 module.id module.pi
@@ -281,7 +312,7 @@ module.id module.pi
 
 ## Importing modules
 
-As is often the case it is convenient to separate code into multiple files which can later be imported and used from multiple other files. To do this we can use the import macro which takes a single string literal as argument and loads that file at compile time before the module importing it gets compiled.
+As is often the case it is convenient to separate code into multiple files which can later be imported and used from multiple other files. To do this we can use the `import` macro which takes a single string literal as argument and loads and compiles that file at compile time before the importing module is compiled.
 
 So say that we need the `assert` function from the `test` module which can be found at `std/test.hs`. Then we might write something like this.
 
@@ -402,6 +433,6 @@ When compiling a an expression the compiler automatically inserts a small prelud
 
 ### Threads and channels
 
-gluon has support for cooperative threading and communication between them through the `Thread` and `Channel` types.
+gluon has support for cooperative threading and communication between them through the `Thread` and `Sender`/`Receiver` types.
 
 TODO
