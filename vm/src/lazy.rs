@@ -109,7 +109,8 @@ fn lazy(vm: &Thread) -> Status {
         value: Mutex::new(Lazy_::Thunk(f)),
         _marker: PhantomData,
     };
-    lazy.push(vm, &mut stack.stack)
+    let _ = lazy.push(vm, &mut stack.stack);
+    Status::Ok
 }
 
 pub fn load(vm: &Thread) -> Result<()> {

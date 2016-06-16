@@ -389,7 +389,8 @@ impl Compiler {
             let env = vm.get_env();
             let name = Name::new(filename);
             let name = NameBuf::from(name.module());
-            let symbols = SymbolModule::new(StdString::from(AsRef::<str>::as_ref(&name)), &mut self.symbols);
+            let symbols = SymbolModule::new(StdString::from(AsRef::<str>::as_ref(&name)),
+                                            &mut self.symbols);
             let mut compiler = Compiler::new(&*env, vm.global_env(), symbols);
             compiler.compile_expr(&expr)
         };
@@ -463,7 +464,11 @@ impl Compiler {
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
-    pub fn run_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<(T, TcType)>
+    pub fn run_expr<'vm, T>(&mut self,
+                            vm: &'vm Thread,
+                            name: &str,
+                            expr_str: &str)
+                            -> Result<(T, TcType)>
         where T: Getable<'vm> + VmType
     {
         let expected = T::make_type(vm);
@@ -476,7 +481,11 @@ impl Compiler {
         }
     }
 
-    pub fn run_io_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<(T, TcType)>
+    pub fn run_io_expr<'vm, T>(&mut self,
+                               vm: &'vm Thread,
+                               name: &str,
+                               expr_str: &str)
+                               -> Result<(T, TcType)>
         where T: Getable<'vm> + VmType,
               T::Type: Sized
     {

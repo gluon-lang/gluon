@@ -215,9 +215,9 @@ impl VmType for RootedThread {
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
-    fn push(self, _vm: &'vm Thread, stack: &mut Stack) -> Status {
+    fn push(self, _vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
         stack.push(Value::Thread(self.0));
-        Status::Ok
+        Ok(())
     }
 }
 
@@ -336,14 +336,11 @@ impl Thread {
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
         where T: Pushable<'vm> + VmType
     {
-        let (status, value) = {
+        let value = {
             let mut stack = self.get_stack();
-            let status = value.push(self, &mut stack);
-            (status, stack.pop())
+            try!(value.push(self, &mut stack));
+            stack.pop()
         };
-        if status == Status::Error {
-            return Err(Error::Message(format!("{:?}", value)));
-        }
         self.global_env().set_global(Symbol::new(name),
                                      T::make_type(self),
                                      Metadata::default(),
@@ -411,11 +408,11 @@ impl Thread {
     }
 
     /// Pushes a value to the top of the stack
-    pub fn push<'vm, T>(&'vm self, v: T)
+    pub fn push<'vm, T>(&'vm self, v: T) -> Result<()>
         where T: Pushable<'vm>
     {
         let mut stack = self.stack.lock().unwrap();
-        v.push(self, &mut stack);
+        v.push(self, &mut stack)
     }
 
     /// Removes the top value from the stack
@@ -1140,7 +1137,9 @@ fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     match (T::from_value(vm, Variants(&l)), T::from_value(vm, Variants(&r))) {
         (Some(l), Some(r)) => {
             let result = f(l, r);
-            result.push(vm, &mut stack.stack);
+            // pushing numbers should never return an error so unwrap
+            result.push(vm, &mut stack.stack)
+                .unwrap()
         }
         (l, r) => panic!("{:?} `op` {:?}", l, r),
     }
