@@ -6,7 +6,6 @@ use std::marker::PhantomData;
 use base::types::{Type, TcType};
 use Result;
 use gc::{Gc, GcPtr, Traverseable};
-use stack::Stack;
 use vm::Thread;
 use thread::ThreadInternal;
 use value::Value;
@@ -19,7 +18,7 @@ struct Reference<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Userdata for Reference<T> where T: Any + Send + Sync { }
+impl<T> Userdata for Reference<T> where T: Any + Send + Sync {}
 
 impl<T> fmt::Debug for Reference<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

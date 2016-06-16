@@ -61,7 +61,10 @@ fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, 
             Ok(bytes_read) => {
                 let value = {
                     let stack = vm.get_stack();
-                    vm.alloc(&stack, &buffer[..bytes_read])
+                    match vm.alloc(&stack, &buffer[..bytes_read]) {
+                        Ok(value) => value,
+                        Err(err) => return IO::Exception(format!("{}", err)),
+                    }
                 };
                 IO::Value(Getable::from_value(vm, Variants::new(&Value::Array(value)))
                     .expect("Array"))
@@ -119,7 +122,7 @@ fn catch_io(vm: &Thread) -> Status {
     let frame_level = stack.stack.get_frames().len();
     let action = stack[0];
     stack.push(action);
-    0.push(vm, &mut stack.stack);
+    0.push(vm, &mut stack.stack).unwrap();
     match vm.call_function(stack, 1) {
         Ok(_) => Status::Ok,
         Err(err) => {
@@ -133,14 +136,14 @@ fn catch_io(vm: &Thread) -> Status {
             let callback = stack[1];
             stack.push(callback);
             let fmt = format!("{}", err);
-            fmt.push(vm, &mut stack.stack);
-            0.push(vm, &mut stack.stack);
+            let _ = fmt.push(vm, &mut stack.stack);
+            0.push(vm, &mut stack.stack).unwrap();
             match vm.call_function(stack, 2) {
                 Ok(_) => Status::Ok,
                 Err(err) => {
                     stack = vm.current_frame();
                     let fmt = format!("{}", err);
-                    fmt.push(vm, &mut stack.stack);
+                    let _ = fmt.push(vm, &mut stack.stack);
                     Status::Error
                 }
             }
@@ -207,13 +210,13 @@ pub fn load(vm: &Thread) -> Result<()> {
         TailCall(2),    // [f_ret]          Call f m_ret ()
     ];
     let io_flat_map_type = <fn (fn (A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
-    vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map);
+    try!(vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map));
 
 
-    vm.add_bytecode("io_pure",
-                    <fn(A) -> IO<A> as VmType>::make_type(vm),
-                    2,
-                    vec![Pop(1)]);
+    try!(vm.add_bytecode("io_pure",
+                         <fn(A) -> IO<A> as VmType>::make_type(vm),
+                         2,
+                         vec![Pop(1)]));
     // IO functions
     try!(vm.define_global("io",
                           record!(

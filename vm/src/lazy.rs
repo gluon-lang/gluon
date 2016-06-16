@@ -18,7 +18,7 @@ pub struct Lazy<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Userdata for Lazy<T> where T: Any + Send + Sync { }
+impl<T> Userdata for Lazy<T> where T: Any + Send + Sync {}
 
 impl<T> fmt::Debug for Lazy<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -65,7 +65,7 @@ fn force(vm: &Thread) -> Status {
             let value = *lazy.value.lock().unwrap();
             match value {
                 Lazy_::Blackhole => {
-                    "<<loop>>".push(vm, &mut stack.stack);
+                    let _ = "<<loop>>".push(vm, &mut stack.stack);
                     Status::Error
                 }
                 Lazy_::Thunk(value) => {
@@ -87,7 +87,7 @@ fn force(vm: &Thread) -> Status {
                         Err(err) => {
                             let mut stack = vm.get_stack();
                             let err = format!("{}", err);
-                            err.push(vm, &mut stack);
+                            let _ = err.push(vm, &mut stack);
                             Status::Error
                         }
                     }

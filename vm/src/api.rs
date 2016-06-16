@@ -246,6 +246,19 @@ pub trait Pushable<'vm> {
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()>;
+
+    fn status_push(self, vm: &'vm Thread, stack: &mut Stack) -> Status
+        where Self: Sized
+    {
+        match self.push(vm, stack) {
+            Ok(()) => Status::Ok,
+            Err(err) => {
+                let msg = vm.alloc_ignore_limit(&format!("{}", err)[..]);
+                stack.push(Value::String(msg));
+                Status::Error
+            }
+        }
+    }
 }
 
 /// Trait which allows rust values to be retrieved from the virtual machine
@@ -261,7 +274,7 @@ pub trait Getable<'vm>: Sized {
 impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
         let data: Box<vm::Userdata> = Box::new(self);
-        let userdata = vm.alloc(stack, Move(data));
+        let userdata = try!(vm.alloc(stack, Move(data)));
         stack.push(Value::Userdata(userdata));
         Ok(())
     }
@@ -538,7 +551,7 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 }
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
-        let s = vm.alloc(stack, self);
+        let s = try!(vm.alloc(stack, self));
         stack.push(Value::String(s));
         Ok(())
     }
@@ -606,7 +619,7 @@ impl<'vm, 's, T> Pushable<'vm> for &'s [T]
           &'s [T]: DataDef<Value = ValueArray>
 {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
-        let result = vm.alloc(stack, self);
+        let result = try!(vm.alloc(stack, self));
         stack.push(Value::Array(result));
         Ok(())
     }
@@ -643,11 +656,11 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
         }
         let result = {
             let values = &stack[stack.len() - len..];
-            vm.alloc(stack,
-                     Def {
-                         tag: 0,
-                         elems: values,
-                     })
+            try!(vm.alloc(stack,
+                          Def {
+                              tag: 0,
+                              elems: values,
+                          }))
         };
         for _ in 0..len {
             stack.pop();
@@ -687,8 +700,8 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
         match self {
             Some(value) => {
                 let len = stack.len();
-                value.push(vm, stack);
-                let value = vm.new_data(1, &[stack.pop()]);
+                try!(value.push(vm, stack));
+                let value = try!(vm.new_data(1, &[stack.pop()]));
                 assert!(stack.len() == len);
                 stack.push(value);
             }
@@ -728,20 +741,20 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
         let tag = match self {
             Ok(ok) => {
-                ok.push(vm, stack);
+                try!(ok.push(vm, stack));
                 1
             }
             Err(err) => {
-                err.push(vm, stack);
+                try!(err.push(vm, stack));
                 0
             }
         };
         let value = stack.pop();
-        let data = vm.alloc(stack,
-                            Def {
-                                tag: tag,
-                                elems: &[value],
-                            });
+        let data = try!(vm.alloc(stack,
+                                 Def {
+                                     tag: tag,
+                                     elems: &[value],
+                                 }));
         stack.push(Value::Data(data));
         Ok(())
     }
@@ -776,16 +789,8 @@ impl<T: VmType, E> VmType for MaybeError<T, E> {
 impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for MaybeError<T, E> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
         match self {
-            MaybeError::Ok(value) => {
-                value.push(vm, stack);
-                Ok(())
-            }
-            MaybeError::Err(err) => {
-                let msg = format!("{}", err);
-                let s = vm.alloc(stack, &msg[..]);
-                stack.push(Value::String(s));
-                Err(Error::Message("Push error".into()))
-            }
+            MaybeError::Ok(value) => value.push(vm, stack),
+            MaybeError::Err(err) => Err(Error::Message(format!("{}", err))),
         }
     }
 }
@@ -814,14 +819,8 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for IO<T> {
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
         match self {
-            IO::Value(value) => {
-                value.push(vm, stack);
-                Ok(())
-            }
-            IO::Exception(exc) => {
-                exc.push(vm, stack);
-                Err(Error::Message("Push error".into()))
-            }
+            IO::Value(value) => value.push(vm, stack),
+            IO::Exception(exc) => Err(Error::Message(exc)),
         }
     }
 }
@@ -988,11 +987,11 @@ macro_rules! define_tuple {
             fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
                 let ( $($id),+ ) = self;
                 $(
-                    $id.push(vm, stack);
+                    try!($id.push(vm, stack));
                 )+
                 let len = count!($($id),+);
                 let offset = stack.len() - len;
-                let value = vm.new_data(0, &stack[offset..]);
+                let value = try!(vm.new_data(0, &stack[offset..]));
                 for _ in 0..len {
                     stack.pop();
                 }
@@ -1024,7 +1023,7 @@ pub mod record {
     use stack::Stack;
     use thread::ThreadInternal;
     use types::VmIndex;
-    use vm::{Thread, Status};
+    use vm::Thread;
     use value::Value;
     use super::{VmType, Getable, Pushable};
 
@@ -1084,20 +1083,22 @@ pub mod record {
     }
 
     pub trait PushableFieldList<'vm>: FieldList {
-        fn push(self, vm: &'vm Thread, fields: &mut Stack);
+        fn push(self, vm: &'vm Thread, fields: &mut Stack) -> Result<()>;
     }
 
     impl<'vm> PushableFieldList<'vm> for () {
-        fn push(self, _: &'vm Thread, _: &mut Stack) {}
+        fn push(self, _: &'vm Thread, _: &mut Stack) -> Result<()> {
+            Ok(())
+        }
     }
 
     impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HList<(F, H), T>
         where T: PushableFieldList<'vm>
     {
-        fn push(self, vm: &'vm Thread, fields: &mut Stack) {
+        fn push(self, vm: &'vm Thread, fields: &mut Stack) -> Result<()> {
             let HList((_, head), tail) = self;
-            head.push(vm, fields);
-            tail.push(vm, fields);
+            try!(head.push(vm, fields));
+            tail.push(vm, fields)
         }
     }
 
@@ -1141,10 +1142,10 @@ pub mod record {
               T: PushableFieldList<'vm>
     {
         fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
-            self.fields.push(vm, stack);
+            try!(self.fields.push(vm, stack));
             let len = HList::<(F, A), T>::len();
             let offset = stack.len() - len;
-            let value = vm.new_data(0, &stack[offset..]);
+            let value = try!(vm.new_data(0, &stack[offset..]));
             for _ in 0..len {
                 stack.pop();
             }
@@ -1243,12 +1244,12 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
         let extern_function = Box::new(self.function);
         let id = Symbol::new(self.name);
-        let value = Value::Function(vm.alloc(stack,
-                                             Move(ExternFunction {
-                                                 id: id,
-                                                 args: F::arguments(),
-                                                 function: extern_function,
-                                             })));
+        let value = Value::Function(try!(vm.alloc(stack,
+                                                  Move(ExternFunction {
+                                                      id: id,
+                                                      args: F::arguments(),
+                                                      function: extern_function,
+                                                  }))));
         stack.push(value);
         Ok(())
     }
@@ -1283,13 +1284,13 @@ impl<'vm> Pushable<'vm> for CPrimitive {
             transmute::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
                         Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(move |vm| function(vm)))
         };
-        let value = Value::Function(vm.alloc(stack,
-                                             Move(ExternFunction {
-                                                 id: self.id,
-                                                 args: self.arguments,
-                                                 function: extern_function,
-                                             })));
-        stack.push(value);
+        let value = try!(vm.alloc(stack,
+                                  Move(ExternFunction {
+                                      id: self.id,
+                                      args: self.arguments,
+                                      function: extern_function,
+                                  })));
+        stack.push(Value::Function(value));
         Ok(())
     }
 }
@@ -1412,12 +1413,12 @@ where $($args: Getable<'vm> + VmType + 'vm,)* R: Pushable<'vm> +  VmType + 'vm {
                        Box<Fn(&Thread) -> Status + Send + Sync>>(f)
         };
         let id = Symbol::new("<extern>");
-        let value = Value::Function(vm.alloc(stack, Move(
+        let value = Value::Function(try!(vm.alloc(stack, Move(
             ExternFunction {
                 id: id,
                 args: count!($($args),*) + R::extra_args(),
                 function: extern_function
-            })));
+            }))));
         stack.push(value);
         Ok(())
     }
@@ -1454,14 +1455,7 @@ where $($args: Getable<'vm> + 'vm,)*
             stack = StackFrame::current(s);
             r
         };
-        match r.push(vm, &mut stack.stack) {
-            Ok(()) => Status::Ok,
-            Err(err) => {
-                let msg = vm.alloc(&stack.stack, &format!("{}", err)[..]);
-                stack.push(Value::String(msg));
-                Status::Error
-            }
-        }
+        r.status_push(vm, &mut stack.stack)
     }
 }
 
@@ -1506,14 +1500,7 @@ where $($args: Getable<'vm> + 'vm,)*
             stack = StackFrame::current(s);
             r
         };
-        match r.push(vm, &mut stack.stack) {
-            Ok(()) => Status::Ok,
-            Err(err) => {
-                let msg = vm.alloc(&stack.stack, &format!("{}", err)[..]);
-                stack.push(Value::String(msg));
-                Status::Error
-            }
-        }
+        r.status_push(vm, &mut stack.stack)
     }
 }
 
@@ -1530,10 +1517,10 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
         stack = vm.get_stack();
         stack.push(*self.value);
         $(
-            $args.push(vm, &mut stack);
+            try!($args.push(vm, &mut stack));
         )*
         for _ in 0..R::extra_args() {
-            0.push(vm, &mut stack);
+            0.push(vm, &mut stack).unwrap();
         }
         let args = stack.len() - 1;
         let mut stack = try!(vm.call_function(StackFrame::current(stack), args)).unwrap();
