@@ -101,6 +101,10 @@ pub extern "C" fn glu_push_float(vm: &Thread, float: f64) {
     Thread::push(vm, float);
 }
 
+pub extern "C" fn glu_push_bool(vm: &Thread, b: i8) {
+    Thread::push(vm, b != 0);
+}
+
 pub unsafe extern "C" fn glu_push_function(vm: &Thread,
                                            name: &u8,
                                            len: usize,
@@ -138,6 +142,15 @@ pub extern "C" fn glu_get_int(vm: &Thread, index: VMIndex, out: &mut VMInt) -> E
 
 pub extern "C" fn glu_get_float(vm: &Thread, index: VMIndex, out: &mut f64) -> Error {
     get_value(vm, index, out)
+}
+
+pub extern "C" fn glu_get_bool(vm: &Thread, index: VMIndex, out: &mut i8) -> Error {
+    let mut b = false;
+    let err = get_value(vm, index, &mut b);
+    if err == Error::Ok {
+        *out = b as i8;
+    }
+    err
 }
 
 /// The returned string is garbage collected and may not be valid after the string is removed from
@@ -190,6 +203,7 @@ mod tests {
             glu_push_float(vm, 3.14);
             let s = "test";
             glu_push_string(vm, &s.as_bytes()[0], s.len());
+            glu_push_bool(vm, 1);
 
             let mut int = 0;
             assert_eq!(glu_get_int(vm, 0, &mut int), Error::Ok);
@@ -206,9 +220,13 @@ mod tests {
             assert_eq!(str::from_utf8(slice::from_raw_parts(string_ptr, string_len)),
                        Ok("test"));
 
-            assert_eq!(glu_len(vm), 3);
+            let mut b = 0;
+            assert_eq!(glu_get_bool(vm, 3, &mut b), Error::Ok);
+            assert_eq!(b, 1);
 
-            glu_pop(vm, 3);
+            assert_eq!(glu_len(vm), 4);
+
+            glu_pop(vm, 4);
 
             glu_free_vm(vm);
         }
