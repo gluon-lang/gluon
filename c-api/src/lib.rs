@@ -165,3 +165,72 @@ fn get_value<T>(vm: &Thread, index: VMIndex, out: &mut T) -> Error
         None => Error::Unknown,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use gluon::vm::thread::{Status, Thread};
+
+    use std::ptr;
+    use std::str;
+    use std::slice;
+
+    #[test]
+    fn push_pop() {
+        unsafe {
+            let vm = &*new_vm();
+
+            push_int(vm, 123);
+            push_float(vm, 3.14);
+            let s = "test";
+            push_string(vm, &s.as_bytes()[0], s.len());
+
+            let mut int = 0;
+            assert_eq!(get_int(vm, 0, &mut int), Error::Ok);
+            assert_eq!(int, 123);
+
+            let mut float = 0.0;
+            assert_eq!(get_float(vm, 1, &mut float), Error::Ok);
+            assert_eq!(float, 3.14);
+
+            let mut string_ptr = ptr::null();
+            let mut string_len = 0;
+            assert_eq!(get_string(vm, 2, &mut string_ptr, &mut string_len), Error::Ok);
+            assert_eq!(str::from_utf8(slice::from_raw_parts(string_ptr, string_len)), Ok("test"));
+
+            assert_eq!(len(vm), 3);
+
+            pop(vm, 3);
+
+            free_vm(vm);
+        }
+    }
+
+    #[test]
+    fn call_function_test() {
+        extern "C" fn mult(vm: &Thread) -> Status {
+            let mut l = 0.0;
+            assert_eq!(get_float(vm, 0, &mut l), Error::Ok);
+            let mut r = 0.0;
+            assert_eq!(get_float(vm, 1, &mut r), Error::Ok);
+            push_float(vm, l * r);
+            Status::Ok
+        }
+
+        unsafe {
+            let vm = &*new_vm();
+            let name = "mult";
+            push_function(vm, &name.as_bytes()[0], name.len(), mult, 2);
+            push_float(vm, 12.0);
+            push_float(vm, 3.0);
+
+            assert_eq!(call_function(vm, 2), Error::Ok);
+            let mut result = 0.0;
+            assert_eq!(get_float(vm, 0, &mut result), Error::Ok);
+            assert_eq!(result, 36.0);
+
+            free_vm(vm);
+        }
+    }
+}
