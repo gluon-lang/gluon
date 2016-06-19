@@ -10,5 +10,8 @@ crate-type = ["staticlib"]
 version = "0.1.0"
 path = ".."
 
+[dependencies.libc]
+version = "0.2.0"
+
 [features]
 test = ["gluon/test"]

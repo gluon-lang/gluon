@@ -535,7 +535,7 @@ pub struct Userdata<T>(pub T);
 impl<T: VMType> VMType for Userdata<T> {
     type Type = T::Type;
 }
-impl<'vm, T: ::vm::Userdata + VMType> Pushable<'vm> for Userdata<T> {
+impl<'vm, T: ::vm::Userdata> Pushable<'vm> for Userdata<T> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let data: Box<::vm::Userdata> = Box::new(self.0);
         let userdata = vm.alloc(stack, Move(data));

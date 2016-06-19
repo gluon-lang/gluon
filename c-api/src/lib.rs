@@ -1,5 +1,6 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
 
+extern crate libc;
 extern crate gluon;
 
 use std::str;
@@ -136,6 +137,10 @@ pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usi
     s.push(vm, &mut vm.get_stack());
 }
 
+pub extern "C" fn glu_push_light_userdata(vm: &Thread, data: *mut libc::c_void) {
+    Thread::push(vm, data as usize);
+}
+
 pub extern "C" fn glu_get_int(vm: &Thread, index: VMIndex, out: &mut VMInt) -> Error {
     get_value(vm, index, out)
 }
@@ -169,6 +174,15 @@ pub unsafe extern "C" fn glu_get_string(vm: &Thread,
         }
         None => Error::Unknown,
     }
+}
+
+pub extern "C" fn glu_get_light_userdata(vm: &Thread, index: VMIndex, out: &mut *mut libc::c_void) -> Error {
+    let mut userdata = 0usize;
+    let err = get_value(vm, index, &mut userdata);
+    if err == Error::Ok {
+        *out = userdata as *mut libc::c_void;
+    }
+    err
 }
 
 fn get_value<T>(vm: &Thread, index: VMIndex, out: &mut T) -> Error
@@ -229,6 +243,19 @@ mod tests {
             glu_pop(vm, 4);
 
             glu_free_vm(vm);
+        }
+    }
+
+    #[test]
+    fn push_userdata() {
+        unsafe {
+            let vm = &*glu_new_vm();
+
+            let x = 123i32;
+            glu_push_light_userdata(vm, &x as *const i32 as *mut ::libc::c_void);
+            let mut p = ptr::null_mut();
+            assert_eq!(glu_get_light_userdata(vm, 0, &mut p), Error::Ok);
+            assert_eq!(*(p as *const i32), 123);
         }
     }
 
