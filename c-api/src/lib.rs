@@ -1,13 +1,15 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
+extern crate gluon;
+
 use std::str;
 use std::slice;
 
-use vm::api::generic::A;
-use vm::api::{Getable, Pushable, Generic, CPrimitive};
-use vm::types::{VMIndex, VMInt};
-use vm::thread::{RootedThread, Thread, ThreadInternal, Status};
+use gluon::vm::api::generic::A;
+use gluon::vm::api::{Getable, Pushable, Generic, CPrimitive};
+use gluon::vm::types::{VMIndex, VMInt};
+use gluon::vm::thread::{RootedThread, Thread, ThreadInternal, Status};
 
-use super::Compiler;
+use gluon::Compiler;
 
 pub type Function = extern "C" fn (&Thread) -> Status;
 

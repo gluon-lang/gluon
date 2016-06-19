@@ -17,7 +17,6 @@ pub extern crate gluon_check as check;
 
 mod io;
 pub mod import;
-pub mod c_api;
 
 pub use vm::thread::{RootedThread, Thread};
 
