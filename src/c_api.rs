@@ -3,11 +3,13 @@ use std::str;
 use std::slice;
 
 use vm::api::generic::A;
-use vm::api::{Getable, Pushable, Generic};
+use vm::api::{Getable, Pushable, Generic, CPrimitive};
 use vm::types::{VMIndex, VMInt};
-use vm::thread::{RootedThread, Thread, ThreadInternal};
+use vm::thread::{RootedThread, Thread, ThreadInternal, Status};
 
 use super::Compiler;
+
+pub type Function = extern "C" fn (&Thread) -> Status;
 
 // TODO What should the c api return as errors
 // TODO How should error messages be returned
@@ -68,12 +70,29 @@ pub unsafe extern "C" fn load_script(vm: &Thread,
     }
 }
 
+pub extern "C" fn call_function(thread: &Thread, arguments: VMIndex) -> Error {
+    let stack = thread.current_frame();
+    match thread.call_function(stack, arguments) {
+        Ok(_) => Error::Ok,
+        Err(_) => Error::Unknown,
+    }
+}
+
 pub extern "C" fn push_int(vm: &Thread, int: VMInt) {
     Thread::push(vm, int);
 }
 
 pub extern "C" fn push_float(vm: &Thread, float: f64) {
     Thread::push(vm, float);
+}
+
+pub unsafe extern "C" fn push_function(vm: &Thread, name: *const u8, len: usize, function: Function, arguments: VMIndex) -> Error {
+    let s = match str::from_utf8(slice::from_raw_parts(name, len)) {
+        Ok(s) => s,
+        Err(_) => return Error::Unknown,
+    };
+    Thread::push(vm, CPrimitive::new(function, arguments, s));
+    Error::Ok
 }
 
 /// Push a string to the stack. The string must be valid utf-8 or an error will be returned

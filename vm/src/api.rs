@@ -178,7 +178,7 @@ pub trait VMType {
 
 
 /// Trait which allows a rust value to be pushed to the virtual machine
-pub trait Pushable<'vm>: VMType {
+pub trait Pushable<'vm> {
     /// Pushes `self` to `stack`. If the call is successful a single element should have been added
     /// to the stack and `Status::Ok` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
@@ -505,8 +505,7 @@ impl<T> VMType for Vec<T>
 }
 
 impl<'vm, T> Pushable<'vm> for Vec<T>
-    where T: Pushable<'vm>,
-          T::Type: Sized
+    where T: Pushable<'vm>
 {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let len = self.len() as VMIndex;
@@ -579,7 +578,6 @@ impl<T: VMType> VMType for Option<T>
     }
 }
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
-    where T::Type: Sized
 {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
@@ -623,8 +621,6 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
 }
 
 impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for Result<T, E>
-    where T::Type: Sized,
-          E::Type: Sized
 {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let tag = match self {
@@ -713,7 +709,6 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for IO<T> {
 }
 
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T>
-    where T::Type: Sized
 {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
@@ -892,8 +887,7 @@ macro_rules! define_tuple {
             }
         }
         impl<'vm, $($id),+> Pushable<'vm> for ($($id),+)
-        where $($id: Pushable<'vm>),+,
-              $($id::Type: Sized),+
+        where $($id: Pushable<'vm>),+
         {
             fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
                 let ( $($id),+ ) = self;
@@ -957,7 +951,9 @@ pub mod record {
 
     pub trait FieldList {
         fn len() -> VMIndex;
+    }
 
+    pub trait FieldTypes: FieldList {
         fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, TcType>>);
     }
 
@@ -965,17 +961,23 @@ pub mod record {
         fn len() -> VMIndex {
             0
         }
+    }
 
+    impl FieldTypes for () {
         fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, TcType>>) {}
     }
 
-    impl<F: Field, H: VMType, T> FieldList for HList<(F, H), T>
+    impl<F, H, T> FieldList for HList<(F, H), T>
         where T: FieldList
 {
         fn len() -> VMIndex {
             1 + T::len()
         }
+    }
 
+    impl<F: Field, H: VMType, T> FieldTypes for HList<(F, H), T>
+        where T: FieldTypes
+{
         fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, TcType>>) {
             fields.push(types::Field {
                 name: Symbol::new(F::name()),
@@ -1026,7 +1028,7 @@ pub mod record {
         }
     }
 
-    impl<A: VMType, F: Field, T: FieldList> VMType for Record<HList<(F, A), T>>
+    impl<A: VMType, F: Field, T: FieldTypes> VMType for Record<HList<(F, A), T>>
         where A::Type: Sized
 {
         type Type = Record<((&'static str, A::Type),)>;
@@ -1040,8 +1042,7 @@ pub mod record {
     impl<'vm, A, F, T> Pushable<'vm> for Record<HList<(F, A), T>>
         where A: Pushable<'vm>,
               F: Field,
-              T: PushableFieldList<'vm>,
-              A::Type: Sized
+              T: PushableFieldList<'vm>
 {
         fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
             self.fields.push(vm, stack);
@@ -1144,13 +1145,7 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
     where F: FunctionType + VMType + Send + Sync
 {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
-        use std::mem::transmute;
-        let extern_function = unsafe {
-            // The VM guarantess that it only ever calls this function with itself which should
-            // make sure that ignoring the lifetime is safe
-            transmute::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
-                        Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(self.function))
-        };
+        let extern_function = Box::new(self.function);
         let id = Symbol::new(self.name);
         let value = Value::Function(vm.alloc(stack,
                                              Move(ExternFunction {
@@ -1162,6 +1157,45 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
         Status::Ok
     }
 }
+
+pub struct CPrimitive {
+    function: extern "C" fn (&Thread) -> Status,
+    arguments: VMIndex,
+    id: Symbol,
+}
+
+impl CPrimitive {
+    pub unsafe fn new(function: extern "C" fn (&Thread) -> Status, arguments: VMIndex, id: &str) -> CPrimitive {
+        CPrimitive {
+            id: Symbol::new(id),
+            function: function,
+            arguments: arguments,
+        }
+    }
+}
+
+impl<'vm> Pushable<'vm> for CPrimitive
+{
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
+        use std::mem::transmute;
+        let function = self.function;
+        let extern_function = unsafe {
+            // The VM guarantess that it only ever calls this function with itself which should
+            // make sure that ignoring the lifetime is safe
+            transmute::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
+                        Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(move |vm| function(vm)))
+        };
+        let value = Value::Function(vm.alloc(stack,
+                                             Move(ExternFunction {
+                                                 id: self.id,
+                                                 args: self.arguments,
+                                                 function: extern_function,
+                                             })));
+        stack.push(value);
+        Status::Ok
+    }
+}
+
 
 fn make_type<T: ?Sized + VMType>(vm: &Thread) -> TcType {
     <T as VMType>::make_type(vm)
@@ -1269,7 +1303,7 @@ impl <$($args: VMType,)* R: VMType> VMType for fn ($($args),*) -> R {
 }
 
 impl <'vm, $($args,)* R> Pushable<'vm> for fn ($($args),*) -> R
-where $($args: Getable<'vm> + VMType + 'vm,)* R: Pushable<'vm> + 'vm {
+where $($args: Getable<'vm> + VMType + 'vm,)* R: Pushable<'vm> +  VMType + 'vm {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let f = Box::new(move |vm| self.unpack_and_call(vm));
         let extern_function = unsafe {
@@ -1298,7 +1332,9 @@ impl <'vm, $($args,)* R: VMType> FunctionType for fn ($($args),*) -> R {
 }
 
 impl <'vm, $($args,)* R> VMFunction<'vm> for fn ($($args),*) -> R
-where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
+where $($args: Getable<'vm> + 'vm,)*
+      R: Pushable<'vm> + VMType + 'vm
+{
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
         let n_args = Self::arguments();
@@ -1341,7 +1377,9 @@ impl <'s, $($args: VMType,)* R: VMType> VMType for Fn($($args),*) -> R + 's {
 }
 
 impl <'vm, $($args,)* R> VMFunction<'vm> for Fn($($args),*) -> R + 'vm
-where $($args: Getable<'vm> + 'vm,)* R: Pushable<'vm> + 'vm {
+where $($args: Getable<'vm> + 'vm,)*
+      R: Pushable<'vm> + VMType + 'vm
+{
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
         let n_args = Self::arguments();

@@ -330,7 +330,7 @@ impl Thread {
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
-        where T: Pushable<'vm>
+        where T: Pushable<'vm> + VMType
     {
         let (status, value) = {
             let mut stack = self.get_stack();
