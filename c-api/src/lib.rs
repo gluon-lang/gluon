@@ -12,7 +12,7 @@ use gluon::vm::thread::{RootedThread, Thread, ThreadInternal, Status};
 
 use gluon::Compiler;
 
-pub type Function = extern "C" fn (&Thread) -> Status;
+pub type Function = extern "C" fn(&Thread) -> Status;
 
 // TODO What should the c api return as errors
 // TODO How should error messages be returned
@@ -23,21 +23,21 @@ pub enum Error {
     Unknown,
 }
 
-pub extern "C" fn new_vm() -> *const Thread {
+pub extern "C" fn glu_new_vm() -> *const Thread {
     let vm = RootedThread::new();
     vm.into_raw()
 }
 
-pub unsafe extern "C" fn free_vm(vm: &Thread) {
+pub unsafe extern "C" fn glu_free_vm(vm: &Thread) {
     RootedThread::from_raw(vm);
 }
 
-pub unsafe extern "C" fn run_expr(vm: &Thread,
-                                  module: &u8,
-                                  module_len: usize,
-                                  expr: &u8,
-                                  expr_len: usize)
-                                  -> Error {
+pub unsafe extern "C" fn glu_run_expr(vm: &Thread,
+                                      module: &u8,
+                                      module_len: usize,
+                                      expr: &u8,
+                                      expr_len: usize)
+                                      -> Error {
     let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -53,12 +53,12 @@ pub unsafe extern "C" fn run_expr(vm: &Thread,
     }
 }
 
-pub unsafe extern "C" fn load_script(vm: &Thread,
-                                     module: &u8,
-                                     module_len: usize,
-                                     expr: &u8,
-                                     expr_len: usize)
-                                     -> Error {
+pub unsafe extern "C" fn glu_load_script(vm: &Thread,
+                                         module: &u8,
+                                         module_len: usize,
+                                         expr: &u8,
+                                         expr_len: usize)
+                                         -> Error {
     let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn load_script(vm: &Thread,
     }
 }
 
-pub extern "C" fn call_function(thread: &Thread, arguments: VMIndex) -> Error {
+pub extern "C" fn glu_call_function(thread: &Thread, arguments: VMIndex) -> Error {
     let stack = thread.current_frame();
     match thread.call_function(stack, arguments) {
         Ok(_) => Error::Ok,
@@ -82,26 +82,31 @@ pub extern "C" fn call_function(thread: &Thread, arguments: VMIndex) -> Error {
     }
 }
 
-pub extern "C" fn len(vm: &Thread) -> usize {
+pub extern "C" fn glu_len(vm: &Thread) -> usize {
     vm.current_frame().len() as usize
 }
 
-pub extern "C" fn pop(vm: &Thread, n: usize) {
+pub extern "C" fn glu_pop(vm: &Thread, n: usize) {
     let mut stack = vm.current_frame();
     for _ in 0..n {
         stack.pop();
     }
 }
 
-pub extern "C" fn push_int(vm: &Thread, int: VMInt) {
+pub extern "C" fn glu_push_int(vm: &Thread, int: VMInt) {
     Thread::push(vm, int);
 }
 
-pub extern "C" fn push_float(vm: &Thread, float: f64) {
+pub extern "C" fn glu_push_float(vm: &Thread, float: f64) {
     Thread::push(vm, float);
 }
 
-pub unsafe extern "C" fn push_function(vm: &Thread, name: &u8, len: usize, function: Function, arguments: VMIndex) -> Error {
+pub unsafe extern "C" fn glu_push_function(vm: &Thread,
+                                           name: &u8,
+                                           len: usize,
+                                           function: Function,
+                                           arguments: VMIndex)
+                                           -> Error {
     let s = match str::from_utf8(slice::from_raw_parts(name, len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -111,7 +116,7 @@ pub unsafe extern "C" fn push_function(vm: &Thread, name: &u8, len: usize, funct
 }
 
 /// Push a string to the stack. The string must be valid utf-8 or an error will be returned
-pub unsafe extern "C" fn push_string(vm: &Thread, s: &u8, len: usize) -> Error {
+pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Error {
     let s = match str::from_utf8(slice::from_raw_parts(s, len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -122,26 +127,26 @@ pub unsafe extern "C" fn push_string(vm: &Thread, s: &u8, len: usize) -> Error {
 
 /// Push a string to the stack. If the string is not utf-8 this function will trigger undefined
 /// behaviour.
-pub unsafe extern "C" fn push_string_unchecked(vm: &Thread, s: &u8, len: usize) {
+pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usize) {
     let s = str::from_utf8_unchecked(slice::from_raw_parts(s, len));
     s.push(vm, &mut vm.get_stack());
 }
 
-pub extern "C" fn get_int(vm: &Thread, index: VMIndex, out: &mut VMInt) -> Error {
+pub extern "C" fn glu_get_int(vm: &Thread, index: VMIndex, out: &mut VMInt) -> Error {
     get_value(vm, index, out)
 }
 
-pub extern "C" fn get_float(vm: &Thread, index: VMIndex, out: &mut f64) -> Error {
+pub extern "C" fn glu_get_float(vm: &Thread, index: VMIndex, out: &mut f64) -> Error {
     get_value(vm, index, out)
 }
 
 /// The returned string is garbage collected and may not be valid after the string is removed from
 /// its slot in the stack
-pub unsafe extern "C" fn get_string(vm: &Thread,
-                                    index: VMIndex,
-                                    out: &mut *const u8,
-                                    out_len: &mut usize)
-                                    -> Error {
+pub unsafe extern "C" fn glu_get_string(vm: &Thread,
+                                        index: VMIndex,
+                                        out: &mut *const u8,
+                                        out_len: &mut usize)
+                                        -> Error {
     let stack = vm.current_frame();
     match stack.get_variants(index).and_then(|value| <&str>::from_value(vm, value)) {
         Some(value) => {
@@ -179,58 +184,60 @@ mod tests {
     #[test]
     fn push_pop() {
         unsafe {
-            let vm = &*new_vm();
+            let vm = &*glu_new_vm();
 
-            push_int(vm, 123);
-            push_float(vm, 3.14);
+            glu_push_int(vm, 123);
+            glu_push_float(vm, 3.14);
             let s = "test";
-            push_string(vm, &s.as_bytes()[0], s.len());
+            glu_push_string(vm, &s.as_bytes()[0], s.len());
 
             let mut int = 0;
-            assert_eq!(get_int(vm, 0, &mut int), Error::Ok);
+            assert_eq!(glu_get_int(vm, 0, &mut int), Error::Ok);
             assert_eq!(int, 123);
 
             let mut float = 0.0;
-            assert_eq!(get_float(vm, 1, &mut float), Error::Ok);
+            assert_eq!(glu_get_float(vm, 1, &mut float), Error::Ok);
             assert_eq!(float, 3.14);
 
             let mut string_ptr = ptr::null();
             let mut string_len = 0;
-            assert_eq!(get_string(vm, 2, &mut string_ptr, &mut string_len), Error::Ok);
-            assert_eq!(str::from_utf8(slice::from_raw_parts(string_ptr, string_len)), Ok("test"));
+            assert_eq!(glu_get_string(vm, 2, &mut string_ptr, &mut string_len),
+                       Error::Ok);
+            assert_eq!(str::from_utf8(slice::from_raw_parts(string_ptr, string_len)),
+                       Ok("test"));
 
-            assert_eq!(len(vm), 3);
+            assert_eq!(glu_len(vm), 3);
 
-            pop(vm, 3);
+            glu_pop(vm, 3);
 
-            free_vm(vm);
+            glu_free_vm(vm);
         }
     }
 
     #[test]
-    fn call_function_test() {
+    fn call_function() {
         extern "C" fn mult(vm: &Thread) -> Status {
             let mut l = 0.0;
-            assert_eq!(get_float(vm, 0, &mut l), Error::Ok);
+            assert_eq!(glu_get_float(vm, 0, &mut l), Error::Ok);
             let mut r = 0.0;
-            assert_eq!(get_float(vm, 1, &mut r), Error::Ok);
-            push_float(vm, l * r);
+            assert_eq!(glu_get_float(vm, 1, &mut r), Error::Ok);
+            glu_push_float(vm, l * r);
             Status::Ok
         }
 
         unsafe {
-            let vm = &*new_vm();
+            let vm = &*glu_new_vm();
             let name = "mult";
-            push_function(vm, &name.as_bytes()[0], name.len(), mult, 2);
-            push_float(vm, 12.0);
-            push_float(vm, 3.0);
+            glu_push_function(vm, &name.as_bytes()[0], name.len(), mult, 2);
+            glu_push_float(vm, 12.0);
+            glu_push_float(vm, 3.0);
 
-            assert_eq!(call_function(vm, 2), Error::Ok);
+            assert_eq!(glu_call_function(vm, 2), Error::Ok);
             let mut result = 0.0;
-            assert_eq!(get_float(vm, 0, &mut result), Error::Ok);
+            assert_eq!(glu_get_float(vm, 0, &mut result), Error::Ok);
             assert_eq!(result, 36.0);
 
-            free_vm(vm);
+            glu_free_vm(vm);
         }
     }
 }
