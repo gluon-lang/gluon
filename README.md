@@ -38,7 +38,7 @@ git = "https://github.com/Marwes/gluon.git"
 #### Other langauges
 Currently the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust api.
 
-[C api]: https://github.com/Marwes/gluon/blob/master/src/c_api.rs
+[C api]: https://github.com/Marwes/gluon/blob/master/c-api/src/lib.rs
 
 ### REPL
 Gluon has a small executable which can be used to run gluon programs directly or to run a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run through `cargo run -- -i`).
