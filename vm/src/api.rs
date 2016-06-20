@@ -25,6 +25,7 @@ macro_rules! count {
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum ValueRef<'a> {
+    Byte(u8),
     Int(VMInt),
     Float(f64),
     String(&'a str),
@@ -37,6 +38,7 @@ pub enum ValueRef<'a> {
 impl<'a> ValueRef<'a> {
     pub fn new(value: &'a Value) -> ValueRef<'a> {
         match *value {
+            Value::Byte(i) => ValueRef::Byte(i),
             Value::Int(i) => ValueRef::Int(i),
             Value::Float(f) => ValueRef::Float(f),
             Value::String(ref s) => ValueRef::String(s),
@@ -341,6 +343,24 @@ impl<'vm> Pushable<'vm> for () {
 impl<'vm> Getable<'vm> for () {
     fn from_value(_: &'vm Thread, _: Variants) -> Option<()> {
         Some(())
+    }
+}
+
+impl VMType for u8 {
+    type Type = Self;
+}
+impl<'vm> Pushable<'vm> for u8 {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
+        stack.push(Value::Byte(self));
+        Status::Ok
+    }
+}
+impl<'vm> Getable<'vm> for u8 {
+    fn from_value(_: &'vm Thread, value: Variants) -> Option<u8> {
+        match value.as_ref() {
+            ValueRef::Byte(i) => Some(i),
+            _ => None,
+        }
     }
 }
 

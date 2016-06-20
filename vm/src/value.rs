@@ -166,6 +166,7 @@ impl<'b> Traverseable for Def<'b> {
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum Value {
+    Byte(u8),
     Int(VMInt),
     Float(f64),
     String(GcPtr<Str>),
@@ -190,7 +191,7 @@ impl Value {
             PartialApplication(p) => p.generation(),
             Value::Userdata(p) => p.generation(),
             Value::Thread(p) => p.generation(),
-            Value::Tag(_) | Int(_) | Float(_) => 0,
+            Value::Tag(_) | Value::Byte(_) | Int(_) | Float(_) => 0,
         }
     }
 }
@@ -287,7 +288,7 @@ impl Traverseable for Value {
             Value::Userdata(ref data) => data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
             Value::Thread(ref thread) => thread.traverse(gc),
-            Value::Tag(_) | Int(_) | Float(_) => (),
+            Value::Tag(_) | Value::Byte(_) | Int(_) | Float(_) => (),
         }
     }
 }
@@ -316,6 +317,7 @@ impl fmt::Debug for Value {
                     return Ok(());
                 }
                 match *self.1 {
+                    Value::Byte(i) => write!(f, "{:?}b", i),
                     Int(i) => write!(f, "{:?}", i),
                     Float(x) => write!(f, "{:?}f", x),
                     String(x) => write!(f, "{:?}", &*x),
@@ -390,6 +392,7 @@ impl Traverseable for ExternFunction {
 /// Representation of values which can be stored directly in an array
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Repr {
+    Byte,
     Int,
     Float,
     String,
@@ -402,6 +405,7 @@ pub enum Repr {
 impl Repr {
     fn from_value(value: Value) -> Repr {
         match value {
+            Value::Byte(_) => Repr::Byte,
             Value::Int(_) => Repr::Int,
             Value::Float(_) => Repr::Float,
             Value::String(_) => Repr::String,
@@ -419,6 +423,7 @@ impl Repr {
     fn size_of(self) -> usize {
         use std::mem::size_of;
         match self {
+            Repr::Byte => size_of::<u8>(),
             Repr::Int => size_of::<VMInt>(),
             Repr::Float => size_of::<f64>(),
             Repr::String => size_of::<GcPtr<Str>>(),
@@ -437,6 +442,7 @@ macro_rules! on_array {
             let ref array = $array;
             unsafe {
                 match array.repr() {
+                    Repr::Byte => $f(array.unsafe_array::<u8>()),
                     Repr::Int => $f(array.unsafe_array::<VMInt>()),
                     Repr::Float => $f(array.unsafe_array::<f64>()),
                     Repr::String => $f(array.unsafe_array::<GcPtr<Str>>()),
@@ -495,6 +501,7 @@ impl ValueArray {
     pub fn get(&self, index: usize) -> Value {
         unsafe {
             match self.repr {
+                Repr::Byte => Value::Byte(self.unsafe_get(index)),
                 Repr::Int => Value::Int(self.unsafe_get(index)),
                 Repr::Float => Value::Float(self.unsafe_get(index)),
                 Repr::String => Value::String(self.unsafe_get(index)),
@@ -534,6 +541,13 @@ impl ValueArray {
     {
         let iter = iter.into_iter();
         match self.repr {
+            Repr::Byte => {
+                let iter = iter.map(|v| match v {
+                    Value::Byte(x) => x,
+                    _ => unreachable!(),
+                });
+                self.unsafe_array_mut().initialize(iter);
+            }
             Repr::Int => {
                 let iter = iter.map(|v| match v {
                     Value::Int(x) => x,
@@ -732,7 +746,7 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
         Err(new_array) => {
             unsafe {
                 try!(match new_array.repr() {
-                    Repr::Int | Repr::Float | Repr::String => Ok(()),
+                    Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
                     Repr::Array => deep_clone_elems(deep_clone_array, new_array, visited, gc),
                     Repr::Unknown => deep_clone_elems(deep_clone, new_array, visited, gc),
                     Repr::Userdata | Repr::Thread => {
@@ -817,6 +831,7 @@ pub fn deep_clone(value: Value,
                                           .into()))
         }
         Value::Tag(i) => Ok(Value::Tag(i)),
+        Value::Byte(i) => Ok(Value::Byte(i)),
         Int(i) => Ok(Int(i)),
         Float(f) => Ok(Float(f)),
     }
