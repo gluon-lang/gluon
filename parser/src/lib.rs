@@ -209,6 +209,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     match_parser! { integer, Integer -> i64 }
 
+    match_parser! { byte, Byte -> u8 }
+
     match_parser! { doc_comment, DocComment -> String }
 
     fn typ(&'s self) -> LanguageParser<'s, I, F, ASTType<Id::Untyped>> {
@@ -463,12 +465,14 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     },
                     expr)
         };
-        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 11],
+        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 12],
                  _>([&mut parser(|input| self.if_else(input)).map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::case_of).map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::lambda).map(&loc),
                      &mut self.integer()
                               .map(|i| loc(Expr::Literal(LiteralEnum::Integer(i)))),
+                     &mut self.byte()
+                              .map(|i| loc(Expr::Literal(LiteralEnum::Byte(i)))),
                      &mut self.float()
                               .map(|f| loc(Expr::Literal(LiteralEnum::Float(f)))),
                      &mut self.ident()

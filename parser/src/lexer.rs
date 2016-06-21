@@ -43,6 +43,7 @@ pub enum Token<Id> {
     String(String),
     Char(char),
     Integer(i64),
+    Byte(u8),
     Float(f64),
     DocComment(String),
     Let,
@@ -79,6 +80,7 @@ impl<Id> fmt::Display for Token<Id> {
             String(..) => "String",
             Char(..) => "Char",
             Integer(..) => "Integer",
+            Byte(..) => "Byte",
             Float(..) => "Float",
             DocComment(..) => "DocComment",
             Let => "Let",
@@ -123,6 +125,7 @@ impl<Id> Token<Id> {
             String(ref s) => String(s.clone()),
             Char(c) => Char(c),
             Integer(i) => Integer(i),
+            Byte(i) => Byte(i),
             Float(f) => Float(f),
             DocComment(ref s) => DocComment(s.clone()),
             Let => Let,
@@ -332,6 +335,19 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             .parse_state(input)
     }
 
+    fn integer<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, i64> {
+        self.parser(Self::integer_)
+    }
+
+    fn integer_<'b>(&'b self, input: State<I>) -> ParseResult<i64, State<I>> {
+        let (s, input) = try!(many1::<String, _>(digit()).parse_lazy(input));
+        let mut n = 0;
+        for c in s.chars() {
+            n = n * 10 + (c as i64 - '0' as i64);
+        }
+        Ok((n, input))
+    }
+
     /// Identifier parser which returns `(id, true)` if the identifier is a constructor
     /// (Starts with an uppercase letter
     fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, bool), State<I>> {
@@ -468,10 +484,21 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 };
                 return Ok((tok, Consumed::Consumed(input)));
             } else if first.is_digit(10) {
-                return try(self.env
-                               .integer()
-                               .skip(not_followed_by(string("."))))
-                           .map(Token::Integer)
+                let int_or_byte = self.env.lex((self.integer(), optional(char('b'))));
+                return try(int_or_byte
+                           .skip(not_followed_by(string("."))))
+                           .and_then(|(i, byte)| {
+                               if byte.is_none() {
+                                   Ok(Token::Integer(i))
+                               } else {
+                                   if i >= 0 && i <= 256 {
+                                       Ok(Token::Byte(i as u8))
+                                   } else {
+                                       Err(CombineError::Message("Byte literal out of range"
+                                                                     .into()))
+                                   }
+                               }
+                           })
                            .or(self.env.float().map(Token::Float))
                            .parse_state(input);
             } else if first.is_alphabetic() || first == '_' {

@@ -466,6 +466,7 @@ impl<'a> Typecheck<'a> {
             ast::Expr::Literal(ref lit) => {
                 Ok(TailCall::Type(match *lit {
                     ast::LiteralEnum::Integer(_) => Type::int(),
+                    ast::LiteralEnum::Byte(_) => Type::byte(),
                     ast::LiteralEnum::Float(_) => Type::float(),
                     ast::LiteralEnum::String(_) => Type::string(),
                     ast::LiteralEnum::Char(_) => Type::char(),
