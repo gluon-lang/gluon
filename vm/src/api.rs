@@ -326,6 +326,10 @@ impl<'vm, T> Pushable<'vm> for WithVM<'vm, T>
 impl<'vm, T> Getable<'vm> for WithVM<'vm, T>
     where T: Getable<'vm>
 {
+    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants) -> Option<WithVM<'vm, T>> {
+        T::from_value_unsafe(vm, value).map(|t| WithVM { vm: vm, value: t })
+    }
+
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<WithVM<'vm, T>> {
         T::from_value(vm, value).map(|t| WithVM { vm: vm, value: t })
     }
