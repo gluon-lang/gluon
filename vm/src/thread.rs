@@ -863,6 +863,9 @@ impl<'b> Context<'b> {
                 PushInt(i) => {
                     self.stack.push(Int(i));
                 }
+                PushByte(b) => {
+                    self.stack.push(Value::Byte(b));
+                }
                 PushString(string_index) => {
                     self.stack.push(String(function.strings[string_index as usize].inner()));
                 }
@@ -1075,6 +1078,14 @@ impl<'b> Context<'b> {
                 DivideInt => binop(self.thread, &mut self.stack, VMInt::div),
                 IntLT => binop(self.thread, &mut self.stack, |l: VMInt, r| l < r),
                 IntEQ => binop(self.thread, &mut self.stack, |l: VMInt, r| l == r),
+
+                AddByte => binop(self.thread, &mut self.stack, u8::add),
+                SubtractByte => binop(self.thread, &mut self.stack, u8::sub),
+                MultiplyByte => binop(self.thread, &mut self.stack, u8::mul),
+                DivideByte => binop(self.thread, &mut self.stack, u8::div),
+                ByteLT => binop(self.thread, &mut self.stack, |l: u8, r| l < r),
+                ByteEQ => binop(self.thread, &mut self.stack, |l: u8, r| l == r),
+
                 AddFloat => binop(self.thread, &mut self.stack, f64::add),
                 SubtractFloat => binop(self.thread, &mut self.stack, f64::sub),
                 MultiplyFloat => binop(self.thread, &mut self.stack, f64::mul),

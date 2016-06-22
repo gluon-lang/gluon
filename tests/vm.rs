@@ -250,6 +250,28 @@ r"
 false
 }
 
+test_expr!{ primitive_byte_arithmetic,
+r"
+let x = 100b #Byte+ 13b
+x #Byte* 2b #Byte/ 3b
+",
+75u8
+}
+
+test_expr!{ primitive_byte_eq,
+r"
+100b #Byte== 100b
+",
+true
+}
+
+test_expr!{ primitive_byte_lt,
+r"
+100b #Byte< 100b
+",
+false
+}
+
 test_expr!{ partial_application,
 r"
 let f x y = x #Int+ y in
@@ -449,6 +471,18 @@ let arr = [1,2,3]
 array.index arr 0 #Int== 1
     && array.length arr #Int== 3
     && array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
+true
+}
+
+test_expr!{ array_byte,
+r#"
+let arr = [1b,2b,3b]
+
+let b = array.index arr 2 #Byte== 3b && array.length arr #Int== 3
+let arr2 = array.append arr arr
+b && array.length arr2 #Int== array.length arr #Int* 2
+  && array.index arr2 1 #Byte== array.index arr2 4
+"#,
 true
 }
 

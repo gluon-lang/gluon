@@ -433,7 +433,7 @@ impl<'a> Compiler<'a> {
             Expr::Literal(ref lit) => {
                 match *lit {
                     ast::LiteralEnum::Integer(i) => function.emit(PushInt(i as isize)),
-                    ast::LiteralEnum::Byte(b) => unimplemented!(),
+                    ast::LiteralEnum::Byte(b) => function.emit(PushByte(b)),
                     ast::LiteralEnum::Float(f) => function.emit(PushFloat(f)),
                     ast::LiteralEnum::String(ref s) => function.emit_string(self.intern(&s)),
                     ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
@@ -493,6 +493,12 @@ impl<'a> Compiler<'a> {
                         "#Int/" => DivideInt,
                         "#Int<" | "#Char<" => IntLT,
                         "#Int==" | "#Char==" => IntEQ,
+                        "#Byte+" => AddByte,
+                        "#Byte-" => SubtractByte,
+                        "#Byte*" => MultiplyByte,
+                        "#Byte/" => DivideByte,
+                        "#Byte<" => ByteLT,
+                        "#Byte=="  => ByteEQ,
                         "#Float+" => AddFloat,
                         "#Float-" => SubtractFloat,
                         "#Float*" => MultiplyFloat,
