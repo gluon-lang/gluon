@@ -59,6 +59,7 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
 fn root_data() {
     let _ = ::env_logger::init();
 
+    #[derive(Debug)]
     struct Test(VMInt);
     impl Traverseable for Test { }
     impl VMType for Test {

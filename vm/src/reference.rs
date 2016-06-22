@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::fmt;
 use std::sync::Mutex;
 use std::marker::PhantomData;
 
@@ -15,6 +16,12 @@ struct Reference<T> {
     value: Mutex<Value>,
     thread: GcPtr<Thread>,
     _marker: PhantomData<T>,
+}
+
+impl<T> fmt::Debug for Reference<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", *self.value.lock().unwrap())
+    }
 }
 
 impl<T> Traverseable for Reference<T> {

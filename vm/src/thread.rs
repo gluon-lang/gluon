@@ -700,7 +700,7 @@ impl<'b> Context<'b> {
     }
 
     fn execute_function(mut self, function: &ExternFunction) -> Result<Context<'b>> {
-        debug!("CALL EXTERN {}", function.id);
+        debug!("CALL EXTERN {} {:?}", function.id, &self.stack[..]);
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
         let thread = self.thread;
@@ -725,7 +725,7 @@ impl<'b> Context<'b> {
             Status::Error => {
                 match self.stack.pop() {
                     String(s) => Err(Error::Message(s.to_string())),
-                    _ => Err(Error::Message("Unexpected panic in VM".to_string())),
+                    _ => Err(Error::Message(format!("Unexpected error calling function `{}`", function.id))),
                 }
             }
         }

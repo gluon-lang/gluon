@@ -15,7 +15,7 @@ use {Error, Result};
 use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
 
 mopafy!(Userdata);
-pub trait Userdata: ::mopa::Any + Traverseable + Send + Sync {}
+pub trait Userdata: ::mopa::Any + Traverseable + fmt::Debug + Send + Sync {}
 
 impl PartialEq for Userdata {
     fn eq(&self, other: &Userdata) -> bool {
@@ -23,13 +23,7 @@ impl PartialEq for Userdata {
     }
 }
 
-impl<T> Userdata for T where T: Any + Traverseable + Send + Sync {}
-
-impl fmt::Debug for Userdata {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Userdata")
-    }
-}
+impl<T> Userdata for T where T: Any + Traverseable + fmt::Debug + Send + Sync {}
 
 #[derive(Debug)]
 pub struct ClosureData {
@@ -355,7 +349,7 @@ impl fmt::Debug for Value {
                                name,
                                LevelSlice(level - 1, &app.arguments))
                     }
-                    Value::Userdata(ref data) => write!(f, "<Userdata {:p}>", &**data),
+                    Value::Userdata(ref data) => write!(f, "<Userdata {:?}>", &**data),
                     Value::Thread(_) => write!(f, "<thread>"),
                 }
             }
