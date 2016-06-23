@@ -1,30 +1,77 @@
 use std::string::String as StdString;
 use std::result::Result as StdResult;
 use std::io::{Read, stdin};
+use std::fmt;
 use std::fs::File;
+use std::sync::Mutex;
 
-use vm::Result;
+use vm::{Result, Variants};
+use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::ThreadInternal;
 use vm::thread::{Thread, Status, RootStr};
-use vm::api::{Generic, VMType, Pushable, IO, WithVM, primitive};
+use vm::api::{Array, Generic, VMType, Getable, Pushable, IO, WithVM, Userdata, primitive};
 use vm::api::generic::{A, B};
+
+use vm::internal::Value;
 
 use super::Compiler;
 
-pub fn print_int(i: VMInt) -> IO<()> {
+fn print_int(i: VMInt) -> IO<()> {
     print!("{}", i);
     IO::Value(())
 }
 
-pub fn print(s: RootStr) -> IO<()> {
+fn print(s: RootStr) -> IO<()> {
     println!("{}", &*s);
     IO::Value(())
 }
 
-pub fn read_file(s: RootStr) -> IO<String> {
+struct GluonFile(Mutex<File>);
+
+impl fmt::Debug for GluonFile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "File")
+    }
+}
+
+impl VMType for GluonFile {
+    type Type = GluonFile;
+}
+
+impl Traverseable for GluonFile {
+    fn traverse(&self, _: &mut Gc) { }
+}
+
+fn open_file(s: &str) -> IO<Userdata<GluonFile>> {
+    match File::open(s) {
+        Ok(f) => IO::Value(Userdata(GluonFile(Mutex::new(f)))),
+        Err(err) => IO::Exception(format!("{}", err)),
+    }
+}
+
+fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, u8>> {
+    let WithVM { vm, value: file } = file;
+    let mut file = file.0.lock().unwrap();
+    let mut buffer = Vec::with_capacity(count);
+    unsafe {
+        buffer.set_len(count);
+        match file.read(&mut *buffer) {
+            Ok(bytes_read) => {
+                let value = {
+                    let stack = vm.get_stack();
+                    vm.alloc(&stack, &buffer[..bytes_read])
+                };
+                IO::Value(Getable::from_value(vm, Variants::new(&Value::Array(value))).expect("Array"))
+            }
+            Err(err) => IO::Exception(format!("{}", err)),
+        }
+    }
+}
+
+fn read_file_to_string(s: &str) -> IO<String> {
     let mut buffer = String::new();
-    match File::open(&s[..]).and_then(|mut file| file.read_to_string(&mut buffer)) {
+    match File::open(s).and_then(|mut file| file.read_to_string(&mut buffer)) {
         Ok(_) => IO::Value(buffer),
         Err(err) => {
             use std::fmt::Write;
@@ -65,7 +112,7 @@ fn read_line() -> IO<String> {
 }
 
 /// IO a -> (String -> IO a) -> IO a
-pub fn catch_io(vm: &Thread) -> Status {
+fn catch_io(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
     let action = stack[0];
@@ -99,7 +146,7 @@ pub fn catch_io(vm: &Thread) -> Status {
     }
 }
 
-pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
+fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     let WithVM { vm, value: expr } = expr;
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
@@ -122,7 +169,7 @@ pub fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     }
 }
 
-pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
+fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
     let WithVM { vm, value: name } = name;
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
@@ -147,6 +194,8 @@ pub fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
 
 pub fn load(vm: &Thread) -> Result<()> {
 
+    try!(vm.register_type::<GluonFile>("File", &[]));
+
     // io_bind m f (): IO a -> (a -> IO b) -> IO b
     //     = f (m ())
     let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), PushInt(0), TailCall(2)];
@@ -162,7 +211,9 @@ pub fn load(vm: &Thread) -> Result<()> {
     try!(vm.define_global("io",
                           record!(
         print_int => primitive!(1 print_int),
-        read_file => primitive!(1 read_file),
+        open_file => primitive!(1 open_file),
+        read_file => primitive!(2 read_file),
+        read_file_to_string => primitive!(1 read_file_to_string),
         read_char => primitive!(0 read_char),
         read_line => primitive!(0 read_line),
         print => primitive!(1 print),

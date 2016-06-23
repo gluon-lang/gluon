@@ -657,6 +657,21 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
     }
 }
 
+unsafe impl<'a> DataDef for &'a [u8] {
+    type Value = ValueArray;
+    fn size(&self) -> usize {
+        use std::mem::size_of;
+        size_of::<ValueArray>() + self.len()
+    }
+    fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.set_repr(Repr::Byte);
+            result.unsafe_array_mut::<u8>().initialize(self.iter().cloned());
+            result
+        }
+    }
+}
 
 fn deep_clone_ptr<T, A>(value: GcPtr<T>,
                         visited: &mut HashMap<*const (), Value>,
