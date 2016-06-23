@@ -81,12 +81,15 @@ fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
 }
 
 fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
+    fn input(s: &str) -> IO<Option<String>> {
+        IO::Value(::linenoise::input(s))
+    }
     try!(vm.define_global("repl_prim",
                           record!(
-        type_of_expr => f1(type_of_expr),
-        find_info => f1(find_info),
-        find_kind => f1(find_kind),
-        input => f1({ fn input(s: &str) -> IO<Option<String>> { IO::Value(::linenoise::input(s)) } input })
+        type_of_expr => primitive!(1 type_of_expr),
+        find_info => primitive!(1 find_info),
+        find_kind => primitive!(1 find_kind),
+        input => primitive!(1 input)
     )));
     let mut compiler = Compiler::new();
     try!(compiler.load_file(vm, "std/prelude.hs"));

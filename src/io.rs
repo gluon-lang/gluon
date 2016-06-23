@@ -165,16 +165,6 @@ fn backtrace(frame_level: usize, stack: &StackFrame) -> String {
     buffer
 }
 
-fn f0<R>(f: fn() -> R) -> fn() -> R {
-    f
-}
-fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
-    f
-}
-fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
-    f
-}
-
 pub fn load(vm: &Thread) -> Result<()> {
 
     // io_bind m f (): IO a -> (a -> IO b) -> IO b
@@ -191,15 +181,15 @@ pub fn load(vm: &Thread) -> Result<()> {
     // IO functions
     try!(vm.define_global("io",
                           record!(
-        print_int => f1(print_int),
-        read_file => f1(read_file),
-        read_char => f0(read_char),
-        read_line => f0(read_line),
-        print => f1(print),
+        print_int => primitive!(1 print_int),
+        read_file => primitive!(1 read_file),
+        read_char => primitive!(0 read_char),
+        read_line => primitive!(0 read_line),
+        print => primitive!(1 print),
         catch =>
             primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", catch_io),
-        run_expr => f1(run_expr),
-        load_script => f2(load_script)
+        run_expr => primitive!(1 run_expr),
+        load_script => primitive!(2 load_script)
     )));
     Ok(())
 }

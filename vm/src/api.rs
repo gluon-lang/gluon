@@ -79,12 +79,67 @@ pub struct Primitive<F> {
     _typ: PhantomData<F>,
 }
 
+#[inline]
 pub fn primitive<F>(name: &'static str, function: fn(&Thread) -> Status) -> Primitive<F> {
     Primitive {
         name: name,
         function: function,
         _typ: PhantomData,
     }
+}
+
+#[inline]
+pub fn primitive_f<F>(name: &'static str, function: fn(&Thread) -> Status, _: F) -> Primitive<F> {
+    primitive::<F>(name, function)
+}
+
+#[macro_export]
+macro_rules! primitive {
+    (0 $name: expr) => {
+        {
+            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+                 $crate::api::VMFunction::unpack_and_call(
+                     &($name as fn () -> _), thread)
+            }
+            $crate::api::primitive_f::<fn () -> _>(stringify!($name), wrapper, $name)
+        }
+    };
+    (1 $name: expr) => {
+        {
+            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+                 $crate::api::VMFunction::unpack_and_call(
+                     &($name as fn (_) -> _), thread)
+            }
+            $crate::api::primitive_f::<fn (_) -> _>(stringify!($name), wrapper, $name)
+        }
+    };
+    (2 $name: expr) => {
+        {
+            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+                 $crate::api::VMFunction::unpack_and_call(
+                     &($name as fn (_, _) -> _), thread)
+            }
+            $crate::api::primitive_f::<fn (_, _) -> _>(stringify!($name), wrapper, $name)
+        }
+    };
+    (3 $name: expr) => {
+        {
+            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+                 $crate::api::VMFunction::unpack_and_call(
+                     &($name as fn (_, _, _) -> _), thread)
+            }
+            $crate::api::primitive_f::<fn (_, _, _) -> _>(stringify!($name), wrapper, $name)
+        }
+    };
+    (4 $name: expr) => {
+        {
+            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+                 $crate::api::VMFunction::unpack_and_call(
+                     &($name as fn (_, _, _ _) -> _), thread)
+            }
+            $crate::api::primitive_f::<fn (_, _, _ _) -> _>(stringify!($name), wrapper, $name)
+        }
+    };
 }
 
 #[derive(PartialEq)]
