@@ -65,7 +65,7 @@ quick_error! {
             from()
         }
         /// Error found when expanding macros
-        Macro(err: ::base::error::Errors<::base::macros::Error>) {
+        Macro(err: ::base::error::Errors<::vm::macros::Error>) {
             description(err.description())
             display("{}", err)
             from()

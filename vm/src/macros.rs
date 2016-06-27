@@ -3,65 +3,67 @@ use std::sync::RwLock;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 
-use ast;
-use ast::MutVisitor;
-use types::TcIdent;
-use error::Errors;
+use base::ast;
+use base::ast::MutVisitor;
+use base::types::TcIdent;
+use base::error::Errors;
+
+use thread::Thread;
 
 pub type Error = Box<StdError + Send + Sync>;
 
 /// A trait which abstracts over macros.
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
-pub trait Macro<Env>: ::mopa::Any + Send + Sync {
+pub trait Macro: ::mopa::Any + Send + Sync {
     fn expand(&self,
-              env: &Env,
+              env: &Thread,
               arguments: &mut [ast::LExpr<TcIdent>])
               -> Result<ast::LExpr<TcIdent>, Error>;
-    fn clone(&self) -> Box<Macro<Env>>;
+    fn clone(&self) -> Box<Macro>;
 }
-mopafy!(Macro<Env>);
+mopafy!(Macro);
 
-impl<F: ::mopa::Any + Clone + Send + Sync, Env> Macro<Env> for F
-    where F: Fn(&Env, &mut [ast::LExpr<TcIdent>]) -> Result<ast::LExpr<TcIdent>, Error>
+impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
+    where F: Fn(&Thread, &mut [ast::LExpr<TcIdent>]) -> Result<ast::LExpr<TcIdent>, Error>
 {
     fn expand(&self,
-              env: &Env,
+              env: &Thread,
               arguments: &mut [ast::LExpr<TcIdent>])
               -> Result<ast::LExpr<TcIdent>, Error> {
         self(env, arguments)
     }
-    fn clone(&self) -> Box<Macro<Env>> {
+    fn clone(&self) -> Box<Macro> {
         Box::new(Clone::clone(self))
     }
 }
 
 /// Type containing macros bound to symbols which can be applied on an AST expression to transform
 /// it.
-pub struct MacroEnv<Env> {
-    macros: RwLock<HashMap<String, Box<Macro<Env>>>>,
+pub struct MacroEnv {
+    macros: RwLock<HashMap<String, Box<Macro>>>,
 }
 
-impl<Env> MacroEnv<Env> {
+impl MacroEnv {
     /// Creates a new `MacroEnv`
-    pub fn new() -> MacroEnv<Env> {
+    pub fn new() -> MacroEnv {
         MacroEnv { macros: RwLock::new(HashMap::new()) }
     }
 
     /// Inserts a `Macro` which acts on any occurance of `symbol` when applied to an expression.
     pub fn insert<M>(&self, name: String, mac: M)
-        where M: Macro<Env> + 'static
+        where M: Macro + 'static
     {
         self.macros.write().unwrap().insert(name, Box::new(mac));
     }
 
     /// Retrieves the macro bound to `symbol`
-    pub fn get(&self, name: &str) -> Option<Box<Macro<Env>>> {
+    pub fn get(&self, name: &str) -> Option<Box<Macro>> {
         self.macros.read().unwrap().get(name).map(|x| (**x).clone())
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub fn run(&self, env: &Env, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Errors<Error>> {
+    pub fn run(&self, env: &Thread, expr: &mut ast::LExpr<TcIdent>) -> Result<(), Errors<Error>> {
         let mut expander = MacroExpander {
             env: env,
             macros: self,
@@ -76,13 +78,13 @@ impl<Env> MacroEnv<Env> {
     }
 }
 
-struct MacroExpander<'a, Env: 'a> {
-    env: &'a Env,
-    macros: &'a MacroEnv<Env>,
+struct MacroExpander<'a> {
+    env: &'a Thread,
+    macros: &'a MacroEnv,
     errors: Errors<Error>,
 }
 
-impl<'a, Env> MutVisitor for MacroExpander<'a, Env> {
+impl<'a> MutVisitor for MacroExpander<'a> {
     type T = TcIdent;
 
     fn visit_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) {

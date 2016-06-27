@@ -8,13 +8,13 @@ use std::ops::{Add, Sub, Mul, Div, Deref};
 use std::string::String as StdString;
 use std::sync::Arc;
 
-use base::macros::MacroEnv;
 use base::metadata::Metadata;
 use base::symbol::Symbol;
 use base::types::TcType;
 use base::types;
 
 use {Variants, Error, Result};
+use macros::MacroEnv;
 use api::{Getable, Pushable, VMType};
 use array::Str;
 use compiler::CompiledFunction;
@@ -392,7 +392,7 @@ impl Thread {
     }
 
     /// Retrieves the macros defined for this vm
-    pub fn get_macros(&self) -> &MacroEnv<Thread> {
+    pub fn get_macros(&self) -> &MacroEnv {
         self.global_env().get_macros()
     }
 

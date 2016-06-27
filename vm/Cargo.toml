@@ -13,9 +13,7 @@ documentation = "https://marwes.github.io/gluon/gluon/index.html"
 [dependencies]
 log = "0.3.6"
 quick-error = "1.0.0"
-
-[dependencies.mopa]
-git = "https://github.com/Marwes/mopa.git"
+mopa = "0.2.2"
 
 [dependencies.gluon_base]
 path = "../base"

@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use base::ast;
 use base::symbol::Symbol;
+use vm::macros::{Macro, Error as MacroError};
 use vm::thread::{Thread, ThreadInternal};
 use super::{filename_to_module, Compiler};
-use base::macros::{Macro, Error as MacroError};
 use base::types::TcIdent;
 
 
@@ -73,7 +73,7 @@ impl Import {
     }
 }
 
-impl Macro<Thread> for Import {
+impl Macro for Import {
     fn expand(&self,
               vm: &Thread,
               arguments: &mut [ast::LExpr<TcIdent>])
@@ -130,7 +130,7 @@ impl Macro<Thread> for Import {
         }
     }
 
-    fn clone(&self) -> Box<Macro<Thread>> {
+    fn clone(&self) -> Box<Macro> {
         Box::new(Import {
             visited: RwLock::new(Vec::new()),
             paths: RwLock::new(self.paths.read().unwrap().clone()),

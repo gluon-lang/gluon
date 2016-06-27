@@ -10,8 +10,8 @@ use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol};
 use base::types;
 use base::types::{Type, KindEnv, TypeEnv, PrimitiveEnv, TcType, RcKind};
-use base::macros::MacroEnv;
 
+use macros::MacroEnv;
 use {Error, Result};
 use types::*;
 use interner::{Interner, InternedStr};
@@ -77,7 +77,7 @@ pub struct GlobalVMState {
     generics: RwLock<HashMap<StdString, TcType>>,
     typeids: RwLock<HashMap<TypeId, TcType>>,
     interner: RwLock<Interner>,
-    macros: MacroEnv<Thread>,
+    macros: MacroEnv,
     // FIXME These fields should not be public
     pub gc: Mutex<Gc>,
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
@@ -434,7 +434,7 @@ impl GlobalVMState {
         }
     }
 
-    pub fn get_macros(&self) -> &MacroEnv<Thread> {
+    pub fn get_macros(&self) -> &MacroEnv {
         &self.macros
     }
 
