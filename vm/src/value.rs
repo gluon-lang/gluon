@@ -396,6 +396,57 @@ pub enum Repr {
     Thread,
 }
 
+pub unsafe trait ArrayRepr {
+    fn matches(repr: Repr) -> bool;
+}
+
+macro_rules! impl_repr {
+    ($($id: ty, $repr: path),*) => {
+        $(
+        unsafe impl ArrayRepr for $id {
+            fn matches(repr: Repr) -> bool { repr == $repr }
+        }
+
+        unsafe impl<'a> DataDef for &'a [$id] {
+            type Value = ValueArray;
+            fn size(&self) -> usize {
+                use std::mem::size_of;
+                size_of::<ValueArray>() + self.len() * size_of::<$id>()
+            }
+            fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+                unsafe {
+                    let result = &mut *result.as_mut_ptr();
+                    result.set_repr($repr);
+                    result.unsafe_array_mut::<$id>().initialize(self.iter().cloned());
+                    result
+                }
+            }
+        }
+        )*
+        impl Repr {
+            fn size_of(self) -> usize {
+                use std::mem::size_of;
+                match self {
+                    $(
+                        $repr => size_of::<$id>(),
+                    )*
+                }
+            }
+        }
+    }
+}
+
+impl_repr! {
+    u8, Repr::Byte,
+    VMInt, Repr::Int,
+    f64, Repr::Float,
+    GcPtr<Str>, Repr::String,
+    GcPtr<ValueArray>, Repr::Array,
+    Value, Repr::Unknown,
+    GcPtr<Box<Userdata>>, Repr::Userdata,
+    GcPtr<Thread>, Repr::Thread
+}
+
 impl Repr {
     fn from_value(value: Value) -> Repr {
         match value {
@@ -411,20 +462,6 @@ impl Repr {
             Value::PartialApplication(_) => Repr::Unknown,
             Value::Userdata(_) => Repr::Userdata,
             Value::Thread(_) => Repr::Thread,
-        }
-    }
-
-    fn size_of(self) -> usize {
-        use std::mem::size_of;
-        match self {
-            Repr::Byte => size_of::<u8>(),
-            Repr::Int => size_of::<VMInt>(),
-            Repr::Float => size_of::<f64>(),
-            Repr::String => size_of::<GcPtr<Str>>(),
-            Repr::Array => size_of::<GcPtr<ValueArray>>(),
-            Repr::Unknown => size_of::<Value>(),
-            Repr::Userdata => size_of::<GcPtr<Box<Userdata>>>(),
-            Repr::Thread => size_of::<GcPtr<Thread>>(),
         }
     }
 }
@@ -590,6 +627,17 @@ impl ValueArray {
         }
     }
 
+    pub fn as_slice<T: ArrayRepr + Copy>(&self) -> Option<&[T]> {
+        unsafe {
+            if T::matches(self.repr) {
+                Some(self.unsafe_array::<T>())
+            }
+            else {
+                None
+            }
+        }
+    }
+
     unsafe fn unsafe_get<T: Copy>(&self, index: usize) -> T {
         ::std::mem::transmute::<&Array<()>, &Array<T>>(&self.array)[index]
     }
@@ -608,7 +656,7 @@ unsafe impl<'a> DataDef for &'a ValueArray {
     fn size(&self) -> usize {
         ValueArray::size_of(self.repr, self.len())
     }
-    
+
     #[allow(unused_unsafe)]
     fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
         unsafe {
@@ -652,22 +700,6 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
                     result.initialize(None);
                 }
             }
-            result
-        }
-    }
-}
-
-unsafe impl<'a> DataDef for &'a [u8] {
-    type Value = ValueArray;
-    fn size(&self) -> usize {
-        use std::mem::size_of;
-        size_of::<ValueArray>() + self.len()
-    }
-    fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
-        unsafe {
-            let result = &mut *result.as_mut_ptr();
-            result.set_repr(Repr::Byte);
-            result.unsafe_array_mut::<u8>().initialize(self.iter().cloned());
             result
         }
     }

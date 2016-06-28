@@ -498,7 +498,7 @@ impl<'a> Compiler<'a> {
                         "#Byte*" => MultiplyByte,
                         "#Byte/" => DivideByte,
                         "#Byte<" => ByteLT,
-                        "#Byte=="  => ByteEQ,
+                        "#Byte==" => ByteEQ,
                         "#Float+" => AddFloat,
                         "#Float-" => SubtractFloat,
                         "#Float*" => MultiplyFloat,

@@ -725,7 +725,10 @@ impl<'b> Context<'b> {
             Status::Error => {
                 match self.stack.pop() {
                     String(s) => Err(Error::Message(s.to_string())),
-                    _ => Err(Error::Message(format!("Unexpected error calling function `{}`", function.id))),
+                    _ => {
+                        Err(Error::Message(format!("Unexpected error calling function `{}`",
+                                                   function.id)))
+                    }
                 }
             }
         }

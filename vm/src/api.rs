@@ -1,10 +1,10 @@
 //! The marshalling api
 use {Variants, Error};
-use gc::{Gc, Traverseable, Move};
+use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, Stack, StackFrame};
 use vm::{Thread, Status, RootStr, RootedValue, Root};
-use value::{DataStruct, ExternFunction, Value, ValueArray, Def};
+use value::{ArrayRepr, DataStruct, ExternFunction, Value, ValueArray, Def};
 use thread::RootedThread;
 use thread::ThreadInternal;
 use base::types;
@@ -579,6 +579,39 @@ impl<'s, 'vm, T> Pushable<'vm> for Ref<'s, T>
     }
 }
 
+impl<'s, T> VMType for &'s [T]
+    where T: VMType + ArrayRepr + 's,
+          T::Type: Sized
+{
+    type Type = &'static [T::Type];
+
+    fn make_type(vm: &Thread) -> TcType {
+        Type::array(T::make_type(vm))
+    }
+}
+impl<'vm, 's, T> Pushable<'vm> for &'s [T]
+    where T: Traverseable + Pushable<'vm> + 's,
+          &'s [T]: DataDef<Value = ValueArray>
+{
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
+        let result = vm.alloc(stack, self);
+        stack.push(Value::Array(result));
+        Status::Ok
+    }
+}
+impl<'s, 'vm, T: Copy + ArrayRepr> Getable<'vm> for &'s [T] {
+    unsafe fn from_value_unsafe(_: &'vm Thread, value: Variants) -> Option<Self> {
+        match *value.0 {
+            Value::Array(ptr) => ptr.as_slice().map(|s| &*(s as *const _)),
+            _ => None,
+        }
+    }
+    // Only allow the unsafe version to be used
+    fn from_value(_vm: &'vm Thread, _value: Variants) -> Option<Self> {
+        None
+    }
+}
+
 impl<T> VMType for Vec<T>
     where T: VMType,
           T::Type: Sized
@@ -659,8 +692,7 @@ impl<T: VMType> VMType for Option<T>
         Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
 }
-impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
-{
+impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
             Some(value) => {
@@ -702,8 +734,7 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
     }
 }
 
-impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for Result<T, E>
-{
+impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for Result<T, E> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let tag = match self {
             Ok(ok) => {
@@ -790,8 +821,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for IO<T> {
     }
 }
 
-impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T>
-{
+impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
             IO::Value(value) => {
@@ -1236,13 +1266,16 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
 }
 
 pub struct CPrimitive {
-    function: extern "C" fn (&Thread) -> Status,
+    function: extern "C" fn(&Thread) -> Status,
     arguments: VMIndex,
     id: Symbol,
 }
 
 impl CPrimitive {
-    pub unsafe fn new(function: extern "C" fn (&Thread) -> Status, arguments: VMIndex, id: &str) -> CPrimitive {
+    pub unsafe fn new(function: extern "C" fn(&Thread) -> Status,
+                      arguments: VMIndex,
+                      id: &str)
+                      -> CPrimitive {
         CPrimitive {
             id: Symbol::new(id),
             function: function,
@@ -1251,8 +1284,7 @@ impl CPrimitive {
     }
 }
 
-impl<'vm> Pushable<'vm> for CPrimitive
-{
+impl<'vm> Pushable<'vm> for CPrimitive {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         use std::mem::transmute;
         let function = self.function;

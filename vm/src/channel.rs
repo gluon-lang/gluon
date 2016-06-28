@@ -21,7 +21,9 @@ pub struct Sender<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> fmt::Debug for Sender<T> where T: fmt::Debug {
+impl<T> fmt::Debug for Sender<T>
+    where T: fmt::Debug
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", *self.queue.lock().unwrap())
     }
@@ -50,7 +52,9 @@ pub struct Receiver<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> fmt::Debug for Receiver<T> where T: fmt::Debug {
+impl<T> fmt::Debug for Receiver<T>
+    where T: fmt::Debug
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", *self.queue.lock().unwrap())
     }
