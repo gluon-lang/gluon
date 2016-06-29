@@ -28,11 +28,11 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 #### Rust
 
-Gluon is currently available only here on github but will soon be added to crates.io. To include it in a Rust project you can add the lines below.
+Gluon is available at [crates.io](https://crates.io/crates/gluon) and can easily be included in a Cargo project by adding the lines below.
 
 ```toml
-[dependencies.gluon]
-git = "https://github.com/Marwes/gluon.git"
+[dependencies]
+gluon = "0.1.0"
 ```
 
 #### Other langauges
