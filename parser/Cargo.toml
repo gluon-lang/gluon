@@ -1,6 +1,6 @@
 [package]
 name = "gluon_parser"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -21,6 +21,7 @@ version = "=2.0.0-beta"
 
 [dependencies.gluon_base]
 path = "../base"
+version = "0.1.1"
 
 [dependencies.env_logger]
 version = "0.3.3"
