@@ -269,6 +269,7 @@ pub fn no_loc<T>(x: T) -> Located<T> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum LiteralEnum {
+    Byte(u8),
     Integer(i64),
     Float(f64),
     String(String),
@@ -363,6 +364,7 @@ impl<Id> LExpr<Id>
                 use self::LiteralEnum::*;
                 match *lit {
                     Integer(i) => self.location.line_offset(format!("{}", i).len() as i32),
+                    Byte(i) => self.location.line_offset(format!("{}", i).len() as i32 + 1),
                     Float(f) => self.location.line_offset(format!("{}", f).len() as i32),
                     String(ref s) => self.location.line_offset(s.len() as i32 + 2),
                     Char(_) => self.location.line_offset(3),
@@ -576,6 +578,7 @@ impl<Id> Typed for Expr<Id>
                 match *lit {
                     LiteralEnum::Integer(_) => Type::int(),
                     LiteralEnum::Float(_) => Type::float(),
+                    LiteralEnum::Byte(_) => Type::byte(),
                     LiteralEnum::String(_) => Type::string(),
                     LiteralEnum::Char(_) => Type::char(),
                 }

@@ -398,7 +398,7 @@ impl<'a> Compiler<'a> {
             UpVar(index) => function.emit(PushUpVar(index)),
             Global(index) => function.emit(PushGlobal(index)),
             // Zero argument constructors can be compiled as integers
-            Constructor(tag, 0) => function.emit(PushInt(tag as VMInt)),
+            Constructor(tag, 0) => function.emit(Construct(tag, 0)),
             Constructor(..) => panic!("Constructor {:?} is not fully applied", id),
         }
     }
@@ -433,6 +433,7 @@ impl<'a> Compiler<'a> {
             Expr::Literal(ref lit) => {
                 match *lit {
                     ast::LiteralEnum::Integer(i) => function.emit(PushInt(i as isize)),
+                    ast::LiteralEnum::Byte(b) => function.emit(PushByte(b)),
                     ast::LiteralEnum::Float(f) => function.emit(PushFloat(f)),
                     ast::LiteralEnum::String(ref s) => function.emit_string(self.intern(&s)),
                     ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
@@ -462,7 +463,7 @@ impl<'a> Compiler<'a> {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
-                    function.emit(PushInt(0));
+                    function.emit(Construct(0, 0));
                     function.emit(Jump(0));//lhs false, jump to after rhs
                     // Dont count the integer added added above as the next part of the code never
                     // pushed it
@@ -479,7 +480,7 @@ impl<'a> Compiler<'a> {
                     function.emit(Jump(0));
                     function.function.instructions[lhs_end] =
                         CJump(function.function.instructions.len() as VMIndex);
-                    function.emit(PushInt(1));
+                    function.emit(Construct(1, 0));
                     // Dont count the integer above
                     function.stack_size -= 1;
                     let end = function.function.instructions.len();
@@ -492,6 +493,12 @@ impl<'a> Compiler<'a> {
                         "#Int/" => DivideInt,
                         "#Int<" | "#Char<" => IntLT,
                         "#Int==" | "#Char==" => IntEQ,
+                        "#Byte+" => AddByte,
+                        "#Byte-" => SubtractByte,
+                        "#Byte*" => MultiplyByte,
+                        "#Byte/" => DivideByte,
+                        "#Byte<" => ByteLT,
+                        "#Byte==" => ByteEQ,
                         "#Float+" => AddFloat,
                         "#Float-" => SubtractFloat,
                         "#Float*" => MultiplyFloat,
@@ -660,7 +667,7 @@ impl<'a> Compiler<'a> {
                 for expr in a.expressions.iter() {
                     self.compile(expr, function, false);
                 }
-                function.emit(Construct(0, a.expressions.len() as VMIndex));
+                function.emit(ConstructArray(a.expressions.len() as VMIndex));
             }
             Expr::Lambda(ref lambda) => {
                 let (function_index, vars, cf) = self.compile_lambda(&lambda.id,
@@ -686,21 +693,13 @@ impl<'a> Compiler<'a> {
                         None => self.load_identifier(&field.0, function),
                     }
                 }
-                if fields.is_empty() {
-                    function.emit(PushInt(0));
-                } else {
-                    function.emit(Construct(0, fields.len() as u32));
-                }
+                function.emit(Construct(0, fields.len() as u32));
             }
             Expr::Tuple(ref exprs) => {
                 for expr in exprs {
                     self.compile(expr, function, false);
                 }
-                if exprs.is_empty() {
-                    function.emit(PushInt(0));
-                } else {
-                    function.emit(Construct(0, exprs.len() as u32));
-                }
+                function.emit(Construct(0, exprs.len() as u32));
             }
             Expr::Block(ref exprs) => {
                 let (last, exprs) = exprs.split_last().expect("Expr in block");

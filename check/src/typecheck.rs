@@ -466,6 +466,7 @@ impl<'a> Typecheck<'a> {
             ast::Expr::Literal(ref lit) => {
                 Ok(TailCall::Type(match *lit {
                     ast::LiteralEnum::Integer(_) => Type::int(),
+                    ast::LiteralEnum::Byte(_) => Type::byte(),
                     ast::LiteralEnum::Float(_) => Type::float(),
                     ast::LiteralEnum::String(_) => Type::string(),
                     ast::LiteralEnum::Char(_) => Type::char(),
@@ -510,21 +511,23 @@ impl<'a> Typecheck<'a> {
                     // Handle primitives
                     let arg_type = try!(self.unify(&lhs_type, rhs_type));
                     let offset;
-                    let typ = if op_name[1..].starts_with("Int") {
+                    let prim_type: TcType = if op_name[1..].starts_with("Int") {
                         offset = "Int".len();
-                        op.typ = Type::function(vec![Type::int(), Type::int()], Type::int());
-                        try!(self.unify(&Type::int(), arg_type))
+                        Type::int()
                     } else if op_name[1..].starts_with("Float") {
                         offset = "Float".len();
-                        op.typ = Type::function(vec![Type::float(), Type::float()], Type::float());
-                        try!(self.unify(&Type::float(), arg_type))
+                        Type::float()
                     } else if op_name[1..].starts_with("Char") {
                         offset = "Char".len();
-                        op.typ = Type::function(vec![Type::char(), Type::char()], Type::char());
-                        try!(self.unify(&Type::char(), arg_type))
+                        Type::char()
+                    } else if op_name[1..].starts_with("Byte") {
+                        offset = "Byte".len();
+                        Type::byte()
                     } else {
                         panic!("ICE: Unknown primitive type")
                     };
+                    op.typ = Type::function(vec![prim_type.clone(), prim_type.clone()], prim_type.clone());
+                    let typ = try!(self.unify(&prim_type, arg_type));
                     match &op_name[1 + offset..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
                         "==" | "<" => Ok(self.bool()),

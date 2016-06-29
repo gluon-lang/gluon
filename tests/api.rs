@@ -59,6 +59,7 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
 fn root_data() {
     let _ = ::env_logger::init();
 
+    #[derive(Debug)]
     struct Test(VMInt);
     impl Traverseable for Test { }
     impl VMType for Test {
@@ -106,6 +107,28 @@ test "hello"
     let result = run_expr(&mut vm, expr);
     match result {
         Value::String(s) => assert_eq!(&s[..], "hello world"),
+        x => panic!("Expected string {:?}", x),
+    }
+}
+
+#[test]
+fn array() {
+    let _ = ::env_logger::init();
+    let expr = r#"
+sum_bytes [100b, 42b, 3b, 15b]
+"#;
+    let mut vm = make_vm();
+    fn sum_bytes(s: &[u8]) -> u8 {
+        s.iter().fold(0, |acc, b| acc + b)
+    }
+    vm.define_global("sum_bytes", {
+          let sum_bytes: fn(_) -> _ = sum_bytes;
+          sum_bytes
+      })
+      .unwrap();
+    let result = run_expr(&mut vm, expr);
+    match result {
+        Value::Byte(b) => assert_eq!(b, 160),
         x => panic!("Expected string {:?}", x),
     }
 }

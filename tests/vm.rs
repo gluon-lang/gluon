@@ -140,7 +140,7 @@ fn record() {
 ";
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0, vm.new_data(0, &mut [Int(0), Float(1.0), Int(0)]));
+    assert_eq!(value.0, vm.new_data(0, &mut [Int(0), Float(1.0), Value::Tag(0)]));
 }
 
 #[test]
@@ -250,6 +250,28 @@ r"
 false
 }
 
+test_expr!{ primitive_byte_arithmetic,
+r"
+let x = 100b #Byte+ 13b
+x #Byte* 2b #Byte/ 3b
+",
+75u8
+}
+
+test_expr!{ primitive_byte_eq,
+r"
+100b #Byte== 100b
+",
+true
+}
+
+test_expr!{ primitive_byte_lt,
+r"
+100b #Byte< 100b
+",
+false
+}
+
 test_expr!{ partial_application,
 r"
 let f x y = x #Int+ y in
@@ -321,7 +343,7 @@ r#"
 type Test = | A Int | B
 B
 "#,
-Generic::<A>::from(Int(1))
+Generic::<A>::from(Value::Tag(1))
 }
 
 test_expr!{ match_on_zero_argument_variant,
@@ -338,14 +360,14 @@ test_expr!{ marshalled_option_none_is_int,
 r#"
 string_prim.find "a" "b"
 "#,
-Generic::<A>::from(Int(0))
+Generic::<A>::from(Value::Tag(0))
 }
 
 test_expr!{ marshalled_ordering_is_int,
 r#"
 string_prim.compare "a" "b"
 "#,
-Generic::<A>::from(Int(0))
+Generic::<A>::from(Value::Tag(0))
 }
 
 test_expr!{ prelude match_on_bool,
@@ -452,6 +474,52 @@ array.index arr 0 #Int== 1
 true
 }
 
+test_expr!{ array_byte,
+r#"
+let arr = [1b,2b,3b]
+
+let b = array.index arr 2 #Byte== 3b && array.length arr #Int== 3
+let arr2 = array.append arr arr
+b && array.length arr2 #Int== array.length arr #Int* 2
+  && array.index arr2 1 #Byte== array.index arr2 4
+"#,
+true
+}
+
+test_expr!{ array_float,
+r#"
+let arr = [1.0,2.0,3.0]
+
+let b = array.index arr 2 #Float== 3.0 && array.length arr #Int== 3
+let arr2 = array.append arr arr
+b && array.length arr2 #Int== array.length arr #Int* 2
+  && array.index arr2 1 #Float== array.index arr2 4
+"#,
+true
+}
+
+test_expr!{ array_data,
+r#"
+let arr = [{x = 1, y = "a" }, { x = 2, y = "b" }]
+
+let b = (array.index arr 1).x #Int== 2 && array.length arr #Int== 2
+let arr2 = array.append arr arr
+b && array.length arr2 #Int== array.length arr #Int* 2
+"#,
+true
+}
+
+test_expr!{ array_array,
+r#"
+let arr = [[], [1], [2, 3]]
+
+let b = array.length (array.index arr 1) #Int== 1 && array.length arr #Int== 3
+let arr2 = array.append arr arr
+b && array.length arr2 #Int== array.length arr #Int* 2
+"#,
+true
+}
+
 test_expr!{ prelude true_branch_not_affected_by_false_branc,
 r#"
 if True then
@@ -503,6 +571,30 @@ let b2 = False
 b
 "#,
 true
+}
+
+// Test that empty variants are handled correctly in arrays
+test_expr!{ array_empty_variant,
+r#"
+type Test = | Empty | Some Int
+let arr = [Empty, Some 1]
+match array.index arr 0 with
+| Empty -> 0
+| Some x -> x
+"#,
+0i32
+}
+
+// Test that array append handles array types correctly
+test_expr!{ array_empty_append,
+r#"
+type Test = | Empty | Some Int
+let arr = array.append [] [Empty, Some 1]
+match array.index arr 0 with
+| Empty -> 0
+| Some x -> x
+"#,
+0i32
 }
 
 #[test]

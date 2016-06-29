@@ -677,7 +677,7 @@ impl ThreadInternal for Thread {
 
     fn deep_clone(&self, value: Value) -> Result<Value> {
         let mut visited = HashMap::new();
-        ::value::deep_clone(&value, &mut visited, &mut self.local_gc.lock().unwrap())
+        ::value::deep_clone(value, &mut visited, &mut self.local_gc.lock().unwrap())
     }
 }
 
@@ -700,7 +700,7 @@ impl<'b> Context<'b> {
     }
 
     fn execute_function(mut self, function: &ExternFunction) -> Result<Context<'b>> {
-        debug!("CALL EXTERN {}", function.id);
+        debug!("CALL EXTERN {} {:?}", function.id, &self.stack[..]);
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
         let thread = self.thread;
@@ -725,7 +725,10 @@ impl<'b> Context<'b> {
             Status::Error => {
                 match self.stack.pop() {
                     String(s) => Err(Error::Message(s.to_string())),
-                    _ => Err(Error::Message("Unexpected panic in VM".to_string())),
+                    _ => {
+                        Err(Error::Message(format!("Unexpected error calling function `{}`",
+                                                   function.id)))
+                    }
                 }
             }
         }
@@ -863,6 +866,9 @@ impl<'b> Context<'b> {
                 PushInt(i) => {
                     self.stack.push(Int(i));
                 }
+                PushByte(b) => {
+                    self.stack.push(Value::Byte(b));
+                }
                 PushString(string_index) => {
                     self.stack.push(String(function.strings[string_index as usize].inner()));
                 }
@@ -911,19 +917,36 @@ impl<'b> Context<'b> {
                 }
                 Construct(tag, args) => {
                     let d = {
-                        let fields = &self.stack[self.stack.len() - args..];
-                        alloc(&mut self.gc,
-                              self.thread,
-                              &self.stack.stack,
-                              Def {
-                                  tag: tag,
-                                  elems: fields,
-                              })
+                        if args == 0 {
+                            Value::Tag(tag)
+                        } else {
+                            let fields = &self.stack[self.stack.len() - args..];
+                            Data(alloc(&mut self.gc,
+                                       self.thread,
+                                       &self.stack.stack,
+                                       Def {
+                                           tag: tag,
+                                           elems: fields,
+                                       }))
+                        }
                     };
                     for _ in 0..args {
                         self.stack.pop();
                     }
-                    self.stack.push(Data(d));
+                    self.stack.push(d);
+                }
+                ConstructArray(args) => {
+                    let d = {
+                        let fields = &self.stack[self.stack.len() - args..];
+                        alloc(&mut self.gc,
+                              self.thread,
+                              &self.stack.stack,
+                              ::value::ArrayDef(fields))
+                    };
+                    for _ in 0..args {
+                        self.stack.pop();
+                    }
+                    self.stack.push(Value::Array(d));
                 }
                 GetField(i) => {
                     match self.stack.pop() {
@@ -937,13 +960,13 @@ impl<'b> Context<'b> {
                 TestTag(tag) => {
                     let data_tag = match self.stack.top() {
                         Data(ref data) => data.tag,
-                        Int(tag) => tag as VMTag,
+                        Value::Tag(tag) => tag,
                         _ => {
                             return Err(Error::Message("Op TestTag called on non data type"
                                                           .to_string()))
                         }
                     };
-                    self.stack.push(Int(if data_tag == tag {
+                    self.stack.push(Value::Tag(if data_tag == tag {
                         1
                     } else {
                         0
@@ -957,7 +980,7 @@ impl<'b> Context<'b> {
                             }
                         }
                         // Zero argument variant
-                        Int(_) => (),
+                        Value::Tag(_) => (),
                         _ => {
                             return Err(Error::Message("Op Split called on non data type"
                                                           .to_string()))
@@ -970,7 +993,7 @@ impl<'b> Context<'b> {
                 }
                 CJump(i) => {
                     match self.stack.pop() {
-                        Int(0) => (),
+                        Value::Tag(0) => (),
                         _ => {
                             index = i as usize;
                             continue;
@@ -1058,6 +1081,14 @@ impl<'b> Context<'b> {
                 DivideInt => binop(self.thread, &mut self.stack, VMInt::div),
                 IntLT => binop(self.thread, &mut self.stack, |l: VMInt, r| l < r),
                 IntEQ => binop(self.thread, &mut self.stack, |l: VMInt, r| l == r),
+
+                AddByte => binop(self.thread, &mut self.stack, u8::add),
+                SubtractByte => binop(self.thread, &mut self.stack, u8::sub),
+                MultiplyByte => binop(self.thread, &mut self.stack, u8::mul),
+                DivideByte => binop(self.thread, &mut self.stack, u8::div),
+                ByteLT => binop(self.thread, &mut self.stack, |l: u8, r| l < r),
+                ByteEQ => binop(self.thread, &mut self.stack, |l: u8, r| l == r),
+
                 AddFloat => binop(self.thread, &mut self.stack, f64::add),
                 SubtractFloat => binop(self.thread, &mut self.stack, f64::sub),
                 MultiplyFloat => binop(self.thread, &mut self.stack, f64::mul),

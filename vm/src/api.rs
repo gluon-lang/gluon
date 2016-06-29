@@ -1,10 +1,10 @@
 //! The marshalling api
 use {Variants, Error};
-use gc::{Gc, Traverseable, Move};
+use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, Stack, StackFrame};
 use vm::{Thread, Status, RootStr, RootedValue, Root};
-use value::{DataStruct, ExternFunction, Value, Def};
+use value::{ArrayRepr, DataStruct, ExternFunction, Value, ValueArray, Def};
 use thread::RootedThread;
 use thread::ThreadInternal;
 use base::types;
@@ -25,10 +25,12 @@ macro_rules! count {
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum ValueRef<'a> {
+    Byte(u8),
     Int(VMInt),
     Float(f64),
     String(&'a str),
     Data(Data<'a>),
+    Tag(VMTag),
     Userdata(&'a ::vm::Userdata),
     Internal,
 }
@@ -36,14 +38,17 @@ pub enum ValueRef<'a> {
 impl<'a> ValueRef<'a> {
     pub fn new(value: &'a Value) -> ValueRef<'a> {
         match *value {
+            Value::Byte(i) => ValueRef::Byte(i),
             Value::Int(i) => ValueRef::Int(i),
             Value::Float(f) => ValueRef::Float(f),
             Value::String(ref s) => ValueRef::String(s),
             Value::Data(ref data) => ValueRef::Data(Data(data)),
             Value::Userdata(ref data) => ValueRef::Userdata(&***data),
+            Value::Tag(tag) => ValueRef::Tag(tag),
             Value::Thread(_) |
             Value::Function(_) |
             Value::Closure(_) |
+            Value::Array(_) | // FIXME Expose arrays safely
             Value::PartialApplication(_) => ValueRef::Internal,
         }
     }
@@ -321,6 +326,10 @@ impl<'vm, T> Pushable<'vm> for WithVM<'vm, T>
 impl<'vm, T> Getable<'vm> for WithVM<'vm, T>
     where T: Getable<'vm>
 {
+    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants) -> Option<WithVM<'vm, T>> {
+        T::from_value_unsafe(vm, value).map(|t| WithVM { vm: vm, value: t })
+    }
+
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<WithVM<'vm, T>> {
         T::from_value(vm, value).map(|t| WithVM { vm: vm, value: t })
     }
@@ -338,6 +347,24 @@ impl<'vm> Pushable<'vm> for () {
 impl<'vm> Getable<'vm> for () {
     fn from_value(_: &'vm Thread, _: Variants) -> Option<()> {
         Some(())
+    }
+}
+
+impl VMType for u8 {
+    type Type = Self;
+}
+impl<'vm> Pushable<'vm> for u8 {
+    fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
+        stack.push(Value::Byte(self));
+        Status::Ok
+    }
+}
+impl<'vm> Getable<'vm> for u8 {
+    fn from_value(_: &'vm Thread, value: Variants) -> Option<u8> {
+        match value.as_ref() {
+            ValueRef::Byte(i) => Some(i),
+            _ => None,
+        }
     }
 }
 
@@ -434,7 +461,7 @@ impl VMType for bool {
 }
 impl<'vm> Pushable<'vm> for bool {
     fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
-        stack.push(Value::Int(if self {
+        stack.push(Value::Tag(if self {
             1
         } else {
             0
@@ -445,8 +472,8 @@ impl<'vm> Pushable<'vm> for bool {
 impl<'vm> Getable<'vm> for bool {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<bool> {
         match value.as_ref() {
-            ValueRef::Int(1) => Some(true),
-            ValueRef::Int(0) => Some(false),
+            ValueRef::Tag(1) => Some(true),
+            ValueRef::Tag(0) => Some(false),
             _ => None,
         }
     }
@@ -466,15 +493,15 @@ impl<'vm> Pushable<'vm> for Ordering {
             Ordering::Equal => 1,
             Ordering::Greater => 2,
         };
-        stack.push(Value::Int(tag));
+        stack.push(Value::Tag(tag));
         Status::Ok
     }
 }
 impl<'vm> Getable<'vm> for Ordering {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Ordering> {
         let tag = match value.as_ref() {
-            ValueRef::Data(data) => data.tag() as VMInt,
-            ValueRef::Int(tag) => tag,
+            ValueRef::Data(data) => data.tag(),
+            ValueRef::Tag(tag) => tag,
             _ => return None,
         };
         match tag {
@@ -549,6 +576,39 @@ impl<'s, 'vm, T> Pushable<'vm> for Ref<'s, T>
 {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         <&T as Pushable>::push(&*self, vm, stack)
+    }
+}
+
+impl<'s, T> VMType for &'s [T]
+    where T: VMType + ArrayRepr + 's,
+          T::Type: Sized
+{
+    type Type = &'static [T::Type];
+
+    fn make_type(vm: &Thread) -> TcType {
+        Type::array(T::make_type(vm))
+    }
+}
+impl<'vm, 's, T> Pushable<'vm> for &'s [T]
+    where T: Traverseable + Pushable<'vm> + 's,
+          &'s [T]: DataDef<Value = ValueArray>
+{
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
+        let result = vm.alloc(stack, self);
+        stack.push(Value::Array(result));
+        Status::Ok
+    }
+}
+impl<'s, 'vm, T: Copy + ArrayRepr> Getable<'vm> for &'s [T] {
+    unsafe fn from_value_unsafe(_: &'vm Thread, value: Variants) -> Option<Self> {
+        match *value.0 {
+            Value::Array(ptr) => ptr.as_slice().map(|s| &*(s as *const _)),
+            _ => None,
+        }
+    }
+    // Only allow the unsafe version to be used
+    fn from_value(_vm: &'vm Thread, _value: Variants) -> Option<Self> {
+        None
     }
 }
 
@@ -632,8 +692,7 @@ impl<T: VMType> VMType for Option<T>
         Type::data(Type::id(symbol), vec![T::make_type(vm)])
     }
 }
-impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
-{
+impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
             Some(value) => {
@@ -643,7 +702,7 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T>
                 assert!(stack.len() == len);
                 stack.push(value);
             }
-            None => stack.push(Value::Int(0)),
+            None => stack.push(Value::Tag(0)),
         }
         Status::Ok
     }
@@ -658,7 +717,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
                     T::from_value(vm, Variants(&data.fields[1])).map(Some)
                 }
             }
-            Value::Int(0) => Some(None),
+            Value::Tag(0) => Some(None),
             _ => None,
         }
     }
@@ -675,8 +734,7 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
     }
 }
 
-impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for Result<T, E>
-{
+impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for Result<T, E> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         let tag = match self {
             Ok(ok) => {
@@ -763,8 +821,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for IO<T> {
     }
 }
 
-impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T>
-{
+impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         match self {
             IO::Value(value) => {
@@ -824,11 +881,11 @@ impl<'vm, V> Getable<'vm> for OpaqueValue<RootedThread, V> {
 pub struct Array<'vm, T>(RootedValue<&'vm Thread>, PhantomData<T>);
 
 impl<'vm, T> Deref for Array<'vm, T> {
-    type Target = DataStruct;
-    fn deref(&self) -> &DataStruct {
+    type Target = ValueArray;
+    fn deref(&self) -> &ValueArray {
         match *self.0 {
-            Value::Data(ref data) => data,
-            _ => panic!("Expected data"),
+            Value::Array(ref data) => data,
+            _ => panic!("Expected an array found {:?}", self.0),
         }
     }
 }
@@ -837,19 +894,14 @@ impl<'vm, T> Array<'vm, T> {
     pub fn vm(&self) -> &'vm Thread {
         self.0.vm_()
     }
-
-    pub fn len(&self) -> VMIndex {
-        self.fields.len() as VMIndex
-    }
 }
 
 impl<'vm, T: for<'vm2> Getable<'vm2>> Array<'vm, T> {
     pub fn get(&self, index: VMInt) -> Option<T> {
         match *self.0 {
-            Value::Data(data) => {
-                data.fields
-                    .get(index as usize)
-                    .and_then(|v| T::from_value(self.0.vm(), Variants(v)))
+            Value::Array(data) => {
+                let v = data.get(index as usize);
+                T::from_value(self.0.vm(), Variants(&v))
             }
             _ => None,
         }
@@ -1214,13 +1266,16 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
 }
 
 pub struct CPrimitive {
-    function: extern "C" fn (&Thread) -> Status,
+    function: extern "C" fn(&Thread) -> Status,
     arguments: VMIndex,
     id: Symbol,
 }
 
 impl CPrimitive {
-    pub unsafe fn new(function: extern "C" fn (&Thread) -> Status, arguments: VMIndex, id: &str) -> CPrimitive {
+    pub unsafe fn new(function: extern "C" fn(&Thread) -> Status,
+                      arguments: VMIndex,
+                      id: &str)
+                      -> CPrimitive {
         CPrimitive {
             id: Symbol::new(id),
             function: function,
@@ -1229,8 +1284,7 @@ impl CPrimitive {
     }
 }
 
-impl<'vm> Pushable<'vm> for CPrimitive
-{
+impl<'vm> Pushable<'vm> for CPrimitive {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
         use std::mem::transmute;
         let function = self.function;

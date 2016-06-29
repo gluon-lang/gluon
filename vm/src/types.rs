@@ -12,6 +12,7 @@ pub type VMInt = isize;
 #[derive(Copy, Clone, Debug)]
 pub enum Instruction {
     PushInt(isize),
+    PushByte(u8),
     PushFloat(f64),
     PushString(VMIndex),
     Push(VMIndex),
@@ -19,6 +20,7 @@ pub enum Instruction {
     Call(VMIndex),
     TailCall(VMIndex),
     Construct(VMIndex, VMIndex),
+    ConstructArray(VMIndex),
     GetField(VMIndex),
     Split,
     TestTag(VMTag),
@@ -45,6 +47,13 @@ pub enum Instruction {
     IntLT,
     IntEQ,
 
+    AddByte,
+    SubtractByte,
+    MultiplyByte,
+    DivideByte,
+    ByteLT,
+    ByteEQ,
+
     AddFloat,
     SubtractFloat,
     MultiplyFloat,
@@ -57,10 +66,11 @@ pub enum Instruction {
 impl Instruction {
     pub fn adjust(&self) -> i32 {
         match *self {
-            PushInt(_) | PushFloat(_) | PushString(_) | Push(_) | PushGlobal(_) => 1,
+            PushInt(_) | PushByte(_) | PushFloat(_) | PushString(_) | Push(_) | PushGlobal(_) => 1,
             Call(n) => -(n as i32),
             TailCall(n) => -(n as i32),
-            Construct(_, n) => 1 - n as i32,
+            Construct(_, n) |
+            ConstructArray(n) => 1 - n as i32,
             GetField(_) => 0,
             // The number of added stack slots are handled separately as the type is needed to
             // calculate the number of slots needed
@@ -76,6 +86,7 @@ impl Instruction {
             PushUpVar(_) => 1,
             GetIndex => 0,
             AddInt | SubtractInt | MultiplyInt | DivideInt | IntLT | IntEQ | AddFloat |
+            AddByte | SubtractByte | MultiplyByte | DivideByte | ByteLT | ByteEQ |
             SubtractFloat | MultiplyFloat | DivideFloat | FloatLT | FloatEQ => -1,
         }
     }

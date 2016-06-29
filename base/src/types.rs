@@ -277,6 +277,7 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType {
     String,
+    Byte,
     Char,
     Int,
     Float,
@@ -289,6 +290,7 @@ impl ::std::str::FromStr for BuiltinType {
     fn from_str(x: &str) -> Result<BuiltinType, ()> {
         let t = match x {
             "Int" => BuiltinType::Int,
+            "Byte" => BuiltinType::Byte,
             "Float" => BuiltinType::Float,
             "String" => BuiltinType::String,
             "Char" => BuiltinType::Char,
@@ -302,6 +304,7 @@ impl BuiltinType {
     pub fn to_str(self) -> &'static str {
         match self {
             BuiltinType::String => "String",
+            BuiltinType::Byte => "Byte",
             BuiltinType::Char => "Char",
             BuiltinType::Int => "Int",
             BuiltinType::Float => "Float",
@@ -524,6 +527,10 @@ impl<Id, T> Type<Id, T>
 
     pub fn char() -> T {
         Type::builtin(BuiltinType::Char)
+    }
+
+    pub fn byte() -> T {
+        Type::builtin(BuiltinType::Byte)
     }
 
     pub fn int() -> T {

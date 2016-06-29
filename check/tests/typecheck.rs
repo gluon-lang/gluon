@@ -108,6 +108,17 @@ fn char_literal() {
 }
 
 #[test]
+fn byte_literal() {
+    let _ = ::env_logger::init();
+    let text = r"
+1b
+";
+    let result = typecheck(text);
+    assert_eq!(result, Ok(Type::byte()));
+}
+
+
+#[test]
 fn function_2_args() {
     let _ = ::env_logger::init();
     let text = r"

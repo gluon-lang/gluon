@@ -167,16 +167,6 @@ unsafe impl<T> DataDef for Move<T> {
     }
 }
 
-unsafe impl<'s, T: Copy> DataDef for &'s [T] {
-    type Value = [T];
-    fn size(&self) -> usize {
-        self.len() * mem::size_of::<T>()
-    }
-    fn initialize(self, result: WriteOnly<[T]>) -> &mut [T] {
-        result.write_slice(self)
-    }
-}
-
 #[derive(Debug)]
 struct TypeInfo {
     drop: unsafe fn(*mut ()),

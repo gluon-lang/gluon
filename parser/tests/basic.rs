@@ -94,10 +94,7 @@ fn type_decl(name: String, args: Vec<Generic<String>>, typ: ASTType<String>, bod
     type_decls(vec![TypeBinding {
                         comment: None,
                         name: name.clone(),
-                        alias: Alias::new(
-                            name,
-                            args,
-                            typ),
+                        alias: Alias::new(name, args, typ),
                     }],
                body)
 }
@@ -291,8 +288,7 @@ match None with
     let e = parse(text);
     assert_eq!(e,
                Ok(case(id("None"),
-                       vec![(Pattern::Constructor(intern("Some"), vec![intern("x")]),
-                             id("x")),
+                       vec![(Pattern::Constructor(intern("Some"), vec![intern("x")]), id("x")),
                             (Pattern::Constructor(intern("None"), vec![]), int(0))])));
 }
 #[test]
@@ -315,7 +311,8 @@ fn operator_expr() {
 fn record_trailing_comma() {
     let _ = ::env_logger::init();
     let e = parse_new("{ y, x = z,}");
-    assert_eq!(e, record(vec![("y".into(), None), ("x".into(), Some(id("z")))]));
+    assert_eq!(e,
+               record(vec![("y".into(), None), ("x".into(), Some(id("z")))]));
 }
 
 #[test]
@@ -362,11 +359,7 @@ fn associated_record() {
 
     let test_type = Type::record(vec![Field {
                                           name: String::from("Fn"),
-                                          typ: Alias::new(
-                                              String::from("Fn"),
-                                              vec![],
-                                              typ("Fn")
-                                          ),
+                                          typ: Alias::new(String::from("Fn"), vec![], typ("Fn")),
                                       }],
                                  vec![Field {
                                           name: intern("x"),
@@ -379,16 +372,18 @@ fn associated_record() {
                type_decl(intern("Test"), vec![generic("a")], test_type, record));
 }
 
+
+fn loc(r: i32, c: i32) -> Location {
+    Location {
+        column: c,
+        row: r,
+        absolute: 0,
+    }
+}
+
 #[test]
-fn span() {
+fn span_identifier() {
     let _ = ::env_logger::init();
-    let loc = |r, c| {
-        Location {
-            column: c,
-            row: r,
-            absolute: 0,
-        }
-    };
 
     let e = parse_new("test");
     assert_eq!(e.span(&EmptyEnv::new()),
@@ -396,6 +391,12 @@ fn span() {
                    start: loc(1, 1),
                    end: loc(1, 5),
                });
+}
+
+
+#[test]
+fn span_integer() {
+    let _ = ::env_logger::init();
 
     let e = parse_new("1234");
     assert_eq!(e.span(&EmptyEnv::new()),
@@ -403,6 +404,11 @@ fn span() {
                    start: loc(1, 1),
                    end: loc(1, 5),
                });
+}
+
+#[test]
+fn span_call() {
+    let _ = ::env_logger::init();
 
     let e = parse_new(r#" f 123 "asd" "#);
     assert_eq!(e.span(&EmptyEnv::new()),
@@ -410,6 +416,11 @@ fn span() {
                    start: loc(1, 2),
                    end: loc(1, 13),
                });
+}
+
+#[test]
+fn span_match() {
+    let _ = ::env_logger::init();
 
     let e = parse_new(r#"
 match False with
@@ -421,6 +432,11 @@ match False with
                    start: loc(2, 1),
                    end: loc(4, 18),
                });
+}
+
+#[test]
+fn span_if_else() {
+    let _ = ::env_logger::init();
 
     let e = parse_new(r#"
 if True then
@@ -432,6 +448,18 @@ else
                Span {
                    start: loc(2, 1),
                    end: loc(5, 11),
+               });
+}
+
+#[test]
+fn span_byte() {
+    let _ = ::env_logger::init();
+
+    let e = parse_new(r#"124b"#);
+    assert_eq!(e.span(&EmptyEnv::new()),
+               Span {
+                   start: loc(1, 1),
+                   end: loc(1, 5),
                });
 }
 
@@ -468,11 +496,7 @@ id
                type_decls(vec![TypeBinding {
                                    comment: Some("Test type ".into()),
                                    name: intern("Test"),
-                                   alias: Alias::new(
-                                       intern("Test"),
-                                       Vec::new(),
-                                       typ("Int")
-                                   ),
+                                   alias: Alias::new(intern("Test"), Vec::new(), typ("Int")),
                                }],
                           id("id")));
 }
@@ -495,10 +519,7 @@ id
                      type_decls(vec![TypeBinding {
                                          comment: Some("Test type ".into()),
                                          name: intern("Test"),
-                                         alias: Alias::new(
-                                             intern("Test"),
-                                             Vec::new(),
-                                             typ("Int")),
+                                         alias: Alias::new(intern("Test"), Vec::new(), typ("Int")),
                                      }],
                                 id("id"))));
 }
@@ -518,10 +539,7 @@ id
                type_decls(vec![TypeBinding {
                                    comment: Some("Merge\nconsecutive\nline comments.".into()),
                                    name: intern("Test"),
-                                   alias: Alias::new(
-                                       intern("Test"),
-                                       Vec::new(),
-                                       typ("Int")),
+                                   alias: Alias::new(intern("Test"), Vec::new(), typ("Int")),
                                }],
                           id("id")));
 }

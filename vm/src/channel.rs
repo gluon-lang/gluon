@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
@@ -18,6 +19,14 @@ pub struct Sender<T> {
     // would also directly own a reference to the `Thread`
     thread: GcPtr<Thread>,
     queue: Arc<Mutex<VecDeque<T>>>,
+}
+
+impl<T> fmt::Debug for Sender<T>
+    where T: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", *self.queue.lock().unwrap())
+    }
 }
 
 impl<T> Traverseable for Sender<T> {
@@ -41,6 +50,14 @@ impl<T: Traverseable> Traverseable for Receiver<T> {
 
 pub struct Receiver<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
+}
+
+impl<T> fmt::Debug for Receiver<T>
+    where T: fmt::Debug
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", *self.queue.lock().unwrap())
+    }
 }
 
 impl<T> Receiver<T> {

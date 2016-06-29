@@ -8,7 +8,7 @@ use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use Result;
 use vm::{Thread, Status};
-use value::{DataStruct, Value};
+use value::{Value, ValueArray};
 use thread::ThreadInternal;
 use types::VMInt;
 
@@ -21,7 +21,7 @@ fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
                     -> MaybeError<Generic<generic::A>, String> {
     match array.get(index) {
         Some(value) => MaybeError::Ok(value),
-        None => MaybeError::Err(format!("{} is out of range", index)),
+        None => MaybeError::Err(format!("Index {} is out of range", index)),
     }
 }
 
@@ -29,8 +29,8 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
                      rhs: Array<'vm, Generic<generic::A>>)
                      -> Array<'vm, Generic<generic::A>> {
     struct Append<'b> {
-        lhs: &'b [Value],
-        rhs: &'b [Value],
+        lhs: &'b ValueArray,
+        rhs: &'b ValueArray,
     }
 
     impl<'b> Traverseable for Append<'b> {
@@ -41,17 +41,24 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
     }
 
     unsafe impl<'b> DataDef for Append<'b> {
-        type Value = DataStruct;
+        type Value = ValueArray;
         fn size(&self) -> usize {
             use std::mem::size_of;
             let len = self.lhs.len() + self.rhs.len();
             size_of::<usize>() + ::array::Array::<Value>::size_of(len)
         }
-        fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
+        fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+            // Empty arrays don't have the correct representation set so choose the representation
+            // of `rhs` if it is empty. (And if both are empty the representation does not matter).
+            let repr = if self.lhs.len() == 0 {
+                self.rhs.repr()
+            } else {
+                self.lhs.repr()
+            };
             unsafe {
                 let result = &mut *result.as_mut_ptr();
-                result.tag = 0;
-                result.fields.initialize(self.lhs.iter().chain(self.rhs.iter()).cloned());
+                result.set_repr(repr);
+                result.initialize(self.lhs.iter().chain(self.rhs.iter()));
                 result
             }
         }
@@ -61,11 +68,11 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
         let stack = vm.get_stack();
         vm.alloc(&stack,
                  Append {
-                     lhs: &lhs.fields,
-                     rhs: &rhs.fields,
+                     lhs: &lhs,
+                     rhs: &rhs,
                  })
     };
-    Getable::from_value(lhs.vm(), Variants(&Value::Data(value))).expect("Array")
+    Getable::from_value(lhs.vm(), Variants(&Value::Array(value))).expect("Array")
 }
 
 fn string_append(lhs: WithVM<&str>, rhs: &str) -> String {

@@ -60,11 +60,17 @@ let y =
 y
 "#;
     let result = parse(text);
-    assert_eq!(result, Err(ParseError {
-        position: SourcePosition { column: 4, line: 5 },
-        errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
-                     Error::Expected("`in` or an expression in the same column as the `let`".into())],
-    }));
+    assert_eq!(result,
+               Err(ParseError {
+                   position: SourcePosition {
+                       column: 4,
+                       line: 5,
+                   },
+                   errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
+                                Error::Expected("`in` or an expression in the same column as \
+                                                 the `let`"
+                                                    .into())],
+               }));
 }
 
 #[test]
@@ -152,7 +158,7 @@ match x with
     assert!(result.is_ok(), "{}", result.unwrap_err());
     match result.as_ref().unwrap().value {
         Expr::Match(_, ref alts) => assert_eq!(alts.len(), 2),
-        ref x => panic!("{:?}", x)
+        ref x => panic!("{:?}", x),
     }
 }
 

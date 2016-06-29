@@ -1,3 +1,4 @@
+use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
@@ -16,7 +17,13 @@ pub struct Lazy<T> {
     _marker: PhantomData<T>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+impl<T> fmt::Debug for Lazy<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", *self.value.lock().unwrap())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Lazy_ {
     Blackhole,
     Thunk(Value),

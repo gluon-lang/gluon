@@ -98,6 +98,10 @@ pub extern "C" fn glu_push_int(vm: &Thread, int: VMInt) {
     Thread::push(vm, int);
 }
 
+pub extern "C" fn glu_push_byte(vm: &Thread, b: u8) {
+    Thread::push(vm, b);
+}
+
 pub extern "C" fn glu_push_float(vm: &Thread, float: f64) {
     Thread::push(vm, float);
 }
@@ -139,6 +143,10 @@ pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usi
 
 pub extern "C" fn glu_push_light_userdata(vm: &Thread, data: *mut libc::c_void) {
     Thread::push(vm, data as usize);
+}
+
+pub extern "C" fn glu_get_byte(vm: &Thread, index: VMIndex, out: &mut u8) -> Error {
+    get_value(vm, index, out)
 }
 
 pub extern "C" fn glu_get_int(vm: &Thread, index: VMIndex, out: &mut VMInt) -> Error {
@@ -218,6 +226,7 @@ mod tests {
             let s = "test";
             glu_push_string(vm, &s.as_bytes()[0], s.len());
             glu_push_bool(vm, 1);
+            glu_push_byte(vm, 128);
 
             let mut int = 0;
             assert_eq!(glu_get_int(vm, 0, &mut int), Error::Ok);
@@ -238,7 +247,11 @@ mod tests {
             assert_eq!(glu_get_bool(vm, 3, &mut b), Error::Ok);
             assert_eq!(b, 1);
 
-            assert_eq!(glu_len(vm), 4);
+            let mut b = 0;
+            assert_eq!(glu_get_byte(vm, 4, &mut b), Error::Ok);
+            assert_eq!(b, 128);
+
+            assert_eq!(glu_len(vm), 5);
 
             glu_pop(vm, 4);
 
