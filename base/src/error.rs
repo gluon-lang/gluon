@@ -82,6 +82,9 @@ impl<E> InFile<E> {
             },
         }
     }
+    pub fn errors(self) -> Errors<ast::Spanned<E>> {
+        Errors { errors: self.error.errors.into_iter().map(|err| err.error).collect() }
+    }
 }
 
 impl<E: fmt::Display> fmt::Display for InFile<E> {

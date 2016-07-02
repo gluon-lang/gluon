@@ -376,9 +376,6 @@ impl GlobalVMState {
                       -> Result<()> {
         let mut env = self.env.write().unwrap();
         let globals = &mut env.globals;
-        if globals.contains_key(id.as_ref()) {
-            return Err(Error::GlobalAlreadyExists(id));
-        }
         let global = Global {
             id: id.clone(),
             typ: typ,

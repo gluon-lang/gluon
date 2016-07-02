@@ -412,6 +412,7 @@ impl Compiler {
         };
         let value = try!(vm.call_module(&typ, closure));
         try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
+        info!("Loaded module `{}` filename", filename);
         Ok(())
     }
 
@@ -511,16 +512,15 @@ impl Compiler {
     }
 }
 
-fn filename_to_module(filename: &str) -> StdString {
+pub fn filename_to_module(filename: &str) -> StdString {
     use std::path::Path;
     let path = Path::new(filename);
     let name = path.extension()
-                   .map(|ext| {
+                   .map_or(filename, |ext| {
                        ext.to_str()
                           .map(|ext| &filename[..filename.len() - ext.len() - 1])
                           .unwrap_or(filename)
-                   })
-                   .expect("filename");
+                   });
 
     name.replace("/", ".")
 }
@@ -529,7 +529,8 @@ fn filename_to_module(filename: &str) -> StdString {
 /// loaded.
 pub fn new_vm() -> RootedThread {
     let vm = RootedThread::new();
-    vm.get_macros().insert(String::from("import"), ::import::Import::new());
+    vm.get_macros().insert(String::from("import"),
+                           ::import::Import::new(::import::DefaultImporter));
     Compiler::new()
         .implicit_prelude(false)
         .run_expr::<Generic<A>>(&vm, "", r#" import "std/types.hs" "#)

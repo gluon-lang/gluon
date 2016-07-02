@@ -21,12 +21,10 @@ fn find_type(s: &str, location: Location) -> Result<TcType, ()> {
 
 fn suggest(s: &str, location: Location) -> Result<Vec<String>, ()> {
     let (mut expr, _result) = typecheck_expr(s);
-    completion::suggest(&ast::EmptyEnv::new(), &mut expr, location)
-        .map(|vec| {
-            let mut vec: Vec<String> = vec.into_iter().map(|sym| sym.to_string()).collect();
-            vec.sort();
-            vec
-        })
+    let vec = completion::suggest(&ast::EmptyEnv::new(), &mut expr, location);
+    let mut vec: Vec<String> = vec.into_iter().map(|sym| sym.to_string()).collect();
+    vec.sort();
+    Ok(vec)
 }
 
 #[test]

@@ -1,4 +1,5 @@
 //! Module containing types representing `gluon`'s type system
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -35,6 +36,12 @@ impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
         let &(ref outer, ref inner) = self;
         inner.find_kind(id)
              .or_else(|| outer.find_kind(id))
+    }
+}
+
+impl KindEnv for HashMap<String, TcType> {
+    fn find_kind(&self, _type_name: &Symbol) -> Option<RcKind> {
+        None
     }
 }
 
@@ -88,6 +95,18 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
         let &(ref outer, ref inner) = self;
         inner.find_record(fields)
              .or_else(|| outer.find_record(fields))
+    }
+}
+
+impl TypeEnv for HashMap<String, TcType> {
+    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+        self.get(id.as_ref())
+    }
+    fn find_type_info(&self, _id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+        None
+    }
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+        None
     }
 }
 

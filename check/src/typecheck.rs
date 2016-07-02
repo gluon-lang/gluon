@@ -526,7 +526,8 @@ impl<'a> Typecheck<'a> {
                     } else {
                         panic!("ICE: Unknown primitive type")
                     };
-                    op.typ = Type::function(vec![prim_type.clone(), prim_type.clone()], prim_type.clone());
+                    op.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
+                                            prim_type.clone());
                     let typ = try!(self.unify(&prim_type, arg_type));
                     match &op_name[1 + offset..] {
                         "+" | "-" | "*" | "/" => Ok(typ),

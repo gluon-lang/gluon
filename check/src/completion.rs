@@ -68,9 +68,13 @@ impl OnFound for Suggest {
         match expr.value {
             ast::Expr::Identifier(ref ident) => {
                 let id = ident.name.as_ref();
-                for (k, _) in self.stack.iter() {
-                    if k.as_ref().starts_with(id) {
-                        self.result.push(k.clone());
+                for (k_sym, _) in self.stack.iter() {
+                    let k = k_sym.as_ref();
+                    if k.split(':')
+                        .next()
+                        .unwrap_or(k)
+                        .starts_with(id.split(':').next().unwrap_or(id)) {
+                        self.result.push(k_sym.clone());
                     }
                 }
             }
@@ -227,7 +231,7 @@ pub fn find(env: &DisplayEnv<Ident = ast::TcIdent<Symbol>>,
 pub fn suggest(env: &DisplayEnv<Ident = ast::TcIdent<Symbol>>,
                expr: &ast::LExpr<ast::TcIdent<Symbol>>,
                location: Location)
-               -> Result<Vec<Symbol>, ()> {
+               -> Vec<Symbol> {
     let mut visitor = FindVisitor {
         env: env,
         location: location,
@@ -237,5 +241,5 @@ pub fn suggest(env: &DisplayEnv<Ident = ast::TcIdent<Symbol>>,
         },
     };
     visitor.visit_expr(expr);
-    Ok(visitor.on_found.result)
+    visitor.on_found.result
 }

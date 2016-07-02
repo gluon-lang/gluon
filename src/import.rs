@@ -1,14 +1,18 @@
 //! Implementation of the `import` macro.
-use std::sync::RwLock;
+use std::any::Any;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock, Mutex};
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use base::ast;
+use base::metadata::Metadata;
 use base::symbol::Symbol;
 use vm::macros::{Macro, Error as MacroError};
 use vm::thread::{Thread, ThreadInternal};
+use vm::internal::Value;
 use super::{filename_to_module, Compiler};
 use base::types::TcIdent;
 
@@ -51,19 +55,62 @@ static STD_LIBS: [(&'static str, &'static str); 8] = std_libs!("prelude",
                                                                "test",
                                                                "writer");
 
-/// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
-/// already loaded and then a global access to the loaded module
-pub struct Import {
-    visited: RwLock<Vec<String>>,
-    paths: RwLock<Vec<PathBuf>>,
+pub trait Importer: Any + Clone + Sync + Send {
+    fn exists(&self, vm: &Thread, modulename: &str) -> bool;
+    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError>;
 }
 
-impl Import {
+#[derive(Clone)]
+pub struct DefaultImporter;
+impl Importer for DefaultImporter {
+    fn exists(&self, vm: &Thread, modulename: &str) -> bool {
+        vm.global_env().global_exists(modulename)
+    }
+    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError> {
+        let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
+        try!(compiler.load_script(vm, &modulename, input));
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct CheckImporter(pub Arc<Mutex<HashMap<String, ast::LExpr<ast::TcIdent<Symbol>>>>>);
+impl CheckImporter {
+    pub fn new() -> CheckImporter {
+        CheckImporter(Arc::new(Mutex::new(HashMap::new())))
+    }
+}
+impl Importer for CheckImporter {
+    fn exists(&self, _vm: &Thread, modulename: &str) -> bool {
+        self.0.lock().unwrap().contains_key(modulename)
+    }
+    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError> {
+        use compiler_pipeline::*;
+        let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
+        let TypecheckValue(expr, typ) = try!(input.typecheck(&mut compiler, vm, modulename, input));
+        self.0.lock().unwrap().insert(modulename.into(), expr);
+        let metadata = Metadata::default();
+        // Insert a global to ensure the globals type can be looked up
+        try!(vm.global_env().set_global(Symbol::new(modulename), typ, metadata, Value::Int(0)));
+        Ok(())
+    }
+}
+
+/// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
+/// already loaded and then a global access to the loaded module
+pub struct Import<I = DefaultImporter> {
+    visited: RwLock<Vec<String>>,
+    paths: RwLock<Vec<PathBuf>>,
+    pub importer: I,
+}
+
+impl<I> Import<I> {
     /// Creates a new import macro
-    pub fn new() -> Import {
+    pub fn new(importer: I) -> Import<I> {
         Import {
             visited: RwLock::new(Vec::new()),
             paths: RwLock::new(vec![PathBuf::from(".")]),
+            importer: importer,
         }
     }
 
@@ -73,7 +120,9 @@ impl Import {
     }
 }
 
-impl Macro for Import {
+impl<I> Macro for Import<I>
+    where I: Importer
+{
     fn expand(&self,
               vm: &Thread,
               arguments: &mut [ast::LExpr<TcIdent>])
@@ -88,7 +137,7 @@ impl Macro for Import {
                 // Only load the script if it is not already loaded
                 let name = Symbol::new(&*modulename);
                 debug!("Import '{}' {:?}", modulename, self.visited);
-                if !vm.global_env().global_exists(&modulename) {
+                if !self.importer.exists(vm, &modulename) {
                     if self.visited.read().unwrap().iter().any(|m| **m == **filename) {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
@@ -118,9 +167,8 @@ impl Macro for Import {
                         }
                     };
                     // FIXME Remove this hack
-                    let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
-                    try!(compiler.load_script(vm, &modulename, file_contents));
                     self.visited.write().unwrap().pop();
+                    try!(self.importer.import(vm, &modulename, file_contents));
                 }
                 // FIXME Does not handle shadowing
                 Ok(ast::located(arguments[0].location,
@@ -134,6 +182,7 @@ impl Macro for Import {
         Box::new(Import {
             visited: RwLock::new(Vec::new()),
             paths: RwLock::new(self.paths.read().unwrap().clone()),
+            importer: self.importer.clone(),
         })
     }
 }

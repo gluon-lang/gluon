@@ -631,8 +631,7 @@ impl ValueArray {
         unsafe {
             if T::matches(self.repr) {
                 Some(self.unsafe_array::<T>())
-            }
-            else {
+            } else {
                 None
             }
         }

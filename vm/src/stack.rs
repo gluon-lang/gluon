@@ -261,14 +261,19 @@ impl<'a: 'b, 'b> StackFrame<'b> {
 
     /// Creates a stackrace starting from `frame_level`
     pub fn stacktrace(&self, frame_level: usize) -> Stacktrace {
-        let frames = self.stack.get_frames()[frame_level..].iter().filter_map(|frame| {
-            match frame.state {
-                State::Closure(ref closure) => Some(Some(closure.function.name.clone())),
-                State::Extern(ref ext) => Some(Some(ext.id.clone())),
-                State::Unknown => Some(None),
-                State::Lock | State::Excess => None,
-            }
-        }).collect();
+        let frames = self.stack.get_frames()[frame_level..]
+                         .iter()
+                         .filter_map(|frame| {
+                             match frame.state {
+                                 State::Closure(ref closure) => {
+                                     Some(Some(closure.function.name.clone()))
+                                 }
+                                 State::Extern(ref ext) => Some(Some(ext.id.clone())),
+                                 State::Unknown => Some(None),
+                                 State::Lock | State::Excess => None,
+                             }
+                         })
+                         .collect();
         Stacktrace { frames: frames }
     }
 
