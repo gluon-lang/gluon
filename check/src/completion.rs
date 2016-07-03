@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 use base::ast::{DisplayEnv, Location, Typed};
 use base::symbol::Symbol;
-use base::types::{Type, TcType};
+use base::types::{Type, TcType, arg_iter};
 
 trait OnFound {
     fn on_ident(&mut self, ident: &ast::TcIdent<Symbol>) {
@@ -37,28 +37,28 @@ impl OnFound for GetType {
 }
 
 struct Suggest {
-    stack: ScopedMap<Symbol, ()>,
-    result: Vec<Symbol>,
+    stack: ScopedMap<Symbol, TcType>,
+    result: Vec<ast::TcIdent<Symbol>>,
 }
 impl OnFound for Suggest {
     fn on_ident(&mut self, ident: &ast::TcIdent<Symbol>) {
-        self.stack.insert(ident.name.clone(), ());
+        self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
 
     fn on_pattern(&mut self, pattern: &ast::LPattern<ast::TcIdent<Symbol>>) {
         match pattern.value {
-            ast::Pattern::Record { ref fields, .. } => {
-                for field in fields {
+            ast::Pattern::Record { ref id, ref fields, .. } => {
+                for (field, typ) in fields.iter().zip(arg_iter(&id.typ)) {
                     let f = field.1.as_ref().unwrap_or(&field.0).clone();
-                    self.stack.insert(f, ());
+                    self.stack.insert(f, typ.clone());
                 }
             }
             ast::Pattern::Identifier(ref id) => {
-                self.stack.insert(id.name.clone(), ());
+                self.stack.insert(id.name.clone(), id.typ.clone());
             }
             ast::Pattern::Constructor(_, ref args) => {
                 for arg in args {
-                    self.stack.insert(arg.name.clone(), ());
+                    self.stack.insert(arg.name.clone(), arg.typ.clone());
                 }
             }
         }
@@ -68,13 +68,16 @@ impl OnFound for Suggest {
         match expr.value {
             ast::Expr::Identifier(ref ident) => {
                 let id = ident.name.as_ref();
-                for (k_sym, _) in self.stack.iter() {
+                for (k_sym, typ) in self.stack.iter() {
                     let k = k_sym.as_ref();
                     if k.split(':')
                         .next()
                         .unwrap_or(k)
                         .starts_with(id.split(':').next().unwrap_or(id)) {
-                        self.result.push(k_sym.clone());
+                        self.result.push(ast::TcIdent {
+                            name: k_sym.clone(),
+                            typ: typ.clone(),
+                        });
                     }
                 }
             }
@@ -90,7 +93,10 @@ impl OnFound for Suggest {
                         let id = ident.name.as_ref();
                         for field in fields {
                             if field.name.as_ref().starts_with(id) {
-                                self.result.push(field.name.clone());
+                                self.result.push(ast::TcIdent {
+                                    name: field.name.clone(),
+                                    typ: field.typ.clone(),
+                                });
                             }
                         }
                     }
@@ -231,7 +237,7 @@ pub fn find(env: &DisplayEnv<Ident = ast::TcIdent<Symbol>>,
 pub fn suggest(env: &DisplayEnv<Ident = ast::TcIdent<Symbol>>,
                expr: &ast::LExpr<ast::TcIdent<Symbol>>,
                location: Location)
-               -> Vec<Symbol> {
+               -> Vec<ast::TcIdent<Symbol>> {
     let mut visitor = FindVisitor {
         env: env,
         location: location,
