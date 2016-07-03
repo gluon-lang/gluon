@@ -384,12 +384,12 @@ impl<'a> Typecheck<'a> {
             let expected = self.instantiate(expected);
             typ = self.unify_span(span, &expected, typ)
         }
+        typ = self.finish_type(0, typ);
+        typ = types::walk_move_type(typ, &mut unroll_app);
+        self.generalize_variables(0, expr);
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
         } else {
-            typ = self.finish_type(0, typ);
-            typ = types::walk_move_type(typ, &mut unroll_app);
-            self.generalize_variables(0, expr);
             match ::rename::rename(&mut self.symbols, &self.environment, expr) {
                 Ok(()) => {
                     debug!("Typecheck result: {}", typ);

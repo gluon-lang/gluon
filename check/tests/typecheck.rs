@@ -818,3 +818,23 @@ test 1
     };
     assert_eq!(test_id.name, call_id.name);
 }
+
+#[test]
+fn types_should_be_fully_instantiated_even_on_errors() {
+    use base::ast::*;
+    let _ = ::env_logger::init();
+    let text = r#"
+let a = { id = \x -> x, z = 1 #Int== 2.0 }
+a.id
+"#;
+    let (expr, _result) = typecheck_expr(text);
+    let t = match expr.value {
+        Expr::Let(_, ref body) => match body.value {
+                ast::Expr::FieldAccess(_, ref ident) => &ident.typ,
+                _ => panic!(),
+            },
+        _ => panic!(),
+    };
+    assert_eq!(*t, Type::function(vec![typ("a0")], typ("a0")));
+}
+
