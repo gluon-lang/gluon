@@ -807,8 +807,8 @@ impl<T> VMType for IO<T>
     type Type = IO<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
         let env = vm.global_env().get_env();
-        let symbol = env.find_type_info("IO").unwrap().name.clone();
-        Type::data(Type::id(symbol), vec![T::make_type(vm)])
+        let alias = env.find_type_info("IO").unwrap().into_owned();
+        Type::data(alias.into_type(), vec![T::make_type(vm)])
     }
     fn extra_args() -> VMIndex {
         1

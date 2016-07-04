@@ -6,7 +6,7 @@ extern crate gluon_check as check;
 
 use base::ast;
 use base::ast::Typed;
-use base::types::Type;
+use base::types::{Generic, Kind, Type};
 use base::types;
 
 mod functions;
@@ -166,7 +166,8 @@ type T = { y: Int } in
 let f: T -> Int = \x -> x.y in { y = f { y = 123 } }
 ";
     let result = typecheck(text);
-    assert_eq!(result, Ok(alias("T",
+    assert_eq!(result,
+               Ok(alias("T",
                         &[],
                         Type::record(vec![],
                                      vec![types::Field {
@@ -298,7 +299,13 @@ let eq_Int: Eq Int = {
 in eq_Int
 ";
     let result = typecheck(text);
-    assert_eq!(result, Ok(typ_a("Eq", vec![typ("Int")])));
+    let bool = Type::alias(intern_unscoped("Bool"), vec![], Type::id(intern_unscoped("Bool")));
+    let eq = alias("Eq", &["a"], Type::record(vec![],
+                               vec![types::Field {
+                                        name: intern_unscoped("=="),
+                                        typ: Type::function(vec![typ("a"), typ("a")], bool),
+                                    }]));
+    assert_eq!(result, Ok(Type::data(eq, vec![typ("Int")])));
 }
 
 #[test]
@@ -317,7 +324,12 @@ let option_Functor: Functor Option = {
 in option_Functor.map (\x -> x #Int- 1) (Some 2)
 ";
     let result = typecheck(text);
-    assert_eq!(result, Ok(typ_a("Option", vec![typ("Int")])));
+    let variants = Type::variants(vec![(intern_unscoped("None"), typ_a("Option", vec![typ("a")])),
+                                       (intern_unscoped("Some"),
+                                        Type::function(vec![typ("a")],
+                                                       typ_a("Option", vec![typ("a")])))]);
+    let option = alias("Option", &["a"], variants);
+    assert_eq!(result, Ok(Type::data(option, vec![typ("Int")])));
 }
 
 #[test]
@@ -346,7 +358,11 @@ test
 ";
     let result = typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
-    assert_eq!(result, Ok(typ_a("Test", vec![Type::unit()])));
+    let variants = Type::variants(vec![(intern_unscoped("T"),
+                                        Type::function(vec![typ("a")],
+                                                       typ_a("Test", vec![typ("a")])))]);
+    assert_eq!(result,
+               Ok(Type::data(alias("Test", &["a"], variants), vec![Type::unit()])));
 }
 
 #[test]
@@ -370,7 +386,9 @@ let f: Fn String Int = \x -> 123
 in f
 ";
     let result = typecheck(text);
-    assert_eq!(result, Ok(typ_a("Fn", vec![typ("String"), typ("Int")])));
+    assert_eq!(result,
+               Ok(Type::data(alias("Fn", &["a", "b"], Type::function(vec![typ("a")], typ("b"))),
+                             vec![typ("String"), typ("Int")])));
 }
 
 #[test]
@@ -505,21 +523,6 @@ in x
 }
 
 #[test]
-fn record_type_out_of_scope() {
-    let _ = ::env_logger::init();
-    let text = r#"
-let test =
-    type Test = { x: Int }
-    in let y: Test = { x = 0 }
-    in y
-in match test with
-    | { x } -> x
-"#;
-    let result = typecheck(text);
-    assert_err!(result, Unification(..));
-}
-
-#[test]
 fn undefined_variant() {
     let _ = ::env_logger::init();
     let text = r#"
@@ -554,7 +557,22 @@ let return x: a -> IdT Test a = Test (Id x)
 return 1
 "#;
     let result = typecheck(text);
-    assert_eq!(result, Ok(typ_a("IdT", vec![typ("Test"), typ("Int")])));
+    let variant = |name| 
+        Type::variants(vec![(intern(name), Type::function(vec![typ("a")], Type::data(typ(name), vec![typ("a")])))]);
+    let test = alias("Test", &["a"], variant("Test"));
+    let m = Generic {
+                            kind: Kind::function(Kind::star(), Kind::star()),
+                            id: intern("m"),
+                        };
+
+    let id = alias("Id", &["a"], variant("Id"));
+    let id_t = Type::alias(intern("IdT"), vec![
+                        m.clone(),
+                        Generic {
+                            kind: Kind::star(),
+                            id: intern("a"),
+                        }], Type::data(Type::generic(m), vec![Type::data(id, vec![typ("a")])]));
+    assert_eq!(result, Ok(Type::data(id_t, vec![test, typ("Int")])));
 }
 
 #[test]
@@ -829,12 +847,13 @@ a.id
 "#;
     let (expr, _result) = typecheck_expr(text);
     let t = match expr.value {
-        Expr::Let(_, ref body) => match body.value {
+        Expr::Let(_, ref body) => {
+            match body.value {
                 ast::Expr::FieldAccess(_, ref ident) => &ident.typ,
                 _ => panic!(),
-            },
+            }
+        }
         _ => panic!(),
     };
     assert_eq!(*t, Type::function(vec![typ("a0")], typ("a0")));
 }
-

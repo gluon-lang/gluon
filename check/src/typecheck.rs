@@ -1116,11 +1116,18 @@ impl<'a> Typecheck<'a> {
                         })
                 }
                 Type::Id(ref id) => {
-                    self.original_symbols
-                        .get(&id)
-                        .or_else(|| self.environment.find_type_info(id).map(|alias| &alias.name))
-                        .cloned()
-                        .map(Type::id)
+                    // Substitute the Id by its alias if possible
+                    let new_id = self.original_symbols
+                                     .get(&id)
+                                     .unwrap_or(id);
+                    self.environment
+                        .find_type_info(new_id)
+                        .map(|alias| alias.clone().into_type())
+                        .or_else(|| if id == new_id {
+                            None
+                        } else {
+                            Some(Type::id(new_id.clone()))
+                        })
                 }
                 Type::Variants(ref variants) => {
                     let iter = || {

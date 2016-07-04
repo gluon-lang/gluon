@@ -114,7 +114,7 @@ mod tests {
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
-        assert!(repl.is_ok());
+        assert!(repl.is_ok(), "{}", repl.err().unwrap());
     }
 
     type QueryFn = fn(&'static str) -> IO<Result<String, String>>;

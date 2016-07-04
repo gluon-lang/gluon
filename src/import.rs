@@ -56,16 +56,12 @@ static STD_LIBS: [(&'static str, &'static str); 8] = std_libs!("prelude",
                                                                "writer");
 
 pub trait Importer: Any + Clone + Sync + Send {
-    fn exists(&self, vm: &Thread, modulename: &str) -> bool;
     fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError>;
 }
 
 #[derive(Clone)]
 pub struct DefaultImporter;
 impl Importer for DefaultImporter {
-    fn exists(&self, vm: &Thread, modulename: &str) -> bool {
-        vm.global_env().global_exists(modulename)
-    }
     fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError> {
         let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
         try!(compiler.load_script(vm, &modulename, input));
@@ -81,9 +77,6 @@ impl CheckImporter {
     }
 }
 impl Importer for CheckImporter {
-    fn exists(&self, _vm: &Thread, modulename: &str) -> bool {
-        self.0.lock().unwrap().contains_key(modulename)
-    }
     fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError> {
         use compiler_pipeline::*;
         let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
@@ -137,7 +130,7 @@ impl<I> Macro for Import<I>
                 // Only load the script if it is not already loaded
                 let name = Symbol::new(&*modulename);
                 debug!("Import '{}' {:?}", modulename, self.visited);
-                if !self.importer.exists(vm, &modulename) {
+                if !vm.global_env().global_exists(&modulename) {
                     if self.visited.read().unwrap().iter().any(|m| **m == **filename) {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
