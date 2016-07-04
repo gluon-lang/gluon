@@ -135,3 +135,16 @@ record.a
 Location { row: 4, column: 8, absolute: 0 });
     assert_eq!(result, Ok(vec!["aa".into(), "ab".into()]));
 }
+
+#[test]
+fn suggest_through_aliases() {
+    let result = suggest(
+r#"
+type Test a = { abc: a -> Int }
+type Test2 = Test String
+let record: Test2 = { abc = \x -> 0 }
+record.ab
+"#,
+Location { row: 5, column: 8, absolute: 0 });
+    assert_eq!(result, Ok(vec!["abc".into()]));
+}

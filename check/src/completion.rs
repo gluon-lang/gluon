@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 use base::ast::{DisplayEnv, Location, Typed};
 use base::symbol::Symbol;
 use base::types::{Type, TcType, arg_iter};
+use base::instantiate::{AliasInstantiator, Instantiator};
 
 trait OnFound {
     fn on_ident(&mut self, ident: &ast::TcIdent<Symbol>) {
@@ -68,12 +69,13 @@ impl OnFound for Suggest {
         match expr.value {
             ast::Expr::Identifier(ref ident) => {
                 let id = ident.name.as_ref();
+                let id = id.split(':').next().unwrap_or(id);
                 for (k_sym, typ) in self.stack.iter() {
                     let k = k_sym.as_ref();
                     if k.split(':')
                         .next()
                         .unwrap_or(k)
-                        .starts_with(id.split(':').next().unwrap_or(id)) {
+                        .starts_with(id) {
                         self.result.push(ast::TcIdent {
                             name: k_sym.clone(),
                             typ: typ.clone(),
@@ -88,7 +90,11 @@ impl OnFound for Suggest {
     fn ident(&mut self, context: &ast::LExpr<ast::TcIdent<Symbol>>, ident: &ast::TcIdent<Symbol>) {
         match context.value {
             ast::Expr::FieldAccess(ref expr, _) => {
-                match *expr.type_of() {
+                let instantiator = Instantiator::new();
+                let env = ();
+                let instantiator = AliasInstantiator::new(&instantiator, &env);
+                let typ = expr.type_of();
+                match *instantiator.remove_aliases(typ) {
                     Type::Record { ref fields, .. } => {
                         let id = ident.name.as_ref();
                         for field in fields {
