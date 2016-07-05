@@ -42,7 +42,7 @@ quick_error! {
 
 macro_rules! std_libs {
     ($($file: expr),*) => {
-        [$((concat!("std/", $file, ".hs"), include_str!(concat!("../std/", $file, ".hs")))),*]
+        [$((concat!("std/", $file, ".glu"), include_str!(concat!("../std/", $file, ".glu")))),*]
     }
 }
 // Include the standard library distribution in the binary

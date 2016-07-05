@@ -1,7 +1,7 @@
-let string = import "std/string.hs"
-and writer = import "std/writer.hs"
+let string = import "std/string.glu"
+and writer = import "std/writer.glu"
 and { Writer, make, tell } = writer
-and prelude = import "std/prelude.hs"
+and prelude = import "std/prelude.glu"
 and { Show, Num, Eq, Option, List, Monad, Monoid, foldl } = prelude
 and { (+) } = prelude.num_Int
 and { (==) } = prelude.eq_Int

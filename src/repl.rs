@@ -88,8 +88,8 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
         input => primitive!(1 input)
     )));
     let mut compiler = Compiler::new();
-    try!(compiler.load_file(vm, "std/prelude.hs"));
-    try!(compiler.load_file(vm, "std/repl.hs"));
+    try!(compiler.load_file(vm, "std/prelude.glu"));
+    try!(compiler.load_file(vm, "std/repl.glu"));
     Ok(())
 }
 

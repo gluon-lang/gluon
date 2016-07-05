@@ -1,6 +1,6 @@
-let prelude = import "std/prelude.hs"
-let map = import "std/map.hs"
-let string = import "std/string.hs"
+let prelude = import "std/prelude.glu"
+let map = import "std/map.glu"
+let string = import "std/string.glu"
 let { Map } = map
 let { (>>=), return, (>>), join, map = fmap, lift2, forM_ } = prelude.make_Monad prelude.monad_IO
 let { Eq, Option, Result, Monoid } = prelude

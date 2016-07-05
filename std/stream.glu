@@ -1,12 +1,12 @@
-let prelude = import "std/prelude.hs"
+let prelude = import "std/prelude.glu"
 and { Option, Num } = prelude
 and { (+) } = prelude.num_Int
-in
+
 type Stream_ a =
     | Value a (Stream a)
     | Empty
 and Stream a = Lazy (Stream_ a)
-in
+
 let from f: (Int -> Option a) -> Stream a =
         let from_ i =
                 lazy (\_ ->
@@ -15,7 +15,7 @@ let from f: (Int -> Option a) -> Stream a =
                         | None -> Empty
                 )
         in from_ 0
-in
+
 let next stream: Stream a -> Option a =
     match force stream with
         | Value x _ -> Some x
@@ -28,5 +28,5 @@ and fold f b stream: (a -> b -> b) -> b -> Stream a -> b =
     match force stream with
         | Value x xs -> fold f (f x b) xs
         | Empty -> b
-in
+
 { from, next, is_empty, fold }

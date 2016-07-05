@@ -53,7 +53,7 @@ fn test_files(path: &str) -> Result<Box<Iterator<Item = PathBuf>>, Box<Error>> {
 fn main_() -> Result<(), Box<Error>> {
     let vm = new_vm();
     let mut compiler = Compiler::new();
-    try!(compiler.load_file(&vm, "std/prelude.hs"));
+    try!(compiler.load_file(&vm, "std/prelude.glu"));
     let mut text = String::new();
     let _ = ::env_logger::init();
     for filename in try!(test_files("tests/pass")) {

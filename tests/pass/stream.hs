@@ -1,6 +1,6 @@
-let prelude = import "std/prelude.hs"
-let { run, monad, assert_eq, assert_ieq } = import "std/test.hs"
-let stream = import "std/stream.hs"
+let prelude = import "std/prelude.glu"
+let { run, monad, assert_eq, assert_ieq } = import "std/test.glu"
+let stream = import "std/stream.glu"
 let { Ord, Num, List, Option } = prelude
 let { (<) } = prelude.make_Ord prelude.ord_Int
 let { (+) } = prelude.num_Int

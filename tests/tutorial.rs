@@ -22,7 +22,7 @@ fn access_field_through_alias() {
     let _ = ::env_logger::init();
     let vm = new_vm();
     Compiler::new()
-        .run_expr::<Generic<A>>(&vm, "example", " import \"std/prelude.hs\" ")
+        .run_expr::<Generic<A>>(&vm, "example", " import \"std/prelude.glu\" ")
         .unwrap();
     let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
         .unwrap();
@@ -49,7 +49,7 @@ fn use_string_module() {
     let _ = ::env_logger::init();
     let vm = new_vm();
     let result = Compiler::new()
-        .run_expr::<String>(&vm, "example", " let string = import \"std/string.hs\" in string.trim \"  Hello world  \t\" ")
+        .run_expr::<String>(&vm, "example", " let string = import \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
         .unwrap();
     assert_eq!(result, "Hello world");
 }

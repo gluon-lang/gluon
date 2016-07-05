@@ -1,14 +1,14 @@
 [root]
 name = "gluon"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap 2.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "compiletest_rs 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon_base 0.1.0",
- "gluon_check 0.1.0",
- "gluon_parser 0.1.0",
- "gluon_vm 0.1.0",
+ "gluon_base 0.1.1",
+ "gluon_check 0.1.1",
+ "gluon_parser 0.1.1",
+ "gluon_vm 0.1.1",
  "lazy_static 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "linenoise-rust 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -89,42 +89,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "gluon_base"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "mopa 0.2.2 (git+https://github.com/Marwes/mopa.git)",
 ]
 
 [[package]]
 name = "gluon_check"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon_base 0.1.0",
- "gluon_parser 0.1.0",
+ "gluon_base 0.1.1",
+ "gluon_parser 0.1.1",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "union-find 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "gluon_parser"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "combine 2.0.0-beta (registry+https://github.com/rust-lang/crates.io-index)",
  "combine-language 2.0.0-beta (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon_base 0.1.0",
+ "gluon_base 0.1.1",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "gluon_vm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon_base 0.1.0",
+ "gluon_base 0.1.1",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "mopa 0.2.2 (git+https://github.com/Marwes/mopa.git)",
+ "mopa 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "quick-error 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -172,7 +171,7 @@ dependencies = [
 [[package]]
 name = "mopa"
 version = "0.2.2"
-source = "git+https://github.com/Marwes/mopa.git#187e4bf866efca32e854fdf315bc20bf512b984d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "pulldown-cmark"

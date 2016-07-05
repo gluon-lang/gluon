@@ -1,5 +1,5 @@
-let { run, monad, assert_ieq } = import "std/test.hs"
-let prelude = import "std/prelude.hs"
+let { run, monad, assert_ieq } = import "std/test.glu"
+let prelude = import "std/prelude.glu"
 let { Num } = prelude
 let { (>>=), return, (>>), join, map, lift2, forM_ }
         = prelude.make_Monad monad

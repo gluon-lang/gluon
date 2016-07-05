@@ -1,12 +1,12 @@
-let prelude = import "std/prelude.hs"
-let { run, monad, assert_eq, assert_seq, assert_ieq } = import "std/test.hs"
+let prelude = import "std/prelude.glu"
+let { run, monad, assert_eq, assert_seq, assert_ieq } = import "std/test.glu"
 let { Ord, Num, List, Option, Monoid } = prelude
 let { (<) } = prelude.make_Ord prelude.ord_Int
 let { (+) } = prelude.num_Int
 let { (>>=), return, (>>), join, map, lift2, forM_ }
         = prelude.make_Monad monad
 
-let string = import "std/string.hs"
+let string = import "std/string.glu"
 
 let assert_oieq = assert_eq (prelude.show_Option prelude.show_Int) (prelude.eq_Option prelude.eq_Int)
 let assert_beq = assert_eq prelude.show_Bool prelude.eq_Bool

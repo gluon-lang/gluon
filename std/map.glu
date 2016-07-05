@@ -1,14 +1,14 @@
-let prelude = import "std/prelude.hs"
+let prelude = import "std/prelude.glu"
 and { Ordering, Ord, Option, List, Monoid } = prelude
-in
+
 type Map k a = | Bin k a (Map k a) (Map k a)
                | Tip
-in let empty = Tip
-in
+let empty = Tip
+
 let singleton k v = Bin k v empty empty
 and make ord =
     let compare = ord.compare
-    in
+    
     let find k m =
         match m with
         | Bin k2 v l r ->
@@ -30,7 +30,7 @@ and make ord =
         match m with
         | Bin key value l r -> to_list l ++ Cons { key, value } (to_list r)
         | Tip -> Nil
-    in
+    
     let (<>) l r =
         match l with
         | Bin lk lv ll lr ->
@@ -45,7 +45,7 @@ and make ord =
             match r with
             | Bin a b c d -> r
             | Tip -> empty
-    in
+    
     let monoid = { (<>), empty }
-    in { monoid, singleton, find, insert, to_list }
-in { Map, make }
+    { monoid, singleton, find, insert, to_list }
+{ Map, make }

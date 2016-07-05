@@ -481,7 +481,7 @@ impl Compiler {
         }
 
         let prelude_import = r#"
-    let __implicit_prelude = import "std/prelude.hs"
+    let __implicit_prelude = import "std/prelude.glu"
     and { Num, Eq, Ord, Show, Functor, Monad, Bool, Option, Result, not } = __implicit_prelude
 
     let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
@@ -533,7 +533,7 @@ pub fn new_vm() -> RootedThread {
                            ::import::Import::new(::import::DefaultImporter));
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr::<Generic<A>>(&vm, "", r#" import "std/types.hs" "#)
+        .run_expr::<Generic<A>>(&vm, "", r#" import "std/types.glu" "#)
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::vm::channel::load(&vm).expect("Loaded channel library");

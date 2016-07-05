@@ -646,7 +646,7 @@ r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
 fn rename_types_after_binding() {
     let _ = ::env_logger::init();
     let text = r#"
-let prelude = import "std/prelude.hs"
+let prelude = import "std/prelude.glu"
 in
 let { List } = prelude
 and { (==) }: Eq (List Int) = prelude.eq_List { (==) }
@@ -686,7 +686,7 @@ fn access_operator_without_parentheses() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     Compiler::new()
-        .run_expr::<Generic<A>>(&vm, "example", r#" import "std/prelude.hs" "#)
+        .run_expr::<Generic<A>>(&vm, "example", r#" import "std/prelude.glu" "#)
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> = vm.get_global("std.prelude.num_Int.\
                                                                              +");
@@ -697,7 +697,7 @@ fn access_operator_without_parentheses() {
 fn test_prelude() {
     let _ = ::env_logger::init();
     let vm = make_vm();
-    run_expr::<Generic<A>>(&vm, r#" import "std/prelude.hs" "#);
+    run_expr::<Generic<A>>(&vm, r#" import "std/prelude.glu" "#);
 }
 
 #[test]
@@ -705,7 +705,7 @@ fn access_types_by_path() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<Generic<A>>(&vm, r#" import "std/prelude.hs" "#);
+    run_expr::<Generic<A>>(&vm, r#" import "std/prelude.glu" "#);
 
     assert!(vm.find_type_info("std.prelude.Option").is_ok());
     assert!(vm.find_type_info("std.prelude.Result").is_ok());
@@ -739,7 +739,7 @@ sender
 fn invalid_string_slice_dont_panic() {
     let _ = ::env_logger::init();
     let text = r#"
-let string = import "std/string.hs"
+let string = import "std/string.glu"
 let s = "åäö"
 string.slice s 1 (string.length s)
 "#;

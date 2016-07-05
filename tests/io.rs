@@ -9,8 +9,8 @@ fn read_file() {
 
     let thread = new_vm();
     let text = r#"
-        let prelude = import "std/prelude.hs"
-        let { assert } = import "std/test.hs"
+        let prelude = import "std/prelude.glu"
+        let { assert } = import "std/test.glu"
         let { (>>=), return } = prelude.monad_IO
 
         io.open_file "Cargo.toml" >>= \file ->

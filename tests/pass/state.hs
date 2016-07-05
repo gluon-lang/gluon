@@ -1,7 +1,7 @@
-let prelude = import "std/prelude.hs"
+let prelude = import "std/prelude.glu"
 let { Monad, Num } = prelude
-let { Test, run, monad = monad_Test, assert, assert_ieq, assert_feq, assert_seq } = import "std/test.hs"
-let { State, monad = monad_State, put, get, modify, runState, evalState, execState } = import "std/state.hs"
+let { Test, run, monad = monad_Test, assert, assert_ieq, assert_feq, assert_seq } = import "std/test.glu"
+let { State, monad = monad_State, put, get, modify, runState, evalState, execState } = import "std/state.glu"
 let { (>>) = (>>>) } = prelude.make_Monad monad_Test
 let { (>>=), return, (>>) } = prelude.make_Monad monad_State
 let { (+), (-), (*) } = prelude.num_Int
