@@ -22,7 +22,7 @@ fn prelude(b: &mut ::test::Bencher) {
     let mut expr = {
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
         let mut text = String::new();
-        File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        File::open("std/prelude.glu").unwrap().read_to_string(&mut text).unwrap();
         ::parser::parse_tc(&mut symbols, &text).unwrap_or_else(|err| panic!("{}", err))
     };
     vm.get_macros().run(&vm, &mut expr).unwrap();
@@ -45,7 +45,7 @@ fn clone_prelude(b: &mut ::test::Bencher) {
     let mut expr = {
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
         let mut text = String::new();
-        File::open("std/prelude.hs").unwrap().read_to_string(&mut text).unwrap();
+        File::open("std/prelude.glu").unwrap().read_to_string(&mut text).unwrap();
         ::parser::parse_tc(&mut symbols, &text).unwrap_or_else(|err| panic!("{}", err))
     };
     vm.get_macros().run(&vm, &mut expr).unwrap();

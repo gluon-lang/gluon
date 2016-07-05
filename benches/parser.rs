@@ -12,7 +12,7 @@ fn prelude(b: &mut ::test::Bencher) {
     use std::fs::File;
     use std::io::Read;
     let mut text = String::new();
-    File::open("std/prelude.hs")
+    File::open("std/prelude.glu")
         .unwrap()
         .read_to_string(&mut text)
         .unwrap();
