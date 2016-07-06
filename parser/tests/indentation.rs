@@ -9,10 +9,11 @@ extern crate combine;
 use combine::ParseError;
 use combine::primitives::{Error, Info, SourcePosition};
 use base::ast::*;
+use base::error::Errors;
 use parser::parse_string;
 use parser::lexer::Token;
 
-fn parse(text: &str) -> Result<LExpr<String>, ::parser::Error> {
+fn parse(text: &str) -> Result<LExpr<String>, Errors<::parser::Error>> {
     parse_string(&mut EmptyEnv::new(), text)
 }
 
@@ -61,15 +62,17 @@ y
 "#;
     let result = parse(text);
     assert_eq!(result,
-               Err(ParseError {
-                   position: SourcePosition {
-                       column: 4,
-                       line: 5,
-                   },
-                   errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
-                                Error::Expected("`in` or an expression in the same column as \
-                                                 the `let`"
-                                                    .into())],
+               Err(Errors {
+                   errors: vec![ParseError {
+                                    position: SourcePosition {
+                                        column: 4,
+                                        line: 5,
+                                    },
+                                    errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
+                                                 Error::Expected("`in` or an expression in the \
+                                                                  same column as the `let`"
+                                                                     .into())],
+                                }],
                }));
 }
 

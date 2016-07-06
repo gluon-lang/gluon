@@ -24,6 +24,7 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 
 use base::ast;
+use base::error::Errors;
 use base::types::TcType;
 use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
 use base::metadata::Metadata;
@@ -41,7 +42,7 @@ quick_error! {
     #[derive(Debug)]
     pub enum Error {
         /// Error found when parsing gluon code
-        Parse(err: ::parser::Error) {
+        Parse(err: Errors<::parser::Error>) {
             description(err.description())
             display("{}", err)
             from()
@@ -65,7 +66,7 @@ quick_error! {
             from()
         }
         /// Error found when expanding macros
-        Macro(err: ::base::error::Errors<::vm::macros::Error>) {
+        Macro(err: Errors<::vm::macros::Error>) {
             description(err.description())
             display("{}", err)
             from()
@@ -316,9 +317,21 @@ impl Compiler {
     pub fn parse_expr(&mut self,
                       file: &str,
                       input: &str)
-                      -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, ::parser::Error> {
+                      -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, Errors<::parser::Error>> {
         Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols),
-                                   input)))
+                                   input)
+                    .map_err(|t| t.1)))
+    }
+
+    /// Parse `input`, returning an expression if successful
+    pub fn parse_partial_expr(&mut self,
+                              file: &str,
+                              input: &str)
+                              -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>,
+                                           (Option<ast::LExpr<ast::TcIdent<Symbol>>>,
+                                            Errors<::parser::Error>)> {
+        ::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols),
+                           input)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the

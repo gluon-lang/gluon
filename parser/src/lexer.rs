@@ -485,8 +485,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 return Ok((tok, Consumed::Consumed(input)));
             } else if first.is_digit(10) {
                 let int_or_byte = self.env.lex((self.integer(), optional(char('b'))));
-                return try(int_or_byte
-                           .skip(not_followed_by(string("."))))
+                return try(int_or_byte.skip(not_followed_by(string("."))))
                            .and_then(|(i, byte)| {
                                if byte.is_none() {
                                    Ok(Token::Integer(i))

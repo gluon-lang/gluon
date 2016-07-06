@@ -16,6 +16,7 @@ use std::rc::Rc;
 
 use base::ast;
 use base::ast::*;
+use base::error::Errors;
 use base::types::{Type, Generic, Alias, Field, Kind, TypeVariable};
 use base::symbol::{Name, Symbol, SymbolModule};
 
@@ -39,10 +40,12 @@ type LanguageParser<'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<I, F>, I, T>;
 /// `ParserEnv` is passed around to all individual parsers so that identifiers can always be
 /// constructed through calling `make_ident`.
 struct ParserEnv<I, F>
-    where F: IdentEnv
+    where F: IdentEnv,
+          I: Stream
 {
     empty_id: F::Ident,
     make_ident: Rc<RefCell<F>>,
+    errors: RefCell<Errors<Error>>,
     env: ::std::marker::PhantomData<I>,
 }
 
@@ -106,10 +109,10 @@ fn as_trait<P: Parser>(p: &mut P) -> &mut Parser<Input = P::Input, Output = P::O
 }
 
 impl<'s, I, Id, F> ParserEnv<I, F>
-    where I: Stream<Item = Token<Id>, Position = SourcePosition>,
+    where I: Stream<Item = Token<Id>, Range = Token<Id>, Position = SourcePosition>,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
-          I::Range: fmt::Debug + 's
+          I::Range: fmt::Debug
 {
     fn parser<T>(&'s self,
                  parser: fn(&ParserEnv<I, F>, I) -> ParseResult<T, I>)
@@ -500,7 +503,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                                       expressions: exprs,
                                   }))
                               })])
-            .and(many(token(Token::Dot).with(self.ident())))
+            .and(self.parser(Self::fields))
             .map(|(expr, fields): (_, Vec<_>)| {
                 debug!("Parsed expr {:?}", expr);
                 fields.into_iter().fold(expr,
@@ -508,6 +511,31 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             })
             .parse_state(input)
 
+    }
+
+    fn fields(&self, input: I) -> ParseResult<Vec<Id>, I> {
+        let mut fields = Vec::new();
+        let mut input = Consumed::Empty(input);
+        loop {
+            input = match input.clone().combine(|input| token(Token::Dot).parse_lazy(input)) {
+                Ok((_, input)) => input,
+                Err(_) => return Ok((fields, input)),
+            };
+            input = match input.clone().combine(|input| self.ident().parse_lazy(input)) {
+                Ok((field, input)) => {
+                    fields.push(field);
+                    input
+                }
+                Err(err) => {
+                    // If not field where found after the '.' add an empty field so that running
+                    // completion can be done for the attempt to access the field
+                    let mut make_ident = self.make_ident.borrow_mut();
+                    self.errors.borrow_mut().error(static_error(&mut *make_ident, err.into_inner()));
+                    fields.push(make_ident.from_str(""));
+                    return Ok((fields, input));
+                }
+            };
+        }
     }
 
     match_parser! { op, Operator -> Id }
@@ -725,7 +753,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
 ///Parses a string to an AST which contains has identifiers which also contains a field for storing
 ///type information. The type will just be a dummy value until the AST has passed typechecking
-pub fn parse_tc(symbols: &mut SymbolModule, input: &str) -> Result<LExpr<TcIdent<Symbol>>, Error> {
+pub fn parse_tc(symbols: &mut SymbolModule,
+                input: &str)
+                -> Result<LExpr<TcIdent<Symbol>>, (Option<LExpr<TcIdent<Symbol>>>, Errors<Error>)> {
     let mut env = ast::TcIdentEnv {
         typ: Type::variable(TypeVariable {
             id: 0,
@@ -739,14 +769,15 @@ pub fn parse_tc(symbols: &mut SymbolModule, input: &str) -> Result<LExpr<TcIdent
 #[cfg(feature = "test")]
 pub fn parse_string<'a, 's>(make_ident: &'a mut IdentEnv<Ident = String>,
                             input: &'s str)
-                            -> Result<LExpr<String>, Error> {
+                            -> Result<LExpr<String>, Errors<Error>> {
     parse_expr(make_ident, input)
+        .map_err(|(_, err)| err)
 }
 
 /// Parses a gluon expression
 pub fn parse_expr<'a, 's, Id>(make_ident: &'a mut IdentEnv<Ident = Id>,
                               input: &'s str)
-                              -> Result<LExpr<Id>, Error>
+                              -> Result<LExpr<Id>, (Option<LExpr<Id>>, Errors<Error>)>
     where Id: AstId + Clone + PartialEq + fmt::Debug
 {
     let make_ident = Rc::new(RefCell::new(make_ident));
@@ -755,30 +786,51 @@ pub fn parse_expr<'a, 's, Id>(make_ident: &'a mut IdentEnv<Ident = Id>,
     let env = ParserEnv {
         empty_id: empty_id,
         make_ident: make_ident.clone(),
+        errors: RefCell::new(Errors::new()),
         env: ::std::marker::PhantomData,
     };
     let buffer = BufferedStream::new(lexer, 10);
     let stream = Wrapper { stream: buffer.as_stream() };
 
-    env.expr()
-       .parse(stream)
-       .map(|t| t.0)
-       .map_err(|err| {
-           let errors = err.errors
-                           .into_iter()
-                           .map(|t| static_error(&mut *make_ident.borrow_mut(), t))
-                           .collect();
-           ParseError {
-               position: err.position,
-               errors: errors,
-           }
-       })
+    let result = env.expr()
+           .parse(stream)
+           .map(|t| t.0);
+
+    let mut errors = env.errors.into_inner();
+    match result {
+        Ok(x) => {
+            if !errors.has_errors() {
+                Ok(x)
+            }
+            else {
+                Err((Some(x), errors))
+            }
+        }
+        Err(err) => {
+            errors.errors.push(static_error(&mut *make_ident.borrow_mut(), err));
+            Err((None, errors))
+        }
+    }
+}
+
+fn static_error<I, Id>(make_ident: &mut IdentEnv<Ident = Id>, err: ParseError<I>) -> Error
+    where Id: Clone + fmt::Debug + PartialEq,
+          I: Stream<Item = Token<Id>, Range = Token<Id>, Position = SourcePosition>,
+{
+    let errors = err.errors
+                    .into_iter()
+                    .map(|t| static_error_(make_ident, t))
+                    .collect();
+    ParseError {
+        position: err.position,
+        errors: errors,
+    }
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
-fn static_error<Id>(make_ident: &mut IdentEnv<Ident = Id>,
-                    e: CombineError<Token<Id>, Token<Id>>)
-                    -> CombineError<Token<String>, Token<String>> {
+fn static_error_<Id>(make_ident: &mut IdentEnv<Ident = Id>,
+                     e: CombineError<Token<Id>, Token<Id>>)
+                     -> CombineError<Token<String>, Token<String>> {
     let static_info = |i: Info<Token<Id>, Token<Id>>| {
         match i {
             Info::Token(t) => Info::Token(t.map(|id| String::from(make_ident.string(id)))),

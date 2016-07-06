@@ -4,9 +4,10 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
 use base::ast::{LExpr, EmptyEnv};
+use base::error::Errors;
 use parser::{parse_string, Error};
 
-fn parse(text: &str) -> Result<LExpr<String>, Error> {
+fn parse(text: &str) -> Result<LExpr<String>, Errors<Error>> {
     parse_string(&mut EmptyEnv::new(), text)
 }
 

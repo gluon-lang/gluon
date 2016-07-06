@@ -6,6 +6,7 @@ extern crate log;
 
 use base::ast::*;
 use base::ast;
+use base::error::Errors;
 use base::types::{Type, Generic, Alias, Field, Kind};
 use parser::{parse_string, Error};
 
@@ -125,7 +126,7 @@ fn array(fields: Vec<PExpr>) -> PExpr {
     }))
 }
 
-fn parse(input: &str) -> Result<LExpr<String>, Error> {
+fn parse(input: &str) -> Result<LExpr<String>, Errors<Error>> {
     parse_string(&mut ast::EmptyEnv::new(), input)
 }
 
@@ -542,4 +543,38 @@ id
                                    alias: Alias::new(intern("Test"), Vec::new(), typ("Int")),
                                }],
                           id("id")));
+}
+
+#[test]
+fn partial_field_access() {
+    let _ = ::env_logger::init();
+    let text = r#"test."#;
+    let e = ::parser::parse_expr(&mut ast::EmptyEnv::new(), text);
+    assert!(e.is_err());
+    assert_eq!(e.unwrap_err().0,
+               Some(Located {
+                   value: Expr::FieldAccess(Box::new(id("test")), intern("")),
+                   location: loc(0, 0),
+               }));
+}
+
+#[test]
+fn partial_field_access_in_block() {
+    let _ = ::env_logger::init();
+    let text = r#"
+test.
+test
+"#;
+    let e = ::parser::parse_expr(&mut ast::EmptyEnv::new(), text);
+    assert!(e.is_err());
+    assert_eq!(e.unwrap_err().0,
+               Some(Located {
+                   location: loc(0, 0),
+                   value: Expr::Block(vec![Located {
+                                               value: Expr::FieldAccess(Box::new(id("test")),
+                                                                        intern("")),
+                                               location: loc(0, 0),
+                                           },
+                                           id("test")]),
+               }));
 }
