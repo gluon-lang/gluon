@@ -159,3 +159,14 @@ record.
 Location { row: 3, column: 7, absolute: 0 });
     assert_eq!(result, Ok(vec!["aa".into(), "ab".into(), "c".into()]));
 }
+
+#[test]
+fn suggest_from_record_unpack() {
+    let result = suggest(
+r#"
+let { aa, c } = { aa = 1, ab = 2, c = "" }
+a
+"#,
+Location { row: 3, column: 7, absolute: 0 });
+    assert_eq!(result, Ok(vec!["aa".into()]));
+}

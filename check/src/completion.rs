@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 use base::ast::{DisplayEnv, Location, Typed};
 use base::symbol::Symbol;
-use base::types::{Type, TcType, arg_iter};
+use base::types::{Type, TcType};
 use base::instantiate::{AliasInstantiator, Instantiator};
 
 trait OnFound {
@@ -49,9 +49,17 @@ impl OnFound for Suggest {
     fn on_pattern(&mut self, pattern: &ast::LPattern<ast::TcIdent<Symbol>>) {
         match pattern.value {
             ast::Pattern::Record { ref id, ref fields, .. } => {
-                for (field, typ) in fields.iter().zip(arg_iter(&id.typ)) {
-                    let f = field.1.as_ref().unwrap_or(&field.0).clone();
-                    self.stack.insert(f, typ.clone());
+                let instantiator = Instantiator::new();
+                let env = ();
+                let instantiator = AliasInstantiator::new(&instantiator, &env);
+                match *instantiator.remove_aliases(id.typ.clone()) {
+                    Type::Record { fields: ref field_types, .. } => {
+                        for (field, field_type) in fields.iter().zip(field_types) {
+                            let f = field.1.as_ref().unwrap_or(&field.0).clone();
+                            self.stack.insert(f, field_type.typ.clone());
+                        }
+                    }
+                    _ => (),
                 }
             }
             ast::Pattern::Identifier(ref id) => {
