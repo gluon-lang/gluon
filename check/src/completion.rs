@@ -202,7 +202,7 @@ impl<'a, F> FindVisitor<'a, F>
             }
             Type(_, ref expr) => self.visit_expr(expr),
             FieldAccess(ref expr, ref id) => {
-                if expr.span(self.env).containment(&self.location) <= Ordering::Equal {
+                if expr.span(self.env).containment(&self.location) < Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
                     self.on_found.ident(current, id);

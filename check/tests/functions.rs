@@ -39,12 +39,11 @@ pub fn intern(s: &str) -> Symbol {
     }
 }
 
-pub fn parse_new(s: &str) -> ast::LExpr<TcIdent> {
+pub fn parse_new(s: &str) -> Result<ast::LExpr<TcIdent>, (Option<ast::LExpr<TcIdent>>, ::base::error::Errors<::parser::Error>)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    let x = ::parser::parse_tc(&mut module, s).unwrap_or_else(|err| panic!("{:?}", err));
-    x
+    ::parser::parse_tc(&mut module, s)
 }
 
 #[allow(dead_code)]
@@ -86,7 +85,24 @@ impl PrimitiveEnv for EmptyEnv {
 }
 
 pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>) {
-    let mut expr = parse_new(text);
+    let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
+    let interner = get_local_interner();
+    let mut interner = interner.borrow_mut();
+    let bool_sym = interner.symbol("Bool");
+    let bool = Type::<_, TcType>::data(Type::id(bool_sym.clone()), vec![]);
+    let env = EmptyEnv(Alias::new(bool_sym, vec![], bool.clone()));
+    let mut tc = Typecheck::new("test".into(), &mut interner, &env);
+    let result = tc.typecheck_expr(&mut expr);
+    (expr, result)
+}
+
+#[allow(dead_code)]
+pub fn typecheck_partial_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>) {
+    let mut expr = match parse_new(text) {
+        Ok(e) => e,
+        Err((Some(e), _)) => e,
+        Err((None, err)) => panic!("{}", err),
+    };
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
     let bool_sym = interner.symbol("Bool");
