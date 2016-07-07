@@ -15,6 +15,7 @@ use parser::lexer::Token;
 
 fn parse(text: &str) -> Result<LExpr<String>, Errors<::parser::Error>> {
     parse_string(&mut EmptyEnv::new(), text)
+        .map_err(|(_, err)| err)
 }
 
 #[test]

@@ -126,12 +126,12 @@ fn array(fields: Vec<PExpr>) -> PExpr {
     }))
 }
 
-fn parse(input: &str) -> Result<LExpr<String>, Errors<Error>> {
+fn parse(input: &str) -> Result<LExpr<String>, (Option<LExpr<String>>, Errors<Error>)> {
     parse_string(&mut ast::EmptyEnv::new(), input)
 }
 
 fn parse_new(input: &str) -> LExpr<String> {
-    parse(input).unwrap_or_else(|err| panic!("{:?}", err))
+    parse(input).unwrap_or_else(|(_, err)| panic!("{:?}", err))
 }
 
 #[test]
@@ -549,7 +549,7 @@ id
 fn partial_field_access() {
     let _ = ::env_logger::init();
     let text = r#"test."#;
-    let e = ::parser::parse_expr(&mut ast::EmptyEnv::new(), text);
+    let e = parse(text);
     assert!(e.is_err());
     assert_eq!(e.unwrap_err().0,
                Some(Located {
@@ -565,7 +565,7 @@ fn partial_field_access_in_block() {
 test.
 test
 "#;
-    let e = ::parser::parse_expr(&mut ast::EmptyEnv::new(), text);
+    let e = parse(text);
     assert!(e.is_err());
     assert_eq!(e.unwrap_err().0,
                Some(Located {

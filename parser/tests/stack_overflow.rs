@@ -9,6 +9,7 @@ use parser::{parse_string, Error};
 
 fn parse(text: &str) -> Result<LExpr<String>, Errors<Error>> {
     parse_string(&mut EmptyEnv::new(), text)
+        .map_err(|(_, err)| err)
 }
 
 #[test]

@@ -769,9 +769,8 @@ pub fn parse_tc(symbols: &mut SymbolModule,
 #[cfg(feature = "test")]
 pub fn parse_string<'a, 's>(make_ident: &'a mut IdentEnv<Ident = String>,
                             input: &'s str)
-                            -> Result<LExpr<String>, Errors<Error>> {
+                            -> Result<LExpr<String>, (Option<LExpr<String>>, Errors<Error>)> {
     parse_expr(make_ident, input)
-        .map_err(|(_, err)| err)
 }
 
 /// Parses a gluon expression
