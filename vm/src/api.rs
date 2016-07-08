@@ -70,14 +70,6 @@ impl<'a> Data<'a> {
         self.0.fields.get(index).map(ValueRef::new)
     }
 }
-
-/// Type representing gluon's IO type#[derive(Debug)]
-#[derive(Debug, PartialEq)]
-pub enum IO<T> {
-    Value(T),
-    Exception(String),
-}
-
 pub struct Primitive<F> {
     name: &'static str,
     function: fn(&Thread) -> Status,
@@ -794,42 +786,6 @@ impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for MaybeError<T, E> 
                 let msg = format!("{}", err);
                 let s = vm.alloc(stack, &msg[..]);
                 stack.push(Value::String(s));
-                Status::Error
-            }
-        }
-    }
-}
-
-impl<T> VMType for IO<T>
-    where T: VMType,
-          T::Type: Sized
-{
-    type Type = IO<T::Type>;
-    fn make_type(vm: &Thread) -> TcType {
-        let env = vm.global_env().get_env();
-        let alias = env.find_type_info("IO").unwrap().into_owned();
-        Type::data(alias.into_type(), vec![T::make_type(vm)])
-    }
-    fn extra_args() -> VMIndex {
-        1
-    }
-}
-
-impl<'vm, T: Getable<'vm>> Getable<'vm> for IO<T> {
-    fn from_value(vm: &'vm Thread, value: Variants) -> Option<IO<T>> {
-        T::from_value(vm, value).map(IO::Value)
-    }
-}
-
-impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
-    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
-        match self {
-            IO::Value(value) => {
-                value.push(vm, stack);
-                Status::Ok
-            }
-            IO::Exception(exc) => {
-                exc.push(vm, stack);
                 Status::Error
             }
         }

@@ -400,11 +400,6 @@ let monad_List: Monad List = {
     return = \x -> Cons x Nil
 }
 
-let monad_IO: Monad IO = {
-    (>>=) = io_bind,
-    return = io_return
-}
-
 let make_Monad m =
     let { (>>=), return } = m
     let (>>) l r = l >>= \_ -> r
@@ -422,16 +417,6 @@ let make_Monad m =
         lift2 = \f lm rm -> lm >>= \l -> rm >>= \r -> f l r,
         forM_
     }
-
-let functor_IO: Functor IO = {
-    map = \f m1 -> monad_IO.(>>=) m1 (\x -> monad_IO.return (f x))
-}
-
-let applicative_IO: Applicative IO = {
-    (<*>) = \f x ->
-            monad_IO.(>>=) f (\g -> monad_IO.(>>=) x (\y -> monad_IO.return (g y))),
-    pure = monad_IO.return
-}
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = {
@@ -504,11 +489,11 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     monoid_Function, monoid_List, monoid_Option,
     monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
     num_Int, num_Float,
-    functor_Option, functor_Result, functor_List, functor_IO,
-    applicative_Option, applicative_Result, applicative_List, applicative_IO,
+    functor_Option, functor_Result, functor_List,
+    applicative_Option, applicative_Result, applicative_List,
     alternative_Option, alternative_List,
     make_Alternative,
-    monad_Option, monad_List, monad_IO,
+    monad_Option, monad_List,
     make_Monad,
     show_Unit, show_Bool, show_Int, show_Float, show_List, show_Option, show_Result
 }

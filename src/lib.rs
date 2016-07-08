@@ -31,7 +31,7 @@ use base::metadata::Metadata;
 
 use vm::Variants;
 use vm::api::generic::A;
-use vm::api::{Getable, VMType, Generic, IO};
+use vm::api::{Getable, VMType, Generic};
 use vm::Error as VMError;
 use vm::compiler::CompiledFunction;
 use vm::thread::{RootedValue, ThreadInternal};
@@ -466,18 +466,6 @@ impl Compiler {
         where T: Getable<'vm> + VMType
     {
         let expected = T::make_type(vm);
-        let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
-        unsafe {
-            T::from_value(vm, Variants::new(&value))
-                .ok_or_else(move || Error::from(VMError::WrongType(expected, actual)))
-        }
-    }
-
-    pub fn run_io_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<T>
-        where T: Getable<'vm> + VMType,
-              T::Type: Sized
-    {
-        let expected = IO::<T>::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
         unsafe {
             T::from_value(vm, Variants::new(&value))
