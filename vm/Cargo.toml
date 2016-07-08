@@ -1,6 +1,6 @@
 [package]
 name = "gluon_vm"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -17,7 +17,7 @@ mopa = "0.2.2"
 
 [dependencies.gluon_base]
 path = "../base"
-version = "0.1.1"
+version = "0.1.2"
 
 [dependencies.env_logger]
 version = "0.3.3"
