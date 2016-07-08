@@ -40,7 +40,18 @@ Currently the easiest way to interact with the gluon virtual machine is through 
 
 [C api]: https://github.com/Marwes/gluon/blob/master/c-api/src/lib.rs
 
+## Tools
+
+### Visual Studio Code Extension
+
+The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions.
+
+![example](http://i.imgur.com/44bH0ww.gif)
+
+[gluon extension]:https://marketplace.visualstudio.com/items?itemName=Marwes.gluon
+
 ### REPL
+
 Gluon has a small executable which can be used to run gluon programs directly or to run a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run through `cargo run -- -i`).
 
 REPL features:
