@@ -15,13 +15,13 @@ before_script:
   export PATH=$HOME/.local/bin:$PATH
 script:
 - |
-  travis_wait sh ./test.sh &&
-  cargo build --release &&
-  travis_wait travis-cargo --only nightly bench &&
+  travis_wait 30 sh ./test.sh &&
+  travis_wait 30 cargo build --release &&
+  travis-cargo --only nightly bench &&
   travis-cargo --only stable doc
 after_success:
 - travis-cargo --only stable doc-upload
-- travis-cargo coveralls --no-sudo
+- (cd c-api && travis-cargo coveralls --no-sudo)
 env:
   global:
   - TRAVIS_CARGO_NIGHTLY_FEATURE="nightly"
