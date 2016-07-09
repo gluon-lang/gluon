@@ -54,8 +54,8 @@ struct SourceContext<E> {
 fn extract_context<E>(lines: &[&str], error: ast::Spanned<E>) -> SourceContext<E> {
     SourceContext {
         context: String::from(lines.get((error.span.start.row - 1) as usize)
-                                   .cloned()
-                                   .unwrap_or("N/A")),
+            .cloned()
+            .unwrap_or("N/A")),
         error: error,
     }
 }
@@ -76,9 +76,9 @@ impl<E> InFile<E> {
             file: file,
             error: Errors {
                 errors: error.errors
-                             .into_iter()
-                             .map(|error| extract_context(&lines, error))
-                             .collect(),
+                    .into_iter()
+                    .map(|error| extract_context(&lines, error))
+                    .collect(),
             },
         }
     }

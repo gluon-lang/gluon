@@ -22,7 +22,7 @@ impl<T: MetadataEnv, U: MetadataEnv> MetadataEnv for (T, U) {
     fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
         let &(ref outer, ref inner) = self;
         inner.get_metadata(id)
-             .or_else(|| outer.get_metadata(id))
+            .or_else(|| outer.get_metadata(id))
     }
 }
 

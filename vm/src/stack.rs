@@ -138,9 +138,9 @@ impl<'b> Drop for StackFrame<'b> {
 impl<'b> fmt::Debug for StackFrame<'b> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StackFrame")
-         .field("stack", &*self.stack)
-         .field("frame", &self.frame)
-         .finish()
+            .field("stack", &*self.stack)
+            .field("frame", &self.frame)
+            .finish()
     }
 }
 
@@ -222,9 +222,9 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         assert!(current_frame.offset == self.frame.offset,
                 "Attempted to exit a scope other than the top-most scope");
         let frame = self.stack
-                        .frames
-                        .last()
-                        .cloned();
+            .frames
+            .last()
+            .cloned();
         frame.and_then(move |frame| {
             self.frame = frame;
             if frame.state == State::Lock {
@@ -262,18 +262,16 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     /// Creates a stackrace starting from `frame_level`
     pub fn stacktrace(&self, frame_level: usize) -> Stacktrace {
         let frames = self.stack.get_frames()[frame_level..]
-                         .iter()
-                         .filter_map(|frame| {
-                             match frame.state {
-                                 State::Closure(ref closure) => {
-                                     Some(Some(closure.function.name.clone()))
-                                 }
-                                 State::Extern(ref ext) => Some(Some(ext.id.clone())),
-                                 State::Unknown => Some(None),
-                                 State::Lock | State::Excess => None,
-                             }
-                         })
-                         .collect();
+            .iter()
+            .filter_map(|frame| {
+                match frame.state {
+                    State::Closure(ref closure) => Some(Some(closure.function.name.clone())),
+                    State::Extern(ref ext) => Some(Some(ext.id.clone())),
+                    State::Unknown => Some(None),
+                    State::Lock | State::Excess => None,
+                }
+            })
+            .collect();
         Stacktrace { frames: frames }
     }
 

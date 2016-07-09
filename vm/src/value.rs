@@ -728,10 +728,10 @@ fn deep_clone_str(data: GcPtr<Str>,
                   gc: &mut Gc)
                   -> Result<Value> {
     Ok(deep_clone_ptr(data, visited, |data| {
-           let ptr = gc.alloc(&data[..]);
-           (String(ptr), ptr)
-       })
-           .unwrap_or_else(String))
+            let ptr = gc.alloc(&data[..]);
+            (String(ptr), ptr)
+        })
+        .unwrap_or_else(String))
 }
 fn deep_clone_data(data: GcPtr<DataStruct>,
                    visited: &mut HashMap<*const (), Value>,
@@ -792,7 +792,7 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
                     Repr::Userdata | Repr::Thread => {
                         return Err(Error::Message("Threads, Userdata and Extern functions cannot \
                                                    be deep cloned yet"
-                                                      .into()))
+                            .into()))
                     }
                 });
             }
@@ -838,7 +838,7 @@ fn deep_clone_app(data: GcPtr<PartialApplicationData>,
             {
                 let new_arguments = unsafe { &mut new_data.as_mut().arguments };
                 for (new, old) in new_arguments.iter_mut()
-                                               .zip(&data.arguments) {
+                    .zip(&data.arguments) {
                     *new = try!(deep_clone(*old, visited, gc));
                 }
             }
@@ -868,7 +868,7 @@ pub fn deep_clone(value: Value,
         Value::Thread(_) => {
             return Err(Error::Message("Threads, Userdata and Extern functions cannot be deep \
                                        cloned yet"
-                                          .into()))
+                .into()))
         }
         Value::Tag(i) => Ok(Value::Tag(i)),
         Value::Byte(i) => Ok(Value::Byte(i)),

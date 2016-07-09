@@ -22,13 +22,13 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
             match bind.name.value {
                 ast::Pattern::Identifier(ref mut id) => {
                     let metadata = bind.comment
-                                       .as_ref()
-                                       .map_or(metadata, |comment| {
-                                           Metadata {
-                                               comment: Some(comment.clone()),
-                                               module: BTreeMap::new(),
-                                           }
-                                       });
+                        .as_ref()
+                        .map_or(metadata, |comment| {
+                            Metadata {
+                                comment: Some(comment.clone()),
+                                module: BTreeMap::new(),
+                            }
+                        });
                     self.stack_var(id.name.clone(), metadata);
                 }
                 _ => self.new_pattern(metadata, &mut bind.name),

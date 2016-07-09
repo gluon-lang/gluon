@@ -306,7 +306,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         env_parser(self, parser)
     }
 
-    ///Parses an operator
+    /// Parses an operator
     fn op(&'s self) -> LanguageParser<'a, 's, I, F, Id> {
         self.parser(Lexer::parse_op)
     }
@@ -466,10 +466,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                         } else if s.starts_with("/**") {
                             return self.block_doc_comment(input);
                         } else if s.starts_with("//") {
-                            let ((), new_input) = try!(skip_many(satisfy(|c| {
-                                                           c != '\n' && c != '\r'
-                                                       }))
-                                                           .parse_lazy(input));
+                            let ((), new_input) =
+                                try!(skip_many(satisfy(|c| c != '\n' && c != '\r'))
+                                    .parse_lazy(input));
                             input = new_input.into_inner();
                             continue;
                         } else if s.starts_with("/*") {
@@ -486,20 +485,19 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             } else if first.is_digit(10) {
                 let int_or_byte = self.env.lex((self.integer(), optional(char('b'))));
                 return try(int_or_byte.skip(not_followed_by(string("."))))
-                           .and_then(|(i, byte)| {
-                               if byte.is_none() {
-                                   Ok(Token::Integer(i))
-                               } else {
-                                   if i >= 0 && i <= 256 {
-                                       Ok(Token::Byte(i as u8))
-                                   } else {
-                                       Err(CombineError::Message("Byte literal out of range"
-                                                                     .into()))
-                                   }
-                               }
-                           })
-                           .or(self.env.float().map(Token::Float))
-                           .parse_state(input);
+                    .and_then(|(i, byte)| {
+                        if byte.is_none() {
+                            Ok(Token::Integer(i))
+                        } else {
+                            if i >= 0 && i <= 256 {
+                                Ok(Token::Byte(i as u8))
+                            } else {
+                                Err(CombineError::Message("Byte literal out of range".into()))
+                            }
+                        }
+                    })
+                    .or(self.env.float().map(Token::Float))
+                    .parse_state(input);
             } else if first.is_alphabetic() || first == '_' {
                 return self.ident().map(|t| self.id_to_keyword(t)).parse_state(input);
             }
@@ -533,7 +531,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             let mut input = Consumed::Empty(input);
             loop {
                 match input.clone()
-                           .combine(|input| try(string("*/")).parse_lazy(input)) {
+                    .combine(|input| try(string("*/")).parse_lazy(input)) {
                     Ok((_, input)) => return Ok(((), input)),
                     Err(_) => {
                         match input.combine(|input| any().parse_state(input)) {
@@ -554,7 +552,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             let mut out = String::new();
             loop {
                 match input.clone()
-                           .combine(|input| try(string("*/")).parse_lazy(input)) {
+                    .combine(|input| try(string("*/")).parse_lazy(input)) {
                     Ok((_, input)) => return Ok((Token::DocComment(out), input)),
                     Err(_) => {
                         match input.combine(|input| any().parse_state(input)) {
@@ -613,8 +611,8 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Token::Close(Delimiter::Bracket),
             Token::Close(Delimiter::Paren),
             Token::Comma]
-               .iter()
-               .any(|t| *t == token.token) {
+            .iter()
+            .any(|t| *t == token.token) {
 
             if token.token == Token::Comma &&
                (offside.context == Context::Delimiter(Delimiter::Brace) ||

@@ -63,7 +63,7 @@ fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, 
                     vm.alloc(&stack, &buffer[..bytes_read])
                 };
                 IO::Value(Getable::from_value(vm, Variants::new(&Value::Array(value)))
-                              .expect("Array"))
+                    .expect("Array"))
             }
             Err(err) => IO::Exception(format!("{}", err)),
         }

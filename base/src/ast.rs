@@ -7,11 +7,11 @@ use types::{Alias, Type, TypeVariable, Kind, TypeEnv, instantiate};
 
 pub type ASTType<Id> = ::types::ArcType<Id>;
 
-///Trait representing a type that can by used as in identifier in the AST
-///Used to allow the AST to both have a representation which has typed expressions etc as well
-///as one which only has identifiers (useful for testing)
+/// Trait representing a type that can by used as in identifier in the AST
+/// Used to allow the AST to both have a representation which has typed expressions etc as well
+/// as one which only has identifiers (useful for testing)
 pub trait AstId: Sized {
-    ///The type used instead of `Self` when the identifier does not need a type
+    /// The type used instead of `Self` when the identifier does not need a type
     type Untyped: Clone + PartialEq + Eq + fmt::Debug;
     fn from_str<E>(env: &mut E, s: &str) -> Self
         where E: IdentEnv<Ident = Self>
@@ -376,7 +376,7 @@ impl<Id> LExpr<Id>
             }
             IfElse(_, ref if_true, ref if_false) => {
                 if_false.as_ref()
-                        .map_or_else(|| if_true.span(env).end, |e| e.span(env).end)
+                    .map_or_else(|| if_true.span(env).end, |e| e.span(env).end)
             }
             Match(_, ref alts) => {
                 alts.last()
@@ -391,15 +391,15 @@ impl<Id> LExpr<Id>
             }
             Array(ref array) => {
                 array.expressions
-                     .last()
-                     .map_or(self.location, |expr| expr.span(env).end)
-                     .line_offset(1)
+                    .last()
+                    .map_or(self.location, |expr| expr.span(env).end)
+                    .line_offset(1)
             }
             Record { ref exprs, .. } => {
                 exprs.last()
-                     .and_then(|tup| tup.1.as_ref().map(|expr| expr.span(env).end))
-                     .unwrap_or(self.location)
-                     .line_offset(2)
+                    .and_then(|tup| tup.1.as_ref().map(|expr| expr.span(env).end))
+                    .unwrap_or(self.location)
+                    .line_offset(2)
             }
             Lambda(ref lambda) => lambda.body.span(env).end,
             Tuple(ref args) => {
@@ -551,8 +551,8 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
     }
 }
 
-///Trait which abstracts over things that have a type.
-///It is not guaranteed that the correct type is returned until after typechecking
+/// Trait which abstracts over things that have a type.
+/// It is not guaranteed that the correct type is returned until after typechecking
 pub trait Typed {
     type Id;
     fn type_of(&self) -> ASTType<Self::Id> {
@@ -664,9 +664,7 @@ fn get_return_type(env: &TypeEnv,
                     Some((id, arguments)) => {
                         let (args, typ) = {
                             let alias = env.find_type_info(&id)
-                                           .unwrap_or_else(|| {
-                                               panic!("ICE: '{:?}' does not exist", id)
-                                           });
+                                .unwrap_or_else(|| panic!("ICE: '{:?}' does not exist", id));
                             match alias.typ {
                                 Some(ref typ) => (&alias.args, typ.clone()),
                                 None => {

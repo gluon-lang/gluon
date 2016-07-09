@@ -184,7 +184,10 @@ pub unsafe extern "C" fn glu_get_string(vm: &Thread,
     }
 }
 
-pub extern "C" fn glu_get_light_userdata(vm: &Thread, index: VMIndex, out: &mut *mut libc::c_void) -> Error {
+pub extern "C" fn glu_get_light_userdata(vm: &Thread,
+                                         index: VMIndex,
+                                         out: &mut *mut libc::c_void)
+                                         -> Error {
     let mut userdata = 0usize;
     let err = get_value(vm, index, &mut userdata);
     if err == Error::Ok {

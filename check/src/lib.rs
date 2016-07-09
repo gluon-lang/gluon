@@ -28,7 +28,7 @@ mod tests {
 
     use base::symbol::{Symbols, SymbolModule, Symbol};
 
-    ///Returns a reference to the interner stored in TLD
+    /// Returns a reference to the interner stored in TLD
     pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
         thread_local!(static INTERNER: Rc<RefCell<Symbols>>
                       = Rc::new(RefCell::new(Symbols::new())));

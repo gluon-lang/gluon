@@ -186,7 +186,7 @@ impl<T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
     fn find_var(&self, s: &Symbol) -> Option<Variable<Symbol>> {
         let &(ref outer, ref inner) = self;
         inner.find_var(s)
-             .or_else(|| outer.find_var(s))
+            .or_else(|| outer.find_var(s))
     }
 }
 
@@ -211,8 +211,8 @@ impl CompilerEnv for TypeInfos {
                     match **typ {
                         Type::Variants(ref variants) => {
                             variants.iter()
-                                    .enumerate()
-                                    .find(|&(_, v)| v.0 == *id)
+                                .enumerate()
+                                .find(|&(_, v)| v.0 == *id)
                         }
                         _ => None,
                     }
@@ -272,53 +272,53 @@ impl<'a> Compiler<'a> {
 
     fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable<VMIndex>> {
         let variable = self.stack_constructors
-                           .iter()
-                           .filter_map(|(_, typ)| {
-                               match **typ {
-                                   Type::Variants(ref variants) => {
-                                       variants.iter()
-                                               .enumerate()
-                                               .find(|&(_, v)| v.0 == *id)
-                                   }
-                                   _ => None,
-                               }
-                           })
-                           .next()
-                           .map(|(tag, &(_, ref typ))| {
-                               Constructor(tag as VMIndex, types::arg_iter(typ).count() as VMIndex)
-                           })
-                           .or_else(|| {
-                               current.stack
-                                      .iter()
-                                      .rev()
-                                      .cloned()
-                                      .find(|&(_, ref var)| var == id)
-                                      .map(|(index, _)| Stack(index))
-                                      .or_else(|| {
-                                          let i = current.envs.len() - 1;
-                                          let (rest, current) = current.envs.split_at_mut(i);
-                                          rest.iter()
-                                              .rev()
-                                              .filter_map(|env| {
-                                                  env.stack
-                                                     .iter()
-                                                     .rev()
-                                                     .cloned()
-                                                     .find(|&(_, ref var)| var == id)
-                                                     .map(|_| UpVar(current[0].upvar(id)))
-                                              })
-                                              .next()
-                                      })
-                           })
-                           .or_else(|| self.globals.find_var(&id));
+            .iter()
+            .filter_map(|(_, typ)| {
+                match **typ {
+                    Type::Variants(ref variants) => {
+                        variants.iter()
+                            .enumerate()
+                            .find(|&(_, v)| v.0 == *id)
+                    }
+                    _ => None,
+                }
+            })
+            .next()
+            .map(|(tag, &(_, ref typ))| {
+                Constructor(tag as VMIndex, types::arg_iter(typ).count() as VMIndex)
+            })
+            .or_else(|| {
+                current.stack
+                    .iter()
+                    .rev()
+                    .cloned()
+                    .find(|&(_, ref var)| var == id)
+                    .map(|(index, _)| Stack(index))
+                    .or_else(|| {
+                        let i = current.envs.len() - 1;
+                        let (rest, current) = current.envs.split_at_mut(i);
+                        rest.iter()
+                            .rev()
+                            .filter_map(|env| {
+                                env.stack
+                                    .iter()
+                                    .rev()
+                                    .cloned()
+                                    .find(|&(_, ref var)| var == id)
+                                    .map(|_| UpVar(current[0].upvar(id)))
+                            })
+                            .next()
+                    })
+            })
+            .or_else(|| self.globals.find_var(&id));
         variable.map(|variable| {
             match variable {
                 Stack(i) => Stack(i),
                 Global(s) => {
                     let existing = current.function
-                                          .module_globals
-                                          .iter()
-                                          .position(|existing| existing == &s);
+                        .module_globals
+                        .iter()
+                        .position(|existing| existing == &s);
                     Global(existing.unwrap_or_else(|| {
                         current.function.module_globals.push(s);
                         current.function.module_globals.len() - 1
@@ -356,8 +356,8 @@ impl<'a> Compiler<'a> {
         match *self.remove_aliases(typ) {
             Type::Record { ref fields, .. } => {
                 fields.iter()
-                      .position(|f| f.name.name_eq(field))
-                      .map(|i| i as VMIndex)
+                    .position(|f| f.name.name_eq(field))
+                    .map(|i| i as VMIndex)
             }
             ref typ => {
                 panic!("ICE: FieldAccess on {}",
@@ -370,16 +370,16 @@ impl<'a> Compiler<'a> {
         match *self.remove_aliases(typ) {
             Type::Variants(ref variants) => {
                 variants.iter()
-                        .enumerate()
-                        .find(|&(_, v)| v.0 == *constructor)
-                        .map(|(tag, _)| tag as VMTag)
+                    .enumerate()
+                    .find(|&(_, v)| v.0 == *constructor)
+                    .map(|(tag, _)| tag as VMTag)
             }
             _ => None,
         }
     }
 
-    ///Compiles an expression to a zero argument function which can be directly fed to the
-    ///interpreter
+    /// Compiles an expression to a zero argument function which can be directly fed to the
+    /// interpreter
     pub fn compile_expr(&mut self, expr: &CExpr) -> CompiledFunction {
         let mut env = FunctionEnvs::new();
         let id = self.symbols.symbol("");
@@ -393,7 +393,7 @@ impl<'a> Compiler<'a> {
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) {
         match self.find(id, function)
-                  .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id))) {
+            .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id))) {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             Global(index) => function.emit(PushGlobal(index)),
@@ -542,10 +542,8 @@ impl<'a> Compiler<'a> {
                             ast::Pattern::Identifier(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
-                        let (function_index, vars, cf) = self.compile_lambda(name,
-                                                                             &bind.arguments,
-                                                                             &bind.expression,
-                                                                             function);
+                        let (function_index, vars, cf) =
+                            self.compile_lambda(name, &bind.arguments, &bind.expression, function);
                         let offset = first_index + i;
                         function.function.instructions[offset] = NewClosure(function_index, vars);
                         function.emit(CloseClosure(vars));
@@ -582,7 +580,7 @@ impl<'a> Compiler<'a> {
                 let typ = typ.inner_app();
                 debug!("FieldAccess {}", types::display_type(&self.symbols, typ));
                 let field_index = self.find_field(typ, field.id())
-                                      .expect("ICE: Undefined field in field access");
+                    .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));
             }
             Expr::Match(ref expr, ref alts) => {
@@ -597,11 +595,11 @@ impl<'a> Compiler<'a> {
                     match alt.pattern.value {
                         ast::Pattern::Constructor(ref id, _) => {
                             let tag = self.find_tag(&typ, id.id())
-                                          .unwrap_or_else(|| {
-                                              panic!("Could not find tag for {}::{}",
-                                                     types::display_type(&self.symbols, &typ),
-                                                     self.symbols.string(id.id()))
-                                          });
+                                .unwrap_or_else(|| {
+                                    panic!("Could not find tag for {}::{}",
+                                           types::display_type(&self.symbols, &typ),
+                                           self.symbols.string(id.id()))
+                                });
                             function.emit(TestTag(tag));
                             start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
@@ -670,10 +668,8 @@ impl<'a> Compiler<'a> {
                 function.emit(ConstructArray(a.expressions.len() as VMIndex));
             }
             Expr::Lambda(ref lambda) => {
-                let (function_index, vars, cf) = self.compile_lambda(&lambda.id,
-                                                                     &lambda.arguments,
-                                                                     &lambda.body,
-                                                                     function);
+                let (function_index, vars, cf) =
+                    self.compile_lambda(&lambda.id, &lambda.arguments, &lambda.body, function);
                 function.emit(MakeClosure(function_index, vars));
                 function.stack_size -= vars;
                 function.function.inner_functions.push(cf);
@@ -725,8 +721,8 @@ impl<'a> Compiler<'a> {
                 let mut typ = typ.clone();
                 if let Some((id, _)) = typ.clone().as_alias() {
                     typ = self.find_type_info(&id)
-                              .and_then(|alias| alias.typ.clone())
-                              .unwrap_or(typ);
+                        .and_then(|alias| alias.typ.clone())
+                        .unwrap_or(typ);
                 }
                 // Insert all variant constructor into scope
                 with_pattern_types(types, &typ, |name, alias| {
@@ -749,22 +745,20 @@ impl<'a> Compiler<'a> {
                             let record_index = function.stack_size();
                             for pattern_field in fields {
                                 let offset = type_fields.iter()
-                                                        .position(|field| {
-                                                            field.name.name_eq(&pattern_field.0)
-                                                        })
-                                                        .expect("Field to exist");
+                                    .position(|field| field.name.name_eq(&pattern_field.0))
+                                    .expect("Field to exist");
                                 function.emit(Push(record_index));
                                 function.emit(GetField(offset as VMIndex));
                                 function.new_stack_var(pattern_field.1
-                                                                    .as_ref()
-                                                                    .unwrap_or(&pattern_field.0)
-                                                                    .clone());
+                                    .as_ref()
+                                    .unwrap_or(&pattern_field.0)
+                                    .clone());
                             }
                         } else {
                             function.emit(Split);
                             for field in type_fields {
                                 let name = match fields.iter()
-                                                       .find(|tup| tup.0.name_eq(&field.name)) {
+                                    .find(|tup| tup.0.name_eq(&field.name)) {
                                     Some(&(ref name, ref bind)) => {
                                         bind.as_ref().unwrap_or(name).clone()
                                     }
@@ -826,10 +820,8 @@ fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {
             let associated_type = record_type_fields.iter()
-                                                    .find(|type_field| {
-                                                        type_field.name.name_eq(&field.0)
-                                                    })
-                                                    .expect("Associated type to exist in record");
+                .find(|type_field| type_field.name.name_eq(&field.0))
+                .expect("Associated type to exist in record");
             f(&field.0, &associated_type.typ);
         }
     }

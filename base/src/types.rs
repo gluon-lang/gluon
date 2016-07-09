@@ -35,7 +35,7 @@ impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
     fn find_kind(&self, id: &Symbol) -> Option<RcKind> {
         let &(ref outer, ref inner) = self;
         inner.find_kind(id)
-             .or_else(|| outer.find_kind(id))
+            .or_else(|| outer.find_kind(id))
     }
 }
 
@@ -84,17 +84,17 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
     fn find_type(&self, id: &Symbol) -> Option<&TcType> {
         let &(ref outer, ref inner) = self;
         inner.find_type(id)
-             .or_else(|| outer.find_type(id))
+            .or_else(|| outer.find_type(id))
     }
     fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
         let &(ref outer, ref inner) = self;
         inner.find_type_info(id)
-             .or_else(|| outer.find_type_info(id))
+            .or_else(|| outer.find_type_info(id))
     }
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         let &(ref outer, ref inner) = self;
         inner.find_record(fields)
-             .or_else(|| outer.find_record(fields))
+            .or_else(|| outer.find_record(fields))
     }
 }
 
@@ -622,7 +622,7 @@ impl<Id> ASTType<Id> {
         }
     }
 
-    ///Returns the inner most application of a type application
+    /// Returns the inner most application of a type application
     pub fn inner_app(&self) -> &ASTType<Id> {
         match **self {
             Type::App(ref a, _) => a.inner_app(),
@@ -981,11 +981,11 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                     })
                 });
                 merge(types, new_types, fields, new_fields, |types, fields| {
-                    Type::Record {
-                        types: types,
-                        fields: fields,
-                    }
-                })
+                        Type::Record {
+                            types: types,
+                            fields: fields,
+                        }
+                    })
                     .map(From::from)
             }
             Type::App(ref l, ref r) => {

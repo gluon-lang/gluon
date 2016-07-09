@@ -12,15 +12,15 @@ use base::symbol::Symbol;
 use base::instantiate::unroll_app;
 
 pub struct Substitution<T> {
-    ///Union-find data structure used to store the relationships of all variables in the
-    ///substitution
+    /// Union-find data structure used to store the relationships of all variables in the
+    /// substitution
     union: RefCell<QuickFindUf<UnionByLevel>>,
-    ///Vector containing all created variables for this substitution. Needed for the `real` method
-    ///which needs to always be able to return a `&T` reference
+    /// Vector containing all created variables for this substitution. Needed for the `real` method
+    /// which needs to always be able to return a `&T` reference
     variables: FixedVec<T>,
-    ///For variables which have been infered to have a real type (not a variable) their types are
-    ///stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
-    ///`&T` from this map safely.
+    /// For variables which have been infered to have a real type (not a variable) their types are
+    /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
+    /// `&T` from this map safely.
     types: FixedMap<u32, T>,
 }
 
@@ -30,8 +30,8 @@ impl<T: Substitutable> Default for Substitution<T> {
     }
 }
 
-///Trait which variables need to implement to allow the substitution to get to the u32 identifying
-///the variable
+/// Trait which variables need to implement to allow the substitution to get to the u32 identifying
+/// the variable
 pub trait Variable {
     fn get_id(&self) -> u32;
 }
@@ -42,15 +42,15 @@ impl Variable for u32 {
     }
 }
 
-///Trait implemented on types which may contain substitutable variables
+/// Trait implemented on types which may contain substitutable variables
 pub trait Substitutable: Sized {
     type Variable: Variable;
     fn new(x: u32) -> Self;
-    ///Constructs a new object from its variable type
+    /// Constructs a new object from its variable type
     fn from_variable(x: Self::Variable) -> Self {
         Self::new(x.get_id())
     }
-    ///Retrieves the variable if `self` is a variable otherwise returns `None`
+    /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
     fn traverse<'s, F>(&'s self, f: F) where F: FnMut(&'s Self) -> &'s Self;
 }
@@ -184,7 +184,7 @@ impl<T: Substitutable> Substitution<T> {
         }
     }
 
-    ///Creates a new variable
+    /// Creates a new variable
     pub fn new_var(&self) -> T
         where T: Clone
     {
@@ -196,9 +196,9 @@ impl<T: Substitutable> Substitution<T> {
         self.variables[last].clone()
     }
 
-    ///If `typ` is a variable this returns the real unified value of that variable. Otherwise it
-    ///just returns the type itself. Note that the returned type may contain terms which also need
-    ///to have `real` called on them.
+    /// If `typ` is a variable this returns the real unified value of that variable. Otherwise it
+    /// just returns the type itself. Note that the returned type may contain terms which also need
+    /// to have `real` called on them.
     pub fn real<'r>(&'r self, typ: &'r T) -> &'r T {
         match typ.get_var() {
             Some(var) => {
@@ -224,7 +224,7 @@ impl<T: Substitutable> Substitution<T> {
             })
     }
 
-    ///Updates the level of `other` to be the minimum level value of `var` and `other`
+    /// Updates the level of `other` to be the minimum level value of `var` and `other`
     pub fn update_level(&self, var: u32, other: u32) {
         let level = ::std::cmp::min(self.get_level(var), self.get_level(other));
         let mut union = self.union.borrow_mut();
@@ -256,16 +256,16 @@ impl Substitution<TcType> {
     pub fn set_type(&self, t: TcType) -> TcType {
         types::walk_move_type(t,
                               &mut |typ| {
-                                  let replacement = self.replace_variable(typ);
-                                  let result = {
-                                      let mut typ = typ;
-                                      if let Some(ref t) = replacement {
-                                          typ = &**t;
-                                      }
-                                      unroll_app(typ)
-                                  };
-                                  result.or(replacement)
-                              })
+            let replacement = self.replace_variable(typ);
+            let result = {
+                let mut typ = typ;
+                if let Some(ref t) = replacement {
+                    typ = &**t;
+                }
+                unroll_app(typ)
+            };
+            result.or(replacement)
+        })
     }
 }
 
@@ -275,7 +275,7 @@ impl<T: Substitutable + Clone> Substitution<T> {
     }
 }
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
-    ///Takes `id` and updates the substitution to say that it should have the same type as `typ`
+    /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
     pub fn union(&self, id: &T::Variable, typ: &T) -> Result<(), ()>
         where T::Variable: Clone
     {

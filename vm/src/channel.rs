@@ -109,7 +109,7 @@ fn channel(WithVM { vm, .. }: WithVM<Generic<A>>)
 
 fn recv(receiver: &Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
     receiver.try_recv()
-            .map_err(|_| ())
+        .map_err(|_| ())
 }
 
 fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {

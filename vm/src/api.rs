@@ -1076,7 +1076,7 @@ pub mod record {
 
     impl<F, H, T> FieldList for HList<(F, H), T>
         where T: FieldList
-{
+    {
         fn len() -> VMIndex {
             1 + T::len()
         }
@@ -1084,7 +1084,7 @@ pub mod record {
 
     impl<F: Field, H: VMType, T> FieldTypes for HList<(F, H), T>
         where T: FieldTypes
-{
+    {
         fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, TcType>>) {
             fields.push(types::Field {
                 name: Symbol::new(F::name()),
@@ -1104,7 +1104,7 @@ pub mod record {
 
     impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HList<(F, H), T>
         where T: PushableFieldList<'vm>
-{
+    {
         fn push(self, vm: &'vm Thread, fields: &mut Stack) {
             let HList((_, head), tail) = self;
             head.push(vm, fields);
@@ -1126,7 +1126,7 @@ pub mod record {
         where F: Field,
               H: Getable<'vm> + VMType,
               T: GetableFieldList<'vm>
-{
+    {
         fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self> {
             let head = unsafe { H::from_value(vm, Variants::new(&values[0])) };
             head.and_then(|head| {
@@ -1137,7 +1137,7 @@ pub mod record {
 
     impl<A: VMType, F: Field, T: FieldTypes> VMType for Record<HList<(F, A), T>>
         where A::Type: Sized
-{
+    {
         type Type = Record<((&'static str, A::Type),)>;
         fn make_type(vm: &Thread) -> TcType {
             let len = HList::<(F, A), T>::len() as usize;
@@ -1150,7 +1150,7 @@ pub mod record {
         where A: Pushable<'vm>,
               F: Field,
               T: PushableFieldList<'vm>
-{
+    {
         fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
             self.fields.push(vm, stack);
             let len = HList::<(F, A), T>::len();
@@ -1167,7 +1167,7 @@ pub mod record {
         where A: Getable<'vm> + VMType,
               F: Field,
               T: GetableFieldList<'vm>
-{
+    {
         fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
             match *value.0 {
                 Value::Data(ref data) => {

@@ -493,7 +493,7 @@ impl<T> Traverseable for VecDeque<T>
     }
 }
 
-///When traversing a GcPtr we need to mark it
+/// When traversing a GcPtr we need to mark it
 impl<T: ?Sized> Traverseable for GcPtr<T>
     where T: Traverseable
 {
@@ -582,8 +582,8 @@ impl Gc {
         }
     }
 
-    ///Does a mark and sweep collection by walking from `roots`. This function is unsafe since
-    ///roots need to cover all reachable object.
+    /// Does a mark and sweep collection by walking from `roots`. This function is unsafe since
+    /// roots need to cover all reachable object.
     pub unsafe fn collect<R>(&mut self, roots: R)
         where R: Traverseable
     {
@@ -593,8 +593,8 @@ impl Gc {
         self.collect_limit = 2 * self.allocated_memory;
     }
 
-    ///Marks the GcPtr
-    ///Returns true if the pointer was already marked
+    /// Marks the GcPtr
+    /// Returns true if the pointer was already marked
     pub fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
         let header = value.header();
         // We only need to mark and traverse values from this garbage collectors generation

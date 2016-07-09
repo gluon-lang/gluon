@@ -140,18 +140,18 @@ impl<I> Macro for Import<I>
                         Some(tup) => tup.1,
                         None => {
                             let file = self.paths
-                                           .read()
-                                           .unwrap()
-                                           .iter()
-                                           .filter_map(|p| {
-                                               let mut base = p.clone();
-                                               base.push(path);
-                                               match File::open(&base) {
-                                                   Ok(file) => Some(file),
-                                                   Err(_) => None,
-                                               }
-                                           })
-                                           .next();
+                                .read()
+                                .unwrap()
+                                .iter()
+                                .filter_map(|p| {
+                                    let mut base = p.clone();
+                                    base.push(path);
+                                    match File::open(&base) {
+                                        Ok(file) => Some(file),
+                                        Err(_) => None,
+                                    }
+                                })
+                                .next();
                             let mut file = try!(file.ok_or_else(|| {
                                 Error::String(format!("Could not find file '{}'", filename))
                             }));

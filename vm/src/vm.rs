@@ -36,8 +36,8 @@ fn new_bytecode(gc: &mut Gc, vm: &GlobalVMState, f: CompiledFunction) -> GcPtr<B
                            module_globals,
                            .. } = f;
     let fs = inner_functions.into_iter()
-                            .map(|inner| new_bytecode(gc, vm, inner))
-                            .collect();
+        .map(|inner| new_bytecode(gc, vm, inner))
+        .collect();
     gc.alloc(Move(BytecodeFunction {
         name: id,
         args: args,
@@ -45,8 +45,8 @@ fn new_bytecode(gc: &mut Gc, vm: &GlobalVMState, f: CompiledFunction) -> GcPtr<B
         inner_functions: fs,
         strings: strings,
         globals: module_globals.into_iter()
-                               .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
-                               .collect(),
+            .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
+            .collect(),
     }))
 }
 
@@ -131,15 +131,15 @@ impl TypeEnv for VMEnv {
                     .values()
                     .filter_map(|alias| {
                         alias.typ
-                             .as_ref()
-                             .and_then(|typ| {
-                                 match **typ {
-                                     Type::Variants(ref ctors) => {
-                                         ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1)
-                                     }
-                                     _ => None,
-                                 }
-                             })
+                            .as_ref()
+                            .and_then(|typ| {
+                                match **typ {
+                                    Type::Variants(ref ctors) => {
+                                        ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1)
+                                    }
+                                    _ => None,
+                                }
+                            })
                     })
                     .next()
                     .map(|ctor| ctor)
@@ -197,8 +197,8 @@ impl VMEnv {
                 Type::Record { ref types, .. } => {
                     let field_name = name.name();
                     types.iter()
-                         .find(|field| field.name.as_ref() == field_name.as_str())
-                         .map(|field| &field.typ)
+                        .find(|field| field.name.as_ref() == field_name.as_str())
+                        .map(|field| &field.typ)
                 }
                 _ => None,
             }
@@ -260,17 +260,17 @@ impl VMEnv {
                 match **typ {
                     Type::Record { ref fields, .. } => {
                         fields.iter()
-                              .enumerate()
-                              .find(|&(_, field)| field.name.as_ref() == field_name)
-                              .map(|(index, field)| {
-                                  match value {
-                                      Value::Data(data) => {
-                                          value = data.fields[index];
-                                          &field.typ
-                                      }
-                                      _ => panic!("Unexpected value {:?}", value),
-                                  }
-                              })
+                            .enumerate()
+                            .find(|&(_, field)| field.name.as_ref() == field_name)
+                            .map(|(index, field)| {
+                                match value {
+                                    Value::Data(data) => {
+                                        value = data.fields[index];
+                                        &field.typ
+                                    }
+                                    _ => panic!("Unexpected value {:?}", value),
+                                }
+                            })
                     }
                     _ => None,
                 }
@@ -289,11 +289,11 @@ impl VMEnv {
         let global = match components.next() {
             Some(comp) => {
                 try!(globals.get(comp)
-                            .or_else(|| {
-                                components = name.name().components();
-                                globals.get(name.module().as_str())
-                            })
-                            .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into())))
+                    .or_else(|| {
+                        components = name.name().components();
+                        globals.get(name.module().as_str())
+                    })
+                    .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into())))
             }
             None => return Err(Error::MetadataDoesNotExist(name_str.into())),
         };
@@ -301,8 +301,8 @@ impl VMEnv {
         let mut metadata = &global.metadata;
         for field_name in components {
             metadata = try!(metadata.module
-                                    .get(field_name)
-                                    .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into())));
+                .get(field_name)
+                .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into())));
         }
         Ok(metadata)
     }
@@ -324,7 +324,7 @@ impl GlobalVMState {
             generation_0_threads: RwLock::new(Vec::new()),
         };
         vm.add_types()
-          .unwrap();
+            .unwrap();
         vm
     }
 
@@ -409,11 +409,11 @@ impl GlobalVMState {
             let id = TypeId::of::<T>();
             let arg_types: Vec<_> = args.iter().map(|g| self.get_generic(g)).collect();
             let args = arg_types.iter()
-                                .map(|g| match **g {
-                                    Type::Generic(ref g) => g.clone(),
-                                    _ => unreachable!(),
-                                })
-                                .collect();
+                .map(|g| match **g {
+                    Type::Generic(ref g) => g.clone(),
+                    _ => unreachable!(),
+                })
+                .collect();
             let n = Symbol::new(name);
             let typ: TcType = Type::data(Type::id(n.clone()), arg_types);
             self.typeids

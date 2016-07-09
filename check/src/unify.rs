@@ -80,11 +80,11 @@ pub fn unify<S, T>(subs: &Substitution<T>,
 {
     let mut errors = Errors::new();
     let typ = UnifierState {
-                  state: state,
-                  subs: subs,
-                  unifier: Unify { errors: &mut errors },
-              }
-              .try_match(l, r);
+            state: state,
+            subs: subs,
+            unifier: Unify { errors: &mut errors },
+        }
+        .try_match(l, r);
     if errors.has_errors() {
         Err(errors)
     } else {
@@ -126,18 +126,18 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
             // Remove any errors found from the first attempt to unify
             for _ in original_errors..first_errors {
                 unifier.unifier
-                       .errors
-                       .errors
-                       .remove(original_errors);
+                    .errors
+                    .errors
+                    .remove(original_errors);
             }
             return result;
         }
         for _ in first_errors..last_errors {
             // Remove the errors from the second attempt (keeping the first attempt)
             unifier.unifier
-                   .errors
-                   .errors
-                   .remove(first_errors);
+                .errors
+                .errors
+                .remove(first_errors);
         }
         Err(())
     }
@@ -235,10 +235,10 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
                     Ok(typ) => typ,
                     Err(_) => {
                         Some(unifier.unifier
-                                    .mismatch_map
-                                    .entry((l.clone(), r.clone()))
-                                    .or_insert_with(|| subs.new_var())
-                                    .clone())
+                            .mismatch_map
+                            .entry((l.clone(), r.clone()))
+                            .or_insert_with(|| subs.new_var())
+                            .clone())
                     }
                 }
             }

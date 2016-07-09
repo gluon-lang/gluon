@@ -179,8 +179,8 @@ impl<'a, F> FindVisitor<'a, F>
             }
             IfElse(ref pred, ref if_true, ref if_false) => {
                 self.visit_one([pred, if_true, if_false.as_ref().expect("false branch")]
-                                   .iter()
-                                   .map(|x| &***x))
+                    .iter()
+                    .map(|x| &***x))
             }
             Match(ref expr, ref alts) => {
                 self.visit_one(once(&**expr).chain(alts.iter().map(|alt| &alt.expression)))

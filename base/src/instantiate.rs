@@ -92,22 +92,21 @@ impl<'a> AliasInstantiator<'a> {
         let ok_substitution = match *typ.clone() {
             Type::Data(ref d, ref arg_types) => {
                 let allowed_missing_args = arg_types.iter()
-                                                    .rev()
-                                                    .zip(args.iter().rev())
-                                                    .take_while(|&(l, r)| {
-                                                        match **l {
-                                                            Type::Generic(ref g) => g == r,
-                                                            _ => false,
-                                                        }
-                                                    })
-                                                    .count();
+                    .rev()
+                    .zip(args.iter().rev())
+                    .take_while(|&(l, r)| {
+                        match **l {
+                            Type::Generic(ref g) => g == r,
+                            _ => false,
+                        }
+                    })
+                    .count();
                 if args.len() - arguments.len() <= allowed_missing_args {
                     // Remove the args at the end of the aliased type
                     let arg_types: Vec<_> = arg_types.iter()
-                                                     .take(arg_types.len() -
-                                                           (args.len() - arguments.len()))
-                                                     .cloned()
-                                                     .collect();
+                        .take(arg_types.len() - (args.len() - arguments.len()))
+                        .cloned()
+                        .collect();
                     typ = Type::data(d.clone(), arg_types);
                     true
                 } else {
@@ -153,7 +152,7 @@ impl Instantiator {
         TcType::from(var)
     }
 
-    ///Instantiates a type, replacing all generic variables with fresh type variables
+    /// Instantiates a type, replacing all generic variables with fresh type variables
     pub fn instantiate<F>(&mut self, typ: &TcType, on_unbound: F) -> TcType
         where F: FnMut(&Symbol) -> TcType
     {

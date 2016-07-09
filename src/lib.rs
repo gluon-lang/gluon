@@ -113,8 +113,8 @@ pub mod compiler_pipeline {
                         file: &str)
                         -> Result<MacroValue> {
             compiler.parse_expr(file, self)
-                    .map_err(From::from)
-                    .and_then(|expr| expr.expand_macro(compiler, thread, file))
+                .map_err(From::from)
+                .and_then(|expr| expr.expand_macro(compiler, thread, file))
         }
     }
 
@@ -155,7 +155,7 @@ pub mod compiler_pipeline {
     }
     impl<T> Typecheckable for T
         where T: MacroExpandable
-{
+    {
         fn typecheck_expected(self,
                               compiler: &mut Compiler,
                               thread: &Thread,
@@ -182,7 +182,7 @@ pub mod compiler_pipeline {
             where Self: Sized
         {
             compiler.typecheck_expr_expected(thread, file, expr_str, &mut self.0, expected_type)
-                    .map(move |typ| TypecheckValue(self.0, typ))
+                .map(move |typ| TypecheckValue(self.0, typ))
         }
     }
 
@@ -198,7 +198,7 @@ pub mod compiler_pipeline {
     }
     impl<'a, 'b, T> Compileable<(&'a str, Option<&'b TcType>)> for T
         where T: Typecheckable
-{
+    {
         fn compile(self,
                    compiler: &mut Compiler,
                    thread: &Thread,
@@ -237,7 +237,7 @@ pub mod compiler_pipeline {
     }
     impl<C, Extra> Executable<Extra> for C
         where C: Compileable<Extra>
-{
+    {
         fn run_expr<'vm>(self,
                          compiler: &mut Compiler,
                          vm: &'vm Thread,
@@ -320,7 +320,7 @@ impl Compiler {
                       -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, Errors<::parser::Error>> {
         Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols),
                                    input)
-                    .map_err(|t| t.1)))
+            .map_err(|t| t.1)))
     }
 
     /// Parse `input`, returning an expression if successful
@@ -357,7 +357,7 @@ impl Compiler {
         let env = vm.get_env();
         let mut tc = Typecheck::new(file.into(), &mut self.symbols, &*env);
         let typ = try!(tc.typecheck_expr_expected(expr, expected_type)
-                         .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
+            .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
         Ok(typ)
     }
 
@@ -529,11 +529,11 @@ pub fn filename_to_module(filename: &str) -> StdString {
     use std::path::Path;
     let path = Path::new(filename);
     let name = path.extension()
-                   .map_or(filename, |ext| {
-                       ext.to_str()
-                          .map(|ext| &filename[..filename.len() - ext.len() - 1])
-                          .unwrap_or(filename)
-                   });
+        .map_or(filename, |ext| {
+            ext.to_str()
+                .map(|ext| &filename[..filename.len() - ext.len() - 1])
+                .unwrap_or(filename)
+        });
 
     name.replace("/", ".")
 }

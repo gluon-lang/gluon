@@ -92,12 +92,10 @@ pub fn rename(symbols: &mut SymbolModule,
                     let field_types = self.find_fields(typ).expect("field_types");
                     for field in fields.iter_mut() {
                         let field_type = field_types.iter()
-                                                    .find(|field_type| {
-                                                        field_type.name.name_eq(&field.0)
-                                                    })
-                                                    .expect("ICE: Existing field")
-                                                    .typ
-                                                    .clone();
+                            .find(|field_type| field_type.name.name_eq(&field.0))
+                            .expect("ICE: Existing field")
+                            .typ
+                            .clone();
                         let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
                         field.1 = Some(self.stack_var(id, pattern.location, field_type));
                     }
@@ -108,26 +106,24 @@ pub fn rename(symbols: &mut SymbolModule,
                     };
                     for &(ref name, _) in types {
                         let field_type = imported_types.iter()
-                                                       .find(|field| field.name.name_eq(name))
-                                                       .expect("field_type");
+                            .find(|field| field.name.name_eq(name))
+                            .expect("field_type");
                         self.stack_type(name.clone(), &field_type.typ);
                     }
                 }
                 ast::Pattern::Identifier(ref mut id) => {
-                    let new_name = self.stack_var(id.name.clone(),
-                                                  pattern.location,
-                                                  id.typ.clone());
+                    let new_name =
+                        self.stack_var(id.name.clone(), pattern.location, id.typ.clone());
                     id.name = new_name;
                 }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
                     let typ = self.env
-                                  .find_type(id.id())
-                                  .expect("ICE: Expected constructor")
-                                  .clone();
+                        .find_type(id.id())
+                        .expect("ICE: Expected constructor")
+                        .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
-                        arg.name = self.stack_var(arg.name.clone(),
-                                                  pattern.location,
-                                                  arg_type.clone());
+                        arg.name =
+                            self.stack_var(arg.name.clone(), pattern.location, arg_type.clone());
                     }
                 }
             }
@@ -163,13 +159,13 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn rename(&self, id: &Symbol, expected: &TcType) -> Result<Option<Symbol>, RenameError> {
             let locals = self.env
-                             .stack
-                             .get_all(&id);
+                .stack
+                .get_all(&id);
             let global = self.env.find_type(&id).map(|typ| (id, typ));
             let candidates = || {
                 locals.iter()
-                      .flat_map(|bindings| bindings.iter().rev().map(|bind| (&bind.0, &bind.1)))
-                      .chain(global.clone())
+                    .flat_map(|bindings| bindings.iter().rev().map(|bind| (&bind.0, &bind.1)))
+                    .chain(global.clone())
             };
             // If there is a single binding (or no binding in case of primitives such as #Int+)
             // there is no need to check for equivalency as typechecker couldnt have infered a
@@ -201,7 +197,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 ast::Expr::Record { ref mut typ, ref mut exprs, .. } => {
                     let field_types = self.find_fields(&typ.typ).expect("field_types");
                     for (field, &mut (ref id, ref mut maybe_expr)) in field_types.iter()
-                                                                                 .zip(exprs) {
+                        .zip(exprs) {
                         match *maybe_expr {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
@@ -251,10 +247,9 @@ pub fn rename(symbols: &mut SymbolModule,
                         for bind in bindings {
                             self.env.stack.enter_scope();
                             for (typ, arg) in types::arg_iter(&bind.type_of())
-                                                  .zip(&mut bind.arguments) {
-                                arg.name = self.stack_var(arg.name.clone(),
-                                                          expr.location,
-                                                          typ.clone());
+                                .zip(&mut bind.arguments) {
+                                arg.name =
+                                    self.stack_var(arg.name.clone(), expr.location, typ.clone());
                             }
                             self.visit_expr(&mut bind.expression);
                             self.env.stack.exit_scope();

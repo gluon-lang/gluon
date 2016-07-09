@@ -141,18 +141,18 @@ impl TypeEnv for TypeInfos {
             .iter()
             .find(|&(_, alias)| {
                 alias.typ
-                     .as_ref()
-                     .map(|typ| {
-                         match **typ {
-                             Type::Record { fields: ref record_fields, .. } => {
-                                 fields.iter().all(|name| {
-                                     record_fields.iter().any(|f| f.name.as_ref() == name.as_ref())
-                                 })
-                             }
-                             _ => false,
-                         }
-                     })
-                     .unwrap_or(false)
+                    .as_ref()
+                    .map(|typ| {
+                        match **typ {
+                            Type::Record { fields: ref record_fields, .. } => {
+                                fields.iter().all(|name| {
+                                    record_fields.iter().any(|f| f.name.as_ref() == name.as_ref())
+                                })
+                            }
+                            _ => false,
+                        }
+                    })
+                    .unwrap_or(false)
             })
             .and_then(|t| {
                 let typ = t.1.typ.as_ref().unwrap();

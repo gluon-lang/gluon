@@ -4,17 +4,17 @@ use std::collections::hash_map;
 use std::collections::hash_map::{Entry, IterMut};
 use std::hash::Hash;
 
-///A map struct which allows for the introduction of different scopes
-///Introducing a new scope will make it possible to introduce additional
-///variables with names already defined, shadowing the old name
-///After exiting a scope the shadowed variable will again be re introduced
+/// A map struct which allows for the introduction of different scopes
+/// Introducing a new scope will make it possible to introduce additional
+/// variables with names already defined, shadowing the old name
+/// After exiting a scope the shadowed variable will again be re introduced
 #[derive(Debug)]
 pub struct ScopedMap<K: Eq + Hash + Clone, V> {
-    ///A hashmap storing a key -> value mapping
-    ///Stores a vector of values in which the value at the top is value returned from 'get'
+    /// A hashmap storing a key -> value mapping
+    /// Stores a vector of values in which the value at the top is value returned from 'get'
     map: HashMap<K, Vec<V>>,
-    ///A vector of scopes, when entering a scope, None is added as a marker
-    ///when later exiting a scope, values are removed from the map until the marker is found
+    /// A vector of scopes, when entering a scope, None is added as a marker
+    /// when later exiting a scope, values are removed from the map until the marker is found
     scopes: Vec<Option<K>>,
 }
 
@@ -27,20 +27,20 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         }
     }
 
-    ///Introduces a new scope
+    /// Introduces a new scope
     pub fn enter_scope(&mut self) {
         self.scopes.push(None);
     }
 
-    ///Exits the current scope, removing anything inserted since the
-    ///matching enter_scope call
+    /// Exits the current scope, removing anything inserted since the
+    /// matching enter_scope call
     pub fn exit_scope(&mut self) {
         while let Some(Some(key)) = self.scopes.pop() {
             self.map.get_mut(&key).map(|x| x.pop());
         }
     }
 
-    ///Removes a previusly inserted value from the map.
+    /// Removes a previusly inserted value from the map.
     pub fn remove(&mut self, k: &K) -> bool {
         match self.map.get_mut(k).map(|x| x.pop()) {
             Some(..) => {
@@ -57,7 +57,7 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         }
     }
 
-    ///Returns true if the key has a value declared in the last declared scope
+    /// Returns true if the key has a value declared in the last declared scope
     pub fn in_current_scope(&self, k: &K) -> bool {
         for n in self.scopes.iter().rev() {
             match *n {
@@ -69,23 +69,23 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         false
     }
 
-    ///Returns an iterator of the (key, values) pairs inserted in the map
+    /// Returns an iterator of the (key, values) pairs inserted in the map
     pub fn iter_mut(&mut self) -> IterMut<K, Vec<V>> {
         self.map.iter_mut()
     }
 
-    ///Returns a reference to the last inserted value corresponding to the key
+    /// Returns a reference to the last inserted value corresponding to the key
     pub fn get<'a>(&'a self, k: &K) -> Option<&'a V> {
         self.map.get(k).and_then(|x| x.last())
     }
 
-    ///Returns a reference to the all inserted value corresponding to the key
+    /// Returns a reference to the all inserted value corresponding to the key
     pub fn get_all<'a>(&'a self, k: &K) -> Option<&'a [V]> {
         self.map.get(k).map(|x| &x[..])
     }
 
-    ///Returns the number of elements in the container.
-    ///Shadowed elements are not counted
+    /// Returns the number of elements in the container.
+    /// Shadowed elements are not counted
     pub fn len(&self) -> usize {
         self.map.len()
     }
@@ -95,13 +95,13 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         self.map.len() == 0
     }
 
-    ///Removes all elements
+    /// Removes all elements
     pub fn clear(&mut self) {
         self.map.clear();
         self.scopes.clear();
     }
 
-    ///Swaps the value stored at key, or inserts it if it is not present
+    /// Swaps the value stored at key, or inserts it if it is not present
     pub fn swap(&mut self, k: K, v: V) -> Option<V> {
         let vec = match self.map.entry(k.clone()) {
             Entry::Occupied(v) => v.into_mut(),

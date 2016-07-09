@@ -172,9 +172,7 @@ impl<'a> TypeEnv for Environment<'a> {
                         match **typ {
                             Type::Record { fields: ref record_fields, .. } => {
                                 fields.iter()
-                                      .all(|name| {
-                                          record_fields.iter().any(|f| f.name.name_eq(name))
-                                      })
+                                    .all(|name| record_fields.iter().any(|f| f.name.name_eq(name)))
                             }
                             _ => false,
                         }
@@ -359,10 +357,10 @@ impl<'a> Typecheck<'a> {
         }
         mem::swap(&mut self.environment.stack, &mut stack);
         ReplaceVisitor {
-            level: level,
-            tc: self,
-        }
-        .visit_expr(expr);
+                level: level,
+                tc: self,
+            }
+            .visit_expr(expr);
     }
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
@@ -581,7 +579,7 @@ impl<'a> Typecheck<'a> {
                     expected_alt_type = Some(alt_type);
                 }
                 expected_alt_type.ok_or(EmptyCase)
-                                 .map(TailCall::Type)
+                    .map(TailCall::Type)
             }
             ast::Expr::Let(ref mut bindings, _) => {
                 self.enter_scope();
@@ -672,8 +670,8 @@ impl<'a> Typecheck<'a> {
                 match *record {
                     Type::Record { ref fields, .. } => {
                         let field_type = fields.iter()
-                                               .find(|field| field.name.name_eq(field_access.id()))
-                                               .map(|field| field.typ.clone());
+                            .find(|field| field.name.name_eq(field_access.id()))
+                            .map(|field| field.typ.clone());
                         field_access.typ = match field_type {
                             Some(typ) => self.instantiate(&typ),
                             None => {
@@ -699,9 +697,8 @@ impl<'a> Typecheck<'a> {
                 let loc = format!("lambda:{}", expr.location);
                 lambda.id.name = self.symbols.symbol(loc);
                 let function_type = self.subs.new_var();
-                let typ = self.typecheck_lambda(function_type,
-                                                &mut lambda.arguments,
-                                                &mut lambda.body);
+                let typ =
+                    self.typecheck_lambda(function_type, &mut lambda.arguments, &mut lambda.body);
                 lambda.id.typ = typ.clone();
                 Ok(TailCall::Type(typ))
             }
@@ -718,16 +715,15 @@ impl<'a> Typecheck<'a> {
                 }
                 for bind in bindings.iter_mut() {
                     let typ = Alias::make_mut(&mut bind.alias)
-                                  .typ
-                                  .as_mut()
-                                  .expect("Expected binding to have an aliased type");
+                        .typ
+                        .as_mut()
+                        .expect("Expected binding to have an aliased type");
                     *typ = self.refresh_symbols_in_type(typ.clone());
                 }
                 {
                     let subs = Substitution::new();
-                    let mut check = super::kindcheck::KindCheck::new(&self.environment,
-                                                                     &self.symbols,
-                                                                     subs);
+                    let mut check =
+                        super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
                     // Setup kind variables for all type variables and insert the types in the
                     // this type expression into the kindcheck environment
                     for bind in bindings.iter_mut() {
@@ -748,9 +744,9 @@ impl<'a> Typecheck<'a> {
                     for bind in bindings.iter_mut() {
                         check.set_variables(&bind.alias.args);
                         let typ = Alias::make_mut(&mut bind.alias)
-                                      .typ
-                                      .as_mut()
-                                      .expect("Expected binding to have an aliased type");
+                            .typ
+                            .as_mut()
+                            .expect("Expected binding to have an aliased type");
                         try!(check.kindcheck_type(typ));
                     }
 
@@ -810,9 +806,9 @@ impl<'a> Typecheck<'a> {
                                         })
                                         .collect::<TcResult<Vec<_>>>());
                 let result = self.find_record(&fields.iter()
-                                                     .map(|f| f.name.clone())
-                                                     .collect::<Vec<_>>())
-                                 .map(|t| (t.0.clone(), t.1.clone()));
+                        .map(|f| f.name.clone())
+                        .collect::<Vec<_>>())
+                    .map(|t| (t.0.clone(), t.1.clone()));
                 let (id_type, record_type) = match result {
                     Ok(x) => x,
                     Err(_) => {
@@ -883,10 +879,10 @@ impl<'a> Typecheck<'a> {
                     Type::Record { fields: ref expected_fields, .. } => {
                         for pattern_field in fields {
                             let found_field = expected_fields.iter()
-                                                             .find(|expected_field| {
-                                                                 pattern_field.0
-                                                                     .name_eq(&expected_field.name)
-                                                             });
+                                .find(|expected_field| {
+                                    pattern_field.0
+                                        .name_eq(&expected_field.name)
+                                });
                             let expected_field = match found_field {
                                 Some(expected) => expected,
                                 None => {
@@ -906,19 +902,17 @@ impl<'a> Typecheck<'a> {
                         let fields: Vec<_> = fields.iter().map(|t| t.0.clone()).collect();
                         // actual_type is the record (not hidden behind an alias)
                         let (mut typ, mut actual_type) = match self.find_record(&fields)
-                                                                   .map(|t| {
-                                                                       (t.0.clone(), t.1.clone())
-                                                                   }) {
+                            .map(|t| (t.0.clone(), t.1.clone())) {
                             Ok(typ) => typ,
                             Err(_) => {
                                 let fields = fields.iter()
-                                                   .map(|field| {
-                                                       types::Field {
-                                                           name: field.clone(),
-                                                           typ: self.subs.new_var(),
-                                                       }
-                                                   })
-                                                   .collect();
+                                    .map(|field| {
+                                        types::Field {
+                                            name: field.clone(),
+                                            typ: self.subs.new_var(),
+                                        }
+                                    })
+                                    .collect();
                                 let t = Type::record(Vec::new(), fields);
                                 (t.clone(), t)
                             }
@@ -956,7 +950,7 @@ impl<'a> Typecheck<'a> {
                             // The `types` in the record type should have a type matching the
                             // `name`
                             let field_type = types.iter()
-                                                  .find(|field| field.name.name_eq(&name));
+                                .find(|field| field.name.name_eq(&name));
                             match field_type {
                                 Some(field_type) => {
                                     // This forces refresh_type to remap the name a type was given
@@ -1059,42 +1053,40 @@ impl<'a> Typecheck<'a> {
         let generic = {
             let vars = self.inst.named_variables.borrow();
             let max_var = vars.keys()
-                              .fold("a", |max, current| {
-                                  ::std::cmp::max(max, self.symbols.string(&current))
-                              });
+                .fold("a",
+                      |max, current| ::std::cmp::max(max, self.symbols.string(&current)));
             String::from(max_var)
         };
         let mut i = 0;
         types::walk_move_type(typ,
                               &mut |typ| {
-                                  let replacement = self.subs.replace_variable(typ);
-                                  let mut typ = typ;
-                                  if let Some(ref t) = replacement {
-                                      debug!("{} ==> {}",
+            let replacement = self.subs.replace_variable(typ);
+            let mut typ = typ;
+            if let Some(ref t) = replacement {
+                debug!("{} ==> {}",
                                              types::display_type(&self.symbols, &typ),
                                              types::display_type(&self.symbols, t));
-                                      typ = &**t;
-                                  }
-                                  match *typ {
-                                      Type::Variable(ref var) if self.subs.get_level(var.id) >
-                                                                 level => {
-                                          let generic = format!("{}{}", generic, i);
-                                          i += 1;
-                                          let id = self.symbols.symbol(generic);
-                                          let gen: TcType = Type::generic(Generic {
-                                              kind: var.kind.clone(),
-                                              id: id.clone(),
-                                          });
-                                          self.subs.insert(var.id, gen.clone());
-                                          self.inst
-                                              .named_variables
-                                              .borrow_mut()
-                                              .insert(id, gen.clone());
-                                          Some(gen)
-                                      }
-                                      _ => unroll_app(typ).or(replacement.clone()),
-                                  }
-                              })
+                typ = &**t;
+            }
+            match *typ {
+                Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
+                    let generic = format!("{}{}", generic, i);
+                    i += 1;
+                    let id = self.symbols.symbol(generic);
+                    let gen: TcType = Type::generic(Generic {
+                        kind: var.kind.clone(),
+                        id: id.clone(),
+                    });
+                    self.subs.insert(var.id, gen.clone());
+                    self.inst
+                        .named_variables
+                        .borrow_mut()
+                        .insert(id, gen.clone());
+                    Some(gen)
+                }
+                _ => unroll_app(typ).or(replacement.clone()),
+            }
+        })
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
@@ -1118,8 +1110,8 @@ impl<'a> Typecheck<'a> {
                 Type::Id(ref id) => {
                     // Substitute the Id by its alias if possible
                     let new_id = self.original_symbols
-                                     .get(&id)
-                                     .unwrap_or(id);
+                        .get(&id)
+                        .unwrap_or(id);
                     self.environment
                         .find_type_info(new_id)
                         .map(|alias| alias.clone().into_type())
@@ -1132,20 +1124,20 @@ impl<'a> Typecheck<'a> {
                 Type::Variants(ref variants) => {
                     let iter = || {
                         variants.iter()
-                                .map(|var| self.original_symbols.get(&var.0))
+                            .map(|var| self.original_symbols.get(&var.0))
                     };
                     if iter().any(|opt| opt.is_some()) {
                         // If any of the variants requires a symbol replacement
                         // we create a new type
                         Some(Type::variants(iter()
-                                                .zip(variants.iter())
-                                                .map(|(new, old)| {
-                                                    match new {
-                                                        Some(new) => (new.clone(), old.1.clone()),
-                                                        None => old.clone(),
-                                                    }
-                                                })
-                                                .collect()))
+                            .zip(variants.iter())
+                            .map(|(new, old)| {
+                                match new {
+                                    Some(new) => (new.clone(), old.1.clone()),
+                                    None => old.clone(),
+                                }
+                            })
+                            .collect()))
                     } else {
                         None
                     }
@@ -1225,8 +1217,8 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut 
     if let Type::Record { fields: ref field_types, .. } = **typ {
         for field in fields {
             let associated_type = field_types.iter()
-                                             .find(|type_field| type_field.name.name_eq(&field.0))
-                                             .expect("Associated type to exist in record");
+                .find(|type_field| type_field.name.name_eq(&field.0))
+                .expect("Associated type to exist in record");
             f(&field.0, &associated_type.typ);
         }
     }
@@ -1237,21 +1229,21 @@ fn apply_subs(subs: &Substitution<TcType>,
               -> Vec<::unify_type::Error<Symbol>> {
     use unify::Error::*;
     error.into_iter()
-         .map(|error| {
-             match error {
-                 TypeMismatch(expected, actual) => {
-                     TypeMismatch(subs.set_type(expected), subs.set_type(actual))
-                 }
-                 Occurs(var, typ) => Occurs(var, subs.set_type(typ)),
-                 Other(::unify_type::TypeError::UndefinedType(id)) => {
-                     Other(::unify_type::TypeError::UndefinedType(id))
-                 }
-                 Other(::unify_type::TypeError::FieldMismatch(expected, actual)) => {
-                     UnifyError::Other(::unify_type::TypeError::FieldMismatch(expected, actual))
-                 }
-             }
-         })
-         .collect()
+        .map(|error| {
+            match error {
+                TypeMismatch(expected, actual) => {
+                    TypeMismatch(subs.set_type(expected), subs.set_type(actual))
+                }
+                Occurs(var, typ) => Occurs(var, subs.set_type(typ)),
+                Other(::unify_type::TypeError::UndefinedType(id)) => {
+                    Other(::unify_type::TypeError::UndefinedType(id))
+                }
+                Other(::unify_type::TypeError::FieldMismatch(expected, actual)) => {
+                    UnifyError::Other(::unify_type::TypeError::FieldMismatch(expected, actual))
+                }
+            }
+        })
+        .collect()
 }
 
 
@@ -1282,7 +1274,7 @@ fn get_alias_app<'a>(env: &'a TypeEnv,
         }
         _ => {
             typ.as_alias()
-               .and_then(|(id, args)| env.find_type_info(id).map(|alias| (&**alias, &args[..])))
+                .and_then(|(id, args)| env.find_type_info(id).map(|alias| (&**alias, &args[..])))
         }
     }
 }

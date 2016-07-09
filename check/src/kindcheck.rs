@@ -20,7 +20,7 @@ pub type Result<T> = ::std::result::Result<T, Error<Symbol>>;
 /// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
     variables: Vec<Generic<Symbol>>,
-    ///Type bindings local to the current kindcheck invocation
+    /// Type bindings local to the current kindcheck invocation
     locals: Vec<(Symbol, RcKind)>,
     info: &'a (KindEnv + 'a),
     idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
@@ -87,29 +87,28 @@ impl<'a> KindCheck<'a> {
     }
 
     fn find(&mut self, id: &Symbol) -> Result<RcKind> {
-        let kind =
-            self.variables
-                .iter()
-                .find(|var| var.id == *id)
-                .map(|t| t.kind.clone())
-                .or_else(|| {
-                    self.locals
-                        .iter()
-                        .find(|t| t.0 == *id)
-                        .map(|t| t.1.clone())
-                })
-                .or_else(|| self.info.find_kind(id))
-                .map_or_else(|| {
-                                 let id_str = self.idents.string(&id);
-                                 if id_str.chars().next().map_or(false, |c| c.is_uppercase()) {
-                                     Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
-                                 } else {
-                                     // Create a new variable
-                                     self.locals.push((id.clone(), self.subs.new_var()));
-                                     Ok(self.locals.last().unwrap().1.clone())
-                                 }
-                             },
-                             Ok);
+        let kind = self.variables
+            .iter()
+            .find(|var| var.id == *id)
+            .map(|t| t.kind.clone())
+            .or_else(|| {
+                self.locals
+                    .iter()
+                    .find(|t| t.0 == *id)
+                    .map(|t| t.1.clone())
+            })
+            .or_else(|| self.info.find_kind(id))
+            .map_or_else(|| {
+                let id_str = self.idents.string(&id);
+                if id_str.chars().next().map_or(false, |c| c.is_uppercase()) {
+                    Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
+                } else {
+                    // Create a new variable
+                    self.locals.push((id.clone(), self.subs.new_var()));
+                    Ok(self.locals.last().unwrap().1.clone())
+                }
+            },
+                         Ok);
         debug!("Find kind: {} => {}",
                self.idents.string(&id),
                kind.as_ref().unwrap());
@@ -188,27 +187,27 @@ impl<'a> KindCheck<'a> {
             }
             Type::Variants(ref variants) => {
                 let variants = try!(variants.iter()
-                                            .map(|variant| {
-                                                let (kind, typ) = try!(self.kindcheck(&variant.1));
-                                                let star = self.star.clone();
-                                                try!(self.unify(&star, kind));
-                                                Ok((variant.0.clone(), typ))
-                                            })
-                                            .collect());
+                    .map(|variant| {
+                        let (kind, typ) = try!(self.kindcheck(&variant.1));
+                        let star = self.star.clone();
+                        try!(self.unify(&star, kind));
+                        Ok((variant.0.clone(), typ))
+                    })
+                    .collect());
                 Ok((self.star.clone(), Type::variants(variants)))
             }
             Type::Record { ref types, ref fields } => {
                 let fields = try!(fields.iter()
-                                        .map(|field| {
-                                            let (kind, typ) = try!(self.kindcheck(&field.typ));
-                                            let star = self.star.clone();
-                                            try!(self.unify(&star, kind));
-                                            Ok(types::Field {
-                                                name: field.name.clone(),
-                                                typ: typ,
-                                            })
-                                        })
-                                        .collect());
+                    .map(|field| {
+                        let (kind, typ) = try!(self.kindcheck(&field.typ));
+                        let star = self.star.clone();
+                        try!(self.unify(&star, kind));
+                        Ok(types::Field {
+                            name: field.name.clone(),
+                            typ: typ,
+                        })
+                    })
+                    .collect());
                 Ok((self.star.clone(), Type::record(types.clone(), fields)))
             }
             Type::Id(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
@@ -234,21 +233,19 @@ impl<'a> KindCheck<'a> {
         let default = Some(&self.star);
         types::walk_move_type(typ,
                               &mut |typ| {
-                                  match *typ {
-                                      Type::Variable(ref var) => {
-                                          let mut kind = var.kind.clone();
-                                          kind = update_kind(&self.subs, kind, default);
-                                          Some(Type::variable(types::TypeVariable {
-                                              id: var.id,
-                                              kind: kind,
-                                          }))
-                                      }
-                                      Type::Generic(ref var) => {
-                                          Some(Type::generic(self.finalize_generic(var)))
-                                      }
-                                      _ => None,
-                                  }
-                              })
+            match *typ {
+                Type::Variable(ref var) => {
+                    let mut kind = var.kind.clone();
+                    kind = update_kind(&self.subs, kind, default);
+                    Some(Type::variable(types::TypeVariable {
+                        id: var.id,
+                        kind: kind,
+                    }))
+                }
+                Type::Generic(ref var) => Some(Type::generic(self.finalize_generic(var))),
+                _ => None,
+            }
+        })
     }
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
         let mut kind = var.kind.clone();
@@ -263,13 +260,11 @@ impl<'a> KindCheck<'a> {
 fn update_kind(subs: &Substitution<RcKind>, kind: RcKind, default: Option<&RcKind>) -> RcKind {
     walk_move_kind(kind,
                    &mut |kind| {
-                       match *kind {
-                           Kind::Variable(id) => {
-                               subs.find_type_for_var(id).cloned().or_else(|| default.cloned())
-                           }
-                           _ => None,
-                       }
-                   })
+        match *kind {
+            Kind::Variable(id) => subs.find_type_for_var(id).cloned().or_else(|| default.cloned()),
+            _ => None,
+        }
+    })
 }
 
 /// Enumeration possible errors other than mismatch and occurs when kindchecking

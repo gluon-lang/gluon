@@ -153,13 +153,13 @@ impl<'b> Context<'b> {
     fn exit_scope(self) -> Option<Context<'b>> {
         let Context { thread, stack, gc } = self;
         stack.exit_scope()
-             .map(move |stack| {
-                 Context {
-                     thread: thread,
-                     stack: stack,
-                     gc: gc,
-                 }
-             })
+            .map(move |stack| {
+                Context {
+                    thread: thread,
+                    stack: stack,
+                    gc: gc,
+                }
+            })
     }
 }
 fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> GcPtr<D::Value>
@@ -230,8 +230,8 @@ impl Drop for RootedThread {
         let is_empty = {
             let mut roots = self.parent_threads();
             let index = roots.iter()
-                             .position(|p| &**p as *const Thread == &*self.0 as *const Thread)
-                             .expect("VM ptr");
+                .position(|p| &**p as *const Thread == &*self.0 as *const Thread)
+                .expect("VM ptr");
             roots.swap_remove(index);
             roots.is_empty()
         };
@@ -368,7 +368,7 @@ impl Thread {
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, TcType>> {
         let env = self.get_env();
         env.find_type_info(name)
-           .map(|alias| alias.into_owned())
+            .map(|alias| alias.into_owned())
     }
 
     /// Returns the gluon type that was bound to `T`
@@ -516,7 +516,7 @@ pub trait ThreadInternal {
                     args: VMIndex,
                     instructions: Vec<Instruction>);
 
-    ///Calls a module, allowed to to run IO expressions
+    /// Calls a module, allowed to to run IO expressions
     fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value>;
 
     /// Calls a function on the stack.
@@ -544,13 +544,13 @@ impl ThreadInternal for Thread {
     /// Roots a userdata
     fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
         v.downcast_ref::<T>()
-         .map(|ptr| {
-             self.roots.write().unwrap().push(v.as_traverseable());
-             Root {
-                 roots: &self.roots,
-                 ptr: ptr,
-             }
-         })
+            .map(|ptr| {
+                self.roots.write().unwrap().push(v.as_traverseable());
+                Root {
+                    roots: &self.roots,
+                    ptr: ptr,
+                }
+            })
     }
 
     /// Roots a string
@@ -611,15 +611,15 @@ impl ThreadInternal for Thread {
     }
 
 
-    ///Calls a module, allowed to to run IO expressions
+    /// Calls a module, allowed to to run IO expressions
     fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
         let value = try!(self.call_bytecode(closure));
         if let Some((id, _)) = typ.as_alias() {
             let is_io = {
                 let env = self.get_env();
                 env.find_type_info("IO")
-                   .map(|alias| *id == alias.name)
-                   .unwrap_or(false)
+                    .map(|alias| *id == alias.name)
+                    .unwrap_or(false)
             };
             if is_io {
                 debug!("Run IO {:?}", value);
@@ -633,7 +633,7 @@ impl ThreadInternal for Thread {
                     stack: StackFrame::frame(stack, 2, State::Unknown),
                 };
                 context = try!(self.call_context(context, 1))
-                              .expect("call_module to have the stack remaining");
+                    .expect("call_module to have the stack remaining");
                 let result = context.stack.pop();
                 while context.stack.len() > 0 {
                     context.stack.pop();
@@ -668,7 +668,7 @@ impl ThreadInternal for Thread {
             return Err(Error::Dead);
         }
         context.execute()
-               .map(|_| ())
+            .map(|_| ())
     }
 
     fn global_env(&self) -> &Arc<GlobalVMState> {
@@ -713,10 +713,9 @@ impl<'b> Context<'b> {
             self.stack.pop();
         }
         self = try!(self.exit_scope()
-                        .ok_or_else(|| {
-                            Error::Message(StdString::from("Poped the last frame in \
-                                                            execute_function"))
-                        }));
+            .ok_or_else(|| {
+                Error::Message(StdString::from("Poped the last frame in execute_function"))
+            }));
         self.stack.pop();// Pop function
         self.stack.push(result);
         match status {
@@ -963,7 +962,7 @@ impl<'b> Context<'b> {
                         Value::Tag(tag) => tag,
                         _ => {
                             return Err(Error::Message("Op TestTag called on non data type"
-                                                          .to_string()))
+                                .to_string()))
                         }
                     };
                     self.stack.push(Value::Tag(if data_tag == tag {
@@ -983,7 +982,7 @@ impl<'b> Context<'b> {
                         Value::Tag(_) => (),
                         _ => {
                             return Err(Error::Message("Op Split called on non data type"
-                                                          .to_string()))
+                                .to_string()))
                         }
                     }
                 }
