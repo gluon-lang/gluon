@@ -22,7 +22,7 @@ fn find_type(s: &str, location: Location) -> Result<TcType, ()> {
 fn suggest(s: &str, location: Location) -> Result<Vec<String>, ()> {
     let (mut expr, _result) = typecheck_partial_expr(s);
     let vec = completion::suggest(&ast::EmptyEnv::new(), &mut expr, location);
-    let mut vec: Vec<String> = vec.into_iter().map(|ident| ident.name.to_string()).collect();
+    let mut vec: Vec<String> = vec.into_iter().map(|ident| ident.name.declared_name().to_string()).collect();
     vec.sort();
     Ok(vec)
 }
@@ -169,4 +169,15 @@ a
 "#,
 Location { row: 3, column: 7, absolute: 0 });
     assert_eq!(result, Ok(vec!["aa".into()]));
+}
+
+#[test]
+fn suggest_on_record_in_field_access() {
+    let result = suggest(
+r#"
+let record = { aa = 1, ab = 2, c = "" }
+record.aa
+"#,
+Location { row: 3, column: 4, absolute: 0 });
+    assert_eq!(result, Ok(vec!["record".into()]));
 }

@@ -76,16 +76,10 @@ impl OnFound for Suggest {
     fn expr(&mut self, expr: &ast::LExpr<ast::TcIdent<Symbol>>) {
         match expr.value {
             ast::Expr::Identifier(ref ident) => {
-                let id = ident.name.as_ref();
-                let id = id.split(':').next().unwrap_or(id);
-                for (k_sym, typ) in self.stack.iter() {
-                    let k = k_sym.as_ref();
-                    if k.split(':')
-                        .next()
-                        .unwrap_or(k)
-                        .starts_with(id) {
+                for (k, typ) in self.stack.iter() {
+                    if k.declared_name().starts_with(ident.name.declared_name()) {
                         self.result.push(ast::TcIdent {
-                            name: k_sym.clone(),
+                            name: k.clone(),
                             typ: typ.clone(),
                         });
                     }
@@ -210,7 +204,7 @@ impl<'a, F> FindVisitor<'a, F>
             }
             Type(_, ref expr) => self.visit_expr(expr),
             FieldAccess(ref expr, ref id) => {
-                if expr.span(self.env).containment(&self.location) < Ordering::Equal {
+                if expr.span(self.env).containment(&self.location) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
                     self.on_found.ident(current, id);

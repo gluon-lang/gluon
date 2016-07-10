@@ -207,9 +207,9 @@ impl Span {
     pub fn containment(&self, location: &Location) -> Ordering {
         use std::cmp::Ordering::*;
         match (location.cmp(&self.start), location.cmp(&self.end)) {
-            (_, Equal) | (Equal, _) | (Greater, Less) => Equal,
+            (Equal, _) | (Greater, Less) => Equal,
             (Less, _) => Less,
-            (_, Greater) => Greater,
+            (_, Equal) | (_, Greater) => Greater,
         }
     }
     pub fn containment_exclusive(&self, location: &Location) -> Ordering {

@@ -64,6 +64,12 @@ impl Symbol {
     pub fn name_eq(&self, other: &Symbol) -> bool {
         self == other || self.0 == other.0
     }
+
+    /// Returns the name of this symbol as it was originally declared (strips location information)
+    pub fn declared_name(&self) -> &str {
+        let name = self.as_ref();
+        name.split(':').next().unwrap_or(name)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
