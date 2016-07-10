@@ -714,6 +714,41 @@ pure 123
             value.0);
 }
 
+#[test]
+fn stacktrace() {
+    use gluon::vm::stack::StacktraceFrame;
+    let _ = ::env_logger::init();
+    let text = r#"
+let f x =
+    if x == 0 then
+        3 + error "test"
+    else if x == 1 then
+        2 + f (x - 1)
+    else
+        1 + f (x - 1)
+f 5
+"#;
+    let mut vm = make_vm();
+    let result = Compiler::new().run_expr::<i32>(&mut vm, "<top>", text);
+    match result {
+        Err(Error::VM(..)) => {
+            let stacktrace = vm.get_stack().stacktrace(1);
+            let f = stacktrace.frames[0].as_ref().unwrap().name.clone();
+            assert_eq!(stacktrace.frames, vec![
+                    // Removed due to being a tail call
+                    // Some(StacktraceFrame { name: f.clone(), line: 9 }),
+                    Some(StacktraceFrame { name: f.clone(), line: 8 }),
+                    Some(StacktraceFrame { name: f.clone(), line: 8 }),
+                    Some(StacktraceFrame { name: f.clone(), line: 8 }),
+                    Some(StacktraceFrame { name: f.clone(), line: 8 }),
+                    Some(StacktraceFrame { name: f.clone(), line: 6 }),
+                    Some(StacktraceFrame { name: f.clone(), line: 4 }),
+                ]);
+        }
+        Err(err) => panic!("Unexpected error `{}`", err),
+        Ok(_) => panic!("Expected an error"),
+    }
+}
 
 #[test]
 fn value_size() {

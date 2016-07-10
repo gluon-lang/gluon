@@ -39,6 +39,7 @@ fn new_bytecode(gc: &mut Gc,
                            strings,
                            module_globals,
                            records,
+                           source_map,
                            .. } = f;
     let fs = try!(inner_functions.into_iter()
         .map(|inner| new_bytecode(gc, vm, inner))
@@ -63,6 +64,7 @@ fn new_bytecode(gc: &mut Gc,
         strings: strings,
         globals: globals,
         records: records,
+        source_map: source_map,
     }))
 }
 

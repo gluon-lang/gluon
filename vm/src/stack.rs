@@ -277,8 +277,31 @@ impl<'a: 'b, 'b> StackFrame<'b> {
             .iter()
             .filter_map(|frame| {
                 match frame.state {
-                    State::Closure(ref closure) => Some(Some(closure.function.name.clone())),
-                    State::Extern(ref ext) => Some(Some(ext.id.clone())),
+                    State::Closure(ref closure) => {
+                        let p = closure.function
+                            .source_map
+                            .iter()
+                            .position(|&(index, _)| index > frame.instruction_index)
+                            .unwrap_or(closure.function.source_map.len());
+                        let line = if p == 0 {
+                            0
+                        } else {
+                            closure.function
+                                .source_map
+                                .get(p - 1)
+                                .map_or(0, |&(_, line)| line)
+                        };
+                        Some(Some(StacktraceFrame {
+                            name: closure.function.name.clone(),
+                            line: line,
+                        }))
+                    }
+                    State::Extern(ref ext) => {
+                        Some(Some(StacktraceFrame {
+                            name: ext.id.clone(),
+                            line: 0,
+                        }))
+                    }
                     State::Unknown => Some(None),
                     State::Lock | State::Excess => None,
                 }
@@ -381,17 +404,28 @@ impl<'b> IndexMut<RangeFrom<VmIndex>> for StackFrame<'b> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
+pub struct StacktraceFrame {
+    pub name: Symbol,
+    pub line: i32,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Stacktrace {
-    frames: Vec<Option<Symbol>>,
+    pub frames: Vec<Option<StacktraceFrame>>,
 }
 
 impl fmt::Display for Stacktrace {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(writeln!(f, "Stacktrace:\n"));
         for (i, frame) in self.frames.iter().enumerate() {
-            let name = frame.as_ref().map_or("<unknown>", |frame| frame.as_ref());
-            try!(writeln!(f, "{}: {}", i, name));
+            let (name, line) = frame.as_ref()
+                .map_or(("<unknown>", 0), |frame| (frame.name.declared_name(), frame.line));
+            try!(if line == 0 {
+                writeln!(f, "{}: {}", i, name)
+            } else {
+                writeln!(f, "{}: {}:{}", i, name, line)
+            });
         }
         Ok(())
     }
