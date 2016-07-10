@@ -43,6 +43,8 @@ pub struct CompiledFunction {
     /// Storage for globals which are needed by the module which is currently being compiled
     pub module_globals: Vec<Symbol>,
     pub records: Vec<Vec<Symbol>>,
+    /// Maps instruction indexes to the line that spawned them
+    pub source_map: Vec<(usize, i32)>,
 }
 
 impl CompiledFunction {
@@ -57,6 +59,7 @@ impl CompiledFunction {
             strings: Vec::new(),
             module_globals: Vec::new(),
             records: Vec::new(),
+            source_map: Vec::new(),
         }
     }
 }
@@ -65,6 +68,7 @@ struct FunctionEnv {
     stack: Vec<(VmIndex, Symbol)>,
     stack_size: VmIndex,
     free_vars: Vec<Symbol>,
+    current_line: i32,
     function: CompiledFunction,
 }
 
@@ -114,6 +118,7 @@ impl FunctionEnv {
             stack: Vec::new(),
             stack_size: 0,
             function: CompiledFunction::new(args, id, typ),
+            current_line: 0,
         }
     }
 
@@ -131,6 +136,12 @@ impl FunctionEnv {
         }
 
         self.function.instructions.push(instruction);
+        let last_emitted_line = self.function.source_map.last().map_or(0, |&(_, x)| x);
+        if last_emitted_line != self.current_line {
+            self.function
+                .source_map
+                .push((self.function.instructions.len() - 1, self.current_line));
+        }
     }
 
     fn increase_stack(&mut self, adjustment: VmIndex) {
@@ -456,9 +467,12 @@ impl<'a> Compiler<'a> {
         // done
         let mut exprs = Vec::new();
         exprs.push(expr);
+        let saved_line = function.current_line;
+        function.current_line = expr.location.row;
         while let Some(next) = try!(self.compile_(expr, function, tail_position)) {
             exprs.push(next);
             expr = next;
+            function.current_line = expr.location.row;
         }
         for expr in exprs.iter().rev() {
             let mut count = 0;
@@ -470,6 +484,7 @@ impl<'a> Compiler<'a> {
             }
             function.emit(Slide(count));
         }
+        function.current_line = saved_line;
         Ok(())
     }
 

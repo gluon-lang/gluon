@@ -105,6 +105,7 @@ pub struct BytecodeFunction {
     pub strings: Vec<InternedStr>,
     pub globals: Vec<Value>,
     pub records: Vec<Vec<InternedStr>>,
+    pub source_map: Vec<(usize, i32)>,
 }
 
 impl Traverseable for BytecodeFunction {
