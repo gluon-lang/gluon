@@ -81,7 +81,7 @@ let store line: String -> IO Bool =
             io.load_script binding expr >> return True
         | None -> io.print "Expected binding in definition" >> return True
 
-let loop x: () -> IO () =
+let loop editor: Editor -> IO () =
     let run_line line =
         if string.is_empty (string.trim line) then
             return True
@@ -94,14 +94,14 @@ let loop x: () -> IO () =
                 >>= io.print
                 >> return True
 
-    repl_prim.input "> " >>= \line_opt ->
+    rustyline.readline editor "> " >>= \line_opt ->
         match line_opt with
             | None -> return ()
             | Some line -> run_line line >>= \continue ->
-                if continue then loop () else return ()
+                if continue then loop editor else return ()
 
 let run x: () -> IO () =
     io.print "gluon (:h for help, :q to quit)"
-        >>= loop
+        >> loop (rustyline.new_editor ())
 
 run

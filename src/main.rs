@@ -7,7 +7,6 @@ extern crate clap;
 extern crate quick_error;
 #[macro_use]
 extern crate lazy_static;
-extern crate linenoise;
 
 extern crate gluon_base as base;
 extern crate gluon;
@@ -57,16 +56,16 @@ fn main() {
             init_env_logger();
 
             let matches = App::new("gluon")
-                              .about("Executes gluon programs")
-                              .arg(Arg::with_name("INPUT")
-                                       .multiple(true)
-                                       .help("Executes each file as a gluon program"))
-                              .arg(Arg::with_name("REPL")
-                                       .short("i")
-                                       .long("interactive")
-                                       .help("Starts the repl")
-                                       .takes_value(false))
-                              .get_matches();
+                .about("Executes gluon programs")
+                .arg(Arg::with_name("INPUT")
+                    .multiple(true)
+                    .help("Executes each file as a gluon program"))
+                .arg(Arg::with_name("REPL")
+                    .short("i")
+                    .long("interactive")
+                    .help("Starts the repl")
+                    .takes_value(false))
+                .get_matches();
             if matches.is_present("REPL") {
                 if let Err(err) = repl::run() {
                     println!("{}", err);
