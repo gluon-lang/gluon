@@ -157,7 +157,7 @@ extern "C" fn catch_io(vm: &Thread) -> Status {
 fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<String> {
     let fmt = match err {
         Error::VM(vm::Error::Panic(_)) => {
-            let trace = stack.stacktrace(frame_level);
+            let trace = stack.stack.stacktrace(frame_level);
             format!("{}\n{}", err, trace)
         }
         _ => format!("{}", err),
