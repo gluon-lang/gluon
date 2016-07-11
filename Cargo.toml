@@ -1,7 +1,7 @@
 [package]
 
 name = "gluon"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Markus <marwes91@gmail.com>"]
 build = "build.rs"
 
@@ -30,7 +30,7 @@ quick-error = "1.0.0"
 
 [dependencies.gluon_base]
 path = "base"
-version = "0.1.2"
+version = "0.1.3"
 
 [dependencies.gluon_parser]
 path = "parser"
@@ -38,7 +38,7 @@ version = "0.1.2"
 
 [dependencies.gluon_check]
 path = "check"
-version = "0.1.2"
+version = "0.1.3"
 
 [dependencies.gluon_vm]
 path = "vm"
