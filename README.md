@@ -28,7 +28,7 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 #### Rust
 
-Gluon is available at [crates.io](https://crates.io/crates/gluon) and can easily be included in a Cargo project by adding the lines below.
+Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available at [crates.io](https://crates.io/crates/gluon) and can easily be included in a Cargo project by adding the lines below.
 
 ```toml
 [dependencies]
