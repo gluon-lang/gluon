@@ -9,9 +9,11 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 * **Statically typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
 
-* **Type inference** - Type inference ensures that types rarely have to be written explicitly giving the all the benefits of static typing with none of the typing.
+* **Type inference** - Type inference ensures that types rarely have to be written explicitly giving the all the benefits of static types with none of the typing.
 
 * **Simple embedding** - Marshalling values to and from gluon requires next to no boiler plate allowing functions defined in [Rust][] to be [directly passed to gluon][easy_embed].
+
+* **UTF-8 by default** - Gluon supports unicode out of the box with utf-8 encoded strings and unicode codepoints as characters.
 
 * **Separate heaps** - Gluon is a garbage collected language but uses a separate heap for each executing gluon thread. This keeps each heap small, reducing the overhead of the garbage collector.
 
@@ -35,7 +37,7 @@ Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available
 gluon = "0.1.0"
 ```
 
-#### Other langauges
+#### Other languages
 Currently the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust api.
 
 [C api]: https://github.com/Marwes/gluon/blob/master/c-api/src/lib.rs
@@ -162,7 +164,7 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Tiny** - By being tiny the langauge is easy to learn and makes the implementation small.
 
-* **Strict** - Strict langauges are usually easier to reason about, especially considering that is what most people are accustomed with. For cases where lazines is desired an explict type is provied.
+* **Strict** - Strict languages are usually easier to reason about, especially considering that is what most people are accustomed with. For cases where lazines is desired an explict type is provied.
 
 * **Modular** - The library is split into parser, typechecker and virtual machine + compiler. Each of these components can be use independently of each other allowing applications to pick and choose exactly what they need.
 
