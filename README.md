@@ -108,7 +108,7 @@ let factorial n =
 
 // `type` is used to declare a new type.
 // In this case we declare `Countable` to be a record with a single field (count) which is a function
-// taking a single arguemnt and returning an integer
+// taking a single argument and returning an integer
 type Countable a = { count: a -> Int }
 
 // "Counting" an integer just means returning the integer itself
@@ -149,7 +149,7 @@ else
 
 ## Contributing
 
-If you are interested in contributing to this project there are a few issues open marked as [beginner][] which should be possible to for someone unfamiliar with the code. If you find something that looks interesting leave a comment on the issue so I know about it annd can give some assistance if needed.
+If you are interested in contributing to this project there are a few issues open marked as [beginner][] which should be possible to handle for someone unfamiliar with the code. If you find something that looks interesting leave a comment on the issue so I know about it and can give some assistance if needed.
 
 [beginner]:https://github.com/Marwes/gluon/labels/Beginner
 
