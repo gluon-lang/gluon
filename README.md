@@ -164,7 +164,7 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Tiny** - By being tiny the langauge is easy to learn and makes the implementation small.
 
-* **Strict** - Strict languages are usually easier to reason about, especially considering that is what most people are accustomed with. For cases where lazines is desired an explict type is provied.
+* **Strict** - Strict languages are usually easier to reason about, especially considering that is what most people are accustomed with. For cases where lazines is desired an explict type is provided.
 
 * **Modular** - The library is split into parser, typechecker and virtual machine + compiler. Each of these components can be use independently of each other allowing applications to pick and choose exactly what they need.
 
