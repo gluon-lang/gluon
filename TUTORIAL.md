@@ -204,7 +204,7 @@ let divide x y: Int -> Int -> MyOption Int =
 in divide 10 4
 ```
 
-An important difference from many languages however is that `type` only defines aliases. This means that all types in the example below are actually equivalent to eachother.
+An important difference from many languages however is that `type` only defines aliases. This means that all types in the example below are actually equivalent to each other.
 
 ```f#,rust
 type Type1 = { x: Int }
@@ -232,7 +232,7 @@ in Atom "name"
 <type> -> <type>
 ```
 
-Function types are written using the `->` operator which is right associtive. This means that the type of `(+)` which is usually written as `Int -> Int -> Int` is parsed as `Int -> (Int -> Int)` (A function taking one argument of `Int` and returning a function of `Int -> Int`).
+Function types are written using the `->` operator which is right associative. This means that the type of `(+)` which is usually written as `Int -> Int -> Int` is parsed as `Int -> (Int -> Int)` (A function taking one argument of `Int` and returning a function of `Int -> Int`).
 
 #### Record type
 
@@ -251,7 +251,7 @@ Records are gluon's main way of creating associating related data and they shoul
 | Err e | Ok t
 ```
 
-Gluon also has a second wy of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of gluons standard `Result` type which represents either the value having been successfully computed (`Ok t`) or that an error occured (`Err e`).
+Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of gluons standard `Result` type which represents either the value having been successfully computed (`Ok t`) or that an error occurred (`Err e`).
 
 #### Alias type
 
@@ -263,7 +263,7 @@ Option Int
 Ref String
 ```
 
-The last kind of type which gluon has is the alias type. An alias type is a type which explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract then the type is only considered equivalent to its own alias (ie if you define an abstract type of `MyInt` which has the same representation as `Int` the typechecker still considers these two types as being not equal to eachother).
+The last kind of type which gluon has is the alias type. An alias type is a type which explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract then the type is only considered equivalent to its own alias (ie if you define an abstract type of `MyInt` which has the same representation as `Int` the typechecker still considers these two types as being not equal to each other).
 
 #### Higher-kinded types (TODO)
 
@@ -271,20 +271,23 @@ Gluon has higher kinded types.
 
 ### Indentation
 
-If you have been following along this far you may be thinking think that the syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily gluon offerrs a more convenient way of writing bindings by relying on indentation.
+If you have been following along this far you may be thinking think that the syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily gluon offers a more convenient way of writing bindings by relying on indentation.
 
-When a token starts on the same line as a token on an earlier line, gluon implicitly adds inserts a block expression which allows multiple expressions and bindings to be run sequentially with all variables in scope.
+When a token starts on the same column as an unclosed `let` or `type` expression the lexer implicitly inserts an `in` token which closes the declaration part and makes the following expression into the body.
 
 ```f#,rust
 let add1 x = x + 1
-add1 11 // `in` will be inserted automatically since `id 1` starts on the same line as the opening `let`
+add1 11 // `in` will be inserted automatically since `add1 11` starts on the same line as the opening `let`
 ```
+
+If a token starts on the same column as an earlier expression but there is not an unclosed `type` or `let` expression gluon treats the code as a block expression which means each expression are run sequentially, returning the value of the last expression.
 
 ```f#
 do_something1 ()
-do_something2 ()
+do_something2 () // `do_something1 ()` is run, then `do_something_2`. The result of `type ...` is the result of the expression
 type PrivateType = | Private Int
 let x = Private (do_something3 ())
+do_something3 ()
 match x with
 | Private y -> do_something4 x
 ```
@@ -385,7 +388,7 @@ assert_eq!(result, Ok(3));
 
 ### Calling Rust functions from gluon
 
-gluon also allows native functions to be called from gluon. To do this we first need to define the function so it is available when running embed_lang code.
+gluon also allows native functions to be called from gluon. To do this we first need to define the function so it is available when running gluon code.
 
 ```rust,ignore
 fn factorial(x: i32) -> i32 {
