@@ -1,15 +1,36 @@
-let { Monad, Monoid } = import "std/prelude.glu"
+let { Applicative, Functor, Monad, Monoid } = import "std/prelude.glu"
 
 type Writer w a = { value: a, writer: w }
 
-let make w: Monoid w -> Monad (Writer w) = {
-    (>>=) = \m g ->
-        let { value, writer } = g m.value
-        { value, writer = w.(<>) m.writer writer },
-    return = \value -> { value, writer = w.empty }
-}
+let make_Functor w: Monoid w -> Functor (Writer w) =
+    let { (<>) } = w
+
+    let map f m : (a -> b) -> Writer w a -> Writer w b =
+        { value = f m.value, writer = m.writer  }
+
+    { map }
+
+let make_Applicative w: Monoid w -> Applicative (Writer w) =
+    let { (<>) } = w
+
+    let (<*>) mf m : Writer w (a -> b) -> Writer w a -> Writer w b =
+        { value = mf.value m.value, writer = mf.writer <> m.writer }
+    let pure value: a -> Writer w a =
+        { value, writer = w.empty }
+
+    { (<*>), pure }
+
+let make_Monad w: Monoid w -> Monad (Writer w) =
+    let { (<>) } = w
+    let { pure } = make_Applicative w
+
+    let (>>=) m f : Writer w a -> (a -> Writer w b) -> Writer w b =
+        let { value, writer } = f m.value
+        { value, writer = m.writer <> writer }
+
+    { (>>=), return = pure }
 
 let tell w: w -> Writer w () =
     { value = (), writer = w }
 
-{ Writer, make, tell }
+{ Writer, make_Functor, make_Applicative, make_Monad, tell }
