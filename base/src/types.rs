@@ -201,8 +201,12 @@ impl<Id, T> Type<Id, T>
             }
             Variable(ref var) => var.kind.clone(),
             Generic(ref gen) => gen.kind.clone(),
+            Builtin(BuiltinType::Function) => {
+                let star = Kind::star();
+                Kind::function(star.clone(), Kind::function(star.clone(), star))
+            }
             Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) |
-            Record { .. } | Type::Id(_) | Type::Alias(_) => RcKind::new(Kind::Star),
+            Record { .. } | Type::Id(_) | Type::Alias(_) => Kind::star(),
         }
     }
 }
@@ -319,6 +323,7 @@ impl ::std::str::FromStr for BuiltinType {
             "Float" => BuiltinType::Float,
             "String" => BuiltinType::String,
             "Char" => BuiltinType::Char,
+            "->" => BuiltinType::Function,
             _ => return Err(()),
         };
         Ok(t)

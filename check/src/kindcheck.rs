@@ -6,7 +6,7 @@ use base::types::{Generic, RcKind, Type, Kind, merge};
 use base::symbol::Symbol;
 use base::types::KindEnv;
 
-use base::types::TcType;
+use base::types::{BuiltinType, TcType};
 use substitution::{Substitution, Substitutable};
 use unify;
 
@@ -26,6 +26,7 @@ pub struct KindCheck<'a> {
     idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
     pub subs: Substitution<RcKind>,
     star: RcKind,
+    arrow_kind: RcKind,
 }
 
 fn walk_move_kind<F>(kind: RcKind, f: &mut F) -> RcKind
@@ -63,13 +64,15 @@ impl<'a> KindCheck<'a> {
                idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
                subs: Substitution<RcKind>)
                -> KindCheck<'a> {
+        let star = Kind::star();
         KindCheck {
             variables: Vec::new(),
             locals: Vec::new(),
             info: info,
             idents: idents,
             subs: subs,
-            star: Kind::star(),
+            star: star.clone(),
+            arrow_kind: Kind::function(star.clone(), Kind::function(star.clone(), star)),
         }
     }
 
@@ -134,6 +137,7 @@ impl<'a> KindCheck<'a> {
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Variable(_) => panic!("kindcheck called on variable"),
+            Type::Builtin(BuiltinType::Function) => Ok((self.arrow_kind.clone(), typ.clone())),
             Type::Builtin(_) => Ok((self.star.clone(), typ.clone())),
             Type::Array(ref typ) => {
                 let (kind, typ) = try!(self.kindcheck(typ));
