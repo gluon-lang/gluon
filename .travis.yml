@@ -9,15 +9,16 @@ addons:
     - libdw-dev
 rust:
 - nightly
-- stable
+- beta
+- 1.9.0
 before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
   export PATH=$HOME/.local/bin:$PATH
 script:
 - |
-  travis_wait 30 sh ./test.sh &&
-  travis_wait 30 cargo build --release &&
+  travis_wait 40 sh ./test.sh &&
+  travis_wait 40 cargo build --release &&
   travis-cargo --only nightly bench &&
   travis-cargo --only stable doc
 after_success:
