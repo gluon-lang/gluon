@@ -5,7 +5,7 @@ use std::collections::hash_map::Entry;
 use std::ops::Deref;
 
 use types;
-use types::{AliasData, Type, Generic, TcType, TypeEnv, merge};
+use types::{AliasData, BuiltinType, Type, Generic, TcType, TypeEnv, merge};
 use symbol::Symbol;
 
 pub struct AliasInstantiator<'a> {
@@ -196,23 +196,61 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
                               })
 }
 
-
+/// Removes layers of `Type::App` and `Type::Data`.
+///
+/// Example:
+///
+/// ```
+/// use gluon_base::types::{Type, TcType, BuiltinType};
+/// use gluon_base::instantiate::unroll_app;
+/// let i: TcType = Type::int();
+/// let s: TcType = Type::string();
+/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), s.clone()), i.clone())),
+///            Some(Type::data(i.clone(), vec![s.clone(), i.clone()])));
+/// assert_eq!(unroll_app(&*Type::data(Type::app(i.clone(), i.clone()), vec![s.clone()])),
+///            Some(Type::data(i.clone(), vec![i.clone(), s.clone()])));
+/// let f: TcType = Type::builtin(BuiltinType::Function);
+/// assert_eq!(unroll_app(&*Type::data(Type::app(f.clone(), i.clone()), vec![s.clone()])),
+///            Some(Type::function(vec![i.clone()], s.clone())));
+/// ```
 pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
     let mut args = Vec::new();
-    let mut current = typ;
+    let mut current = match *typ {
+        Type::App(ref l, ref r) => {
+            args.push(r.clone());
+            l
+        }
+        Type::Data(ref l, ref rest) => {
+            args.extend(rest.iter().rev().cloned());
+            l
+        }
+        _ => return None,
+    };
     loop {
-        match *current {
+        match **current {
             Type::App(ref l, ref r) => {
                 args.push(r.clone());
-                current = &**l;
+                current = l;
             }
             Type::Data(ref l, ref rest) => {
                 args.extend(rest.iter().rev().cloned());
-                args.reverse();
-                return Some(Type::data(l.clone(), args));
+                current = l;
             }
-            _ => return None,
+            _ => break,
         }
+    }
+    if args.is_empty() {
+        None
+    }
+    else {
+        args.reverse();
+        Some(match **current {
+            Type::Builtin(BuiltinType::Function) if args.len() == 2 => {
+                let ret = args.pop().unwrap();
+                Type::function(args, ret)
+            }
+            _ => Type::data(current.clone(), args),
+        })
     }
 }
 
