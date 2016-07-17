@@ -3,7 +3,7 @@ use std::fmt;
 use base::types;
 use base::types::{Type, merge};
 use base::ast::ASTType;
-use base::types::{TcType, TypeVariable};
+use base::types::{BuiltinType, TcType, TypeVariable};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate::AliasInstantiator;
 
@@ -219,10 +219,13 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
     }
 }
 
-
-enum AliasResult {
-    Match(TcType),
-    Type(TcType),
+// Retrieves the alias name of an application if it exists.
+// (Result e Int ==> Result, a -> b ==> ->
+fn alias_sym(l: &TcType) -> Option<&SymbolRef> {
+    match **l {
+        Type::Function(..) => Some(BuiltinType::Function.symbol()),
+        _ => l.as_alias().map(|(id, _)| id)
+    }
 }
 
 /// Attempt to unify two alias types.
@@ -230,16 +233,25 @@ enum AliasResult {
 fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                          mut l: TcType,
                          r_id: &SymbolRef)
-                         -> Result<AliasResult, ()>
+                         -> Result<Option<TcType>, ()>
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
+    let mut did_alias = false;
     loop {
-        l = match l.as_alias() {
-            Some((l_id, _l_args)) => {
+        l = match alias_sym(&l) {
+            Some(l_id) => {
                 debug!("Looking for alias reduction from `{}` to `{}`", l_id, r_id);
                 if l_id == r_id {
-                    return Ok(AliasResult::Match(l.clone()));
+                    // If the aliases matching bevore going through an alias there is no need to
+                    // return a replacement type
+                    return Ok(if did_alias {
+                        Some(l.clone())
+                    }
+                    else {
+                        None
+                    })
                 }
+                did_alias = true;
                 match unifier.state.maybe_remove_alias(&l) {
                     Ok(Some(typ)) => typ,
                     Ok(None) => break,
@@ -254,7 +266,7 @@ fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
             None => break,
         }
     }
-    Ok(AliasResult::Type(l))
+    Ok(None)
 }
 
 fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
@@ -265,13 +277,10 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
     let mut l = expected.clone();
-    if let Some((r_id, _)) = actual.as_alias() {
-        l = match find_alias(unifier, l, r_id) {
-            Ok(AliasResult::Match(typ)) => {
-                *through_alias = true;
-                return Ok((typ, actual.clone()));
-            }
-            Ok(AliasResult::Type(typ)) => {
+    if let Some(r_id) = alias_sym(actual) {
+        l = match find_alias(unifier, l.clone(), r_id) {
+            Ok(None) => l,
+            Ok(Some(typ)) => {
                 *through_alias = true;
                 typ
             }
@@ -279,13 +288,10 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
         };
     }
     let mut r = actual.clone();
-    if let Some((l_id, _)) = expected.as_alias() {
-        r = match find_alias(unifier, r, l_id) {
-            Ok(AliasResult::Match(typ)) => {
-                *through_alias = true;
-                return Ok((expected.clone(), typ));
-            }
-            Ok(AliasResult::Type(typ)) => {
+    if let Some(l_id) = alias_sym(expected) {
+        r = match find_alias(unifier, r.clone(), l_id) {
+            Ok(None) => r,
+            Ok(Some(typ)) => {
                 *through_alias = true;
                 typ
             }
