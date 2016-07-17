@@ -130,6 +130,12 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
         (&Type::App(..), &Type::Function(ref l_args, ref l_ret)) => {
             zip_function(&mut unifier, &l_args[0], l_ret, self_)
         }
+        (&Type::Function(ref l_args, ref l_ret), &Type::Data(..)) => {
+            zip_function(&mut unifier, &l_args[0], l_ret, other)
+        }
+        (&Type::Data(..), &Type::Function(ref l_args, ref l_ret)) => {
+            zip_function(&mut unifier, &l_args[0], l_ret, self_)
+        }
         (&Type::Array(ref l), &Type::Array(ref r)) => Ok(unifier.try_match(l, r).map(Type::array)),
         (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
             if l_args.len() == r_args.len() {
@@ -426,24 +432,39 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     };
     let subs = unifier.subs;
     let other = subs.real(other);
-    match **other {
+    let (other_arg, fn_prim, other_ret) = match **other {
         Type::App(ref other_f, ref other_ret) => {
             let other_f = subs.real(other_f);
             match **other_f {
-                Type::App(ref fn_prim, ref other_arg) => {
-                    unifier.try_match(fn_prim, &Type::builtin(types::BuiltinType::Function));
-                    let new_arg = unifier.try_match(arg, other_arg);
-                    let new_ret = unifier.try_match(ret, other_ret);
-                    Ok(merge(arg,
-                             new_arg,
-                             ret,
-                             new_ret,
-                             |args, ret| Type::function(vec![args], ret)))
-                }
-                _ => error(),
+                Type::App(ref fn_prim, ref other_arg) => (Some(other_arg), fn_prim, other_ret),
+                _ => (None, other_f, other_ret),
             }
         }
-        _ => error(),
+        Type::Data(ref fn_prim, ref args) if args.len() == 2 => (Some(&args[0]), fn_prim, &args[1]),
+        Type::Data(ref fn_prim, ref args) if args.len() == 1 => (None, fn_prim, &args[0]),
+        _ => return error(),
+    };
+    match other_arg {
+        Some(other_arg) => {
+            unifier.try_match(fn_prim, &Type::builtin(types::BuiltinType::Function));
+            let new_arg = unifier.try_match(arg, other_arg);
+            let new_ret = unifier.try_match(ret, other_ret);
+            Ok(merge(arg,
+                     new_arg,
+                     ret,
+                     new_ret,
+                     |args, ret| Type::function(vec![args], ret)))
+        }
+        None => {
+            unifier.try_match(fn_prim,
+                              &Type::app(Type::builtin(types::BuiltinType::Function), arg.clone()));
+            let new_ret = unifier.try_match(ret, other_ret);
+            Ok(merge(arg,
+                     None,
+                     ret,
+                     new_ret,
+                     |args, ret| Type::function(vec![args], ret)))
+        }
     }
 }
 

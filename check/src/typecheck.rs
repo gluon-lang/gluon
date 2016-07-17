@@ -662,7 +662,7 @@ impl<'a> Typecheck<'a> {
                     // Attempt to find a record with `field_access` since inferring to a record
                     // with only `field_access` as the field is probably useless
                     let (record_type, _) = try!(self.find_record(&[field_access.name.clone()])
-                                                    .map(|t| (t.0.clone(), t.1.clone())));
+                        .map(|t| (t.0.clone(), t.1.clone())));
                     let record_type = self.instantiate(&record_type);
                     typ = try!(self.unify(&record_type, typ));
                 }
@@ -779,32 +779,32 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
-                                      .map(|&mut (ref mut symbol, ref mut typ)| {
-                                          if let Some(ref mut typ) = *typ {
-                                              *typ = self.refresh_symbols_in_type(typ.clone());
-                                          }
-                                          let alias = try!(self.find_type_info(symbol));
+                    .map(|&mut (ref mut symbol, ref mut typ)| {
+                        if let Some(ref mut typ) = *typ {
+                            *typ = self.refresh_symbols_in_type(typ.clone());
+                        }
+                        let alias = try!(self.find_type_info(symbol));
 
-                                          Ok(types::Field {
-                                              name: symbol.clone(),
-                                              typ: alias.clone(),
-                                          })
-                                      })
-                                      .collect::<TcResult<Vec<_>>>());
+                        Ok(types::Field {
+                            name: symbol.clone(),
+                            typ: alias.clone(),
+                        })
+                    })
+                    .collect::<TcResult<Vec<_>>>());
                 let fields = try!(fields.iter_mut()
-                                        .map(|field| {
-                                            match field.1 {
-                                                Some(ref mut expr) => Ok(self.typecheck(expr)),
-                                                None => self.find(&field.0),
-                                            }
-                                            .map(|typ| {
-                                                types::Field {
-                                                    name: field.0.clone(),
-                                                    typ: typ,
-                                                }
-                                            })
-                                        })
-                                        .collect::<TcResult<Vec<_>>>());
+                    .map(|field| {
+                        match field.1 {
+                                Some(ref mut expr) => Ok(self.typecheck(expr)),
+                                None => self.find(&field.0),
+                            }
+                            .map(|typ| {
+                                types::Field {
+                                    name: field.0.clone(),
+                                    typ: typ,
+                                }
+                            })
+                    })
+                    .collect::<TcResult<Vec<_>>>());
                 let result = self.find_record(&fields.iter()
                         .map(|f| f.name.clone())
                         .collect::<Vec<_>>())
@@ -1012,7 +1012,7 @@ impl<'a> Typecheck<'a> {
                 debug!("{{ .. }}: {}",
                        types::display_type(&self.symbols,
                                            &bind.expression
-                                                .env_type_of(&self.environment)));
+                                               .env_type_of(&self.environment)));
                 let record_type = self.remove_alias(id.typ.clone());
                 with_pattern_types(fields, &record_type, |field_name, field_type| {
                     self.intersect_type(level, field_name, field_type);
@@ -1023,7 +1023,7 @@ impl<'a> Typecheck<'a> {
                        self.symbols.string(&id.name),
                        types::display_type(&self.symbols,
                                            &bind.expression
-                                                .env_type_of(&self.environment)));
+                                               .env_type_of(&self.environment)));
                 for arg in arguments {
                     self.intersect_type(level, &arg.name, &arg.typ);
                 }
@@ -1064,8 +1064,8 @@ impl<'a> Typecheck<'a> {
             let mut typ = typ;
             if let Some(ref t) = replacement {
                 debug!("{} ==> {}",
-                                             types::display_type(&self.symbols, &typ),
-                                             types::display_type(&self.symbols, t));
+                       types::display_type(&self.symbols, &typ),
+                       types::display_type(&self.symbols, t));
                 typ = &**t;
             }
             match *typ {
