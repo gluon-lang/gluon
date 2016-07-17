@@ -5,7 +5,7 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::ast;
-use base::symbol::{Symbols, SymbolModule, Symbol};
+use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{Generic, Type, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias, RcKind,
                   Kind};
 
@@ -53,7 +53,7 @@ pub fn typecheck(text: &str) -> Result<TcType, Error> {
 }
 struct EmptyEnv(Alias<Symbol, TcType>);
 impl KindEnv for EmptyEnv {
-    fn find_kind(&self, id: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
         match id.as_ref() {
             "Bool" => Some(Kind::star()),
             _ => None,
@@ -61,13 +61,13 @@ impl KindEnv for EmptyEnv {
     }
 }
 impl TypeEnv for EmptyEnv {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         match id.as_ref() {
             "False" | "True" => Some(&self.0.typ.as_ref().unwrap()),
             _ => None,
         }
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         match id.as_ref() {
             "Bool" => Some(&self.0),
             _ => None,

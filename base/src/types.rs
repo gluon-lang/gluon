@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use ast;
 use ast::{ASTType, DisplayEnv};
-use symbol::Symbol;
+use symbol::{Symbol, SymbolRef};
 
 pub type TcType = ast::ASTType<Symbol>;
 pub type TcIdent = ast::TcIdent<Symbol>;
@@ -16,23 +16,23 @@ pub type TcIdent = ast::TcIdent<Symbol>;
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`
-    fn find_kind(&self, type_name: &Symbol) -> Option<RcKind>;
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind>;
 }
 
 impl KindEnv for () {
-    fn find_kind(&self, _type_name: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
         None
     }
 }
 
 impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
-    fn find_kind(&self, id: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
         (**self).find_kind(id)
     }
 }
 
 impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
-    fn find_kind(&self, id: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
         let &(ref outer, ref inner) = self;
         inner.find_kind(id)
             .or_else(|| outer.find_kind(id))
@@ -40,7 +40,7 @@ impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
 }
 
 impl KindEnv for HashMap<String, TcType> {
-    fn find_kind(&self, _type_name: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
         None
     }
 }
@@ -48,19 +48,19 @@ impl KindEnv for HashMap<String, TcType> {
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
     /// Returns the type of the value bound at `id`
-    fn find_type(&self, id: &Symbol) -> Option<&TcType>;
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType>;
     /// Returns information about the type `id`
-    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>>;
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>>;
     /// Returns a record which contains all `fields`. The first element is the record type and the
     /// second is the alias type.
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
 }
 
 impl TypeEnv for () {
-    fn find_type(&self, _id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<&TcType> {
         None
     }
-    fn find_type_info(&self, _id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         None
     }
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
@@ -69,10 +69,10 @@ impl TypeEnv for () {
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         (**self).find_type(id)
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         (**self).find_type_info(id)
     }
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
@@ -81,12 +81,12 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
 }
 
 impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         let &(ref outer, ref inner) = self;
         inner.find_type(id)
             .or_else(|| outer.find_type(id))
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         let &(ref outer, ref inner) = self;
         inner.find_type_info(id)
             .or_else(|| outer.find_type_info(id))
@@ -99,10 +99,10 @@ impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
 }
 
 impl TypeEnv for HashMap<String, TcType> {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         self.get(id.as_ref())
     }
-    fn find_type_info(&self, _id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         None
     }
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
@@ -302,6 +302,12 @@ pub enum BuiltinType {
     Float,
     Unit,
     Function,
+}
+
+impl BuiltinType {
+    pub fn symbol(self) -> &'static SymbolRef {
+        unsafe { ::std::mem::transmute::<&'static str, &'static SymbolRef>(self.to_str()) }
+    }
 }
 
 impl ::std::str::FromStr for BuiltinType {
@@ -568,17 +574,38 @@ impl<Id, T> Type<Id, T>
 impl<Id, T> Type<Id, T>
     where T: Deref<Target = Type<Id, T>>
 {
-    pub fn as_alias(&self) -> Option<(&Id, &[T])> {
+    pub fn as_alias_symbol(&self) -> Option<&Id> {
+        match *self {
+            Type::Data(ref id, _) => {
+                match **id {
+                    Type::Id(ref id) => Some(id),
+                    Type::Alias(ref alias) => Some(&alias.name),
+                    _ => None,
+                }
+            }
+            Type::Id(ref id) => Some(id),
+            Type::Alias(ref alias) => Some(&alias.name),
+            _ => None,
+        }
+    }
+}
+
+impl<T> Type<Symbol, T>
+    where T: Deref<Target = Type<Symbol, T>>
+{
+    pub fn as_alias(&self) -> Option<(&SymbolRef, &[T])> {
         match *self {
             Type::Data(ref id, ref args) => {
                 match **id {
                     Type::Id(ref id) => Some((id, args)),
                     Type::Alias(ref alias) => Some((&alias.name, args)),
+                    Type::Builtin(b) => Some((b.symbol(), args)),
                     _ => None,
                 }
             }
             Type::Id(ref id) => Some((id, &[][..])),
             Type::Alias(ref alias) => Some((&alias.name, &[][..])),
+            Type::Builtin(b) => Some((b.symbol(), &[][..])),
             _ => None,
         }
     }

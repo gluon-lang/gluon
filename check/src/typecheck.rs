@@ -10,7 +10,7 @@ use base::ast::{Typed, DisplayEnv, MutVisitor};
 use base::types;
 use base::types::{RcKind, Type, Generic, Kind};
 use base::error::Errors;
-use base::symbol::{Symbol, SymbolModule, Symbols};
+use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType};
 use base::instantiate::{AliasInstantiator, Instantiator, unroll_app};
 use kindcheck;
@@ -137,7 +137,7 @@ struct Environment<'a> {
 }
 
 impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, type_name: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind> {
         self.stack_types
             .get(type_name)
             .map(|&(_, ref alias)| {
@@ -152,11 +152,11 @@ impl<'a> KindEnv for Environment<'a> {
 }
 
 impl<'a> TypeEnv for Environment<'a> {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         self.stack.get(id).or_else(|| self.environment.find_type(id))
     }
 
-    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         self.stack_types
             .get(id)
             .map(|&(_, ref alias)| alias)
@@ -1033,7 +1033,7 @@ impl<'a> Typecheck<'a> {
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &TcType) {
         let mut typ = None;
-        if let Some(existing_types) = self.environment.stack.get_all(&symbol) {
+        if let Some(existing_types) = self.environment.stack.get_all(symbol) {
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
                 let mut alias = AliasInstantiator::new(&self.inst, &self.environment);
@@ -1090,7 +1090,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
-        let mut f = |typ: &Type<_, TcType>| {
+        let mut f = |typ: &Type<Symbol, TcType>| {
             match *typ {
                 Type::Alias(ref alias) => {
                     self.original_symbols
@@ -1110,7 +1110,7 @@ impl<'a> Typecheck<'a> {
                 Type::Id(ref id) => {
                     // Substitute the Id by its alias if possible
                     let new_id = self.original_symbols
-                        .get(&id)
+                        .get(id)
                         .unwrap_or(id);
                     self.environment
                         .find_type_info(new_id)

@@ -4,7 +4,7 @@ use base::types;
 use base::types::{Type, merge};
 use base::ast::ASTType;
 use base::types::{TcType, TypeVariable};
-use base::symbol::Symbol;
+use base::symbol::{Symbol, SymbolRef};
 use base::instantiate::AliasInstantiator;
 
 use unify;
@@ -223,7 +223,7 @@ enum AliasResult {
 /// To find a possible successful unification we go through
 fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                          mut l: TcType,
-                         r_id: &Symbol)
+                         r_id: &SymbolRef)
                          -> Result<AliasResult, ()>
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
@@ -238,6 +238,7 @@ fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                     Ok(Some(typ)) => typ,
                     Ok(None) => break,
                     Err(()) => {
+                        let l_id = l.as_alias_symbol().unwrap();
                         let err = UnifyError::Other(TypeError::UndefinedType(l_id.clone()));
                         unifier.report_error(err);
                         return Err(());
@@ -297,8 +298,8 @@ fn try_with_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     let r = match unifier.state.maybe_remove_alias(actual) {
         Ok(typ) => typ,
         Err(()) => {
-            match actual.as_alias() {
-                Some((id, _)) => {
+            match actual.as_alias_symbol() {
+                Some(id) => {
                     unifier.report_error(UnifyError::Other(TypeError::UndefinedType(id.clone())));
                     return Err(());
                 }

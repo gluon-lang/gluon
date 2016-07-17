@@ -7,7 +7,7 @@ use std::string::String as StdString;
 
 use base::ast::{Typed, ASTType};
 use base::metadata::{Metadata, MetadataEnv};
-use base::symbol::{Name, Symbol};
+use base::symbol::{Name, Symbol, SymbolRef};
 use base::types;
 use base::types::{Type, KindEnv, TypeEnv, PrimitiveEnv, TcType, RcKind};
 
@@ -115,13 +115,13 @@ impl CompilerEnv for VMEnv {
 }
 
 impl KindEnv for VMEnv {
-    fn find_kind(&self, type_name: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind> {
         self.type_infos
             .find_kind(type_name)
     }
 }
 impl TypeEnv for VMEnv {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         self.globals
             .get(AsRef::<str>::as_ref(id))
             .map(|g| &g.typ)
@@ -135,7 +135,7 @@ impl TypeEnv for VMEnv {
                             .and_then(|typ| {
                                 match **typ {
                                     Type::Variants(ref ctors) => {
-                                        ctors.iter().find(|ctor| ctor.0 == *id).map(|t| &t.1)
+                                        ctors.iter().find(|ctor| *ctor.0 == *id).map(|t| &t.1)
                                     }
                                     _ => None,
                                 }
@@ -145,7 +145,7 @@ impl TypeEnv for VMEnv {
                     .map(|ctor| ctor)
             })
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<&types::Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&types::Alias<Symbol, TcType>> {
         self.type_infos
             .find_type_info(id)
     }

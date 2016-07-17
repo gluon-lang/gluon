@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
 use base::ast;
-use base::symbol::{Symbol, SymbolModule};
+use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, LExpr, Expr};
 use base::types;
 use base::types::{Type, TcIdent, TcType, TypeEnv};
@@ -234,16 +234,16 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> ::base::types::KindEnv for Compiler<'a> {
-    fn find_kind(&self, _type_name: &Symbol) -> Option<types::RcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<types::RcKind> {
         None
     }
 }
 
 impl<'a> TypeEnv for Compiler<'a> {
-    fn find_type(&self, _id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<&TcType> {
         None
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<&types::Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&types::Alias<Symbol, TcType>> {
         self.stack_types
             .get(id)
     }
