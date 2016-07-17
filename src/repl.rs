@@ -77,9 +77,18 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
 }
 
 fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
-    fn input(s: &str) -> IO<Option<String>> {
-        IO::Value(::linenoise::input(s))
+    fn input(prompt: &str) -> IO<Option<String>> {
+        let input = ::linenoise::input(prompt);
+
+        if let Some(ref input) = input {
+            if !input.trim().is_empty() {
+                ::linenoise::history_add(input);
+            }
+        }
+
+        IO::Value(input)
     }
+
     try!(vm.define_global("repl_prim",
                           record!(
         type_of_expr => primitive!(1 type_of_expr),
