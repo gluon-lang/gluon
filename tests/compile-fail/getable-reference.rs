@@ -3,6 +3,7 @@ use gluon::new_vm;
 use gluon::vm::gc::{Gc, Traverseable};
 use gluon::vm::api::{Pushable, VMType};
 
+#[derive(Debug)]
 struct Test;
 
 impl VMType for Test {
