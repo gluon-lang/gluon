@@ -578,3 +578,21 @@ test
                                            id("test")]),
                }));
 }
+
+#[test]
+fn function_operator_application() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let x: ((->) Int Int) = x
+x
+"#;
+    let e = parse(text);
+    assert_eq!(e, Ok(no_loc(Expr::Let(vec![Binding {
+                              comment: None,
+                              name: no_loc(Pattern::Identifier(intern("x"))),
+                              typ: Some(Type::data(typ("->"), vec![typ("Int"), typ("Int")])),
+                              arguments: vec![],
+                              expression: id("x"),
+                          }],
+                     Box::new(id("x"))))));
+}

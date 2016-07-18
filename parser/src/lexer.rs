@@ -34,11 +34,21 @@ impl fmt::Display for Delimiter {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum IdentType {
+    /// Constructors are identifiers starting with an uppercase letter
+    Constructor,
+    /// An operator in identifier position (Example: (+), (-), (>>=))
+    Operator,
+    /// A normal variable
+    Variable,
+}
+
 pub type Error<Id> = CombineError<Token<Id>, Token<Id>>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Token<Id> {
-    Identifier(Id, bool),
+    Identifier(Id, IdentType),
     Operator(Id),
     String(String),
     Char(char),
@@ -348,12 +358,20 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         Ok((n, input))
     }
 
-    /// Identifier parser which returns `(id, true)` if the identifier is a constructor
-    /// (Starts with an uppercase letter
-    fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, bool), State<I>> {
-        try(self.env.identifier())
-            .or(try(self.env.parens(self.env.op())))
-            .map(|s| (self.intern(&s), s.chars().next().unwrap().is_uppercase()))
+    /// Identifier parser which returns the identifier as well as the type of the identifier
+    fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, IdentType), State<I>> {
+        let id = self.env.identifier().map(|id| {
+            let typ = if id.chars().next().unwrap().is_uppercase() {
+                IdentType::Constructor
+            } else {
+                IdentType::Variable
+            };
+            (id, typ)
+        });
+        let op = self.env.parens(self.env.op()).map(|id| (id, IdentType::Operator));
+        try(id)
+            .or(try(op))
+            .map(|(s, typ)| (self.intern(&s), typ))
             .parse_state(input)
     }
 

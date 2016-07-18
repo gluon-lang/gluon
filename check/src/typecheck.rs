@@ -10,7 +10,7 @@ use base::ast::{Typed, DisplayEnv, MutVisitor};
 use base::types;
 use base::types::{RcKind, Type, Generic, Kind};
 use base::error::Errors;
-use base::symbol::{Symbol, SymbolModule, Symbols};
+use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType};
 use base::instantiate::{AliasInstantiator, Instantiator, unroll_app};
 use kindcheck;
@@ -137,7 +137,7 @@ struct Environment<'a> {
 }
 
 impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, type_name: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind> {
         self.stack_types
             .get(type_name)
             .map(|&(_, ref alias)| {
@@ -152,11 +152,11 @@ impl<'a> KindEnv for Environment<'a> {
 }
 
 impl<'a> TypeEnv for Environment<'a> {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         self.stack.get(id).or_else(|| self.environment.find_type(id))
     }
 
-    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         self.stack_types
             .get(id)
             .map(|&(_, ref alias)| alias)
@@ -662,7 +662,7 @@ impl<'a> Typecheck<'a> {
                     // Attempt to find a record with `field_access` since inferring to a record
                     // with only `field_access` as the field is probably useless
                     let (record_type, _) = try!(self.find_record(&[field_access.name.clone()])
-                                                    .map(|t| (t.0.clone(), t.1.clone())));
+                        .map(|t| (t.0.clone(), t.1.clone())));
                     let record_type = self.instantiate(&record_type);
                     typ = try!(self.unify(&record_type, typ));
                 }
@@ -779,32 +779,32 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
-                                      .map(|&mut (ref mut symbol, ref mut typ)| {
-                                          if let Some(ref mut typ) = *typ {
-                                              *typ = self.refresh_symbols_in_type(typ.clone());
-                                          }
-                                          let alias = try!(self.find_type_info(symbol));
+                    .map(|&mut (ref mut symbol, ref mut typ)| {
+                        if let Some(ref mut typ) = *typ {
+                            *typ = self.refresh_symbols_in_type(typ.clone());
+                        }
+                        let alias = try!(self.find_type_info(symbol));
 
-                                          Ok(types::Field {
-                                              name: symbol.clone(),
-                                              typ: alias.clone(),
-                                          })
-                                      })
-                                      .collect::<TcResult<Vec<_>>>());
+                        Ok(types::Field {
+                            name: symbol.clone(),
+                            typ: alias.clone(),
+                        })
+                    })
+                    .collect::<TcResult<Vec<_>>>());
                 let fields = try!(fields.iter_mut()
-                                        .map(|field| {
-                                            match field.1 {
-                                                Some(ref mut expr) => Ok(self.typecheck(expr)),
-                                                None => self.find(&field.0),
-                                            }
-                                            .map(|typ| {
-                                                types::Field {
-                                                    name: field.0.clone(),
-                                                    typ: typ,
-                                                }
-                                            })
-                                        })
-                                        .collect::<TcResult<Vec<_>>>());
+                    .map(|field| {
+                        match field.1 {
+                                Some(ref mut expr) => Ok(self.typecheck(expr)),
+                                None => self.find(&field.0),
+                            }
+                            .map(|typ| {
+                                types::Field {
+                                    name: field.0.clone(),
+                                    typ: typ,
+                                }
+                            })
+                    })
+                    .collect::<TcResult<Vec<_>>>());
                 let result = self.find_record(&fields.iter()
                         .map(|f| f.name.clone())
                         .collect::<Vec<_>>())
@@ -1012,7 +1012,7 @@ impl<'a> Typecheck<'a> {
                 debug!("{{ .. }}: {}",
                        types::display_type(&self.symbols,
                                            &bind.expression
-                                                .env_type_of(&self.environment)));
+                                               .env_type_of(&self.environment)));
                 let record_type = self.remove_alias(id.typ.clone());
                 with_pattern_types(fields, &record_type, |field_name, field_type| {
                     self.intersect_type(level, field_name, field_type);
@@ -1023,7 +1023,7 @@ impl<'a> Typecheck<'a> {
                        self.symbols.string(&id.name),
                        types::display_type(&self.symbols,
                                            &bind.expression
-                                                .env_type_of(&self.environment)));
+                                               .env_type_of(&self.environment)));
                 for arg in arguments {
                     self.intersect_type(level, &arg.name, &arg.typ);
                 }
@@ -1033,14 +1033,16 @@ impl<'a> Typecheck<'a> {
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &TcType) {
         let mut typ = None;
-        if let Some(existing_types) = self.environment.stack.get_all(&symbol) {
+        if let Some(existing_types) = self.environment.stack.get_all(symbol) {
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
                 let mut alias = AliasInstantiator::new(&self.inst, &self.environment);
                 debug!("Intersect\n{} <> {}",
                        types::display_type(&self.symbols, existing_type),
                        types::display_type(&self.symbols, symbol_type));
-                typ = Some(unify::intersection(&self.subs, &mut alias, existing_type, symbol_type));
+                let result = unify::intersection(&self.subs, &mut alias, existing_type, symbol_type);
+                debug!("Intersect result {}", result);
+                typ = Some(result);
             }
         }
         if let Some(typ) = typ {
@@ -1064,8 +1066,8 @@ impl<'a> Typecheck<'a> {
             let mut typ = typ;
             if let Some(ref t) = replacement {
                 debug!("{} ==> {}",
-                                             types::display_type(&self.symbols, &typ),
-                                             types::display_type(&self.symbols, t));
+                       types::display_type(&self.symbols, &typ),
+                       types::display_type(&self.symbols, t));
                 typ = &**t;
             }
             match *typ {
@@ -1090,7 +1092,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
-        let mut f = |typ: &Type<_, TcType>| {
+        let mut f = |typ: &Type<Symbol, TcType>| {
             match *typ {
                 Type::Alias(ref alias) => {
                     self.original_symbols
@@ -1110,7 +1112,7 @@ impl<'a> Typecheck<'a> {
                 Type::Id(ref id) => {
                     // Substitute the Id by its alias if possible
                     let new_id = self.original_symbols
-                        .get(&id)
+                        .get(id)
                         .unwrap_or(id);
                     self.environment
                         .find_type_info(new_id)

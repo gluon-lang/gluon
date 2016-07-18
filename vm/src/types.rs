@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use base::symbol::Symbol;
+use base::symbol::{Symbol, SymbolRef};
 use base::types;
 use base::types::{Alias, KindEnv, TypeEnv, TcType, Type};
 
@@ -99,7 +99,7 @@ pub struct TypeInfos {
 }
 
 impl KindEnv for TypeInfos {
-    fn find_kind(&self, type_name: &Symbol) -> Option<types::RcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<types::RcKind> {
         let type_name = AsRef::<str>::as_ref(type_name);
         self.id_to_type
             .get(type_name)
@@ -112,7 +112,7 @@ impl KindEnv for TypeInfos {
 }
 
 impl TypeEnv for TypeInfos {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .iter()
@@ -130,7 +130,7 @@ impl TypeEnv for TypeInfos {
             .map(|x| &x.1)
     }
 
-    fn find_type_info(&self, id: &Symbol) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .get(id)

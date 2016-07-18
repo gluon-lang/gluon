@@ -3,7 +3,7 @@ use std::fmt;
 use base::ast;
 use base::ast::{Typed, DisplayEnv, MutVisitor};
 use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolModule};
+use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::types;
 use base::types::{Alias, TcType, Type, TcIdent, RcKind, KindEnv, TypeEnv};
 use base::error::Errors;
@@ -44,16 +44,16 @@ struct Environment<'b> {
 }
 
 impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, _type_name: &Symbol) -> Option<RcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
         None
     }
 }
 
 impl<'a> TypeEnv for Environment<'a> {
-    fn find_type(&self, id: &Symbol) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         self.stack.get(id).map(|t| &t.1).or_else(|| self.env.find_type(id))
     }
-    fn find_type_info(&self, id: &Symbol) -> Option<&types::Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&types::Alias<Symbol, TcType>> {
         self.stack_types
             .get(id)
             .or_else(|| self.env.find_type_info(id))
@@ -160,7 +160,7 @@ pub fn rename(symbols: &mut SymbolModule,
         fn rename(&self, id: &Symbol, expected: &TcType) -> Result<Option<Symbol>, RenameError> {
             let locals = self.env
                 .stack
-                .get_all(&id);
+                .get_all(id);
             let global = self.env.find_type(&id).map(|typ| (id, typ));
             let candidates = || {
                 locals.iter()

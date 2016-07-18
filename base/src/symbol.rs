@@ -13,45 +13,60 @@ use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
 #[derive(Clone, Eq)]
 pub struct Symbol(Arc<NameBuf>);
 
+impl Deref for Symbol {
+    type Target = SymbolRef;
+    fn deref(&self) -> &SymbolRef {
+        let s: &str = self.0.as_str();
+        unsafe { ::std::mem::transmute::<&str, &SymbolRef>(s) }
+    }
+}
+
+impl Borrow<SymbolRef> for Symbol {
+    fn borrow(&self) -> &SymbolRef {
+        &**self
+    }
+}
+
 impl AsRef<str> for Symbol {
     fn as_ref(&self) -> &str {
         self.0.as_str()
     }
 }
 
+
 impl fmt::Debug for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:p}:{}", &*self.0, self.0)
+        write!(f, "{:?}", &**self)
     }
 }
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", &**self)
     }
 }
 
 impl PartialEq for Symbol {
     fn eq(&self, other: &Symbol) -> bool {
-        &*self.0 as *const NameBuf == &*other.0 as *const NameBuf
+        &**self == &**other
     }
 }
 
 impl PartialOrd for Symbol {
     fn partial_cmp(&self, other: &Symbol) -> Option<Ordering> {
-        (&*self.0 as *const NameBuf).partial_cmp(&(&*other.0 as *const NameBuf))
+        (**self).partial_cmp(other)
     }
 }
 
 impl Ord for Symbol {
     fn cmp(&self, other: &Symbol) -> Ordering {
-        (&*self.0 as *const NameBuf).cmp(&(&*other.0 as *const NameBuf))
+        (**self).cmp(other)
     }
 }
 
 impl Hash for Symbol {
     fn hash<H: Hasher>(&self, h: &mut H) {
-        (&*self.0 as *const NameBuf).hash(h)
+        (**self).hash(h)
     }
 }
 
@@ -59,9 +74,56 @@ impl Symbol {
     pub fn new(name: &str) -> Symbol {
         Symbol(Arc::new(NameBuf(String::from(name))))
     }
+}
 
+#[derive(Eq)]
+pub struct SymbolRef(str); 
+
+impl fmt::Debug for SymbolRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:p}:{}", self, &self.0)
+    }
+}
+
+impl fmt::Display for SymbolRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
+
+impl PartialEq for SymbolRef {
+    fn eq(&self, other: &SymbolRef) -> bool {
+        self.ptr() == other.ptr()
+    }
+}
+
+impl PartialOrd for SymbolRef {
+    fn partial_cmp(&self, other: &SymbolRef) -> Option<Ordering> {
+        self.ptr().partial_cmp(&other.ptr())
+    }
+}
+
+impl Ord for SymbolRef {
+    fn cmp(&self, other: &SymbolRef) -> Ordering {
+        self.ptr().cmp(&other.ptr())
+    }
+}
+
+impl Hash for SymbolRef {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        self.ptr().hash(h)
+    }
+}
+
+impl AsRef<str> for SymbolRef {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl SymbolRef {
     /// Checks whether the names of two symbols are equal
-    pub fn name_eq(&self, other: &Symbol) -> bool {
+    pub fn name_eq(&self, other: &SymbolRef) -> bool {
         self == other || self.0 == other.0
     }
 
@@ -69,6 +131,10 @@ impl Symbol {
     pub fn declared_name(&self) -> &str {
         let name = self.as_ref();
         name.split(':').next().unwrap_or(name)
+    }
+
+    fn ptr(&self) -> *const () {
+        self.0.as_bytes().as_ptr() as *const ()
     }
 }
 

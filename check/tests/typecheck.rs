@@ -366,6 +366,35 @@ test
 }
 
 #[test]
+fn function_operator_type() {
+    let _ = ::env_logger::init();
+    let text = r"
+let f x: ((->) Int Int) = x #Int+ 1
+f
+";
+    let result = typecheck(text);
+    assert_eq!(result, Ok(Type::function(vec![typ("Int")], typ("Int"))));
+}
+
+#[test]
+fn function_operator_partially_applied() {
+    let _ = ::env_logger::init();
+    let text = r"
+type Test f = {
+    test: f Int
+}
+let function_test: Test ((->) Float) = {
+    test = \x ->
+        1.0 #Float+ x
+        1
+}
+function_test.test
+";
+    let result = typecheck(text);
+    assert_eq!(result, Ok(Type::function(vec![typ("Float")], typ("Int"))));
+}
+
+#[test]
 fn record_missing_field() {
     let _ = ::env_logger::init();
     let text = r"

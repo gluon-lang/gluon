@@ -3,8 +3,8 @@ use std::fmt;
 use base::types;
 use base::types::{Type, merge};
 use base::ast::ASTType;
-use base::types::{TcType, TypeVariable};
-use base::symbol::Symbol;
+use base::types::{BuiltinType, TcType, TypeVariable};
+use base::symbol::{Symbol, SymbolRef};
 use base::instantiate::AliasInstantiator;
 
 use unify;
@@ -130,6 +130,12 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
         (&Type::App(..), &Type::Function(ref l_args, ref l_ret)) => {
             zip_function(&mut unifier, &l_args[0], l_ret, self_)
         }
+        (&Type::Function(ref l_args, ref l_ret), &Type::Data(..)) => {
+            zip_function(&mut unifier, &l_args[0], l_ret, other)
+        }
+        (&Type::Data(..), &Type::Function(ref l_args, ref l_ret)) => {
+            zip_function(&mut unifier, &l_args[0], l_ret, self_)
+        }
         (&Type::Array(ref l), &Type::Array(ref r)) => Ok(unifier.try_match(l, r).map(Type::array)),
         (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
             if l_args.len() == r_args.len() {
@@ -213,31 +219,44 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
     }
 }
 
-
-enum AliasResult {
-    Match(TcType),
-    Type(TcType),
+// Retrieves the alias name of an application if it exists.
+// (Result e Int ==> Result, a -> b ==> ->
+fn alias_sym(l: &TcType) -> Option<&SymbolRef> {
+    match **l {
+        Type::Function(..) => Some(BuiltinType::Function.symbol()),
+        _ => l.as_alias().map(|(id, _)| id)
+    }
 }
 
 /// Attempt to unify two alias types.
 /// To find a possible successful unification we go through
 fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                          mut l: TcType,
-                         r_id: &Symbol)
-                         -> Result<AliasResult, ()>
+                         r_id: &SymbolRef)
+                         -> Result<Option<TcType>, ()>
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
+    let mut did_alias = false;
     loop {
-        l = match l.as_alias() {
-            Some((l_id, _l_args)) => {
+        l = match alias_sym(&l) {
+            Some(l_id) => {
                 debug!("Looking for alias reduction from `{}` to `{}`", l_id, r_id);
                 if l_id == r_id {
-                    return Ok(AliasResult::Match(l.clone()));
+                    // If the aliases matching bevore going through an alias there is no need to
+                    // return a replacement type
+                    return Ok(if did_alias {
+                        Some(l.clone())
+                    }
+                    else {
+                        None
+                    })
                 }
+                did_alias = true;
                 match unifier.state.maybe_remove_alias(&l) {
                     Ok(Some(typ)) => typ,
                     Ok(None) => break,
                     Err(()) => {
+                        let l_id = l.as_alias_symbol().unwrap();
                         let err = UnifyError::Other(TypeError::UndefinedType(l_id.clone()));
                         unifier.report_error(err);
                         return Err(());
@@ -247,7 +266,7 @@ fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
             None => break,
         }
     }
-    Ok(AliasResult::Type(l))
+    Ok(None)
 }
 
 fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
@@ -258,13 +277,10 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     where U: Unifier<AliasInstantiator<'a>, TcType>
 {
     let mut l = expected.clone();
-    if let Some((r_id, _)) = actual.as_alias() {
-        l = match find_alias(unifier, l, r_id) {
-            Ok(AliasResult::Match(typ)) => {
-                *through_alias = true;
-                return Ok((typ, actual.clone()));
-            }
-            Ok(AliasResult::Type(typ)) => {
+    if let Some(r_id) = alias_sym(actual) {
+        l = match find_alias(unifier, l.clone(), r_id) {
+            Ok(None) => l,
+            Ok(Some(typ)) => {
                 *through_alias = true;
                 typ
             }
@@ -272,13 +288,10 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
         };
     }
     let mut r = actual.clone();
-    if let Some((l_id, _)) = expected.as_alias() {
-        r = match find_alias(unifier, r, l_id) {
-            Ok(AliasResult::Match(typ)) => {
-                *through_alias = true;
-                return Ok((expected.clone(), typ));
-            }
-            Ok(AliasResult::Type(typ)) => {
+    if let Some(l_id) = alias_sym(expected) {
+        r = match find_alias(unifier, r.clone(), l_id) {
+            Ok(None) => r,
+            Ok(Some(typ)) => {
                 *through_alias = true;
                 typ
             }
@@ -297,8 +310,8 @@ fn try_with_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     let r = match unifier.state.maybe_remove_alias(actual) {
         Ok(typ) => typ,
         Err(()) => {
-            match actual.as_alias() {
-                Some((id, _)) => {
+            match actual.as_alias_symbol() {
+                Some(id) => {
                     unifier.report_error(UnifyError::Other(TypeError::UndefinedType(id.clone())));
                     return Err(());
                 }
@@ -425,24 +438,39 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     };
     let subs = unifier.subs;
     let other = subs.real(other);
-    match **other {
+    let (other_arg, fn_prim, other_ret) = match **other {
         Type::App(ref other_f, ref other_ret) => {
             let other_f = subs.real(other_f);
             match **other_f {
-                Type::App(ref fn_prim, ref other_arg) => {
-                    unifier.try_match(fn_prim, &Type::builtin(types::BuiltinType::Function));
-                    let new_arg = unifier.try_match(arg, other_arg);
-                    let new_ret = unifier.try_match(ret, other_ret);
-                    Ok(merge(arg,
-                             new_arg,
-                             ret,
-                             new_ret,
-                             |args, ret| Type::function(vec![args], ret)))
-                }
-                _ => error(),
+                Type::App(ref fn_prim, ref other_arg) => (Some(other_arg), fn_prim, other_ret),
+                _ => (None, other_f, other_ret),
             }
         }
-        _ => error(),
+        Type::Data(ref fn_prim, ref args) if args.len() == 2 => (Some(&args[0]), fn_prim, &args[1]),
+        Type::Data(ref fn_prim, ref args) if args.len() == 1 => (None, fn_prim, &args[0]),
+        _ => return error(),
+    };
+    match other_arg {
+        Some(other_arg) => {
+            unifier.try_match(fn_prim, &Type::builtin(types::BuiltinType::Function));
+            let new_arg = unifier.try_match(arg, other_arg);
+            let new_ret = unifier.try_match(ret, other_ret);
+            Ok(merge(arg,
+                     new_arg,
+                     ret,
+                     new_ret,
+                     |args, ret| Type::function(vec![args], ret)))
+        }
+        None => {
+            unifier.try_match(fn_prim,
+                              &Type::app(Type::builtin(types::BuiltinType::Function), arg.clone()));
+            let new_ret = unifier.try_match(ret, other_ret);
+            Ok(merge(arg,
+                     None,
+                     ret,
+                     new_ret,
+                     |args, ret| Type::function(vec![args], ret)))
+        }
     }
 }
 

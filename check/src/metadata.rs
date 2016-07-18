@@ -63,7 +63,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
             debug!("Lookup {}", id);
             self.env
                 .stack
-                .get(&id)
+                .get(id)
                 .or_else(|| self.env.env.get_metadata(id))
         }
 

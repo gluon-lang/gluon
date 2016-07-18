@@ -27,7 +27,7 @@ use combine::{between, choice, env_parser, many, many1, optional, parser, satisf
               sep_end_by, token, try, value, ParseError, ParseResult, Parser, ParserExt};
 use combine_language::{Assoc, Fixity, expression_parser};
 
-use lexer::{Lexer, Delimiter, Token};
+use lexer::{Lexer, Delimiter, Token, IdentType};
 
 pub type Error = ParseError<BufferedStream<'static,
                                            Lexer<'static,
@@ -155,9 +155,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    /// Identifier parser which returns `(id, true)` if the identifier is a constructor
-    /// (Starts with an uppercase letter
-    fn parse_ident2(&self, input: I) -> ParseResult<(Id, bool), I> {
+    /// Identifier parser which returns the identifier as well as the type of the identifier
+    fn parse_ident2(&self, input: I) -> ParseResult<(Id, IdentType), I> {
         satisfy(|t: Token<Id>| {
                 match t {
                     Token::Identifier(..) => true,
@@ -166,7 +165,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             })
             .map(|t| {
                 match t {
-                    Token::Identifier(id, is_ctor) => (id, is_ctor),
+                    Token::Identifier(id, typ) => (id, typ),
                     _ => unreachable!(),
                 }
             })
@@ -186,9 +185,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
     fn parse_ident_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
         try(self.parser(ParserEnv::<I, F>::parse_ident2))
-            .map(|(s, is_ctor)| {
+            .map(|(s, typ)| {
                 debug!("Id: {:?}", s);
-                if !is_ctor {
+                if typ == IdentType::Variable {
                     Type::generic(Generic {
                         kind: Kind::variable(0),
                         id: s.to_id(),
@@ -254,9 +253,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     fn record_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
         let field = self.parser(ParserEnv::<I, F>::parse_ident2)
-            .then(|(id, is_ctor)| {
+            .then(|(id, typ)| {
                 parser(move |input| {
-                    if is_ctor {
+                    if typ == IdentType::Constructor {
                         value((id.clone(), None)).parse_state(input)
                     } else {
                         token(Token::Colon)
@@ -610,9 +609,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                 absolute: 0,
             };
             self.parser(ParserEnv::<I, F>::parse_ident2)
-                .then(|(id, is_ctor)| {
+                .then(|(id, typ)| {
                     parser(move |input| {
-                        if is_ctor {
+                        if typ == IdentType::Constructor {
                             many(self.ident())
                                 .parse_state(input)
                                 .map(|(args, input)| {
@@ -727,9 +726,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
               G: FnOnce(&mut Parser<Input = I, Output = O>) -> R
     {
         let mut field = self.parser(ParserEnv::<I, F>::parse_ident2)
-            .then(move |(id, is_ctor)| {
+            .then(move |(id, typ)| {
                 parser(move |input| {
-                    let result = if is_ctor {
+                    let result = if typ == IdentType::Constructor {
                         optional(token(Token::Equal).with(p1.clone()))
                             .map(Ok)
                             .parse_state(input)
