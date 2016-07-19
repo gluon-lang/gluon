@@ -1,7 +1,15 @@
+extern crate rustyline;
+
 use std::error::Error as StdError;
+use std::fmt;
+use std::sync::Mutex;
+
+use self::rustyline::error::ReadlineError;
+
 use base::ast::Typed;
 use base::types::Kind;
-use vm::api::{IO, Function, WithVM};
+use vm::api::{IO, Function, WithVM, VMType, Userdata};
+use vm::gc::{Gc, Traverseable};
 use vm::thread::{Thread, RootStr};
 
 use gluon::{Compiler, new_vm};
@@ -66,8 +74,8 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
         }
     }
     let maybe_comment = env.get_metadata(args)
-                           .ok()
-                           .and_then(|metadata| metadata.comment.as_ref());
+        .ok()
+        .and_then(|metadata| metadata.comment.as_ref());
     if let Some(comment) = maybe_comment {
         for line in comment.lines() {
             write!(&mut buffer, "\n/// {}", line).unwrap();
@@ -76,25 +84,56 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     IO::Value(Ok(buffer))
 }
 
-fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
-    fn input(prompt: &str) -> IO<Option<String>> {
-        let input = ::linenoise::input(prompt);
+struct Editor(Mutex<rustyline::Editor<()>>);
 
-        if let Some(ref input) = input {
-            if !input.trim().is_empty() {
-                ::linenoise::history_add(input);
-            }
-        }
+impl fmt::Debug for Editor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Editor(..)")
+    }
+}
 
-        IO::Value(input)
+impl VMType for Editor {
+    type Type = Editor;
+}
+
+impl Traverseable for Editor {
+    fn traverse(&self, _: &mut Gc) {}
+}
+
+fn new_editor(_: ()) -> Userdata<Editor> {
+    let editor = rustyline::Editor::new();
+    Userdata(Editor(Mutex::new(editor)))
+}
+
+fn readline(editor: &Editor, prompt: &str) -> IO<Option<String>> {
+    let mut editor = editor.0.lock().unwrap();
+    let input = match editor.readline(prompt) {
+        Ok(input) => input,
+        Err(ReadlineError::Eof) |
+        Err(ReadlineError::Interrupted) => return IO::Value(None),
+        Err(err) => return IO::Exception(format!("{}", err)),
+    };
+    if !input.trim().is_empty() {
+        editor.add_history_entry(&input);
     }
 
+    IO::Value(Some(input))
+}
+
+fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
+
+    try!(vm.register_type::<Editor>("Editor", &[]));
+
+    try!(vm.define_global("rustyline",
+                          record!(
+        new_editor => primitive!(1 new_editor),
+        readline => primitive!(2 readline)
+    )));
     try!(vm.define_global("repl_prim",
                           record!(
         type_of_expr => primitive!(1 type_of_expr),
         find_info => primitive!(1 find_info),
-        find_kind => primitive!(1 find_kind),
-        input => primitive!(1 input)
+        find_kind => primitive!(1 find_kind)
     )));
     let mut compiler = Compiler::new();
     try!(compiler.load_file(vm, "std/prelude.glu"));
@@ -143,7 +182,8 @@ mod tests {
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
-        assert_eq!(find_kind.call("std.prelude.Option"), Ok(IO::Value(Ok("* -> *".into()))));
+        assert_eq!(find_kind.call("std.prelude.Option"),
+                   Ok(IO::Value(Ok("* -> *".into()))));
     }
 
     #[test]
