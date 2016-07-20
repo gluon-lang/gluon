@@ -12,7 +12,8 @@ use base::types::{RcKind, Type, Generic, Kind};
 use base::error::Errors;
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType};
-use base::instantiate::{AliasInstantiator, Instantiator, unroll_app};
+use base::instantiate;
+use base::instantiate::{Instantiator, unroll_app};
 use kindcheck;
 use substitution::Substitution;
 use unify::Error as UnifyError;
@@ -1036,11 +1037,13 @@ impl<'a> Typecheck<'a> {
         if let Some(existing_types) = self.environment.stack.get_all(symbol) {
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
-                let mut alias = AliasInstantiator::new(&self.inst, &self.environment);
                 debug!("Intersect\n{} <> {}",
                        types::display_type(&self.symbols, existing_type),
                        types::display_type(&self.symbols, symbol_type));
-                let result = unify::intersection(&self.subs, &mut alias, existing_type, symbol_type);
+                let result = unify::intersection(&self.subs,
+                                                 &mut (&self.environment as &TypeEnv),
+                                                 existing_type,
+                                                 symbol_type);
                 debug!("Intersect result {}", result);
                 typ = Some(result);
             }
@@ -1167,8 +1170,10 @@ impl<'a> Typecheck<'a> {
         debug!("Unify {} <=> {}",
                types::display_type(&self.symbols, expected),
                types::display_type(&self.symbols, &actual));
-        let mut alias = AliasInstantiator::new(&self.inst, &self.environment);
-        match unify::unify(&self.subs, &mut alias, expected, &actual) {
+        match unify::unify(&self.subs,
+                           &mut (&self.environment as &TypeEnv),
+                           expected,
+                           &actual) {
             Ok(typ) => Ok(self.subs.set_type(typ)),
             Err(errors) => {
                 let mut expected = expected.clone();
@@ -1184,22 +1189,18 @@ impl<'a> Typecheck<'a> {
     }
 
     fn remove_alias(&self, typ: TcType) -> TcType {
-        AliasInstantiator::new(&self.inst, &self.environment).remove_alias(typ)
+        instantiate::remove_alias(&self.environment, typ)
     }
 
     fn remove_aliases(&self, typ: TcType) -> TcType {
-        AliasInstantiator::new(&self.inst, &self.environment).remove_aliases(typ)
+        instantiate::remove_aliases(&self.environment, typ)
     }
 
     fn type_of_alias(&self,
                      id: &AliasData<Symbol, TcType>,
                      arguments: &[TcType])
                      -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
-        AliasInstantiator::new(&self.inst, &self.environment)
-            .type_of_alias(id, arguments)
-            .map_err(|()| {
-                UnifyError::Other(::unify_type::TypeError::UndefinedType(id.name.clone()))
-            })
+        Ok(instantiate::type_of_alias(id, arguments))
     }
 
     fn instantiate(&mut self, typ: &TcType) -> TcType {
@@ -1218,10 +1219,12 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut 
 {
     if let Type::Record { fields: ref field_types, .. } = **typ {
         for field in fields {
-            let associated_type = field_types.iter()
-                .find(|type_field| type_field.name.name_eq(&field.0))
-                .expect("Associated type to exist in record");
-            f(&field.0, &associated_type.typ);
+            // If the field in the pattern does not exist (undefined field error) then skip it as
+            // the error itself will already have been reported
+            if let Some(associated_type) = field_types.iter()
+                .find(|type_field| type_field.name.name_eq(&field.0)) {
+                f(&field.0, &associated_type.typ);
+            }
         }
     }
 }

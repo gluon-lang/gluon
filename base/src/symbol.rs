@@ -77,7 +77,7 @@ impl Symbol {
 }
 
 #[derive(Eq)]
-pub struct SymbolRef(str); 
+pub struct SymbolRef(str);
 
 impl fmt::Debug for SymbolRef {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

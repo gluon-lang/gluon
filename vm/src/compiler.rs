@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
 use base::ast;
+use base::instantiate;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, LExpr, Expr};
 use base::types;
@@ -330,30 +331,9 @@ impl<'a> Compiler<'a> {
         })
     }
 
-
-    fn remove_aliases<'s>(&'s self, typ: &'s Type<Symbol, TcType>) -> &'s Type<Symbol, TcType> {
-        let mut typ = typ;
-        loop {
-            match typ.as_alias() {
-                Some((id, _)) => {
-                    match self.find_type_info(id) {
-                        Some(alias) => {
-                            match alias.typ {
-                                Some(ref real_type) => typ = real_type,
-                                None => break,
-                            }
-                        }
-                        _ => break,
-                    }
-                }
-                _ => break,
-            }
-        }
-        typ
-    }
-    fn find_field(&self, typ: &Type<Symbol, TcType>, field: &Symbol) -> Option<VMIndex> {
+    fn find_field(&self, typ: &TcType, field: &Symbol) -> Option<VMIndex> {
         // Walk through all type aliases
-        match *self.remove_aliases(typ) {
+        match **instantiate::remove_aliases_cow(self, typ) {
             Type::Record { ref fields, .. } => {
                 fields.iter()
                     .position(|f| f.name.name_eq(field))
@@ -367,7 +347,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self, typ: &TcType, constructor: &Symbol) -> Option<VMTag> {
-        match *self.remove_aliases(typ) {
+        match **instantiate::remove_aliases_cow(self, typ) {
             Type::Variants(ref variants) => {
                 variants.iter()
                     .enumerate()
@@ -711,19 +691,14 @@ impl<'a> Compiler<'a> {
 
     fn compile_let_pattern(&mut self,
                            pattern: &ast::Pattern<TcIdent>,
-                           typ: &TcType,
+                           pattern_type: &TcType,
                            function: &mut FunctionEnvs) {
         match *pattern {
             ast::Pattern::Identifier(ref name) => {
                 function.new_stack_var(name.id().clone());
             }
             ast::Pattern::Record { ref types, ref fields, .. } => {
-                let mut typ = typ.clone();
-                if let Some((id, _)) = typ.clone().as_alias() {
-                    typ = self.find_type_info(&id)
-                        .and_then(|alias| alias.typ.clone())
-                        .unwrap_or(typ);
-                }
+                let typ = instantiate::remove_aliases(self, pattern_type.clone());
                 // Insert all variant constructor into scope
                 with_pattern_types(types, &typ, |name, alias| {
                     // FIXME: Workaround so that both the types name in this module and its global

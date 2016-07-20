@@ -209,7 +209,7 @@ impl VMEnv {
     }
 
     pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<TcType>)> {
-        use base::instantiate::{Instantiator, AliasInstantiator};
+        use base::instantiate;
         let globals = &self.globals;
         let mut module = Name::new(name);
         let global;
@@ -235,8 +235,6 @@ impl VMEnv {
             return Ok((global.value, Cow::Borrowed(&global.typ)));
         }
         let remaining_fields = Name::new(&name[remaining_offset..]);
-        let instantiator = Instantiator::new();
-        let instantiator = AliasInstantiator::new(&instantiator, self);
 
         let mut typ = Cow::Borrowed(&global.typ);
         let mut value = global.value;
@@ -252,8 +250,8 @@ impl VMEnv {
                                                    test.+)")));
             }
             typ = match typ {
-                Cow::Borrowed(typ) => instantiator.remove_aliases_cow(typ),
-                Cow::Owned(typ) => Cow::Owned(instantiator.remove_aliases(typ)),
+                Cow::Borrowed(typ) => instantiate::remove_aliases_cow(self, typ),
+                Cow::Owned(typ) => Cow::Owned(instantiate::remove_aliases(self, typ)),
             };
             // HACK Can't return the data directly due to the use of cow on the type
             let next_type = map_cow_option(typ.clone(), |typ| {
