@@ -358,45 +358,39 @@ fn unify_app_<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
 {
     let r = unifier.subs.real(r);
     let new = match **r {
-        Type::App(ref r, ref r_arg) => {
+        Type::App(ref r_fn, ref r_arg) => {
             match l_args.last() {
                 Some(last) => {
                     let arg_result = f(unifier, last, r_arg);
                     unify_app_(unifier,
                                l,
                                &l_args[0..l_args.len() - 1],
-                               r,
+                               r_fn,
                                replaced || arg_result.is_some(),
                                output,
                                f);
                     arg_result
                 }
-                None => {
-                    let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-                    unifier.try_match(&l, r)
-                }
-            }
-        }
-        Type::Data(ref r, ref r_args) if l_args.len() == r_args.len() => {
-            unifier.try_match(l, r);
-            let args = walk_move_types(l_args.iter().zip(r_args), |l, r| unifier.try_match(l, r));
-            match args {
-                Some(args) => {
-                    output.extend(args);
-                    return;
-                }
-                None => None,
+                None => unifier.try_match(&l, r),
             }
         }
         Type::Data(ref r, ref r_args) => {
-            let args_iter = if l_args.len() < r_args.len() {
-                let offset = r_args.len() - l_args.len();
-                unifier.try_match(l, &Type::data(r.clone(), r_args[..offset].into()));
-                l_args.iter().zip(&r_args[offset..])
-            } else {
-                let offset = l_args.len() - r_args.len();
-                unifier.try_match(&Type::data(l.clone(), l_args[..offset].into()), r);
-                r_args.iter().zip(&l_args[offset..])
+            use std::cmp::Ordering::*;
+            let args_iter = match l_args.len().cmp(&r_args.len()) {
+                Equal => {
+                    unifier.try_match(l, r);
+                    l_args.iter().zip(r_args)
+                }
+                Less => {
+                    let offset = r_args.len() - l_args.len();
+                    unifier.try_match(l, &Type::data(r.clone(), r_args[..offset].into()));
+                    l_args.iter().zip(&r_args[offset..])
+                }
+                Greater => {
+                    let offset = l_args.len() - r_args.len();
+                    unifier.try_match(&Type::data(l.clone(), l_args[..offset].into()), r);
+                    r_args.iter().zip(&l_args[offset..])
+                }
             };
             // Unify the last min(l_args.len(), r_args.len()) arguments
             match walk_move_types(args_iter, |l, r| unifier.try_match(l, r)) {
@@ -409,7 +403,9 @@ fn unify_app_<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
         }
         _ => {
             let l = Type::data(l.clone(), l_args.iter().cloned().collect());
-            unifier.try_match(&l, r)
+            unifier.try_match(&l, r);
+            // Dont push the actual type that is applied
+            return;
         }
     };
     match new {
@@ -461,14 +457,14 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                      |args, ret| Type::function(vec![args], ret)))
         }
         None => {
-            unifier.try_match(fn_prim,
+            let new_fn = unifier.try_match(fn_prim,
                               &Type::app(Type::builtin(types::BuiltinType::Function), arg.clone()));
             let new_ret = unifier.try_match(ret, other_ret);
-            Ok(merge(arg,
-                     None,
+            Ok(merge(fn_prim,
+                     new_fn,
                      ret,
                      new_ret,
-                     |args, ret| Type::function(vec![args], ret)))
+                     Type::app))
         }
     }
 }

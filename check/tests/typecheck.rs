@@ -383,15 +383,13 @@ fn function_operator_partially_applied() {
 type Test f = {
     test: f Int
 }
-let function_test: Test ((->) Float) = {
-    test = \x ->
-        1.0 #Float+ x
-        1
+let function_test: Test ((->) a) = {
+    test = \x -> 1
 }
 function_test.test
 ";
     let result = typecheck(text);
-    assert_eq!(result, Ok(Type::function(vec![typ("Float")], typ("Int"))));
+    assert_eq!(result, Ok(Type::function(vec![typ("a0")], typ("Int"))));
 }
 
 #[test]
