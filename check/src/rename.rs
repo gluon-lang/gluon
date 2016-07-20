@@ -73,20 +73,15 @@ pub fn rename(symbols: &mut SymbolModule,
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
         env: Environment<'b>,
-        inst: Instantiator,
         errors: Error,
     }
     impl<'a, 'b> RenameVisitor<'a, 'b> {
         fn find_fields(&self, typ: &TcType) -> Option<Vec<types::Field<Symbol, TcType>>> {
             // Walk through all type aliases
-            match *self.remove_aliases(typ) {
+            match *instantiate::remove_aliases(&self.env, typ.clone()) {
                 Type::Record { ref fields, .. } => Some(fields.to_owned()),
                 _ => None,
             }
-        }
-
-        fn remove_aliases(&self, typ: &TcType) -> TcType {
-            AliasInstantiator::new(&self.inst, &self.env).remove_aliases(typ.clone())
         }
 
         fn new_pattern(&mut self, typ: &TcType, pattern: &mut ast::LPattern<TcIdent>) {
@@ -102,7 +97,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
                         field.1 = Some(self.stack_var(id, pattern.location, field_type));
                     }
-                    let record_type = self.remove_aliases(typ).clone();
+                    let record_type = instantiate::remove_aliases(&self.env, typ.clone()).clone();
                     let imported_types = match *record_type {
                         Type::Record { ref types, .. } => types,
                         _ => panic!(),
@@ -310,7 +305,6 @@ pub fn rename(symbols: &mut SymbolModule,
     let mut visitor = RenameVisitor {
         symbols: symbols,
         errors: Errors::new(),
-        inst: Instantiator::new(),
         env: Environment {
             env: env,
             stack: ScopedMap::new(),
@@ -327,20 +321,18 @@ pub fn rename(symbols: &mut SymbolModule,
 
 
 use std::collections::HashMap;
-use base::instantiate::{Instantiator, AliasInstantiator};
+use base::instantiate;
 use unify_type::TypeError;
 use substitution::Substitution;
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
-pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
-    let inst = Instantiator::new();
+pub fn equivalent(mut env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
     let subs = Substitution::new();
-    let mut state = AliasInstantiator::new(&inst, env);
     let mut map = HashMap::new();
     let mut equiv = true;
     {
         let mut unifier = UnifierState {
-            state: &mut state,
+            state: &mut env,
             subs: &subs,
             unifier: Equivalent {
                 map: &mut map,
@@ -357,12 +349,12 @@ struct Equivalent<'m> {
     equiv: &'m mut bool,
 }
 
-impl<'a, 'm> Unifier<AliasInstantiator<'a>, TcType> for Equivalent<'m> {
-    fn report_error(_unifier: &mut UnifierState<AliasInstantiator<'a>, TcType, Self>,
+impl<'a, 'm> Unifier<&'a (TypeEnv + 'a), TcType> for Equivalent<'m> {
+    fn report_error(_unifier: &mut UnifierState<&'a (TypeEnv + 'a), TcType, Self>,
                     _error: UnifyError<TcType, TypeError<Symbol>>) {
     }
 
-    fn try_match(unifier: &mut UnifierState<AliasInstantiator<'a>, TcType, Self>,
+    fn try_match(unifier: &mut UnifierState<&'a (TypeEnv + 'a), TcType, Self>,
                  l: &TcType,
                  r: &TcType)
                  -> Option<TcType> {

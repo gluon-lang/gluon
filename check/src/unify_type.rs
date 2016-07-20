@@ -3,9 +3,9 @@ use std::fmt;
 use base::types;
 use base::types::{Type, merge};
 use base::ast::ASTType;
-use base::types::{BuiltinType, TcType, TypeVariable};
+use base::types::{BuiltinType, TcType, TypeVariable, TypeEnv};
 use base::symbol::{Symbol, SymbolRef};
-use base::instantiate::AliasInstantiator;
+use base::instantiate;
 
 use unify;
 use unify::{Error as UnifyError, Unifier, Unifiable};
@@ -39,7 +39,7 @@ pub fn fmt_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
 }
 
 
-pub type UnifierState<'a, 's, U> = unify::UnifierState<'s, AliasInstantiator<'a>, TcType, U>;
+pub type UnifierState<'a, 's, U> = unify::UnifierState<'s, &'a (TypeEnv + 'a), TcType, U>;
 
 impl Variable for TypeVariable {
     fn get_id(&self) -> u32 {
@@ -72,14 +72,14 @@ impl<I> Substitutable for ASTType<I> {
     }
 }
 
-impl<'a> Unifiable<AliasInstantiator<'a>> for TcType {
+impl<'a> Unifiable<&'a (TypeEnv + 'a)> for TcType {
     type Error = TypeError<Symbol>;
 
     fn zip_match<'s, U>(&self,
                         other: &Self,
                         mut unifier: UnifierState<'a, 's, U>)
                         -> Result<Option<Self>, Error<Symbol>>
-        where U: Unifier<AliasInstantiator<'a>, Self>
+        where U: Unifier<&'a (TypeEnv + 'a), Self>
     {
         debug!("{:?} <=> {:?}", self, other);
         let (l_temp, r_temp);
@@ -109,7 +109,7 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
                            other: &TcType,
                            mut unifier: UnifierState<'a, 's, U>)
                            -> Result<Option<TcType>, Error<Symbol>>
-    where U: Unifier<AliasInstantiator<'a>, TcType>
+    where U: Unifier<&'a (TypeEnv + 'a), TcType>
 {
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
     match (&**self_, &**other) {
@@ -234,7 +234,7 @@ fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                          mut l: TcType,
                          r_id: &SymbolRef)
                          -> Result<Option<TcType>, ()>
-    where U: Unifier<AliasInstantiator<'a>, TcType>
+    where U: Unifier<&'a (TypeEnv + 'a), TcType>
 {
     let mut did_alias = false;
     loop {
@@ -251,7 +251,7 @@ fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                     });
                 }
                 did_alias = true;
-                match unifier.state.maybe_remove_alias(&l) {
+                match instantiate::maybe_remove_alias(*unifier.state, &l) {
                     Ok(Some(typ)) => typ,
                     Ok(None) => break,
                     Err(()) => {
@@ -273,7 +273,7 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                             actual: &TcType,
                             through_alias: &mut bool)
                             -> Result<(TcType, TcType), ()>
-    where U: Unifier<AliasInstantiator<'a>, TcType>
+    where U: Unifier<&'a (TypeEnv + 'a), TcType>
 {
     let mut l = expected.clone();
     if let Some(r_id) = alias_sym(actual) {
@@ -304,9 +304,9 @@ fn try_with_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                              expected: &TcType,
                              actual: &TcType)
                              -> Result<Option<TcType>, ()>
-    where U: Unifier<AliasInstantiator<'a>, TcType>
+    where U: Unifier<&'a (TypeEnv + 'a), TcType>
 {
-    let r = match unifier.state.maybe_remove_alias(actual) {
+    let r = match instantiate::maybe_remove_alias(*unifier.state, actual) {
         Ok(typ) => typ,
         Err(()) => {
             match actual.as_alias_symbol() {
@@ -335,7 +335,7 @@ fn unify_app<'a, 's, F, U, E>(unifier: &mut UnifierState<'a, 's, U>,
                               f: &F)
                               -> Result<Option<TcType>, E>
     where F: Fn(&mut UnifierState<'a, 's, U>, &TcType, &TcType) -> Option<TcType>,
-          U: Unifier<AliasInstantiator<'a>, TcType>
+          U: Unifier<&'a (TypeEnv + 'a), TcType>
 {
     let mut args = Vec::new();
     unify_app_(unifier, l, l_args, r, false, &mut args, f);
@@ -354,7 +354,7 @@ fn unify_app_<'a, 's, F, U>(unifier: &mut UnifierState<'a, 's, U>,
                             output: &mut Vec<TcType>,
                             f: &F)
     where F: Fn(&mut UnifierState<'a, 's, U>, &TcType, &TcType) -> Option<TcType>,
-          U: Unifier<AliasInstantiator<'a>, TcType>
+          U: Unifier<&'a (TypeEnv + 'a), TcType>
 {
     let r = unifier.subs.real(r);
     let new = match **r {
@@ -428,7 +428,7 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                            ret: &TcType,
                            other: &TcType)
                            -> Result<Option<TcType>, Error<Symbol>>
-    where U: Unifier<AliasInstantiator<'a>, TcType>
+    where U: Unifier<&'a (TypeEnv + 'a), TcType>
 {
     let error = || {
         let func = Type::function(vec![arg.clone()], ret.clone());
@@ -510,14 +510,13 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
 #[cfg(test)]
 mod tests {
     use base::error::Errors;
-    use base::instantiate::{AliasInstantiator, Instantiator};
 
     use super::TypeError::FieldMismatch;
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
     use base::types;
-    use base::types::{TcType, Type};
+    use base::types::{TcType, Type, TypeEnv};
     use tests::*;
 
 
@@ -543,11 +542,8 @@ mod tests {
                                       name: w.clone(),
                                       typ: Type::string(),
                                   }]);
-        let inst = Instantiator::new();
         let subs = Substitution::new();
-        let unit = ();
-        let mut alias = AliasInstantiator::new(&inst, &unit);
-        let result = unify(&subs, &mut alias, &l, &r);
+        let result = unify(&subs, &mut (&() as &TypeEnv), &l, &r);
         assert_eq!(result,
                    Err(Errors {
                        errors: vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))],

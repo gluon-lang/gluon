@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use base::ast::{DisplayEnv, Location, Typed};
 use base::symbol::Symbol;
 use base::types::{Type, TcType};
-use base::instantiate::{AliasInstantiator, Instantiator};
+use base::instantiate;
 
 trait OnFound {
     fn on_ident(&mut self, ident: &ast::TcIdent<Symbol>) {
@@ -49,10 +49,7 @@ impl OnFound for Suggest {
     fn on_pattern(&mut self, pattern: &ast::LPattern<ast::TcIdent<Symbol>>) {
         match pattern.value {
             ast::Pattern::Record { ref id, ref fields, .. } => {
-                let instantiator = Instantiator::new();
-                let env = ();
-                let instantiator = AliasInstantiator::new(&instantiator, &env);
-                match *instantiator.remove_aliases(id.typ.clone()) {
+                match *instantiate::remove_aliases(&(), id.typ.clone()) {
                     Type::Record { fields: ref field_types, .. } => {
                         for (field, field_type) in fields.iter().zip(field_types) {
                             let f = field.1.as_ref().unwrap_or(&field.0).clone();
@@ -92,11 +89,8 @@ impl OnFound for Suggest {
     fn ident(&mut self, context: &ast::LExpr<ast::TcIdent<Symbol>>, ident: &ast::TcIdent<Symbol>) {
         match context.value {
             ast::Expr::FieldAccess(ref expr, _) => {
-                let instantiator = Instantiator::new();
-                let env = ();
-                let instantiator = AliasInstantiator::new(&instantiator, &env);
                 let typ = expr.type_of();
-                match *instantiator.remove_aliases(typ) {
+                match *instantiate::remove_aliases(&(), typ) {
                     Type::Record { ref fields, .. } => {
                         let id = ident.name.as_ref();
                         for field in fields {
