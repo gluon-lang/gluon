@@ -17,6 +17,7 @@ type Monoid m = {
     (<>): m -> m -> m,
     empty: m
 }
+
 let monoid_Function m: Monoid b -> (Monoid (a -> b)) = {
     (<>) = \f g -> \x -> m.(<>) (f x) (g x),
     empty = m.empty
@@ -59,15 +60,6 @@ let monoid_Float_Mul = {
     (<>) = \x y -> x #Float* y,
     empty = 1.0
 }
-
-/// The identity function
-let id x = x
-
-/// const `x` creates a function which always returns `x`
-let const x = \_ -> x
-
-/// flip `f` takes creates a new function which takes its two arguments in reverse order
-let flip f = \x y -> f y x
 
 let not x = if x then False else True
 
@@ -120,7 +112,7 @@ let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
                 (match r with
                     | Some r_val -> eq_a.(==) l_val r_val
                     | None -> False)
-            | None -> 
+            | None ->
                 (match r with
                     | Some _ -> False
                     | None -> True)
@@ -133,7 +125,7 @@ let eq_Result: Eq e -> Eq t -> Eq (Result e t) = \eq_e eq_t -> {
                 (match r with
                     | Ok r_val -> eq_t.(==) l_val r_val
                     | Err _ -> False)
-            | Err l_val -> 
+            | Err l_val ->
                 (match r with
                     | Ok _ -> False
                     | Err r_val -> eq_e.(==) l_val r_val)
@@ -214,7 +206,7 @@ let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
                 (match r with
                     | Some r_val -> compare_a.compare l_val r_val
                     | None -> LT)
-            | None -> 
+            | None ->
                 (match r with
                     | Some r_val -> GT
                     | None -> EQ)
@@ -227,7 +219,7 @@ let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_e ord_t -> {
                 (match r with
                     | Ok r_val -> ord_t.compare l_val r_val
                     | Err _ -> GT)
-            | Err l_val -> 
+            | Err l_val ->
                 (match r with
                     | Ok _ -> LT
                     | Err r_val -> ord_e.compare l_val r_val)
@@ -287,12 +279,36 @@ let num_Float: Num Float = {
     negate = \x -> 0.0 #Float- x
 }
 
+type Category cat = {
+    id : cat a a,
+    compose : cat b c -> cat a b -> cat a c
+}
+
+let category_Function: Category (->) = {
+    id = \x -> x,
+    compose = \f g x -> f (g x)
+}
+
+let make_Category cat =
+    let { id, compose } = cat
+
+    /// Right-to-left composition. Alias for `compose`.
+    let (<<) : cat b c -> cat a b -> cat a c = compose
+    /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
+    let (>>) f g : cat a b -> cat b c -> cat a c = compose g f
+
+    { id, compose, (<<), (>>) }
+
 /**
 A `Functor` represents an action on a parameterized type which does not change the structure with
 the mapped type.
 */
 type Functor f = {
     map : (a -> b) -> f a -> f b
+}
+
+let functor_Function : Functor ((->) a) = {
+    map = category_Function.compose
 }
 
 let functor_Option: Functor Option = {
@@ -316,6 +332,11 @@ let functor_List: Functor List =
 type Applicative f = {
     (<*>) : f (a -> b) -> f a -> f b,
     pure : a -> f a
+}
+
+let applicative_Function: Applicative ((->) a) = {
+    (<*>) = \f g x -> f x (g x),
+    pure = \x -> \_ -> x
 }
 
 let applicative_Option: Applicative Option = {
@@ -388,6 +409,11 @@ type Monad m = {
     return : a -> m a
 }
 
+let monad_Function: Monad ((->) a) = {
+    (>>=) = \m f x -> f (m x) x,
+    return = applicative_Function.pure
+}
+
 let monad_Option: Monad Option = {
     (>>=) = \m f -> match m with
                         | Some x -> f x
@@ -407,11 +433,12 @@ let monad_IO: Monad IO = {
 
 let make_Monad m =
     let { (>>=), return } = m
+    let { id } = category_Function
+
     let (>>) l r = l >>= \_ -> r
     let forM_ xs f =
         match xs with
-            | Cons y ys ->
-                f y >> forM_ ys f
+            | Cons y ys -> f y >> forM_ ys f
             | Nil -> return ()
     {
         (>>=),
@@ -432,6 +459,32 @@ let applicative_IO: Applicative IO = {
             monad_IO.(>>=) f (\g -> monad_IO.(>>=) x (\y -> monad_IO.return (g y))),
     pure = monad_IO.return
 }
+
+/// The identity function, where `id x == x`
+let id : a -> a =
+    category_Function.id
+
+/// const `x` creates a function which always returns `x`
+let const : a -> b -> a =
+    applicative_Function.pure
+
+/// flip `f` takes creates a new function which takes its two arguments in reverse order
+let flip f : (a -> b -> c) -> b -> a -> c =
+    \x y -> f y x
+
+/// Backward function application, where `f <| x == f x`
+let (<|) f x : a -> (a -> b) -> b = f x
+
+/// Forward function application, where `x |> f == f x`
+let (|>) x f : (a -> b) -> a -> b = f x
+
+/// Right-to-left function composition
+let (<<) : (b -> c) -> (a -> b) -> a -> c =
+    (make_Category category_Function).(<<)
+
+/// Left-to-right function composition
+let (>>) : (a -> b) -> (b -> c) -> a -> c =
+    (make_Category category_Function).(>>)
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = {
@@ -483,33 +536,46 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     { show }
 
 {
-    Eq,
-    Ord,
-    Monoid,
     Bool,
     Ordering,
     Option,
     Result,
     List,
-    Functor,
-    Applicative,
-    Alternative,
-    Monad,
-    Num,
-    Show,
-    id, const, flip, not,
+
+    not,
     foldl, foldr,
-    ord_Unit, ord_Bool, ord_Option, ord_Result, ord_Float, ord_Int, ord_Char, make_Ord,
-    eq_Unit, eq_Bool, eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_Char,
+
+    Monoid,
     monoid_Function, monoid_List, monoid_Option,
     monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
-    num_Int, num_Float,
+
+    Eq,
+    eq_Unit, eq_Bool, eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_Char,
+
+    Ord, make_Ord,
+    ord_Unit, ord_Bool, ord_Option, ord_Result, ord_Float, ord_Int, ord_Char,
+
+    Category, make_Category,
+    category_Function,
+
+    Functor,
     functor_Option, functor_Result, functor_List, functor_IO,
+
+    Applicative,
     applicative_Option, applicative_Result, applicative_List, applicative_IO,
+
+    Alternative, make_Alternative,
     alternative_Option, alternative_List,
-    make_Alternative,
+
+    Monad, make_Monad,
     monad_Option, monad_List, monad_IO,
-    make_Monad,
+
+    Num,
+    num_Int, num_Float,
+
+    id, const, flip, (<|), (|>), (<<), (>>),
+
+    Show,
     show_Unit, show_Bool, show_Int, show_Float, show_List, show_Option, show_Result
 }
 
