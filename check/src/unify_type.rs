@@ -224,7 +224,7 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
 fn alias_sym(l: &TcType) -> Option<&SymbolRef> {
     match **l {
         Type::Function(..) => Some(BuiltinType::Function.symbol()),
-        _ => l.as_alias().map(|(id, _)| id)
+        _ => l.as_alias().map(|(id, _)| id),
     }
 }
 
@@ -246,10 +246,9 @@ fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                     // return a replacement type
                     return Ok(if did_alias {
                         Some(l.clone())
-                    }
-                    else {
+                    } else {
                         None
-                    })
+                    });
                 }
                 did_alias = true;
                 match unifier.state.maybe_remove_alias(&l) {

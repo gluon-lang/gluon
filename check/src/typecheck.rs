@@ -1040,7 +1040,8 @@ impl<'a> Typecheck<'a> {
                 debug!("Intersect\n{} <> {}",
                        types::display_type(&self.symbols, existing_type),
                        types::display_type(&self.symbols, symbol_type));
-                let result = unify::intersection(&self.subs, &mut alias, existing_type, symbol_type);
+                let result =
+                    unify::intersection(&self.subs, &mut alias, existing_type, symbol_type);
                 debug!("Intersect result {}", result);
                 typ = Some(result);
             }
