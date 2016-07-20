@@ -361,6 +361,7 @@ impl<'a, 'm> Unifier<&'a (TypeEnv + 'a), TcType> for Equivalent<'m> {
         let subs = unifier.subs;
         let l = subs.real(l);
         let r = subs.real(r);
+        debug!("{} ====> {}", l, r);
         match (&**l, &**r) {
             (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => None,
             (&Type::Generic(ref gl), _) => {

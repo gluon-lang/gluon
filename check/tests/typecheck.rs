@@ -603,6 +603,25 @@ return 1
 }
 
 #[test]
+fn normalize_function_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Cat cat = {
+    id : cat a a,
+}
+let cat: Cat (->) = {
+    id = \x -> x,
+}
+let { id } = cat
+let { id } = cat
+let test f: (a -> m b) -> m b = test f
+test id
+"#;
+    let result = typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
 fn mutually_recursive_types() {
     let _ = ::env_logger::init();
     let text = r#"
