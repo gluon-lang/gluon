@@ -631,6 +631,17 @@ in 1
 }
 
 #[test]
+fn unpack_field_which_does_not_exist() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let { y } = { x = 1 }
+2
+"#;
+    let result = typecheck(text);
+    assert_err!(result, UndefinedField(..));
+}
+
+#[test]
 fn field_access_through_multiple_aliases() {
     let _ = ::env_logger::init();
     let text = r#"

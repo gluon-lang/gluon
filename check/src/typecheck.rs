@@ -1219,10 +1219,12 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut 
 {
     if let Type::Record { fields: ref field_types, .. } = **typ {
         for field in fields {
-            let associated_type = field_types.iter()
-                .find(|type_field| type_field.name.name_eq(&field.0))
-                .expect("Associated type to exist in record");
-            f(&field.0, &associated_type.typ);
+            // If the field in the pattern does not exist (undefined field error) then skip it as
+            // the error itself will already have been reported
+            if let Some(associated_type) = field_types.iter()
+                .find(|type_field| type_field.name.name_eq(&field.0)) {
+                f(&field.0, &associated_type.typ);
+            }
         }
     }
 }
