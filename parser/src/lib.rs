@@ -134,6 +134,10 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                 let op = s[1..].trim_left_matches(|c: char| c.is_alphanumeric());
                 self.precedence(op)
             }
+            // Hack for some library operators
+            "<<" | ">>" => 9,
+            "<|" | "|>" => 0,
+            // User-defined operators
             _ => 9,
         }
     }
@@ -142,6 +146,10 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         match i {
             "*" | "/" | "%" | "+" | "-" | "==" | "/=" | "<" | ">" | "<=" | ">=" => Fixity::Left,
             ":" | "++" | "&&" | "||" | "$" => Fixity::Right,
+            // Hack for some library operators
+            ">>" | "|>" => Fixity::Left,
+            "<<" | "<|" => Fixity::Right,
+            // User-defined operators
             _ => Fixity::Left,
         }
     }
