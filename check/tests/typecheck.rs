@@ -802,6 +802,21 @@ else
 }
 
 #[test]
+fn arguments_need_to_be_instantiated_before_any_access() {
+    let _ = ::env_logger::init();
+    // test_fn: forall a. (a -> ()) -> ()
+    // To allow any type to be passed to `f` it should be
+    // test_fn: (forall a. a -> ()) -> ()
+    let text = r#"
+let test_fn f: (a -> ()) -> () =
+    f 2.0
+1
+"#;
+    let result = typecheck(text);
+    assert_unify_err!(result, TypeMismatch(..));
+}
+
+#[test]
 fn module() {
     let _ = ::env_logger::init();
     let text = r"

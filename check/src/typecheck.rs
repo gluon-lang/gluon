@@ -616,7 +616,7 @@ impl<'a> Typecheck<'a> {
                         self.typecheck(&mut bind.expression)
                     } else {
                         let function_type = match bind.typ {
-                            Some(ref typ) => typ.clone(),
+                            Some(ref typ) => self.instantiate(typ),
                             None => self.subs.new_var(),
                         };
                         self.typecheck_lambda(function_type,
