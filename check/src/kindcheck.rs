@@ -147,7 +147,7 @@ impl<'a> KindCheck<'a> {
                 try!(self.unify(&star, kind));
                 Ok((self.star.clone(), Type::array(typ)))
             }
-            Type::Data(ref ctor, ref args) => {
+            Type::App(ref ctor, ref args) => {
                 let (mut kind, ctor) = try!(self.kindcheck(ctor));
                 let mut new_args = Vec::new();
                 for arg in args {
@@ -167,7 +167,7 @@ impl<'a> KindCheck<'a> {
                         }
                     };
                 }
-                Ok((kind, Type::data(ctor, new_args)))
+                Ok((kind, Type::app(ctor, new_args)))
             }
             Type::Function(ref args, ref ret) => {
                 let (kind, arg) = try!(self.kindcheck(&args[0]));

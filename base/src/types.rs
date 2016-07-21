@@ -144,13 +144,13 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 ///
 /// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
 /// `Type` is used to enable types to be shared. It is recommended to use the static functions on
-/// `Type` such as `Type::data` and `Type::record` when constructing types as those will construct
+/// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id, T = ASTType<Id>> {
     /// An application with multiple arguments.
-    /// `Map String Int` would be represented as `Data(Map, [String, Int])`
-    Data(T, Vec<T>),
+    /// `Map String Int` would be represented as `App(Map, [String, Int])`
+    App(T, Vec<T>),
     /// A variant type `| A Int Float | B`.
     /// The second element of the tuple is the function type which the constructor has which in the
     /// above example means that A's type is `Int -> Float -> A` and B's is `B`
@@ -472,19 +472,15 @@ pub struct Field<Id, T = ASTType<Id>> {
 impl<Id, T> Type<Id, T>
     where T: From<Type<Id, T>>
 {
-    pub fn app(l: T, r: T) -> T {
-        Type::data(l, vec![r])
-    }
-
     pub fn array(typ: T) -> T {
         T::from(Type::Array(typ))
     }
 
-    pub fn data(id: T, args: Vec<T>) -> T {
+    pub fn app(id: T, args: Vec<T>) -> T {
         if args.is_empty() {
             id
         } else {
-            T::from(Type::Data(id, args))
+            T::from(Type::App(id, args))
         }
     }
 
@@ -559,7 +555,7 @@ impl<Id, T> Type<Id, T>
 {
     pub fn as_alias_symbol(&self) -> Option<&Id> {
         match *self {
-            Type::Data(ref id, _) => {
+            Type::App(ref id, _) => {
                 match **id {
                     Type::Id(ref id) => Some(id),
                     Type::Alias(ref alias) => Some(&alias.name),
@@ -578,7 +574,7 @@ impl<T> Type<Symbol, T>
 {
     pub fn as_alias(&self) -> Option<(&SymbolRef, &[T])> {
         match *self {
-            Type::Data(ref id, ref args) => {
+            Type::App(ref id, ref args) => {
                 match **id {
                     Type::Id(ref id) => Some((id, args)),
                     Type::Alias(ref alias) => Some((&alias.name, args)),
@@ -747,7 +743,7 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                            top(self.env, &**result))
                 }
             }
-            Type::Data(ref t, ref args) => {
+            Type::App(ref t, ref args) => {
                 if p >= Prec::Constructor {
                     try!(write!(f, "("));
                 }
@@ -858,7 +854,7 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
 {
     let typ = f(typ);
     match **typ {
-        Type::Data(_, ref args) => {
+        Type::App(_, ref args) => {
             for a in args {
                 walk_type(a, f);
             }
@@ -946,9 +942,9 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
     let result = {
         let typ = new.as_ref().map_or(typ, |t| &**t);
         match *typ {
-            Type::Data(ref id, ref args) => {
+            Type::App(ref id, ref args) => {
                 let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                merge(id, walk_move_type2(id, f), args, new_args, Type::data)
+                merge(id, walk_move_type2(id, f), args, new_args, Type::app)
             }
             Type::Array(ref inner) => walk_move_type2(&**inner, f).map(Type::array),
             Type::Function(ref args, ref ret) => {

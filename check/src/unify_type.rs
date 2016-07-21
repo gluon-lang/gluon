@@ -124,14 +124,14 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
                 Err(UnifyError::TypeMismatch(self_.clone(), other.clone()))
             }
         }
-        (&Type::Function(ref l_args, ref l_ret), &Type::Data(..)) => {
+        (&Type::Function(ref l_args, ref l_ret), &Type::App(..)) => {
             zip_function(&mut unifier,
                          &l_args[0],
                          l_ret,
                          other,
                          &mut |u, l, r| u.try_match(l, r))
         }
-        (&Type::Data(..), &Type::Function(ref l_args, ref l_ret)) => {
+        (&Type::App(..), &Type::Function(ref l_args, ref l_ret)) => {
             zip_function(&mut unifier,
                          &l_args[0],
                          l_ret,
@@ -139,12 +139,12 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
                          &mut |u, r, l| u.try_match(l, r))
         }
         (&Type::Array(ref l), &Type::Array(ref r)) => Ok(unifier.try_match(l, r).map(Type::array)),
-        (&Type::Data(ref l, ref l_args), &Type::Data(ref r, ref r_args)) => {
+        (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             if l_args.len() == r_args.len() {
                 let ctor = unifier.try_match(l, r);
                 let args = walk_move_types(l_args.iter().zip(r_args.iter()),
                                            |l, r| unifier.try_match(l, r));
-                Ok(merge(l, ctor, l_args, args, Type::data))
+                Ok(merge(l, ctor, l_args, args, Type::app))
             } else {
                 unify_app(&mut unifier, l, l_args, other)
             }
@@ -311,7 +311,7 @@ fn unify_app<'a, 's, U, E>(unifier: &mut UnifierState<'a, 's, U>,
     if args.is_empty() {
         Ok(None)
     } else {
-        Ok(Some(Type::data(l.clone(), args)))
+        Ok(Some(Type::app(l.clone(), args)))
     }
 }
 
@@ -325,7 +325,7 @@ fn unify_app_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
 {
     let r = unifier.subs.real(r);
     let new = match **r {
-        Type::Data(ref r, ref r_args) => {
+        Type::App(ref r, ref r_args) => {
             use std::cmp::Ordering::*;
             let args_iter = match l_args.len().cmp(&r_args.len()) {
                 Equal => {
@@ -334,12 +334,12 @@ fn unify_app_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                 }
                 Less => {
                     let offset = r_args.len() - l_args.len();
-                    unifier.try_match(l, &Type::data(r.clone(), r_args[..offset].into()));
+                    unifier.try_match(l, &Type::app(r.clone(), r_args[..offset].into()));
                     l_args.iter().zip(&r_args[offset..])
                 }
                 Greater => {
                     let offset = l_args.len() - r_args.len();
-                    unifier.try_match(&Type::data(l.clone(), l_args[..offset].into()), r);
+                    unifier.try_match(&Type::app(l.clone(), l_args[..offset].into()), r);
                     r_args.iter().zip(&l_args[offset..])
                 }
             };
@@ -353,7 +353,7 @@ fn unify_app_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
             }
         }
         _ => {
-            let l = Type::data(l.clone(), l_args.iter().cloned().collect());
+            let l = Type::app(l.clone(), l_args.iter().cloned().collect());
             unifier.try_match(&l, r);
             // Dont push the actual type that is applied
             return;
@@ -387,8 +387,8 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     let subs = unifier.subs;
     let other = subs.real(other);
     let (other_arg, fn_prim, other_ret) = match **other {
-        Type::Data(ref fn_prim, ref args) if args.len() == 2 => (Some(&args[0]), fn_prim, &args[1]),
-        Type::Data(ref fn_prim, ref args) if args.len() == 1 => (None, fn_prim, &args[0]),
+        Type::App(ref fn_prim, ref args) if args.len() == 2 => (Some(&args[0]), fn_prim, &args[1]),
+        Type::App(ref fn_prim, ref args) if args.len() == 1 => (None, fn_prim, &args[0]),
         _ => return error(),
     };
     match other_arg {
@@ -408,9 +408,9 @@ fn zip_function<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
             let new_fn = matcher(unifier,
                                  fn_prim,
                                  &Type::app(Type::builtin(types::BuiltinType::Function),
-                                            arg.clone()));
+                                             vec![arg.clone()]));
             let new_ret = matcher(unifier, ret, other_ret);
-            Ok(merge(fn_prim, new_fn, ret, new_ret, Type::app))
+            Ok(merge(fn_prim, new_fn, ret, new_ret, |l, r| Type::app(l, vec![r])))
         }
     }
 }

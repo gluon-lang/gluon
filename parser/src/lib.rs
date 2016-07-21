@@ -248,7 +248,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     arg.pop().unwrap()
                 } else {
                     let x = arg.remove(0);
-                    Type::data(x, arg)
+                    Type::app(x, arg)
                 };
                 debug!("Parse: {:?} -> {:?}", arg, ret);
                 match ret {
@@ -360,7 +360,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                 let return_type = if args.is_empty() {
                     Type::id(name.clone())
                 } else {
-                    Type::data(Type::id(name.clone()), arg_types)
+                    Type::app(Type::id(name.clone()), arg_types)
                 };
                 token(Token::Equal)
                     .with(self.typ()
