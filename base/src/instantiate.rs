@@ -176,7 +176,7 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
                               })
 }
 
-/// Removes layers of `Type::App` and `Type::Data`.
+/// Removes layers of `Type::Data`.
 ///
 /// Example:
 ///
@@ -185,21 +185,17 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 /// use gluon_base::instantiate::unroll_app;
 /// let i: TcType = Type::int();
 /// let s: TcType = Type::string();
-/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), s.clone()), i.clone())),
+/// assert_eq!(unroll_app(&*Type::data(Type::data(i.clone(), vec![s.clone()]), vec![i.clone()])),
 ///            Some(Type::data(i.clone(), vec![s.clone(), i.clone()])));
-/// assert_eq!(unroll_app(&*Type::data(Type::app(i.clone(), i.clone()), vec![s.clone()])),
+/// assert_eq!(unroll_app(&*Type::data(Type::data(i.clone(), vec![i.clone()]), vec![s.clone()])),
 ///            Some(Type::data(i.clone(), vec![i.clone(), s.clone()])));
 /// let f: TcType = Type::builtin(BuiltinType::Function);
-/// assert_eq!(unroll_app(&*Type::data(Type::app(f.clone(), i.clone()), vec![s.clone()])),
+/// assert_eq!(unroll_app(&*Type::data(Type::data(f.clone(), vec![i.clone()]), vec![s.clone()])),
 ///            Some(Type::function(vec![i.clone()], s.clone())));
 /// ```
 pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
     let mut args = Vec::new();
     let mut current = match *typ {
-        Type::App(ref l, ref r) => {
-            args.push(r.clone());
-            l
-        }
         Type::Data(ref l, ref rest) => {
             args.extend(rest.iter().rev().cloned());
             l
@@ -208,10 +204,6 @@ pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
     };
     loop {
         match **current {
-            Type::App(ref l, ref r) => {
-                args.push(r.clone());
-                current = l;
-            }
             Type::Data(ref l, ref rest) => {
                 args.extend(rest.iter().rev().cloned());
                 current = l;
@@ -275,13 +267,6 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                         })
                     });
                     merge(types, new_types, fields, new_fields, Type::record)
-                }
-                Type::App(ref l, ref r) => {
-                    merge(l,
-                          walk_move_type2(l, f),
-                          r,
-                          walk_move_type2(r, f),
-                          Type::app)
                 }
                 Type::Variants(ref variants) => {
                     walk_move_types(variants.iter(),

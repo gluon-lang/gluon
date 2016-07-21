@@ -144,14 +144,12 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 ///
 /// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
 /// `Type` is used to enable types to be shared. It is recommended to use the static functions on
-/// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
+/// `Type` such as `Type::data` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id, T = ASTType<Id>> {
-    /// An application which applies the first argument on the second.
-    /// `Option Int` would be represented as `App(Option, Int)`
-    App(T, T),
-    /// An application with multiple arguments
+    /// An application with multiple arguments.
+    /// `Map String Int` would be represented as `Data(Map, [String, Int])`
     Data(T, Vec<T>),
     /// A variant type `| A Int Float | B`.
     /// The second element of the tuple is the function type which the constructor has which in the
@@ -187,26 +185,6 @@ impl<Id, T> Type<Id, T>
         match *self {
             Type::Variable(ref id) if id.id == 0 => true,
             _ => false,
-        }
-    }
-
-    pub fn kind(&self) -> RcKind {
-        use self::Type::*;
-        match *self {
-            App(ref arg, _) => {
-                match *arg.kind() {
-                    Kind::Function(_, ref ret) => ret.clone(),
-                    _ => panic!("Expected function kind"),
-                }
-            }
-            Variable(ref var) => var.kind.clone(),
-            Generic(ref gen) => gen.kind.clone(),
-            Builtin(BuiltinType::Function) => {
-                let star = Kind::star();
-                Kind::function(star.clone(), Kind::function(star.clone(), star))
-            }
-            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) |
-            Record { .. } | Type::Id(_) | Type::Alias(_) => Kind::star(),
         }
     }
 }
@@ -495,7 +473,7 @@ impl<Id, T> Type<Id, T>
     where T: From<Type<Id, T>>
 {
     pub fn app(l: T, r: T) -> T {
-        T::from(Type::App(l, r))
+        Type::data(l, vec![r])
     }
 
     pub fn array(typ: T) -> T {
@@ -654,14 +632,6 @@ impl<Id> ASTType<Id> {
         }
     }
 
-    /// Returns the inner most application of a type application
-    pub fn inner_app(&self) -> &ASTType<Id> {
-        match **self {
-            Type::App(ref a, _) => a.inner_app(),
-            _ => self,
-        }
-    }
-
     /// Returns the lowest level which this type contains. The level informs from where type
     /// variables where created.
     pub fn level(&self) -> u32 {
@@ -775,19 +745,6 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                            "{} -> {}",
                            dt(self.env, Prec::Function, &args[0]),
                            top(self.env, &**result))
-                }
-            }
-            Type::App(ref lhs, ref rhs) => {
-                if p >= Prec::Constructor {
-                    write!(f,
-                           "({} {})",
-                           dt(self.env, Prec::Function, &lhs),
-                           dt(self.env, Prec::Constructor, &rhs))
-                } else {
-                    write!(f,
-                           "{} {}",
-                           dt(self.env, Prec::Function, &lhs),
-                           dt(self.env, Prec::Constructor, &rhs))
                 }
             }
             Type::Data(ref t, ref args) => {
@@ -925,10 +882,6 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
                 walk_type(&field.typ, f);
             }
         }
-        Type::App(ref l, ref r) => {
-            walk_type(l, f);
-            walk_type(r, f);
-        }
         Type::Variants(ref variants) => {
             for variant in variants {
                 walk_type(&variant.1, f);
@@ -1018,14 +971,6 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                             fields: fields,
                         }
                     })
-                    .map(From::from)
-            }
-            Type::App(ref l, ref r) => {
-                merge(l,
-                      walk_move_type2(l, f),
-                      r,
-                      walk_move_type2(r, f),
-                      Type::App)
                     .map(From::from)
             }
             Type::Variants(ref variants) => {

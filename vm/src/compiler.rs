@@ -557,9 +557,8 @@ impl<'a> Compiler<'a> {
                 self.compile(&**expr, function, false);
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.env_type_of(self);
-                let typ = typ.inner_app();
-                debug!("FieldAccess {}", types::display_type(&self.symbols, typ));
-                let field_index = self.find_field(typ, field.id())
+                debug!("FieldAccess {}", types::display_type(&self.symbols, &typ));
+                let field_index = self.find_field(&typ, field.id())
                     .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));
             }

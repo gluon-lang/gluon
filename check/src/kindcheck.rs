@@ -112,9 +112,11 @@ impl<'a> KindCheck<'a> {
                 }
             },
                          Ok);
-        debug!("Find kind: {} => {}",
-               self.idents.string(&id),
-               kind.as_ref().unwrap());
+
+        if let Ok(ref kind) = kind {
+            debug!("Find kind: {} => {}", self.idents.string(&id), kind);
+        }
+
         kind
     }
 
@@ -144,19 +146,6 @@ impl<'a> KindCheck<'a> {
                 let star = self.star.clone();
                 try!(self.unify(&star, kind));
                 Ok((self.star.clone(), Type::array(typ)))
-            }
-            Type::App(ref f, ref r) => {
-                let (kind, f) = try!(self.kindcheck(f));
-                let kind_fn = Kind::function(self.subs.new_var(), self.subs.new_var());
-                let kind = try!(self.unify(&kind_fn, kind));
-                match *kind {
-                    Kind::Function(ref arg, ref ret) => {
-                        let (arg_kind, r) = try!(self.kindcheck(r));
-                        try!(self.unify(&arg, arg_kind));
-                        Ok((ret.clone(), Type::app(f, r)))
-                    }
-                    _ => panic!("Expected kind function"),
-                }
             }
             Type::Data(ref ctor, ref args) => {
                 let (mut kind, ctor) = try!(self.kindcheck(ctor));
