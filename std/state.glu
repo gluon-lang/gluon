@@ -6,14 +6,15 @@ let functor : Functor (State s) =
     let map f m : (a -> b) -> State s a -> State s b =
         \state ->
             let { value, state } = m state
-            { value = f value, state = state  }
+            { value = f value, state = state }
 
     { map }
 
 let applicative : Applicative (State s) =
-    let (<*>) mf state : State s (a -> b) -> State s a -> State s b =
-        let { value, state } = mf state
-        functor.map value state
+    let (<*>) mf n : State s (a -> b) -> State s a -> State s b =
+        \state ->
+            let { value, state } = mf state
+            functor.map value n state
 
     let pure value: a -> State s a =
         \state -> { value, state }
@@ -37,7 +38,7 @@ let gets f: (s -> a) -> State s a = \state -> { value = f state, state }
 
 let modify f: (s -> s) -> State s () = \state -> { value = (), state = f state }
 
-let runState f state: State s a -> s -> { value: a, state: a } = f state
+let runState f state: State s a -> s -> { value: a, state: s } = f state
 
 let evalState f state: State s a -> s -> a = (runState f state).value
 

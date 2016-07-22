@@ -616,7 +616,7 @@ impl<'a> Typecheck<'a> {
                         self.typecheck(&mut bind.expression)
                     } else {
                         let function_type = match bind.typ {
-                            Some(ref typ) => typ.clone(),
+                            Some(ref typ) => self.instantiate(typ),
                             None => self.subs.new_var(),
                         };
                         self.typecheck_lambda(function_type,
@@ -1063,9 +1063,15 @@ impl<'a> Typecheck<'a> {
             String::from(max_var)
         };
         let mut i = 0;
+        self.finish_type_(level, &generic, &mut i, typ)
+    }
+
+    fn finish_type_(&mut self, level: u32, generic: &str, i: &mut i32, typ: TcType) -> TcType {
         types::walk_move_type(typ,
-                              &mut |typ| {
-            let replacement = self.subs.replace_variable(typ);
+                                  &mut |typ| {
+            let replacement = self.subs
+                .replace_variable(typ)
+                .map(|t| self.finish_type_(level, generic, i, t));
             let mut typ = typ;
             if let Some(ref t) = replacement {
                 debug!("{} ==> {}",
@@ -1076,7 +1082,7 @@ impl<'a> Typecheck<'a> {
             match *typ {
                 Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
                     let generic = format!("{}{}", generic, i);
-                    i += 1;
+                    *i += 1;
                     let id = self.symbols.symbol(generic);
                     let gen: TcType = Type::generic(Generic {
                         kind: var.kind.clone(),

@@ -20,7 +20,7 @@ type Monoid m = {
 
 let monoid_Function m: Monoid b -> (Monoid (a -> b)) = {
     (<>) = \f g -> \x -> m.(<>) (f x) (g x),
-    empty = m.empty
+    empty = \_ -> m.empty
 }
 
 let monoid_List =
@@ -473,10 +473,10 @@ let flip f : (a -> b -> c) -> b -> a -> c =
     \x y -> f y x
 
 /// Backward function application, where `f <| x == f x`
-let (<|) f x : a -> (a -> b) -> b = f x
+let (<|) f x : (a -> b) -> a -> b = f x
 
 /// Forward function application, where `x |> f == f x`
-let (|>) x f : (a -> b) -> a -> b = f x
+let (|>) x f : a -> (a -> b) -> b = f x
 
 /// Right-to-left function composition
 let (<<) : (b -> c) -> (a -> b) -> a -> c =
