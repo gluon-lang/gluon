@@ -476,15 +476,14 @@ impl<'a> Typecheck<'a> {
                 for arg in args.iter_mut() {
                     let f = Type::function(vec![self.subs.new_var()], self.subs.new_var());
                     func_type = try!(self.unify(&f, func_type));
-                    func_type = match *func_type {
-                        Type::Function(ref arg_type, ref ret) => {
-                            assert!(arg_type.len() == 1);
+                    func_type = match func_type.as_function() {
+                        Some((arg_ty, ret_ty)) => {
                             let actual = self.typecheck(arg);
                             let span = arg.span(&ast::TcIdentEnvWrapper(&self.symbols));
-                            self.unify_span(span, &arg_type[0], actual);
-                            ret.clone()
+                            self.unify_span(span, arg_ty, actual);
+                            ret_ty.clone()
                         }
-                        _ => return Err(NotAFunction(func_type.clone())),
+                        None => return Err(NotAFunction(func_type.clone())),
                     };
                 }
                 Ok(TailCall::Type(func_type))
@@ -544,17 +543,13 @@ impl<'a> Typecheck<'a> {
                             op.typ = try!(self.find(op.id()));
                             let func_type = Type::function(vec![lhs_type, rhs_type],
                                                            self.subs.new_var());
-                            match *try!(self.unify(&op.typ, func_type)) {
-                                Type::Function(_, ref return_type) => {
-                                    match **return_type {
-                                        Type::Function(_, ref return_type) => {
-                                            Ok(return_type.clone())
-                                        }
-                                        _ => panic!("ICE: unify binop"),
-                                    }
-                                }
-                                _ => panic!("ICE: unify binop"),
-                            }
+                            let ret =
+                                try!(self.unify(&op.typ, func_type)).as_function()
+                                    .and_then(|(_, ret)| ret.as_function())
+                                    .map(|(_, ret)| ret.clone())
+                                    .expect("ICE: unify binop");
+
+                            Ok(ret)
                         }
                     }
                 };
@@ -982,13 +977,14 @@ impl<'a> Typecheck<'a> {
         if args.len() == 0 {
             return Ok(typ);
         }
-        match *typ {
-            Type::Function(ref argument_types, ref return_type) => {
-                assert!(argument_types.len() == 1);
-                self.stack_var(args[0].id().clone(), argument_types.last().unwrap().clone());
-                self.typecheck_pattern_rec(&args[1..], return_type.clone())
+        match typ.as_function() {
+            Some((arg, ret)) => {
+                self.stack_var(args[0].id().clone(), arg.clone());
+                self.typecheck_pattern_rec(&args[1..], ret.clone())
             }
-            _ => Err(PatternError(typ.clone(), args.len())),
+            None => {
+                Err(PatternError(typ.clone(), args.len()))
+            },
         }
     }
 
@@ -1299,9 +1295,9 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     type Item = TcType;
     fn next(&mut self) -> Option<TcType> {
         loop {
-            let (arg, new) = match *self.typ {
-                Type::Function(ref args, ref ret) => (Some(args[0].clone()), ret.clone()),
-                _ => {
+            let (arg, new) = match self.typ.as_function() {
+                Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
+                None => {
                     match get_alias_app(&self.tc.environment, &self.typ) {
                         Some((alias, args)) => {
                             match self.tc.type_of_alias(alias, args) {

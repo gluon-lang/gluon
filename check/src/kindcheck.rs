@@ -169,15 +169,6 @@ impl<'a> KindCheck<'a> {
                 }
                 Ok((kind, Type::app(ctor, new_args)))
             }
-            Type::Function(ref args, ref ret) => {
-                let (kind, arg) = try!(self.kindcheck(&args[0]));
-                let star = self.star.clone();
-                try!(self.unify(&star, kind));
-                let (kind, ret) = try!(self.kindcheck(ret));
-                let star = self.star.clone();
-                let new_kind = try!(self.unify(&star, kind));
-                Ok((new_kind, Type::function(vec![arg], ret)))
-            }
             Type::Variants(ref variants) => {
                 let variants = try!(variants.iter()
                     .map(|variant| {
