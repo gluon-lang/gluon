@@ -910,7 +910,7 @@ pub fn walk_move_type<F, I, T>(typ: T, f: &mut F) -> T
           T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
           I: Clone
 {
-    walk_move_type2(&typ, f).unwrap_or(typ)
+    walk_move_type_opt(&typ, f).unwrap_or(typ)
 }
 
 /// Merges two values using `f` if either or both them is `Some(..)`.
@@ -933,57 +933,60 @@ pub fn merge<F, A, B, R>(a_original: &A,
     }
 }
 
-fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
+pub fn walk_move_type_opt<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
     where F: FnMut(&Type<I, T>) -> Option<T>,
           T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
           I: Clone
 {
-    let new = f(typ);
-    let result = {
-        let typ = new.as_ref().map_or(typ, |t| &**t);
-        match *typ {
-            Type::App(ref id, ref args) => {
-                let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                merge(id, walk_move_type2(id, f), args, new_args, Type::app)
-            }
-            Type::Array(ref inner) => walk_move_type2(&**inner, f).map(Type::array),
-            Type::Function(ref args, ref ret) => {
-                let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                merge(args, new_args, ret, walk_move_type2(ret, f), Type::Function).map(From::from)
-            }
-            Type::Record { ref types, ref fields } => {
-                let new_types = None;
-                let new_fields = walk_move_types(fields.iter(), |field| {
-                    walk_move_type2(&field.typ, f).map(|typ| {
-                        Field {
-                            name: field.name.clone(),
-                            typ: typ,
-                        }
-                    })
-                });
-                merge(types, new_types, fields, new_fields, |types, fields| {
-                        Type::Record {
-                            types: types,
-                            fields: fields,
-                        }
-                    })
-                    .map(From::from)
-            }
-            Type::Variants(ref variants) => {
-                walk_move_types(variants.iter(),
-                                |v| walk_move_type2(&v.1, f).map(|t| (v.0.clone(), t)))
-                    .map(Type::Variants)
-                    .map(From::from)
-            }
-            Type::Builtin(_) |
-            Type::Variable(_) |
-            Type::Generic(_) |
-            Type::Id(_) |
-            Type::Alias(_) => None,
+    let new_type = match *typ {
+        Type::App(ref id, ref args) => {
+            let new_args = walk_move_types(args.iter(), |t| walk_move_type_opt(t, f));
+            merge(id, walk_move_type_opt(id, f), args, new_args, Type::app)
         }
+        Type::Array(ref inner) => walk_move_type_opt(&**inner, f).map(Type::array),
+        Type::Function(ref args, ref ret) => {
+            let new_args = walk_move_types(args.iter(), |t| walk_move_type_opt(t, f));
+            merge(args,
+                  new_args,
+                  ret,
+                  walk_move_type_opt(ret, f),
+                  Type::Function)
+                .map(From::from)
+        }
+        Type::Record { ref types, ref fields } => {
+            let new_types = None;
+            let new_fields = walk_move_types(fields.iter(), |field| {
+                walk_move_type_opt(&field.typ, f).map(|typ| {
+                    Field {
+                        name: field.name.clone(),
+                        typ: typ,
+                    }
+                })
+            });
+            merge(types, new_types, fields, new_fields, |types, fields| {
+                    Type::Record {
+                        types: types,
+                        fields: fields,
+                    }
+                })
+                .map(From::from)
+        }
+        Type::Variants(ref variants) => {
+            walk_move_types(variants.iter(),
+                            |v| walk_move_type_opt(&v.1, f).map(|t| (v.0.clone(), t)))
+                .map(Type::Variants)
+                .map(From::from)
+        }
+        Type::Builtin(_) |
+        Type::Variable(_) |
+        Type::Generic(_) |
+        Type::Id(_) |
+        Type::Alias(_) => None,
     };
-    result.or(new)
+    let new_type2 = f(new_type.as_ref().map_or(typ, |t| t));
+    new_type2.or(new_type)
 }
+
 fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
     where I: Iterator<Item = &'a T>,
           F: FnMut(&'a T) -> Option<T>,
