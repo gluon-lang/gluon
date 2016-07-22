@@ -1,10 +1,9 @@
-let { run, monad, assert_eq } = import "std/test.glu"
+let { run, applicative, monad, assert_eq } = import "std/test.glu"
 let prelude = import "std/prelude.glu"
 let { Applicative } = prelude
-let { (>>=), return, (>>), join, map, lift2, forM_ }
-        = prelude.make_Monad monad
+let { (>>) } = prelude.make_Monad monad applicative
 
-let test_alt show eq fun alt app = 
+let test_alt show eq fun alt app =
     let { (<|>), empty, many, some } = prelude.make_Alternative fun app alt
     let { (<*>), pure } = app
     let assert =

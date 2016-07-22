@@ -638,7 +638,7 @@ fn run_expr_int() {
 }
 
 test_expr!{ io run_expr_io,
-r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
+r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_pure 100) "#,
 100i32
 }
 

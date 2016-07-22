@@ -2,7 +2,7 @@ let string = import "std/string.glu"
 and writer = import "std/writer.glu"
 and { Writer, tell } = writer
 and prelude = import "std/prelude.glu"
-and { Show, Num, Eq, Option, List, Monad, Monoid, foldl } = prelude
+and { Show, Num, Eq, Option, List, Applicative, Monad, Monoid, foldl } = prelude
 and { (+) } = prelude.num_Int
 and { (==) } = prelude.eq_Int
 and { (<) } = prelude.make_Ord prelude.ord_Int
@@ -11,15 +11,16 @@ let (++) = string.monoid.(<>)
 
 type Test a = Writer (List String) a
 
-let monad: Monad Test = writer.make_Monad prelude.monoid_List
+let applicative : Applicative Test = writer.make_Applicative prelude.monoid_List
+let monad : Monad Test = writer.make_Monad prelude.monoid_List
 
-let { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
-        = prelude.make_Monad monad
+let { pure } = applicative
+let { (>>=), (>>), join, lift2, forM_ } = prelude.make_Monad monad applicative
 
 let assert x = if x then () else error "Assertion failed"
 and assert_eq show eq = \x y ->
     if eq.(==) x y
-    then return ()
+    then pure ()
     else tell (Cons ("Assertion failed: "
                 ++ show.show x  ++ " != " ++ show.show y) Nil)
 
@@ -32,4 +33,4 @@ let run test: Test a -> () =
             | Cons _ _ -> error (prelude.foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
             | Nil -> ()
 
-{ Test, monad, assert, assert_eq, assert_ieq, assert_feq, assert_seq, run }
+{ Test, applicative, monad, assert, assert_eq, assert_ieq, assert_feq, assert_seq, run }

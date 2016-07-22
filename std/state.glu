@@ -28,7 +28,7 @@ let monad: Monad (State s) =
             and m2 = f value
             m2 state
 
-    { (>>=), return = applicative.pure }
+    { (>>=) }
 
 let put value: s -> State s () = \state -> { value = (), state = value }
 

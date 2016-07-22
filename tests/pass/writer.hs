@@ -1,8 +1,7 @@
 let prelude = import "std/prelude.glu"
 let { Writer } = import "std/writer.glu"
-let { Test, run, monad, assert, assert_ieq, assert_feq } = import "std/test.glu"
-let { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
-        = prelude.make_Monad monad
+let { Test, run, applicative, monad, assert, assert_ieq, assert_feq } = import "std/test.glu"
+let { (>>) } = prelude.make_Monad monad applicative
 
 let tests =
     assert_ieq 1 1 >>

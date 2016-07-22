@@ -405,60 +405,57 @@ let make_Alternative fun app alt =
     }
 
 type Monad m = {
-    (>>=) : m a -> (a -> m b) -> m b,
-    return : a -> m a
+    (>>=) : m a -> (a -> m b) -> m b
 }
 
 let monad_Function: Monad ((->) a) = {
-    (>>=) = \m f x -> f (m x) x,
-    return = applicative_Function.pure
+    (>>=) = \m f x -> f (m x) x
 }
 
 let monad_Option: Monad Option = {
     (>>=) = \m f -> match m with
                         | Some x -> f x
-                        | None -> None,
-    return = \x -> Some x
+                        | None -> None
 }
 
 let monad_List: Monad List = {
-    (>>=) = \m f -> concatMap f m,
-    return = \x -> Cons x Nil
+    (>>=) = \m f -> concatMap f m
 }
 
 let monad_IO: Monad IO = {
-    (>>=) = io_bind,
-    return = io_return
+    (>>=) = io_bind
 }
 
-let make_Monad m =
-    let { (>>=), return } = m
+let make_Monad m app =
+    let { (>>=) } = m
+    // let { pure } = app // fails to typecheck on usage! :s
     let { id } = category_Function
 
-    let (>>) l r = l >>= \_ -> r
-    let forM_ xs f =
+    let (>>) l r : m a -> m b -> m b = l >>= \_ -> r
+    let join mm : m (m a) -> m a = mm >>= id
+    let lift2 f lm rm = lm >>= \l -> rm >>= \r -> f l r
+    let forM_ xs f : List a -> (a -> m b) -> m () =
         match xs with
             | Cons y ys -> f y >> forM_ ys f
-            | Nil -> return ()
-    {
-        (>>=),
-        return = return,
-        (>>),
-        join = \mm -> mm >>= id,
-        map = \x f -> x >>= (\y -> return (f x)),
-        lift2 = \f lm rm -> lm >>= \l -> rm >>= \r -> f l r,
-        forM_
-    }
+            | Nil -> app.pure ()
 
-let functor_IO: Functor IO = {
-    map = \f m1 -> monad_IO.(>>=) m1 (\x -> monad_IO.return (f x))
-}
+    { (>>=), (>>), join, lift2, forM_ }
 
-let applicative_IO: Applicative IO = {
-    (<*>) = \f x ->
-            monad_IO.(>>=) f (\g -> monad_IO.(>>=) x (\y -> monad_IO.return (g y))),
-    pure = monad_IO.return
-}
+let applicative_IO: Applicative IO =
+    let { (>>=) } = monad_IO
+
+    let pure = io_pure
+    let (<*>) f x = f >>= (\g -> x >>= (\y -> pure (g y)))
+
+    { (<*>), pure }
+
+let functor_IO: Functor IO =
+    let { pure } = applicative_IO
+    let { (>>=) } = monad_IO
+
+    let map f m1 = m1 >>= (\x -> pure (f x))
+
+    { map }
 
 /// The identity function, where `id x == x`
 let id : a -> a =

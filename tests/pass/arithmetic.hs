@@ -1,8 +1,7 @@
-let { run, monad, assert, assert_ieq, assert_feq } = import "std/test.glu"
+let { run, applicative, monad, assert, assert_ieq, assert_feq } = import "std/test.glu"
 let prelude = import "std/prelude.glu"
 let { Num } = prelude
-let { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
-        = prelude.make_Monad monad
+let { (>>) } = prelude.make_Monad monad applicative
 
 let int_tests =
     let { (+), (-), (*) } = prelude.num_Int

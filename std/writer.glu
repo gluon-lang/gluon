@@ -22,13 +22,12 @@ let make_Applicative w: Monoid w -> Applicative (Writer w) =
 
 let make_Monad w: Monoid w -> Monad (Writer w) =
     let { (<>) } = w
-    let { pure } = make_Applicative w
 
     let (>>=) m f : Writer w a -> (a -> Writer w b) -> Writer w b =
         let { value, writer } = f m.value
         { value, writer = m.writer <> writer }
 
-    { (>>=), return = pure }
+    { (>>=) }
 
 let tell w: w -> Writer w () =
     { value = (), writer = w }

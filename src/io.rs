@@ -204,7 +204,7 @@ pub fn load(vm: &Thread) -> Result<()> {
     vm.add_bytecode("io_bind", io_bind_type, 3, io_bind);
 
 
-    vm.add_bytecode("io_return",
+    vm.add_bytecode("io_pure",
                     <fn(A) -> IO<A> as VMType>::make_type(vm),
                     2,
                     vec![Pop(1)]);

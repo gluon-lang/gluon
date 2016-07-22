@@ -1,10 +1,9 @@
 let prelude = import "std/prelude.glu"
-let { run, monad, assert_eq, assert_seq, assert_ieq } = import "std/test.glu"
+let { run, applicative, monad, assert_eq, assert_seq, assert_ieq } = import "std/test.glu"
 let { Ord, Num, List, Option, Monoid } = prelude
 let { (<) } = prelude.make_Ord prelude.ord_Int
 let { (+) } = prelude.num_Int
-let { (>>=), return, (>>), join, map, lift2, forM_ }
-        = prelude.make_Monad monad
+let { (>>) } = prelude.make_Monad monad applicative
 
 let string = import "std/string.glu"
 
@@ -25,11 +24,11 @@ let append_tests =
 
 let find_tests =
     assert_oieq (string.find "abcd1234" "ab") (Some 0) >>
-        assert_oieq (string.find "abcd1234" "b") (Some 1) >> 
+        assert_oieq (string.find "abcd1234" "b") (Some 1) >>
         assert_oieq (string.find "abcd1234" "4") (Some 7) >>
         assert_oieq (string.find "abcd1234" "xyz") None >>
-        assert_oieq (string.rfind "abcdabcd" "b") (Some 5) >> 
-        assert_oieq (string.rfind "abcdabcd" "d") (Some 7) >> 
+        assert_oieq (string.rfind "abcdabcd" "b") (Some 5) >>
+        assert_oieq (string.rfind "abcdabcd" "d") (Some 7) >>
         assert_oieq (string.rfind "abcd1234" "xyz") None
 
 let starts_ends_tests =
