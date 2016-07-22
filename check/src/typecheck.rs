@@ -301,7 +301,7 @@ impl<'a> Typecheck<'a> {
             }
         }
         let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
-        let typ = Type::<_, TcType>::data(alias.as_ref().clone(), generic_args);
+        let typ = Type::<_, TcType>::app(alias.as_ref().clone(), generic_args);
         {
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
@@ -1271,7 +1271,7 @@ fn get_alias_app<'a>(env: &'a TypeEnv,
                      -> Option<(&'a AliasData<Symbol, TcType>, &'a [TcType])> {
     match **typ {
         Type::Alias(ref alias) => Some((alias, &[][..])),
-        Type::Data(ref alias, ref args) => {
+        Type::App(ref alias, ref args) => {
             match **alias {
                 Type::Alias(ref alias) => Some((alias, args)),
                 _ => None,

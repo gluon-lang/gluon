@@ -34,7 +34,7 @@ pub fn remove_alias(env: &TypeEnv, typ: TcType) -> TcType {
 pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>, ()> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
-        Type::Data(ref alias, ref args) => {
+        Type::App(ref alias, ref args) => {
             match **alias {
                 Type::Alias(ref alias) if alias.args.len() == args.len() => Some(alias),
                 _ => None,
@@ -80,7 +80,7 @@ pub fn type_of_alias(alias: &AliasData<Symbol, TcType>, arguments: &[TcType]) ->
     // Test == ??? (Impossible to do a sane substitution)
 
     let ok_substitution = match *typ.clone() {
-        Type::Data(ref d, ref arg_types) => {
+        Type::App(ref d, ref arg_types) => {
             let allowed_missing_args = arg_types.iter()
                 .rev()
                 .zip(args.iter().rev())
@@ -97,7 +97,7 @@ pub fn type_of_alias(alias: &AliasData<Symbol, TcType>, arguments: &[TcType]) ->
                     .take(arg_types.len() - (args.len() - arguments.len()))
                     .cloned()
                     .collect();
-                typ = Type::data(d.clone(), arg_types);
+                typ = Type::app(d.clone(), arg_types);
                 true
             } else {
                 false
@@ -176,7 +176,7 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
                               })
 }
 
-/// Removes layers of `Type::App` and `Type::Data`.
+/// Removes layers of `Type::App`.
 ///
 /// Example:
 ///
@@ -185,22 +185,18 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 /// use gluon_base::instantiate::unroll_app;
 /// let i: TcType = Type::int();
 /// let s: TcType = Type::string();
-/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), s.clone()), i.clone())),
-///            Some(Type::data(i.clone(), vec![s.clone(), i.clone()])));
-/// assert_eq!(unroll_app(&*Type::data(Type::app(i.clone(), i.clone()), vec![s.clone()])),
-///            Some(Type::data(i.clone(), vec![i.clone(), s.clone()])));
+/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![s.clone()]), vec![i.clone()])),
+///            Some(Type::app(i.clone(), vec![s.clone(), i.clone()])));
+/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![i.clone()]), vec![s.clone()])),
+///            Some(Type::app(i.clone(), vec![i.clone(), s.clone()])));
 /// let f: TcType = Type::builtin(BuiltinType::Function);
-/// assert_eq!(unroll_app(&*Type::data(Type::app(f.clone(), i.clone()), vec![s.clone()])),
+/// assert_eq!(unroll_app(&*Type::app(Type::app(f.clone(), vec![i.clone()]), vec![s.clone()])),
 ///            Some(Type::function(vec![i.clone()], s.clone())));
 /// ```
 pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
     let mut args = Vec::new();
     let mut current = match *typ {
-        Type::App(ref l, ref r) => {
-            args.push(r.clone());
-            l
-        }
-        Type::Data(ref l, ref rest) => {
+        Type::App(ref l, ref rest) => {
             args.extend(rest.iter().rev().cloned());
             l
         }
@@ -208,11 +204,7 @@ pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
     };
     loop {
         match **current {
-            Type::App(ref l, ref r) => {
-                args.push(r.clone());
-                current = l;
-            }
-            Type::Data(ref l, ref rest) => {
+            Type::App(ref l, ref rest) => {
                 args.extend(rest.iter().rev().cloned());
                 current = l;
             }
@@ -228,7 +220,7 @@ pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
                 let ret = args.pop().unwrap();
                 Type::function(args, ret)
             }
-            _ => Type::data(current.clone(), args),
+            _ => Type::app(current.clone(), args),
         })
     }
 }
@@ -255,9 +247,9 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
         None => {
             let typ = new.as_ref().map_or(typ, |t| &**t);
             match *typ {
-                Type::Data(ref id, ref args) => {
+                Type::App(ref id, ref args) => {
                     let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                    merge(id, walk_move_type2(id, f), args, new_args, Type::data)
+                    merge(id, walk_move_type2(id, f), args, new_args, Type::app)
                 }
                 Type::Array(ref inner) => walk_move_type2(&**inner, f).map(Type::array),
                 Type::Function(ref args, ref ret) => {
@@ -275,13 +267,6 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                         })
                     });
                     merge(types, new_types, fields, new_fields, Type::record)
-                }
-                Type::App(ref l, ref r) => {
-                    merge(l,
-                          walk_move_type2(l, f),
-                          r,
-                          walk_move_type2(r, f),
-                          Type::app)
                 }
                 Type::Variants(ref variants) => {
                     walk_move_types(variants.iter(),

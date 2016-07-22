@@ -483,7 +483,7 @@ impl VMType for Ordering {
     type Type = Self;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.find_type_info("std.types.Ordering").unwrap().name.clone();
-        Type::data(Type::id(symbol), vec![])
+        Type::app(Type::id(symbol), vec![])
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
@@ -689,7 +689,7 @@ impl<T: VMType> VMType for Option<T>
     type Type = Option<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.find_type_info("std.types.Option").unwrap().name.clone();
-        Type::data(Type::id(symbol), vec![T::make_type(vm)])
+        Type::app(Type::id(symbol), vec![T::make_type(vm)])
     }
 }
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
@@ -730,7 +730,7 @@ impl<T: VMType, E: VMType> VMType for Result<T, E>
     type Type = Result<T::Type, E::Type>;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.find_type_info("std.types.Result").unwrap().name.clone();
-        Type::data(Type::id(symbol), vec![E::make_type(vm), T::make_type(vm)])
+        Type::app(Type::id(symbol), vec![E::make_type(vm), T::make_type(vm)])
     }
 }
 
@@ -808,7 +808,7 @@ impl<T> VMType for IO<T>
     fn make_type(vm: &Thread) -> TcType {
         let env = vm.global_env().get_env();
         let alias = env.find_type_info("IO").unwrap().into_owned();
-        Type::data(alias.into_type(), vec![T::make_type(vm)])
+        Type::app(alias.into_type(), vec![T::make_type(vm)])
     }
     fn extra_args() -> VMIndex {
         1

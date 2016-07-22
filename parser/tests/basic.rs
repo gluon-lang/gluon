@@ -55,7 +55,7 @@ fn typ(s: &str) -> ASTType<String> {
 }
 fn typ_a(s: &str, args: Vec<ASTType<String>>) -> ASTType<String> {
     assert!(s.len() != 0);
-    Type::data(Type::id(intern(s)), args)
+    Type::app(Type::id(intern(s)), args)
 }
 fn generic_ty(s: &str) -> ASTType<String> {
     Type::generic(generic(s))
@@ -270,7 +270,7 @@ fn op_identifier() {
 fn variant_type() {
     let _ = ::env_logger::init();
     let e = parse_new("type Option a = | None | Some a in Some 1");
-    let option = Type::data(typ("Option"), vec![typ("a")]);
+    let option = Type::app(typ("Option"), vec![typ("a")]);
     let none = Type::function(vec![], option.clone());
     let some = Type::function(vec![typ("a")], option.clone());
     assert_eq!(e,
@@ -590,7 +590,7 @@ x
     assert_eq!(e, Ok(no_loc(Expr::Let(vec![Binding {
                               comment: None,
                               name: no_loc(Pattern::Identifier(intern("x"))),
-                              typ: Some(Type::data(typ("->"), vec![typ("Int"), typ("Int")])),
+                              typ: Some(Type::app(typ("->"), vec![typ("Int"), typ("Int")])),
                               arguments: vec![],
                               expression: id("x"),
                           }],

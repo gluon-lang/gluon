@@ -305,7 +305,7 @@ in eq_Int
                                         name: intern_unscoped("=="),
                                         typ: Type::function(vec![typ("a"), typ("a")], bool),
                                     }]));
-    assert_eq!(result, Ok(Type::data(eq, vec![typ("Int")])));
+    assert_eq!(result, Ok(Type::app(eq, vec![typ("Int")])));
 }
 
 #[test]
@@ -329,7 +329,7 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
                                         Type::function(vec![typ("a")],
                                                        typ_a("Option", vec![typ("a")])))]);
     let option = alias("Option", &["a"], variants);
-    assert_eq!(result, Ok(Type::data(option, vec![typ("Int")])));
+    assert_eq!(result, Ok(Type::app(option, vec![typ("Int")])));
 }
 
 #[test]
@@ -362,7 +362,7 @@ test
                                         Type::function(vec![typ("a")],
                                                        typ_a("Test", vec![typ("a")])))]);
     assert_eq!(result,
-               Ok(Type::data(alias("Test", &["a"], variants), vec![Type::unit()])));
+               Ok(Type::app(alias("Test", &["a"], variants), vec![Type::unit()])));
 }
 
 #[test]
@@ -414,7 +414,7 @@ in f
 ";
     let result = typecheck(text);
     assert_eq!(result,
-               Ok(Type::data(alias("Fn", &["a", "b"], Type::function(vec![typ("a")], typ("b"))),
+               Ok(Type::app(alias("Fn", &["a", "b"], Type::function(vec![typ("a")], typ("b"))),
                              vec![typ("String"), typ("Int")])));
 }
 
@@ -584,8 +584,8 @@ let return x: a -> IdT Test a = Test (Id x)
 return 1
 "#;
     let result = typecheck(text);
-    let variant = |name| 
-        Type::variants(vec![(intern(name), Type::function(vec![typ("a")], Type::data(typ(name), vec![typ("a")])))]);
+    let variant = |name|
+        Type::variants(vec![(intern(name), Type::function(vec![typ("a")], Type::app(typ(name), vec![typ("a")])))]);
     let test = alias("Test", &["a"], variant("Test"));
     let m = Generic {
                             kind: Kind::function(Kind::star(), Kind::star()),
@@ -598,8 +598,8 @@ return 1
                         Generic {
                             kind: Kind::star(),
                             id: intern("a"),
-                        }], Type::data(Type::generic(m), vec![Type::data(id, vec![typ("a")])]));
-    assert_eq!(result, Ok(Type::data(id_t, vec![test, typ("Int")])));
+                        }], Type::app(Type::generic(m), vec![Type::app(id, vec![typ("a")])]));
+    assert_eq!(result, Ok(Type::app(id_t, vec![test, typ("Int")])));
 }
 
 #[test]

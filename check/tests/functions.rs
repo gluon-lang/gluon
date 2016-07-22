@@ -89,7 +89,7 @@ pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
     let bool_sym = interner.symbol("Bool");
-    let bool = Type::<_, TcType>::data(Type::id(bool_sym.clone()), vec![]);
+    let bool = Type::<_, TcType>::app(Type::id(bool_sym.clone()), vec![]);
     let env = EmptyEnv(Alias::new(bool_sym, vec![], bool.clone()));
     let mut tc = Typecheck::new("test".into(), &mut interner, &env);
     let result = tc.typecheck_expr(&mut expr);
@@ -106,7 +106,7 @@ pub fn typecheck_partial_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
     let bool_sym = interner.symbol("Bool");
-    let bool = Type::<_, TcType>::data(Type::id(bool_sym.clone()), vec![]);
+    let bool = Type::<_, TcType>::app(Type::id(bool_sym.clone()), vec![]);
     let env = EmptyEnv(Alias::new(bool_sym, vec![], bool.clone()));
     let mut tc = Typecheck::new("test".into(), &mut interner, &env);
     let result = tc.typecheck_expr(&mut expr);
@@ -137,7 +137,7 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
             if args.len() == 0 {
                 Type::id(intern(s))
             } else {
-                Type::data(Type::id(intern(s)), args)
+                Type::app(Type::id(intern(s)), args)
             }
         }
     }

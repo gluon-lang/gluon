@@ -413,7 +413,7 @@ impl GlobalVMState {
                 })
                 .collect();
             let n = Symbol::new(name);
-            let typ: TcType = Type::data(Type::id(n.clone()), arg_types);
+            let typ: TcType = Type::app(Type::id(n.clone()), arg_types);
             self.typeids
                 .write()
                 .unwrap()

@@ -148,11 +148,9 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id, T = ASTType<Id>> {
-    /// An application which applies the first argument on the second.
-    /// `Option Int` would be represented as `App(Option, Int)`
-    App(T, T),
-    /// An application with multiple arguments
-    Data(T, Vec<T>),
+    /// An application with multiple arguments.
+    /// `Map String Int` would be represented as `App(Map, [String, Int])`
+    App(T, Vec<T>),
     /// A variant type `| A Int Float | B`.
     /// The second element of the tuple is the function type which the constructor has which in the
     /// above example means that A's type is `Int -> Float -> A` and B's is `B`
@@ -187,26 +185,6 @@ impl<Id, T> Type<Id, T>
         match *self {
             Type::Variable(ref id) if id.id == 0 => true,
             _ => false,
-        }
-    }
-
-    pub fn kind(&self) -> RcKind {
-        use self::Type::*;
-        match *self {
-            App(ref arg, _) => {
-                match *arg.kind() {
-                    Kind::Function(_, ref ret) => ret.clone(),
-                    _ => panic!("Expected function kind"),
-                }
-            }
-            Variable(ref var) => var.kind.clone(),
-            Generic(ref gen) => gen.kind.clone(),
-            Builtin(BuiltinType::Function) => {
-                let star = Kind::star();
-                Kind::function(star.clone(), Kind::function(star.clone(), star))
-            }
-            Data(_, _) | Variants(..) | Builtin(_) | Function(_, _) | Array(_) |
-            Record { .. } | Type::Id(_) | Type::Alias(_) => Kind::star(),
         }
     }
 }
@@ -494,19 +472,15 @@ pub struct Field<Id, T = ASTType<Id>> {
 impl<Id, T> Type<Id, T>
     where T: From<Type<Id, T>>
 {
-    pub fn app(l: T, r: T) -> T {
-        T::from(Type::App(l, r))
-    }
-
     pub fn array(typ: T) -> T {
         T::from(Type::Array(typ))
     }
 
-    pub fn data(id: T, args: Vec<T>) -> T {
+    pub fn app(id: T, args: Vec<T>) -> T {
         if args.is_empty() {
             id
         } else {
-            T::from(Type::Data(id, args))
+            T::from(Type::App(id, args))
         }
     }
 
@@ -581,7 +555,7 @@ impl<Id, T> Type<Id, T>
 {
     pub fn as_alias_symbol(&self) -> Option<&Id> {
         match *self {
-            Type::Data(ref id, _) => {
+            Type::App(ref id, _) => {
                 match **id {
                     Type::Id(ref id) => Some(id),
                     Type::Alias(ref alias) => Some(&alias.name),
@@ -600,7 +574,7 @@ impl<T> Type<Symbol, T>
 {
     pub fn as_alias(&self) -> Option<(&SymbolRef, &[T])> {
         match *self {
-            Type::Data(ref id, ref args) => {
+            Type::App(ref id, ref args) => {
                 match **id {
                     Type::Id(ref id) => Some((id, args)),
                     Type::Alias(ref alias) => Some((&alias.name, args)),
@@ -650,14 +624,6 @@ impl<Id> ASTType<Id> {
     pub fn return_type(&self) -> &ASTType<Id> {
         match **self {
             Type::Function(_, ref return_type) => return_type.return_type(),
-            _ => self,
-        }
-    }
-
-    /// Returns the inner most application of a type application
-    pub fn inner_app(&self) -> &ASTType<Id> {
-        match **self {
-            Type::App(ref a, _) => a.inner_app(),
             _ => self,
         }
     }
@@ -777,20 +743,7 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                            top(self.env, &**result))
                 }
             }
-            Type::App(ref lhs, ref rhs) => {
-                if p >= Prec::Constructor {
-                    write!(f,
-                           "({} {})",
-                           dt(self.env, Prec::Function, &lhs),
-                           dt(self.env, Prec::Constructor, &rhs))
-                } else {
-                    write!(f,
-                           "{} {}",
-                           dt(self.env, Prec::Function, &lhs),
-                           dt(self.env, Prec::Constructor, &rhs))
-                }
-            }
-            Type::Data(ref t, ref args) => {
+            Type::App(ref t, ref args) => {
                 if p >= Prec::Constructor {
                     try!(write!(f, "("));
                 }
@@ -901,7 +854,7 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
 {
     let typ = f(typ);
     match **typ {
-        Type::Data(_, ref args) => {
+        Type::App(_, ref args) => {
             for a in args {
                 walk_type(a, f);
             }
@@ -924,10 +877,6 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
             for field in fields {
                 walk_type(&field.typ, f);
             }
-        }
-        Type::App(ref l, ref r) => {
-            walk_type(l, f);
-            walk_type(r, f);
         }
         Type::Variants(ref variants) => {
             for variant in variants {
@@ -993,9 +942,9 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
     let result = {
         let typ = new.as_ref().map_or(typ, |t| &**t);
         match *typ {
-            Type::Data(ref id, ref args) => {
+            Type::App(ref id, ref args) => {
                 let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                merge(id, walk_move_type2(id, f), args, new_args, Type::data)
+                merge(id, walk_move_type2(id, f), args, new_args, Type::app)
             }
             Type::Array(ref inner) => walk_move_type2(&**inner, f).map(Type::array),
             Type::Function(ref args, ref ret) => {
@@ -1018,14 +967,6 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                             fields: fields,
                         }
                     })
-                    .map(From::from)
-            }
-            Type::App(ref l, ref r) => {
-                merge(l,
-                      walk_move_type2(l, f),
-                      r,
-                      walk_move_type2(r, f),
-                      Type::App)
                     .map(From::from)
             }
             Type::Variants(ref variants) => {
