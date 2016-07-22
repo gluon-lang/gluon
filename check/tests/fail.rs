@@ -27,7 +27,7 @@ macro_rules! assert_err {
                 match iter.next() {
                     Some(&ast::Spanned { value: $id, .. }) => (),
                     _ => assert!(false, "Found errors:\n{}\nbut expected {}",
-                                        err, stringify!($id))
+                                        err, stringify!($id)),
                 }
                 )+
                 assert!(iter.count() == 0, "Found more errors than expected\n{}", err);
@@ -42,7 +42,7 @@ macro_rules! assert_unify_err {
         #[allow(unused_imports)]
         use check::unify::Error::{TypeMismatch, Occurs, Other};
         #[allow(unused_imports)]
-        use check::unify_type::TypeError::FieldMismatch;
+        use check::unify_type::TypeError::{FieldMismatch, SelfRecursive};
         let symbols = get_local_interner();
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}",
@@ -55,7 +55,9 @@ macro_rules! assert_unify_err {
                             $(
                             match iter.next() {
                                 Some(&$id) => (),
-                                _ => assert!(false, "Found errors:\n{}\nbut expected {}",
+                                Some(err2) => assert!(false, "Found errors:\n{}\nExpected:\n{}\nFound\n:{:?}",
+                                                    err, stringify!($id), err2),
+                                None => assert!(false, "Found errors:\n{}\nbut expected {}",
                                                     err, stringify!($id))
                             }
                             )+
@@ -246,4 +248,33 @@ let (<=) = (make_Ord ord_Int).(<=)
 "#;
     let result = typecheck(text);
     assert_unify_err!(result, TypeMismatch(..), TypeMismatch(..));
+}
+
+#[test]
+fn recursive_types_with_differing_aliases() {
+    let _ = ::env_logger::init();
+    let text = r"
+type Option a = | None | Some a
+type R1 = Option R1
+and R2 = Option R2
+
+let x: R1 = None
+let y: R2 = x
+y
+";
+    let result = typecheck(text);
+    assert_unify_err!(result, Other(SelfRecursive(..)));
+}
+
+#[test]
+fn detect_self_recursive_aliases() {
+    let _ = ::env_logger::init();
+    let text = r"
+type A a = A a
+
+let g x: A a -> () = x
+1
+";
+    let result = typecheck(text);
+    assert_unify_err!(result, Other(SelfRecursive(..)));
 }

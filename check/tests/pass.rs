@@ -686,3 +686,26 @@ a.id
     };
     assert_eq!(*t, Type::function(vec![typ("a0")], typ("a0")));
 }
+
+#[test]
+fn non_self_recursive_alias() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Type1 = { x: Int }
+type Type2 = Type1
+type Type3 = { x: Int }
+let r1: Type1 = { x = 0 }
+let r2: Type2 = r1
+let r3: Type3 = r2
+in r1"#;
+    let result = typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    assert_eq!(result,
+               Ok(alias("Type1",
+                        &[],
+                        Type::record(vec![],
+                                     vec![types::Field {
+                                              name: intern("x"),
+                                              typ: typ("Int"),
+                                          }]))));
+}
