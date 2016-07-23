@@ -307,12 +307,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn type_arg(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
-        choice::<[&mut Parser<Input = I, Output = ASTType<Id::Untyped>>; 4],
-                 _>([&mut between(token(Token::Open(Delimiter::Bracket)),
-                                  token(Token::Close(Delimiter::Bracket)),
-                                  self.typ())
-                         .map(Type::array),
-                     &mut self.parser(ParserEnv::<I, F>::record_type),
+        choice::<[&mut Parser<Input = I, Output = ASTType<Id::Untyped>>; 3],
+                 _>([&mut self.parser(ParserEnv::<I, F>::record_type),
                      &mut between(token(Token::Open(Delimiter::Paren)),
                                   token(Token::Close(Delimiter::Paren)),
                                   optional(self.typ()))

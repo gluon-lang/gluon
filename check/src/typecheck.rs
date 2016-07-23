@@ -5,16 +5,13 @@ use std::fmt;
 use std::mem;
 
 use base::scoped_map::ScopedMap;
-use base::ast;
-use base::ast::{Typed, DisplayEnv, MutVisitor};
-use base::types;
-use base::types::{RcKind, Type, Generic, Kind};
+use base::ast::{self, Typed, DisplayEnv, MutVisitor};
+use base::types::{self, RcKind, Type, Generic, Kind};
 use base::error::Errors;
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType};
-use base::instantiate;
-use base::instantiate::{Instantiator, unroll_app};
-use kindcheck;
+use base::instantiate::{self, Instantiator, unroll_app};
+use kindcheck::{self, KindCheck};
 use substitution::Substitution;
 use unify::Error as UnifyError;
 use unify;
@@ -718,8 +715,7 @@ impl<'a> Typecheck<'a> {
                 }
                 {
                     let subs = Substitution::new();
-                    let mut check =
-                        super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
+                    let mut check = KindCheck::new(&self.environment, &self.symbols, subs);
                     // Setup kind variables for all type variables and insert the types in the
                     // this type expression into the kindcheck environment
                     for bind in bindings.iter_mut() {
@@ -727,7 +723,7 @@ impl<'a> Typecheck<'a> {
                         // Test a b: 2 -> 1 -> *
                         // and bind the same variables to the arguments of the type binding
                         // ('a' and 'b' in the example)
-                        let mut id_kind = check.star();
+                        let mut id_kind = check.star_kind();
                         let alias = Alias::make_mut(&mut bind.alias);
                         for gen in alias.args.iter_mut().rev() {
                             gen.kind = check.subs.new_var();
