@@ -1,6 +1,7 @@
 let { Bool, Option, Result, Ordering } = import "std/types.glu"
 /// A linked list type
 type List a = | Nil | Cons a (List a)
+
 /**
 
 `Monoid m` represents an associative operation on `m` an which has an identity.
@@ -14,52 +15,60 @@ This means the following laws must hold:
 
 */
 type Monoid m = {
-    (<>): m -> m -> m,
-    empty: m
+    append : m -> m -> m,
+    empty : m
 }
 
 let monoid_Function m: Monoid b -> (Monoid (a -> b)) = {
-    (<>) = \f g -> \x -> m.(<>) (f x) (g x),
+    append = \f g -> \x -> m.append (f x) (g x),
     empty = \_ -> m.empty
 }
 
 let monoid_List =
-    let (<>) xs ys =
+    let append xs ys =
         match xs with
-            | Cons x zs -> Cons x (zs <> ys)
+            | Cons x zs -> Cons x (append zs ys)
             | Nil -> ys
-    { (<>), empty = Nil }
+
+    { append, empty = Nil }
 
 let monoid_Option m: Monoid a -> Monoid (Option a) = {
-    (<>) = \l r ->
+    append = \l r ->
         match l with
             | Some x ->
-                (match r with
-                    | Some y -> Some (m.(<>) x y)
-                    | None -> l)
+                match r with
+                    | Some y -> Some (m.append x y)
+                    | None -> l
             | None -> r,
     empty = None
 }
 
 let monoid_Int_Add = {
-    (<>) = \x y -> x #Int+ y,
+    append = \x y -> x #Int+ y,
     empty = 0
 }
 
 let monoid_Int_Mul = {
-    (<>) = \x y -> x #Int* y,
+    append = \x y -> x #Int* y,
     empty = 1
 }
 
 let monoid_Float_Add = {
-    (<>) = \x y -> x #Float+ y,
+    append = \x y -> x #Float+ y,
     empty = 0.0
 }
 
 let monoid_Float_Mul = {
-    (<>) = \x y -> x #Float* y,
+    append = \x y -> x #Float* y,
     empty = 1.0
 }
+
+let make_Monoid m =
+    let { append, empty } = m
+
+    let (<>) : m -> m -> m = append
+
+    { append, empty, (<>) }
 
 let not x = if x then False else True
 
@@ -140,7 +149,7 @@ let eq_List a : Eq a -> Eq (List a) =
     { (==) }
 
 let monoid_Ordering = {
-    (<>) = \x y ->
+    append = \x y ->
         match x with
             | EQ -> y
             | _ -> x,
@@ -271,18 +280,18 @@ type Num a = {
 
 let num_Int = {
     ord = ord_Int,
-    (+) = monoid_Int_Add.(<>),
+    (+) = monoid_Int_Add.append,
     (-) = \l r -> l #Int- r,
-    (*) = monoid_Int_Mul.(<>),
+    (*) = monoid_Int_Mul.append,
     (/) = \l r -> l #Int/ r,
     negate = \x -> 0 #Int- x
 }
 
 let num_Float: Num Float = {
     ord = ord_Float,
-    (+) = monoid_Float_Add.(<>),
+    (+) = monoid_Float_Add.append,
     (-) = \l r -> l #Float- r,
-    (*) = monoid_Float_Mul.(<>),
+    (*) = monoid_Float_Mul.append,
     (/) = \l r -> l #Float/ r,
     negate = \x -> 0.0 #Float- x
 }
@@ -401,7 +410,7 @@ let applicative_Result: Applicative (Result e) = {
 }
 
 let applicative_List: Applicative List =
-    let { (<>) } = monoid_List
+    let { (<>) } = make_Monoid monoid_List
 
     let apply f xs =
         match f with
@@ -447,7 +456,7 @@ let alternative_Option: Alternative Option = {
 
 let alternative_List: Alternative List = {
     applicative = applicative_List,
-    or = monoid_List.(<>),
+    or = monoid_List.append,
     empty = Nil
 }
 
@@ -486,7 +495,7 @@ let monad_Option: Monad Option = {
 }
 
 let monad_List: Monad List =
-    let { (<>) } = monoid_List
+    let { (<>) } = make_Monoid monoid_List
 
     let flat_map f xs =
         match xs with
@@ -575,7 +584,7 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     not,
     foldl, foldr,
 
-    Monoid,
+    Monoid, make_Monoid,
     monoid_Function, monoid_List, monoid_Option,
     monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
 

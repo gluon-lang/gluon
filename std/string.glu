@@ -3,7 +3,7 @@ let { Num, Option, Eq, Ord, Ordering, Monoid, Show } = prelude
 let { (==) } = prelude.eq_Int
 
 let monoid = {
-    (<>) = string_prim.append,
+    append = string_prim.append,
     empty = ""
 }
 

@@ -16,7 +16,7 @@ let slice_tests =
         assert_seq (string.slice "abcd" 2 4) "cd"
 
 let append_tests =
-    let { (<>) } = string.monoid
+    let { (<>) } = prelude.make_Monoid string.monoid
     assert_seq ("ab" <> "cd") "abcd" >>
         assert_seq ("ab" <> "") "ab" >>
         assert_seq ("" <> "cd") "cd" >>

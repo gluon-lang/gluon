@@ -5,9 +5,9 @@ let { Map } = map
 let { pure } = prelude.applicative_IO
 let { (>>=), (>>), forM_ } = prelude.make_Monad prelude.monad_IO
 let { Eq, Result, Monoid } = prelude
-let { (<>) = (++) } = string.monoid
+let { append = (++) } = string.monoid
 let { singleton, find, monoid, to_list } = map.make string.ord
-let { (<>), empty } = monoid
+let { (<>), empty } = prelude.make_Monoid monoid
 
 
 let load_file filename: String -> IO String =

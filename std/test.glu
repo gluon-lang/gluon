@@ -6,7 +6,7 @@ and { (+) } = prelude.num_Int
 and { (==) } = prelude.eq_Int
 and { (<) } = prelude.make_Ord prelude.ord_Int
 
-let (++) = string.monoid.(<>)
+let (++) = string.monoid.append
 
 type Test a = Writer (List String) a
 

@@ -1,4 +1,5 @@
-let { Applicative, Functor, Monad, Monoid } = import "std/prelude.glu"
+let prelude = import "std/prelude.glu"
+let { Applicative, Functor, Monad, Monoid } = prelude
 
 type Writer w a = {
     value: a,
@@ -12,7 +13,7 @@ type Impl w = {
 }
 
 let make w : Monoid w -> Impl w =
-    let { (<>), empty } = w
+    let { (<>), empty } = prelude.make_Monoid w
 
     let functor : Functor (Writer w) = {
         map = \f m -> {
