@@ -347,43 +347,56 @@ let functor_List: Functor List =
     { map }
 
 type Applicative f = {
-    (<*>) : f (a -> b) -> f a -> f b,
+    apply : f (a -> b) -> f a -> f b,
     pure : a -> f a
 }
 
 let applicative_Function: Applicative ((->) a) = {
-    (<*>) = \f g x -> f x (g x),
+    apply = \f g x -> f x (g x),
     pure = \x -> \_ -> x
 }
 
 let applicative_Option: Applicative Option = {
-    (<*>) = \f x -> match f with
-                        | Some g ->
-                            (match x with
-                                | Some y -> Some (g y)
-                                | None -> None)
-                        | None -> None,
+    apply = \f x ->
+        match f with
+            | Some g ->
+                match x with
+                    | Some y -> Some (g y)
+                    | None -> None
+            | None -> None,
     pure = \x -> Some x
 }
 
 let applicative_Result: Applicative (Result e) = {
-    (<*>) = \f x -> match f with
-                        | Ok g ->
-                            (match x with
-                                | Ok y -> Ok (g y)
-                                | Err _ -> x)
-                        | Err x -> Err x,
+    apply = \f x ->
+        match f with
+            | Ok g ->
+                match x with
+                    | Ok y -> Ok (g y)
+                    | Err _ -> x
+            | Err x -> Err x,
     pure = \x -> Ok x
 }
 
 let applicative_List: Applicative List =
-    let (<*>) f xs =
-            match f with
-                | Cons g gs ->
-                    monoid_List.(<>) (functor_List.map g xs) (gs <*> xs)
-                | Nil -> Nil
+    let { (<>) } = monoid_List
+
+    let apply f xs =
+        match f with
+            | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
+            | Nil -> Nil
     let pure x = Cons x Nil
-    { (<*>), pure }
+
+    { apply, pure }
+
+let make_Applicative app fun =
+    let { apply, pure } = app
+
+    let (<*>) : app (a -> b) -> app a -> app b = apply
+    let map2 f a b : (a -> b -> c) -> app a -> app b -> app c = (fun.map f a) <*> b
+    let map3 f a b c : (a -> b -> c -> d) -> app a -> app b -> app c -> app d = (fun.map f a) <*> b <*> c
+
+    { apply, pure, (<*>), map2, map3 }
 
 /// const `x` creates a function which always returns `x`
 let const : a -> b -> a =
@@ -409,7 +422,8 @@ let alternative_List: Alternative List = {
 
 let make_Alternative fun app alt =
     let { (<|>), empty } = alt
-    let { (<*>), pure } = app
+    let { (<*>), pure } = make_Applicative app fun
+
     let many x =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = fun.map (\h l -> Cons h l) x <*> many_v ()
@@ -418,6 +432,7 @@ let make_Alternative fun app alt =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = fun.map (\h l -> Cons h l) x <*> many_v ()
         some_v ()
+
     {
         (<|>),
         empty,
@@ -463,21 +478,20 @@ let make_Monad m app =
     let (>>=) : m a -> (a -> m b) -> m b = flip flat_map
     let (>>) l r : m a -> m b -> m b = l >>= \_ -> r
     let join mm : m (m a) -> m a = mm >>= id
-    let lift2 f lm rm = lm >>= \l -> rm >>= \r -> f l r
     let forM_ xs f : List a -> (a -> m b) -> m () =
         match xs with
             | Cons y ys -> f y >> forM_ ys f
             | Nil -> app.pure ()
 
-    { flat_map, (=<<), (>>=), (>>), join, lift2, forM_ }
+    { flat_map, (=<<), (>>=), (>>), join, forM_ }
 
 let applicative_IO: Applicative IO =
     let { flat_map } = monad_IO
 
     let pure = io_pure
-    let (<*>) f x = flat_map (\g -> flat_map (\y -> pure (g y)) x) f
+    let apply f x = flat_map (\g -> flat_map (\y -> pure (g y)) x) f
 
-    { (<*>), pure }
+    { apply, pure }
 
 let functor_IO: Functor IO =
     let { pure } = applicative_IO

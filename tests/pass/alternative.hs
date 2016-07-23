@@ -5,7 +5,8 @@ let { (>>) } = prelude.make_Monad monad applicative
 
 let test_alt show eq fun alt app =
     let { (<|>), empty, many, some } = prelude.make_Alternative fun app alt
-    let { (<*>), pure } = app
+    let { pure } = app
+
     let assert =
             assert_eq (show prelude.show_Int) (eq prelude.eq_Int)
 

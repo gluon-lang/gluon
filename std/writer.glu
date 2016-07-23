@@ -13,12 +13,12 @@ let make_Functor w: Monoid w -> Functor (Writer w) =
 let make_Applicative w: Monoid w -> Applicative (Writer w) =
     let { (<>) } = w
 
-    let (<*>) mf m : Writer w (a -> b) -> Writer w a -> Writer w b =
+    let apply mf m : Writer w (a -> b) -> Writer w a -> Writer w b =
         { value = mf.value m.value, writer = mf.writer <> m.writer }
     let pure value: a -> Writer w a =
         { value, writer = w.empty }
 
-    { (<*>), pure }
+    { apply, pure }
 
 let make_Monad w: Monoid w -> Monad (Writer w) =
     let { (<>) } = w

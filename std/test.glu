@@ -15,7 +15,7 @@ let applicative : Applicative Test = writer.make_Applicative prelude.monoid_List
 let monad : Monad Test = writer.make_Monad prelude.monoid_List
 
 let { pure } = applicative
-let { (>>=), (>>), join, lift2, forM_ } = prelude.make_Monad monad applicative
+let { (>>=), (>>), join, forM_ } = prelude.make_Monad monad applicative
 
 let assert x = if x then () else error "Assertion failed"
 and assert_eq show eq = \x y ->
