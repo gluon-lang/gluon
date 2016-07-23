@@ -88,13 +88,7 @@ fn function_type_new() {
 \x -> x
 ";
     let result = typecheck(text);
-    assert!(result.is_ok());
-    match *result.unwrap() {
-        Type::Function(_, _) => {
-            assert!(true);
-        }
-        _ => assert!(false),
-    }
+    assert!(result.unwrap().as_function().is_some());
 }
 
 #[test]
@@ -235,10 +229,10 @@ in test2 1";
     assert_eq!(result, Ok(typ("Int")));
     assert_m!(expr.value, ast::Expr::Let(ref binds, _) => {
         assert_eq!(binds.len(), 2);
-        assert_m!(*binds[0].type_of(), Type::Function(ref args, _) => {
+        assert_m!(*binds[0].type_of(), Type::App(_, ref args) => {
             assert_m!(*args[0], Type::Generic(_) => ())
         });
-        assert_m!(*binds[1].type_of(), Type::Function(ref args, _) => {
+        assert_m!(*binds[1].type_of(), Type::App(_, ref args) => {
             assert_m!(*args[0], Type::Generic(_) => ())
         });
     });

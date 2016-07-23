@@ -252,10 +252,6 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                     merge(id, walk_move_type2(id, f), args, new_args, Type::app)
                 }
                 Type::Array(ref inner) => walk_move_type2(&**inner, f).map(Type::array),
-                Type::Function(ref args, ref ret) => {
-                    let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                    merge(args, new_args, ret, walk_move_type2(ret, f), Type::function)
-                }
                 Type::Record { ref types, ref fields } => {
                     let new_types = None;
                     let new_fields = walk_move_types(fields.iter(), |field| {

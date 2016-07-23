@@ -560,12 +560,14 @@ pub trait Typed {
     }
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Self::Id>;
 }
+
 impl<Id: Clone> Typed for TcIdent<Id> {
     type Id = Id;
     fn env_type_of(&self, _: &TypeEnv) -> ASTType<Id> {
         self.typ.clone()
     }
 }
+
 impl<Id> Typed for Expr<Id>
     where Id: Typed<Id = Symbol> + AstId<Untyped = Symbol>
 {
@@ -589,12 +591,12 @@ impl<Id> Typed for Expr<Id>
                 Type::unit()
             }
             Expr::BinOp(_, ref op, _) => {
-                if let Type::Function(_, ref return_type) = *op.env_type_of(env) {
-                    if let Type::Function(_, ref return_type) = **return_type {
-                        return return_type.clone();
+                if let Type::App(_, ref args) = *op.env_type_of(env) {
+                    if let Type::App(_, ref args) = *args[1] {
+                        return args[1].clone();
                     }
                 }
-                panic!("Expected function type in binop")
+                panic!("Expected function type in binop");
             }
             Expr::Let(_, ref expr) |
             Expr::Type(_, ref expr) => expr.env_type_of(env),
@@ -657,9 +659,11 @@ fn get_return_type(env: &TypeEnv,
     if arg_count == 0 {
         alias_type
     } else {
-        match *alias_type {
-            Type::Function(_, ref ret) => get_return_type(env, ret.clone(), arg_count - 1),
-            _ => {
+        match alias_type.as_function() {
+            Some((_, ret)) => {
+                get_return_type(env, ret.clone(), arg_count - 1)
+            }
+            None => {
                 match alias_type.as_alias() {
                     Some((id, arguments)) => {
                         let (args, typ) = {

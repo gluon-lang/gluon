@@ -199,9 +199,9 @@ impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
 impl CompilerEnv for TypeInfos {
     fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
         fn count_function_args(typ: &TcType) -> VMIndex {
-            match **typ {
-                Type::Function(_, ref rest) => 1 + count_function_args(rest),
-                _ => 0,
+            match typ.as_function() {
+                Some((_, ret)) => 1 + count_function_args(ret),
+                None => 0,
             }
         }
 
