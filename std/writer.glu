@@ -2,8 +2,8 @@ let prelude = import "std/prelude.glu"
 let { Applicative, Functor, Monad, Monoid } = prelude
 
 type Writer w a = {
-    value: a,
-    writer: w
+    value : a,
+    writer : w
 }
 
 type Impl w = {

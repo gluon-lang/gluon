@@ -19,7 +19,7 @@ type Monoid m = {
     empty : m
 }
 
-let monoid_Function m: Monoid b -> (Monoid (a -> b)) = {
+let monoid_Function m : Monoid b -> (Monoid (a -> b)) = {
     append = \f g -> \x -> m.append (f x) (g x),
     empty = \_ -> m.empty
 }
@@ -32,7 +32,7 @@ let monoid_List =
 
     { append, empty = Nil }
 
-let monoid_Option m: Monoid a -> Monoid (Option a) = {
+let monoid_Option m : Monoid a -> Monoid (Option a) = {
     append = \l r ->
         match l with
             | Some x ->
@@ -89,11 +89,11 @@ type Eq a = {
     (==) : a -> a -> Bool
 }
 
-let eq_Unit: Eq () = {
+let eq_Unit : Eq () = {
     (==) = \l r -> True
 }
 
-let eq_Bool: Eq Bool = {
+let eq_Bool : Eq Bool = {
     (==) = \l r -> if l then r else not r
 }
 
@@ -275,7 +275,7 @@ type Num a = {
     (-) : a -> a -> a,
     (*) : a -> a -> a,
     (/) : a -> a -> a,
-    negate: a -> a
+    negate : a -> a
 }
 
 let num_Int = {
@@ -287,7 +287,7 @@ let num_Int = {
     negate = \x -> 0 #Int- x
 }
 
-let num_Float: Num Float = {
+let num_Float : Num Float = {
     ord = ord_Float,
     (+) = monoid_Float_Add.append,
     (-) = \l r -> l #Float- r,
@@ -301,7 +301,7 @@ type Category cat = {
     compose : cat b c -> cat a b -> cat a c
 }
 
-let category_Function: Category (->) = {
+let category_Function : Category (->) = {
     id = \x -> x,
     compose = \f g x -> f (g x)
 }
@@ -350,26 +350,26 @@ let functor_Function : Functor ((->) a) = {
     map = category_Function.compose
 }
 
-let functor_Option: Functor Option = {
+let functor_Option : Functor Option = {
     map = \f x -> match x with
                     | Some y -> Some (f y)
                     | None -> None
 }
 
-let functor_Result: Functor (Result e) = {
+let functor_Result : Functor (Result e) = {
     map = \f x -> match x with
                     | Ok y -> Ok (f y)
                     | Err _ -> x
 }
 
-let functor_List: Functor List =
+let functor_List : Functor List =
     let map f xs =
         match xs with
             | Cons y ys -> Cons (f y) (map f ys)
             | Nil -> Nil
     { map }
 
-let functor_IO: Functor IO = {
+let functor_IO : Functor IO = {
     map = \f m1 -> io_bind m1 (\x -> io_pure (f x))
 }
 
@@ -379,7 +379,7 @@ type Applicative f = {
     pure : a -> f a
 }
 
-let applicative_Function: Applicative ((->) a) = {
+let applicative_Function : Applicative ((->) a) = {
     functor = functor_Function,
     apply = \f g x -> f x (g x),
     pure = \x -> \_ -> x
@@ -389,7 +389,7 @@ let applicative_Function: Applicative ((->) a) = {
 let const : a -> b -> a =
     applicative_Function.pure
 
-let applicative_Option: Applicative Option = {
+let applicative_Option : Applicative Option = {
     functor = functor_Option,
     apply = \f x ->
         match f with
@@ -401,7 +401,7 @@ let applicative_Option: Applicative Option = {
     pure = \x -> Some x
 }
 
-let applicative_Result: Applicative (Result e) = {
+let applicative_Result : Applicative (Result e) = {
     functor = functor_Result,
     apply = \f x ->
         match f with
@@ -413,7 +413,7 @@ let applicative_Result: Applicative (Result e) = {
     pure = \x -> Ok x
 }
 
-let applicative_List: Applicative List =
+let applicative_List : Applicative List =
     let { (<>) } = make_Monoid monoid_List
 
     let apply f xs =
@@ -424,7 +424,7 @@ let applicative_List: Applicative List =
 
     { functor = functor_List, apply, pure }
 
-let applicative_IO: Applicative IO =
+let applicative_IO : Applicative IO =
     let pure = io_pure
     let apply f x = io_bind f (\g -> io_bind x (\y -> pure (g y)))
 
@@ -447,7 +447,7 @@ type Alternative f = {
     empty : f a
 }
 
-let alternative_Option: Alternative Option = {
+let alternative_Option : Alternative Option = {
     applicative = applicative_Option,
     or = \x y ->
         match x with
@@ -456,7 +456,7 @@ let alternative_Option: Alternative Option = {
     empty = None
 }
 
-let alternative_List: Alternative List = {
+let alternative_List : Alternative List = {
     applicative = applicative_List,
     or = monoid_List.append,
     empty = Nil
@@ -483,12 +483,12 @@ type Monad m = {
     flat_map : (a -> m b) -> m a -> m b
 }
 
-let monad_Function: Monad ((->) a) = {
+let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
     flat_map = \f m x -> f (m x) x
 }
 
-let monad_Option: Monad Option = {
+let monad_Option : Monad Option = {
     applicative = applicative_Option,
     flat_map = \f m ->
         match m with
@@ -496,7 +496,7 @@ let monad_Option: Monad Option = {
             | None -> None
 }
 
-let monad_List: Monad List =
+let monad_List : Monad List =
     let { (<>) } = make_Monoid monoid_List
 
     let flat_map f xs =
@@ -506,7 +506,7 @@ let monad_List: Monad List =
 
     { applicative = applicative_List, flat_map }
 
-let monad_IO: Monad IO = {
+let monad_IO : Monad IO = {
     applicative = applicative_IO,
     flat_map = flip io_bind
 }
@@ -531,25 +531,25 @@ type Show a = {
     show : a -> String
 }
 
-let show_Unit: Show () = {
+let show_Unit : Show () = {
     show = const "()"
 }
 
-let show_Bool: Show Bool = {
+let show_Bool : Show Bool = {
     show = \x -> if x then "True" else "False"
 }
 
-let show_Int: Show Int = {
+let show_Int : Show Int = {
     show = prim.show_Int
 }
 
-let show_Float: Show Float = {
+let show_Float : Show Float = {
     show = prim.show_Float
 }
 
 let (++) = string_prim.append
 
-let show_List: Show a -> Show (List a) = \d ->
+let show_List : Show a -> Show (List a) = \d ->
     let show xs =
         let show2 ys =
             match ys with
@@ -561,14 +561,14 @@ let show_List: Show a -> Show (List a) = \d ->
         "[" ++ show2 xs
     { show }
 
-let show_Option: Show a -> Show (Option a) = \d ->
+let show_Option : Show a -> Show (Option a) = \d ->
     let show o =
         match o with
             | Some x -> "Some (" ++ d.show x ++ ")"
             | None -> "None"
     { show }
 
-let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
+let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
     let show o =
         match o with
             | Ok x -> "Ok (" ++ t.show x ++ ")"

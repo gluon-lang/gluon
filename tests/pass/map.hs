@@ -11,7 +11,7 @@ let show_Entry e =
     let { key, value } = e
     key <> prelude.show_Int.show value
 
-let eq_Entry l r : { key: String, value: Int } -> { key: String, value: Int } -> Bool =
+let eq_Entry l r : { key : String, value : Int } -> { key : String, value : Int } -> Bool =
     l.key == r.key && l.value == r.value
 
 let assert_list =

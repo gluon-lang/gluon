@@ -10,7 +10,7 @@ let { singleton, find, monoid, to_list } = map.make string.ord
 let { (<>), empty } = prelude.make_Monoid monoid
 
 
-let load_file filename: String -> IO String =
+let load_file filename : String -> IO String =
     let last_slash =
         match string.rfind filename "/" with
             | None -> 0
@@ -23,11 +23,11 @@ let load_file filename: String -> IO String =
             | Err msg -> pure msg
 
 type Cmd = {
-    info: String,
-    action: String -> IO Bool
+    info : String,
+    action : String -> IO Bool
 }
 
-let commands: Map String Cmd =
+let commands : Map String Cmd =
     let print_result result =
         match result with
             | Ok x -> io.print x
@@ -58,7 +58,7 @@ let commands: Map String Cmd =
                     io.print "Available commands\n" *>
                         forM_ (to_list (load commands)) (\cmd ->
                             //FIXME This type declaration should not be needed
-                            let cmd: { key: String, value: Cmd } = cmd
+                            let cmd : { key : String, value : Cmd } = cmd
                             io.print ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
                         ) *>
                         pure True
@@ -66,14 +66,14 @@ let commands: Map String Cmd =
     commands <- cmds
     load commands
 
-let do_command line: String -> IO Bool =
+let do_command line : String -> IO Bool =
     let cmd = string.slice line 1 2
     let arg = if string.length line >= 3 then string.trim (string.slice line 3 (string.length line)) else ""
     match find cmd commands with
         | Some command -> command.action arg
         | None -> io.print ("Unknown command '"  ++ cmd ++ "'") *> pure True
 
-let store line: String -> IO Bool =
+let store line : String -> IO Bool =
     let line = string.trim line
     match string.find line " " with
         | Some bind_end ->
@@ -82,7 +82,7 @@ let store line: String -> IO Bool =
             io.load_script binding expr *> pure True
         | None -> io.print "Expected binding in definition" *> pure True
 
-let loop editor: Editor -> IO () =
+let loop editor : Editor -> IO () =
     let run_line line =
         if string.is_empty (string.trim line) then
             pure True
@@ -101,7 +101,7 @@ let loop editor: Editor -> IO () =
             | Some line -> run_line line >>= \continue ->
                 if continue then loop editor else pure ()
 
-let run x: () -> IO () =
+let run x : () -> IO () =
     io.print "gluon (:h for help, :q to quit)"
         *> loop (rustyline.new_editor ())
 

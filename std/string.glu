@@ -21,12 +21,12 @@ let eq : Eq String = {
     (==) = string_prim.eq
 }
 
-let ord: Ord String = {
+let ord : Ord String = {
     eq,
     compare = string_prim.compare
 }
 
-let show: Show String = {
+let show : Show String = {
     show = prelude.id
 }
 
