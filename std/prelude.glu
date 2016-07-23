@@ -403,12 +403,12 @@ let const : a -> b -> a =
     applicative_Function.pure
 
 type Alternative f = {
-    (<|>) : f a -> f a -> f a,
+    or : f a -> f a -> f a,
     empty : f a
 }
 
 let alternative_Option: Alternative Option = {
-    (<|>) = \x y ->
+    or = \x y ->
         match x with
             | Some _ -> x
             | None -> y,
@@ -416,29 +416,25 @@ let alternative_Option: Alternative Option = {
 }
 
 let alternative_List: Alternative List = {
-    (<|>) = monoid_List.(<>),
+    or = monoid_List.(<>),
     empty = Nil
 }
 
 let make_Alternative fun app alt =
-    let { (<|>), empty } = alt
+    let { or, empty } = alt
     let { (<*>), pure } = make_Applicative app fun
 
-    let many x =
+    let (<|>) : f a -> f a -> f a = or
+    let many x : f a -> f (List a) =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = fun.map (\h l -> Cons h l) x <*> many_v ()
         many_v ()
-    let some x =
+    let some x : f a -> f (List a) =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = fun.map (\h l -> Cons h l) x <*> many_v ()
         some_v ()
 
-    {
-        (<|>),
-        empty,
-        many,
-        some
-    }
+    { or, empty, (<|>), many, some }
 
 type Monad m = {
     flat_map : (a -> m b) -> m a -> m b
