@@ -385,6 +385,10 @@ let applicative_Function: Applicative ((->) a) = {
     pure = \x -> \_ -> x
 }
 
+/// const `x` creates a function which always returns `x`
+let const : a -> b -> a =
+    applicative_Function.pure
+
 let applicative_Option: Applicative Option = {
     functor = functor_Option,
     apply = \f x ->
@@ -430,14 +434,12 @@ let make_Applicative app =
     let { functor, apply, pure } = app
 
     let (<*>) : app (a -> b) -> app a -> app b = apply
+    let (<*) l r : app a -> app b -> app a = functor.map const l <*> r
+    let (*>) l r : app a -> app b -> app b = functor.map (const id) l <*> r
     let map2 f a b : (a -> b -> c) -> app a -> app b -> app c = (functor.map f a) <*> b
     let map3 f a b c : (a -> b -> c -> d) -> app a -> app b -> app c -> app d = (functor.map f a) <*> b <*> c
 
-    { functor, apply, pure, (<*>), map2, map3 }
-
-/// const `x` creates a function which always returns `x`
-let const : a -> b -> a =
-    applicative_Function.pure
+    { functor, apply, pure, (<*>), (<*), (*>), map2, map3 }
 
 type Alternative f = {
     applicative : Applicative f,
@@ -511,19 +513,18 @@ let monad_IO: Monad IO = {
 
 let make_Monad m =
     let { applicative, flat_map } = m
-    let { pure } = applicative
+    let { (*>), pure } = make_Applicative applicative
     let { id } = category_Function
 
     let (=<<) : (a -> m b) -> m a -> m b = flat_map
     let (>>=) : m a -> (a -> m b) -> m b = flip flat_map
-    let (>>) l r : m a -> m b -> m b = l >>= \_ -> r
     let join mm : m (m a) -> m a = mm >>= id
     let forM_ xs f : List a -> (a -> m b) -> m () =
         match xs with
-            | Cons y ys -> f y >> forM_ ys f
+            | Cons y ys -> f y *> forM_ ys f
             | Nil -> pure ()
 
-    { applicative, flat_map, (=<<), (>>=), (>>), join, forM_ }
+    { applicative, flat_map, (=<<), (>>=), join, forM_ }
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = {
@@ -600,7 +601,7 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     Functor,
     functor_Option, functor_Result, functor_List, functor_IO,
 
-    Applicative,
+    Applicative, make_Applicative,
     applicative_Option, applicative_Result, applicative_List, applicative_IO,
 
     Alternative, make_Alternative,

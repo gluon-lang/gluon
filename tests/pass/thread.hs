@@ -1,7 +1,8 @@
 let { run, writer, assert_eq } = import "std/test.glu"
 let prelude = import "std/prelude.glu"
 let string = import "std/string.glu"
-let { (>>=), (>>) } = prelude.make_Monad writer.monad
+let { (*>) } = prelude.make_Applicative writer.applicative
+let { (>>=) } = prelude.make_Monad writer.monad
 
 let assert =
     assert_eq (prelude.show_Result prelude.show_Unit prelude.show_Int)
@@ -21,11 +22,11 @@ let thread = spawn (\_ ->
 resume thread
 
 let tests =
-    assert (recv receiver) (Ok 0) >>
+    assert (recv receiver) (Ok 0) *>
         assert (recv receiver) (Err ()) >>= (\_ ->
             resume thread
             assert (recv receiver) (Ok 1)
-        ) >>
+        ) *>
         assert (recv receiver) (Err ()) >>= (\_ ->
             assert_any_err (resume thread) (Err "Any error message here")
         )
