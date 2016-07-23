@@ -370,7 +370,7 @@ let functor_List : Functor List =
     { map }
 
 let functor_IO : Functor IO = {
-    map = \f m1 -> io_bind m1 (\x -> io_pure (f x))
+    map = \f -> io_flat_map (\x -> io_pure (f x))
 }
 
 type Applicative f = {
@@ -426,7 +426,7 @@ let applicative_List : Applicative List =
 
 let applicative_IO : Applicative IO =
     let pure = io_pure
-    let apply f x = io_bind f (\g -> io_bind x (\y -> pure (g y)))
+    let apply f x = io_flat_map (\g -> io_flat_map (\y -> pure (g y)) x) f
 
     { functor = functor_IO, apply, pure }
 
@@ -508,7 +508,7 @@ let monad_List : Monad List =
 
 let monad_IO : Monad IO = {
     applicative = applicative_IO,
-    flat_map = flip io_bind
+    flat_map = io_flat_map
 }
 
 let make_Monad m =
