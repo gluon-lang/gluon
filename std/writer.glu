@@ -18,7 +18,7 @@ let make_Applicative w: Monoid w -> Applicative (Writer w) =
     let pure value: a -> Writer w a =
         { value, writer = w.empty }
 
-    { apply, pure }
+    { functor = make_Functor w, apply, pure }
 
 let make_Monad w: Monoid w -> Monad (Writer w) =
     let { (<>) } = w
@@ -27,7 +27,7 @@ let make_Monad w: Monoid w -> Monad (Writer w) =
         let { value, writer } = f m.value
         { value, writer = m.writer <> writer }
 
-    { flat_map }
+    { applicative = make_Applicative w, flat_map }
 
 let tell w: w -> Writer w () =
     { value = (), writer = w }

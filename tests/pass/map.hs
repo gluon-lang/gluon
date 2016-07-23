@@ -1,9 +1,9 @@
 let prelude = import "std/prelude.glu"
 let { Monad, Monoid, Option, List, Eq, Show } = prelude
 let string = import "std/string.glu"
-let { Test, run, applicative, monad, assert, assert_eq } = import "std/test.glu"
+let { Test, run, monad, assert, assert_eq } = import "std/test.glu"
 let map = import "std/map.glu"
-let { (>>) } = prelude.make_Monad monad applicative
+let { (>>) } = prelude.make_Monad monad
 
 let show_Entry e =
     let { key, value } = e

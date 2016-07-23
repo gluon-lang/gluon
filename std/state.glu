@@ -19,7 +19,7 @@ let applicative : Applicative (State s) =
     let pure value: a -> State s a =
         \state -> { value, state }
 
-    { apply, pure }
+    { functor, apply, pure }
 
 let monad: Monad (State s) =
     let flat_map f m : (a -> State s b) -> State s a -> State s b =
@@ -28,7 +28,7 @@ let monad: Monad (State s) =
             and m2 = f value
             m2 state
 
-    { flat_map }
+    { applicative, flat_map }
 
 let put value: s -> State s () = \state -> { value = (), state = value }
 

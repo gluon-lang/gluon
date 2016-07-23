@@ -1,22 +1,31 @@
 let prelude = import "std/prelude.glu"
 let { Num, Option, Eq, Ord, Ordering, Monoid, Show } = prelude
-let (==) = prelude.eq_Int.(==)
+let { (==) } = prelude.eq_Int
+
 let monoid = {
     (<>) = string_prim.append,
     empty = ""
 }
+
 let starts_with haystack needle =
     match string_prim.find haystack needle with
         | Some i -> i == 0
         | None -> False
+
 let ends_with haystack needle =
     match string_prim.rfind haystack needle with
         | Some i -> i == string_prim.length haystack - string_prim.length needle
         | None -> False
 
+let eq : Eq String = {
+    (==) = string_prim.eq
+}
+
 let ord: Ord String = {
+    eq,
     compare = string_prim.compare
 }
+
 let show: Show String = {
     show = prelude.id
 }
@@ -30,8 +39,7 @@ let show: Show String = {
     trim = string_prim.trim,
     trim_left = string_prim.trim_left,
     trim_right = string_prim.trim_right,
-    compare = string_prim.compare,
-    eq = { (==) = string_prim.eq },
+    eq,
     ord,
     show,
     slice = string_prim.slice,
