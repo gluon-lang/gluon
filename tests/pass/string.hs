@@ -1,9 +1,9 @@
 let prelude = import "std/prelude.glu"
-let { run, monad, assert_eq, assert_seq, assert_ieq } = import "std/test.glu"
+let { run, writer, assert_eq, assert_seq, assert_ieq } = import "std/test.glu"
 let { Ord, Num, List, Option, Monoid } = prelude
 let { (<) } = prelude.make_Ord prelude.ord_Int
 let { (+) } = prelude.num_Int
-let { (>>) } = prelude.make_Monad monad
+let { (>>) } = prelude.make_Monad writer.monad
 
 let string = import "std/string.glu"
 

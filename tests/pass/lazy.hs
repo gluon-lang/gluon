@@ -1,8 +1,8 @@
-let { run, applicative, monad, assert_ieq } = import "std/test.glu"
+let { run, writer, assert_ieq } = import "std/test.glu"
 let prelude = import "std/prelude.glu"
 let { Num } = prelude
-let { pure } = applicative
-let { (>>) } = prelude.make_Monad monad
+let { pure } = writer.applicative
+let { (>>) } = prelude.make_Monad writer.monad
 let { (+), (-), (*) } = prelude.num_Int
 
 let l = lazy (\_ -> 123 + 57)

@@ -1,9 +1,10 @@
 let prelude = import "std/prelude.glu"
 let { Monad, Num } = prelude
-let { Test, run, monad = monad_Test, assert, assert_ieq, assert_feq, assert_seq } = import "std/test.glu"
-let { State, monad = monad_State, put, get, modify, runState, evalState, execState } = import "std/state.glu"
-let { (>>) = (>>>) } = prelude.make_Monad monad_Test
-let { (>>) } = prelude.make_Monad monad_State
+let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq } = import "std/test.glu"
+let state = import "std/state.glu"
+let { State, put, get, modify, runState, evalState, execState } = import "std/state.glu"
+let { (>>) = (>>>) } = prelude.make_Monad writer.monad
+let { (>>) } = prelude.make_Monad state.monad
 let { (+), (-), (*) } = prelude.num_Int
 
 let tests =
