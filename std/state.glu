@@ -22,13 +22,13 @@ let applicative : Applicative (State s) =
     { (<*>), pure }
 
 let monad: Monad (State s) =
-    let (>>=) m f: State s a -> (a -> State s b) -> State s b =
+    let flat_map f m : (a -> State s b) -> State s a -> State s b =
         \state ->
             let { value, state } = m state
             and m2 = f value
             m2 state
 
-    { (>>=) }
+    { flat_map }
 
 let put value: s -> State s () = \state -> { value = (), state = value }
 

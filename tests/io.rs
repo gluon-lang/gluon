@@ -12,7 +12,7 @@ fn read_file() {
         let prelude = import "std/prelude.glu"
         let { assert } = import "std/test.glu"
         let { pure } = prelude.applicative_IO
-        let { (>>=) } = prelude.monad_IO
+        let { (>>=) } = prelude.make_Monad prelude.monad_IO prelude.applicative_IO
 
         io.open_file "Cargo.toml" >>= \file ->
             io.read_file file 9 >>= \bytes ->

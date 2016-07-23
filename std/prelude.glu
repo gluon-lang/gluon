@@ -63,11 +63,6 @@ let monoid_Float_Mul = {
 
 let not x = if x then False else True
 
-let concatMap f xs: (a -> List b) -> List a -> List b =
-    match xs with
-        | Cons x ys -> monoid_List.(<>) (f x) (concatMap f ys)
-        | Nil -> Nil
-
 /// Folds a lift from the left
 let foldl f x xs =
     match xs with
@@ -299,6 +294,28 @@ let make_Category cat =
 
     { id, compose, (<<), (>>) }
 
+/// The identity function, where `id x == x`
+let id : a -> a =
+    category_Function.id
+
+/// flip `f` takes creates a new function which takes its two arguments in reverse order
+let flip f : (a -> b -> c) -> b -> a -> c =
+    \x y -> f y x
+
+/// Backward function application, where `f <| x == f x`
+let (<|) f x : (a -> b) -> a -> b = f x
+
+/// Forward function application, where `x |> f == f x`
+let (|>) x f : a -> (a -> b) -> b = f x
+
+/// Right-to-left function composition
+let (<<) : (b -> c) -> (a -> b) -> a -> c =
+    (make_Category category_Function).(<<)
+
+/// Left-to-right function composition
+let (>>) : (a -> b) -> (b -> c) -> a -> c =
+    (make_Category category_Function).(>>)
+
 /**
 A `Functor` represents an action on a parameterized type which does not change the structure with
 the mapped type.
@@ -368,6 +385,10 @@ let applicative_List: Applicative List =
     let pure x = Cons x Nil
     { (<*>), pure }
 
+/// const `x` creates a function which always returns `x`
+let const : a -> b -> a =
+    applicative_Function.pure
+
 type Alternative f = {
     (<|>) : f a -> f a -> f a,
     empty : f a
@@ -405,32 +426,41 @@ let make_Alternative fun app alt =
     }
 
 type Monad m = {
-    (>>=) : m a -> (a -> m b) -> m b
+    flat_map : (a -> m b) -> m a -> m b
 }
 
 let monad_Function: Monad ((->) a) = {
-    (>>=) = \m f x -> f (m x) x
+    flat_map = \f m x -> f (m x) x
 }
 
 let monad_Option: Monad Option = {
-    (>>=) = \m f -> match m with
-                        | Some x -> f x
-                        | None -> None
+    flat_map = \f m ->
+        match m with
+            | Some x -> f x
+            | None -> None
 }
 
-let monad_List: Monad List = {
-    (>>=) = \m f -> concatMap f m
-}
+let monad_List: Monad List =
+    let { (<>) } = monoid_List
+
+    let flat_map f xs =
+        match xs with
+            | Cons x ys -> (f x) <> (flat_map f ys)
+            | Nil -> Nil
+
+    { flat_map }
 
 let monad_IO: Monad IO = {
-    (>>=) = io_bind
+    flat_map = flip io_bind
 }
 
 let make_Monad m app =
-    let { (>>=) } = m
+    let { flat_map } = m
     // let { pure } = app // fails to typecheck on usage! :s
     let { id } = category_Function
 
+    let (=<<) : (a -> m b) -> m a -> m b = flat_map
+    let (>>=) : m a -> (a -> m b) -> m b = flip flat_map
     let (>>) l r : m a -> m b -> m b = l >>= \_ -> r
     let join mm : m (m a) -> m a = mm >>= id
     let lift2 f lm rm = lm >>= \l -> rm >>= \r -> f l r
@@ -439,49 +469,23 @@ let make_Monad m app =
             | Cons y ys -> f y >> forM_ ys f
             | Nil -> app.pure ()
 
-    { (>>=), (>>), join, lift2, forM_ }
+    { flat_map, (=<<), (>>=), (>>), join, lift2, forM_ }
 
 let applicative_IO: Applicative IO =
-    let { (>>=) } = monad_IO
+    let { flat_map } = monad_IO
 
     let pure = io_pure
-    let (<*>) f x = f >>= (\g -> x >>= (\y -> pure (g y)))
+    let (<*>) f x = flat_map (\g -> flat_map (\y -> pure (g y)) x) f
 
     { (<*>), pure }
 
 let functor_IO: Functor IO =
     let { pure } = applicative_IO
-    let { (>>=) } = monad_IO
+    let { (>>=) } = make_Monad monad_IO applicative_IO
 
-    let map f m1 = m1 >>= (\x -> pure (f x))
+    let map f m1 = m1 >>= \x -> pure (f x)
 
     { map }
-
-/// The identity function, where `id x == x`
-let id : a -> a =
-    category_Function.id
-
-/// const `x` creates a function which always returns `x`
-let const : a -> b -> a =
-    applicative_Function.pure
-
-/// flip `f` takes creates a new function which takes its two arguments in reverse order
-let flip f : (a -> b -> c) -> b -> a -> c =
-    \x y -> f y x
-
-/// Backward function application, where `f <| x == f x`
-let (<|) f x : (a -> b) -> a -> b = f x
-
-/// Forward function application, where `x |> f == f x`
-let (|>) x f : a -> (a -> b) -> b = f x
-
-/// Right-to-left function composition
-let (<<) : (b -> c) -> (a -> b) -> a -> c =
-    (make_Category category_Function).(<<)
-
-/// Left-to-right function composition
-let (>>) : (a -> b) -> (b -> c) -> a -> c =
-    (make_Category category_Function).(>>)
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = {

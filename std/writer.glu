@@ -23,11 +23,11 @@ let make_Applicative w: Monoid w -> Applicative (Writer w) =
 let make_Monad w: Monoid w -> Monad (Writer w) =
     let { (<>) } = w
 
-    let (>>=) m f : Writer w a -> (a -> Writer w b) -> Writer w b =
+    let flat_map f m : (a -> Writer w b) -> Writer w a -> Writer w b =
         let { value, writer } = f m.value
         { value, writer = m.writer <> writer }
 
-    { (>>=) }
+    { flat_map }
 
 let tell w: w -> Writer w () =
     { value = (), writer = w }
