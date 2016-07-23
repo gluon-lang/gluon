@@ -160,8 +160,6 @@ pub enum Type<Id, T = ASTType<Id>> {
     /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
     /// etc and are what unbound type variables are eventually made into.
     Generic(Generic<Id>),
-    /// A function type `<type> -> <type>`
-    Function(Vec<T>, T),
     /// A builtin type
     Builtin(BuiltinType),
     /// An array type `Array T`
@@ -495,10 +493,13 @@ impl<Id, T> Type<Id, T>
         })
     }
 
-    pub fn function(args: Vec<T>, ret: T) -> T {
+    pub fn function(args: Vec<T>, ret: T) -> T where T: Clone {
+        let function: T = Type::builtin(BuiltinType::Function);
         args.into_iter()
             .rev()
-            .fold(ret, |body, arg| T::from(Type::Function(vec![arg], body)))
+            .fold(ret, |body, arg| {
+                Type::app(function.clone(), vec![arg, body])
+            })
     }
 
     pub fn generic(typ: Generic<Id>) -> T {
@@ -553,6 +554,17 @@ impl<Id, T> Type<Id, T>
 impl<Id, T> Type<Id, T>
     where T: Deref<Target = Type<Id, T>>
 {
+    pub fn as_function(&self) -> Option<(&T, &T)> {
+        if let Type::App(ref app, ref args) = *self {
+            if args.len() == 2 {
+                if let Type::Builtin(BuiltinType::Function) = **app {
+                    return Some((&args[0], &args[1]));
+                }
+            }
+        }
+        None
+    }
+
     pub fn as_alias_symbol(&self) -> Option<&Id> {
         match *self {
             Type::App(ref id, _) => {
@@ -609,25 +621,14 @@ impl<'a, Id, T> Iterator for ArgIterator<'a, T>
 {
     type Item = &'a T;
     fn next(&mut self) -> Option<&'a T> {
-        match **self.typ {
-            Type::Function(ref arg, ref return_type) => {
-                self.typ = return_type;
-                Some(&arg[0])
-            }
-            _ => None,
-        }
+        self.typ.as_function().map(|(arg, ret)| {
+            self.typ = ret;
+            arg
+        })
     }
 }
 
 impl<Id> ASTType<Id> {
-    /// Returns the type which this type would return if it was fully applied.
-    pub fn return_type(&self) -> &ASTType<Id> {
-        match **self {
-            Type::Function(_, ref return_type) => return_type.return_type(),
-            _ => self,
-        }
-    }
-
     /// Returns the lowest level which this type contains. The level informs from where type
     /// variables where created.
     pub fn level(&self) -> u32 {
@@ -730,31 +731,29 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
         match *self.typ {
             Type::Variable(ref var) => write!(f, "{}", var),
             Type::Generic(ref gen) => write!(f, "{}", self.env.string(&gen.id)),
-            Type::Function(ref args, ref result) => {
-                if p >= Prec::Function {
-                    write!(f,
-                           "({} -> {})",
-                           top(self.env, &*args[0]),
-                           top(self.env, &**result))
-                } else {
-                    write!(f,
-                           "{} -> {}",
-                           dt(self.env, Prec::Function, &args[0]),
-                           top(self.env, &**result))
-                }
-            }
             Type::App(ref t, ref args) => {
-                if p >= Prec::Constructor {
-                    try!(write!(f, "("));
+                match self.typ.as_function() {
+                    Some((arg, ret)) => {
+                        if p >= Prec::Function {
+                            write!(f, "({} -> {})", top(self.env, arg), top(self.env, ret))
+                        } else {
+                            write!(f, "{} -> {}", dt(self.env, Prec::Function, arg), top(self.env, ret))
+                        }
+                    }
+                    None => {
+                        if p >= Prec::Constructor {
+                            try!(write!(f, "("));
+                        }
+                        try!(write!(f, "{}", dt(self.env, Prec::Top, t)));
+                        for arg in args {
+                            try!(write!(f, " {}", dt(self.env, Prec::Constructor, arg)));
+                        }
+                        if p >= Prec::Constructor {
+                            try!(write!(f, ")"));
+                        }
+                        Ok(())
+                    }
                 }
-                try!(write!(f, "{}", dt(self.env, Prec::Top, t)));
-                for arg in args {
-                    try!(write!(f, " {}", dt(self.env, Prec::Constructor, arg)));
-                }
-                if p >= Prec::Constructor {
-                    try!(write!(f, ")"));
-                }
-                Ok(())
             }
             Type::Variants(ref variants) => {
                 if p >= Prec::Constructor {
@@ -862,12 +861,6 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
         Type::Array(ref inner) => {
             walk_type(inner, f);
         }
-        Type::Function(ref args, ref ret) => {
-            for a in args {
-                walk_type(a, f);
-            }
-            walk_type(ret, f);
-        }
         Type::Record { ref types, ref fields } => {
             for field in types {
                 if let Some(ref typ) = field.typ.typ {
@@ -944,15 +937,6 @@ pub fn walk_move_type_opt<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
             merge(id, walk_move_type_opt(id, f), args, new_args, Type::app)
         }
         Type::Array(ref inner) => walk_move_type_opt(&**inner, f).map(Type::array),
-        Type::Function(ref args, ref ret) => {
-            let new_args = walk_move_types(args.iter(), |t| walk_move_type_opt(t, f));
-            merge(args,
-                  new_args,
-                  ret,
-                  walk_move_type_opt(ret, f),
-                  Type::Function)
-                .map(From::from)
-        }
         Type::Record { ref types, ref fields } => {
             let new_types = None;
             let new_fields = walk_move_types(fields.iter(), |field| {
