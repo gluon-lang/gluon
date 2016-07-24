@@ -15,6 +15,8 @@ pub type Error<I> = UnifyError<ASTType<I>, TypeError<I>>;
 
 pub struct State<'a> {
     env: &'a (TypeEnv + 'a),
+    /// A stack of which aliases are currently expanded. Used to determine when an alias is
+    /// recursively expanded in which case the unification fails.
     reduced_aliases: Vec<Symbol>,
 }
 
@@ -194,7 +196,8 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
 }
 
 /// Attempt to unify two alias types.
-/// To find a possible successful unification we go through
+/// To find a possible successful unification we walk through the alias expansions of `l` to find
+/// an expansion which has `r_id` in the spine of the expanded type
 fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                          l: TcType,
                          r_id: &SymbolRef)
@@ -259,6 +262,17 @@ fn find_alias_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     Ok(None)
 }
 
+/// Attempt to find a common alias between two types. If the function is successful it returns
+/// either the same types that were passed in or two types which have the same alias in their spine
+///
+/// Example:
+/// ```
+/// type Test a = | Test a Int
+/// type Test2 = Test String
+///
+/// // try_zip_alias(Test2, Test 0) => Ok((Test String, Test 0))
+/// // try_zip_alias(Float, Test 0) => Ok((Float, Test 0))
+/// ```
 fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                             expected: &TcType,
                             actual: &TcType,
@@ -289,6 +303,8 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     Ok((l, r))
 }
 
+/// As a last ditch effort attempt to unify the types again by expanding the aliases (if the types
+/// are alias types).
 fn try_with_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                              expected: &TcType,
                              actual: &TcType)

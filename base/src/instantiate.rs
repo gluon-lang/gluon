@@ -75,6 +75,7 @@ pub fn remove_alias(env: &TypeEnv, typ: TcType) -> TcType {
     maybe_remove_alias(env, &typ).unwrap_or(None).unwrap_or(typ)
 }
 
+/// Expand `typ` if it is an alias that can be expanded and return the expanded type. Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>, Error> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
