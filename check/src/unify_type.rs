@@ -221,10 +221,10 @@ fn find_alias_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
 {
     let mut did_alias = false;
     loop {
-        l = match l.as_alias() {
-            Some((l_id, _)) => {
-                if let Some(alias_sym) = l.as_alias_symbol() {
-                    if unifier.state.reduced_aliases.iter().any(|id| id == alias_sym) {
+        l = match l.name() {
+            Some(l_id) => {
+                if let Some((l_id, _)) = l.as_alias() {
+                    if unifier.state.reduced_aliases.iter().any(|id| id == l_id) {
                         return Err(());
                     }
                 }
@@ -243,7 +243,7 @@ fn find_alias_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
                     Ok(Some(typ)) => {
                         unifier.state
                             .reduced_aliases
-                            .push(l.as_alias_symbol().expect("Alias").clone());
+                            .push(l.as_alias().expect("Alias").0.clone());
                         typ
                     }
                     Ok(None) => break,
@@ -267,7 +267,7 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     where U: Unifier<State<'a>, TcType>
 {
     let mut l = expected.clone();
-    if let Some((r_id, _)) = actual.as_alias() {
+    if let Some(r_id) = actual.name() {
         l = match try!(find_alias(unifier, l.clone(), r_id)) {
             None => l,
             Some(typ) => {
@@ -277,7 +277,7 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
         };
     }
     let mut r = actual.clone();
-    if let Some((l_id, _)) = expected.as_alias() {
+    if let Some(l_id) = expected.name() {
         r = match try!(find_alias(unifier, r.clone(), l_id)) {
             None => r,
             Some(typ) => {

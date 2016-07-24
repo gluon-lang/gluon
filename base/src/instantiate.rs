@@ -37,7 +37,7 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
                               env: &TypeEnv,
                               typ: &TcType)
                               -> Result<Option<TcType>, Error<Symbol>> {
-    if let Some(alias_id) = typ.as_alias_symbol() {
+    if let Some((alias_id, _)) = typ.as_alias() {
         if reduced_aliases.iter().any(|name| name == alias_id) {
             return Err(Error::SelfRecursive(alias_id.clone()));
         }
@@ -48,11 +48,11 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
         None => return Ok(None),
     };
     loop {
-        if let Some(alias_id) = typ.as_alias_symbol().cloned() {
-            if reduced_aliases.iter().any(|name| *name == alias_id) {
+        if let Some((alias_id, _)) = typ.as_alias() {
+            if reduced_aliases.iter().any(|name| name == alias_id) {
                 return Err(Error::SelfRecursive(alias_id.clone()));
             }
-            reduced_aliases.push(alias_id);
+            reduced_aliases.push(alias_id.clone());
         }
         match try!(maybe_remove_alias(env, &typ)) {
             Some(new) => typ = new,
@@ -77,9 +77,9 @@ pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>,
         }
         _ => None,
     };
-    let (id, args) = match (typ.as_alias(), typ.as_alias_symbol()) {
-        (Some((_, args)), Some(id)) => (id, args),
-        _ => return Ok(None),
+    let (id, args) = match typ.as_alias() {
+        Some(x) => x,
+        None => return Ok(None),
     };
     let alias = match maybe_alias {
         Some(alias) => alias,

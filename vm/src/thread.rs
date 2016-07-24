@@ -618,7 +618,7 @@ impl ThreadInternal for Thread {
             let is_io = {
                 let env = self.get_env();
                 env.find_type_info("IO")
-                    .map(|alias| *id == *alias.name)
+                    .map(|alias| *id == alias.name)
                     .unwrap_or(false)
             };
             if is_io {
