@@ -326,7 +326,7 @@ io.print_int 123
 
 test_expr!{ no_io_eval,
 r#"
-let x = io_bind (io.print_int 1) (\x -> error "NOOOOOOOO")
+let x = io_flat_map (\x -> error "NOOOOOOOO") (io.print_int 1)
 in { x }
 "#
 }
@@ -638,7 +638,7 @@ fn run_expr_int() {
 }
 
 test_expr!{ io run_expr_io,
-r#"io_bind (io.run_expr "io.print_int 123") (\x -> io_return 100) "#,
+r#"io_flat_map (\x -> io_pure 100) (io.run_expr "io.print_int 123") "#,
 100i32
 }
 

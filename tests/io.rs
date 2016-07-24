@@ -11,14 +11,15 @@ fn read_file() {
     let text = r#"
         let prelude = import "std/prelude.glu"
         let { assert } = import "std/test.glu"
-        let { (>>=), return } = prelude.monad_IO
+        let { pure } = prelude.applicative_IO
+        let { (>>=) } = prelude.make_Monad prelude.monad_IO
 
         io.open_file "Cargo.toml" >>= \file ->
             io.read_file file 9 >>= \bytes ->
             assert (array.length bytes == 9)
             assert (array.index bytes 0 #Byte== 91b) // [
             assert (array.index bytes 1 #Byte== 112b) // p
-            return (array.index bytes 8)
+            pure (array.index bytes 8)
         "#;
     let result = Compiler::new()
         .run_io_expr::<u8>(&thread, "<top>", text);

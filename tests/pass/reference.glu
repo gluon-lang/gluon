@@ -1,9 +1,6 @@
-let { run, monad, assert, assert_ieq, assert_feq } = import "std/test.glu"
+let { assert } = import "std/test.glu"
 let prelude = import "std/prelude.glu"
-let { Num, Eq } = prelude
 let { (==) } = prelude.eq_Int
-let { (>>=), return, (>>), join, map = fmap, lift2, forM_ }
-        = prelude.make_Monad monad
 
 let ri = ref 0
 assert (0 == load ri)

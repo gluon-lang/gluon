@@ -197,14 +197,19 @@ pub fn load(vm: &Thread) -> Result<()> {
 
     try!(vm.register_type::<GluonFile>("File", &[]));
 
-    // io_bind m f (): IO a -> (a -> IO b) -> IO b
+    // io_flat_map f m : (a -> IO b) -> IO a -> IO b
     //     = f (m ())
-    let io_bind = vec![Pop(1), Push(0), PushInt(0), Call(1), PushInt(0), TailCall(2)];
-    let io_bind_type = <fn (IO<A>, fn (A) -> IO<B>) -> IO<B> as VMType>::make_type(vm);
-    vm.add_bytecode("io_bind", io_bind_type, 3, io_bind);
+    let io_flat_map = vec![
+                        // [f, m, ()]       Initial stack
+        Call(1),        // [f, m_ret]       Call m ()
+        PushInt(0),     // [f, m_ret, ()]   Add a dummy argument ()
+        TailCall(2),    // [f_ret]          Call f m_ret ()
+    ];
+    let io_flat_map_type = <fn (fn (A) -> IO<B>, IO<A>) -> IO<B> as VMType>::make_type(vm);
+    vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map);
 
 
-    vm.add_bytecode("io_return",
+    vm.add_bytecode("io_pure",
                     <fn(A) -> IO<A> as VMType>::make_type(vm),
                     2,
                     vec![Pop(1)]);
