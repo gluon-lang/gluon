@@ -257,7 +257,7 @@ impl<'a> Typecheck<'a> {
         let subs = &mut self.subs;
         let inst = &mut self.inst;
         self.environment
-            .find_type(&id)
+            .find_type(id)
             .ok_or_else(|| UndefinedVariable(id.clone()))
             .map(|typ| {
                 let typ = subs.set_type(typ.clone());
@@ -504,26 +504,12 @@ impl<'a> Typecheck<'a> {
                 let result = if op_name.starts_with('#') {
                     // Handle primitives
                     let arg_type = try!(self.unify(&lhs_type, rhs_type));
-                    let offset;
-                    let prim_type: TcType = if op_name[1..].starts_with("Int") {
-                        offset = "Int".len();
-                        Type::int()
-                    } else if op_name[1..].starts_with("Float") {
-                        offset = "Float".len();
-                        Type::float()
-                    } else if op_name[1..].starts_with("Char") {
-                        offset = "Char".len();
-                        Type::char()
-                    } else if op_name[1..].starts_with("Byte") {
-                        offset = "Byte".len();
-                        Type::byte()
-                    } else {
-                        panic!("ICE: Unknown primitive type")
-                    };
+                    let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
+                    let prim_type = primitive_type(op_type);
                     op.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
                                             prim_type.clone());
                     let typ = try!(self.unify(&prim_type, arg_type));
-                    match &op_name[1 + offset..] {
+                    match &op_name[1 + op_type.len()..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
                         "==" | "<" => Ok(self.bool()),
                         _ => Err(UndefinedVariable(op.name.clone())),
@@ -574,74 +560,7 @@ impl<'a> Typecheck<'a> {
                     .map(TailCall::Type)
             }
             ast::Expr::Let(ref mut bindings, _) => {
-                self.enter_scope();
-                let level = self.subs.var_id();
-                let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
-                // When the decfinitions are allowed to be mutually recursive
-                if is_recursive {
-                    for bind in bindings.iter_mut() {
-                        let mut typ = self.subs.new_var();
-                        if let Some(ref mut type_decl) = bind.typ {
-                            *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                            try!(self.kindcheck(type_decl, &mut []));
-                            let decl = self.instantiate(type_decl);
-                            typ = self.unify_span(bind.name.span(), &decl, typ);
-                        }
-                        self.typecheck_pattern(&mut bind.name, typ);
-                        if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
-                            if let ast::Pattern::Identifier(ref name) = bind.name.value {
-                                lambda.id.name = name.name.clone();
-                            }
-                        }
-                    }
-                }
-                let mut types = Vec::new();
-                for bind in bindings.iter_mut() {
-                    // Functions which are declared as `let f x = ...` are allowed to be self
-                    // recursive
-                    let mut typ = if bind.arguments.is_empty() {
-                        if let Some(ref mut type_decl) = bind.typ {
-                            *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                            try!(self.kindcheck(type_decl, &mut []));
-                        }
-                        self.typecheck(&mut bind.expression)
-                    } else {
-                        let function_type = match bind.typ {
-                            Some(ref typ) => self.instantiate(typ),
-                            None => self.subs.new_var(),
-                        };
-                        self.typecheck_lambda(function_type,
-                                              &mut bind.arguments,
-                                              &mut bind.expression)
-                    };
-                    debug!("let {:?} : {}",
-                           bind.name,
-                           types::display_type(&self.symbols, &typ));
-                    if let Some(ref type_decl) = bind.typ {
-                        typ = self.unify_span(bind.name.span(), type_decl, typ);
-                    }
-                    if !is_recursive {
-                        // Merge the type declaration and the actual type
-                        self.generalize_variables(level, &mut bind.expression);
-                        self.typecheck_pattern(&mut bind.name, typ);
-                    } else {
-                        types.push(typ);
-                    }
-                }
-                if is_recursive {
-                    for (typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
-                        // Merge the variable we bound to the name and the type inferred
-                        // in the expression
-                        self.unify_span(bind.name.span(), &bind.type_of().clone(), typ);
-                    }
-                }
-                // Once all variables inside the let has been unified we can quantify them
-                debug!("Generalize {}", level);
-                for bind in bindings {
-                    self.generalize_variables(level, &mut bind.expression);
-                    self.finish_binding(level, bind);
-                }
-                debug!("Typecheck `in`");
+                try!(self.typecheck_bindings(bindings));
                 Ok(TailCall::TailCall)
             }
             ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
@@ -695,77 +614,7 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(typ))
             }
             ast::Expr::Type(ref mut bindings, ref expr) => {
-                self.enter_scope();
-                // Rename the types so they get a name which is distinct from types from other
-                // modules
-                for bind in bindings.iter_mut() {
-                    let s = String::from(self.symbols.string(&bind.alias.name));
-                    let new = self.symbols.scoped_symbol(&s);
-                    self.original_symbols.insert(bind.alias.name.clone(), new.clone());
-                    // Rename the aliase's name to its global name
-                    Alias::make_mut(&mut bind.alias).name = new;
-                }
-                for bind in bindings.iter_mut() {
-                    let typ = Alias::make_mut(&mut bind.alias)
-                        .typ
-                        .as_mut()
-                        .expect("Expected binding to have an aliased type");
-                    *typ = self.refresh_symbols_in_type(typ.clone());
-                }
-                {
-                    let subs = Substitution::new();
-                    let mut check = KindCheck::new(&self.environment, &self.symbols, subs);
-                    // Setup kind variables for all type variables and insert the types in the
-                    // this type expression into the kindcheck environment
-                    for bind in bindings.iter_mut() {
-                        // Create the kind for this binding
-                        // Test a b: 2 -> 1 -> Type
-                        // and bind the same variables to the arguments of the type binding
-                        // ('a' and 'b' in the example)
-                        let mut id_kind = check.type_kind();
-                        let alias = Alias::make_mut(&mut bind.alias);
-                        for gen in alias.args.iter_mut().rev() {
-                            gen.kind = check.subs.new_var();
-                            id_kind = Kind::function(gen.kind.clone(), id_kind);
-                        }
-                        check.add_local(alias.name.clone(), id_kind);
-                    }
-
-                    // Kindcheck all the types in the environment
-                    for bind in bindings.iter_mut() {
-                        check.set_variables(&bind.alias.args);
-                        let typ = Alias::make_mut(&mut bind.alias)
-                            .typ
-                            .as_mut()
-                            .expect("Expected binding to have an aliased type");
-                        try!(check.kindcheck_type(typ));
-                    }
-
-                    // All kinds are now inferred so replace the kinds store in the AST
-                    for bind in bindings.iter_mut() {
-                        let alias = Alias::make_mut(&mut bind.alias);
-                        if let Some(ref mut typ) = alias.typ {
-                            *typ = check.finalize_type(typ.clone());
-                        }
-                        for arg in &mut alias.args {
-                            *arg = check.finalize_generic(&arg);
-                        }
-                    }
-                }
-
-                // Finally insert the declared types into the global scope
-                for bind in bindings {
-                    let args = &bind.alias.args;
-                    debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
-                    if self.environment.stack_types.get(&bind.name).is_some() {
-                        self.errors.error(ast::Spanned {
-                            span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
-                            value: DuplicateTypeDefinition(bind.name.clone()),
-                        });
-                    } else {
-                        self.stack_type(bind.name.clone(), &bind.alias);
-                    }
-                }
+                try!(self.typecheck_type_bindings(bindings, expr));
                 Ok(TailCall::TailCall)
             }
             ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
@@ -981,6 +830,154 @@ impl<'a> Typecheck<'a> {
         }
     }
 
+    fn typecheck_bindings(&mut self, bindings: &mut [ast::Binding<TcIdent>]) -> TcResult<()> {
+        self.enter_scope();
+        let level = self.subs.var_id();
+        let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
+        // When the decfinitions are allowed to be mutually recursive
+        if is_recursive {
+            for bind in bindings.iter_mut() {
+                let mut typ = self.subs.new_var();
+                if let Some(ref mut type_decl) = bind.typ {
+                    *type_decl = self.refresh_symbols_in_type(type_decl.clone());
+                    try!(self.kindcheck(type_decl, &mut []));
+                    let decl = self.instantiate(type_decl);
+                    typ = self.unify_span(bind.name.span(), &decl, typ);
+                }
+                self.typecheck_pattern(&mut bind.name, typ);
+                if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
+                    if let ast::Pattern::Identifier(ref name) = bind.name.value {
+                        lambda.id.name = name.name.clone();
+                    }
+                }
+            }
+        }
+        let mut types = Vec::new();
+        for bind in bindings.iter_mut() {
+            // Functions which are declared as `let f x = ...` are allowed to be self
+            // recursive
+            let mut typ = if bind.arguments.is_empty() {
+                if let Some(ref mut type_decl) = bind.typ {
+                    *type_decl = self.refresh_symbols_in_type(type_decl.clone());
+                    try!(self.kindcheck(type_decl, &mut []));
+                }
+                self.typecheck(&mut bind.expression)
+            } else {
+                let function_type = match bind.typ {
+                    Some(ref typ) => self.instantiate(typ),
+                    None => self.subs.new_var(),
+                };
+                self.typecheck_lambda(function_type, &mut bind.arguments, &mut bind.expression)
+            };
+            debug!("let {:?} : {}",
+                   bind.name,
+                   types::display_type(&self.symbols, &typ));
+            if let Some(ref type_decl) = bind.typ {
+                typ = self.unify_span(bind.name.span(), type_decl, typ);
+            }
+            if !is_recursive {
+                // Merge the type declaration and the actual type
+                self.generalize_variables(level, &mut bind.expression);
+                self.typecheck_pattern(&mut bind.name, typ);
+            } else {
+                types.push(typ);
+            }
+        }
+        if is_recursive {
+            for (typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
+                // Merge the variable we bound to the name and the type inferred
+                // in the expression
+                self.unify_span(bind.name.span(), &bind.type_of().clone(), typ);
+            }
+        }
+        // Once all variables inside the let has been unified we can quantify them
+        debug!("Generalize {}", level);
+        for bind in bindings {
+            self.generalize_variables(level, &mut bind.expression);
+            self.finish_binding(level, bind);
+        }
+        debug!("Typecheck `in`");
+        Ok(())
+    }
+
+    fn typecheck_type_bindings(&mut self,
+                               bindings: &mut [ast::TypeBinding<Symbol>],
+                               expr: &ast::LExpr<TcIdent>)
+                               -> TcResult<()> {
+                self.enter_scope();
+                // Rename the types so they get a name which is distinct from types from other
+                // modules
+                for bind in bindings.iter_mut() {
+                    let s = String::from(self.symbols.string(&bind.alias.name));
+                    let new = self.symbols.scoped_symbol(&s);
+                    self.original_symbols.insert(bind.alias.name.clone(), new.clone());
+                    // Rename the aliase's name to its global name
+                    Alias::make_mut(&mut bind.alias).name = new;
+                }
+                for bind in bindings.iter_mut() {
+                    let typ = Alias::make_mut(&mut bind.alias)
+                        .typ
+                        .as_mut()
+                        .expect("Expected binding to have an aliased type");
+                    *typ = self.refresh_symbols_in_type(typ.clone());
+                }
+                {
+                    let subs = Substitution::new();
+                    let mut check = KindCheck::new(&self.environment, &self.symbols, subs);
+                    // Setup kind variables for all type variables and insert the types in the
+                    // this type expression into the kindcheck environment
+                    for bind in bindings.iter_mut() {
+                        // Create the kind for this binding
+                        // Test a b: 2 -> 1 -> Type
+                        // and bind the same variables to the arguments of the type binding
+                        // ('a' and 'b' in the example)
+                        let mut id_kind = check.type_kind();
+                        let alias = Alias::make_mut(&mut bind.alias);
+                        for gen in alias.args.iter_mut().rev() {
+                            gen.kind = check.subs.new_var();
+                            id_kind = Kind::function(gen.kind.clone(), id_kind);
+                        }
+                        check.add_local(alias.name.clone(), id_kind);
+                    }
+
+                    // Kindcheck all the types in the environment
+                    for bind in bindings.iter_mut() {
+                        check.set_variables(&bind.alias.args);
+                        let typ = Alias::make_mut(&mut bind.alias)
+                            .typ
+                            .as_mut()
+                            .expect("Expected binding to have an aliased type");
+                        try!(check.kindcheck_type(typ));
+                    }
+
+                    // All kinds are now inferred so replace the kinds store in the AST
+                    for bind in bindings.iter_mut() {
+                        let alias = Alias::make_mut(&mut bind.alias);
+                        if let Some(ref mut typ) = alias.typ {
+                            *typ = check.finalize_type(typ.clone());
+                        }
+                        for arg in &mut alias.args {
+                            *arg = check.finalize_generic(&arg);
+                        }
+                    }
+                }
+
+                // Finally insert the declared types into the global scope
+                for bind in bindings {
+                    let args = &bind.alias.args;
+                    debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
+                    if self.environment.stack_types.get(&bind.name).is_some() {
+                        self.errors.error(ast::Spanned {
+                            span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
+                            value: DuplicateTypeDefinition(bind.name.clone()),
+                        });
+                    } else {
+                        self.stack_type(bind.name.clone(), &bind.alias);
+                    }
+                }
+        Ok(())
+    }
+
     fn kindcheck(&self, typ: &mut TcType, args: &mut [Generic<Symbol>]) -> TcResult<()> {
         let subs = Substitution::new();
         let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
@@ -1037,7 +1034,7 @@ impl<'a> Typecheck<'a> {
             }
         }
         if let Some(typ) = typ {
-            *self.environment.stack.get_mut(&symbol).unwrap() = self.finish_type(level, typ);
+            *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, typ);
         }
     }
 
@@ -1047,7 +1044,7 @@ impl<'a> Typecheck<'a> {
             let vars = self.inst.named_variables.borrow();
             let max_var = vars.keys()
                 .fold("a",
-                      |max, current| ::std::cmp::max(max, self.symbols.string(&current)));
+                      |max, current| ::std::cmp::max(max, self.symbols.string(current)));
             String::from(max_var)
         };
         let mut i = 0;
@@ -1313,6 +1310,16 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
 
 fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: TcType) -> FunctionArgIter<'a, 'b> {
     FunctionArgIter { tc: tc, typ: typ }
+}
+
+fn primitive_type(op_type: &str) -> TcType {
+    match op_type {
+        "Int" => Type::int(),
+        "Float" => Type::float(),
+        "Char" => Type::char(),
+        "Byte" => Type::byte(),
+        _ => panic!("ICE: Unknown primitive type"),
+    }
 }
 
 /// Removes layers of `Type::App`.

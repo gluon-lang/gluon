@@ -115,7 +115,7 @@ impl<'a> KindCheck<'a> {
             })
             .or_else(|| self.info.find_kind(id))
             .map_or_else(|| {
-                let id_str = self.idents.string(&id);
+                let id_str = self.idents.string(id);
                 if id_str.chars().next().map_or(false, |c| c.is_uppercase()) {
                     Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
                 } else {

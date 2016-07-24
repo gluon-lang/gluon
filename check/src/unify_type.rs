@@ -58,7 +58,9 @@ impl<I> fmt::Display for TypeError<I>
             }
             TypeError::UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
             TypeError::SelfRecursive(ref id) => {
-                write!(f, "The use of self recursion in type `{}` could not be unified.", id)
+                write!(f,
+                       "The use of self recursion in type `{}` could not be unified.",
+                       id)
             }
         }
     }
