@@ -34,8 +34,8 @@ pub enum TypeError<I> {
     SelfRecursive(I),
 }
 
-impl<I> From<instantiate::Error<I>> for Error<I> {
-    fn from(error: instantiate::Error<I>) -> Error<I> {
+impl From<instantiate::Error> for Error<Symbol> {
+    fn from(error: instantiate::Error) -> Error<Symbol> {
         UnifyError::Other(match error {
             instantiate::Error::UndefinedType(id) => TypeError::UndefinedType(id),
             instantiate::Error::SelfRecursive(id) => TypeError::SelfRecursive(id),

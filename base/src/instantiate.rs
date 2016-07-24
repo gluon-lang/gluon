@@ -8,9 +8,18 @@ use types;
 use types::{AliasData, BuiltinType, Type, Generic, TcType, TypeEnv, merge};
 use symbol::Symbol;
 
-pub enum Error<I> {
-    SelfRecursive(I),
-    UndefinedType(I),
+quick_error! {
+    #[derive(Debug)]
+    pub enum Error {
+        SelfRecursive(id: Symbol) {
+            description("self recursive")
+            display("The use of self recursion in type `{}` could not be unified.", id)
+        }
+        UndefinedType(id: Symbol) {
+            description("undefined type")
+            display("Type `{}` does not exist.", id)
+        }
+    }
 }
 
 /// Removes type aliases from `typ` until it is an actual type
@@ -36,7 +45,7 @@ pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t TcType) -> Cow<'t, TcType>
 pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
                               env: &TypeEnv,
                               typ: &TcType)
-                              -> Result<Option<TcType>, Error<Symbol>> {
+                              -> Result<Option<TcType>, Error> {
     if let Some((alias_id, _)) = typ.as_alias() {
         if reduced_aliases.iter().any(|name| name == alias_id) {
             return Err(Error::SelfRecursive(alias_id.clone()));
@@ -66,7 +75,7 @@ pub fn remove_alias(env: &TypeEnv, typ: TcType) -> TcType {
     maybe_remove_alias(env, &typ).unwrap_or(None).unwrap_or(typ)
 }
 
-pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>, Error<Symbol>> {
+pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>, Error> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
         Type::App(ref alias, ref args) => {
