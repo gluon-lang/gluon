@@ -540,11 +540,11 @@ impl<'a> Typecheck<'a> {
                             op.typ = try!(self.find(op.id()));
                             let func_type = Type::function(vec![lhs_type, rhs_type],
                                                            self.subs.new_var());
-                            let ret =
-                                try!(self.unify(&op.typ, func_type)).as_function()
-                                    .and_then(|(_, ret)| ret.as_function())
-                                    .map(|(_, ret)| ret.clone())
-                                    .expect("ICE: unify binop");
+                            let ret = try!(self.unify(&op.typ, func_type))
+                                .as_function()
+                                .and_then(|(_, ret)| ret.as_function())
+                                .map(|(_, ret)| ret.clone())
+                                .expect("ICE: unify binop");
 
                             Ok(ret)
                         }
@@ -978,9 +978,7 @@ impl<'a> Typecheck<'a> {
                 self.stack_var(args[0].id().clone(), arg.clone());
                 self.typecheck_pattern_rec(&args[1..], ret.clone())
             }
-            None => {
-                Err(PatternError(typ.clone(), args.len()))
-            },
+            None => Err(PatternError(typ.clone(), args.len())),
         }
     }
 
@@ -1367,4 +1365,3 @@ pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
         Some(Type::app(current.clone(), args))
     }
 }
-

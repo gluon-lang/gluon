@@ -146,12 +146,8 @@ impl<'a> KindCheck<'a> {
 
     fn builtin_kind(&self, typ: BuiltinType) -> RcKind {
         match typ {
-            BuiltinType::String |
-            BuiltinType::Byte |
-            BuiltinType::Char |
-            BuiltinType::Int |
-            BuiltinType::Float |
-            BuiltinType::Unit => self.type_kind(),
+            BuiltinType::String | BuiltinType::Byte | BuiltinType::Char | BuiltinType::Int |
+            BuiltinType::Float | BuiltinType::Unit => self.type_kind(),
             BuiltinType::Array => self.function1_kind(),
             BuiltinType::Function => self.function2_kind(),
         }
