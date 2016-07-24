@@ -1,7 +1,7 @@
 # gluon
 (Previously called embed_lang)
 
-[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon)
+[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon) [![Gitter](https://badges.gitter.im/Marwes/gluon.svg)](https://gitter.im/Marwes/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
 
