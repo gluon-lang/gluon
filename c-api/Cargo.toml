@@ -11,7 +11,7 @@ version = "0.1.3"
 path = ".."
 
 [dependencies.libc]
-version = "0.2.0"
+version = "0.2.14"
 
 [features]
 test = ["gluon/test"]

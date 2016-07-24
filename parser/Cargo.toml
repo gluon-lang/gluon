@@ -24,7 +24,7 @@ path = "../base"
 version = "0.1.2"
 
 [dependencies.env_logger]
-version = "0.3.3"
+version = "0.3.4"
 optional = true
 
 [features]
