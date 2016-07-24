@@ -90,10 +90,9 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                     return Ok(());
                 }
                 for error in &errors[..errors.len() - 1] {
-                    try!(::unify_type::fmt_error(error, f));
-                    try!(writeln!(f, ""));
+                    try!(writeln!(f, "{}", error));
                 }
-                ::unify_type::fmt_error(errors.last().unwrap(), f)
+                write!(f, "{}", errors.last().unwrap())
             }
             PatternError(ref typ, expected_len) => {
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
