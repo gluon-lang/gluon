@@ -6,12 +6,9 @@ authors = ["Markus Westerlind <marwes91@gmail.com>"]
 [lib]
 crate-type = ["staticlib"]
 
-[dependencies.gluon]
-version = "0.1.3"
-path = ".."
-
-[dependencies.libc]
-version = "0.2.14"
+[dependencies]
+libc = "0.2.14"
+gluon = { version = "0.1.3", path = ".." }
 
 [features]
 test = ["gluon/test"]
