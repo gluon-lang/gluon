@@ -36,8 +36,8 @@ If, on the other hand, you are familiar with functional languages you will be ri
 
 ### Identifiers and Literals
 
-The simplest syntactical elements in gluon are identifiers and literals and none of them should be especially 
-surprising if you are experienced in programming. Identifiers are a sequence of alphanumeric characters including 
+The simplest syntactical elements in gluon are identifiers and literals and none of them should be especially
+surprising if you are experienced in programming. Identifiers are a sequence of alphanumeric characters including
 underscore ('_') which has to start with a letter or an underscore. Literals come in four different forms
 integer, float, string and character literals.
 
@@ -66,7 +66,7 @@ f x "argument" 3
 ```
 
 Being a functional language functions are everywhere and because of this calling functions have an intentional minimalistic
-syntax where there is no need to enclose the arguments in a parenthesized list of arguments. Instead arguments are just 
+syntax where there is no need to enclose the arguments in a parenthesized list of arguments. Instead arguments are just
 separated by whitespace.
 
 Another way of calling a function is through infix notation since gluon implements all operators as just functions.
@@ -196,7 +196,7 @@ gluon allows new types to be defined through the `type` expression which just li
 ```f#,rust
 // type <identifier> <identifier>* = <type> in <expression>
 type MyOption a = | None | Some a
-let divide x y: Int -> Int -> MyOption Int =
+let divide x y : Int -> Int -> MyOption Int =
     if (x / y) * y == x then
         Some (x / y)
     else
@@ -210,9 +210,9 @@ An important difference from many languages however is that `type` only defines 
 type Type1 = { x: Int }
 type Type2 = Type1
 type Type3 = { x: Int }
-let r1: Type1 = { x = 0 }
-let r2: Type2 = r1
-let r3: Type3 = r2
+let r1 : Type1 = { x = 0 }
+let r2 : Type2 = r1
+let r3 : Type3 = r2
 in r1
 ```
 
@@ -246,7 +246,7 @@ Records are gluon's main way of creating associating related data and they shoul
 #### Enumeration type
 
 ```
-( | <identifier> (<type>)* )* 
+( | <identifier> (<type>)* )*
 
 | Err e | Ok t
 ```
@@ -337,7 +337,7 @@ let twice f x = f (f x)
 //main.glu
 let { twice, Named } = import "module.glu"
 let addTwice = twice (\x -> x + 1)
-let namedFloat: Named Float = { name = "pi", value = 3.14 }
+let namedFloat : Named Float = { name = "pi", value = 3.14 }
 addTwice 10
 ```
 

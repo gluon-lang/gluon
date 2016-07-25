@@ -14,7 +14,7 @@ use gluon::{Compiler, new_vm};
 use gluon::compiler_pipeline::*;
 
 #[bench]
-fn prelude(b: &mut ::test::Bencher) {
+fn typecheck_prelude(b: &mut ::test::Bencher) {
     let vm = new_vm();
     let mut compiler = Compiler::new();
     let MacroValue(expr) = {

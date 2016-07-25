@@ -10,7 +10,7 @@ use base::types::{self, RcKind, Type, Generic, Kind};
 use base::error::Errors;
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType};
-use base::instantiate::{self, Instantiator, unroll_app};
+use base::instantiate::{self, Instantiator};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
 use unify::Error as UnifyError;
@@ -1317,3 +1317,54 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
 fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: TcType) -> FunctionArgIter<'a, 'b> {
     FunctionArgIter { tc: tc, typ: typ }
 }
+
+/// Removes layers of `Type::App`.
+///
+/// Example:
+///
+/// ```
+/// extern crate gluon_base;
+/// extern crate gluon_check;
+///
+/// use gluon_base::types::{Type, TcType, BuiltinType};
+/// use gluon_check::typecheck::unroll_app;
+///
+/// # fn main() {
+/// let i: TcType = Type::int();
+/// let s: TcType = Type::string();
+/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![s.clone()]), vec![i.clone()])),
+///            Some(Type::app(i.clone(), vec![s.clone(), i.clone()])));
+/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![i.clone()]), vec![s.clone()])),
+///            Some(Type::app(i.clone(), vec![i.clone(), s.clone()])));
+/// let f: TcType = Type::builtin(BuiltinType::Function);
+/// assert_eq!(unroll_app(&*Type::app(Type::app(f.clone(), vec![i.clone()]), vec![s.clone()])),
+///            Some(Type::function(vec![i.clone()], s.clone())));
+/// # }
+/// ```
+pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
+    let mut args = Vec::new();
+    let mut current = match *typ {
+        Type::App(ref l, ref rest) => {
+            // No need to unroll if `l` is not an application as that will just result in returning
+            // an application that is identical to `typ`
+            match **l {
+                Type::App(..) => (),
+                _ => return None,
+            }
+            args.extend(rest.iter().rev().cloned());
+            l
+        }
+        _ => return None,
+    };
+    while let Type::App(ref l, ref rest) = **current {
+        args.extend(rest.iter().rev().cloned());
+        current = l;
+    }
+    if args.is_empty() {
+        None
+    } else {
+        args.reverse();
+        Some(Type::app(current.clone(), args))
+    }
+}
+

@@ -11,7 +11,7 @@ let functor : Functor (State s) =
     { map }
 
 let applicative : Applicative (State s) =
-    let (<*>) mf n : State s (a -> b) -> State s a -> State s b =
+    let apply mf n : State s (a -> b) -> State s a -> State s b =
         \state ->
             let { value, state } = mf state
             functor.map value n state
@@ -19,16 +19,16 @@ let applicative : Applicative (State s) =
     let pure value: a -> State s a =
         \state -> { value, state }
 
-    { (<*>), pure }
+    { functor, apply, pure }
 
 let monad: Monad (State s) =
-    let (>>=) m f: State s a -> (a -> State s b) -> State s b =
+    let flat_map f m : (a -> State s b) -> State s a -> State s b =
         \state ->
             let { value, state } = m state
             and m2 = f value
             m2 state
 
-    { (>>=), return = applicative.pure }
+    { applicative, flat_map }
 
 let put value: s -> State s () = \state -> { value = (), state = value }
 

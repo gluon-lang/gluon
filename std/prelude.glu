@@ -1,6 +1,7 @@
 let { Bool, Option, Result, Ordering } = import "std/types.glu"
 /// A linked list type
 type List a = | Nil | Cons a (List a)
+
 /**
 
 `Monoid m` represents an associative operation on `m` an which has an identity.
@@ -14,59 +15,62 @@ This means the following laws must hold:
 
 */
 type Monoid m = {
-    (<>): m -> m -> m,
-    empty: m
+    append : m -> m -> m,
+    empty : m
 }
 
-let monoid_Function m: Monoid b -> (Monoid (a -> b)) = {
-    (<>) = \f g -> \x -> m.(<>) (f x) (g x),
+let monoid_Function m : Monoid b -> (Monoid (a -> b)) = {
+    append = \f g -> \x -> m.append (f x) (g x),
     empty = \_ -> m.empty
 }
 
 let monoid_List =
-    let (<>) xs ys =
+    let append xs ys =
         match xs with
-            | Cons x zs -> Cons x (zs <> ys)
+            | Cons x zs -> Cons x (append zs ys)
             | Nil -> ys
-    { (<>), empty = Nil }
 
-let monoid_Option m: Monoid a -> Monoid (Option a) = {
-    (<>) = \l r ->
+    { append, empty = Nil }
+
+let monoid_Option m : Monoid a -> Monoid (Option a) = {
+    append = \l r ->
         match l with
             | Some x ->
-                (match r with
-                    | Some y -> Some (m.(<>) x y)
-                    | None -> l)
+                match r with
+                    | Some y -> Some (m.append x y)
+                    | None -> l
             | None -> r,
     empty = None
 }
 
 let monoid_Int_Add = {
-    (<>) = \x y -> x #Int+ y,
+    append = \x y -> x #Int+ y,
     empty = 0
 }
 
 let monoid_Int_Mul = {
-    (<>) = \x y -> x #Int* y,
+    append = \x y -> x #Int* y,
     empty = 1
 }
 
 let monoid_Float_Add = {
-    (<>) = \x y -> x #Float+ y,
+    append = \x y -> x #Float+ y,
     empty = 0.0
 }
 
 let monoid_Float_Mul = {
-    (<>) = \x y -> x #Float* y,
+    append = \x y -> x #Float* y,
     empty = 1.0
 }
 
-let not x = if x then False else True
+let make_Monoid m =
+    let { append, empty } = m
 
-let concatMap f xs: (a -> List b) -> List a -> List b =
-    match xs with
-        | Cons x ys -> monoid_List.(<>) (f x) (concatMap f ys)
-        | Nil -> Nil
+    let (<>) : m -> m -> m = append
+
+    { append, empty, (<>) }
+
+let not x = if x then False else True
 
 /// Folds a lift from the left
 let foldl f x xs =
@@ -85,11 +89,11 @@ type Eq a = {
     (==) : a -> a -> Bool
 }
 
-let eq_Unit: Eq () = {
+let eq_Unit : Eq () = {
     (==) = \l r -> True
 }
 
-let eq_Bool: Eq Bool = {
+let eq_Bool : Eq Bool = {
     (==) = \l r -> if l then r else not r
 }
 
@@ -105,12 +109,12 @@ let eq_Char = {
     (==) = \l r -> l #Char== r
 }
 
-let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
+let eq_Option a : Eq a -> Eq (Option a) = {
     (==) = \l r ->
         match l with
             | Some l_val ->
                 (match r with
-                    | Some r_val -> eq_a.(==) l_val r_val
+                    | Some r_val -> a.(==) l_val r_val
                     | None -> False)
             | None ->
                 (match r with
@@ -118,20 +122,20 @@ let eq_Option: Eq a -> Eq (Option a) = \eq_a -> {
                     | None -> True)
 }
 
-let eq_Result: Eq e -> Eq t -> Eq (Result e t) = \eq_e eq_t -> {
+let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
     (==) = \l r ->
         match l with
             | Ok l_val ->
                 (match r with
-                    | Ok r_val -> eq_t.(==) l_val r_val
+                    | Ok r_val -> a.(==) l_val r_val
                     | Err _ -> False)
             | Err l_val ->
                 (match r with
                     | Ok _ -> False
-                    | Err r_val -> eq_e.(==) l_val r_val)
+                    | Err r_val -> e.(==) l_val r_val)
 }
 
-let eq_List: Eq a -> Eq (List a) = \d ->
+let eq_List a : Eq a -> Eq (List a) =
     let (==) l r =
         match l with
             | Nil ->
@@ -141,11 +145,11 @@ let eq_List: Eq a -> Eq (List a) = \d ->
             | Cons x xs ->
                 match r with
                     | Nil -> False
-                    | Cons y ys -> d.(==) x y && xs == ys
+                    | Cons y ys -> a.(==) x y && xs == ys
     { (==) }
 
 let monoid_Ordering = {
-    (<>) = \x y ->
+    append = \x y ->
         match x with
             | EQ -> y
             | _ -> x,
@@ -154,14 +158,17 @@ let monoid_Ordering = {
 
 /// `Ord a` defines an ordering on `a`
 type Ord a = {
+    eq : Eq a,
     compare : a -> a -> Ordering
 }
 
 let ord_Unit = {
+    eq = eq_Unit,
     compare = \l r -> EQ
 }
 
 let ord_Bool = {
+    eq = eq_Bool,
     compare = \l r ->
         if l then
             if r then
@@ -173,6 +180,7 @@ let ord_Bool = {
 }
 
 let ord_Int = {
+    eq = eq_Int,
     compare = \l r ->
         if l #Int< r
         then LT
@@ -182,6 +190,7 @@ let ord_Int = {
 }
 
 let ord_Float = {
+    eq = eq_Float,
     compare = \l r ->
         if l #Float< r
         then LT
@@ -191,6 +200,7 @@ let ord_Float = {
 }
 
 let ord_Char = {
+    eq = eq_Char,
     compare = \l r ->
         if l #Char< r
         then LT
@@ -199,36 +209,40 @@ let ord_Char = {
         else GT
 }
 
-let ord_Option: Ord a -> Ord (Option a) = \compare_a -> {
+let ord_Option a : Ord a -> Ord (Option a) = {
+    eq = eq_Option a.eq,
     compare = \l r ->
         match l with
             | Some l_val ->
-                (match r with
-                    | Some r_val -> compare_a.compare l_val r_val
-                    | None -> LT)
+                match r with
+                    | Some r_val -> a.compare l_val r_val
+                    | None -> LT
             | None ->
-                (match r with
+                match r with
                     | Some r_val -> GT
-                    | None -> EQ)
+                    | None -> EQ
 }
 
-let ord_Result: Ord e -> Ord t -> Ord (Result e t) = \ord_e ord_t -> {
+let ord_Result e a : Ord e -> Ord a -> Ord (Result e a) = {
+    eq = eq_Result e.eq a.eq,
     compare = \l r ->
         match l with
             | Ok l_val ->
-                (match r with
-                    | Ok r_val -> ord_t.compare l_val r_val
-                    | Err _ -> GT)
+                match r with
+                    | Ok r_val -> a.compare l_val r_val
+                    | Err _ -> GT
             | Err l_val ->
-                (match r with
+                match r with
                     | Ok _ -> LT
-                    | Err r_val -> ord_e.compare l_val r_val)
+                    | Err r_val -> e.compare l_val r_val
 }
 
 /// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
 let make_Ord ord =
-    let compare = ord.compare
+    let { eq, compare } = ord
     {
+        eq,
+        compare,
         (<=) = \l r ->
             match compare l r with
                 | LT -> True
@@ -256,25 +270,28 @@ The basic operation on numbers.
 Defined for both the primitive type `Int` and `Float`
 */
 type Num a = {
+    ord : Ord a,
     (+) : a -> a -> a,
     (-) : a -> a -> a,
     (*) : a -> a -> a,
     (/) : a -> a -> a,
-    negate: a -> a
+    negate : a -> a
 }
 
 let num_Int = {
-    (+) = monoid_Int_Add.(<>),
+    ord = ord_Int,
+    (+) = monoid_Int_Add.append,
     (-) = \l r -> l #Int- r,
-    (*) = monoid_Int_Mul.(<>),
+    (*) = monoid_Int_Mul.append,
     (/) = \l r -> l #Int/ r,
     negate = \x -> 0 #Int- x
 }
 
-let num_Float: Num Float = {
-    (+) = monoid_Float_Add.(<>),
+let num_Float : Num Float = {
+    ord = ord_Float,
+    (+) = monoid_Float_Add.append,
     (-) = \l r -> l #Float- r,
-    (*) = monoid_Float_Mul.(<>),
+    (*) = monoid_Float_Mul.append,
     (/) = \l r -> l #Float/ r,
     negate = \x -> 0.0 #Float- x
 }
@@ -284,7 +301,7 @@ type Category cat = {
     compose : cat b c -> cat a b -> cat a c
 }
 
-let category_Function: Category (->) = {
+let category_Function : Category (->) = {
     id = \x -> x,
     compose = \f g x -> f (g x)
 }
@@ -299,174 +316,9 @@ let make_Category cat =
 
     { id, compose, (<<), (>>) }
 
-/**
-A `Functor` represents an action on a parameterized type which does not change the structure with
-the mapped type.
-*/
-type Functor f = {
-    map : (a -> b) -> f a -> f b
-}
-
-let functor_Function : Functor ((->) a) = {
-    map = category_Function.compose
-}
-
-let functor_Option: Functor Option = {
-    map = \f x -> match x with
-                    | Some y -> Some (f y)
-                    | None -> None
-}
-
-let functor_Result: Functor (Result e) = {
-    map = \f x -> match x with
-                    | Ok y -> Ok (f y)
-                    | Err _ -> x
-}
-let functor_List: Functor List =
-    let map f xs =
-        match xs with
-            | Cons y ys -> Cons (f y) (map f ys)
-            | Nil -> Nil
-    { map }
-
-type Applicative f = {
-    (<*>) : f (a -> b) -> f a -> f b,
-    pure : a -> f a
-}
-
-let applicative_Function: Applicative ((->) a) = {
-    (<*>) = \f g x -> f x (g x),
-    pure = \x -> \_ -> x
-}
-
-let applicative_Option: Applicative Option = {
-    (<*>) = \f x -> match f with
-                        | Some g ->
-                            (match x with
-                                | Some y -> Some (g y)
-                                | None -> None)
-                        | None -> None,
-    pure = \x -> Some x
-}
-
-let applicative_Result: Applicative (Result e) = {
-    (<*>) = \f x -> match f with
-                        | Ok g ->
-                            (match x with
-                                | Ok y -> Ok (g y)
-                                | Err _ -> x)
-                        | Err x -> Err x,
-    pure = \x -> Ok x
-}
-
-let applicative_List: Applicative List =
-    let (<*>) f xs =
-            match f with
-                | Cons g gs ->
-                    monoid_List.(<>) (functor_List.map g xs) (gs <*> xs)
-                | Nil -> Nil
-    let pure x = Cons x Nil
-    { (<*>), pure }
-
-type Alternative f = {
-    (<|>) : f a -> f a -> f a,
-    empty : f a
-}
-
-let alternative_Option: Alternative Option = {
-    (<|>) = \x y ->
-        match x with
-            | Some _ -> x
-            | None -> y,
-    empty = None
-}
-
-let alternative_List: Alternative List = {
-    (<|>) = monoid_List.(<>),
-    empty = Nil
-}
-
-let make_Alternative fun app alt =
-    let { (<|>), empty } = alt
-    let { (<*>), pure } = app
-    let many x =
-        let many_v _ = some_v () <|> pure Nil
-        and some_v _ = fun.map (\h l -> Cons h l) x <*> many_v ()
-        many_v ()
-    let some x =
-        let many_v _ = some_v () <|> pure Nil
-        and some_v _ = fun.map (\h l -> Cons h l) x <*> many_v ()
-        some_v ()
-    {
-        (<|>),
-        empty,
-        many,
-        some
-    }
-
-type Monad m = {
-    (>>=) : m a -> (a -> m b) -> m b,
-    return : a -> m a
-}
-
-let monad_Function: Monad ((->) a) = {
-    (>>=) = \m f x -> f (m x) x,
-    return = applicative_Function.pure
-}
-
-let monad_Option: Monad Option = {
-    (>>=) = \m f -> match m with
-                        | Some x -> f x
-                        | None -> None,
-    return = \x -> Some x
-}
-
-let monad_List: Monad List = {
-    (>>=) = \m f -> concatMap f m,
-    return = \x -> Cons x Nil
-}
-
-let monad_IO: Monad IO = {
-    (>>=) = io_bind,
-    return = io_return
-}
-
-let make_Monad m =
-    let { (>>=), return } = m
-    let { id } = category_Function
-
-    let (>>) l r = l >>= \_ -> r
-    let forM_ xs f =
-        match xs with
-            | Cons y ys -> f y >> forM_ ys f
-            | Nil -> return ()
-    {
-        (>>=),
-        return = return,
-        (>>),
-        join = \mm -> mm >>= id,
-        map = \x f -> x >>= (\y -> return (f x)),
-        lift2 = \f lm rm -> lm >>= \l -> rm >>= \r -> f l r,
-        forM_
-    }
-
-let functor_IO: Functor IO = {
-    map = \f m1 -> monad_IO.(>>=) m1 (\x -> monad_IO.return (f x))
-}
-
-let applicative_IO: Applicative IO = {
-    (<*>) = \f x ->
-            monad_IO.(>>=) f (\g -> monad_IO.(>>=) x (\y -> monad_IO.return (g y))),
-    pure = monad_IO.return
-}
-
 /// The identity function, where `id x == x`
 let id : a -> a =
     category_Function.id
-
-/// const `x` creates a function which always returns `x`
-let const : a -> b -> a =
-    applicative_Function.pure
 
 /// flip `f` takes creates a new function which takes its two arguments in reverse order
 let flip f : (a -> b -> c) -> b -> a -> c =
@@ -486,30 +338,218 @@ let (<<) : (b -> c) -> (a -> b) -> a -> c =
 let (>>) : (a -> b) -> (b -> c) -> a -> c =
     (make_Category category_Function).(>>)
 
+/**
+A `Functor` represents an action on a parameterized type which does not change the structure with
+the mapped type.
+*/
+type Functor f = {
+    map : (a -> b) -> f a -> f b
+}
+
+let functor_Function : Functor ((->) a) = {
+    map = category_Function.compose
+}
+
+let functor_Option : Functor Option = {
+    map = \f x -> match x with
+                    | Some y -> Some (f y)
+                    | None -> None
+}
+
+let functor_Result : Functor (Result e) = {
+    map = \f x -> match x with
+                    | Ok y -> Ok (f y)
+                    | Err _ -> x
+}
+
+let functor_List : Functor List =
+    let map f xs =
+        match xs with
+            | Cons y ys -> Cons (f y) (map f ys)
+            | Nil -> Nil
+    { map }
+
+let functor_IO : Functor IO = {
+    map = \f -> io_flat_map (\x -> io_pure (f x))
+}
+
+type Applicative f = {
+    functor : Functor f,
+    apply : f (a -> b) -> f a -> f b,
+    pure : a -> f a
+}
+
+let applicative_Function : Applicative ((->) a) = {
+    functor = functor_Function,
+    apply = \f g x -> f x (g x),
+    pure = \x -> \_ -> x
+}
+
+/// const `x` creates a function which always returns `x`
+let const : a -> b -> a =
+    applicative_Function.pure
+
+let applicative_Option : Applicative Option = {
+    functor = functor_Option,
+    apply = \f x ->
+        match f with
+            | Some g ->
+                match x with
+                    | Some y -> Some (g y)
+                    | None -> None
+            | None -> None,
+    pure = \x -> Some x
+}
+
+let applicative_Result : Applicative (Result e) = {
+    functor = functor_Result,
+    apply = \f x ->
+        match f with
+            | Ok g ->
+                match x with
+                    | Ok y -> Ok (g y)
+                    | Err _ -> x
+            | Err x -> Err x,
+    pure = \x -> Ok x
+}
+
+let applicative_List : Applicative List =
+    let { (<>) } = make_Monoid monoid_List
+
+    let apply f xs =
+        match f with
+            | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
+            | Nil -> Nil
+    let pure x = Cons x Nil
+
+    { functor = functor_List, apply, pure }
+
+let applicative_IO : Applicative IO =
+    let pure = io_pure
+    let apply f x = io_flat_map (\g -> io_flat_map (\y -> pure (g y)) x) f
+
+    { functor = functor_IO, apply, pure }
+
+let make_Applicative app =
+    let { functor, apply, pure } = app
+
+    let (<*>) : app (a -> b) -> app a -> app b = apply
+    let (<*) l r : app a -> app b -> app a = functor.map const l <*> r
+    let (*>) l r : app a -> app b -> app b = functor.map (const id) l <*> r
+    let map2 f a b : (a -> b -> c) -> app a -> app b -> app c = (functor.map f a) <*> b
+    let map3 f a b c : (a -> b -> c -> d) -> app a -> app b -> app c -> app d = (functor.map f a) <*> b <*> c
+
+    { functor, apply, pure, (<*>), (<*), (*>), map2, map3 }
+
+type Alternative f = {
+    applicative : Applicative f,
+    or : f a -> f a -> f a,
+    empty : f a
+}
+
+let alternative_Option : Alternative Option = {
+    applicative = applicative_Option,
+    or = \x y ->
+        match x with
+            | Some _ -> x
+            | None -> y,
+    empty = None
+}
+
+let alternative_List : Alternative List = {
+    applicative = applicative_List,
+    or = monoid_List.append,
+    empty = Nil
+}
+
+let make_Alternative f =
+    let { applicative, or, empty } = f
+    let { functor, (<*>), pure } = make_Applicative applicative
+
+    let (<|>) : f a -> f a -> f a = or
+    let many x : f a -> f (List a) =
+        let many_v _ = some_v () <|> pure Nil
+        and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
+        many_v ()
+    let some x : f a -> f (List a) =
+        let many_v _ = some_v () <|> pure Nil
+        and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
+        some_v ()
+
+    { applicative, or, empty, (<|>), many, some }
+
+type Monad m = {
+    applicative : Applicative m,
+    flat_map : (a -> m b) -> m a -> m b
+}
+
+let monad_Function : Monad ((->) a) = {
+    applicative = applicative_Function,
+    flat_map = \f m x -> f (m x) x
+}
+
+let monad_Option : Monad Option = {
+    applicative = applicative_Option,
+    flat_map = \f m ->
+        match m with
+            | Some x -> f x
+            | None -> None
+}
+
+let monad_List : Monad List =
+    let { (<>) } = make_Monoid monoid_List
+
+    let flat_map f xs =
+        match xs with
+            | Cons x ys -> (f x) <> (flat_map f ys)
+            | Nil -> Nil
+
+    { applicative = applicative_List, flat_map }
+
+let monad_IO : Monad IO = {
+    applicative = applicative_IO,
+    flat_map = io_flat_map
+}
+
+let make_Monad m =
+    let { applicative, flat_map } = m
+    let { (*>), pure } = make_Applicative applicative
+    let { id } = category_Function
+
+    let (=<<) : (a -> m b) -> m a -> m b = flat_map
+    let (>>=) : m a -> (a -> m b) -> m b = flip flat_map
+    let join mm : m (m a) -> m a = mm >>= id
+    let forM_ xs f : List a -> (a -> m b) -> m () =
+        match xs with
+            | Cons y ys -> f y *> forM_ ys f
+            | Nil -> pure ()
+
+    { applicative, flat_map, (=<<), (>>=), join, forM_ }
+
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = {
     show : a -> String
 }
 
-let show_Unit: Show () = {
+let show_Unit : Show () = {
     show = const "()"
 }
 
-let show_Bool: Show Bool = {
+let show_Bool : Show Bool = {
     show = \x -> if x then "True" else "False"
 }
 
-let show_Int: Show Int = {
+let show_Int : Show Int = {
     show = prim.show_Int
 }
 
-let show_Float: Show Float = {
+let show_Float : Show Float = {
     show = prim.show_Float
 }
 
 let (++) = string_prim.append
 
-let show_List: Show a -> Show (List a) = \d ->
+let show_List : Show a -> Show (List a) = \d ->
     let show xs =
         let show2 ys =
             match ys with
@@ -521,14 +561,14 @@ let show_List: Show a -> Show (List a) = \d ->
         "[" ++ show2 xs
     { show }
 
-let show_Option: Show a -> Show (Option a) = \d ->
+let show_Option : Show a -> Show (Option a) = \d ->
     let show o =
         match o with
             | Some x -> "Some (" ++ d.show x ++ ")"
             | None -> "None"
     { show }
 
-let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
+let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
     let show o =
         match o with
             | Ok x -> "Ok (" ++ t.show x ++ ")"
@@ -545,7 +585,7 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     not,
     foldl, foldr,
 
-    Monoid,
+    Monoid, make_Monoid,
     monoid_Function, monoid_List, monoid_Option,
     monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
 
@@ -561,7 +601,7 @@ let show_Result: Show e -> Show t -> Show (Result e t) = \e t ->
     Functor,
     functor_Option, functor_Result, functor_List, functor_IO,
 
-    Applicative,
+    Applicative, make_Applicative,
     applicative_Option, applicative_Result, applicative_List, applicative_IO,
 
     Alternative, make_Alternative,

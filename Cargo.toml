@@ -24,47 +24,23 @@ name = "repl"
 path = "src/main.rs"
 
 [dependencies]
-log = "0.3.6"
 clap = "2.2.5"
+compiletest_rs = { version = "0.2", optional = true }
+env_logger = { version = "0.3.4", optional = true }
+lazy_static = { version = "0.2.0", optional = true }
+log = "0.3.6"
 quick-error = "1.0.0"
-
-[dependencies.gluon_base]
-path = "base"
-version = "0.1.3"
-
-[dependencies.gluon_parser]
-path = "parser"
-version = "0.1.2"
-
-[dependencies.gluon_check]
-path = "check"
-version = "0.1.3"
-
-[dependencies.gluon_vm]
-path = "vm"
-version = "0.1.2"
-
-[dependencies.compiletest_rs]
-version = "0.1.3"
-optional = true
-
-[dependencies.env_logger]
-version = "0.3.3"
-optional = true
-
-[dependencies.rustyline]
-git = "https://github.com/kkawakam/rustyline"
-optional = true
-
-[dependencies.lazy_static]
-version = "0.2.0"
-optional = true
+rustyline = { git = "https://github.com/kkawakam/rustyline", rev = "480bf15", optional = true }
+gluon_base = { path = "base", version = "0.1.3" }
+gluon_check = { path = "check", version = "0.1.3" }
+gluon_parser = { path = "parser", version = "0.1.2" }
+gluon_vm = { path = "vm", version = "0.1.2" }
 
 [build-dependencies]
-skeptic = "0.4"
+skeptic = "0.6"
 
 [dev-dependencies]
-skeptic = "0.4"
+skeptic = "0.6"
 
 [features]
 default = ["repl"]

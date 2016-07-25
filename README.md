@@ -1,7 +1,7 @@
 # gluon
 (Previously called embed_lang)
 
-[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon)
+[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon) [![Gitter](https://badges.gitter.im/Marwes/gluon.svg)](https://gitter.im/Marwes/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
 
@@ -67,7 +67,7 @@ REPL features:
         :i std.prelude.List
         type std.prelude.List a = | Nil | Cons a (std.prelude.List a)
         /// A linked list type
-        
+
 * Exit the REPL by writing `:q`
 
 ## Documentation
@@ -111,10 +111,10 @@ let factorial n =
 // `type` is used to declare a new type.
 // In this case we declare `Countable` to be a record with a single field (count) which is a function
 // taking a single argument and returning an integer
-type Countable a = { count: a -> Int }
+type Countable a = { count : a -> Int }
 
 // "Counting" an integer just means returning the integer itself
-let countable_Int: Countable Int = { count = \x -> x }
+let countable_Int : Countable Int = { count = \x -> x }
 
 let list_module =
     // Declare a new type which only exists in the current scope
@@ -125,7 +125,7 @@ let list_module =
                 | Nil -> Nil
     // Define a count instance over lists which counts each of the elements and sums
     // the results
-    let countable_List c: Countable a -> Countable (List a) =
+    let countable_List c : Countable a -> Countable (List a) =
         let count xs =
             match xs with
             | Cons y ys -> c.count y + count ys
@@ -141,8 +141,10 @@ let list_module =
 
 // Bring the `List` type and its constructors into scope
 let { List, countable_List } = list_module
+
 // Create a `Countable` record for `List Int`
-let { count }: Countable (List Int) = countable_List countable_Int
+let { count } : Countable (List Int) = countable_List countable_Int
+
 if count (Cons 20 (Cons 22 Nil)) == 41 then
     error "This branch is not executed"
 else

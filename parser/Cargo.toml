@@ -11,21 +11,11 @@ repository = "https://github.com/Marwes/gluon"
 documentation = "https://marwes.github.io/gluon/gluon/index.html"
 
 [dependencies]
+combine-language = "=2.0.0-beta"
+combine = "=2.0.0-beta"
+env_logger = { version = "0.3.4", optional = true }
 log = "0.3.6"
-
-[dependencies.combine-language]
-version = "=2.0.0-beta"
-
-[dependencies.combine]
-version = "=2.0.0-beta"
-
-[dependencies.gluon_base]
-path = "../base"
-version = "0.1.2"
-
-[dependencies.env_logger]
-version = "0.3.3"
-optional = true
+gluon_base = { path = "../base", version = "0.1.2" }
 
 [features]
 test = ["env_logger"]
