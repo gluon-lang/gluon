@@ -9,36 +9,81 @@ pub type VMIndex = u32;
 pub type VMTag = u32;
 pub type VMInt = isize;
 
+/// Enum which represent the instructions executed by the virtual machine.
+///
+/// The binary arithmetic instructions pop two values of the stack and then push the result.
 #[derive(Copy, Clone, Debug)]
 pub enum Instruction {
+    /// Push an integer to the stack
     PushInt(isize),
+    /// Push a byte to the stack
     PushByte(u8),
+    /// Push a float to the stack
     PushFloat(f64),
+    /// Push a string to the stack by loading the string at `index` in the currently executing
+    /// function
     PushString(VMIndex),
+    /// Push a variable to the stack by loading the upvariable at `index` from the currently
+    /// executing function
+    PushUpVar(VMIndex),
+    /// Push the value at `index`
     Push(VMIndex),
+    /// Push the value at `index`
     PushGlobal(VMIndex),
+    /// Call a function by passing it `args` number of arguments. The function is at the index in
+    /// the stack just before the arguments. After the call is all arguments are removed and the
+    /// function is replaced by the result of the call.
     Call(VMIndex),
+    /// Tailcalls a function, removing the current stack frame before calling it.
+    /// See `Call`.
     TailCall(VMIndex),
-    Construct(VMIndex, VMIndex),
+    /// Constructs a data value tagged by `tag` by taking the top `args` values of the stack.
+    Construct {
+        /// The tag of the data
+        tag: VMIndex,
+        /// How many arguments that is taken from the stack to construct the data.
+        args: VMIndex,
+    },
+    /// Constructs an array containing `args` values.
     ConstructArray(VMIndex),
+    /// Retrieves the field at `index` of an object at the top of the stack. The result of the
+    /// field access replaces the object on the stack.
     GetField(VMIndex),
+    /// Splits a object, pushing all contained values to the stack.
     Split,
+    /// Tests if the value at the top of the stack is tagged with `tag`. Pushes `True` if the tag
+    /// matches, otherwise `False`
     TestTag(VMTag),
+    /// Jumps to the instruction at `index` in the currently executing function.
     Jump(VMIndex),
+    /// Jumps to the instruction at `index` in the currently executing function if `True` is at the
+    /// top of the stack and pops that value.
     CJump(VMIndex),
+    /// Pops the top `n` values from the stack.
     Pop(VMIndex),
+    /// Pops the top value from the stack, then pops `n` more values, finally the first value is
+    /// pushed back to the stack.
     Slide(VMIndex),
 
-    // Creates a closure with 'n' upvariables
-    // Pops the 'n' values on top of the stack and creates a closure
-    MakeClosure(VMIndex, VMIndex),
-    // Creates a closure but does not fill its environment
-    NewClosure(VMIndex, VMIndex),
-    // Fills the previously allocated closure with `n` upvariables
+    /// Creates a closure with the function at `function_index` of the currently executing function
+    /// and `upvars` upvariables popped from the top of the stack.
+    MakeClosure {
+        /// The index in the currently executing function which the function data is located at
+        function_index: VMIndex,
+        /// How many upvariables the closure contains
+        upvars: VMIndex,
+    },
+    /// Creates a closure with the function at `function_index` of the currently executing
+    /// function. The closure has room for `upvars` upvariables but these are not filled until the
+    /// matching call to `ClosureClosure` is executed.
+    NewClosure {
+        /// The index in the currently executing function which the function data is located at
+        function_index: VMIndex,
+        /// How many upvariables the closure contains
+        upvars: VMIndex,
+    },
+    /// Fills the previously allocated closure with `n` upvariables.
     CloseClosure(VMIndex),
-    PushUpVar(VMIndex),
-
-    GetIndex,
 
     AddInt,
     SubtractInt,
@@ -64,12 +109,13 @@ pub enum Instruction {
 
 
 impl Instruction {
+    /// Returns by how much the stack is adjusted when executing the instruction `self`.
     pub fn adjust(&self) -> i32 {
         match *self {
             PushInt(_) | PushByte(_) | PushFloat(_) | PushString(_) | Push(_) | PushGlobal(_) => 1,
             Call(n) => -(n as i32),
             TailCall(n) => -(n as i32),
-            Construct(_, n) |
+            Construct { args: n, .. } |
             ConstructArray(n) => 1 - n as i32,
             GetField(_) => 0,
             // The number of added stack slots are handled separately as the type is needed to
@@ -80,11 +126,10 @@ impl Instruction {
             CJump(_) => -1,
             Pop(n) => -(n as i32),
             Slide(n) => -(n as i32),
-            MakeClosure(_, _) => 1,
-            NewClosure(_, _) => 1,
+            MakeClosure { .. } => 1,
+            NewClosure { .. } => 1,
             CloseClosure(_) => -1,
             PushUpVar(_) => 1,
-            GetIndex => 0,
             AddInt | SubtractInt | MultiplyInt | DivideInt | IntLT | IntEQ | AddFloat |
             AddByte | SubtractByte | MultiplyByte | DivideByte | ByteLT | ByteEQ |
             SubtractFloat | MultiplyFloat | DivideFloat | FloatLT | FloatEQ => -1,

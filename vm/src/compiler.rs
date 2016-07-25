@@ -378,7 +378,12 @@ impl<'a> Compiler<'a> {
             UpVar(index) => function.emit(PushUpVar(index)),
             Global(index) => function.emit(PushGlobal(index)),
             // Zero argument constructors can be compiled as integers
-            Constructor(tag, 0) => function.emit(Construct(tag, 0)),
+            Constructor(tag, 0) => {
+                function.emit(Construct {
+                    tag: tag,
+                    args: 0,
+                })
+            }
             Constructor(..) => panic!("Constructor {:?} is not fully applied", id),
         }
     }
@@ -443,7 +448,7 @@ impl<'a> Compiler<'a> {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
-                    function.emit(Construct(0, 0));
+                    function.emit(Construct { tag: 0, args: 0 });
                     function.emit(Jump(0));//lhs false, jump to after rhs
                     // Dont count the integer added added above as the next part of the code never
                     // pushed it
@@ -460,7 +465,7 @@ impl<'a> Compiler<'a> {
                     function.emit(Jump(0));
                     function.function.instructions[lhs_end] =
                         CJump(function.function.instructions.len() as VMIndex);
-                    function.emit(Construct(1, 0));
+                    function.emit(Construct { tag: 1, args: 0 });
                     // Dont count the integer above
                     function.stack_size -= 1;
                     let end = function.function.instructions.len();
@@ -505,7 +510,10 @@ impl<'a> Compiler<'a> {
                     for bind in bindings.iter() {
                         // Add the NewClosure instruction before hand
                         // it will be fixed later
-                        function.emit(NewClosure(0, 0));
+                        function.emit(NewClosure {
+                            function_index: 0,
+                            upvars: 0,
+                        });
                         match bind.name.value {
                             ast::Pattern::Identifier(ref name) => {
                                 function.new_stack_var(name.id().clone());
@@ -525,7 +533,10 @@ impl<'a> Compiler<'a> {
                         let (function_index, vars, cf) =
                             self.compile_lambda(name, &bind.arguments, &bind.expression, function);
                         let offset = first_index + i;
-                        function.function.instructions[offset] = NewClosure(function_index, vars);
+                        function.function.instructions[offset] = NewClosure {
+                            function_index: function_index,
+                            upvars: vars,
+                        };
                         function.emit(CloseClosure(vars));
                         function.stack_size -= vars;
                         function.function.inner_functions.push(cf);
@@ -543,7 +554,10 @@ impl<'a> Compiler<'a> {
                         for arg in args.iter() {
                             self.compile(arg, function, false);
                         }
-                        function.emit(Construct(tag, num_args));
+                        function.emit(Construct {
+                            tag: tag,
+                            args: num_args,
+                        });
                         return None;
                     }
                 }
@@ -649,7 +663,10 @@ impl<'a> Compiler<'a> {
             Expr::Lambda(ref lambda) => {
                 let (function_index, vars, cf) =
                     self.compile_lambda(&lambda.id, &lambda.arguments, &lambda.body, function);
-                function.emit(MakeClosure(function_index, vars));
+                function.emit(MakeClosure {
+                    function_index: function_index,
+                    upvars: vars,
+                });
                 function.stack_size -= vars;
                 function.function.inner_functions.push(cf);
             }
@@ -668,13 +685,19 @@ impl<'a> Compiler<'a> {
                         None => self.load_identifier(&field.0, function),
                     }
                 }
-                function.emit(Construct(0, fields.len() as u32));
+                function.emit(Construct {
+                    tag: 0,
+                    args: fields.len() as u32,
+                });
             }
             Expr::Tuple(ref exprs) => {
                 for expr in exprs {
                     self.compile(expr, function, false);
                 }
-                function.emit(Construct(0, exprs.len() as u32));
+                function.emit(Construct {
+                    tag: 0,
+                    args: exprs.len() as u32,
+                });
             }
             Expr::Block(ref exprs) => {
                 let (last, exprs) = exprs.split_last().expect("Expr in block");
