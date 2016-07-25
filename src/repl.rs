@@ -31,7 +31,7 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
         Ok(ref alias) => {
-            let kind = alias.args.iter().rev().fold(Kind::star(), |acc, arg| {
+            let kind = alias.args.iter().rev().fold(Kind::typ(), |acc, arg| {
                 Kind::function(arg.kind.clone(), acc)
             });
             Ok(format!("{}", kind))
@@ -183,7 +183,7 @@ mod tests {
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
         assert_eq!(find_kind.call("std.prelude.Option"),
-                   Ok(IO::Value(Ok("* -> *".into()))));
+                   Ok(IO::Value(Ok("Type -> Type".into()))));
     }
 
     #[test]

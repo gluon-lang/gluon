@@ -391,7 +391,7 @@ impl GlobalVMState {
         }
         let g: TcType = Type::generic(types::Generic {
             id: Symbol::new(name),
-            kind: types::Kind::star(),
+            kind: types::Kind::typ(),
         });
         generics.insert(name.into(), g.clone());
         g

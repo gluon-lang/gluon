@@ -331,18 +331,18 @@ impl BuiltinType {
 
 /// Kind representation
 ///
-/// All types in gluon has a kind. Most types encountered are of the `Star` (*) kind which
+/// All types in gluon has a kind. Most types encountered are of the `Type` kind which
 /// includes things like `Int`, `String` and `Option Int`. There are however other types which
 /// are said to be "higher kinded" and these use the `Function` (a -> b) variant.
-/// These types include `Option` and `->` which both have the kind `* -> *` as well as `Functor`
-/// which has the kind `(* -> *) -> *`.
+/// These types include `Option` and `(->)` which both have the kind `Type -> Type` as well as
+/// `Functor` which has the kind `(Type -> Type) -> Type`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Kind {
-    /// Representation for a kind which is yet to be infered
+    /// Representation for a kind which is yet to be inferred.
     Variable(u32),
     /// The simplest possible kind. All values in a program have this kind.
-    Star,
-    /// Constructor which takes two kinds, taking the first as argument and returning the second
+    Type,
+    /// Constructor which takes two kinds, taking the first as argument and returning the second.
     Function(RcKind, RcKind),
 }
 
@@ -350,9 +350,11 @@ impl Kind {
     pub fn variable(v: u32) -> RcKind {
         RcKind::new(Kind::Variable(v))
     }
-    pub fn star() -> RcKind {
-        RcKind::new(Kind::Star)
+
+    pub fn typ() -> RcKind {
+        RcKind::new(Kind::Type)
     }
+
     pub fn function(l: RcKind, r: RcKind) -> RcKind {
         RcKind::new(Kind::Function(l, r))
     }
@@ -658,8 +660,9 @@ impl<Id> ASTType<Id> {
 
 impl TypeVariable {
     pub fn new(var: u32) -> TypeVariable {
-        TypeVariable::with_kind(Kind::Star, var)
+        TypeVariable::with_kind(Kind::Type, var)
     }
+
     pub fn with_kind(kind: Kind, var: u32) -> TypeVariable {
         TypeVariable {
             kind: RcKind::new(kind),
@@ -675,11 +678,12 @@ impl fmt::Display for Kind {
         write!(f, "{}", DisplayKind(Prec::Top, self))
     }
 }
+
 impl<'a> fmt::Display for DisplayKind<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self.1 {
             Kind::Variable(i) => i.fmt(f),
-            Kind::Star => '*'.fmt(f),
+            Kind::Type => "Type".fmt(f),
             Kind::Function(ref arg, ref ret) => {
                 match self.0 {
                     Prec::Function => {
