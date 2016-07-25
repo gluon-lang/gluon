@@ -139,7 +139,7 @@ impl<'a> KindEnv for Environment<'a> {
         self.stack_types
             .get(type_name)
             .map(|&(_, ref alias)| {
-                let mut kind = Kind::star();
+                let mut kind = Kind::typ();
                 for arg in alias.args.iter().rev() {
                     kind = Kind::function(arg.kind.clone(), kind);
                 }
@@ -720,10 +720,10 @@ impl<'a> Typecheck<'a> {
                     // this type expression into the kindcheck environment
                     for bind in bindings.iter_mut() {
                         // Create the kind for this binding
-                        // Test a b: 2 -> 1 -> *
+                        // Test a b: 2 -> 1 -> Type
                         // and bind the same variables to the arguments of the type binding
                         // ('a' and 'b' in the example)
-                        let mut id_kind = check.star_kind();
+                        let mut id_kind = check.type_kind();
                         let alias = Alias::make_mut(&mut bind.alias);
                         for gen in alias.args.iter_mut().rev() {
                             gen.kind = check.subs.new_var();

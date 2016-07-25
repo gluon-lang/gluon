@@ -25,11 +25,11 @@ pub struct KindCheck<'a> {
     info: &'a (KindEnv + 'a),
     idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
     pub subs: Substitution<RcKind>,
-    /// A cached star kind, `*`
-    star_kind: RcKind,
-    /// A cached one argument kind function, `* -> *`
+    /// A cached type kind, `Type`
+    type_kind: RcKind,
+    /// A cached one argument kind function, `Type -> Type`
     function1_kind: RcKind,
-    /// A cached two argument kind function, `* -> * -> *`
+    /// A cached two argument kind function, `Type -> Type -> Type`
     function2_kind: RcKind,
 }
 
@@ -56,7 +56,7 @@ fn walk_move_kind2<F>(kind: &RcKind, f: &mut F) -> Option<RcKind>
                     (None, None) => None,
                 }
             }
-            Kind::Star |
+            Kind::Type |
             Kind::Variable(_) => None,
         }
     };
@@ -68,16 +68,16 @@ impl<'a> KindCheck<'a> {
                idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
                subs: Substitution<RcKind>)
                -> KindCheck<'a> {
-        let star = Kind::star();
+        let typ = Kind::typ();
         KindCheck {
             variables: Vec::new(),
             locals: Vec::new(),
             info: info,
             idents: idents,
             subs: subs,
-            star_kind: star.clone(),
-            function1_kind: Kind::function(star.clone(), star.clone()),
-            function2_kind: Kind::function(star.clone(), Kind::function(star.clone(), star)),
+            type_kind: typ.clone(),
+            function1_kind: Kind::function(typ.clone(), typ.clone()),
+            function2_kind: Kind::function(typ.clone(), Kind::function(typ.clone(), typ)),
         }
     }
 
@@ -90,8 +90,8 @@ impl<'a> KindCheck<'a> {
         self.variables.extend(variables.iter().cloned());
     }
 
-    pub fn star_kind(&self) -> RcKind {
-        self.star_kind.clone()
+    pub fn type_kind(&self) -> RcKind {
+        self.type_kind.clone()
     }
 
     pub fn function1_kind(&self) -> RcKind {
@@ -133,12 +133,12 @@ impl<'a> KindCheck<'a> {
         kind
     }
 
-    // Kindhecks `typ`, infering it to be of kind `*`
+    // Kindhecks `typ`, infering it to be of kind `Type`
     pub fn kindcheck_type(&mut self, typ: &mut TcType) -> Result<RcKind> {
         debug!("Kindcheck {:?}", typ);
         let (kind, t) = try!(self.kindcheck(typ));
-        let star = self.star_kind();
-        let kind = try!(self.unify(&star, kind));
+        let type_kind = self.type_kind();
+        let kind = try!(self.unify(&type_kind, kind));
         *typ = self.finalize_type(t);
         debug!("Done {:?}", typ);
         Ok(kind)
@@ -151,7 +151,7 @@ impl<'a> KindCheck<'a> {
             BuiltinType::Char |
             BuiltinType::Int |
             BuiltinType::Float |
-            BuiltinType::Unit => self.star_kind(),
+            BuiltinType::Unit => self.type_kind(),
             BuiltinType::Array => self.function1_kind(),
             BuiltinType::Function => self.function2_kind(),
         }
@@ -191,26 +191,26 @@ impl<'a> KindCheck<'a> {
                 let variants = try!(variants.iter()
                     .map(|variant| {
                         let (kind, typ) = try!(self.kindcheck(&variant.1));
-                        let star = self.star_kind();
-                        try!(self.unify(&star, kind));
+                        let type_kind = self.type_kind();
+                        try!(self.unify(&type_kind, kind));
                         Ok((variant.0.clone(), typ))
                     })
                     .collect());
-                Ok((self.star_kind(), Type::variants(variants)))
+                Ok((self.type_kind(), Type::variants(variants)))
             }
             Type::Record { ref types, ref fields } => {
                 let fields = try!(fields.iter()
                     .map(|field| {
                         let (kind, typ) = try!(self.kindcheck(&field.typ));
-                        let star = self.star_kind();
-                        try!(self.unify(&star, kind));
+                        let type_kind = self.type_kind();
+                        try!(self.unify(&type_kind, kind));
                         Ok(types::Field {
                             name: field.name.clone(),
                             typ: typ,
                         })
                     })
                     .collect());
-                Ok((self.star_kind(), Type::record(types.clone(), fields)))
+                Ok((self.type_kind(), Type::record(types.clone(), fields)))
             }
             Type::Id(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
             Type::Alias(ref alias) => self.find(&alias.name).map(|kind| (kind, typ.clone())),
@@ -232,7 +232,7 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn finalize_type(&self, typ: TcType) -> TcType {
-        let default = Some(&self.star_kind);
+        let default = Some(&self.type_kind);
         types::walk_move_type(typ,
                               &mut |typ| {
             match *typ {
@@ -251,7 +251,7 @@ impl<'a> KindCheck<'a> {
     }
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
         let mut kind = var.kind.clone();
-        kind = update_kind(&self.subs, kind, Some(&self.star_kind));
+        kind = update_kind(&self.subs, kind, Some(&self.type_kind));
         types::Generic {
             id: var.id.clone(),
             kind: kind,
@@ -321,7 +321,7 @@ impl Substitutable for RcKind {
                     walk_kind(r, f);
                 }
                 Kind::Variable(_) |
-                Kind::Star => (),
+                Kind::Type => (),
             }
         }
         walk_kind(self, &mut f)

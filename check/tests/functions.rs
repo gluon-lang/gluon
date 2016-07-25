@@ -55,7 +55,7 @@ struct EmptyEnv(Alias<Symbol, TcType>);
 impl KindEnv for EmptyEnv {
     fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
         match id.as_ref() {
-            "Bool" => Some(Kind::star()),
+            "Bool" => Some(Kind::typ()),
             _ => None,
         }
     }
@@ -129,7 +129,7 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
         Ok(b) => Type::builtin(b),
         Err(()) if is_var => {
             Type::generic(Generic {
-                kind: Kind::star(),
+                kind: Kind::typ(),
                 id: intern(s),
             })
         }
@@ -150,7 +150,7 @@ pub fn alias(s: &str, args: &[&str], typ: TcType) -> TcType {
                 args.iter()
                     .map(|id| {
                         Generic {
-                            kind: Kind::star(),
+                            kind: Kind::typ(),
                             id: intern(id),
                         }
                     })

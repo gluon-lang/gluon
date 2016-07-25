@@ -761,7 +761,7 @@ pub fn parse_tc
     let mut env = ast::TcIdentEnv {
         typ: Type::variable(TypeVariable {
             id: 0,
-            kind: Kind::star(),
+            kind: Kind::typ(),
         }),
         env: symbols,
     };

@@ -448,7 +448,7 @@ return 1
         Type::variants(vec![(intern(name), Type::function(vec![typ("a")], Type::app(typ(name), vec![typ("a")])))]);
     let test = alias("Test", &["a"], variant("Test"));
     let m = Generic {
-                            kind: Kind::function(Kind::star(), Kind::star()),
+                            kind: Kind::function(Kind::typ(), Kind::typ()),
                             id: intern("m"),
                         };
 
@@ -456,7 +456,7 @@ return 1
     let id_t = Type::alias(intern("IdT"), vec![
                         m.clone(),
                         Generic {
-                            kind: Kind::star(),
+                            kind: Kind::typ(),
                             id: intern("a"),
                         }], Type::app(Type::generic(m), vec![Type::app(id, vec![typ("a")])]));
     assert_eq!(result, Ok(Type::app(id_t, vec![test, typ("Int")])));

@@ -15,7 +15,7 @@ fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
         Ok(b) => Type::Builtin(b),
         Err(()) if is_var => {
             Type::Generic(Generic {
-                kind: RcKind::new(Kind::Star),
+                kind: RcKind::new(Kind::Type),
                 id: s,
             })
         }
@@ -56,7 +56,7 @@ fn show_record() {
                                     typ: Alias::new(
                                         "Test",
                                         vec![Generic {
-                                                       kind: Kind::star(),
+                                                       kind: Kind::typ(),
                                                        id: "a",
                                                    }],
                                         f.clone(),
@@ -72,7 +72,7 @@ fn show_record() {
                                     typ: Alias::new(
                                         "Test",
                                         vec![Generic {
-                                                       kind: Kind::star(),
+                                                       kind: Kind::typ(),
                                                        id: "a",
                                                    }],
                                         f.clone(),
@@ -93,7 +93,7 @@ fn show_record() {
                                     typ: Alias::new(
                                         "Test",
                                         vec![Generic {
-                                                       kind: Kind::star(),
+                                                       kind: Kind::typ(),
                                                        id: "a",
                                                    }],
                                         f.clone(),
@@ -112,8 +112,8 @@ fn variants() {
 
 #[test]
 fn show_kind() {
-    let two_args = Kind::function(Kind::star(), Kind::function(Kind::star(), Kind::star()));
-    assert_eq!(format!("{}", two_args), "* -> * -> *");
-    let function_arg = Kind::function(Kind::function(Kind::star(), Kind::star()), Kind::star());
-    assert_eq!(format!("{}", function_arg), "(* -> *) -> *");
+    let two_args = Kind::function(Kind::typ(), Kind::function(Kind::typ(), Kind::typ()));
+    assert_eq!(format!("{}", two_args), "Type -> Type -> Type");
+    let function_arg = Kind::function(Kind::function(Kind::typ(), Kind::typ()), Kind::typ());
+    assert_eq!(format!("{}", function_arg), "(Type -> Type) -> Type");
 }
