@@ -660,9 +660,7 @@ fn get_return_type(env: &TypeEnv,
         alias_type
     } else {
         match alias_type.as_function() {
-            Some((_, ret)) => {
-                get_return_type(env, ret.clone(), arg_count - 1)
-            }
+            Some((_, ret)) => get_return_type(env, ret.clone(), arg_count - 1),
             None => {
                 match alias_type.as_alias() {
                     Some((id, arguments)) => {

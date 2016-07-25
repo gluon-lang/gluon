@@ -8,6 +8,20 @@ use types;
 use types::{AliasData, Type, Generic, TcType, TypeEnv, merge};
 use symbol::Symbol;
 
+quick_error! {
+    #[derive(Debug)]
+    pub enum Error {
+        SelfRecursive(id: Symbol) {
+            description("self recursive")
+            display("The use of self recursion in type `{}` could not be unified.", id)
+        }
+        UndefinedType(id: Symbol) {
+            description("undefined type")
+            display("Type `{}` does not exist.", id)
+        }
+    }
+}
+
 /// Removes type aliases from `typ` until it is an actual type
 pub fn remove_aliases(env: &TypeEnv, mut typ: TcType) -> TcType {
     while let Ok(Some(new)) = maybe_remove_alias(env, &typ) {
@@ -27,11 +41,42 @@ pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t TcType) -> Cow<'t, TcType>
     Cow::Owned(typ)
 }
 
+/// Removes all possible aliases while checking that
+pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
+                              env: &TypeEnv,
+                              typ: &TcType)
+                              -> Result<Option<TcType>, Error> {
+    if let Some((alias_id, _)) = typ.as_alias() {
+        if reduced_aliases.iter().any(|name| name == alias_id) {
+            return Err(Error::SelfRecursive(alias_id.clone()));
+        }
+        reduced_aliases.push(alias_id.clone());
+    }
+    let mut typ = match try!(maybe_remove_alias(env, typ)) {
+        Some(new) => new,
+        None => return Ok(None),
+    };
+    loop {
+        if let Some((alias_id, _)) = typ.as_alias() {
+            if reduced_aliases.iter().any(|name| name == alias_id) {
+                return Err(Error::SelfRecursive(alias_id.clone()));
+            }
+            reduced_aliases.push(alias_id.clone());
+        }
+        match try!(maybe_remove_alias(env, &typ)) {
+            Some(new) => typ = new,
+            None => break,
+        }
+    }
+    Ok(Some(typ))
+}
+
 pub fn remove_alias(env: &TypeEnv, typ: TcType) -> TcType {
     maybe_remove_alias(env, &typ).unwrap_or(None).unwrap_or(typ)
 }
 
-pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>, ()> {
+/// Expand `typ` if it is an alias that can be expanded and return the expanded type. Returns `None` if the type is not an alias or the alias could not be expanded.
+pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>, Error> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
         Type::App(ref alias, ref args) => {
@@ -46,13 +91,13 @@ pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>,
         Some(x) => x,
         None => return Ok(None),
     };
-    let maybe_alias = maybe_alias.or_else(|| {
-        env.find_type_info(&id)
-            .map(|a| &**a)
-    });
     let alias = match maybe_alias {
         Some(alias) => alias,
-        None => return Ok(None),
+        None => {
+            try!(env.find_type_info(&id)
+                .map(|a| &**a)
+                .ok_or_else(|| Error::UndefinedType(id.clone())))
+        }
     };
     Ok(type_of_alias(alias, args))
 }
