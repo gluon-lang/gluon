@@ -5,7 +5,7 @@ use std::collections::hash_map::Entry;
 use std::ops::Deref;
 
 use types;
-use types::{AliasData, BuiltinType, Type, Generic, TcType, TypeEnv, merge};
+use types::{AliasData, Type, Generic, TcType, TypeEnv, merge};
 use symbol::Symbol;
 
 /// Removes type aliases from `typ` until it is an actual type
@@ -175,56 +175,6 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
                                   }
                               })
 }
-
-/// Removes layers of `Type::App`.
-///
-/// Example:
-///
-/// ```
-/// use gluon_base::types::{Type, TcType, BuiltinType};
-/// use gluon_base::instantiate::unroll_app;
-/// let i: TcType = Type::int();
-/// let s: TcType = Type::string();
-/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![s.clone()]), vec![i.clone()])),
-///            Some(Type::app(i.clone(), vec![s.clone(), i.clone()])));
-/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![i.clone()]), vec![s.clone()])),
-///            Some(Type::app(i.clone(), vec![i.clone(), s.clone()])));
-/// let f: TcType = Type::builtin(BuiltinType::Function);
-/// assert_eq!(unroll_app(&*Type::app(Type::app(f.clone(), vec![i.clone()]), vec![s.clone()])),
-///            Some(Type::function(vec![i.clone()], s.clone())));
-/// ```
-pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
-    let mut args = Vec::new();
-    let mut current = match *typ {
-        Type::App(ref l, ref rest) => {
-            args.extend(rest.iter().rev().cloned());
-            l
-        }
-        _ => return None,
-    };
-    loop {
-        match **current {
-            Type::App(ref l, ref rest) => {
-                args.extend(rest.iter().rev().cloned());
-                current = l;
-            }
-            _ => break,
-        }
-    }
-    if args.is_empty() {
-        None
-    } else {
-        args.reverse();
-        Some(match **current {
-            Type::Builtin(BuiltinType::Function) if args.len() == 2 => {
-                let ret = args.pop().unwrap();
-                Type::function(args, ret)
-            }
-            _ => Type::app(current.clone(), args),
-        })
-    }
-}
-
 
 /// Walks through a type replacing some types
 /// If a type is replaced the new type will not be traversed
