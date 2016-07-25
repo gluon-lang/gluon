@@ -187,10 +187,15 @@ fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
 
 impl VMEnv {
     pub fn find_type_info(&self, name: &str) -> Result<Cow<types::Alias<Symbol, TcType>>> {
-        if let Some(alias) = self.type_infos.id_to_type.get(name) {
-            return Ok(Cow::Borrowed(alias));
-        }
         let name = Name::new(name);
+        let module_str = name.module().as_str();
+        if module_str == "" {
+            return self.type_infos
+                .id_to_type
+                .get(name.as_str())
+                .map(|alias| Cow::Borrowed(alias))
+                .ok_or_else(|| Error::UndefinedBinding(name.as_str().into()));
+        }
         let (_, typ) = try!(self.get_binding(name.module().as_str()));
         let maybe_type_info = map_cow_option(typ.clone(), |typ| {
             match **typ {
@@ -309,7 +314,7 @@ impl VMEnv {
 impl GlobalVMState {
     /// Creates a new virtual machine
     pub fn new() -> GlobalVMState {
-        let vm = GlobalVMState {
+        let mut vm = GlobalVMState {
             env: RwLock::new(VMEnv {
                 globals: HashMap::new(),
                 type_infos: TypeInfos::new(),
@@ -326,19 +331,32 @@ impl GlobalVMState {
         vm
     }
 
-    fn add_types(&self) -> StdResult<(), (TypeId, TcType)> {
+    fn add_types(&mut self) -> StdResult<(), (TypeId, TcType)> {
         use api::generic::A;
         use api::Generic;
+        fn add_type<T: Any>(ids: &mut HashMap<TypeId, TcType>,
+                            env: &mut VMEnv,
+                            name: &str,
+                            typ: TcType) {
+            ids.insert(TypeId::of::<T>(), typ);
+            // Insert aliases so that `find_info` can retrieve information about the primitives
+            env.type_infos.id_to_type.insert(name.into(),
+                                             types::Alias::from(types::AliasData {
+                                                 name: Symbol::new(name),
+                                                 args: Vec::new(),
+                                                 typ: None,
+                                             }));
+        }
+
         {
-            let mut ids = self.typeids.write().unwrap();
-            ids.insert(TypeId::of::<()>(), Type::unit());
-            ids.insert(TypeId::of::<VMInt>(), Type::int());
-            ids.insert(TypeId::of::<i32>(), Type::int());
-            ids.insert(TypeId::of::<u32>(), Type::int());
-            ids.insert(TypeId::of::<u8>(), Type::byte());
-            ids.insert(TypeId::of::<f64>(), Type::float());
-            ids.insert(TypeId::of::<::std::string::String>(), Type::string());
-            ids.insert(TypeId::of::<char>(), Type::char());
+            let ids = self.typeids.get_mut().unwrap();
+            let env = self.env.get_mut().unwrap();
+            add_type::<()>(ids, env, "()", Type::unit());
+            add_type::<VMInt>(ids, env, "Int", Type::int());
+            add_type::<u8>(ids, env, "Byte", Type::byte());
+            add_type::<f64>(ids, env, "Float", Type::float());
+            add_type::<::std::string::String>(ids, env, "String", Type::string());
+            add_type::<char>(ids, env, "Char", Type::char());
         }
         let _ = self.register_type::<IO<Generic<A>>>("IO", &["a"]);
         let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"]);
