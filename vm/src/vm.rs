@@ -8,8 +8,8 @@ use std::string::String as StdString;
 use base::ast::{Typed, ASTType};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types;
-use base::types::{Type, KindEnv, TypeEnv, PrimitiveEnv, TcType, RcKind};
+use base::types::{Alias, AliasData, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv, TcType,
+                  RcKind};
 
 use macros::MacroEnv;
 use {Error, Result};
@@ -145,7 +145,7 @@ impl TypeEnv for VMEnv {
                     .map(|ctor| ctor)
             })
     }
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&types::Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         self.type_infos
             .find_type_info(id)
     }
@@ -186,15 +186,14 @@ fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
 }
 
 impl VMEnv {
-    pub fn find_type_info(&self, name: &str) -> Result<Cow<types::Alias<Symbol, TcType>>> {
+    pub fn find_type_info(&self, name: &str) -> Result<Cow<Alias<Symbol, TcType>>> {
         let name = Name::new(name);
         let module_str = name.module().as_str();
         if module_str == "" {
-            return self.type_infos
-                .id_to_type
-                .get(name.as_str())
-                .map(|alias| Cow::Borrowed(alias))
-                .ok_or_else(|| Error::UndefinedBinding(name.as_str().into()));
+            return match self.type_infos.id_to_type.get(name.as_str()) {
+                Some(alias) => Ok(Cow::Borrowed(alias)),
+                None => Err(Error::UndefinedBinding(name.as_str().into())),
+            };
         }
         let (_, typ) = try!(self.get_binding(name.module().as_str()));
         let maybe_type_info = map_cow_option(typ.clone(), |typ| {
@@ -341,7 +340,7 @@ impl GlobalVMState {
             ids.insert(TypeId::of::<T>(), typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(name.into(),
-                                             types::Alias::from(types::AliasData {
+                                             Alias::from(AliasData {
                                                  name: Symbol::new(name),
                                                  args: Vec::new(),
                                                  typ: None,
@@ -358,9 +357,9 @@ impl GlobalVMState {
             add_type::<::std::string::String>(ids, env, "String", Type::string());
             add_type::<char>(ids, env, "Char", Type::char());
         }
-        let _ = self.register_type::<IO<Generic<A>>>("IO", &["a"]);
-        let _ = self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"]);
-        let _ = self.register_type::<RootedThread>("Thread", &[]);
+        self.register_type::<IO<Generic<A>>>("IO", &["a"]).unwrap();
+        self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"]).unwrap();
+        self.register_type::<RootedThread>("Thread", &[]).unwrap();
         Ok(())
     }
 
@@ -407,9 +406,9 @@ impl GlobalVMState {
         if let Some(g) = generics.get(name) {
             return g.clone();
         }
-        let g: TcType = Type::generic(types::Generic {
+        let g: TcType = Type::generic(Generic {
             id: Symbol::new(name),
-            kind: types::Kind::typ(),
+            kind: Kind::typ(),
         });
         generics.insert(name.into(), g.clone());
         g
@@ -438,7 +437,7 @@ impl GlobalVMState {
                 .insert(id, typ.clone());
             let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(name.into(),
-                                         types::Alias::from(types::AliasData {
+                                         Alias::from(AliasData {
                                              name: n,
                                              args: args,
                                              typ: None,
