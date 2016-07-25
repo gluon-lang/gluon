@@ -113,7 +113,6 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
 {
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
     match (&**self_, &**other) {
-        (&Type::Array(ref l), &Type::Array(ref r)) => Ok(unifier.try_match(l, r).map(Type::array)),
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             if l_args.len() == r_args.len() {
                 let ctor = unifier.try_match(l, r);

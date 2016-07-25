@@ -53,10 +53,6 @@ fn typ(s: &str) -> ASTType<String> {
         Err(()) => Type::id(intern(s)),
     }
 }
-fn typ_a(s: &str, args: Vec<ASTType<String>>) -> ASTType<String> {
-    assert!(s.len() != 0);
-    Type::app(Type::id(intern(s)), args)
-}
 fn generic_ty(s: &str) -> ASTType<String> {
     Type::generic(generic(s))
 }
@@ -366,7 +362,7 @@ fn associated_record() {
                                           name: intern("x"),
                                           typ: typ("a"),
                                       }]);
-    let fn_type = Type::function(vec![typ("Int")], typ_a("Array", vec![typ("Int")]));
+    let fn_type = Type::function(vec![typ("Int")], Type::array(typ("Int")));
     let record = record_a(vec![(intern("Fn"), Some(fn_type)), (intern("Test"), None)],
                           vec![(intern("x"), Some(int(1)))]);
     assert_eq!(e,

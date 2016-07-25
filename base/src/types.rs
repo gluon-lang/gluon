@@ -162,8 +162,6 @@ pub enum Type<Id, T = ASTType<Id>> {
     Generic(Generic<Id>),
     /// A builtin type
     Builtin(BuiltinType),
-    /// An array type `Array T`
-    Array(T),
     /// A record type
     Record {
         /// The associated types of this record type
@@ -275,12 +273,21 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
 /// All the builtin types of gluon
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType {
+    /// Unicode string
     String,
+    /// Unsigned byte
     Byte,
+    /// Character
     Char,
+    /// Integer number
     Int,
+    /// Floating point number
     Float,
+    /// The unit type
     Unit,
+    /// Type constructor for arrays, `Array a : Type -> Type`
+    Array,
+    /// Type constructor for functions, `(->) a b : Type -> Type -> Type`
     Function,
 }
 
@@ -299,6 +306,7 @@ impl ::std::str::FromStr for BuiltinType {
             "Float" => BuiltinType::Float,
             "String" => BuiltinType::String,
             "Char" => BuiltinType::Char,
+            "Array" => BuiltinType::Array,
             "->" => BuiltinType::Function,
             _ => return Err(()),
         };
@@ -315,6 +323,7 @@ impl BuiltinType {
             BuiltinType::Int => "Int",
             BuiltinType::Float => "Float",
             BuiltinType::Unit => "()",
+            BuiltinType::Array => "Array",
             BuiltinType::Function => "->",
         }
     }
@@ -471,7 +480,7 @@ impl<Id, T> Type<Id, T>
     where T: From<Type<Id, T>>
 {
     pub fn array(typ: T) -> T {
-        T::from(Type::Array(typ))
+        Type::app(Type::builtin(BuiltinType::Array), vec![typ])
     }
 
     pub fn app(id: T, args: Vec<T>) -> T {
@@ -776,7 +785,6 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                 Ok(())
             }
             Type::Builtin(ref t) => t.fmt(f),
-            Type::Array(ref t) => write!(f, "[{}]", top(self.env, &**t)),
             Type::Record { ref types, ref fields } => {
                 try!(write!(f, "{{"));
                 if !types.is_empty() {
@@ -858,9 +866,6 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
                 walk_type(a, f);
             }
         }
-        Type::Array(ref inner) => {
-            walk_type(inner, f);
-        }
         Type::Record { ref types, ref fields } => {
             for field in types {
                 if let Some(ref typ) = field.typ.typ {
@@ -936,7 +941,6 @@ pub fn walk_move_type_opt<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
             let new_args = walk_move_types(args.iter(), |t| walk_move_type_opt(t, f));
             merge(id, walk_move_type_opt(id, f), args, new_args, Type::app)
         }
-        Type::Array(ref inner) => walk_move_type_opt(&**inner, f).map(Type::array),
         Type::Record { ref types, ref fields } => {
             let new_types = None;
             let new_fields = walk_move_types(fields.iter(), |field| {
