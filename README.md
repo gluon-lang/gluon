@@ -153,9 +153,10 @@ else
 
 ## Contributing
 
-If you are interested in contributing to this project there are a few issues open marked as [beginner][] which should be possible to handle for someone unfamiliar with the code. If you find something that looks interesting leave a comment on the issue so I know about it and can give some assistance if needed.
+There are many ways to contribute to gluon. The two simplest ways of starting out is opening issues or working on an issue marked as [beginner][]. For more extensive information about contributing you can look at [CONTRIBUTING.md][].
 
 [beginner]:https://github.com/Marwes/gluon/labels/Beginner
+[CONTRIBUTING.md]:https://github.com/Marwes/gluon/blob/master/CONTRIBUTING.md
 
 ## Goals
 These goals may change or be refined over time as I experiment with what is possible to with the language.
