@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::hash::Hash;
 
 use base::error::Errors;
@@ -11,6 +12,24 @@ pub enum Error<T: Substitutable, E> {
     Occurs(T::Variable, T),
     Other(E),
 }
+
+impl<T, E> fmt::Display for Error<T, E>
+    where T: Substitutable + fmt::Display,
+          T::Variable: fmt::Display,
+          E: fmt::Display
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use unify::Error::*;
+        match *self {
+            TypeMismatch(ref l, ref r) => {
+                write!(f, "Types do not match:\n\tExpected: {}\n\tFound: {}", l, r)
+            }
+            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
+            Other(ref err) => write!(f, "{}", err),
+        }
+    }
+}
+
 
 pub struct UnifierState<'s, S: ?Sized + 's, T: 's, U> {
     pub state: &'s mut S,

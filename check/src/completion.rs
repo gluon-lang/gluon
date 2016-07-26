@@ -48,15 +48,13 @@ impl OnFound for Suggest {
 
     fn on_pattern(&mut self, pattern: &ast::LPattern<ast::TcIdent<Symbol>>) {
         match pattern.value {
-            ast::Pattern::Record { ref id, ref fields, .. } => {
-                match *instantiate::remove_aliases(&(), id.typ.clone()) {
-                    Type::Record { fields: ref field_types, .. } => {
-                        for (field, field_type) in fields.iter().zip(field_types) {
-                            let f = field.1.as_ref().unwrap_or(&field.0).clone();
-                            self.stack.insert(f, field_type.typ.clone());
-                        }
+            ast::Pattern::Record { ref id, fields: ref field_ids, .. } => {
+                let unaliased = instantiate::remove_aliases(&(), id.typ.clone());
+                if let Type::Record { ref fields, .. } = *unaliased {
+                    for (field, field_type) in field_ids.iter().zip(fields) {
+                        let f = field.1.as_ref().unwrap_or(&field.0).clone();
+                        self.stack.insert(f, field_type.typ.clone());
                     }
-                    _ => (),
                 }
             }
             ast::Pattern::Identifier(ref id) => {
@@ -71,41 +69,32 @@ impl OnFound for Suggest {
     }
 
     fn expr(&mut self, expr: &ast::LExpr<ast::TcIdent<Symbol>>) {
-        match expr.value {
-            ast::Expr::Identifier(ref ident) => {
-                for (k, typ) in self.stack.iter() {
-                    if k.declared_name().starts_with(ident.name.declared_name()) {
-                        self.result.push(ast::TcIdent {
-                            name: k.clone(),
-                            typ: typ.clone(),
-                        });
-                    }
+        if let ast::Expr::Identifier(ref ident) = expr.value {
+            for (k, typ) in self.stack.iter() {
+                if k.declared_name().starts_with(ident.name.declared_name()) {
+                    self.result.push(ast::TcIdent {
+                        name: k.clone(),
+                        typ: typ.clone(),
+                    });
                 }
             }
-            _ => (),
         }
     }
 
     fn ident(&mut self, context: &ast::LExpr<ast::TcIdent<Symbol>>, ident: &ast::TcIdent<Symbol>) {
-        match context.value {
-            ast::Expr::FieldAccess(ref expr, _) => {
-                let typ = expr.type_of();
-                match *instantiate::remove_aliases(&(), typ) {
-                    Type::Record { ref fields, .. } => {
-                        let id = ident.name.as_ref();
-                        for field in fields {
-                            if field.name.as_ref().starts_with(id) {
-                                self.result.push(ast::TcIdent {
-                                    name: field.name.clone(),
-                                    typ: field.typ.clone(),
-                                });
-                            }
-                        }
+        if let ast::Expr::FieldAccess(ref expr, _) = context.value {
+            let typ = expr.type_of();
+            if let Type::Record { ref fields, .. } = *instantiate::remove_aliases(&(), typ) {
+                let id = ident.name.as_ref();
+                for field in fields {
+                    if field.name.as_ref().starts_with(id) {
+                        self.result.push(ast::TcIdent {
+                            name: field.name.clone(),
+                            typ: field.typ.clone(),
+                        });
                     }
-                    _ => (),
                 }
             }
-            _ => (),
         }
     }
 }
@@ -189,7 +178,7 @@ impl<'a, F> FindVisitor<'a, F>
                 match self.select_spanned(bindings, |b| b.expression.span(self.env)) {
                     (false, Some(bind)) => {
                         for arg in &bind.arguments {
-                            self.on_found.on_ident(&arg);
+                            self.on_found.on_ident(arg);
                         }
                         self.visit_expr(&bind.expression)
                     }
@@ -213,7 +202,7 @@ impl<'a, F> FindVisitor<'a, F>
             }
             Lambda(ref lambda) => {
                 for arg in &lambda.arguments {
-                    self.on_found.on_ident(&arg);
+                    self.on_found.on_ident(arg);
                 }
                 self.visit_expr(&lambda.body)
             }

@@ -165,13 +165,13 @@ pub fn rename(symbols: &mut SymbolModule,
             let locals = self.env
                 .stack
                 .get_all(id);
-            let global = self.env.env.find_type(&id).map(|typ| (id, None, typ));
+            let global = self.env.env.find_type(id).map(|typ| (id, None, typ));
             let candidates = || {
                 locals.iter()
                     .flat_map(|bindings| {
                         bindings.iter().rev().map(|bind| (&bind.0, Some(&bind.1), &bind.2))
                     })
-                    .chain(global.clone())
+                    .chain(global)
             };
             // If there is a single binding (or no binding in case of primitives such as #Int+)
             // there is no need to check for equivalency as typechecker couldnt have infered a

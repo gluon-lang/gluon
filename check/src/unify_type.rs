@@ -45,30 +45,26 @@ impl From<instantiate::Error> for Error<Symbol> {
     }
 }
 
-pub fn fmt_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
+impl<I> fmt::Display for TypeError<I>
     where I: fmt::Display + AsRef<str>
 {
-    use unify::Error::*;
-    match *error {
-        TypeMismatch(ref l, ref r) => {
-            write!(f, "Types do not match:\n\tExpected: {}\n\tFound: {}", l, r)
-        }
-        Other(TypeError::FieldMismatch(ref l, ref r)) => {
-            write!(f,
-                   "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
-                   l,
-                   r)
-        }
-        Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
-        Other(TypeError::UndefinedType(ref id)) => write!(f, "Type `{}` does not exist.", id),
-        Other(TypeError::SelfRecursive(ref id)) => {
-            write!(f,
-                   "The use of self recursion in type `{}` could not be unified.",
-                   id)
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            TypeError::FieldMismatch(ref l, ref r) => {
+                write!(f,
+                       "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
+                       l,
+                       r)
+            }
+            TypeError::UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
+            TypeError::SelfRecursive(ref id) => {
+                write!(f,
+                       "The use of self recursion in type `{}` could not be unified.",
+                       id)
+            }
         }
     }
 }
-
 
 pub type UnifierState<'a, 's, U> = unify::UnifierState<'s, State<'a>, TcType, U>;
 
@@ -149,13 +145,30 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
     match (&**self_, &**other) {
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
-            if l_args.len() == r_args.len() {
-                let ctor = unifier.try_match(l, r);
-                let args = walk_move_types(l_args.iter().zip(r_args.iter()),
-                                           |l, r| unifier.try_match(l, r));
-                Ok(merge(l, ctor, l_args, args, Type::app))
-            } else {
-                unify_app(unifier, l, l_args, other)
+            use std::cmp::Ordering::*;
+            match l_args.len().cmp(&r_args.len()) {
+                Equal => {
+                    let new_type = unifier.try_match(l, r);
+                    let new_args = walk_move_types(l_args.iter().zip(r_args),
+                                                   |l, r| unifier.try_match(l, r));
+                    Ok(merge(l, new_type, l_args, new_args, Type::app))
+                }
+                Less => {
+                    let offset = r_args.len() - l_args.len();
+                    let new_type =
+                        unifier.try_match(l, &Type::app(r.clone(), r_args[..offset].into()));
+                    let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
+                                                   |l, r| unifier.try_match(l, r));
+                    Ok(merge(l, new_type, l_args, new_args, Type::app))
+                }
+                Greater => {
+                    let offset = l_args.len() - r_args.len();
+                    let new_type =
+                        unifier.try_match(&Type::app(l.clone(), l_args[..offset].into()), r);
+                    let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
+                                                   |l, r| unifier.try_match(l, r));
+                    Ok(merge(r, new_type, r_args, new_args, Type::app))
+                }
             }
         }
         (&Type::Record { fields: ref l_args, types: ref l_types },
@@ -327,77 +340,6 @@ fn try_with_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
             unifier.try_match(l, r);
             Ok(None)
         }
-    }
-}
-
-fn unify_app<'a, 's, U, E>(unifier: &mut UnifierState<'a, 's, U>,
-                           l: &TcType,
-                           l_args: &[TcType],
-                           r: &TcType)
-                           -> Result<Option<TcType>, E>
-    where U: Unifier<State<'a>, TcType>
-{
-    let mut args = Vec::new();
-    unify_app_(unifier, l, l_args, r, false, &mut args);
-    if args.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(Type::app(l.clone(), args)))
-    }
-}
-
-fn unify_app_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
-                         l: &TcType,
-                         l_args: &[TcType],
-                         r: &TcType,
-                         replaced: bool,
-                         output: &mut Vec<TcType>)
-    where U: Unifier<State<'a>, TcType>
-{
-    let r = unifier.subs.real(r);
-    let new = match **r {
-        Type::App(ref r, ref r_args) => {
-            use std::cmp::Ordering::*;
-            let args_iter = match l_args.len().cmp(&r_args.len()) {
-                Equal => {
-                    unifier.try_match(l, r);
-                    l_args.iter().zip(r_args)
-                }
-                Less => {
-                    let offset = r_args.len() - l_args.len();
-                    unifier.try_match(l, &Type::app(r.clone(), r_args[..offset].into()));
-                    l_args.iter().zip(&r_args[offset..])
-                }
-                Greater => {
-                    let offset = l_args.len() - r_args.len();
-                    unifier.try_match(&Type::app(l.clone(), l_args[..offset].into()), r);
-                    r_args.iter().zip(&l_args[offset..])
-                }
-            };
-            // Unify the last min(l_args.len(), r_args.len()) arguments
-            match walk_move_types(args_iter, |l, r| unifier.try_match(l, r)) {
-                Some(args) => {
-                    output.extend(args);
-                    return;
-                }
-                None => None,
-            }
-        }
-        _ => {
-            let l = Type::app(l.clone(), l_args.iter().cloned().collect());
-            unifier.try_match(&l, r);
-            // Dont push the actual type that is applied
-            return;
-        }
-    };
-    match new {
-        Some(typ) => {
-            output.push(typ);
-        }
-        None if replaced || !output.is_empty() => {
-            output.push(r.clone());
-        }
-        None => (),
     }
 }
 
