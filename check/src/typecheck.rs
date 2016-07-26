@@ -904,77 +904,77 @@ impl<'a> Typecheck<'a> {
                                bindings: &mut [ast::TypeBinding<Symbol>],
                                expr: &ast::LExpr<TcIdent>)
                                -> TcResult<()> {
-                self.enter_scope();
-                // Rename the types so they get a name which is distinct from types from other
-                // modules
-                for bind in bindings.iter_mut() {
-                    let s = String::from(self.symbols.string(&bind.alias.name));
-                    let new = self.symbols.scoped_symbol(&s);
-                    self.original_symbols.insert(bind.alias.name.clone(), new.clone());
-                    // Rename the aliase's name to its global name
-                    Alias::make_mut(&mut bind.alias).name = new;
+        self.enter_scope();
+        // Rename the types so they get a name which is distinct from types from other
+        // modules
+        for bind in bindings.iter_mut() {
+            let s = String::from(self.symbols.string(&bind.alias.name));
+            let new = self.symbols.scoped_symbol(&s);
+            self.original_symbols.insert(bind.alias.name.clone(), new.clone());
+            // Rename the aliase's name to its global name
+            Alias::make_mut(&mut bind.alias).name = new;
+        }
+        for bind in bindings.iter_mut() {
+            let typ = Alias::make_mut(&mut bind.alias)
+                .typ
+                .as_mut()
+                .expect("Expected binding to have an aliased type");
+            *typ = self.refresh_symbols_in_type(typ.clone());
+        }
+        {
+            let subs = Substitution::new();
+            let mut check = KindCheck::new(&self.environment, &self.symbols, subs);
+            // Setup kind variables for all type variables and insert the types in the
+            // this type expression into the kindcheck environment
+            for bind in bindings.iter_mut() {
+                // Create the kind for this binding
+                // Test a b: 2 -> 1 -> Type
+                // and bind the same variables to the arguments of the type binding
+                // ('a' and 'b' in the example)
+                let mut id_kind = check.type_kind();
+                let alias = Alias::make_mut(&mut bind.alias);
+                for gen in alias.args.iter_mut().rev() {
+                    gen.kind = check.subs.new_var();
+                    id_kind = Kind::function(gen.kind.clone(), id_kind);
                 }
-                for bind in bindings.iter_mut() {
-                    let typ = Alias::make_mut(&mut bind.alias)
-                        .typ
-                        .as_mut()
-                        .expect("Expected binding to have an aliased type");
-                    *typ = self.refresh_symbols_in_type(typ.clone());
-                }
-                {
-                    let subs = Substitution::new();
-                    let mut check = KindCheck::new(&self.environment, &self.symbols, subs);
-                    // Setup kind variables for all type variables and insert the types in the
-                    // this type expression into the kindcheck environment
-                    for bind in bindings.iter_mut() {
-                        // Create the kind for this binding
-                        // Test a b: 2 -> 1 -> Type
-                        // and bind the same variables to the arguments of the type binding
-                        // ('a' and 'b' in the example)
-                        let mut id_kind = check.type_kind();
-                        let alias = Alias::make_mut(&mut bind.alias);
-                        for gen in alias.args.iter_mut().rev() {
-                            gen.kind = check.subs.new_var();
-                            id_kind = Kind::function(gen.kind.clone(), id_kind);
-                        }
-                        check.add_local(alias.name.clone(), id_kind);
-                    }
+                check.add_local(alias.name.clone(), id_kind);
+            }
 
-                    // Kindcheck all the types in the environment
-                    for bind in bindings.iter_mut() {
-                        check.set_variables(&bind.alias.args);
-                        let typ = Alias::make_mut(&mut bind.alias)
-                            .typ
-                            .as_mut()
-                            .expect("Expected binding to have an aliased type");
-                        try!(check.kindcheck_type(typ));
-                    }
+            // Kindcheck all the types in the environment
+            for bind in bindings.iter_mut() {
+                check.set_variables(&bind.alias.args);
+                let typ = Alias::make_mut(&mut bind.alias)
+                    .typ
+                    .as_mut()
+                    .expect("Expected binding to have an aliased type");
+                try!(check.kindcheck_type(typ));
+            }
 
-                    // All kinds are now inferred so replace the kinds store in the AST
-                    for bind in bindings.iter_mut() {
-                        let alias = Alias::make_mut(&mut bind.alias);
-                        if let Some(ref mut typ) = alias.typ {
-                            *typ = check.finalize_type(typ.clone());
-                        }
-                        for arg in &mut alias.args {
-                            *arg = check.finalize_generic(&arg);
-                        }
-                    }
+            // All kinds are now inferred so replace the kinds store in the AST
+            for bind in bindings.iter_mut() {
+                let alias = Alias::make_mut(&mut bind.alias);
+                if let Some(ref mut typ) = alias.typ {
+                    *typ = check.finalize_type(typ.clone());
                 }
+                for arg in &mut alias.args {
+                    *arg = check.finalize_generic(&arg);
+                }
+            }
+        }
 
-                // Finally insert the declared types into the global scope
-                for bind in bindings {
-                    let args = &bind.alias.args;
-                    debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
-                    if self.environment.stack_types.get(&bind.name).is_some() {
-                        self.errors.error(ast::Spanned {
-                            span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
-                            value: DuplicateTypeDefinition(bind.name.clone()),
-                        });
-                    } else {
-                        self.stack_type(bind.name.clone(), &bind.alias);
-                    }
-                }
+        // Finally insert the declared types into the global scope
+        for bind in bindings {
+            let args = &bind.alias.args;
+            debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
+            if self.environment.stack_types.get(&bind.name).is_some() {
+                self.errors.error(ast::Spanned {
+                    span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
+                    value: DuplicateTypeDefinition(bind.name.clone()),
+                });
+            } else {
+                self.stack_type(bind.name.clone(), &bind.alias);
+            }
+        }
         Ok(())
     }
 
