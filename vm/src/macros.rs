@@ -57,6 +57,15 @@ impl MacroEnv {
         self.macros.write().unwrap().insert(name, Box::new(mac));
     }
 
+    /// Inserts a `Macro` then returns an instance of Option<Box<Macro>> using self.get
+    pub fn insert_and_get<M>(&self, name: String, mac: M) -> Option<Box<Macro>>
+        where M: Macro + 'static
+    {
+        let get_name = name.clone();
+        self.insert(name, mac);
+        self.get(&get_name)
+    }
+
     /// Retrieves the macro bound to `symbol`
     pub fn get(&self, name: &str) -> Option<Box<Macro>> {
         self.macros.read().unwrap().get(name).map(|x| (**x).clone())
