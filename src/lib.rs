@@ -22,6 +22,7 @@ pub use vm::thread::{RootedThread, Thread};
 
 use std::result::Result as StdResult;
 use std::string::String as StdString;
+use std::env;
 
 use base::ast;
 use base::error::Errors;
@@ -541,9 +542,15 @@ pub fn filename_to_module(filename: &str) -> StdString {
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
 pub fn new_vm() -> RootedThread {
+    use ::import::{DefaultImporter, Import};
+
     let vm = RootedThread::new();
-    vm.get_macros().insert(String::from("import"),
-                           ::import::Import::new(::import::DefaultImporter));
+    let gluon_path = env::var("GLUON_PATH").unwrap_or(String::from("."));
+    let import = Import::new(DefaultImporter);
+    import.add_path(gluon_path);
+    vm.get_macros()
+        .insert(String::from("import"), import);
+
     Compiler::new()
         .implicit_prelude(false)
         .run_expr::<Generic<A>>(&vm, "", r#" import "std/types.glu" "#)
