@@ -539,25 +539,17 @@ pub fn filename_to_module(filename: &str) -> StdString {
     name.replace("/", ".")
 }
 
-fn get_env_path() -> Option<String> {
-    match env::var("GLUON_PATH") {
-        Ok(val) => Some(val),
-        Err(_) => None,
-    }
-}
-
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
 pub fn new_vm() -> RootedThread {
+    use ::import::{DefaultImporter, Import};
+
     let vm = RootedThread::new();
-    let gluon_path = get_env_path().unwrap_or(String::from("."));
+    let gluon_path = env::var("GLUON_PATH").unwrap_or(String::from("."));
+    let import = Import::new(DefaultImporter);
+    import.add_path(gluon_path);
     vm.get_macros()
-        .insert_and_get(String::from("import"),
-                        ::import::Import::new(::import::DefaultImporter))
-        .as_ref()
-        .and_then(|import| import.downcast_ref::<::import::Import>())
-        .expect("Import macro")
-        .add_path(gluon_path);
+        .insert(String::from("import"), import);
 
     Compiler::new()
         .implicit_prelude(false)
