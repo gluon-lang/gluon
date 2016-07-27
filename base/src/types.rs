@@ -808,7 +808,7 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
                         None => try!(write!(f, "= <abstract>")),
                     }
                     for field in &types[1..] {
-                        try!(write!(f, " {} ", self.env.string(&field.name)));
+                        try!(write!(f, ", {} ", self.env.string(&field.name)));
                         for arg in &field.typ.args {
                             try!(write!(f, "{} ", self.env.string(&arg.id)));
                         }

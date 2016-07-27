@@ -369,7 +369,7 @@ impl<'vm> Getable<'vm> for u8 {
 }
 
 impl VMType for i32 {
-    type Type = Self;
+    type Type = VMInt;
 }
 impl<'vm> Pushable<'vm> for i32 {
     fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
@@ -386,7 +386,7 @@ impl<'vm> Getable<'vm> for i32 {
     }
 }
 impl VMType for u32 {
-    type Type = Self;
+    type Type = VMInt;
 }
 impl<'vm> Pushable<'vm> for u32 {
     fn push(self, _: &'vm Thread, stack: &mut Stack) -> Status {
