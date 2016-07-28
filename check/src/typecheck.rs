@@ -1058,16 +1058,25 @@ impl<'a> Typecheck<'a> {
         *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, typ);
     }
 
+    /// Generate a generic variable name which is not used in the current scope
+    fn next_variable(&mut self, level: u32, s: &mut String) {
+        for c in b'a'..(b'z' + 1) {
+            s.push(c as char);
+            let symbol = self.symbols.symbol(&s[..]);
+            if self.type_variables.get(&symbol).is_none() {
+                self.type_variables.insert(symbol, level);
+                return;
+            }
+            s.pop();
+        }
+        s.push('a');
+        self.next_variable(level, s)
+    }
+
     /// Finish a type by replacing all unbound type variables above `level` with generics
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
-        let generic = {
-            let max_var = self.type_variables
-                .iter()
-                .map(|t| t.0)
-                .fold("a",
-                      |max, current| ::std::cmp::max(max, self.symbols.string(current)));
-            String::from(max_var)
-        };
+        let mut generic = String::new();
+        self.next_variable(level, &mut generic);
         let mut i = 0;
         self.finish_type_(level, &generic, &mut i, typ)
     }
@@ -1095,7 +1104,6 @@ impl<'a> Typecheck<'a> {
                         id: id.clone(),
                     });
                     self.subs.insert(var.id, gen.clone());
-                    self.type_variables.insert(id, level);
                     Some(gen)
                 }
                 _ => unroll_app(typ).or(replacement.clone()),
