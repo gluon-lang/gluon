@@ -338,6 +338,7 @@ impl<'a> Typecheck<'a> {
     /// `let` scope and can thus be "generalized" into `a -> a` which is instantiated with a fresh
     /// type variable in the `id 2` call.
     fn generalize_variables(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
+        self.type_variables.enter_scope();
         // Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b: 'a> {
             level: u32,
@@ -345,22 +346,17 @@ impl<'a> Typecheck<'a> {
         }
         impl<'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
             type T = TcIdent;
+
             fn visit_identifier(&mut self, id: &mut TcIdent) {
                 id.typ = self.tc.finish_type(self.level, id.typ.clone());
             }
         }
-        let mut stack = mem::replace(&mut self.environment.stack, ScopedMap::new());
-        for (_, vec) in stack.iter_mut() {
-            for typ in vec {
-                *typ = self.finish_type(level, typ.clone());
-            }
-        }
-        mem::swap(&mut self.environment.stack, &mut stack);
         ReplaceVisitor {
                 level: level,
                 tc: self,
             }
             .visit_expr(expr);
+        self.type_variables.exit_scope();
     }
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
@@ -373,6 +369,13 @@ impl<'a> Typecheck<'a> {
                                    expr: &mut ast::LExpr<TcIdent>,
                                    expected_type: Option<&TcType>)
                                    -> Result<TcType, Error> {
+        fn tail_expr(e: &mut ast::LExpr<TcIdent>) -> &mut ast::LExpr<TcIdent> {
+            match e.value {
+                ast::Expr::Let(_, ref mut b) |
+                ast::Expr::Type(_, ref mut b) => tail_expr(b),
+                _ => e,
+            }
+        }
         self.subs.clear();
         self.environment.stack.clear();
 
@@ -384,7 +387,9 @@ impl<'a> Typecheck<'a> {
         }
         typ = self.finish_type(0, typ);
         typ = types::walk_move_type(typ, &mut unroll_app);
-        self.generalize_variables(0, expr);
+        // Only the 'tail' expression need to be generalized at this point as all bindings
+        // will have already been generalized
+        self.generalize_variables(0, tail_expr(expr));
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
         } else {
@@ -760,7 +765,7 @@ impl<'a> Typecheck<'a> {
                                 (t.clone(), t)
                             }
                         };
-                        typ = self.instantiate_(&typ);
+                        typ = self.instantiate(&typ);
                         actual_type = self.instantiate_(&actual_type);
                         self.unify_span(span, &match_type, typ);
                         match *actual_type {
@@ -1007,13 +1012,15 @@ impl<'a> Typecheck<'a> {
                        types::display_type(&self.symbols, &id.typ));
                 self.intersect_type(level, &id.name, &id.typ);
             }
-            ast::Pattern::Record { ref id, ref mut fields, .. } => {
+            ast::Pattern::Record { ref mut id, ref mut fields, .. } => {
                 debug!("{{ .. }}: {}",
                        types::display_type(&self.symbols,
                                            &bind.expression
                                                .env_type_of(&self.environment)));
+                id.typ = self.finish_type(level, id.typ.clone());
                 let record_type = self.remove_alias(id.typ.clone());
-                with_pattern_types(fields, &record_type, |field_name, field_type| {
+                with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
+                    let field_name = binding.as_ref().unwrap_or(field_name);
                     self.intersect_type(level, field_name, field_type);
                 });
             }
@@ -1226,7 +1233,7 @@ impl<'a> Typecheck<'a> {
 }
 
 fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(&Symbol, &TcType)
+    where F: FnMut(&Symbol, &Option<Symbol>, &TcType)
 {
     if let Type::Record { fields: ref field_types, .. } = **typ {
         for field in fields {
@@ -1234,7 +1241,7 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut 
             // the error itself will already have been reported
             if let Some(associated_type) = field_types.iter()
                 .find(|type_field| type_field.name.name_eq(&field.0)) {
-                f(&field.0, &associated_type.typ);
+                f(&field.0, &field.1, &associated_type.typ);
             }
         }
     }
