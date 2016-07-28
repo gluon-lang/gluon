@@ -866,7 +866,14 @@ impl<I, T> fmt::Display for Type<I, T>
     }
 }
 
-pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
+pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, mut f: F)
+    where F: FnMut(&'t T) -> &'t T,
+          T: Deref<Target = Type<I, T>>
+{
+    walk_type_(typ, &mut f)
+}
+
+fn walk_type_<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
     where F: FnMut(&'t T) -> &'t T,
           T: Deref<Target = Type<I, T>>
 {
@@ -874,22 +881,22 @@ pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
     match **typ {
         Type::App(_, ref args) => {
             for a in args {
-                walk_type(a, f);
+                walk_type_(a, f);
             }
         }
         Type::Record { ref types, ref fields } => {
             for field in types {
                 if let Some(ref typ) = field.typ.typ {
-                    walk_type(typ, f);
+                    walk_type_(typ, f);
                 }
             }
             for field in fields {
-                walk_type(&field.typ, f);
+                walk_type_(&field.typ, f);
             }
         }
         Type::Variants(ref variants) => {
             for variant in variants {
-                walk_type(&variant.1, f);
+                walk_type_(&variant.1, f);
             }
         }
         Type::Builtin(_) |

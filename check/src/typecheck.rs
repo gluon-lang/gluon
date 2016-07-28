@@ -207,6 +207,8 @@ pub struct Typecheck<'a> {
     subs: Substitution<TcType>,
     inst: Instantiator,
     errors: Errors<ast::Spanned<TypeError<Symbol>>>,
+    /// Type variables `let test: a -> b` (`a` and `b`)
+    type_variables: ScopedMap<Symbol, u32>,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
@@ -230,6 +232,7 @@ impl<'a> Typecheck<'a> {
             subs: Substitution::new(),
             inst: Instantiator::new(),
             errors: Errors::new(),
+            type_variables: ScopedMap::new(),
         }
     }
 
@@ -832,6 +835,7 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_bindings(&mut self, bindings: &mut [ast::Binding<TcIdent>]) -> TcResult<()> {
         self.enter_scope();
+        self.type_variables.enter_scope();
         let level = self.subs.var_id();
         let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
         // When the decfinitions are allowed to be mutually recursive
@@ -854,17 +858,23 @@ impl<'a> Typecheck<'a> {
         }
         let mut types = Vec::new();
         for bind in bindings.iter_mut() {
+            self.type_variables.enter_scope();
+
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let mut typ = if bind.arguments.is_empty() {
                 if let Some(ref mut type_decl) = bind.typ {
+                    self.insert_type_variables(level, type_decl);
                     *type_decl = self.refresh_symbols_in_type(type_decl.clone());
                     try!(self.kindcheck(type_decl, &mut []));
                 }
                 self.typecheck(&mut bind.expression)
             } else {
                 let function_type = match bind.typ {
-                    Some(ref typ) => self.instantiate(typ),
+                    Some(ref type_decl) => {
+                        self.insert_type_variables(level, type_decl);
+                        self.instantiate(type_decl)
+                    }
                     None => self.subs.new_var(),
                 };
                 self.typecheck_lambda(function_type, &mut bind.arguments, &mut bind.expression)
@@ -882,6 +892,7 @@ impl<'a> Typecheck<'a> {
             } else {
                 types.push(typ);
             }
+            self.type_variables.exit_scope();
         }
         if is_recursive {
             for (typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
@@ -897,6 +908,7 @@ impl<'a> Typecheck<'a> {
             self.finish_binding(level, bind);
         }
         debug!("Typecheck `in`");
+        self.type_variables.exit_scope();
         Ok(())
     }
 
@@ -1019,30 +1031,32 @@ impl<'a> Typecheck<'a> {
     }
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &TcType) {
-        let mut typ = None;
-        if let Some(existing_types) = self.environment.stack.get_all(symbol) {
+        let typ = {
+            let existing_types = self.environment.stack.get_all(symbol).expect("Symbol is not in scope");
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
                 debug!("Intersect\n{} <> {}",
-                       types::display_type(&self.symbols, existing_type),
-                       types::display_type(&self.symbols, symbol_type));
+                        types::display_type(&self.symbols, existing_type),
+                        types::display_type(&self.symbols, symbol_type));
                 let mut state = ::unify_type::State::new(&self.environment);
                 let result =
                     unify::intersection(&self.subs, &mut state, existing_type, symbol_type);
                 debug!("Intersect result {}", result);
-                typ = Some(result);
+                result
             }
-        }
-        if let Some(typ) = typ {
-            *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, typ);
-        }
+            else {
+                symbol_type.clone()
+            }
+        };
+        *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, typ);
     }
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
     fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
         let generic = {
-            let vars = self.inst.named_variables.borrow();
-            let max_var = vars.keys()
+            let max_var = self.type_variables
+                .iter()
+                .map(|t| t.0)
                 .fold("a",
                       |max, current| ::std::cmp::max(max, self.symbols.string(current)));
             String::from(max_var)
@@ -1074,15 +1088,23 @@ impl<'a> Typecheck<'a> {
                         id: id.clone(),
                     });
                     self.subs.insert(var.id, gen.clone());
-                    self.inst
-                        .named_variables
-                        .borrow_mut()
-                        .insert(id, gen.clone());
+                    self.type_variables.insert(id, level);
                     Some(gen)
                 }
                 _ => unroll_app(typ).or(replacement.clone()),
             }
         })
+    }
+
+    fn insert_type_variables(&mut self, level: u32, typ: &TcType) {
+        types::walk_type(typ, |typ| {
+            if let Type::Generic(ref generic) = **typ {
+                if self.type_variables.get(&generic.id).is_none() {
+                    self.type_variables.insert(generic.id.clone(), level);
+                }
+            }
+            typ
+        });
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
