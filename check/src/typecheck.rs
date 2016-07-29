@@ -849,7 +849,7 @@ impl<'a> Typecheck<'a> {
                 let mut typ = self.subs.new_var();
                 if let Some(ref mut type_decl) = bind.typ {
                     *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                    try!(self.kindcheck(type_decl, &mut []));
+                    try!(self.kindcheck(type_decl));
                     let decl = self.instantiate(type_decl);
                     typ = self.unify_span(bind.name.span(), &decl, typ);
                 }
@@ -871,7 +871,7 @@ impl<'a> Typecheck<'a> {
                 if let Some(ref mut type_decl) = bind.typ {
                     self.insert_type_variables(level, type_decl);
                     *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                    try!(self.kindcheck(type_decl, &mut []));
+                    try!(self.kindcheck(type_decl));
                 }
                 self.typecheck(&mut bind.expression)
             } else {
@@ -981,8 +981,6 @@ impl<'a> Typecheck<'a> {
 
         // Finally insert the declared types into the global scope
         for bind in bindings {
-            let args = &bind.alias.args;
-            debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
             if self.environment.stack_types.get(&bind.name).is_some() {
                 self.errors.error(ast::Spanned {
                     span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
@@ -995,10 +993,9 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn kindcheck(&self, typ: &mut TcType, args: &mut [Generic<Symbol>]) -> TcResult<()> {
+    fn kindcheck(&self, typ: &mut TcType) -> TcResult<()> {
         let subs = Substitution::new();
         let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
-        check.set_variables(args);
         try!(check.kindcheck_type(typ));
         Ok(())
     }
@@ -1039,19 +1036,19 @@ impl<'a> Typecheck<'a> {
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &TcType) {
         let typ = {
-            let existing_types = self.environment.stack.get_all(symbol).expect("Symbol is not in scope");
+            let existing_types =
+                self.environment.stack.get_all(symbol).expect("Symbol is not in scope");
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
                 debug!("Intersect\n{} <> {}",
-                        types::display_type(&self.symbols, existing_type),
-                        types::display_type(&self.symbols, symbol_type));
+                       types::display_type(&self.symbols, existing_type),
+                       types::display_type(&self.symbols, symbol_type));
                 let mut state = ::unify_type::State::new(&self.environment);
                 let result =
                     unify::intersection(&self.subs, &mut state, existing_type, symbol_type);
                 debug!("Intersect result {}", result);
                 result
-            }
-            else {
+            } else {
                 symbol_type.clone()
             }
         };
