@@ -1,23 +1,18 @@
-extern crate env_logger;
-
-extern crate gluon_base as base;
-extern crate gluon_parser as parser;
-extern crate gluon_check as check;
-
-use base::ast;
+use base::{self, ast};
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
-use base::types::{Generic, Type, TcIdent, TcType, KindEnv, TypeEnv, PrimitiveEnv, Alias, RcKind,
-                  Kind};
-
-use check::typecheck::*;
+use base::types::{Alias, Generic, Kind, Type, KindEnv};
+use base::types::{TcIdent, TcType, TypeEnv, PrimitiveEnv, RcKind};
+use check::typecheck::{self, Typecheck};
+use parser;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-///Returns a reference to the interner stored in TLD
+/// Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
     thread_local!(static INTERNER: Rc<RefCell<Symbols>>
                   = Rc::new(RefCell::new(Symbols::new())));
+
     INTERNER.with(|interner| interner.clone())
 }
 
@@ -25,34 +20,37 @@ pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
 pub fn intern_unscoped(s: &str) -> Symbol {
     let i = get_local_interner();
     let mut i = i.borrow_mut();
+
     i.symbol(s)
 }
 
-#[allow(dead_code)]
 pub fn intern(s: &str) -> Symbol {
     let i = get_local_interner();
     let mut i = i.borrow_mut();
-    if s.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+
+    if s.chars().next().map(char::is_lowercase).unwrap_or(false) {
         i.symbol(s)
     } else {
         SymbolModule::new("test".into(), &mut i).scoped_symbol(s)
     }
 }
 
-pub fn parse_new(s: &str) -> Result<ast::LExpr<TcIdent>, (Option<ast::LExpr<TcIdent>>, ::base::error::Errors<::parser::Error>)> {
+pub fn parse_new(s: &str) -> Result<ast::LExpr<TcIdent>, (Option<ast::LExpr<TcIdent>>, base::error::Errors<parser::Error>)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    ::parser::parse_tc(&mut module, s)
+    parser::parse_tc(&mut module, s)
 }
 
 #[allow(dead_code)]
-pub fn typecheck(text: &str) -> Result<TcType, Error> {
+pub fn typecheck(text: &str) -> Result<TcType, typecheck::Error> {
     let (_, t) = typecheck_expr(text);
     t
 }
-struct EmptyEnv(Alias<Symbol, TcType>);
-impl KindEnv for EmptyEnv {
+
+struct MockEnv(Alias<Symbol, TcType>);
+
+impl KindEnv for MockEnv {
     fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
         match id.as_ref() {
             "Bool" => Some(Kind::typ()),
@@ -60,7 +58,7 @@ impl KindEnv for EmptyEnv {
         }
     }
 }
-impl TypeEnv for EmptyEnv {
+impl TypeEnv for MockEnv {
     fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         match id.as_ref() {
             "False" | "True" => Some(&self.0.typ.as_ref().unwrap()),
@@ -78,38 +76,47 @@ impl TypeEnv for EmptyEnv {
     }
 }
 
-impl PrimitiveEnv for EmptyEnv {
+impl PrimitiveEnv for MockEnv {
     fn get_bool(&self) -> &TcType {
         self.0.typ.as_ref().unwrap()
     }
 }
 
-pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>) {
+pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, typecheck::Error>) {
     let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
+
     let bool_sym = interner.symbol("Bool");
     let bool = Type::<_, TcType>::app(Type::id(bool_sym.clone()), vec![]);
-    let env = EmptyEnv(Alias::new(bool_sym, vec![], bool.clone()));
+
+    let env = MockEnv(Alias::new(bool_sym, vec![], bool.clone()));
     let mut tc = Typecheck::new("test".into(), &mut interner, &env);
+
     let result = tc.typecheck_expr(&mut expr);
+
     (expr, result)
 }
 
 #[allow(dead_code)]
-pub fn typecheck_partial_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, Error>) {
+pub fn typecheck_partial_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, typecheck::Error>) {
     let mut expr = match parse_new(text) {
         Ok(e) => e,
         Err((Some(e), _)) => e,
         Err((None, err)) => panic!("{}", err),
     };
+
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
+
     let bool_sym = interner.symbol("Bool");
     let bool = Type::<_, TcType>::app(Type::id(bool_sym.clone()), vec![]);
-    let env = EmptyEnv(Alias::new(bool_sym, vec![], bool.clone()));
+
+    let env = MockEnv(Alias::new(bool_sym, vec![], bool.clone()));
     let mut tc = Typecheck::new("test".into(), &mut interner, &env);
+
     let result = tc.typecheck_expr(&mut expr);
+
     (expr, result)
 }
 
@@ -119,7 +126,6 @@ pub fn typ(s: &str) -> TcType {
     typ_a(s, Vec::new())
 }
 
-#[allow(dead_code)]
 pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
     where T: From<Type<Symbol, T>>
 {
