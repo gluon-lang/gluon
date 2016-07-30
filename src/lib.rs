@@ -463,26 +463,30 @@ impl Compiler {
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
-    pub fn run_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<T>
+    pub fn run_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<(T, TcType)>
         where T: Getable<'vm> + VMType
     {
         let expected = T::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
         unsafe {
-            T::from_value(vm, Variants::new(&value))
-                .ok_or_else(move || Error::from(VMError::WrongType(expected, actual)))
+            match T::from_value(vm, Variants::new(&value)) {
+                Some(value) => Ok((value, actual)),
+                None => Err(Error::from(VMError::WrongType(expected, actual))),
+            }
         }
     }
 
-    pub fn run_io_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<T>
+    pub fn run_io_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<(T, TcType)>
         where T: Getable<'vm> + VMType,
               T::Type: Sized
     {
         let expected = IO::<T>::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
         unsafe {
-            T::from_value(vm, Variants::new(&value))
-                .ok_or_else(move || Error::from(VMError::WrongType(expected, actual)))
+            match T::from_value(vm, Variants::new(&value)) {
+                Some(value) => Ok((value, actual)),
+                None => Err(Error::from(VMError::WrongType(expected, actual))),
+            }
         }
     }
 

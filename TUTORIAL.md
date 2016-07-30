@@ -366,7 +366,7 @@ Once in possession of a [RootedThread][] you can compile and execute code using 
 
 ```rust,ignore
 let vm = new_vm();
-let result = Compiler::new()
+let (result, _) = Compiler::new()
     .run_expr::<i32>(&vm, "example", "1 + 2")
     .ok();
 assert_eq!(result, Some(3));
@@ -397,7 +397,7 @@ fn factorial(x: i32) -> i32 {
 let vm = new_vm();
 vm.define_global("factorial", factorial as fn (_) -> _)
     .unwrap();
-let result = Compiler::new()
+let (result, _) = Compiler::new()
     .run_expr::<i32>(&vm, "example", "factorial 5")
     .unwrap();
 assert_eq!(result, 120);
@@ -407,7 +407,7 @@ assert_eq!(result, 120);
 
 ```rust,ignore
 let vm = new_vm();
-let result = Compiler::new()
+let (result, _) = Compiler::new()
     .run_expr::<String>(&vm, "example", " let string = import \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
     .unwrap();
 assert_eq!(result, "Hello world");
