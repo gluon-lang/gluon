@@ -9,29 +9,44 @@ use base::types::{Type, TcType};
 use check::completion;
 
 mod support;
-use support::typ;
+use support::{MockEnv, typ};
 
 fn find_type(s: &str, location: Location) -> Result<TcType, ()> {
+    let env = ast::EmptyEnv::new();
+    let typ_env = MockEnv::new();
+
     let (mut expr, result) = support::typecheck_expr(s);
     assert!(result.is_ok(), "{}", result.unwrap_err());
-    completion::find(&ast::EmptyEnv::new(), &mut expr, location)
+
+    completion::find(&env, &typ_env, &mut expr, location)
 }
 
 fn suggest(s: &str, location: Location) -> Result<Vec<String>, ()> {
+    let env = ast::EmptyEnv::new();
+    let typ_env = MockEnv::new();
+
     let (mut expr, _result) = support::typecheck_partial_expr(s);
-    let vec = completion::suggest(&ast::EmptyEnv::new(), &mut expr, location);
-    let mut vec: Vec<String> =
-        vec.into_iter().map(|ident| ident.name.declared_name().to_string()).collect();
+    let mut vec: Vec<String> = {
+        completion::suggest(&env, &typ_env, &mut expr, location)
+            .into_iter()
+            .map(|ident| ident.name.declared_name().to_string())
+            .collect()
+    };
     vec.sort();
+
     Ok(vec)
 }
 
 #[test]
 fn identifier() {
+    let env = ast::EmptyEnv::new();
+    let typ_env = MockEnv::new();
+
     let (mut expr, result) = support::typecheck_expr("let abc = 1 in abc");
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&ast::EmptyEnv::new(),
+    let result = completion::find(&env,
+                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       row: 1,
@@ -41,7 +56,8 @@ fn identifier() {
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&ast::EmptyEnv::new(),
+    let result = completion::find(&env,
+                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       row: 1,
@@ -51,7 +67,8 @@ fn identifier() {
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&ast::EmptyEnv::new(),
+    let result = completion::find(&env,
+                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       row: 1,
@@ -61,7 +78,8 @@ fn identifier() {
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&ast::EmptyEnv::new(),
+    let result = completion::find(&env,
+                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       row: 1,
@@ -120,6 +138,9 @@ let f x = f x
 
 #[test]
 fn binop() {
+    let env = ast::EmptyEnv::new();
+    let typ_env = MockEnv::new();
+
     let (mut expr, result) = support::typecheck_expr(r#"
 let (++) l r =
     l #Int+ 1
@@ -129,7 +150,8 @@ let (++) l r =
 "#);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&ast::EmptyEnv::new(),
+    let result = completion::find(&env,
+                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       row: 6,
@@ -139,7 +161,8 @@ let (++) l r =
     let expected = Ok(Type::function(vec![typ("Int"), typ("Float")], typ("Int")));
     assert_eq!(result, expected);
 
-    let result = completion::find(&ast::EmptyEnv::new(),
+    let result = completion::find(&env,
+                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       row: 6,
@@ -149,7 +172,8 @@ let (++) l r =
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&ast::EmptyEnv::new(),
+    let result = completion::find(&env,
+                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       row: 6,

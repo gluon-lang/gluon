@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
 use symbol::Symbol;
-use types::{self, Alias, AliasData, EmptyTypeEnv, Kind, Type, TypeEnv, TypeVariable};
+use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
 
 pub type ASTType<Id> = ::types::ArcType<Id>;
 
@@ -555,10 +555,6 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
 /// It is not guaranteed that the correct type is returned until after typechecking
 pub trait Typed {
     type Id;
-
-    fn type_of(&self) -> ASTType<Self::Id> {
-        self.env_type_of(&EmptyTypeEnv)
-    }
 
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Self::Id>;
 }

@@ -9,7 +9,7 @@ use base::types::{Field, Generic, Kind, Type};
 use base::types;
 
 mod support;
-use support::{alias, intern, typ};
+use support::{MockEnv, alias, intern, typ};
 
 macro_rules! assert_pass {
     ($e: expr) => {{
@@ -127,6 +127,7 @@ let f: T -> Int = \x -> x.y in { y = f { y = 123 } }
 fn let_binding_type() {
     let _ = env_logger::init();
 
+    let env = MockEnv::new();
     let text = r"
 let f: a -> b -> a = \x y -> x in f 1.0 ()
 ";
@@ -137,7 +138,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
     assert_eq!(result, expected);
     match expr.value {
         ast::Expr::Let(ref bindings, _) => {
-            assert_eq!(bindings[0].expression.type_of(), expr_expected)
+            assert_eq!(bindings[0].expression.env_type_of(&env), expr_expected)
         }
         _ => assert!(false),
     }
@@ -184,6 +185,7 @@ macro_rules! assert_match {
 fn let_binding_general_mutually_recursive() {
     let _ = env_logger::init();
 
+    let env = MockEnv::new();
     let text = r"
 let test x = (1 #Int+ 2) #Int+ test2 x
 and test2 x = 2 #Int+ test x
@@ -194,10 +196,10 @@ in test2 1";
     assert_eq!(result, expected);
     assert_match!(expr.value, ast::Expr::Let(ref binds, _) => {
         assert_eq!(binds.len(), 2);
-        assert_match!(*binds[0].type_of(), Type::App(_, ref args) => {
+        assert_match!(*binds[0].env_type_of(&env), Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
-        assert_match!(*binds[1].type_of(), Type::App(_, ref args) => {
+        assert_match!(*binds[1].env_type_of(&env), Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
     });
