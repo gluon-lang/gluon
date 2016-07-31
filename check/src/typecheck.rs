@@ -348,7 +348,9 @@ impl<'a> Typecheck<'a> {
             type T = TcIdent;
 
             fn visit_identifier(&mut self, id: &mut TcIdent) {
-                id.typ = self.tc.finish_type(self.level, id.typ.clone());
+                if let Some(typ) = self.tc.finish_type(self.level, &id.typ) {
+                    id.typ = typ;
+                }
             }
         }
         ReplaceVisitor {
@@ -385,7 +387,7 @@ impl<'a> Typecheck<'a> {
             let expected = self.instantiate(expected);
             typ = self.unify_span(span, &expected, typ)
         }
-        typ = self.finish_type(0, typ);
+        typ = self.finish_type(0, &typ).unwrap_or(typ);
         typ = types::walk_move_type(typ, &mut unroll_app);
         // Only the 'tail' expression need to be generalized at this point as all bindings
         // will have already been generalized
@@ -1003,7 +1005,9 @@ impl<'a> Typecheck<'a> {
     fn finish_binding(&mut self, level: u32, bind: &mut ast::Binding<TcIdent>) {
         match bind.name.value {
             ast::Pattern::Identifier(ref mut id) => {
-                id.typ = self.finish_type(level, id.typ.clone());
+                if let Some(typ) = self.finish_type(level, &id.typ) {
+                    id.typ = typ;
+                }
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
                        types::display_type(&self.symbols, &id.typ));
@@ -1014,7 +1018,9 @@ impl<'a> Typecheck<'a> {
                        types::display_type(&self.symbols,
                                            &bind.expression
                                                .env_type_of(&self.environment)));
-                id.typ = self.finish_type(level, id.typ.clone());
+                if let Some(typ) = self.finish_type(level, &id.typ) {
+                    id.typ = typ;
+                }
                 let record_type = self.remove_alias(id.typ.clone());
                 with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
                     let field_name = binding.as_ref().unwrap_or(field_name);
@@ -1052,7 +1058,8 @@ impl<'a> Typecheck<'a> {
                 symbol_type.clone()
             }
         };
-        *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, typ);
+        *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, &typ)
+            .unwrap_or(typ)
     }
 
     /// Generate a generic variable name which is not used in the current scope
@@ -1071,19 +1078,25 @@ impl<'a> Typecheck<'a> {
     }
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
-    fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
+    fn finish_type(&mut self, level: u32, typ: &TcType) -> Option<TcType> {
         let mut generic = String::new();
         self.next_variable(level, &mut generic);
         let mut i = 0;
         self.finish_type_(level, &generic, &mut i, typ)
     }
 
-    fn finish_type_(&mut self, level: u32, generic: &str, i: &mut i32, typ: TcType) -> TcType {
-        types::walk_move_type(typ,
-                              &mut |typ| {
+    fn finish_type_(&mut self,
+                    level: u32,
+                    generic: &str,
+                    i: &mut i32,
+                    typ: &Type<Symbol>)
+                    -> Option<TcType> {
+        use base::types::TypeVisitor;
+
+        let mut visitor = types::ControlVisitation(|typ: &Type<_, _>| {
             let replacement = self.subs
                 .replace_variable(typ)
-                .map(|t| self.finish_type_(level, generic, i, t));
+                .map(|t| self.finish_type_(level, generic, i, &t).unwrap_or(t));
             let mut typ = typ;
             if let Some(ref t) = replacement {
                 debug!("{} ==> {}",
@@ -1103,9 +1116,29 @@ impl<'a> Typecheck<'a> {
                     self.subs.insert(var.id, gen.clone());
                     Some(gen)
                 }
-                _ => unroll_app(typ).or(replacement.clone()),
+                Type::Record { ref types, ref fields, .. } => {
+                    let new_fields = types::walk_move_types(fields, |field| {
+                        // Make a new name base for any unbound variables in the record field
+                        // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
+                        // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
+                        self.finish_type(level, &field.typ).map(|typ| {
+                            types::Field {
+                                name: field.name.clone(),
+                                typ: typ,
+                            }
+                        })
+                    });
+                    new_fields.map(|fields| Type::record(types.clone(), fields)).or_else(|| replacement.clone())
+                }
+                _ => {
+                    let new_type = types::walk_move_type_opt(typ, &mut |typ: &Type<Symbol>| {
+                        self.finish_type_(level, generic, i, typ)
+                    });
+                    new_type.map(|t| unroll_app(&t).unwrap_or(t)).or_else(|| replacement.clone())
+                }
             }
-        })
+        });
+        visitor.visit(typ)
     }
 
     fn insert_type_variables(&mut self, level: u32, typ: &TcType) {

@@ -958,6 +958,19 @@ impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
     }
 }
 
+/// Wrapper type which allows functions to control how to traverse the members of the type
+pub struct ControlVisitation<F>(pub F);
+impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
+    where F: FnMut(&Type<I, T>) -> Option<T>
+{
+    fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
+        where T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+              I: Clone
+    {
+        (self.0)(typ)
+    }
+}
+
 impl<I, T, F: ?Sized> Walker<T> for F
     where F: FnMut(&T),
           T: Deref<Target = Type<I, T>>
@@ -1013,12 +1026,11 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
 {
     match *typ {
         Type::App(ref id, ref args) => {
-            let new_args = walk_move_types(args.iter(), |t| f.visit(t));
+            let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
         }
         Type::Record { ref types, ref fields } => {
-            let new_types = None;
-            let new_fields = walk_move_types(fields.iter(), |field| {
+            let new_fields = walk_move_types(fields, |field| {
                 f.visit(&field.typ).map(|typ| {
                     Field {
                         name: field.name.clone(),
@@ -1026,16 +1038,10 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
                     }
                 })
             });
-            merge(types, new_types, fields, new_fields, |types, fields| {
-                    Type::Record {
-                        types: types,
-                        fields: fields,
-                    }
-                })
-                .map(From::from)
+            new_fields.map(|fields| Type::record(types.clone(), fields))
         }
         Type::Variants(ref variants) => {
-            walk_move_types(variants.iter(), |v| f.visit(&v.1).map(|t| (v.0.clone(), t)))
+            walk_move_types(variants, |v| f.visit(&v.1).map(|t| (v.0.clone(), t)))
                 .map(Type::variants)
         }
         Type::Builtin(_) |
@@ -1046,13 +1052,13 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
     }
 }
 
-fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
-    where I: Iterator<Item = &'a T>,
+pub fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
+    where I: IntoIterator<Item = &'a T>,
           F: FnMut(&'a T) -> Option<T>,
           T: Clone + 'a
 {
     let mut out = Vec::new();
-    walk_move_types2(types, false, &mut out, &mut f);
+    walk_move_types2(types.into_iter(), false, &mut out, &mut f);
     if out.is_empty() {
         None
     } else {
