@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
 use symbol::Symbol;
-use types::{Alias, Type, TypeVariable, Kind, TypeEnv, instantiate};
+use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
 
 pub type ASTType<Id> = ::types::ArcType<Id>;
 
@@ -601,7 +601,7 @@ impl<Id> Typed for Expr<Id>
             Expr::Let(_, ref expr) |
             Expr::Type(_, ref expr) => expr.env_type_of(env),
             Expr::Call(ref func, ref args) => {
-                get_return_type(env, func.env_type_of(env), args.len())
+                get_return_type(env, &func.env_type_of(env), args.len())
             }
             Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),
             Expr::Array(ref a) => a.id.env_type_of(env),
@@ -635,9 +635,7 @@ impl Typed for Pattern<TcIdent<Symbol>> {
         match *self {
             Pattern::Identifier(ref name) => name.env_type_of(env),
             Pattern::Record { ref id, .. } => id.env_type_of(env),
-            Pattern::Constructor(ref id, ref args) => {
-                get_return_type(env, id.typ.clone(), args.len())
-            }
+            Pattern::Constructor(ref id, ref args) => get_return_type(env, &id.typ, args.len()),
         }
     }
 }
@@ -653,39 +651,36 @@ impl Typed for Binding<TcIdent<Symbol>> {
 }
 
 fn get_return_type(env: &TypeEnv,
-                   alias_type: ASTType<Symbol>,
+                   alias_type: &ASTType<Symbol>,
                    arg_count: usize)
                    -> ASTType<Symbol> {
     if arg_count == 0 {
-        alias_type
+        alias_type.clone()
     } else {
         match alias_type.as_function() {
-            Some((_, ret)) => get_return_type(env, ret.clone(), arg_count - 1),
+            Some((_, ret)) => get_return_type(env, ret, arg_count - 1),
             None => {
                 match alias_type.as_alias() {
-                    Some((id, arguments)) => {
-                        let (args, typ) = {
-                            let alias = env.find_type_info(&id)
-                                .unwrap_or_else(|| panic!("ICE: '{:?}' does not exist", id));
-                            match alias.typ {
-                                Some(ref typ) => (&alias.args, typ.clone()),
-                                None => {
-                                    panic!("Unexpected type {:?} is not a function", alias_type)
-                                }
-                            }
+                    Some((id, alias_args)) => {
+                        let (args, typ) = match env.find_type_info(&id).map(Alias::deref) {
+                            Some(&AliasData { ref args, typ: Some(ref typ), .. }) => (args, typ),
+                            Some(&AliasData { .. }) => panic!("ICE: '{:?}' does not exist", id),
+                            None => panic!("Unexpected type {:?} is not a function", alias_type),
                         };
-                        let typ = instantiate(typ, |gen| {
+
+                        let typ = types::instantiate(typ.clone(), |gen| {
                             // Replace the generic variable with the type from the list
                             // or if it is not found the make a fresh variable
                             args.iter()
-                                .zip(arguments)
+                                .zip(alias_args)
                                 .find(|&(arg, _)| arg.id == gen.id)
                                 .map(|(_, typ)| typ.clone())
                         });
-                        get_return_type(env, typ, arg_count)
+
+                        get_return_type(env, &typ, arg_count)
                     }
                     None => {
-                        panic!("Expected function with {} more arguments, found {:?}",
+                        panic!("ICE: Expected function with {} more arguments, found {:?}",
                                arg_count,
                                alias_type)
                     }
