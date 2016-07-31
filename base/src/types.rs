@@ -25,20 +25,14 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
     }
 }
 
-impl<T: KindEnv, U: KindEnv> KindEnv for (T, U) {
-    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
-        let &(ref outer, ref inner) = self;
-        inner.find_kind(id)
-            .or_else(|| outer.find_kind(id))
-    }
-}
-
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
     /// Returns the type of the value bound at `id`
     fn find_type(&self, id: &SymbolRef) -> Option<&TcType>;
+
     /// Returns information about the type `id`
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>>;
+
     /// Returns a record which contains all `fields`. The first element is the record type and the
     /// second is the alias type.
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
@@ -48,29 +42,13 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
     fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         (**self).find_type(id)
     }
+
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         (**self).find_type_info(id)
     }
+
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         (**self).find_record(fields)
-    }
-}
-
-impl<T: TypeEnv, U: TypeEnv> TypeEnv for (T, U) {
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
-        let &(ref outer, ref inner) = self;
-        inner.find_type(id)
-            .or_else(|| outer.find_type(id))
-    }
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
-        let &(ref outer, ref inner) = self;
-        inner.find_type_info(id)
-            .or_else(|| outer.find_type_info(id))
-    }
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
-        let &(ref outer, ref inner) = self;
-        inner.find_record(fields)
-            .or_else(|| outer.find_record(fields))
     }
 }
 
@@ -83,12 +61,6 @@ pub trait PrimitiveEnv: TypeEnv {
 impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     fn get_bool(&self) -> &TcType {
         (**self).get_bool()
-    }
-}
-
-impl<'a, T: PrimitiveEnv, U: TypeEnv> PrimitiveEnv for (T, U) {
-    fn get_bool(&self) -> &TcType {
-        self.0.get_bool()
     }
 }
 

@@ -23,28 +23,28 @@ trait OnFound {
     fn ident(&mut self, context: &LExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>);
 }
 
-struct GetType<'a, T: TypeEnv + 'a> {
-    env: &'a T,
+struct GetType<E> {
+    env: E,
     typ: Option<TcType>,
 }
 
-impl<'a, T: TypeEnv + 'a> OnFound for GetType<'a, T> {
+impl<E: TypeEnv> OnFound for GetType<E> {
     fn expr(&mut self, expr: &LExpr<TcIdent<Symbol>>) {
-        self.typ = Some(expr.env_type_of(self.env));
+        self.typ = Some(expr.env_type_of(&self.env));
     }
 
     fn ident(&mut self, _context: &LExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
-        self.typ = Some(ident.env_type_of(self.env));
+        self.typ = Some(ident.env_type_of(&self.env));
     }
 }
 
-struct Suggest<'a, T: TypeEnv + 'a> {
-    env: &'a T,
+struct Suggest<E> {
+    env: E,
     stack: ScopedMap<Symbol, TcType>,
     result: Vec<TcIdent<Symbol>>,
 }
 
-impl<'a, T: TypeEnv + 'a> OnFound for Suggest<'a, T> {
+impl<E: TypeEnv> OnFound for Suggest<E> {
     fn on_ident(&mut self, ident: &TcIdent<Symbol>) {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
@@ -52,7 +52,7 @@ impl<'a, T: TypeEnv + 'a> OnFound for Suggest<'a, T> {
     fn on_pattern(&mut self, pattern: &LPattern<TcIdent<Symbol>>) {
         match pattern.value {
             Pattern::Record { ref id, fields: ref field_ids, .. } => {
-                let unaliased = instantiate::remove_aliases(self.env, id.typ.clone());
+                let unaliased = instantiate::remove_aliases(&self.env, id.typ.clone());
                 if let Type::Record { ref fields, .. } = *unaliased {
                     for (field, field_type) in field_ids.iter().zip(fields) {
                         let f = field.1.as_ref().unwrap_or(&field.0).clone();
@@ -86,7 +86,7 @@ impl<'a, T: TypeEnv + 'a> OnFound for Suggest<'a, T> {
 
     fn ident(&mut self, context: &LExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
         if let Expr::FieldAccess(ref expr, _) = context.value {
-            let typ = instantiate::remove_aliases(self.env, expr.env_type_of(self.env));
+            let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
             if let Type::Record { ref fields, .. } = *typ {
                 let id = ident.name.as_ref();
                 for field in fields {
