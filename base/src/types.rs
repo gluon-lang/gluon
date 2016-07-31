@@ -14,13 +14,15 @@ use symbol::{Symbol, SymbolRef};
 pub type TcType = ast::ASTType<Symbol>;
 pub type TcIdent = ast::TcIdent<Symbol>;
 
+pub struct EmptyTypeEnv;
+
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`
     fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind>;
 }
 
-impl KindEnv for () {
+impl KindEnv for EmptyTypeEnv {
     fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
         None
     }
@@ -57,7 +59,7 @@ pub trait TypeEnv: KindEnv {
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
 }
 
-impl TypeEnv for () {
+impl TypeEnv for EmptyTypeEnv {
     fn find_type(&self, _id: &SymbolRef) -> Option<&TcType> {
         None
     }

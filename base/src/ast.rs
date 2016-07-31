@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Deref;
 use symbol::Symbol;
-use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
+use types::{self, Alias, AliasData, EmptyTypeEnv, Kind, Type, TypeEnv, TypeVariable};
 
 pub type ASTType<Id> = ::types::ArcType<Id>;
 
@@ -555,14 +555,17 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
 /// It is not guaranteed that the correct type is returned until after typechecking
 pub trait Typed {
     type Id;
+
     fn type_of(&self) -> ASTType<Self::Id> {
-        self.env_type_of(&())
+        self.env_type_of(&EmptyTypeEnv)
     }
+
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Self::Id>;
 }
 
 impl<Id: Clone> Typed for TcIdent<Id> {
     type Id = Id;
+
     fn env_type_of(&self, _: &TypeEnv) -> ASTType<Id> {
         self.typ.clone()
     }
@@ -572,6 +575,7 @@ impl<Id> Typed for Expr<Id>
     where Id: Typed<Id = Symbol> + AstId<Untyped = Symbol>
 {
     type Id = Id::Id;
+
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         match *self {
             Expr::Identifier(ref id) |
@@ -614,6 +618,7 @@ impl<Id> Typed for Expr<Id>
 
 impl<T: Typed> Typed for Located<T> {
     type Id = T::Id;
+
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<T::Id> {
         self.value.env_type_of(env)
     }
@@ -621,6 +626,7 @@ impl<T: Typed> Typed for Located<T> {
 
 impl Typed for Option<Box<Located<Expr<TcIdent<Symbol>>>>> {
     type Id = Symbol;
+
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         match *self {
             Some(ref t) => t.env_type_of(env),
@@ -630,6 +636,7 @@ impl Typed for Option<Box<Located<Expr<TcIdent<Symbol>>>>> {
 }
 impl Typed for Pattern<TcIdent<Symbol>> {
     type Id = Symbol;
+
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
@@ -642,6 +649,7 @@ impl Typed for Pattern<TcIdent<Symbol>> {
 
 impl Typed for Binding<TcIdent<Symbol>> {
     type Id = Symbol;
+
     fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
         match self.typ {
             Some(ref typ) => typ.clone(),

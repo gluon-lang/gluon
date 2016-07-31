@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 use base::ast::{DisplayEnv, Location, Typed};
 use base::symbol::Symbol;
-use base::types::{Type, TcType};
+use base::types::{EmptyTypeEnv, Type, TcType};
 use base::instantiate;
 
 trait OnFound {
@@ -49,7 +49,7 @@ impl OnFound for Suggest {
     fn on_pattern(&mut self, pattern: &ast::LPattern<ast::TcIdent<Symbol>>) {
         match pattern.value {
             ast::Pattern::Record { ref id, fields: ref field_ids, .. } => {
-                let unaliased = instantiate::remove_aliases(&(), id.typ.clone());
+                let unaliased = instantiate::remove_aliases(&EmptyTypeEnv, id.typ.clone());
                 if let Type::Record { ref fields, .. } = *unaliased {
                     for (field, field_type) in field_ids.iter().zip(fields) {
                         let f = field.1.as_ref().unwrap_or(&field.0).clone();
@@ -84,7 +84,7 @@ impl OnFound for Suggest {
     fn ident(&mut self, context: &ast::LExpr<ast::TcIdent<Symbol>>, ident: &ast::TcIdent<Symbol>) {
         if let ast::Expr::FieldAccess(ref expr, _) = context.value {
             let typ = expr.type_of();
-            if let Type::Record { ref fields, .. } = *instantiate::remove_aliases(&(), typ) {
+            if let Type::Record { ref fields, .. } = *instantiate::remove_aliases(&EmptyTypeEnv, typ) {
                 let id = ident.name.as_ref();
                 for field in fields {
                     if field.name.as_ref().starts_with(id) {
