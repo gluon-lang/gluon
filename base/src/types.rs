@@ -13,18 +13,10 @@ use symbol::{Symbol, SymbolRef};
 pub type TcType = ast::ASTType<Symbol>;
 pub type TcIdent = ast::TcIdent<Symbol>;
 
-pub struct EmptyTypeEnv;
-
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`
     fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind>;
-}
-
-impl KindEnv for EmptyTypeEnv {
-    fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
-        None
-    }
 }
 
 impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
@@ -50,18 +42,6 @@ pub trait TypeEnv: KindEnv {
     /// Returns a record which contains all `fields`. The first element is the record type and the
     /// second is the alias type.
     fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
-}
-
-impl TypeEnv for EmptyTypeEnv {
-    fn find_type(&self, _id: &SymbolRef) -> Option<&TcType> {
-        None
-    }
-    fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
-        None
-    }
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
-        None
-    }
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {

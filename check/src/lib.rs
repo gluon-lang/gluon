@@ -26,7 +26,28 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use base::symbol::{Symbols, SymbolModule, Symbol};
+    use base::types::{Alias, KindEnv, RcKind, TcType, TypeEnv};
+    use base::symbol::{Symbol, Symbols, SymbolModule, SymbolRef};
+
+    pub struct MockEnv;
+
+    impl KindEnv for MockEnv {
+        fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
+            None
+        }
+    }
+
+    impl TypeEnv for MockEnv {
+        fn find_type(&self, _id: &SymbolRef) -> Option<&TcType> {
+            None
+        }
+        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+            None
+        }
+        fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+            None
+        }
+    }
 
     /// Returns a reference to the interner stored in TLD
     pub fn get_local_interner() -> Rc<RefCell<Symbols>> {

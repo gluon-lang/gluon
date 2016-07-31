@@ -386,9 +386,8 @@ mod tests {
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
-    use base::types::{self, EmptyTypeEnv, TcType, Type};
+    use base::types::{self, TcType, Type};
     use tests::*;
-
 
     #[test]
     fn detect_multiple_type_errors_in_single_type() {
@@ -413,7 +412,7 @@ mod tests {
                                       typ: Type::string(),
                                   }]);
         let subs = Substitution::new();
-        let env = EmptyTypeEnv;
+        let env = MockEnv;
         let mut state = State::new(&env);
         let result = unify(&subs, &mut state, &l, &r);
         assert_eq!(result,
