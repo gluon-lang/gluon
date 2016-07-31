@@ -256,7 +256,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in types::arg_iter(&bind.type_of())
+                            for (typ, arg) in types::arg_iter(&bind.env_type_of(&self.env))
                                 .zip(&mut bind.arguments) {
                                 arg.name =
                                     self.stack_var(arg.name.clone(), expr.location, typ.clone());
