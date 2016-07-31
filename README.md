@@ -1,5 +1,4 @@
 # gluon
-(Previously called embed_lang)
 
 [![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon) [![Gitter](https://badges.gitter.im/Marwes/gluon.svg)](https://gitter.im/Marwes/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
@@ -19,7 +18,7 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 * **Thread safe** - Gluon is written in Rust which guarantees thread safety and gluon keeps the same guarantees allowing multiple gluon programs to run in parallel ([example][parallel])\*
 
-[easy_embed]:https://github.com/Marwes/embed_lang/blob/master/TUTORIAL.md#embedding-api
+[easy_embed]:https://github.com/Marwes/gluon/blob/master/TUTORIAL.md#embedding-api
 [parallel]:https://github.com/Marwes/gluon/blob/master/tests/parallel.rs
 
 \* Parallel execution of gluon programs is a recent addition and may still have issues such as deadlocks.
