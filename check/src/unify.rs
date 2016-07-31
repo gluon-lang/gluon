@@ -48,13 +48,6 @@ impl<'s, S: ?Sized, Type, U> UnifierState<'s, S, Type, U>
     pub fn try_match(&mut self, l: &Type, r: &Type) -> Option<Type> {
         Unifier::try_match(self, l, r)
     }
-
-    pub fn match_either<F, G>(&mut self, f: F, g: G) -> Result<Option<Type>, ()>
-        where F: FnMut(&mut UnifierState<S, Type, U>) -> Result<Option<Type>, ()>,
-              G: FnMut(&mut UnifierState<S, Type, U>) -> Result<Option<Type>, ()>
-    {
-        Unifier::match_either(self, f, g)
-    }
 }
 
 pub trait Unifier<S: ?Sized, Type>: Sized
@@ -62,18 +55,6 @@ pub trait Unifier<S: ?Sized, Type>: Sized
 {
     fn report_error(unifier: &mut UnifierState<S, Type, Self>, error: Error<Type, Type::Error>);
     fn try_match(unifier: &mut UnifierState<S, Type, Self>, l: &Type, r: &Type) -> Option<Type>;
-    fn match_either<F, G>(unifier: &mut UnifierState<S, Type, Self>,
-                          mut f: F,
-                          mut g: G)
-                          -> Result<Option<Type>, ()>
-        where F: FnMut(&mut UnifierState<S, Type, Self>) -> Result<Option<Type>, ()>,
-              G: FnMut(&mut UnifierState<S, Type, Self>) -> Result<Option<Type>, ()>
-    {
-        match f(unifier) {
-            Ok(typ) => Ok(typ),
-            Err(()) => g(unifier),
-        }
-    }
 }
 
 pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
@@ -123,42 +104,6 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 {
     fn report_error(unifier: &mut UnifierState<S, T, Self>, error: Error<T, T::Error>) {
         unifier.unifier.errors.error(error);
-    }
-
-    fn match_either<F, G>(unifier: &mut UnifierState<S, T, Self>,
-                          mut f: F,
-                          mut g: G)
-                          -> Result<Option<T>, ()>
-        where F: FnMut(&mut UnifierState<S, T, Self>) -> Result<Option<T>, ()>,
-              G: FnMut(&mut UnifierState<S, T, Self>) -> Result<Option<T>, ()>
-    {
-        let original_errors = unifier.unifier.errors.errors.len();
-        let result = f(unifier);
-        let first_errors = unifier.unifier.errors.errors.len();
-        // If there has been no error added the unification succeded
-        if result.is_ok() && original_errors == first_errors {
-            return result;
-        }
-        let result = g(unifier);
-        let last_errors = unifier.unifier.errors.errors.len();
-        if result.is_ok() && first_errors == last_errors {
-            // Remove any errors found from the first attempt to unify
-            for _ in original_errors..first_errors {
-                unifier.unifier
-                    .errors
-                    .errors
-                    .remove(original_errors);
-            }
-            return result;
-        }
-        for _ in first_errors..last_errors {
-            // Remove the errors from the second attempt (keeping the first attempt)
-            unifier.unifier
-                .errors
-                .errors
-                .remove(first_errors);
-        }
-        Err(())
     }
 
     fn try_match(unifier: &mut UnifierState<S, T, Self>, l: &T, r: &T) -> Option<T> {
@@ -267,7 +212,7 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
 
 #[cfg(test)]
 mod test {
-    use base::types::merge;
+    use base::types::{Walker, merge};
     use base::error::Errors;
 
     use super::{Error, Unifier, Unifiable, UnifierState};
@@ -295,20 +240,20 @@ mod test {
                 _ => None,
             }
         }
-        fn traverse<'s, F>(&'s self, mut f: F)
-            where F: FnMut(&'s Self) -> &'s Self
+        fn traverse<F>(&self, f: &mut F)
+            where F: Walker<Self>
         {
-            fn traverse_<'s>(typ: &'s TType, f: &mut FnMut(&'s TType) -> &'s TType) {
-                match *f(typ).0 {
+            fn traverse_(typ: &TType, f: &mut Walker<TType>) {
+                match *typ.0 {
                     Type::Arrow(ref a, ref r) => {
-                        traverse_(a, f);
-                        traverse_(r, f);
+                        f.walk(a);
+                        f.walk(r);
                     }
                     Type::Variable(_) |
                     Type::Id(_) => (),
                 }
             }
-            traverse_(self, &mut f)
+            traverse_(self, f)
         }
     }
 

@@ -35,7 +35,9 @@ pub fn intern(s: &str) -> Symbol {
     }
 }
 
-pub fn parse_new(s: &str) -> Result<ast::LExpr<TcIdent>, (Option<ast::LExpr<TcIdent>>, base::error::Errors<parser::Error>)> {
+pub fn parse_new(s: &str)
+                 -> Result<ast::LExpr<TcIdent>,
+                           (Option<ast::LExpr<TcIdent>>, ::base::error::Errors<::parser::Error>)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);

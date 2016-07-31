@@ -207,6 +207,8 @@ pub struct Typecheck<'a> {
     subs: Substitution<TcType>,
     inst: Instantiator,
     errors: Errors<ast::Spanned<TypeError<Symbol>>>,
+    /// Type variables `let test: a -> b` (`a` and `b`)
+    type_variables: ScopedMap<Symbol, u32>,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
@@ -230,6 +232,7 @@ impl<'a> Typecheck<'a> {
             subs: Substitution::new(),
             inst: Instantiator::new(),
             errors: Errors::new(),
+            type_variables: ScopedMap::new(),
         }
     }
 
@@ -335,6 +338,7 @@ impl<'a> Typecheck<'a> {
     /// `let` scope and can thus be "generalized" into `a -> a` which is instantiated with a fresh
     /// type variable in the `id 2` call.
     fn generalize_variables(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
+        self.type_variables.enter_scope();
         // Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b: 'a> {
             level: u32,
@@ -342,22 +346,19 @@ impl<'a> Typecheck<'a> {
         }
         impl<'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
             type T = TcIdent;
+
             fn visit_identifier(&mut self, id: &mut TcIdent) {
-                id.typ = self.tc.finish_type(self.level, id.typ.clone());
+                if let Some(typ) = self.tc.finish_type(self.level, &id.typ) {
+                    id.typ = typ;
+                }
             }
         }
-        let mut stack = mem::replace(&mut self.environment.stack, ScopedMap::new());
-        for (_, vec) in stack.iter_mut() {
-            for typ in vec {
-                *typ = self.finish_type(level, typ.clone());
-            }
-        }
-        mem::swap(&mut self.environment.stack, &mut stack);
         ReplaceVisitor {
                 level: level,
                 tc: self,
             }
             .visit_expr(expr);
+        self.type_variables.exit_scope();
     }
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
@@ -370,6 +371,13 @@ impl<'a> Typecheck<'a> {
                                    expr: &mut ast::LExpr<TcIdent>,
                                    expected_type: Option<&TcType>)
                                    -> Result<TcType, Error> {
+        fn tail_expr(e: &mut ast::LExpr<TcIdent>) -> &mut ast::LExpr<TcIdent> {
+            match e.value {
+                ast::Expr::Let(_, ref mut b) |
+                ast::Expr::Type(_, ref mut b) => tail_expr(b),
+                _ => e,
+            }
+        }
         self.subs.clear();
         self.environment.stack.clear();
 
@@ -379,9 +387,11 @@ impl<'a> Typecheck<'a> {
             let expected = self.instantiate(expected);
             typ = self.unify_span(span, &expected, typ)
         }
-        typ = self.finish_type(0, typ);
+        typ = self.finish_type(0, &typ).unwrap_or(typ);
         typ = types::walk_move_type(typ, &mut unroll_app);
-        self.generalize_variables(0, expr);
+        // Only the 'tail' expression need to be generalized at this point as all bindings
+        // will have already been generalized
+        self.generalize_variables(0, tail_expr(expr));
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
         } else {
@@ -757,7 +767,7 @@ impl<'a> Typecheck<'a> {
                                 (t.clone(), t)
                             }
                         };
-                        typ = self.instantiate_(&typ);
+                        typ = self.instantiate(&typ);
                         actual_type = self.instantiate_(&actual_type);
                         self.unify_span(span, &match_type, typ);
                         match *actual_type {
@@ -832,6 +842,7 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_bindings(&mut self, bindings: &mut [ast::Binding<TcIdent>]) -> TcResult<()> {
         self.enter_scope();
+        self.type_variables.enter_scope();
         let level = self.subs.var_id();
         let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
         // When the decfinitions are allowed to be mutually recursive
@@ -840,7 +851,7 @@ impl<'a> Typecheck<'a> {
                 let mut typ = self.subs.new_var();
                 if let Some(ref mut type_decl) = bind.typ {
                     *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                    try!(self.kindcheck(type_decl, &mut []));
+                    try!(self.kindcheck(type_decl));
                     let decl = self.instantiate(type_decl);
                     typ = self.unify_span(bind.name.span(), &decl, typ);
                 }
@@ -854,17 +865,23 @@ impl<'a> Typecheck<'a> {
         }
         let mut types = Vec::new();
         for bind in bindings.iter_mut() {
+            self.type_variables.enter_scope();
+
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let mut typ = if bind.arguments.is_empty() {
                 if let Some(ref mut type_decl) = bind.typ {
+                    self.insert_type_variables(level, type_decl);
                     *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                    try!(self.kindcheck(type_decl, &mut []));
+                    try!(self.kindcheck(type_decl));
                 }
                 self.typecheck(&mut bind.expression)
             } else {
                 let function_type = match bind.typ {
-                    Some(ref typ) => self.instantiate(typ),
+                    Some(ref type_decl) => {
+                        self.insert_type_variables(level, type_decl);
+                        self.instantiate(type_decl)
+                    }
                     None => self.subs.new_var(),
                 };
                 self.typecheck_lambda(function_type, &mut bind.arguments, &mut bind.expression)
@@ -882,6 +899,7 @@ impl<'a> Typecheck<'a> {
             } else {
                 types.push(typ);
             }
+            self.type_variables.exit_scope();
         }
         if is_recursive {
             for (typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
@@ -897,6 +915,7 @@ impl<'a> Typecheck<'a> {
             self.finish_binding(level, bind);
         }
         debug!("Typecheck `in`");
+        self.type_variables.exit_scope();
         Ok(())
     }
 
@@ -904,84 +923,81 @@ impl<'a> Typecheck<'a> {
                                bindings: &mut [ast::TypeBinding<Symbol>],
                                expr: &ast::LExpr<TcIdent>)
                                -> TcResult<()> {
-                self.enter_scope();
-                // Rename the types so they get a name which is distinct from types from other
-                // modules
-                for bind in bindings.iter_mut() {
-                    let s = String::from(self.symbols.string(&bind.alias.name));
-                    let new = self.symbols.scoped_symbol(&s);
-                    self.original_symbols.insert(bind.alias.name.clone(), new.clone());
-                    // Rename the aliase's name to its global name
-                    Alias::make_mut(&mut bind.alias).name = new;
+        self.enter_scope();
+        // Rename the types so they get a name which is distinct from types from other
+        // modules
+        for bind in bindings.iter_mut() {
+            let s = String::from(self.symbols.string(&bind.alias.name));
+            let new = self.symbols.scoped_symbol(&s);
+            self.original_symbols.insert(bind.alias.name.clone(), new.clone());
+            // Rename the aliase's name to its global name
+            Alias::make_mut(&mut bind.alias).name = new;
+        }
+        for bind in bindings.iter_mut() {
+            let typ = Alias::make_mut(&mut bind.alias)
+                .typ
+                .as_mut()
+                .expect("Expected binding to have an aliased type");
+            *typ = self.refresh_symbols_in_type(typ.clone());
+        }
+        {
+            let subs = Substitution::new();
+            let mut check = KindCheck::new(&self.environment, &self.symbols, subs);
+            // Setup kind variables for all type variables and insert the types in the
+            // this type expression into the kindcheck environment
+            for bind in bindings.iter_mut() {
+                // Create the kind for this binding
+                // Test a b: 2 -> 1 -> Type
+                // and bind the same variables to the arguments of the type binding
+                // ('a' and 'b' in the example)
+                let mut id_kind = check.type_kind();
+                let alias = Alias::make_mut(&mut bind.alias);
+                for gen in alias.args.iter_mut().rev() {
+                    gen.kind = check.subs.new_var();
+                    id_kind = Kind::function(gen.kind.clone(), id_kind);
                 }
-                for bind in bindings.iter_mut() {
-                    let typ = Alias::make_mut(&mut bind.alias)
-                        .typ
-                        .as_mut()
-                        .expect("Expected binding to have an aliased type");
-                    *typ = self.refresh_symbols_in_type(typ.clone());
-                }
-                {
-                    let subs = Substitution::new();
-                    let mut check = KindCheck::new(&self.environment, &self.symbols, subs);
-                    // Setup kind variables for all type variables and insert the types in the
-                    // this type expression into the kindcheck environment
-                    for bind in bindings.iter_mut() {
-                        // Create the kind for this binding
-                        // Test a b: 2 -> 1 -> Type
-                        // and bind the same variables to the arguments of the type binding
-                        // ('a' and 'b' in the example)
-                        let mut id_kind = check.type_kind();
-                        let alias = Alias::make_mut(&mut bind.alias);
-                        for gen in alias.args.iter_mut().rev() {
-                            gen.kind = check.subs.new_var();
-                            id_kind = Kind::function(gen.kind.clone(), id_kind);
-                        }
-                        check.add_local(alias.name.clone(), id_kind);
-                    }
+                check.add_local(alias.name.clone(), id_kind);
+            }
 
-                    // Kindcheck all the types in the environment
-                    for bind in bindings.iter_mut() {
-                        check.set_variables(&bind.alias.args);
-                        let typ = Alias::make_mut(&mut bind.alias)
-                            .typ
-                            .as_mut()
-                            .expect("Expected binding to have an aliased type");
-                        try!(check.kindcheck_type(typ));
-                    }
+            // Kindcheck all the types in the environment
+            for bind in bindings.iter_mut() {
+                check.set_variables(&bind.alias.args);
+                let typ = Alias::make_mut(&mut bind.alias)
+                    .typ
+                    .as_mut()
+                    .expect("Expected binding to have an aliased type");
+                try!(check.kindcheck_type(typ));
+            }
 
-                    // All kinds are now inferred so replace the kinds store in the AST
-                    for bind in bindings.iter_mut() {
-                        let alias = Alias::make_mut(&mut bind.alias);
-                        if let Some(ref mut typ) = alias.typ {
-                            *typ = check.finalize_type(typ.clone());
-                        }
-                        for arg in &mut alias.args {
-                            *arg = check.finalize_generic(&arg);
-                        }
-                    }
+            // All kinds are now inferred so replace the kinds store in the AST
+            for bind in bindings.iter_mut() {
+                let alias = Alias::make_mut(&mut bind.alias);
+                if let Some(ref mut typ) = alias.typ {
+                    *typ = check.finalize_type(typ.clone());
                 }
+                for arg in &mut alias.args {
+                    *arg = check.finalize_generic(&arg);
+                }
+            }
+        }
 
-                // Finally insert the declared types into the global scope
-                for bind in bindings {
-                    let args = &bind.alias.args;
-                    debug!("HELP {} \n{:?}", self.symbols.string(&bind.name), args);
-                    if self.environment.stack_types.get(&bind.name).is_some() {
-                        self.errors.error(ast::Spanned {
-                            span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
-                            value: DuplicateTypeDefinition(bind.name.clone()),
-                        });
-                    } else {
-                        self.stack_type(bind.name.clone(), &bind.alias);
-                    }
-                }
+        // Finally insert the declared types into the global scope
+        for bind in bindings {
+            if self.environment.stack_types.get(&bind.name).is_some() {
+                self.errors.error(ast::Spanned {
+                    span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
+                    value: DuplicateTypeDefinition(bind.name.clone()),
+                });
+            } else {
+                self.stack_type(bind.name.clone(), &bind.alias);
+            }
+        }
         Ok(())
     }
 
-    fn kindcheck(&self, typ: &mut TcType, args: &mut [Generic<Symbol>]) -> TcResult<()> {
+    fn kindcheck(&self, typ: &mut TcType) -> TcResult<()> {
         let subs = Substitution::new();
         let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
-        check.set_variables(args);
         try!(check.kindcheck_type(typ));
         Ok(())
     }
@@ -989,19 +1005,25 @@ impl<'a> Typecheck<'a> {
     fn finish_binding(&mut self, level: u32, bind: &mut ast::Binding<TcIdent>) {
         match bind.name.value {
             ast::Pattern::Identifier(ref mut id) => {
-                id.typ = self.finish_type(level, id.typ.clone());
+                if let Some(typ) = self.finish_type(level, &id.typ) {
+                    id.typ = typ;
+                }
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
                        types::display_type(&self.symbols, &id.typ));
                 self.intersect_type(level, &id.name, &id.typ);
             }
-            ast::Pattern::Record { ref id, ref mut fields, .. } => {
+            ast::Pattern::Record { ref mut id, ref mut fields, .. } => {
                 debug!("{{ .. }}: {}",
                        types::display_type(&self.symbols,
                                            &bind.expression
                                                .env_type_of(&self.environment)));
+                if let Some(typ) = self.finish_type(level, &id.typ) {
+                    id.typ = typ;
+                }
                 let record_type = self.remove_alias(id.typ.clone());
-                with_pattern_types(fields, &record_type, |field_name, field_type| {
+                with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
+                    let field_name = binding.as_ref().unwrap_or(field_name);
                     self.intersect_type(level, field_name, field_type);
                 });
             }
@@ -1019,8 +1041,9 @@ impl<'a> Typecheck<'a> {
     }
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &TcType) {
-        let mut typ = None;
-        if let Some(existing_types) = self.environment.stack.get_all(symbol) {
+        let typ = {
+            let existing_types =
+                self.environment.stack.get_all(symbol).expect("Symbol is not in scope");
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
                 debug!("Intersect\n{} <> {}",
@@ -1030,33 +1053,49 @@ impl<'a> Typecheck<'a> {
                 let result =
                     unify::intersection(&self.subs, &mut state, existing_type, symbol_type);
                 debug!("Intersect result {}", result);
-                typ = Some(result);
+                result
+            } else {
+                symbol_type.clone()
             }
+        };
+        *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, &typ)
+            .unwrap_or(typ)
+    }
+
+    /// Generate a generic variable name which is not used in the current scope
+    fn next_variable(&mut self, level: u32, s: &mut String) {
+        for c in b'a'..(b'z' + 1) {
+            s.push(c as char);
+            let symbol = self.symbols.symbol(&s[..]);
+            if self.type_variables.get(&symbol).is_none() {
+                self.type_variables.insert(symbol, level);
+                return;
+            }
+            s.pop();
         }
-        if let Some(typ) = typ {
-            *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, typ);
-        }
+        s.push('a');
+        self.next_variable(level, s)
     }
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
-    fn finish_type(&mut self, level: u32, typ: TcType) -> TcType {
-        let generic = {
-            let vars = self.inst.named_variables.borrow();
-            let max_var = vars.keys()
-                .fold("a",
-                      |max, current| ::std::cmp::max(max, self.symbols.string(current)));
-            String::from(max_var)
-        };
+    fn finish_type(&mut self, level: u32, typ: &TcType) -> Option<TcType> {
+        let mut generic = None;
         let mut i = 0;
-        self.finish_type_(level, &generic, &mut i, typ)
+        self.finish_type_(level, &mut generic, &mut i, typ)
     }
 
-    fn finish_type_(&mut self, level: u32, generic: &str, i: &mut i32, typ: TcType) -> TcType {
-        types::walk_move_type(typ,
-                              &mut |typ| {
+    fn finish_type_(&mut self,
+                    level: u32,
+                    generic: &mut Option<String>,
+                    i: &mut i32,
+                    typ: &Type<Symbol>)
+                    -> Option<TcType> {
+        use base::types::TypeVisitor;
+
+        let mut visitor = types::ControlVisitation(|typ: &Type<_, _>| {
             let replacement = self.subs
                 .replace_variable(typ)
-                .map(|t| self.finish_type_(level, generic, i, t));
+                .map(|t| self.finish_type_(level, generic, i, &t).unwrap_or(t));
             let mut typ = typ;
             if let Some(ref t) = replacement {
                 debug!("{} ==> {}",
@@ -1066,6 +1105,14 @@ impl<'a> Typecheck<'a> {
             }
             match *typ {
                 Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
+                    // Create a prefix if none exists
+                    if generic.is_none() {
+                        let mut g = String::new();
+                        self.next_variable(level, &mut g);
+                        *generic = Some(g);
+                    }
+                    let generic = generic.as_ref().unwrap();
+
                     let generic = format!("{}{}", generic, i);
                     *i += 1;
                     let id = self.symbols.symbol(generic);
@@ -1074,15 +1121,41 @@ impl<'a> Typecheck<'a> {
                         id: id.clone(),
                     });
                     self.subs.insert(var.id, gen.clone());
-                    self.inst
-                        .named_variables
-                        .borrow_mut()
-                        .insert(id, gen.clone());
                     Some(gen)
                 }
-                _ => unroll_app(typ).or(replacement.clone()),
+                Type::Record { ref types, ref fields, .. } => {
+                    let new_fields = types::walk_move_types(fields, |field| {
+                        // Make a new name base for any unbound variables in the record field
+                        // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
+                        // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
+                        self.finish_type(level, &field.typ).map(|typ| {
+                            types::Field {
+                                name: field.name.clone(),
+                                typ: typ,
+                            }
+                        })
+                    });
+                    new_fields.map(|fields| Type::record(types.clone(), fields)).or_else(|| replacement.clone())
+                }
+                _ => {
+                    let new_type = types::walk_move_type_opt(typ, &mut |typ: &Type<Symbol>| {
+                        self.finish_type_(level, generic, i, typ)
+                    });
+                    new_type.map(|t| unroll_app(&t).unwrap_or(t)).or_else(|| replacement.clone())
+                }
             }
-        })
+        });
+        visitor.visit(typ)
+    }
+
+    fn insert_type_variables(&mut self, level: u32, typ: &TcType) {
+        types::walk_type(typ, |typ| {
+            if let Type::Generic(ref generic) = **typ {
+                if self.type_variables.get(&generic.id).is_none() {
+                    self.type_variables.insert(generic.id.clone(), level);
+                }
+            }
+        });
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
@@ -1204,7 +1277,7 @@ impl<'a> Typecheck<'a> {
 }
 
 fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(&Symbol, &TcType)
+    where F: FnMut(&Symbol, &Option<Symbol>, &TcType)
 {
     if let Type::Record { fields: ref field_types, .. } = **typ {
         for field in fields {
@@ -1212,7 +1285,7 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut 
             // the error itself will already have been reported
             if let Some(associated_type) = field_types.iter()
                 .find(|type_field| type_field.name.name_eq(&field.0)) {
-                f(&field.0, &associated_type.typ);
+                f(&field.0, &field.1, &associated_type.typ);
             }
         }
     }
