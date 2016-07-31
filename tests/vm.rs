@@ -23,7 +23,7 @@ pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
     Compiler::new()
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s)
-        .unwrap_or_else(|err| panic!("{}", err))
+        .unwrap_or_else(|err| panic!("{}", err)).0
 }
 
 pub fn run_expr<'vm, T>(vm: &'vm Thread, s: &str) -> T
@@ -62,7 +62,7 @@ macro_rules! test_expr {
         fn $name() {
             let _ = ::env_logger::init();
             let mut vm = make_vm();
-            let value = Compiler::new()
+            let (value, _) = Compiler::new()
                 .implicit_prelude(false)
                 .run_io_expr(&mut vm, "<top>", $expr)
                 .unwrap_or_else(|err| panic!("{}", err));
@@ -631,10 +631,13 @@ in id 1
 #[test]
 fn run_expr_int() {
     let _ = ::env_logger::init();
+
     let text = r#"io.run_expr "123" "#;
     let mut vm = make_vm();
-    let result = Compiler::new().run_io_expr::<String>(&mut vm, "<top>", text).unwrap();
-    assert_eq!(result, String::from("123"));
+    let (result, _) = Compiler::new().run_io_expr::<String>(&mut vm, "<top>", text).unwrap();
+    let expected = "123 : Int";
+
+    assert_eq!(result, expected);
 }
 
 test_expr!{ io run_expr_io,
@@ -645,6 +648,7 @@ r#"io_flat_map (\x -> io_pure 100) (io.run_expr "io.print_int 123") "#,
 #[test]
 fn rename_types_after_binding() {
     let _ = ::env_logger::init();
+
     let text = r#"
 let prelude = import "std/prelude.glu"
 in
@@ -653,10 +657,12 @@ and { (==) }: Eq (List Int) = prelude.eq_List { (==) }
 in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
-    let value = Compiler::new()
+    let (result, _) = Compiler::new()
                     .run_expr::<bool>(&mut vm, "<top>", text)
                     .unwrap_or_else(|err| panic!("{}", err));
-    assert_eq!(value, false);
+    let expected = false;
+
+    assert_eq!(result, expected);
 }
 
 #[test]

@@ -1,6 +1,7 @@
 extern crate env_logger;
 extern crate gluon;
 
+use gluon::base::types::Type;
 use gluon::vm::api::generic::A;
 use gluon::vm::api::{FunctionRef, Generic};
 use gluon::RootedThread;
@@ -29,27 +30,32 @@ fn access_field_through_alias() {
     let result = add.call(1, 2);
     assert_eq!(result, Ok(3));
 }
+
 #[test]
 fn call_rust_from_gluon() {
     let _ = ::env_logger::init();
+
     fn factorial(x: i32) -> i32 {
         if x <= 1 { 1 } else { x * factorial(x - 1) }
     }
     let vm = new_vm();
-    vm.define_global("factorial", factorial as fn (_) -> _)
-        .unwrap();
-    let result = Compiler::new()
-        .run_expr::<i32>(&vm, "example", "factorial 5")
-        .unwrap();
-    assert_eq!(result, 120);
+    vm.define_global("factorial", factorial as fn (_) -> _).unwrap();
+
+    let result = Compiler::new().run_expr::<i32>(&vm, "example", "factorial 5").unwrap();
+    let expected = (120, Type::int());
+
+    assert_eq!(result, expected);
 }
 
 #[test]
 fn use_string_module() {
     let _ = ::env_logger::init();
+
     let vm = new_vm();
     let result = Compiler::new()
         .run_expr::<String>(&vm, "example", " let string = import \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
         .unwrap();
-    assert_eq!(result, "Hello world");
+    let expected = ("Hello world".to_string(), Type::string());
+
+    assert_eq!(result, expected);
 }

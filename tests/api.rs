@@ -1,11 +1,9 @@
 extern crate env_logger;
 extern crate gluon;
 
-use gluon::vm::api;
-use gluon::vm::api::generic::A;
-use gluon::vm::api::{Generic, VMType, FunctionRef};
+use gluon::base::types::Type;
+use gluon::vm::api::{self, VMType, FunctionRef};
 use gluon::vm::thread::{RootedThread, Thread, Traverseable, Root, RootStr};
-use gluon::vm::internal::Value;
 use gluon::vm::types::VMInt;
 use gluon::Compiler;
 use gluon::import::Import;
@@ -13,13 +11,6 @@ use gluon::import::Import;
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
         .load_script(vm, filename, input)
-}
-
-fn run_expr(vm: &Thread, s: &str) -> Value {
-    Compiler::new()
-        .run_expr::<Generic<A>>(vm, "<top>", s)
-        .unwrap_or_else(|err| panic!("{}", err))
-        .0
 }
 
 fn make_vm() -> RootedThread {
@@ -90,45 +81,49 @@ fn root_data() {
 #[test]
 fn root_string() {
     let _ = ::env_logger::init();
+
     let expr = r#"
 test "hello"
 "#;
-    let mut vm = make_vm();
     fn test(s: RootStr) -> String {
         let mut result = String::from(&s[..]);
         result.push_str(" world");
         result
     }
+
+    let vm = make_vm();
     vm.define_global("test", {
           let test: fn(_) -> _ = test;
           test
       })
       .unwrap();
-    let result = run_expr(&mut vm, expr);
-    match result {
-        Value::String(s) => assert_eq!(&s[..], "hello world"),
-        x => panic!("Expected string {:?}", x),
-    }
+
+    let result = Compiler::new().run_expr::<String>(&vm, "<top>", expr).unwrap();
+    let expected = ("hello world".to_string(), Type::string());
+
+    assert_eq!(result, expected);
 }
 
 #[test]
 fn array() {
     let _ = ::env_logger::init();
+
     let expr = r#"
 sum_bytes [100b, 42b, 3b, 15b]
 "#;
-    let mut vm = make_vm();
     fn sum_bytes(s: &[u8]) -> u8 {
         s.iter().fold(0, |acc, b| acc + b)
     }
+
+    let vm = make_vm();
     vm.define_global("sum_bytes", {
           let sum_bytes: fn(_) -> _ = sum_bytes;
           sum_bytes
       })
       .unwrap();
-    let result = run_expr(&mut vm, expr);
-    match result {
-        Value::Byte(b) => assert_eq!(b, 160),
-        x => panic!("Expected string {:?}", x),
-    }
+
+    let result = Compiler::new().run_expr::<u8>(&vm, "<top>", expr).unwrap();
+    let expected = (160, Type::byte());
+
+    assert_eq!(result, expected);
 }

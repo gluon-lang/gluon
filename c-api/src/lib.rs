@@ -47,7 +47,7 @@ pub unsafe extern "C" fn glu_run_expr(vm: &Thread,
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result: Result<Generic<A>, _> = Compiler::new().run_expr(&vm, module, expr);
+    let result = Compiler::new().run_expr::<Generic<A>>(&vm, module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,

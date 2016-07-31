@@ -1,5 +1,4 @@
 use std::string::String as StdString;
-use std::result::Result as StdResult;
 use std::io::{Read, stdin};
 use std::fmt;
 use std::fs::File;
@@ -152,10 +151,10 @@ fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     let mut stack = vm.current_frame();
     let frame_level = stack.stack.get_frames().len();
     drop(stack);
-    let run_result: StdResult<Generic<A>, _> = Compiler::new().run_expr(vm, "<top>", &expr);
+    let run_result = Compiler::new().run_expr::<Generic<A>>(vm, "<top>", &expr);
     stack = vm.current_frame();
     match run_result {
-        Ok(value) => IO::Value(format!("{:?}", value.0)),
+        Ok((value, typ)) => IO::Value(format!("{:?} : {}", value.0, typ)),
         Err(err) => {
             let trace = stack.stacktrace(frame_level);
             let fmt = format!("{}\n{}", err, trace);

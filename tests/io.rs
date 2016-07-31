@@ -21,8 +21,7 @@ fn read_file() {
             assert (array.index bytes 1 #Byte== 112b) // p
             pure (array.index bytes 8)
         "#;
-    let result = Compiler::new()
-        .run_io_expr::<u8>(&thread, "<top>", text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-    assert_eq!(result.unwrap(), b']');
+    let (result, _) = Compiler::new().run_io_expr::<u8>(&thread, "<top>", text).unwrap();
+
+    assert_eq!(result, b']');
 }
