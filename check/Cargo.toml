@@ -14,6 +14,7 @@ documentation = "https://docs.rs/gluon"
 env_logger = { version = "0.3.4", optional = true }
 log = "0.3.6"
 union-find = "0.3.1"
+smallvec = "0.2.0"
 gluon_base = { path = "../base", version = "0.2.2" }
 gluon_parser = { path = "../parser", version = "0.2.2", optional = true }
 

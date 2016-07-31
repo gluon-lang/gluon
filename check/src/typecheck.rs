@@ -299,8 +299,7 @@ impl<'a> Typecheck<'a> {
                 self.stack_var(field.name, field.typ);
             }
         }
-
-        let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
+        let generic_args = alias.args.iter().cloned().map(Type::generic);
         let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
             // FIXME: Workaround so that both the types name in this module and its global
@@ -1113,7 +1112,7 @@ impl<'a> Typecheck<'a> {
                     Some(gen)
                 }
                 Type::ExtendRow { ref types, ref fields, ref rest } => {
-                    let new_fields = types::walk_move_types(fields, |field| {
+                    let new_fields = types::walk_move_types(Vec::new(), fields, |field| {
                         // Make a new name base for any unbound variables in the record field
                         // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                         // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }

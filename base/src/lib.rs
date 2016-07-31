@@ -6,6 +6,7 @@ extern crate log;
 #[macro_use]
 extern crate quick_error;
 extern crate pretty;
+extern crate smallvec;
 
 pub mod ast;
 pub mod error;

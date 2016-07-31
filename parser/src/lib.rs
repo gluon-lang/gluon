@@ -382,17 +382,16 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     fn type_binding(&self, input: I) -> ParseResult<TypeBinding<Id>, I> {
         (self.ident(), many(self.ident()))
             .then(|(name, args): (Id, Vec<Id>)| {
-                let arg_types = args.iter()
-                    .map(|id| {
-                        Type::generic(Generic {
-                            kind: Kind::variable(0),
-                            id: id.clone(),
-                        })
-                    })
-                    .collect();
                 let return_type = if args.is_empty() {
                     Type::ident(name.clone())
                 } else {
+                    let arg_types = args.iter()
+                        .map(|id| {
+                            Type::generic(Generic {
+                                kind: Kind::variable(0),
+                                id: id.clone(),
+                            })
+                        });
                     Type::app(Type::ident(name.clone()), arg_types)
                 };
                 token(Token::Equal)

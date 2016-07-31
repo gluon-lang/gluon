@@ -1,10 +1,12 @@
 use std::borrow::ToOwned;
 use std::fmt;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::marker::PhantomData;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
+
+use smallvec::{SmallVec, VecLike};
 
 use ast::{self, DisplayEnv};
 use kind::{ArcKind, Kind, KindEnv};
@@ -214,6 +216,12 @@ pub struct Field<Id, T = ArcType<Id>> {
     pub typ: T,
 }
 
+/// SmallVec used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
+/// type. If `Type` is changed in a way that changes its size it is likely a good idea to change
+/// the number of elements in the `SmallVec` so that it fills out the entire `Type` enum while not
+/// increasing the size of `Type`.
+pub type AppVec<T> = SmallVec<[T; 2]>;
+
 /// The representation of gluon's types.
 ///
 /// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
@@ -230,7 +238,7 @@ pub enum Type<Id, T = ArcType<Id>> {
     Builtin(BuiltinType),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
-    App(T, Vec<T>),
+    App(T, AppVec<T>),
     /// Record constructor, of kind `Row -> Type`
     Record(T),
     /// Variant constructor, of kind `Row -> Type`
@@ -277,7 +285,10 @@ impl<Id, T> Type<Id, T>
         Type::app(Type::builtin(BuiltinType::Array), vec![typ])
     }
 
-    pub fn app(id: T, args: Vec<T>) -> T {
+    pub fn app<I>(id: T, args: I) -> T
+        where I: IntoIterator<Item = T>,
+    {
+        let args: AppVec<T> = args.into_iter().collect();
         if args.is_empty() {
             id
         } else {
@@ -1045,13 +1056,13 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
 {
     match *typ {
         Type::App(ref id, ref args) => {
-            let new_args = walk_move_types(args, |t| f.visit(t));
+            let new_args = walk_move_types(AppVec::new(), args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
         }
         Type::Record(ref row) => f.visit(row).map(|row| T::from(Type::Record(row))),
         Type::Variant(ref row) => f.visit(row).map(|row| T::from(Type::Variant(row))),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
-            let new_fields = walk_move_types(fields, |field| {
+            let new_fields = walk_move_types(Vec::new(), fields, |field| {
                 f.visit(&field.typ).map(|typ| {
                     Field {
                         name: field.name.clone(),
@@ -1077,12 +1088,13 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
     }
 }
 
-pub fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
+// FIXME Add R: Default and remove the `out` parameter
+pub fn walk_move_types<'a, I, F, T, R>(mut out: R, types: I, mut f: F) -> Option<R>
     where I: IntoIterator<Item = &'a T>,
           F: FnMut(&'a T) -> Option<T>,
           T: Clone + 'a,
+          R: VecLike<T> + DerefMut<Target = [T]>,
 {
-    let mut out = Vec::new();
     walk_move_types2(types.into_iter(), false, &mut out, &mut f);
     if out.is_empty() {
         None
@@ -1091,11 +1103,11 @@ pub fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
         Some(out)
     }
 }
-
-fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<T>, f: &mut F)
+fn walk_move_types2<'a, I, F, T, R>(mut types: I, replaced: bool, output: &mut R, f: &mut F)
     where I: Iterator<Item = &'a T>,
           F: FnMut(&'a T) -> Option<T>,
           T: Clone + 'a,
+          R: VecLike<T> + DerefMut<Target = [T]>,
 {
     if let Some(typ) = types.next() {
         let new = f(typ);

@@ -18,7 +18,7 @@ fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
                 id: s,
             })
         }
-        Err(()) => Type::App(Type::ident(s), args),
+        Err(()) => Type::App(Type::ident(s), args.into_iter().collect()),
     }
 }
 
