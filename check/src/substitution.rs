@@ -6,7 +6,7 @@ use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use base::fixed::{FixedMap, FixedVec};
 use base::types;
-use base::types::{TcType, Type};
+use base::types::{TcType, Type, Walker};
 use base::symbol::Symbol;
 
 use typecheck::unroll_app;
@@ -52,28 +52,43 @@ pub trait Substitutable: Sized {
     }
     /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
-    fn traverse<'s, F>(&'s self, f: F) where F: FnMut(&'s Self) -> &'s Self;
+    fn traverse<F>(&self, f: &mut F) where F: Walker<Self>;
 }
 
 fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
     where T: Substitutable
 {
-    let mut occurs = false;
-    typ.traverse(|typ| {
-        if occurs {
-            return typ;
-        }
-        let typ = subs.real(typ);
-        if let Some(other) = typ.get_var() {
-            if var.get_id() == other.get_id() {
-                occurs = true;
-                return typ;
+    struct Occurs<'a, T: Substitutable + 'a> {
+        occurs: bool,
+        var: &'a T::Variable,
+        subs: &'a Substitution<T>,
+    }
+    impl<'a, T> Walker<T> for Occurs<'a, T>
+        where T: Substitutable
+    {
+        fn walk(&mut self, typ: &T) {
+            if self.occurs {
+                return;
             }
-            subs.update_level(var.get_id(), other.get_id());
+            let typ = self.subs.real(typ);
+            if let Some(other) = typ.get_var() {
+                if self.var.get_id() == other.get_id() {
+                    self.occurs = true;
+                    typ.traverse(self);
+                    return;
+                }
+                self.subs.update_level(self.var.get_id(), other.get_id());
+            }
+            typ.traverse(self);
         }
-        typ
-    });
-    occurs
+    }
+    let mut occurs = Occurs {
+        occurs: false,
+        var: var,
+        subs: subs,
+    };
+    occurs.walk(typ);
+    occurs.occurs
 }
 
 /// Specialized union implementation which makes sure that variables with a higher level always

@@ -1,12 +1,10 @@
 use std::fmt;
 
 use base::ast;
-use base::types;
-use base::types::{Generic, RcKind, Type, Kind, merge};
+use base::types::{self, BuiltinType, Generic, RcKind, TcType, Type, Kind, merge};
 use base::symbol::Symbol;
-use base::types::KindEnv;
+use base::types::{KindEnv, Walker};
 
-use base::types::{BuiltinType, TcType};
 use substitution::{Substitution, Substitutable};
 use unify;
 
@@ -304,21 +302,10 @@ impl Substitutable for RcKind {
         }
     }
 
-    fn traverse<'s, F>(&'s self, mut f: F)
-        where F: FnMut(&'s RcKind) -> &'s RcKind
+    fn traverse<F>(&self, f: &mut F)
+        where F: Walker<RcKind>
     {
-        fn walk_kind<'s>(k: &'s RcKind, f: &mut FnMut(&'s RcKind) -> &'s RcKind) {
-            let k = f(k);
-            match **k {
-                Kind::Function(ref a, ref r) => {
-                    walk_kind(a, f);
-                    walk_kind(r, f);
-                }
-                Kind::Variable(_) |
-                Kind::Type => (),
-            }
-        }
-        walk_kind(self, &mut f)
+        types::walk_kind(self, f);
     }
 }
 

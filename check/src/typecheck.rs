@@ -1115,7 +1115,6 @@ impl<'a> Typecheck<'a> {
                     self.type_variables.insert(generic.id.clone(), level);
                 }
             }
-            typ
         });
     }
 

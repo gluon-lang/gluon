@@ -212,7 +212,7 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
 
 #[cfg(test)]
 mod test {
-    use base::types::merge;
+    use base::types::{Walker, merge};
     use base::error::Errors;
 
     use super::{Error, Unifier, Unifiable, UnifierState};
@@ -240,20 +240,20 @@ mod test {
                 _ => None,
             }
         }
-        fn traverse<'s, F>(&'s self, mut f: F)
-            where F: FnMut(&'s Self) -> &'s Self
+        fn traverse<F>(&self, f: &mut F)
+            where F: Walker<Self>
         {
-            fn traverse_<'s>(typ: &'s TType, f: &mut FnMut(&'s TType) -> &'s TType) {
-                match *f(typ).0 {
+            fn traverse_(typ: &TType, f: &mut Walker<TType>) {
+                match *typ.0 {
                     Type::Arrow(ref a, ref r) => {
-                        traverse_(a, f);
-                        traverse_(r, f);
+                        f.walk(a);
+                        f.walk(r);
                     }
                     Type::Variable(_) |
                     Type::Id(_) => (),
                 }
             }
-            traverse_(self, &mut f)
+            traverse_(self, f)
         }
     }
 

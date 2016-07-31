@@ -866,37 +866,37 @@ impl<I, T> fmt::Display for Type<I, T>
     }
 }
 
-pub fn walk_type<'t, I: 't, T, F>(typ: &'t T, mut f: F)
-    where F: FnMut(&'t T) -> &'t T,
+pub fn walk_type<I, T, F>(typ: &T, mut f: F)
+    where F: FnMut(&T),
           T: Deref<Target = Type<I, T>>
 {
-    walk_type_(typ, &mut f)
+    f.walk(typ)
 }
 
-fn walk_type_<'t, I: 't, T, F>(typ: &'t T, f: &mut F)
-    where F: FnMut(&'t T) -> &'t T,
+pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
+    where F: Walker<T>,
           T: Deref<Target = Type<I, T>>
 {
-    let typ = f(typ);
     match **typ {
-        Type::App(_, ref args) => {
+        Type::App(ref t, ref args) => {
+            f.walk(t);
             for a in args {
-                walk_type_(a, f);
+                f.walk(a);
             }
         }
         Type::Record { ref types, ref fields } => {
             for field in types {
                 if let Some(ref typ) = field.typ.typ {
-                    walk_type_(typ, f);
+                    f.walk(typ);
                 }
             }
             for field in fields {
-                walk_type_(&field.typ, f);
+                f.walk(&field.typ);
             }
         }
         Type::Variants(ref variants) => {
             for variant in variants {
-                walk_type_(&variant.1, f);
+                f.walk(&variant.1);
             }
         }
         Type::Builtin(_) |
@@ -912,21 +912,78 @@ pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
           T: Deref<Target = Type<I, T>>
 {
     let mut a = Some(a);
-    walk_type(typ,
-              &mut |t| {
-                  a = Some(f(t, a.take().expect("None in fold_type")));
-                  t
-              });
+    walk_type(typ, |t| {
+        a = Some(f(t, a.take().expect("None in fold_type")));
+    });
     a.expect("fold_type")
 }
 
+pub fn walk_kind<F: ?Sized>(k: &RcKind, f: &mut F)
+    where F: Walker<RcKind>
+{
+    match **k {
+        Kind::Function(ref a, ref r) => {
+            f.walk(a);
+            f.walk(r);
+        }
+        Kind::Variable(_) |
+        Kind::Type => (),
+    }
+}
+
+
+pub trait TypeVisitor<I, T> {
+    fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
+        where T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+              I: Clone
+    {
+        walk_move_type_opt(typ, self)
+    }
+}
+
+pub trait Walker<T> {
+    fn walk(&mut self, typ: &T);
+}
+
+impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
+    where F: FnMut(&Type<I, T>) -> Option<T>
+{
+    fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
+        where T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+              I: Clone
+    {
+        let new_type = walk_move_type_opt(typ, self);
+        let new_type2 = self(new_type.as_ref().map_or(typ, |t| t));
+        new_type2.or(new_type)
+    }
+}
+
+impl<I, T, F: ?Sized> Walker<T> for F
+    where F: FnMut(&T),
+          T: Deref<Target = Type<I, T>>
+{
+    fn walk(&mut self, typ: &T) {
+        self(typ);
+        walk_type_(typ, self)
+    }
+}
+
+impl<F: ?Sized> Walker<RcKind> for F
+    where F: FnMut(&RcKind)
+{
+    fn walk(&mut self, typ: &RcKind) {
+        self(typ);
+        walk_kind(typ, self)
+    }
+}
+
 /// Walks through a type calling `f` on each inner type. If `f` return `Some` the type is replaced.
-pub fn walk_move_type<F, I, T>(typ: T, f: &mut F) -> T
+pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
     where F: FnMut(&Type<I, T>) -> Option<T>,
           T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
           I: Clone
 {
-    walk_move_type_opt(&typ, f).unwrap_or(typ)
+    f.visit(&typ).unwrap_or(typ)
 }
 
 /// Merges two values using `f` if either or both them is `Some(..)`.
@@ -949,20 +1006,20 @@ pub fn merge<F, A: ?Sized, B: ?Sized, R>(a_original: &A,
     }
 }
 
-pub fn walk_move_type_opt<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
-    where F: FnMut(&Type<I, T>) -> Option<T>,
+pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
+    where F: TypeVisitor<I, T>,
           T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
           I: Clone
 {
-    let new_type = match *typ {
+    match *typ {
         Type::App(ref id, ref args) => {
-            let new_args = walk_move_types(args.iter(), |t| walk_move_type_opt(t, f));
-            merge(id, walk_move_type_opt(id, f), args, new_args, Type::app)
+            let new_args = walk_move_types(args.iter(), |t| f.visit(t));
+            merge(id, f.visit(id), args, new_args, Type::app)
         }
         Type::Record { ref types, ref fields } => {
             let new_types = None;
             let new_fields = walk_move_types(fields.iter(), |field| {
-                walk_move_type_opt(&field.typ, f).map(|typ| {
+                f.visit(&field.typ).map(|typ| {
                     Field {
                         name: field.name.clone(),
                         typ: typ,
@@ -978,19 +1035,15 @@ pub fn walk_move_type_opt<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                 .map(From::from)
         }
         Type::Variants(ref variants) => {
-            walk_move_types(variants.iter(),
-                            |v| walk_move_type_opt(&v.1, f).map(|t| (v.0.clone(), t)))
-                .map(Type::Variants)
-                .map(From::from)
+            walk_move_types(variants.iter(), |v| f.visit(&v.1).map(|t| (v.0.clone(), t)))
+                .map(Type::variants)
         }
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |
         Type::Id(_) |
         Type::Alias(_) => None,
-    };
-    let new_type2 = f(new_type.as_ref().map_or(typ, |t| t));
-    new_type2.or(new_type)
+    }
 }
 
 fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
