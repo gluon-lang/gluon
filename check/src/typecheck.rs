@@ -1079,15 +1079,14 @@ impl<'a> Typecheck<'a> {
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
     fn finish_type(&mut self, level: u32, typ: &TcType) -> Option<TcType> {
-        let mut generic = String::new();
-        self.next_variable(level, &mut generic);
+        let mut generic = None;
         let mut i = 0;
-        self.finish_type_(level, &generic, &mut i, typ)
+        self.finish_type_(level, &mut generic, &mut i, typ)
     }
 
     fn finish_type_(&mut self,
                     level: u32,
-                    generic: &str,
+                    generic: &mut Option<String>,
                     i: &mut i32,
                     typ: &Type<Symbol>)
                     -> Option<TcType> {
@@ -1106,6 +1105,14 @@ impl<'a> Typecheck<'a> {
             }
             match *typ {
                 Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
+                    // Create a prefix if none exists
+                    if generic.is_none() {
+                        let mut g = String::new();
+                        self.next_variable(level, &mut g);
+                        *generic = Some(g);
+                    }
+                    let generic = generic.as_ref().unwrap();
+
                     let generic = format!("{}{}", generic, i);
                     *i += 1;
                     let id = self.symbols.symbol(generic);
