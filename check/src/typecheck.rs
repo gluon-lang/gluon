@@ -15,6 +15,7 @@ use kindcheck::{self, KindCheck};
 use substitution::Substitution;
 use unify::Error as UnifyError;
 use unify;
+use unify_type;
 
 use self::TypeError::*;
 
@@ -35,7 +36,7 @@ pub enum TypeError<I> {
     /// Constructor type was found in a pattern but did not have the expected number of arguments
     PatternError(ast::ASTType<I>, usize),
     /// Errors found when trying to unify two types
-    Unification(ast::ASTType<I>, ast::ASTType<I>, Vec<::unify_type::Error<I>>),
+    Unification(ast::ASTType<I>, ast::ASTType<I>, Vec<unify_type::Error<I>>),
     /// Error were found when trying to unify the kinds of two types
     KindError(kindcheck::Error<I>),
     /// Errors found during renaming (overload resolution)
@@ -1050,7 +1051,7 @@ impl<'a> Typecheck<'a> {
                 debug!("Intersect\n{} <> {}",
                        types::display_type(&self.symbols, existing_type),
                        types::display_type(&self.symbols, symbol_type));
-                let state = ::unify_type::State::new(&self.environment);
+                let state = unify_type::State::new(&self.environment);
                 let result = unify::intersection(&self.subs, state, existing_type, symbol_type);
                 debug!("Intersect result {}", result);
                 result
@@ -1237,7 +1238,7 @@ impl<'a> Typecheck<'a> {
         debug!("Unify {} <=> {}",
                types::display_type(&self.symbols, expected),
                types::display_type(&self.symbols, &actual));
-        let state = ::unify_type::State::new(&self.environment);
+        let state = unify_type::State::new(&self.environment);
         match unify::unify(&self.subs, state, expected, &actual) {
             Ok(typ) => Ok(self.subs.set_type(typ)),
             Err(errors) => {
@@ -1264,7 +1265,7 @@ impl<'a> Typecheck<'a> {
     fn type_of_alias(&self,
                      id: &AliasData<Symbol, TcType>,
                      arguments: &[TcType])
-                     -> Result<Option<TcType>, ::unify_type::Error<Symbol>> {
+                     -> Result<Option<TcType>, unify_type::Error<Symbol>> {
         Ok(instantiate::type_of_alias(id, arguments))
     }
 
@@ -1295,8 +1296,8 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut 
 }
 
 fn apply_subs(subs: &Substitution<TcType>,
-              error: Vec<::unify_type::Error<Symbol>>)
-              -> Vec<::unify_type::Error<Symbol>> {
+              error: Vec<unify_type::Error<Symbol>>)
+              -> Vec<unify_type::Error<Symbol>> {
     use unify::Error::*;
     error.into_iter()
         .map(|error| {
@@ -1305,14 +1306,14 @@ fn apply_subs(subs: &Substitution<TcType>,
                     TypeMismatch(subs.set_type(expected), subs.set_type(actual))
                 }
                 Occurs(var, typ) => Occurs(var, subs.set_type(typ)),
-                Other(::unify_type::TypeError::UndefinedType(id)) => {
-                    Other(::unify_type::TypeError::UndefinedType(id))
+                Other(unify_type::TypeError::UndefinedType(id)) => {
+                    Other(unify_type::TypeError::UndefinedType(id))
                 }
-                Other(::unify_type::TypeError::FieldMismatch(expected, actual)) => {
-                    UnifyError::Other(::unify_type::TypeError::FieldMismatch(expected, actual))
+                Other(unify_type::TypeError::FieldMismatch(expected, actual)) => {
+                    UnifyError::Other(unify_type::TypeError::FieldMismatch(expected, actual))
                 }
-                Other(::unify_type::TypeError::SelfRecursive(t)) => {
-                    UnifyError::Other(::unify_type::TypeError::SelfRecursive(t))
+                Other(unify_type::TypeError::SelfRecursive(t)) => {
+                    UnifyError::Other(unify_type::TypeError::SelfRecursive(t))
                 }
             }
         })
