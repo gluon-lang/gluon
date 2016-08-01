@@ -102,7 +102,7 @@ impl<'a> Unifiable<State<'a>> for TcType {
 
     fn zip_match<'s, U>(&self,
                         other: &Self,
-                        mut unifier: UnifierState<'a, 's, U>)
+                        unifier: &mut UnifierState<'a, 's, U>)
                         -> Result<Option<Self>, Error<Symbol>>
         where U: Unifier<State<'a>, Self>
     {
@@ -111,7 +111,7 @@ impl<'a> Unifiable<State<'a>> for TcType {
         let (l_temp, r_temp);
         let (mut l, mut r) = (self, other);
         let mut through_alias = false;
-        match try_zip_alias(&mut unifier, self, other, &mut through_alias) {
+        match try_zip_alias(unifier, self, other, &mut through_alias) {
             Ok((l2, r2)) => {
                 l_temp = l2;
                 r_temp = r2;
@@ -120,7 +120,7 @@ impl<'a> Unifiable<State<'a>> for TcType {
             }
             Err(()) => (),
         }
-        let result = do_zip_match(l, r, &mut unifier).map(|mut unified_type| {
+        let result = do_zip_match(l, r, unifier).map(|mut unified_type| {
             // If the match was done through an alias the unified type is likely less precise than
             // `self` or `other`.
             // So just return `None` which means `self` is used as the type if necessary

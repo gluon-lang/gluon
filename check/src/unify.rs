@@ -76,7 +76,7 @@ pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
     /// Returns `Err` if the immediate level were not equal.
     fn zip_match<U>(&self,
                     other: &Self,
-                    unifier: UnifierState<S, U>)
+                    unifier: &mut UnifierState<S, U>)
                     -> Result<Option<Self>, Error<Self, Self::Error>>
         where U: Unifier<S, Self>;
 }
@@ -124,7 +124,6 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 
     fn try_match(unifier: &mut UnifierState<S, Self>, l: &T, r: &T) -> Option<T> {
         let subs = unifier.unifier.subs;
-        let errors = &mut unifier.unifier.errors;
         // Retrieve the 'real' types by resolving
         let l = subs.real(l);
         let r = subs.real(r);
@@ -148,17 +147,13 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms
                 // unify)
-                let next_unifier = UnifierState {
-                    state: unifier.state,
-                    unifier: Unify { errors: errors, subs: subs, },
-                };
-                l.zip_match(r, next_unifier)
+                l.zip_match(r, unifier)
             }
         };
         match result {
             Ok(typ) => typ,
             Err(error) => {
-                errors.error(error);
+                unifier.unifier.errors.error(error);
                 Some(subs.new_var())
             }
         }
@@ -169,7 +164,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 /// specialized type which both types can sucessfully unify to.
 ///
 /// # Example
-/// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
+    /// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
 pub fn intersection<S, T>(subs: &Substitution<T>, state: &mut S, l: &T, r: &T) -> T
     where T: Unifiable<S> + Eq + Clone + Hash,
           T::Variable: Clone
@@ -203,17 +198,7 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
         match (l.get_var(), r.get_var()) {
             (Some(l), Some(r)) if l.get_id() == r.get_id() => None,
             _ => {
-                let result = {
-                    let next_unifier = UnifierState {
-                        state: unifier.state,
-                        unifier: Intersect {
-                            mismatch_map: unifier.unifier.mismatch_map,
-                            subs: subs,
-                        },
-                    };
-                    l.zip_match(r, next_unifier)
-                };
-                match result {
+                match l.zip_match(r, unifier) {
                     Ok(typ) => typ,
                     Err(_) => {
                         // If the immediate level of `l` and `r` does not match, record
@@ -282,7 +267,7 @@ mod test {
         type Error = ();
         fn zip_match<F>(&self,
                         other: &Self,
-                        mut f: UnifierState<(), F>)
+                        f: &mut UnifierState<(), F>)
                         -> Result<Option<Self>, Error<Self, Self::Error>>
             where F: Unifier<(), Self>
         {

@@ -314,7 +314,7 @@ impl<S> unify::Unifiable<S> for RcKind {
 
     fn zip_match<U>(&self,
                     other: &Self,
-                    mut unifier: unify::UnifierState<S, U>)
+                    unifier: &mut unify::UnifierState<S, U>)
                     -> ::std::result::Result<Option<Self>, Error<Symbol>>
         where U: unify::Unifier<S, Self>
     {

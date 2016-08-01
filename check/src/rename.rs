@@ -369,17 +369,7 @@ impl<'a, 'm> Unifier<State<'a>, TcType> for Equivalent<'m> {
                 }
             }
             _ => {
-                let result = {
-                    let next_unifier = UnifierState {
-                        state: unifier.state,
-                        unifier: Equivalent {
-                            map: unifier.unifier.map,
-                            equiv: unifier.unifier.equiv,
-                        },
-                    };
-                    l.zip_match(r, next_unifier)
-                };
-                match result {
+                match l.zip_match(r, unifier) {
                     Ok(typ) => typ,
                     Err(_) => {
                         *unifier.unifier.equiv = false;
