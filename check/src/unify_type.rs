@@ -64,7 +64,7 @@ impl<I> fmt::Display for TypeError<I>
     }
 }
 
-pub type UnifierState<'a, 's, U> = unify::UnifierState<'s, State<'a>, TcType, U>;
+pub type UnifierState<'a, U> = unify::UnifierState<State<'a>, U>;
 
 impl Variable for TypeVariable {
     fn get_id(&self) -> u32 {
@@ -100,10 +100,10 @@ impl<I> Substitutable for ASTType<I> {
 impl<'a> Unifiable<State<'a>> for TcType {
     type Error = TypeError<Symbol>;
 
-    fn zip_match<'s, U>(&self,
-                        other: &Self,
-                        mut unifier: UnifierState<'a, 's, U>)
-                        -> Result<Option<Self>, Error<Symbol>>
+    fn zip_match<U>(&self,
+                    other: &Self,
+                    unifier: &mut UnifierState<'a, U>)
+                    -> Result<Option<Self>, Error<Symbol>>
         where U: Unifier<State<'a>, Self>
     {
         let reduced_aliases = unifier.state.reduced_aliases.len();
@@ -111,7 +111,7 @@ impl<'a> Unifiable<State<'a>> for TcType {
         let (l_temp, r_temp);
         let (mut l, mut r) = (self, other);
         let mut through_alias = false;
-        match try_zip_alias(&mut unifier, self, other, &mut through_alias) {
+        match try_zip_alias(unifier, self, other, &mut through_alias) {
             Ok((l2, r2)) => {
                 l_temp = l2;
                 r_temp = r2;
@@ -120,7 +120,7 @@ impl<'a> Unifiable<State<'a>> for TcType {
             }
             Err(()) => (),
         }
-        let result = do_zip_match(l, r, &mut unifier).map(|mut unified_type| {
+        let result = do_zip_match(l, r, unifier).map(|mut unified_type| {
             // If the match was done through an alias the unified type is likely less precise than
             // `self` or `other`.
             // So just return `None` which means `self` is used as the type if necessary
@@ -134,10 +134,10 @@ impl<'a> Unifiable<State<'a>> for TcType {
     }
 }
 
-fn do_zip_match<'a, 's, U>(self_: &TcType,
-                           other: &TcType,
-                           unifier: &mut UnifierState<'a, 's, U>)
-                           -> Result<Option<TcType>, Error<Symbol>>
+fn do_zip_match<'a, U>(self_: &TcType,
+                       other: &TcType,
+                       unifier: &mut UnifierState<'a, U>)
+                       -> Result<Option<TcType>, Error<Symbol>>
     where U: Unifier<State<'a>, TcType>
 {
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
@@ -177,7 +177,7 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
 
                     let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
                     unifier.report_error(UnifyError::Other(err));
-                    Some(unifier.subs.new_var())
+                    None
                 } else {
                     unifier.try_match(&l.typ, &r.typ)
                 };
@@ -208,10 +208,10 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
 /// Attempt to unify two alias types.
 /// To find a possible successful unification we walk through the alias expansions of `l` to find
 /// an expansion which has `r_id` in the spine of the expanded type
-fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
-                         l: TcType,
-                         r_id: &SymbolRef)
-                         -> Result<Option<TcType>, ()>
+fn find_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
+                     l: TcType,
+                     r_id: &SymbolRef)
+                     -> Result<Option<TcType>, ()>
     where U: Unifier<State<'a>, TcType>
 {
     let reduced_aliases = unifier.state.reduced_aliases.len();
@@ -226,10 +226,10 @@ fn find_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
     result
 }
 
-fn find_alias_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
-                          mut l: TcType,
-                          r_id: &SymbolRef)
-                          -> Result<Option<TcType>, ()>
+fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
+                      mut l: TcType,
+                      r_id: &SymbolRef)
+                      -> Result<Option<TcType>, ()>
     where U: Unifier<State<'a>, TcType>
 {
     let mut did_alias = false;
@@ -283,11 +283,11 @@ fn find_alias_<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
 /// // try_zip_alias(Test2, Test 0) => Ok((Test String, Test 0))
 /// // try_zip_alias(Float, Test 0) => Ok((Float, Test 0))
 /// ```
-fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
-                            expected: &TcType,
-                            actual: &TcType,
-                            through_alias: &mut bool)
-                            -> Result<(TcType, TcType), ()>
+fn try_zip_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
+                        expected: &TcType,
+                        actual: &TcType,
+                        through_alias: &mut bool)
+                        -> Result<(TcType, TcType), ()>
     where U: Unifier<State<'a>, TcType>
 {
     let mut l = expected.clone();
@@ -315,10 +315,10 @@ fn try_zip_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
 
 /// As a last ditch effort attempt to unify the types again by expanding the aliases (if the types
 /// are alias types).
-fn try_with_alias<'a, 's, U>(unifier: &mut UnifierState<'a, 's, U>,
-                             expected: &TcType,
-                             actual: &TcType)
-                             -> Result<Option<TcType>, Error<Symbol>>
+fn try_with_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
+                         expected: &TcType,
+                         actual: &TcType)
+                         -> Result<Option<TcType>, Error<Symbol>>
     where U: Unifier<State<'a>, TcType>
 {
     let l = try!(instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
@@ -411,8 +411,8 @@ mod tests {
                                   }]);
         let subs = Substitution::new();
         let env = MockEnv;
-        let mut state = State::new(&env);
-        let result = unify(&subs, &mut state, &l, &r);
+        let state = State::new(&env);
+        let result = unify(&subs, state, &l, &r);
         assert_eq!(result,
                    Err(Errors {
                        errors: vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))],
