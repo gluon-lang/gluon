@@ -10,16 +10,15 @@ addons:
 rust:
 - nightly
 - beta
-- 1.9.0
 before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
   export PATH=$HOME/.local/bin:$PATH
 script:
 - |
-  travis_wait 40 sh ./test.sh &&
+  sh ./test.sh &&
   travis-cargo --only nightly test -- --features "test nightly" -p gluon compile_test &&
-  travis_wait 40 cargo build --release &&
+  cargo build --release &&
   travis-cargo --only nightly bench &&
   travis-cargo --only stable doc
 after_success:
