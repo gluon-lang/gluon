@@ -31,21 +31,23 @@ impl<T, E> fmt::Display for Error<T, E>
 }
 
 
-pub struct UnifierState<'s, S: ?Sized + 's, T: 's, U> {
+pub struct UnifierState<'s, S: ?Sized + 's, U> {
     pub state: &'s mut S,
-    pub subs: &'s Substitution<T>,
     pub unifier: U,
 }
 
-impl<'s, S: ?Sized, Type, U> UnifierState<'s, S, Type, U>
-    where U: Unifier<S, Type>,
-          Type: Unifiable<S>
-{
-    pub fn report_error(&mut self, error: Error<Type, Type::Error>) {
+impl<'s, S: ?Sized, U> UnifierState<'s, S, U> {
+    pub fn report_error<Type>(&mut self, error: Error<Type, Type::Error>)
+        where U: Unifier<S, Type>,
+              Type: Unifiable<S>
+    {
         Unifier::report_error(self, error)
     }
 
-    pub fn try_match(&mut self, l: &Type, r: &Type) -> Option<Type> {
+    pub fn try_match<Type>(&mut self, l: &Type, r: &Type) -> Option<Type>
+        where U: Unifier<S, Type>,
+              Type: Unifiable<S>
+    {
         Unifier::try_match(self, l, r)
     }
 }
@@ -55,9 +57,9 @@ pub trait Unifier<S: ?Sized, Type>: Sized
     where Type: Unifiable<S>
 {
     /// Reports an error to the `unifier` for cases when returning the error is not possible.
-    fn report_error(unifier: &mut UnifierState<S, Type, Self>, error: Error<Type, Type::Error>);
+    fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<Type, Type::Error>);
     /// Attempt to unify `l` and `r` using the strategy of `Self`.
-    fn try_match(unifier: &mut UnifierState<S, Type, Self>, l: &Type, r: &Type) -> Option<Type>;
+    fn try_match(unifier: &mut UnifierState<S, Self>, l: &Type, r: &Type) -> Option<Type>;
 }
 
 /// A type which can be unified by checking for equivalence between the top level of
@@ -74,7 +76,7 @@ pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
     /// Returns `Err` if the immediate level were not equal.
     fn zip_match<U>(&self,
                     other: &Self,
-                    unifier: UnifierState<S, Self, U>)
+                    unifier: UnifierState<S, U>)
                     -> Result<Option<Self>, Error<Self, Self::Error>>
         where U: Unifier<S, Self>;
 }
@@ -95,8 +97,7 @@ pub fn unify<S, T>(subs: &Substitution<T>,
     let mut errors = Errors::new();
     let typ = UnifierState {
             state: state,
-            subs: subs,
-            unifier: Unify { errors: &mut errors },
+            unifier: Unify { errors: &mut errors, subs: subs, },
         }
         .try_match(l, r);
     if errors.has_errors() {
@@ -110,18 +111,19 @@ struct Unify<'e, T, E: 'e>
     where T: Substitutable + 'e
 {
     errors: &'e mut Errors<Error<T, E>>,
+    subs: &'e Substitution<T>,
 }
 
 impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
     where T: Unifiable<S> + PartialEq + Clone + 'e,
           T::Variable: Clone
 {
-    fn report_error(unifier: &mut UnifierState<S, T, Self>, error: Error<T, T::Error>) {
+    fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<T, T::Error>) {
         unifier.unifier.errors.error(error);
     }
 
-    fn try_match(unifier: &mut UnifierState<S, T, Self>, l: &T, r: &T) -> Option<T> {
-        let subs = unifier.subs;
+    fn try_match(unifier: &mut UnifierState<S, Self>, l: &T, r: &T) -> Option<T> {
+        let subs = unifier.unifier.subs;
         let errors = &mut unifier.unifier.errors;
         // Retrieve the 'real' types by resolving
         let l = subs.real(l);
@@ -133,13 +135,13 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
             (_, Some(r)) => {
                 match subs.union(r, l) {
                     Ok(()) => Ok(None),
-                    Err(()) => Err(Error::Occurs(r.clone(), l.clone()))
+                    Err(()) => Err(Error::Occurs(r.clone(), l.clone())),
                 }
             }
             (Some(l), _) => {
                 match subs.union(l, r) {
                     Ok(()) => Ok(Some(r.clone())),
-                    Err(()) => Err(Error::Occurs(l.clone(), r.clone()))
+                    Err(()) => Err(Error::Occurs(l.clone(), r.clone())),
                 }
             }
             (None, None) => {
@@ -148,8 +150,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
                 // unify)
                 let next_unifier = UnifierState {
                     state: unifier.state,
-                    subs: subs,
-                    unifier: Unify { errors: errors },
+                    unifier: Unify { errors: errors, subs: subs, },
                 };
                 l.zip_match(r, next_unifier)
             }
@@ -176,24 +177,27 @@ pub fn intersection<S, T>(subs: &Substitution<T>, state: &mut S, l: &T, r: &T) -
     let mut map = HashMap::new();
     let mut unifier = UnifierState {
         state: state,
-        subs: subs,
-        unifier: Intersect { mismatch_map: &mut map },
+        unifier: Intersect {
+            mismatch_map: &mut map,
+            subs: subs,
+        },
     };
     unifier.try_match(l, r).unwrap_or_else(|| l.clone())
 }
 
 struct Intersect<'m, T: 'm> {
     mismatch_map: &'m mut HashMap<(T, T), T>,
+    subs: &'m Substitution<T>,
 }
 
 impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
     where T: Unifiable<S> + Eq + Hash + Clone,
           T::Variable: Clone
 {
-    fn report_error(_unifier: &mut UnifierState<S, T, Self>, _error: Error<T, T::Error>) {}
+    fn report_error(_unifier: &mut UnifierState<S, Self>, _error: Error<T, T::Error>) {}
 
-    fn try_match(unifier: &mut UnifierState<S, T, Self>, l: &T, r: &T) -> Option<T> {
-        let subs = unifier.subs;
+    fn try_match(unifier: &mut UnifierState<S, Self>, l: &T, r: &T) -> Option<T> {
+        let subs = unifier.unifier.subs;
         let l = subs.real(l);
         let r = subs.real(r);
         match (l.get_var(), r.get_var()) {
@@ -202,8 +206,10 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
                 let result = {
                     let next_unifier = UnifierState {
                         state: unifier.state,
-                        subs: subs,
-                        unifier: Intersect { mismatch_map: unifier.unifier.mismatch_map },
+                        unifier: Intersect {
+                            mismatch_map: unifier.unifier.mismatch_map,
+                            subs: subs,
+                        },
                     };
                     l.zip_match(r, next_unifier)
                 };
@@ -276,7 +282,7 @@ mod test {
         type Error = ();
         fn zip_match<F>(&self,
                         other: &Self,
-                        mut f: UnifierState<(), Self, F>)
+                        mut f: UnifierState<(), F>)
                         -> Result<Option<Self>, Error<Self, Self::Error>>
             where F: Unifier<(), Self>
         {

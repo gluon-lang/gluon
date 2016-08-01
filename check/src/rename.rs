@@ -323,18 +323,15 @@ pub fn rename(symbols: &mut SymbolModule,
 use std::collections::HashMap;
 use base::instantiate;
 use unify_type::{TypeError, State};
-use substitution::Substitution;
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
 pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
-    let subs = Substitution::new();
     let mut map = HashMap::new();
     let mut equiv = true;
     {
         let mut state = State::new(env);
         let mut unifier = UnifierState {
             state: &mut state,
-            subs: &subs,
             unifier: Equivalent {
                 map: &mut map,
                 equiv: &mut equiv,
@@ -351,17 +348,14 @@ struct Equivalent<'m> {
 }
 
 impl<'a, 'm> Unifier<State<'a>, TcType> for Equivalent<'m> {
-    fn report_error(_unifier: &mut UnifierState<State<'a>, TcType, Self>,
+    fn report_error(_unifier: &mut UnifierState<State<'a>, Self>,
                     _error: UnifyError<TcType, TypeError<Symbol>>) {
     }
 
-    fn try_match(unifier: &mut UnifierState<State<'a>, TcType, Self>,
+    fn try_match(unifier: &mut UnifierState<State<'a>, Self>,
                  l: &TcType,
                  r: &TcType)
                  -> Option<TcType> {
-        let subs = unifier.subs;
-        let l = subs.real(l);
-        let r = subs.real(r);
         debug!("{} ====> {}", l, r);
         match (&**l, &**r) {
             (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => None,
@@ -378,7 +372,6 @@ impl<'a, 'm> Unifier<State<'a>, TcType> for Equivalent<'m> {
                 let result = {
                     let next_unifier = UnifierState {
                         state: unifier.state,
-                        subs: subs,
                         unifier: Equivalent {
                             map: unifier.unifier.map,
                             equiv: unifier.unifier.equiv,

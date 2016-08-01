@@ -64,7 +64,7 @@ impl<I> fmt::Display for TypeError<I>
     }
 }
 
-pub type UnifierState<'a, 's, U> = unify::UnifierState<'s, State<'a>, TcType, U>;
+pub type UnifierState<'a, 's, U> = unify::UnifierState<'s, State<'a>, U>;
 
 impl Variable for TypeVariable {
     fn get_id(&self) -> u32 {
@@ -177,7 +177,7 @@ fn do_zip_match<'a, 's, U>(self_: &TcType,
 
                     let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
                     unifier.report_error(UnifyError::Other(err));
-                    Some(unifier.subs.new_var())
+                    None
                 } else {
                     unifier.try_match(&l.typ, &r.typ)
                 };

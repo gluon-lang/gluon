@@ -1136,12 +1136,15 @@ impl<'a> Typecheck<'a> {
                             }
                         })
                     });
-                    new_fields.map(|fields| Type::record(types.clone(), fields)).or_else(|| replacement.clone())
+                    new_fields.map(|fields| Type::record(types.clone(), fields))
+                        .or_else(|| replacement.clone())
                 }
                 _ => {
-                    let new_type = types::walk_move_type_opt(typ, &mut |typ: &Type<Symbol>| {
-                        self.finish_type_(level, generic, i, typ)
-                    });
+                    let new_type =
+                        types::walk_move_type_opt(typ,
+                                                  &mut |typ: &Type<Symbol>| {
+                                                      self.finish_type_(level, generic, i, typ)
+                                                  });
                     new_type.map(|t| unroll_app(&t).unwrap_or(t)).or_else(|| replacement.clone())
                 }
             }
