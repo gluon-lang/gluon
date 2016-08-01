@@ -1,4 +1,4 @@
-use base::{self, ast};
+use base::ast;
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{Alias, Generic, Kind, Type, KindEnv};
 use base::types::{TcIdent, TcType, TypeEnv, PrimitiveEnv, RcKind};
