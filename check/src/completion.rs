@@ -1,55 +1,58 @@
 //! Primitive auto completion and type quering on ASTs
-use std::iter::once;
 
-use base::ast;
-use base::scoped_map::ScopedMap;
+use std::iter::once;
 use std::cmp::Ordering;
 
-use base::ast::{DisplayEnv, Location, Typed};
-use base::symbol::Symbol;
-use base::types::{Type, TcType};
+use base::ast::{self, DisplayEnv, Expr, LExpr, Location, LPattern, Pattern, TcIdent, Typed};
 use base::instantiate;
+use base::scoped_map::ScopedMap;
+use base::symbol::Symbol;
+use base::types::{TcType, Type, TypeEnv};
 
 trait OnFound {
-    fn on_ident(&mut self, ident: &ast::TcIdent<Symbol>) {
+    fn on_ident(&mut self, ident: &TcIdent<Symbol>) {
         let _ = ident;
     }
-    fn on_expr(&mut self, expr: &ast::LExpr<ast::TcIdent<Symbol>>) {
-        let _ = expr;
-    }
-    fn on_pattern(&mut self, pattern: &ast::LPattern<ast::TcIdent<Symbol>>) {
+
+    fn on_pattern(&mut self, pattern: &LPattern<TcIdent<Symbol>>) {
         let _ = pattern;
     }
 
-    fn expr(&mut self, expr: &ast::LExpr<ast::TcIdent<Symbol>>);
-    fn ident(&mut self, context: &ast::LExpr<ast::TcIdent<Symbol>>, ident: &ast::TcIdent<Symbol>);
+    fn expr(&mut self, expr: &LExpr<TcIdent<Symbol>>);
+
+    fn ident(&mut self, context: &LExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>);
 }
 
-struct GetType(Option<TcType>);
-impl OnFound for GetType {
-    fn expr(&mut self, expr: &ast::LExpr<ast::TcIdent<Symbol>>) {
-        self.0 = Some(expr.type_of());
+struct GetType<E> {
+    env: E,
+    typ: Option<TcType>,
+}
+
+impl<E: TypeEnv> OnFound for GetType<E> {
+    fn expr(&mut self, expr: &LExpr<TcIdent<Symbol>>) {
+        self.typ = Some(expr.env_type_of(&self.env));
     }
-    fn ident(&mut self,
-             _context: &ast::LExpr<ast::TcIdent<Symbol>>,
-             ident: &ast::TcIdent<Symbol>) {
-        self.0 = Some(ident.type_of());
+
+    fn ident(&mut self, _context: &LExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
+        self.typ = Some(ident.env_type_of(&self.env));
     }
 }
 
-struct Suggest {
+struct Suggest<E> {
+    env: E,
     stack: ScopedMap<Symbol, TcType>,
-    result: Vec<ast::TcIdent<Symbol>>,
+    result: Vec<TcIdent<Symbol>>,
 }
-impl OnFound for Suggest {
-    fn on_ident(&mut self, ident: &ast::TcIdent<Symbol>) {
+
+impl<E: TypeEnv> OnFound for Suggest<E> {
+    fn on_ident(&mut self, ident: &TcIdent<Symbol>) {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
 
-    fn on_pattern(&mut self, pattern: &ast::LPattern<ast::TcIdent<Symbol>>) {
+    fn on_pattern(&mut self, pattern: &LPattern<TcIdent<Symbol>>) {
         match pattern.value {
-            ast::Pattern::Record { ref id, fields: ref field_ids, .. } => {
-                let unaliased = instantiate::remove_aliases(&(), id.typ.clone());
+            Pattern::Record { ref id, fields: ref field_ids, .. } => {
+                let unaliased = instantiate::remove_aliases(&self.env, id.typ.clone());
                 if let Type::Record { ref fields, .. } = *unaliased {
                     for (field, field_type) in field_ids.iter().zip(fields) {
                         let f = field.1.as_ref().unwrap_or(&field.0).clone();
@@ -57,10 +60,10 @@ impl OnFound for Suggest {
                     }
                 }
             }
-            ast::Pattern::Identifier(ref id) => {
+            Pattern::Identifier(ref id) => {
                 self.stack.insert(id.name.clone(), id.typ.clone());
             }
-            ast::Pattern::Constructor(_, ref args) => {
+            Pattern::Constructor(_, ref args) => {
                 for arg in args {
                     self.stack.insert(arg.name.clone(), arg.typ.clone());
                 }
@@ -68,11 +71,11 @@ impl OnFound for Suggest {
         }
     }
 
-    fn expr(&mut self, expr: &ast::LExpr<ast::TcIdent<Symbol>>) {
-        if let ast::Expr::Identifier(ref ident) = expr.value {
+    fn expr(&mut self, expr: &LExpr<TcIdent<Symbol>>) {
+        if let Expr::Identifier(ref ident) = expr.value {
             for (k, typ) in self.stack.iter() {
                 if k.declared_name().starts_with(ident.name.declared_name()) {
-                    self.result.push(ast::TcIdent {
+                    self.result.push(TcIdent {
                         name: k.clone(),
                         typ: typ.clone(),
                     });
@@ -81,14 +84,14 @@ impl OnFound for Suggest {
         }
     }
 
-    fn ident(&mut self, context: &ast::LExpr<ast::TcIdent<Symbol>>, ident: &ast::TcIdent<Symbol>) {
-        if let ast::Expr::FieldAccess(ref expr, _) = context.value {
-            let typ = expr.type_of();
-            if let Type::Record { ref fields, .. } = *instantiate::remove_aliases(&(), typ) {
+    fn ident(&mut self, context: &LExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
+        if let Expr::FieldAccess(ref expr, _) = context.value {
+            let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
+            if let Type::Record { ref fields, .. } = *typ {
                 let id = ident.name.as_ref();
                 for field in fields {
                     if field.name.as_ref().starts_with(id) {
-                        self.result.push(ast::TcIdent {
+                        self.result.push(TcIdent {
                             name: field.name.clone(),
                             typ: field.typ.clone(),
                         });
@@ -100,7 +103,7 @@ impl OnFound for Suggest {
 }
 
 struct FindVisitor<'a, F> {
-    env: &'a (DisplayEnv<Ident = ast::TcIdent<Symbol>> + 'a),
+    env: &'a (DisplayEnv<Ident = TcIdent<Symbol>> + 'a),
     location: Location,
     on_found: F,
 }
@@ -138,17 +141,19 @@ impl<'a, F> FindVisitor<'a, F>
     where F: OnFound
 {
     fn visit_one<'e, I>(&mut self, iter: I)
-        where I: IntoIterator<Item = &'e ast::LExpr<ast::TcIdent<Symbol>>>
+        where I: IntoIterator<Item = &'e LExpr<TcIdent<Symbol>>>
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span(self.env));
         self.visit_expr(expr.unwrap());
     }
 
-    fn visit_pattern(&mut self, pattern: &ast::LPattern<ast::TcIdent<Symbol>>) {
+    fn visit_pattern(&mut self, pattern: &LPattern<TcIdent<Symbol>>) {
         self.on_found.on_pattern(pattern);
     }
-    fn visit_expr(&mut self, current: &ast::LExpr<ast::TcIdent<Symbol>>) {
+
+    fn visit_expr(&mut self, current: &LExpr<TcIdent<Symbol>>) {
         use base::ast::Expr::*;
+
         match current.value {
             Identifier(_) | Literal(_) => self.on_found.expr(current),
             Call(ref func, ref args) => {
@@ -212,27 +217,39 @@ impl<'a, F> FindVisitor<'a, F>
     }
 }
 
-pub fn find(env: &DisplayEnv<Ident = ast::TcIdent<Symbol>>,
-            expr: &ast::LExpr<ast::TcIdent<Symbol>>,
-            location: Location)
-            -> Result<TcType, ()> {
+pub fn find<D, T>(env: &D,
+                  typ_env: &T,
+                  expr: &LExpr<TcIdent<Symbol>>,
+                  location: Location)
+                  -> Result<TcType, ()>
+    where D: DisplayEnv<Ident = TcIdent<Symbol>>,
+          T: TypeEnv
+{
     let mut visitor = FindVisitor {
         env: env,
         location: location,
-        on_found: GetType(None),
+        on_found: GetType {
+            env: typ_env,
+            typ: None,
+        },
     };
     visitor.visit_expr(expr);
-    visitor.on_found.0.ok_or(())
+    visitor.on_found.typ.ok_or(())
 }
 
-pub fn suggest(env: &DisplayEnv<Ident = ast::TcIdent<Symbol>>,
-               expr: &ast::LExpr<ast::TcIdent<Symbol>>,
-               location: Location)
-               -> Vec<ast::TcIdent<Symbol>> {
+pub fn suggest<D, T>(env: &D,
+                     typ_env: &T,
+                     expr: &LExpr<TcIdent<Symbol>>,
+                     location: Location)
+                     -> Vec<TcIdent<Symbol>>
+    where D: DisplayEnv<Ident = TcIdent<Symbol>>,
+          T: TypeEnv
+{
     let mut visitor = FindVisitor {
         env: env,
         location: location,
         on_found: Suggest {
+            env: typ_env,
             stack: ScopedMap::new(),
             result: Vec::new(),
         },

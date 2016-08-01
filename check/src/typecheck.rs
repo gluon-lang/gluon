@@ -902,10 +902,11 @@ impl<'a> Typecheck<'a> {
             self.type_variables.exit_scope();
         }
         if is_recursive {
-            for (typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
+            for (found_typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
                 // Merge the variable we bound to the name and the type inferred
                 // in the expression
-                self.unify_span(bind.name.span(), &bind.type_of().clone(), typ);
+                let bound_typ = bind.env_type_of(&self.environment);
+                self.unify_span(bind.name.span(), &bound_typ, found_typ);
             }
         }
         // Once all variables inside the let has been unified we can quantify them

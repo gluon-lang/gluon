@@ -387,7 +387,6 @@ mod tests {
     use base::types::{self, TcType, Type};
     use tests::*;
 
-
     #[test]
     fn detect_multiple_type_errors_in_single_type() {
         let _ = ::env_logger::init();
@@ -411,7 +410,7 @@ mod tests {
                                       typ: Type::string(),
                                   }]);
         let subs = Substitution::new();
-        let env = ();
+        let env = MockEnv;
         let mut state = State::new(&env);
         let result = unify(&subs, &mut state, &l, &r);
         assert_eq!(result,

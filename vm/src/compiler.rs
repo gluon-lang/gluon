@@ -5,7 +5,7 @@ use base::instantiate;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, LExpr, Expr};
 use base::types;
-use base::types::{Type, TcIdent, TcType, TypeEnv};
+use base::types::{Alias, KindEnv, TcIdent, TcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
 use vm::GlobalVMState;
@@ -183,19 +183,6 @@ pub trait CompilerEnv: TypeEnv {
     fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>>;
 }
 
-impl<T: CompilerEnv, U: CompilerEnv> CompilerEnv for (T, U) {
-    fn find_var(&self, s: &Symbol) -> Option<Variable<Symbol>> {
-        let &(ref outer, ref inner) = self;
-        inner.find_var(s)
-            .or_else(|| outer.find_var(s))
-    }
-}
-
-impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
-    fn find_var(&self, s: &Symbol) -> Option<Variable<Symbol>> {
-        (**self).find_var(s)
-    }
-}
 impl CompilerEnv for TypeInfos {
     fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
         fn count_function_args(typ: &TcType) -> VMIndex {
@@ -231,10 +218,10 @@ pub struct Compiler<'a> {
     vm: &'a GlobalVMState,
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, TcType>,
-    stack_types: ScopedMap<Symbol, types::Alias<Symbol, TcType>>,
+    stack_types: ScopedMap<Symbol, Alias<Symbol, TcType>>,
 }
 
-impl<'a> ::base::types::KindEnv for Compiler<'a> {
+impl<'a> KindEnv for Compiler<'a> {
     fn find_kind(&self, _type_name: &SymbolRef) -> Option<types::RcKind> {
         None
     }
@@ -244,17 +231,25 @@ impl<'a> TypeEnv for Compiler<'a> {
     fn find_type(&self, _id: &SymbolRef) -> Option<&TcType> {
         None
     }
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&types::Alias<Symbol, TcType>> {
+
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         self.stack_types
             .get(id)
     }
+
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         None
     }
 }
 
+impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
+    fn find_var(&self, s: &Symbol) -> Option<Variable<Symbol>> {
+        (**self).find_var(s)
+    }
+}
+
 impl<'a> Compiler<'a> {
-    pub fn new(globals: &'a CompilerEnv,
+    pub fn new(globals: &'a (CompilerEnv + 'a),
                vm: &'a GlobalVMState,
                symbols: SymbolModule<'a>)
                -> Compiler<'a> {
@@ -812,7 +807,7 @@ impl<'a> Compiler<'a> {
 }
 
 fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(&Symbol, &types::Alias<Symbol, TcType>)
+    where F: FnMut(&Symbol, &Alias<Symbol, TcType>)
 {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {

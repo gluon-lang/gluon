@@ -50,7 +50,23 @@ pub fn typecheck(text: &str) -> Result<TcType, typecheck::Error> {
     t
 }
 
-struct MockEnv(Alias<Symbol, TcType>);
+pub struct MockEnv {
+    bool: Alias<Symbol, TcType>,
+}
+
+impl MockEnv {
+    pub fn new() -> MockEnv {
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+
+        let bool_sym = interner.symbol("Bool");
+        let bool_ty = Type::app(Type::id(bool_sym.clone()), vec![]);
+
+        MockEnv {
+            bool: Alias::new(bool_sym, vec![], bool_ty),
+        }
+    }
+}
 
 impl KindEnv for MockEnv {
     fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
@@ -60,19 +76,22 @@ impl KindEnv for MockEnv {
         }
     }
 }
+
 impl TypeEnv for MockEnv {
     fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         match id.as_ref() {
-            "False" | "True" => Some(&self.0.typ.as_ref().unwrap()),
+            "False" | "True" => Some(&self.bool.typ.as_ref().unwrap()),
             _ => None,
         }
     }
+
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         match id.as_ref() {
-            "Bool" => Some(&self.0),
+            "Bool" => Some(&self.bool),
             _ => None,
         }
     }
+
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         None
     }
@@ -80,19 +99,16 @@ impl TypeEnv for MockEnv {
 
 impl PrimitiveEnv for MockEnv {
     fn get_bool(&self) -> &TcType {
-        self.0.typ.as_ref().unwrap()
+        self.bool.typ.as_ref().unwrap()
     }
 }
 
 pub fn typecheck_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType, typecheck::Error>) {
     let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
+
+    let env = MockEnv::new();
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
-
-    let bool_sym = interner.symbol("Bool");
-    let bool = Type::<_, TcType>::app(Type::id(bool_sym.clone()), vec![]);
-
-    let env = MockEnv(Alias::new(bool_sym, vec![], bool.clone()));
     let mut tc = Typecheck::new("test".into(), &mut interner, &env);
 
     let result = tc.typecheck_expr(&mut expr);
@@ -108,13 +124,9 @@ pub fn typecheck_partial_expr(text: &str) -> (ast::LExpr<TcIdent>, Result<TcType
         Err((None, err)) => panic!("{}", err),
     };
 
+    let env = MockEnv::new();
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
-
-    let bool_sym = interner.symbol("Bool");
-    let bool = Type::<_, TcType>::app(Type::id(bool_sym.clone()), vec![]);
-
-    let env = MockEnv(Alias::new(bool_sym, vec![], bool.clone()));
     let mut tc = Typecheck::new("test".into(), &mut interner, &env);
 
     let result = tc.typecheck_expr(&mut expr);
