@@ -1050,9 +1050,8 @@ impl<'a> Typecheck<'a> {
                 debug!("Intersect\n{} <> {}",
                        types::display_type(&self.symbols, existing_type),
                        types::display_type(&self.symbols, symbol_type));
-                let mut state = ::unify_type::State::new(&self.environment);
-                let result =
-                    unify::intersection(&self.subs, &mut state, existing_type, symbol_type);
+                let state = ::unify_type::State::new(&self.environment);
+                let result = unify::intersection(&self.subs, state, existing_type, symbol_type);
                 debug!("Intersect result {}", result);
                 result
             } else {
@@ -1238,8 +1237,8 @@ impl<'a> Typecheck<'a> {
         debug!("Unify {} <=> {}",
                types::display_type(&self.symbols, expected),
                types::display_type(&self.symbols, &actual));
-        let mut state = ::unify_type::State::new(&self.environment);
-        match unify::unify(&self.subs, &mut state, expected, &actual) {
+        let state = ::unify_type::State::new(&self.environment);
+        match unify::unify(&self.subs, state, expected, &actual) {
             Ok(typ) => Ok(self.subs.set_type(typ)),
             Err(errors) => {
                 let mut expected = expected.clone();

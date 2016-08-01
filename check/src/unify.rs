@@ -31,12 +31,12 @@ impl<T, E> fmt::Display for Error<T, E>
 }
 
 
-pub struct UnifierState<'s, S: ?Sized + 's, U> {
-    pub state: &'s mut S,
+pub struct UnifierState<S, U> {
+    pub state: S,
     pub unifier: U,
 }
 
-impl<'s, S: ?Sized, U> UnifierState<'s, S, U> {
+impl<S, U> UnifierState<S, U> {
     pub fn report_error<Type>(&mut self, error: Error<Type, Type::Error>)
         where U: Unifier<S, Type>,
               Type: Unifiable<S>
@@ -53,7 +53,7 @@ impl<'s, S: ?Sized, U> UnifierState<'s, S, U> {
 }
 
 /// A `Unifier` is a type which implements a unifying strategy between two values.
-pub trait Unifier<S: ?Sized, Type>: Sized
+pub trait Unifier<S, Type>: Sized
     where Type: Unifiable<S>
 {
     /// Reports an error to the `unifier` for cases when returning the error is not possible.
@@ -64,7 +64,7 @@ pub trait Unifier<S: ?Sized, Type>: Sized
 
 /// A type which can be unified by checking for equivalence between the top level of
 /// two instances of the type and then recursively calling into the `unifier` on all sub-terms
-pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
+pub trait Unifiable<S>: Substitutable + Sized {
     type Error;
 
     /// Perform one level of equality testing between `self` and `other` and recursively call
@@ -87,30 +87,33 @@ pub trait Unifiable<S: ?Sized>: Substitutable + Sized {
 /// If the unification is successful the returned type is the unified type with as much sharing as
 /// possible which lets further computions be more efficient.
 pub fn unify<S, T>(subs: &Substitution<T>,
-                   state: &mut S,
+                   state: S,
                    l: &T,
                    r: &T)
                    -> Result<T, Errors<Error<T, T::Error>>>
     where T: Unifiable<S> + PartialEq + Clone,
           T::Variable: Clone
 {
-    let mut errors = Errors::new();
-    let typ = UnifierState {
-            state: state,
-            unifier: Unify { errors: &mut errors, subs: subs, },
-        }
-        .try_match(l, r);
-    if errors.has_errors() {
-        Err(errors)
+    let mut state = UnifierState {
+        state: state,
+        unifier: Unify {
+            errors: Errors::new(),
+            subs: subs,
+        },
+    };
+
+    let typ = state.try_match(l, r);
+    if state.unifier.errors.has_errors() {
+        Err(state.unifier.errors)
     } else {
         Ok(typ.unwrap_or_else(|| l.clone()))
     }
 }
 
-struct Unify<'e, T, E: 'e>
+struct Unify<'e, T, E>
     where T: Substitutable + 'e
 {
-    errors: &'e mut Errors<Error<T, E>>,
+    errors: Errors<Error<T, E>>,
     subs: &'e Substitution<T>,
 }
 
@@ -164,16 +167,15 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 /// specialized type which both types can sucessfully unify to.
 ///
 /// # Example
-    /// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
-pub fn intersection<S, T>(subs: &Substitution<T>, state: &mut S, l: &T, r: &T) -> T
+/// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
+pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
     where T: Unifiable<S> + Eq + Clone + Hash,
           T::Variable: Clone
 {
-    let mut map = HashMap::new();
     let mut unifier = UnifierState {
         state: state,
         unifier: Intersect {
-            mismatch_map: &mut map,
+            mismatch_map: HashMap::new(),
             subs: subs,
         },
     };
@@ -181,7 +183,7 @@ pub fn intersection<S, T>(subs: &Substitution<T>, state: &mut S, l: &T, r: &T) -
 }
 
 struct Intersect<'m, T: 'm> {
-    mismatch_map: &'m mut HashMap<(T, T), T>,
+    mismatch_map: HashMap<(T, T), T>,
     subs: &'m Substitution<T>,
 }
 
@@ -291,7 +293,7 @@ mod test {
              l: &TType,
              r: &TType)
              -> Result<TType, Errors<Error<TType, ()>>> {
-        super::unify(subs, &mut (), l, r)
+        super::unify(subs, (), l, r)
     }
 
     #[test]
@@ -359,7 +361,7 @@ mod test {
     }
 
     fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {
-        super::intersection(subs, &mut (), l, r)
+        super::intersection(subs, (), l, r)
     }
     #[test]
     fn intersection_test() {

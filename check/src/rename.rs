@@ -326,28 +326,23 @@ use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
 pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
-    let mut map = HashMap::new();
-    let mut equiv = true;
-    {
-        let mut state = State::new(env);
-        let mut unifier = UnifierState {
-            state: &mut state,
-            unifier: Equivalent {
-                map: &mut map,
-                equiv: &mut equiv,
-            },
-        };
-        unifier.try_match(actual, inferred);
-    }
-    equiv
+    let mut unifier = UnifierState {
+        state: State::new(env),
+        unifier: Equivalent {
+            map: HashMap::new(),
+            equiv: true,
+        },
+    };
+    unifier.try_match(actual, inferred);
+    unifier.unifier.equiv
 }
 
-struct Equivalent<'m> {
-    map: &'m mut HashMap<Symbol, TcType>,
-    equiv: &'m mut bool,
+struct Equivalent {
+    map: HashMap<Symbol, TcType>,
+    equiv: bool,
 }
 
-impl<'a, 'm> Unifier<State<'a>, TcType> for Equivalent<'m> {
+impl<'a> Unifier<State<'a>, TcType> for Equivalent {
     fn report_error(_unifier: &mut UnifierState<State<'a>, Self>,
                     _error: UnifyError<TcType, TypeError<Symbol>>) {
     }
@@ -372,7 +367,7 @@ impl<'a, 'm> Unifier<State<'a>, TcType> for Equivalent<'m> {
                 match l.zip_match(r, unifier) {
                     Ok(typ) => typ,
                     Err(_) => {
-                        *unifier.unifier.equiv = false;
+                        unifier.unifier.equiv = false;
                         None
                     }
                 }
