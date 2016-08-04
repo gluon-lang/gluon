@@ -188,10 +188,10 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn ident_type(&'s self) -> LanguageParser<'s, I, F, ASTType<Id::Untyped>> {
+    fn ident_type(&'s self) -> LanguageParser<'s, I, F, AstType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_ident_type)
     }
-    fn parse_ident_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
+    fn parse_ident_type(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
         try(self.parser(ParserEnv::<I, F>::parse_ident2))
             .map(|(s, typ)| {
                 debug!("Id: {:?}", s);
@@ -223,14 +223,14 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     match_parser! { doc_comment, DocComment -> String }
 
-    fn typ(&'s self) -> LanguageParser<'s, I, F, ASTType<Id::Untyped>> {
+    fn typ(&'s self) -> LanguageParser<'s, I, F, AstType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_type)
     }
 
     fn parse_adt(&self,
-                 return_type: &ASTType<Id::Untyped>,
+                 return_type: &AstType<Id::Untyped>,
                  input: I)
-                 -> ParseResult<ASTType<Id::Untyped>, I> {
+                 -> ParseResult<AstType<Id::Untyped>, I> {
         let variant = (token(Token::Pipe),
                        self.ident_u(),
                        many(self.parser(ParserEnv::<I, F>::type_arg)))
@@ -240,7 +240,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn parse_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
+    fn parse_type(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
         (many1(self.parser(ParserEnv::<I, F>::type_arg)),
          optional(token(Token::RightArrow).with(self.typ())))
             .map(|(mut arg, ret): (Vec<_>, _)| {
@@ -259,7 +259,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn record_type(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
+    fn record_type(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
         let field = self.parser(ParserEnv::<I, F>::parse_ident2)
             .then(|(id, typ)| {
                 parser(move |input| {
@@ -306,8 +306,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn type_arg(&self, input: I) -> ParseResult<ASTType<Id::Untyped>, I> {
-        choice::<[&mut Parser<Input = I, Output = ASTType<Id::Untyped>>; 3],
+    fn type_arg(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
+        choice::<[&mut Parser<Input = I, Output = AstType<Id::Untyped>>; 3],
                  _>([&mut self.parser(ParserEnv::<I, F>::record_type),
                      &mut between(token(Token::Open(Delimiter::Paren)),
                                   token(Token::Close(Delimiter::Paren)),

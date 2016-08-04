@@ -19,7 +19,7 @@ use unify_type;
 
 use self::TypeError::*;
 
-type ErrType = ast::ASTType<String>;
+type ErrType = ast::AstType<String>;
 
 
 /// Type representing a single error when checking a type
@@ -28,15 +28,15 @@ pub enum TypeError<I> {
     /// Variable has not been defined before it was used
     UndefinedVariable(I),
     /// Attempt to call a type which is not a function
-    NotAFunction(ast::ASTType<I>),
+    NotAFunction(ast::AstType<I>),
     /// Type has not been defined before it was used
     UndefinedType(I),
     /// Type were expected to have a certain field
-    UndefinedField(ast::ASTType<I>, I),
+    UndefinedField(ast::AstType<I>, I),
     /// Constructor type was found in a pattern but did not have the expected number of arguments
-    PatternError(ast::ASTType<I>, usize),
+    PatternError(ast::AstType<I>, usize),
     /// Errors found when trying to unify two types
-    Unification(ast::ASTType<I>, ast::ASTType<I>, Vec<unify_type::Error<I>>),
+    Unification(ast::AstType<I>, ast::AstType<I>, Vec<unify_type::Error<I>>),
     /// Error were found when trying to unify the kinds of two types
     KindError(kindcheck::Error<I>),
     /// Errors found during renaming (overload resolution)
@@ -44,7 +44,7 @@ pub enum TypeError<I> {
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// Type is not a type which has any fields
-    InvalidFieldAccess(ast::ASTType<I>),
+    InvalidFieldAccess(ast::AstType<I>),
     /// Expected to find a record with the following fields
     UndefinedRecord {
         fields: Vec<I>,

@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::Mutex;
 
 use gluon::new_vm;
-use gluon::vm::api::VMType;
+use gluon::vm::api::VmType;
 use gluon::vm::gc::Traverseable;
 
 struct Test<'vm>(Mutex<&'vm str>);
@@ -15,7 +15,7 @@ impl<'vm> fmt::Debug for Test<'vm> {
 }
 
 impl<'vm> Traverseable for Test<'vm> { }
-impl<'vm> VMType for Test<'vm> {
+impl<'vm> VmType for Test<'vm> {
     type Type = Test<'static>;
 }
 

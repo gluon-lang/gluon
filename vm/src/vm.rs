@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 
-use base::ast::{Typed, ASTType};
+use base::ast::{Typed, AstType};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{Alias, AliasData, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv, TcType,
@@ -27,7 +27,7 @@ pub use value::Value;//FIXME Value should not be exposed
 pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 
 
-fn new_bytecode(gc: &mut Gc, vm: &GlobalVMState, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
+fn new_bytecode(gc: &mut Gc, vm: &GlobalVmState, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
     let CompiledFunction { id,
                            args,
                            instructions,
@@ -67,13 +67,13 @@ impl Traverseable for Global {
 
 impl Typed for Global {
     type Id = Symbol;
-    fn env_type_of(&self, _: &TypeEnv) -> ASTType<Symbol> {
+    fn env_type_of(&self, _: &TypeEnv) -> AstType<Symbol> {
         self.typ.clone()
     }
 }
 
-pub struct GlobalVMState {
-    env: RwLock<VMEnv>,
+pub struct GlobalVmState {
+    env: RwLock<VmEnv>,
     generics: RwLock<HashMap<StdString, TcType>>,
     typeids: RwLock<HashMap<TypeId, TcType>>,
     interner: RwLock<Interner>,
@@ -86,7 +86,7 @@ pub struct GlobalVMState {
     pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 }
 
-impl Traverseable for GlobalVMState {
+impl Traverseable for GlobalVmState {
     fn traverse(&self, gc: &mut Gc) {
         for g in self.env.read().unwrap().globals.values() {
             g.traverse(gc);
@@ -100,12 +100,12 @@ impl Traverseable for GlobalVMState {
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
 /// typechecker and compiler to lookup things in the virtual machine.
 #[derive(Debug)]
-pub struct VMEnv {
+pub struct VmEnv {
     pub type_infos: TypeInfos,
     pub globals: HashMap<StdString, Global>,
 }
 
-impl CompilerEnv for VMEnv {
+impl CompilerEnv for VmEnv {
     fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
         self.globals
             .get(id.as_ref())
@@ -114,13 +114,13 @@ impl CompilerEnv for VMEnv {
     }
 }
 
-impl KindEnv for VMEnv {
+impl KindEnv for VmEnv {
     fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind> {
         self.type_infos
             .find_kind(type_name)
     }
 }
-impl TypeEnv for VMEnv {
+impl TypeEnv for VmEnv {
     fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         self.globals
             .get(AsRef::<str>::as_ref(id))
@@ -154,7 +154,7 @@ impl TypeEnv for VMEnv {
     }
 }
 
-impl PrimitiveEnv for VMEnv {
+impl PrimitiveEnv for VmEnv {
     fn get_bool(&self) -> &TcType {
         self.find_type_info("std.types.Bool")
             .ok()
@@ -166,7 +166,7 @@ impl PrimitiveEnv for VMEnv {
     }
 }
 
-impl MetadataEnv for VMEnv {
+impl MetadataEnv for VmEnv {
     fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
         self.globals
             .get(AsRef::<str>::as_ref(id))
@@ -185,7 +185,7 @@ fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
     }
 }
 
-impl VMEnv {
+impl VmEnv {
     pub fn find_type_info(&self, name: &str) -> Result<Cow<Alias<Symbol, TcType>>> {
         let name = Name::new(name);
         let module_str = name.module().as_str();
@@ -310,11 +310,11 @@ impl VMEnv {
     }
 }
 
-impl GlobalVMState {
+impl GlobalVmState {
     /// Creates a new virtual machine
-    pub fn new() -> GlobalVMState {
-        let mut vm = GlobalVMState {
-            env: RwLock::new(VMEnv {
+    pub fn new() -> GlobalVmState {
+        let mut vm = GlobalVmState {
+            env: RwLock::new(VmEnv {
                 globals: HashMap::new(),
                 type_infos: TypeInfos::new(),
             }),
@@ -334,7 +334,7 @@ impl GlobalVMState {
         use api::generic::A;
         use api::Generic;
         fn add_type<T: Any>(ids: &mut HashMap<TypeId, TcType>,
-                            env: &mut VMEnv,
+                            env: &mut VmEnv,
                             name: &str,
                             typ: TcType) {
             ids.insert(TypeId::of::<T>(), typ);
@@ -351,7 +351,7 @@ impl GlobalVMState {
             let ids = self.typeids.get_mut().unwrap();
             let env = self.env.get_mut().unwrap();
             add_type::<()>(ids, env, "()", Type::unit());
-            add_type::<VMInt>(ids, env, "Int", Type::int());
+            add_type::<VmInt>(ids, env, "Int", Type::int());
             add_type::<u8>(ids, env, "Byte", Type::byte());
             add_type::<f64>(ids, env, "Float", Type::float());
             add_type::<::std::string::String>(ids, env, "String", Type::string());
@@ -455,7 +455,7 @@ impl GlobalVMState {
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`
-    pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VMEnv> {
+    pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VmEnv> {
         self.env.read().unwrap()
     }
 }

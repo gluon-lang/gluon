@@ -7,10 +7,10 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use ast;
-use ast::{ASTType, DisplayEnv};
+use ast::{AstType, DisplayEnv};
 use symbol::{Symbol, SymbolRef};
 
-pub type TcType = ast::ASTType<Symbol>;
+pub type TcType = ast::AstType<Symbol>;
 pub type TcIdent = ast::TcIdent<Symbol>;
 
 /// Trait for values which contains kinded values which can be refered by name
@@ -83,7 +83,7 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Type<Id, T = ASTType<Id>> {
+pub enum Type<Id, T = AstType<Id>> {
     /// An application with multiple arguments.
     /// `Map String Int` would be represented as `App(Map, [String, Int])`
     App(T, Vec<T>),
@@ -387,10 +387,10 @@ impl<Id, T> Alias<Id, T>
     }
 }
 
-impl<Id> Alias<Id, ASTType<Id>>
+impl<Id> Alias<Id, AstType<Id>>
     where Id: Clone
 {
-    pub fn make_mut(alias: &mut Alias<Id, ASTType<Id>>) -> &mut AliasData<Id, ASTType<Id>> {
+    pub fn make_mut(alias: &mut Alias<Id, AstType<Id>>) -> &mut AliasData<Id, AstType<Id>> {
         match *Arc::make_mut(&mut alias._typ.typ) {
             Type::Alias(ref mut alias) => alias,
             _ => unreachable!(),
@@ -409,7 +409,7 @@ pub struct AliasData<Id, T> {
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
-pub struct Field<Id, T = ASTType<Id>> {
+pub struct Field<Id, T = AstType<Id>> {
     pub name: Id,
     pub typ: T,
 }
@@ -578,7 +578,7 @@ impl<'a, Id, T> Iterator for ArgIterator<'a, T>
     }
 }
 
-impl<Id> ASTType<Id> {
+impl<Id> AstType<Id> {
     /// Returns the lowest level which this type contains. The level informs from where type
     /// variables where created.
     pub fn level(&self) -> u32 {

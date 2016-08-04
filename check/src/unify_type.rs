@@ -1,6 +1,6 @@
 use std::fmt;
 
-use base::ast::ASTType;
+use base::ast::AstType;
 use base::types::{self, TcType, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
@@ -9,7 +9,7 @@ use unify;
 use unify::{Error as UnifyError, Unifier, Unifiable};
 use substitution::{Variable, Substitutable};
 
-pub type Error<I> = UnifyError<ASTType<I>, TypeError<I>>;
+pub type Error<I> = UnifyError<AstType<I>, TypeError<I>>;
 
 pub struct State<'a> {
     env: &'a (TypeEnv + 'a),
@@ -72,14 +72,14 @@ impl Variable for TypeVariable {
     }
 }
 
-impl<I> Substitutable for ASTType<I> {
+impl<I> Substitutable for AstType<I> {
     type Variable = TypeVariable;
 
-    fn new(id: u32) -> ASTType<I> {
+    fn new(id: u32) -> AstType<I> {
         Type::variable(TypeVariable::new(id))
     }
 
-    fn from_variable(var: TypeVariable) -> ASTType<I> {
+    fn from_variable(var: TypeVariable) -> AstType<I> {
         Type::variable(var)
     }
 
@@ -91,7 +91,7 @@ impl<I> Substitutable for ASTType<I> {
     }
 
     fn traverse<F>(&self, f: &mut F)
-        where F: types::Walker<ASTType<I>>
+        where F: types::Walker<AstType<I>>
     {
         types::walk_type_(self, f)
     }

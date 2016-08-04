@@ -2,9 +2,9 @@ extern crate env_logger;
 extern crate gluon;
 
 use gluon::base::types::Type;
-use gluon::vm::api::{self, VMType, FunctionRef};
+use gluon::vm::api::{self, VmType, FunctionRef};
 use gluon::vm::thread::{RootedThread, Thread, Traverseable, Root, RootStr};
-use gluon::vm::types::VMInt;
+use gluon::vm::types::VmInt;
 use gluon::Compiler;
 use gluon::import::Import;
 
@@ -36,7 +36,7 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
     load_script(&mut vm, "add10", &add10).unwrap_or_else(|err| panic!("{}", err));
     load_script(&mut vm, "mul", &mul).unwrap_or_else(|err| panic!("{}", err));
     {
-        let mut f: FunctionRef<fn(VMInt) -> VMInt> = vm.get_global("add10")
+        let mut f: FunctionRef<fn(VmInt) -> VmInt> = vm.get_global("add10")
                                                     .unwrap();
         let result = f.call(2).unwrap();
         assert_eq!(result, 12);
@@ -51,9 +51,9 @@ fn root_data() {
     let _ = ::env_logger::init();
 
     #[derive(Debug)]
-    struct Test(VMInt);
+    struct Test(VmInt);
     impl Traverseable for Test { }
-    impl VMType for Test {
+    impl VmType for Test {
         type Type = Test;
     }
 
@@ -61,7 +61,7 @@ fn root_data() {
 \x -> test x 1
 "#;
     let vm = make_vm();
-    fn test(r: Root<Test>, i: VMInt) -> VMInt {
+    fn test(r: Root<Test>, i: VmInt) -> VmInt {
         r.0 + i
     }
     vm.register_type::<Test>("Test", &[])
@@ -72,7 +72,7 @@ fn root_data() {
       })
       .unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
-    let mut script_fn: FunctionRef<fn(api::Userdata<Test>) -> VMInt> = vm.get_global("script_fn").unwrap();
+    let mut script_fn: FunctionRef<fn(api::Userdata<Test>) -> VmInt> = vm.get_global("script_fn").unwrap();
     let result = script_fn.call(api::Userdata(Test(123)))
                           .unwrap();
     assert_eq!(result, 124);

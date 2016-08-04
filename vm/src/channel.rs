@@ -4,9 +4,9 @@ use std::collections::VecDeque;
 
 use base::types::{TcType, Type};
 
-use {Error, Result as VMResult};
+use {Error, Result as VmResult};
 use api::record::{Record, HList};
-use api::{Generic, Userdata, VMType, primitive, WithVM, Function, Pushable};
+use api::{Generic, Userdata, VmType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
 use vm::{Thread, RootedThread, Status};
@@ -70,7 +70,7 @@ impl<T> Receiver<T> {
     }
 }
 
-impl<T: VMType> VMType for Sender<T>
+impl<T: VmType> VmType for Sender<T>
     where T::Type: Sized
 {
     type Type = Sender<T::Type>;
@@ -80,7 +80,7 @@ impl<T: VMType> VMType for Sender<T>
     }
 }
 
-impl<T: VMType> VMType for Receiver<T>
+impl<T: VmType> VmType for Receiver<T>
     where T::Type: Sized
 {
     type Type = Receiver<T::Type>;
@@ -177,7 +177,7 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
     f
 }
 
-pub fn load(vm: &Thread) -> VMResult<()> {
+pub fn load(vm: &Thread) -> VmResult<()> {
     let _ = vm.register_type::<Sender<A>>("Sender", &["a"]);
     let _ = vm.register_type::<Receiver<A>>("Receiver", &["a"]);
     try!(vm.define_global("channel", f1(channel)));

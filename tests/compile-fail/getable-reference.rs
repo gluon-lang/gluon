@@ -1,12 +1,12 @@
 extern crate gluon;
 use gluon::new_vm;
 use gluon::vm::gc::{Gc, Traverseable};
-use gluon::vm::api::{Pushable, VMType};
+use gluon::vm::api::{Pushable, VmType};
 
 #[derive(Debug)]
 struct Test;
 
-impl VMType for Test {
+impl VmType for Test {
     type Type = Test;
 }
 

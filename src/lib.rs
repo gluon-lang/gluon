@@ -32,8 +32,8 @@ use base::metadata::Metadata;
 
 use vm::Variants;
 use vm::api::generic::A;
-use vm::api::{Getable, VMType, Generic, IO};
-use vm::Error as VMError;
+use vm::api::{Getable, VmType, Generic, IO};
+use vm::Error as VmError;
 use vm::compiler::CompiledFunction;
 use vm::thread::{RootedValue, ThreadInternal};
 use vm::internal::ClosureDataDef;
@@ -464,20 +464,20 @@ impl Compiler {
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
     pub fn run_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<(T, TcType)>
-        where T: Getable<'vm> + VMType
+        where T: Getable<'vm> + VmType
     {
         let expected = T::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
         unsafe {
             match T::from_value(vm, Variants::new(&value)) {
                 Some(value) => Ok((value, actual)),
-                None => Err(Error::from(VMError::WrongType(expected, actual))),
+                None => Err(Error::from(VmError::WrongType(expected, actual))),
             }
         }
     }
 
     pub fn run_io_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<(T, TcType)>
-        where T: Getable<'vm> + VMType,
+        where T: Getable<'vm> + VmType,
               T::Type: Sized
     {
         let expected = IO::<T>::make_type(vm);
@@ -485,7 +485,7 @@ impl Compiler {
         unsafe {
             match T::from_value(vm, Variants::new(&value)) {
                 Some(value) => Ok((value, actual)),
-                None => Err(Error::from(VMError::WrongType(expected, actual))),
+                None => Err(Error::from(VmError::WrongType(expected, actual))),
             }
         }
     }

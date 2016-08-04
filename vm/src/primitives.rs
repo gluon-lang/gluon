@@ -10,14 +10,14 @@ use Result;
 use vm::{Thread, Status};
 use value::{Value, ValueArray};
 use thread::ThreadInternal;
-use types::VMInt;
+use types::VmInt;
 
-fn array_length(array: Array<generic::A>) -> VMInt {
-    array.len() as VMInt
+fn array_length(array: Array<generic::A>) -> VmInt {
+    array.len() as VmInt
 }
 
 fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
-                    index: VMInt)
+                    index: VmInt)
                     -> MaybeError<Generic<generic::A>, String> {
     match array.get(index) {
         Some(value) => MaybeError::Ok(value),
@@ -136,7 +136,7 @@ fn trace(a: Generic<A>) {
     println!("{:?}", a.0);
 }
 
-fn show_int(i: VMInt) -> String {
+fn show_int(i: VmInt) -> String {
     format!("{}", i)
 }
 
@@ -221,21 +221,21 @@ pub fn load(vm: &Thread) -> Result<()> {
     )));
     try!(vm.define_global("int",
                           record!(
-        min_value => VMInt::min_value(),
-        max_value => VMInt::max_value(),
-        count_ones => primitive!(1 VMInt::count_ones),
-        rotate_left => primitive!(2 VMInt::rotate_left),
-        rotate_right => primitive!(2 VMInt::rotate_right),
-        swap_bytes => primitive!(1 VMInt::swap_bytes),
-        from_be => primitive!(1 VMInt::from_be),
-        from_le => primitive!(1 VMInt::from_le),
-        to_be => primitive!(1 VMInt::to_be),
-        to_le => primitive!(1 VMInt::to_le),
-        pow => primitive!(2 VMInt::pow),
-        abs => primitive!(1 VMInt::abs),
-        signum => primitive!(1 VMInt::signum),
-        is_positive => primitive!(1 VMInt::is_positive),
-        is_negative => primitive!(1 VMInt::is_negative)
+        min_value => VmInt::min_value(),
+        max_value => VmInt::max_value(),
+        count_ones => primitive!(1 VmInt::count_ones),
+        rotate_left => primitive!(2 VmInt::rotate_left),
+        rotate_right => primitive!(2 VmInt::rotate_right),
+        swap_bytes => primitive!(1 VmInt::swap_bytes),
+        from_be => primitive!(1 VmInt::from_be),
+        from_le => primitive!(1 VmInt::from_le),
+        to_be => primitive!(1 VmInt::to_be),
+        to_le => primitive!(1 VmInt::to_le),
+        pow => primitive!(2 VmInt::pow),
+        abs => primitive!(1 VmInt::abs),
+        signum => primitive!(1 VmInt::signum),
+        is_positive => primitive!(1 VmInt::is_positive),
+        is_negative => primitive!(1 VmInt::is_negative)
     )));
     try!(vm.define_global("array",
                           record!(

@@ -3,7 +3,7 @@ extern crate gluon_base as base;
 use std::ops::Deref;
 
 use base::types::*;
-use base::ast::ASTType;
+use base::ast::AstType;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
     where I: Deref<Target = str>,
@@ -25,7 +25,7 @@ fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
 
 #[test]
 fn show_function() {
-    let int: ASTType<&str> = Type::int();
+    let int: AstType<&str> = Type::int();
     let int_int = Type::function(vec![int.clone()], int.clone());
     assert_eq!(format!("{}", int_int),
                "Int -> Int");
@@ -39,12 +39,12 @@ fn show_function() {
 
 #[test]
 fn show_record() {
-    assert_eq!(format!("{}", Type::<&str, ASTType<&str>>::record(vec![], vec![])),
+    assert_eq!(format!("{}", Type::<&str, AstType<&str>>::record(vec![], vec![])),
                "{}");
     let typ = Type::record(vec![],
                            vec![Field {
                                     name: "x",
-                                    typ: Type::<&str, ASTType<&str>>::int(),
+                                    typ: Type::<&str, AstType<&str>>::int(),
                                 }]);
     assert_eq!(format!("{}", typ), "{ x: Int }");
 
@@ -105,7 +105,7 @@ fn show_record() {
 
 #[test]
 fn variants() {
-    let typ: ASTType<&str> = Type::variants(vec![("A", Type::function(vec![Type::int()], Type::id("A"))),
+    let typ: AstType<&str> = Type::variants(vec![("A", Type::function(vec![Type::int()], Type::id("A"))),
                                                  ("B", Type::id("A"))]);
     assert_eq!(format!("{}", typ), "| A Int | B");
 }

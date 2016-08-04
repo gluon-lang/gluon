@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::borrow::Borrow;
 use std::ops::Deref;
 
-use ast::{AstId, DisplayEnv, IdentEnv, ASTType};
+use ast::{AstId, DisplayEnv, IdentEnv, AstType};
 
 // FIXME Don't have a double indirection (Arc + String)
 #[derive(Clone, Eq)]
@@ -351,5 +351,5 @@ impl AstId for Symbol {
     fn to_id(self) -> Symbol {
         self
     }
-    fn set_type(&mut self, _: ASTType<Self::Untyped>) {}
+    fn set_type(&mut self, _: AstType<Self::Untyped>) {}
 }

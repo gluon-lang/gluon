@@ -15,13 +15,13 @@ use base::types;
 
 use {Variants, Error, Result};
 use macros::MacroEnv;
-use api::{Getable, Pushable, VMType};
+use api::{Getable, Pushable, VmType};
 use array::Str;
 use compiler::CompiledFunction;
 use gc::{DataDef, Gc, GcPtr, Move};
 use stack::{Stack, StackFrame, State};
 use types::*;
-use vm::{GlobalVMState, VMEnv};
+use vm::{GlobalVmState, VmEnv};
 use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction,
             BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
@@ -142,7 +142,7 @@ struct Context<'b> {
 }
 
 impl<'b> Context<'b> {
-    fn enter_scope(self, args: VMIndex, state: State) -> Context<'b> {
+    fn enter_scope(self, args: VmIndex, state: State) -> Context<'b> {
         Context {
             thread: self.thread,
             gc: self.gc,
@@ -182,7 +182,7 @@ fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> GcPtr<D::Val
 // be allocated anywhere else.
 /// Representation of the virtual machine
 pub struct Thread {
-    global_state: Arc<GlobalVMState>,
+    global_state: Arc<GlobalVmState>,
     // The parent of this thread, if it exists must live at least as long as this thread as this
     // thread can refer to any value in the parent thread
     parent: Option<RootedThread>,
@@ -210,7 +210,7 @@ impl PartialEq for Thread {
     }
 }
 
-impl VMType for RootedThread {
+impl VmType for RootedThread {
     type Type = Self;
 }
 
@@ -271,7 +271,7 @@ impl RootedThread {
     /// Creates a new virtual machine with an empty global environment
     pub fn new() -> RootedThread {
         let thread = Thread {
-            global_state: Arc::new(GlobalVMState::new()),
+            global_state: Arc::new(GlobalVmState::new()),
             parent: None,
             local_gc: Mutex::new(Gc::new(1)),
             stack: Mutex::new(Stack::new()),
@@ -330,7 +330,7 @@ impl Thread {
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
-        where T: Pushable<'vm> + VMType
+        where T: Pushable<'vm> + VmType
     {
         let (status, value) = {
             let mut stack = self.get_stack();
@@ -349,7 +349,7 @@ impl Thread {
     /// Retrieves the global called `name`.
     /// Fails if the global does not exist or it does not have the correct type.
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
-        where T: Getable<'vm> + VMType
+        where T: Getable<'vm> + VmType
     {
         let env = self.get_env();
         let (value, actual) = try!(env.get_binding(name));
@@ -382,7 +382,7 @@ impl Thread {
     }
 
     /// Locks and retrieves the global environment of the vm
-    pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VMEnv> {
+    pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VmEnv> {
         self.global_env().get_env()
     }
 
@@ -465,7 +465,7 @@ impl Thread {
 
     fn call_context<'b>(&'b self,
                         mut context: Context<'b>,
-                        args: VMIndex)
+                        args: VmIndex)
                         -> Result<Option<Context<'b>>> {
         context = try!(context.do_call(args));
         context.execute()
@@ -508,12 +508,12 @@ pub trait ThreadInternal {
         where D: DataDef + Traverseable,
               D::Value: Sized + Any;
 
-    fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value;
+    fn new_data(&self, tag: VmTag, fields: &[Value]) -> Value;
 
     fn add_bytecode(&self,
                     name: &str,
                     typ: TcType,
-                    args: VMIndex,
+                    args: VmIndex,
                     instructions: Vec<Instruction>);
 
     /// Calls a module, allowed to to run IO expressions
@@ -524,12 +524,12 @@ pub trait ThreadInternal {
     /// `stack.len() - args - 1` and that the arguments are of the correct type
     fn call_function<'b>(&'b self,
                          stack: StackFrame<'b>,
-                         args: VMIndex)
+                         args: VmIndex)
                          -> Result<Option<StackFrame<'b>>>;
 
     fn resume(&self) -> Result<()>;
 
-    fn global_env(&self) -> &Arc<GlobalVMState>;
+    fn global_env(&self) -> &Arc<GlobalVmState>;
 
     fn deep_clone(&self, value: Value) -> Result<Value>;
 }
@@ -590,7 +590,7 @@ impl ThreadInternal for Thread {
                         |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
     }
 
-    fn new_data(&self, tag: VMTag, fields: &[Value]) -> Value {
+    fn new_data(&self, tag: VmTag, fields: &[Value]) -> Value {
         Value::Data(self.local_gc.lock().unwrap().alloc(Def {
             tag: tag,
             elems: fields,
@@ -600,7 +600,7 @@ impl ThreadInternal for Thread {
     fn add_bytecode(&self,
                     name: &str,
                     typ: TcType,
-                    args: VMIndex,
+                    args: VmIndex,
                     instructions: Vec<Instruction>) {
         let id = Symbol::new(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
@@ -650,7 +650,7 @@ impl ThreadInternal for Thread {
     /// `stack.len() - args - 1` and that the arguments are of the correct type
     fn call_function<'b>(&'b self,
                          stack: StackFrame<'b>,
-                         args: VMIndex)
+                         args: VmIndex)
                          -> Result<Option<StackFrame<'b>>> {
         let context = Context {
             thread: self,
@@ -671,7 +671,7 @@ impl ThreadInternal for Thread {
             .map(|_| ())
     }
 
-    fn global_env(&self) -> &Arc<GlobalVMState> {
+    fn global_env(&self) -> &Arc<GlobalVmState> {
         &self.global_state
     }
 
@@ -734,8 +734,8 @@ impl<'b> Context<'b> {
     }
 
     fn call_function_with_upvars(mut self,
-                                 args: VMIndex,
-                                 required_args: VMIndex,
+                                 args: VmIndex,
+                                 required_args: VmIndex,
                                  callable: Callable)
                                  -> Result<Context<'b>> {
         debug!("cmp {} {} {:?} {:?}", args, required_args, callable, {
@@ -783,7 +783,7 @@ impl<'b> Context<'b> {
         }
     }
 
-    fn do_call(mut self, args: VMIndex) -> Result<Context<'b>> {
+    fn do_call(mut self, args: VmIndex) -> Result<Context<'b>> {
         let function_index = self.stack.len() - 1 - args;
         debug!("Do call {:?} {:?}",
                self.stack[function_index],
@@ -798,7 +798,7 @@ impl<'b> Context<'b> {
                 self.call_function_with_upvars(args, closure.function.args, callable)
             }
             PartialApplication(app) => {
-                let total_args = app.arguments.len() as VMIndex + args;
+                let total_args = app.arguments.len() as VmIndex + args;
                 let offset = self.stack.len() - args;
                 self.stack.insert_slice(offset, &app.arguments);
                 self.call_function_with_upvars(total_args, app.function.args(), app.function)
@@ -890,7 +890,7 @@ impl<'b> Context<'b> {
                                 for value in &excess.fields {
                                     self.stack.push(*value);
                                 }
-                                args += excess.fields.len() as VMIndex;
+                                args += excess.fields.len() as VmIndex;
                             }
                             None => panic!("Expected excess args"),
                         }
@@ -1058,12 +1058,12 @@ impl<'b> Context<'b> {
                     let v = self.stack.get_upvar(i).clone();
                     self.stack.push(v);
                 }
-                AddInt => binop(self.thread, &mut self.stack, VMInt::add),
-                SubtractInt => binop(self.thread, &mut self.stack, VMInt::sub),
-                MultiplyInt => binop(self.thread, &mut self.stack, VMInt::mul),
-                DivideInt => binop(self.thread, &mut self.stack, VMInt::div),
-                IntLT => binop(self.thread, &mut self.stack, |l: VMInt, r| l < r),
-                IntEQ => binop(self.thread, &mut self.stack, |l: VMInt, r| l == r),
+                AddInt => binop(self.thread, &mut self.stack, VmInt::add),
+                SubtractInt => binop(self.thread, &mut self.stack, VmInt::sub),
+                MultiplyInt => binop(self.thread, &mut self.stack, VmInt::mul),
+                DivideInt => binop(self.thread, &mut self.stack, VmInt::div),
+                IntLT => binop(self.thread, &mut self.stack, |l: VmInt, r| l < r),
+                IntEQ => binop(self.thread, &mut self.stack, |l: VmInt, r| l == r),
 
                 AddByte => binop(self.thread, &mut self.stack, u8::add),
                 SubtractByte => binop(self.thread, &mut self.stack, u8::sub),
@@ -1110,7 +1110,7 @@ impl<'b> Context<'b> {
                     for value in &excess.fields {
                         self.stack.push(*value);
                     }
-                    self.do_call(excess.fields.len() as VMIndex).map(Some)
+                    self.do_call(excess.fields.len() as VmIndex).map(Some)
                 }
                 x => panic!("Expected excess arguments found {:?}", x),
             }
