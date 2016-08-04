@@ -38,13 +38,13 @@ fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
 fn id(s: &str) -> PExpr {
     no_loc(Expr::Identifier(intern(s)))
 }
-fn field(s: &str, typ: ASTType<String>) -> Field<String> {
+fn field(s: &str, typ: AstType<String>) -> Field<String> {
     Field {
         name: intern(s),
         typ: typ,
     }
 }
-fn typ(s: &str) -> ASTType<String> {
+fn typ(s: &str) -> AstType<String> {
     assert!(s.len() != 0);
     let is_var = s.chars().next().unwrap().is_lowercase();
     match s.parse() {
@@ -53,7 +53,7 @@ fn typ(s: &str) -> ASTType<String> {
         Err(()) => Type::id(intern(s)),
     }
 }
-fn generic_ty(s: &str) -> ASTType<String> {
+fn generic_ty(s: &str) -> AstType<String> {
     Type::generic(generic(s))
 }
 fn generic(s: &str) -> Generic<String> {
@@ -87,7 +87,7 @@ fn lambda(name: &str, args: Vec<String>, body: PExpr) -> PExpr {
     }))
 }
 
-fn type_decl(name: String, args: Vec<Generic<String>>, typ: ASTType<String>, body: PExpr) -> PExpr {
+fn type_decl(name: String, args: Vec<Generic<String>>, typ: AstType<String>, body: PExpr) -> PExpr {
     type_decls(vec![TypeBinding {
                         comment: None,
                         name: name.clone(),
@@ -103,7 +103,7 @@ fn type_decls(binds: Vec<TypeBinding<String>>, body: PExpr) -> PExpr {
 fn record(fields: Vec<(String, Option<PExpr>)>) -> PExpr {
     record_a(Vec::new(), fields)
 }
-fn record_a(types: Vec<(String, Option<ASTType<String>>)>,
+fn record_a(types: Vec<(String, Option<AstType<String>>)>,
             fields: Vec<(String, Option<PExpr>)>)
             -> PExpr {
     no_loc(Expr::Record {

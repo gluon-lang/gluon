@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use base::ast::{AstId, DisplayEnv, IdentEnv, ASTType};
+use base::ast::{AstId, DisplayEnv, IdentEnv, AstType};
 
 use gc::{GcPtr, Gc, Traverseable};
 use array::Str;
@@ -128,5 +128,5 @@ impl AstId for InternedStr {
     fn to_id(self) -> InternedStr {
         self
     }
-    fn set_type(&mut self, _: ASTType<Self::Untyped>) {}
+    fn set_type(&mut self, _: AstType<Self::Untyped>) {}
 }

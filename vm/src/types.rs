@@ -5,9 +5,9 @@ use base::types::{Alias, KindEnv, TypeEnv, TcType, Type};
 
 pub use self::Instruction::*;
 
-pub type VMIndex = u32;
-pub type VMTag = u32;
-pub type VMInt = isize;
+pub type VmIndex = u32;
+pub type VmTag = u32;
+pub type VmInt = isize;
 
 /// Enum which represent the instructions executed by the virtual machine.
 ///
@@ -22,68 +22,68 @@ pub enum Instruction {
     PushFloat(f64),
     /// Push a string to the stack by loading the string at `index` in the currently executing
     /// function
-    PushString(VMIndex),
+    PushString(VmIndex),
     /// Push a variable to the stack by loading the upvariable at `index` from the currently
     /// executing function
-    PushUpVar(VMIndex),
+    PushUpVar(VmIndex),
     /// Push the value at `index`
-    Push(VMIndex),
+    Push(VmIndex),
     /// Push the value at `index`
-    PushGlobal(VMIndex),
+    PushGlobal(VmIndex),
     /// Call a function by passing it `args` number of arguments. The function is at the index in
     /// the stack just before the arguments. After the call is all arguments are removed and the
     /// function is replaced by the result of the call.
-    Call(VMIndex),
+    Call(VmIndex),
     /// Tailcalls a function, removing the current stack frame before calling it.
     /// See `Call`.
-    TailCall(VMIndex),
+    TailCall(VmIndex),
     /// Constructs a data value tagged by `tag` by taking the top `args` values of the stack.
     Construct {
         /// The tag of the data
-        tag: VMIndex,
+        tag: VmIndex,
         /// How many arguments that is taken from the stack to construct the data.
-        args: VMIndex,
+        args: VmIndex,
     },
     /// Constructs an array containing `args` values.
-    ConstructArray(VMIndex),
+    ConstructArray(VmIndex),
     /// Retrieves the field at `index` of an object at the top of the stack. The result of the
     /// field access replaces the object on the stack.
-    GetField(VMIndex),
+    GetField(VmIndex),
     /// Splits a object, pushing all contained values to the stack.
     Split,
     /// Tests if the value at the top of the stack is tagged with `tag`. Pushes `True` if the tag
     /// matches, otherwise `False`
-    TestTag(VMTag),
+    TestTag(VmTag),
     /// Jumps to the instruction at `index` in the currently executing function.
-    Jump(VMIndex),
+    Jump(VmIndex),
     /// Jumps to the instruction at `index` in the currently executing function if `True` is at the
     /// top of the stack and pops that value.
-    CJump(VMIndex),
+    CJump(VmIndex),
     /// Pops the top `n` values from the stack.
-    Pop(VMIndex),
+    Pop(VmIndex),
     /// Pops the top value from the stack, then pops `n` more values, finally the first value is
     /// pushed back to the stack.
-    Slide(VMIndex),
+    Slide(VmIndex),
 
     /// Creates a closure with the function at `function_index` of the currently executing function
     /// and `upvars` upvariables popped from the top of the stack.
     MakeClosure {
         /// The index in the currently executing function which the function data is located at
-        function_index: VMIndex,
+        function_index: VmIndex,
         /// How many upvariables the closure contains
-        upvars: VMIndex,
+        upvars: VmIndex,
     },
     /// Creates a closure with the function at `function_index` of the currently executing
     /// function. The closure has room for `upvars` upvariables but these are not filled until the
     /// matching call to `ClosureClosure` is executed.
     NewClosure {
         /// The index in the currently executing function which the function data is located at
-        function_index: VMIndex,
+        function_index: VmIndex,
         /// How many upvariables the closure contains
-        upvars: VMIndex,
+        upvars: VmIndex,
     },
     /// Fills the previously allocated closure with `n` upvariables.
-    CloseClosure(VMIndex),
+    CloseClosure(VmIndex),
 
     AddInt,
     SubtractInt,

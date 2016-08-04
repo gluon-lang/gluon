@@ -8,22 +8,22 @@ use base::types;
 use base::types::{Alias, KindEnv, TcIdent, TcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
-use vm::GlobalVMState;
+use vm::GlobalVmState;
 use self::Variable::*;
 
 pub type CExpr = LExpr<TcIdent>;
 
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
-    Stack(VMIndex),
+    Stack(VmIndex),
     Global(G),
-    Constructor(VMTag, VMIndex),
-    UpVar(VMIndex),
+    Constructor(VmTag, VmIndex),
+    UpVar(VmIndex),
 }
 
 #[derive(Debug)]
 pub struct CompiledFunction {
-    pub args: VMIndex,
+    pub args: VmIndex,
     pub id: Symbol,
     pub typ: TcType,
     pub instructions: Vec<Instruction>,
@@ -34,7 +34,7 @@ pub struct CompiledFunction {
 }
 
 impl CompiledFunction {
-    pub fn new(args: VMIndex, id: Symbol, typ: TcType) -> CompiledFunction {
+    pub fn new(args: VmIndex, id: Symbol, typ: TcType) -> CompiledFunction {
         CompiledFunction {
             args: args,
             id: id,
@@ -48,8 +48,8 @@ impl CompiledFunction {
 }
 
 struct FunctionEnv {
-    stack: Vec<(VMIndex, Symbol)>,
-    stack_size: VMIndex,
+    stack: Vec<(VmIndex, Symbol)>,
+    stack_size: VmIndex,
     free_vars: Vec<Symbol>,
     function: CompiledFunction,
 }
@@ -76,7 +76,7 @@ impl FunctionEnvs {
         FunctionEnvs { envs: vec![] }
     }
 
-    fn start_function(&mut self, compiler: &mut Compiler, args: VMIndex, id: Symbol, typ: TcType) {
+    fn start_function(&mut self, compiler: &mut Compiler, args: VmIndex, id: Symbol, typ: TcType) {
         compiler.stack_types.enter_scope();
         compiler.stack_constructors.enter_scope();
         self.envs.push(FunctionEnv::new(args, id, typ));
@@ -90,7 +90,7 @@ impl FunctionEnvs {
 }
 
 impl FunctionEnv {
-    fn new(args: VMIndex, id: Symbol, typ: TcType) -> FunctionEnv {
+    fn new(args: VmIndex, id: Symbol, typ: TcType) -> FunctionEnv {
         FunctionEnv {
             free_vars: Vec::new(),
             stack: Vec::new(),
@@ -104,11 +104,11 @@ impl FunctionEnv {
             return;
         }
         debug!("{:?} {} {}", i, self.stack_size, i.adjust());
-        self.stack_size = (self.stack_size as i32 + i.adjust()) as VMIndex;
+        self.stack_size = (self.stack_size as i32 + i.adjust()) as VmIndex;
         self.function.instructions.push(i);
     }
 
-    fn emit_call(&mut self, args: VMIndex, tail_position: bool) {
+    fn emit_call(&mut self, args: VmIndex, tail_position: bool) {
         let i = if tail_position {
             TailCall(args)
         } else {
@@ -125,21 +125,21 @@ impl FunctionEnv {
                 self.function.strings.len() - 1
             }
         };
-        self.emit(PushString(index as VMIndex));
+        self.emit(PushString(index as VmIndex));
     }
 
-    fn upvar(&mut self, s: &Symbol) -> VMIndex {
+    fn upvar(&mut self, s: &Symbol) -> VmIndex {
         match self.free_vars.iter().position(|t| t == s) {
-            Some(index) => index as VMIndex,
+            Some(index) => index as VmIndex,
             None => {
                 self.free_vars.push(s.clone());
-                (self.free_vars.len() - 1) as VMIndex
+                (self.free_vars.len() - 1) as VmIndex
             }
         }
     }
 
-    fn stack_size(&mut self) -> VMIndex {
-        (self.stack_size - 1) as VMIndex
+    fn stack_size(&mut self) -> VmIndex {
+        (self.stack_size - 1) as VmIndex
     }
 
     fn push_stack_var(&mut self, s: Symbol) {
@@ -157,19 +157,19 @@ impl FunctionEnv {
         debug!("Pop var: {:?}", x);
     }
 
-    fn pop_pattern(&mut self, pattern: &ast::Pattern<TcIdent>) -> VMIndex {
+    fn pop_pattern(&mut self, pattern: &ast::Pattern<TcIdent>) -> VmIndex {
         match *pattern {
             ast::Pattern::Constructor(_, ref args) => {
                 for _ in 0..args.len() {
                     self.pop_var();
                 }
-                args.len() as VMIndex
+                args.len() as VmIndex
             }
             ast::Pattern::Record { ref fields, .. } => {
                 for _ in fields {
                     self.pop_var();
                 }
-                fields.len() as VMIndex
+                fields.len() as VmIndex
             }
             ast::Pattern::Identifier(_) => {
                 self.pop_var();
@@ -185,7 +185,7 @@ pub trait CompilerEnv: TypeEnv {
 
 impl CompilerEnv for TypeInfos {
     fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
-        fn count_function_args(typ: &TcType) -> VMIndex {
+        fn count_function_args(typ: &TcType) -> VmIndex {
             match typ.as_function() {
                 Some((_, ret)) => 1 + count_function_args(ret),
                 None => 0,
@@ -208,14 +208,14 @@ impl CompilerEnv for TypeInfos {
             })
             .next()
             .map(|(tag, &(_, ref typ))| {
-                Variable::Constructor(tag as VMTag, count_function_args(&typ))
+                Variable::Constructor(tag as VmTag, count_function_args(&typ))
             })
     }
 }
 
 pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
-    vm: &'a GlobalVMState,
+    vm: &'a GlobalVmState,
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, TcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, TcType>>,
@@ -250,7 +250,7 @@ impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
 
 impl<'a> Compiler<'a> {
     pub fn new(globals: &'a (CompilerEnv + 'a),
-               vm: &'a GlobalVMState,
+               vm: &'a GlobalVmState,
                symbols: SymbolModule<'a>)
                -> Compiler<'a> {
         Compiler {
@@ -266,7 +266,7 @@ impl<'a> Compiler<'a> {
         self.vm.intern(s)
     }
 
-    fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable<VMIndex>> {
+    fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable<VmIndex>> {
         let variable = self.stack_constructors
             .iter()
             .filter_map(|(_, typ)| {
@@ -281,7 +281,7 @@ impl<'a> Compiler<'a> {
             })
             .next()
             .map(|(tag, &(_, ref typ))| {
-                Constructor(tag as VMIndex, types::arg_iter(typ).count() as VMIndex)
+                Constructor(tag as VmIndex, types::arg_iter(typ).count() as VmIndex)
             })
             .or_else(|| {
                 current.stack
@@ -318,7 +318,7 @@ impl<'a> Compiler<'a> {
                     Global(existing.unwrap_or_else(|| {
                         current.function.module_globals.push(s);
                         current.function.module_globals.len() - 1
-                    }) as VMIndex)
+                    }) as VmIndex)
                 }
                 Constructor(tag, args) => Constructor(tag, args),
                 UpVar(i) => UpVar(i),
@@ -326,13 +326,13 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    fn find_field(&self, typ: &TcType, field: &Symbol) -> Option<VMIndex> {
+    fn find_field(&self, typ: &TcType, field: &Symbol) -> Option<VmIndex> {
         // Walk through all type aliases
         match **instantiate::remove_aliases_cow(self, typ) {
             Type::Record { ref fields, .. } => {
                 fields.iter()
                     .position(|f| f.name.name_eq(field))
-                    .map(|i| i as VMIndex)
+                    .map(|i| i as VmIndex)
             }
             ref typ => {
                 panic!("ICE: FieldAccess on {}",
@@ -341,13 +341,13 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn find_tag(&self, typ: &TcType, constructor: &Symbol) -> Option<VMTag> {
+    fn find_tag(&self, typ: &TcType, constructor: &Symbol) -> Option<VmTag> {
         match **instantiate::remove_aliases_cow(self, typ) {
             Type::Variants(ref variants) => {
                 variants.iter()
                     .enumerate()
                     .find(|&(_, v)| v.0 == *constructor)
-                    .map(|(tag, _)| tag as VMTag)
+                    .map(|(tag, _)| tag as VmTag)
             }
             _ => None,
         }
@@ -433,16 +433,16 @@ impl<'a> Compiler<'a> {
                 let false_jump_index = function.function.instructions.len();
                 function.emit(Jump(0));
                 function.function.instructions[jump_index] =
-                    CJump(function.function.instructions.len() as VMIndex);
+                    CJump(function.function.instructions.len() as VmIndex);
                 self.compile(&**if_true, function, tail_position);
                 function.function.instructions[false_jump_index] =
-                    Jump(function.function.instructions.len() as VMIndex);
+                    Jump(function.function.instructions.len() as VmIndex);
             }
             Expr::BinOp(ref lhs, ref op, ref rhs) => {
                 if op.name.as_ref() == "&&" {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.function.instructions.len();
-                    function.emit(CJump(lhs_end as VMIndex + 3));//Jump to rhs evaluation
+                    function.emit(CJump(lhs_end as VmIndex + 3));//Jump to rhs evaluation
                     function.emit(Construct { tag: 0, args: 0 });
                     function.emit(Jump(0));//lhs false, jump to after rhs
                     // Dont count the integer added added above as the next part of the code never
@@ -451,7 +451,7 @@ impl<'a> Compiler<'a> {
                     self.compile(&**rhs, function, tail_position);
                     // replace jump instruction
                     function.function.instructions[lhs_end + 2] =
-                        Jump(function.function.instructions.len() as VMIndex);
+                        Jump(function.function.instructions.len() as VmIndex);
                 } else if op.name.as_ref() == "||" {
                     self.compile(&**lhs, function, false);
                     let lhs_end = function.function.instructions.len();
@@ -459,12 +459,12 @@ impl<'a> Compiler<'a> {
                     self.compile(&**rhs, function, tail_position);
                     function.emit(Jump(0));
                     function.function.instructions[lhs_end] =
-                        CJump(function.function.instructions.len() as VMIndex);
+                        CJump(function.function.instructions.len() as VmIndex);
                     function.emit(Construct { tag: 1, args: 0 });
                     // Dont count the integer above
                     function.stack_size -= 1;
                     let end = function.function.instructions.len();
-                    function.function.instructions[end - 2] = Jump(end as VMIndex);
+                    function.function.instructions[end - 2] = Jump(end as VmIndex);
                 } else {
                     let instr = match self.symbols.string(&op.name) {
                         "#Int+" => AddInt,
@@ -520,7 +520,7 @@ impl<'a> Compiler<'a> {
                 for (i, bind) in bindings.iter().enumerate() {
 
                     if is_recursive {
-                        function.emit(Push(stack_start + i as VMIndex));
+                        function.emit(Push(stack_start + i as VmIndex));
                         let name = match bind.name.value {
                             ast::Pattern::Identifier(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern"),
@@ -560,7 +560,7 @@ impl<'a> Compiler<'a> {
                 for arg in args.iter() {
                     self.compile(arg, function, false);
                 }
-                function.emit_call(args.len() as VMIndex, tail_position);
+                function.emit_call(args.len() as VmIndex, tail_position);
             }
             Expr::FieldAccess(ref expr, ref field) => {
                 self.compile(&**expr, function, false);
@@ -621,7 +621,7 @@ impl<'a> Compiler<'a> {
                     match alt.pattern.value {
                         ast::Pattern::Constructor(_, ref args) => {
                             function.function.instructions[start_index] =
-                                CJump(function.function.instructions.len() as VMIndex);
+                                CJump(function.function.instructions.len() as VmIndex);
                             function.emit(Split);
                             for arg in args.iter() {
                                 function.push_stack_var(arg.id().clone());
@@ -633,7 +633,7 @@ impl<'a> Compiler<'a> {
                         }
                         ast::Pattern::Identifier(ref id) => {
                             function.function.instructions[start_index] =
-                                Jump(function.function.instructions.len() as VMIndex);
+                                Jump(function.function.instructions.len() as VmIndex);
                             function.new_stack_var(id.id().clone());
                         }
                     }
@@ -646,14 +646,14 @@ impl<'a> Compiler<'a> {
                 }
                 for &index in end_jumps.iter() {
                     function.function.instructions[index] =
-                        Jump(function.function.instructions.len() as VMIndex);
+                        Jump(function.function.instructions.len() as VmIndex);
                 }
             }
             Expr::Array(ref a) => {
                 for expr in a.expressions.iter() {
                     self.compile(expr, function, false);
                 }
-                function.emit(ConstructArray(a.expressions.len() as VMIndex));
+                function.emit(ConstructArray(a.expressions.len() as VmIndex));
             }
             Expr::Lambda(ref lambda) => {
                 let (function_index, vars, cf) =
@@ -740,7 +740,7 @@ impl<'a> Compiler<'a> {
                                     .position(|field| field.name.name_eq(&pattern_field.0))
                                     .expect("Field to exist");
                                 function.emit(Push(record_index));
-                                function.emit(GetField(offset as VMIndex));
+                                function.emit(GetField(offset as VmIndex));
                                 function.new_stack_var(pattern_field.1
                                     .as_ref()
                                     .unwrap_or(&pattern_field.0)
@@ -776,9 +776,9 @@ impl<'a> Compiler<'a> {
                       arguments: &[TcIdent],
                       body: &LExpr<TcIdent>,
                       function: &mut FunctionEnvs)
-                      -> (VMIndex, VMIndex, CompiledFunction) {
+                      -> (VmIndex, VmIndex, CompiledFunction) {
         function.start_function(self,
-                                arguments.len() as VMIndex,
+                                arguments.len() as VmIndex,
                                 id.id().clone(),
                                 id.typ.clone());
         for arg in arguments {
@@ -799,8 +799,8 @@ impl<'a> Compiler<'a> {
                 _ => panic!("Free variables can only be on the stack or another upvar"),
             }
         }
-        let function_index = function.function.inner_functions.len() as VMIndex;
-        let free_vars = f.free_vars.len() as VMIndex;
+        let function_index = function.function.inner_functions.len() as VmIndex;
+        let free_vars = f.free_vars.len() as VmIndex;
         let FunctionEnv { function, .. } = f;
         (function_index, free_vars, function)
     }

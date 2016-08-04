@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use base::types;
 use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
-use api::{Userdata, VMType, Pushable};
+use api::{Userdata, VmType, Pushable};
 use api::generic::A;
 use vm::{Status, Thread};
 use Result;
@@ -40,8 +40,8 @@ impl<T> Traverseable for Lazy<T> {
     }
 }
 
-impl<T> VMType for Lazy<T>
-    where T: VMType,
+impl<T> VmType for Lazy<T>
+    where T: VmType,
           T::Type: Sized
 {
     type Type = Lazy<T::Type>;

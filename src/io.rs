@@ -9,14 +9,14 @@ use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::ThreadInternal;
 use vm::thread::{Thread, Status, RootStr};
-use vm::api::{Array, Generic, VMType, Getable, Pushable, IO, WithVM, Userdata, primitive};
+use vm::api::{Array, Generic, VmType, Getable, Pushable, IO, WithVM, Userdata, primitive};
 use vm::api::generic::{A, B};
 
 use vm::internal::Value;
 
 use super::Compiler;
 
-fn print_int(i: VMInt) -> IO<()> {
+fn print_int(i: VmInt) -> IO<()> {
     print!("{}", i);
     IO::Value(())
 }
@@ -34,7 +34,7 @@ impl fmt::Debug for GluonFile {
     }
 }
 
-impl VMType for GluonFile {
+impl VmType for GluonFile {
     type Type = GluonFile;
 }
 
@@ -204,12 +204,12 @@ pub fn load(vm: &Thread) -> Result<()> {
         PushInt(0),     // [f, m_ret, ()]   Add a dummy argument ()
         TailCall(2),    // [f_ret]          Call f m_ret ()
     ];
-    let io_flat_map_type = <fn (fn (A) -> IO<B>, IO<A>) -> IO<B> as VMType>::make_type(vm);
+    let io_flat_map_type = <fn (fn (A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
     vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map);
 
 
     vm.add_bytecode("io_pure",
-                    <fn(A) -> IO<A> as VMType>::make_type(vm),
+                    <fn(A) -> IO<A> as VmType>::make_type(vm),
                     2,
                     vec![Pop(1)]);
     // IO functions

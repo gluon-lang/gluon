@@ -100,7 +100,7 @@ unsafe impl DataDef for ClosureInitDef {
 #[derive(Debug)]
 pub struct BytecodeFunction {
     pub name: Symbol,
-    pub args: VMIndex,
+    pub args: VmIndex,
     pub instructions: Vec<Instruction>,
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
     pub strings: Vec<InternedStr>,
@@ -115,7 +115,7 @@ impl Traverseable for BytecodeFunction {
 }
 
 pub struct DataStruct {
-    pub tag: VMTag,
+    pub tag: VmTag,
     pub fields: Array<Value>,
 }
 
@@ -133,7 +133,7 @@ impl PartialEq for DataStruct {
 
 /// Definition for data values in the VM
 pub struct Def<'b> {
-    pub tag: VMTag,
+    pub tag: VmTag,
     pub elems: &'b [Value],
 }
 unsafe impl<'b> DataDef for Def<'b> {
@@ -161,10 +161,10 @@ impl<'b> Traverseable for Def<'b> {
 #[derive(Copy, Clone, PartialEq)]
 pub enum Value {
     Byte(u8),
-    Int(VMInt),
+    Int(VmInt),
     Float(f64),
     String(GcPtr<Str>),
-    Tag(VMTag),
+    Tag(VmTag),
     Data(GcPtr<DataStruct>),
     Array(GcPtr<ValueArray>),
     Function(GcPtr<ExternFunction>),
@@ -204,7 +204,7 @@ impl Callable {
         }
     }
 
-    pub fn args(&self) -> VMIndex {
+    pub fn args(&self) -> VmIndex {
         match *self {
             Callable::Closure(ref closure) => closure.function.args,
             Callable::Extern(ref ext) => ext.args,
@@ -360,7 +360,7 @@ impl fmt::Debug for Value {
 
 pub struct ExternFunction {
     pub id: Symbol,
-    pub args: VMIndex,
+    pub args: VmIndex,
     pub function: Box<Fn(&Thread) -> Status + Send + Sync>,
 }
 
@@ -438,7 +438,7 @@ macro_rules! impl_repr {
 
 impl_repr! {
     u8, Repr::Byte,
-    VMInt, Repr::Int,
+    VmInt, Repr::Int,
     f64, Repr::Float,
     GcPtr<Str>, Repr::String,
     GcPtr<ValueArray>, Repr::Array,
@@ -474,7 +474,7 @@ macro_rules! on_array {
             unsafe {
                 match array.repr() {
                     Repr::Byte => $f(array.unsafe_array::<u8>()),
-                    Repr::Int => $f(array.unsafe_array::<VMInt>()),
+                    Repr::Int => $f(array.unsafe_array::<VmInt>()),
                     Repr::Float => $f(array.unsafe_array::<f64>()),
                     Repr::String => $f(array.unsafe_array::<GcPtr<Str>>()),
                     Repr::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),

@@ -9,7 +9,7 @@ use stack::Stack;
 use vm::{Thread, Status};
 use thread::ThreadInternal;
 use value::Value;
-use api::{MaybeError, Generic, Pushable, Userdata, VMType, WithVM};
+use api::{MaybeError, Generic, Pushable, Userdata, VmType, WithVM};
 use api::generic::A;
 
 struct Reference<T> {
@@ -30,8 +30,8 @@ impl<T> Traverseable for Reference<T> {
     }
 }
 
-impl<T> VMType for Reference<T>
-    where T: VMType,
+impl<T> VmType for Reference<T>
+    where T: VmType,
           T::Type: Sized
 {
     type Type = Reference<T::Type>;
@@ -45,7 +45,7 @@ impl<T> VMType for Reference<T>
 }
 
 impl<'vm, T> Pushable<'vm> for Reference<T>
-    where T: Any + Send + Sync + VMType,
+    where T: Any + Send + Sync + VmType,
           T::Type: Sized
 {
     fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {

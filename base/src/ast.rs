@@ -5,7 +5,7 @@ use std::ops::Deref;
 use symbol::Symbol;
 use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
 
-pub type ASTType<Id> = ::types::ArcType<Id>;
+pub type AstType<Id> = ::types::ArcType<Id>;
 
 /// Trait representing a type that can by used as in identifier in the AST
 /// Used to allow the AST to both have a representation which has typed expressions etc as well
@@ -19,7 +19,7 @@ pub trait AstId: Sized {
         env.from_str(s)
     }
     fn to_id(self) -> Self::Untyped;
-    fn set_type(&mut self, typ: ASTType<Self::Untyped>);
+    fn set_type(&mut self, typ: AstType<Self::Untyped>);
 }
 
 impl AstId for String {
@@ -28,7 +28,7 @@ impl AstId for String {
     fn to_id(self) -> String {
         self
     }
-    fn set_type(&mut self, _typ: ASTType<Self::Untyped>) {}
+    fn set_type(&mut self, _typ: AstType<Self::Untyped>) {}
 }
 
 pub trait DisplayEnv {
@@ -100,7 +100,7 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct TcIdent<Id> {
-    pub typ: ASTType<Id>,
+    pub typ: AstType<Id>,
     pub name: Id,
 }
 impl<Id> TcIdent<Id> {
@@ -127,7 +127,7 @@ impl<Id> AsRef<str> for TcIdent<Id>
 }
 
 pub struct TcIdentEnv<Id, Env> {
-    pub typ: ASTType<Id>,
+    pub typ: AstType<Id>,
     pub env: Env,
 }
 
@@ -140,7 +140,7 @@ impl<Id> AstId for TcIdent<Id>
         self.name
     }
 
-    fn set_type(&mut self, typ: ASTType<Self::Untyped>) {
+    fn set_type(&mut self, typ: AstType<Self::Untyped>) {
         self.typ = typ;
     }
 }
@@ -327,7 +327,7 @@ pub enum Expr<Id: AstId> {
     Array(Array<Id>),
     Record {
         typ: Id,
-        types: Vec<(Id::Untyped, Option<ASTType<Id::Untyped>>)>,
+        types: Vec<(Id::Untyped, Option<AstType<Id::Untyped>>)>,
         exprs: Vec<(Id::Untyped, Option<LExpr<Id>>)>,
     },
     Lambda(Lambda<Id>),
@@ -340,14 +340,14 @@ pub enum Expr<Id: AstId> {
 pub struct TypeBinding<Id> {
     pub comment: Option<String>,
     pub name: Id,
-    pub alias: Alias<Id, ASTType<Id>>,
+    pub alias: Alias<Id, AstType<Id>>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Binding<Id: AstId> {
     pub comment: Option<String>,
     pub name: LPattern<Id>,
-    pub typ: Option<ASTType<Id::Untyped>>,
+    pub typ: Option<AstType<Id::Untyped>>,
     pub arguments: Vec<Id>,
     pub expression: LExpr<Id>,
 }
@@ -556,13 +556,13 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
 pub trait Typed {
     type Id;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Self::Id>;
+    fn env_type_of(&self, env: &TypeEnv) -> AstType<Self::Id>;
 }
 
 impl<Id: Clone> Typed for TcIdent<Id> {
     type Id = Id;
 
-    fn env_type_of(&self, _: &TypeEnv) -> ASTType<Id> {
+    fn env_type_of(&self, _: &TypeEnv) -> AstType<Id> {
         self.typ.clone()
     }
 }
@@ -572,7 +572,7 @@ impl<Id> Typed for Expr<Id>
 {
     type Id = Id::Id;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
         match *self {
             Expr::Identifier(ref id) |
             Expr::FieldAccess(_, ref id) => id.env_type_of(env),
@@ -615,7 +615,7 @@ impl<Id> Typed for Expr<Id>
 impl<T: Typed> Typed for Located<T> {
     type Id = T::Id;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<T::Id> {
+    fn env_type_of(&self, env: &TypeEnv) -> AstType<T::Id> {
         self.value.env_type_of(env)
     }
 }
@@ -623,7 +623,7 @@ impl<T: Typed> Typed for Located<T> {
 impl Typed for Option<Box<Located<Expr<TcIdent<Symbol>>>>> {
     type Id = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
         match *self {
             Some(ref t) => t.env_type_of(env),
             None => Type::unit(),
@@ -633,7 +633,7 @@ impl Typed for Option<Box<Located<Expr<TcIdent<Symbol>>>>> {
 impl Typed for Pattern<TcIdent<Symbol>> {
     type Id = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
             Pattern::Identifier(ref name) => name.env_type_of(env),
@@ -646,7 +646,7 @@ impl Typed for Pattern<TcIdent<Symbol>> {
 impl Typed for Binding<TcIdent<Symbol>> {
     type Id = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ASTType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
         match self.typ {
             Some(ref typ) => typ.clone(),
             None => self.name.env_type_of(env),
@@ -655,9 +655,9 @@ impl Typed for Binding<TcIdent<Symbol>> {
 }
 
 fn get_return_type(env: &TypeEnv,
-                   alias_type: &ASTType<Symbol>,
+                   alias_type: &AstType<Symbol>,
                    arg_count: usize)
-                   -> ASTType<Symbol> {
+                   -> AstType<Symbol> {
     if arg_count == 0 {
         alias_type.clone()
     } else {

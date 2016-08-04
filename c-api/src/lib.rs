@@ -8,7 +8,7 @@ use std::slice;
 
 use gluon::vm::api::generic::A;
 use gluon::vm::api::{Getable, Pushable, Generic, CPrimitive};
-use gluon::vm::types::{VMIndex, VMInt};
+use gluon::vm::types::{VmIndex, VmInt};
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal, Status};
 
 use gluon::Compiler;
@@ -75,7 +75,7 @@ pub unsafe extern "C" fn glu_load_script(vm: &Thread,
     }
 }
 
-pub extern "C" fn glu_call_function(thread: &Thread, arguments: VMIndex) -> Error {
+pub extern "C" fn glu_call_function(thread: &Thread, arguments: VmIndex) -> Error {
     let stack = thread.current_frame();
     match thread.call_function(stack, arguments) {
         Ok(_) => Error::Ok,
@@ -94,7 +94,7 @@ pub extern "C" fn glu_pop(vm: &Thread, n: usize) {
     }
 }
 
-pub extern "C" fn glu_push_int(vm: &Thread, int: VMInt) {
+pub extern "C" fn glu_push_int(vm: &Thread, int: VmInt) {
     Thread::push(vm, int);
 }
 
@@ -114,7 +114,7 @@ pub unsafe extern "C" fn glu_push_function(vm: &Thread,
                                            name: &u8,
                                            len: usize,
                                            function: Function,
-                                           arguments: VMIndex)
+                                           arguments: VmIndex)
                                            -> Error {
     let s = match str::from_utf8(slice::from_raw_parts(name, len)) {
         Ok(s) => s,
@@ -145,19 +145,19 @@ pub extern "C" fn glu_push_light_userdata(vm: &Thread, data: *mut libc::c_void) 
     Thread::push(vm, data as usize);
 }
 
-pub extern "C" fn glu_get_byte(vm: &Thread, index: VMIndex, out: &mut u8) -> Error {
+pub extern "C" fn glu_get_byte(vm: &Thread, index: VmIndex, out: &mut u8) -> Error {
     get_value(vm, index, out)
 }
 
-pub extern "C" fn glu_get_int(vm: &Thread, index: VMIndex, out: &mut VMInt) -> Error {
+pub extern "C" fn glu_get_int(vm: &Thread, index: VmIndex, out: &mut VmInt) -> Error {
     get_value(vm, index, out)
 }
 
-pub extern "C" fn glu_get_float(vm: &Thread, index: VMIndex, out: &mut f64) -> Error {
+pub extern "C" fn glu_get_float(vm: &Thread, index: VmIndex, out: &mut f64) -> Error {
     get_value(vm, index, out)
 }
 
-pub extern "C" fn glu_get_bool(vm: &Thread, index: VMIndex, out: &mut i8) -> Error {
+pub extern "C" fn glu_get_bool(vm: &Thread, index: VmIndex, out: &mut i8) -> Error {
     let mut b = false;
     let err = get_value(vm, index, &mut b);
     if err == Error::Ok {
@@ -169,7 +169,7 @@ pub extern "C" fn glu_get_bool(vm: &Thread, index: VMIndex, out: &mut i8) -> Err
 /// The returned string is garbage collected and may not be valid after the string is removed from
 /// its slot in the stack
 pub unsafe extern "C" fn glu_get_string(vm: &Thread,
-                                        index: VMIndex,
+                                        index: VmIndex,
                                         out: &mut *const u8,
                                         out_len: &mut usize)
                                         -> Error {
@@ -185,7 +185,7 @@ pub unsafe extern "C" fn glu_get_string(vm: &Thread,
 }
 
 pub extern "C" fn glu_get_light_userdata(vm: &Thread,
-                                         index: VMIndex,
+                                         index: VmIndex,
                                          out: &mut *mut libc::c_void)
                                          -> Error {
     let mut userdata = 0usize;
@@ -196,7 +196,7 @@ pub extern "C" fn glu_get_light_userdata(vm: &Thread,
     err
 }
 
-fn get_value<T>(vm: &Thread, index: VMIndex, out: &mut T) -> Error
+fn get_value<T>(vm: &Thread, index: VmIndex, out: &mut T) -> Error
     where T: for<'vm> Getable<'vm>
 {
     let stack = vm.current_frame();
