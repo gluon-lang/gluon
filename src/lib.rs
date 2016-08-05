@@ -389,7 +389,7 @@ impl Compiler {
             let env = vm.get_env();
             let name = Name::new(filename);
             let name = NameBuf::from(name.module());
-            let symbols = SymbolModule::new(StdString::from(name.as_ref()), &mut self.symbols);
+            let symbols = SymbolModule::new(StdString::from(AsRef::<str>::as_ref(&name)), &mut self.symbols);
             let mut compiler = Compiler::new(&*env, vm.global_env(), symbols);
             compiler.compile_expr(&expr)
         };

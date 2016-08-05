@@ -66,7 +66,7 @@ let monoid_Float_Mul = {
 let make_Monoid m =
     let { append, empty } = m
 
-    let (<>) : m -> m -> m = append
+    let (<>) /* : m -> m -> m */ = append
 
     { append, empty, (<>) }
 
@@ -310,9 +310,9 @@ let make_Category cat =
     let { id, compose } = cat
 
     /// Right-to-left composition. Alias for `compose`.
-    let (<<) : cat b c -> cat a b -> cat a c = compose
+    let (<<) /* : cat b c -> cat a b -> cat a c */ = compose
     /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
-    let (>>) f g : cat a b -> cat b c -> cat a c = compose g f
+    let (>>) f g /* : cat a b -> cat b c -> cat a c */ = compose g f
 
     { id, compose, (<<), (>>) }
 
@@ -433,11 +433,11 @@ let applicative_IO : Applicative IO =
 let make_Applicative app =
     let { functor, apply, pure } = app
 
-    let (<*>) : app (a -> b) -> app a -> app b = apply
-    let (<*) l r : app a -> app b -> app a = functor.map const l <*> r
-    let (*>) l r : app a -> app b -> app b = functor.map (const id) l <*> r
-    let map2 f a b : (a -> b -> c) -> app a -> app b -> app c = (functor.map f a) <*> b
-    let map3 f a b c : (a -> b -> c -> d) -> app a -> app b -> app c -> app d = (functor.map f a) <*> b <*> c
+    let (<*>) /* : app (a -> b) -> app a -> app b */ = apply
+    let (<*) l r /* : app a -> app b -> app a */ = functor.map const l <*> r
+    let (*>) l r /* : app a -> app b -> app b */ = functor.map (const id) l <*> r
+    let map2 f a b /* : (a -> b -> c) -> app a -> app b -> app c */ = (functor.map f a) <*> b
+    let map3 f a b c /* : (a -> b -> c -> d) -> app a -> app b -> app c -> app d */ = (functor.map f a) <*> b <*> c
 
     { functor, apply, pure, (<*>), (<*), (*>), map2, map3 }
 
@@ -466,12 +466,12 @@ let make_Alternative f =
     let { applicative, or, empty } = f
     let { functor, (<*>), pure } = make_Applicative applicative
 
-    let (<|>) : f a -> f a -> f a = or
-    let many x : f a -> f (List a) =
+    let (<|>) /* : f a -> f a -> f a */ = or
+    let many x /* : f a -> f (List a) */ =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         many_v ()
-    let some x : f a -> f (List a) =
+    let some x  /* : f a -> f (List a) */ =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         some_v ()
@@ -516,10 +516,10 @@ let make_Monad m =
     let { (*>), pure } = make_Applicative applicative
     let { id } = category_Function
 
-    let (=<<) : (a -> m b) -> m a -> m b = flat_map
-    let (>>=) : m a -> (a -> m b) -> m b = flip flat_map
-    let join mm : m (m a) -> m a = mm >>= id
-    let forM_ xs f : List a -> (a -> m b) -> m () =
+    let (=<<) /* : (a -> m b) -> m a -> m b */ = flat_map
+    let (>>=) /* : m a -> (a -> m b) -> m b */ = flip flat_map
+    let join mm /* : m (m a) -> m a */ = mm >>= id
+    let forM_ xs f /* : List a -> (a -> m b) -> m () */ =
         match xs with
             | Cons y ys -> f y *> forM_ ys f
             | Nil -> pure ()
