@@ -698,13 +698,12 @@ in \(<) ->
         | Cons y ys -> if x < y
                        then Cons x xs
                        else Cons y (insert x ys)
-    let ret : { empty: SortedList a, insert: a -> SortedList a -> SortedList a }
-        = { empty, insert }
+    let ret = { empty, insert }
     ret
 ";
     let result = support::typecheck(text);
 
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]
@@ -826,4 +825,19 @@ in r1"#;
                                           }])));
 
     assert_eq!(result, expected);
+}
+
+#[test]
+fn scoped_generic_variable() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let any x = any x
+let make m: m -> { test: m, test2: m } =
+    let m2: m = any ()
+    { test = m, test2 = m2 }
+
+make
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }

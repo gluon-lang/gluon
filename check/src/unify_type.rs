@@ -1,13 +1,15 @@
 use std::fmt;
 
 use base::ast::AstType;
+use base::error::Errors;
 use base::types::{self, TcType, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
+use base::scoped_map::ScopedMap;
 
 use unify;
 use unify::{Error as UnifyError, Unifier, Unifiable};
-use substitution::{Variable, Substitutable};
+use substitution::{Variable, Substitutable, Substitution};
 
 pub type Error<I> = UnifyError<AstType<I>, TypeError<I>>;
 
@@ -32,6 +34,7 @@ pub enum TypeError<I> {
     UndefinedType(I),
     FieldMismatch(I, I),
     SelfRecursive(I),
+    UnableToGeneralize(I),
 }
 
 impl From<instantiate::Error> for Error<Symbol> {
@@ -58,6 +61,12 @@ impl<I> fmt::Display for TypeError<I>
             TypeError::SelfRecursive(ref id) => {
                 write!(f,
                        "The use of self recursion in type `{}` could not be unified.",
+                       id)
+            }
+            TypeError::UnableToGeneralize(ref id) => {
+                write!(f,
+                       "Could not generalize the variable bound to `{}` as the variable was used \
+                        outside its scope",
                        id)
             }
         }
@@ -371,6 +380,109 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
                 output.push(l.clone());
             }
             None => (),
+        }
+    }
+}
+
+pub fn merge_signature(subs: &Substitution<TcType>,
+                       variables: &mut ScopedMap<Symbol, TcType>,
+                       level: u32,
+                       state: State,
+                       l: &TcType,
+                       r: &TcType)
+                       -> Result<TcType, Errors<Error<Symbol>>> {
+    let mut unifier = UnifierState {
+        state: state,
+        unifier: Merge {
+            subs: subs,
+            variables: variables,
+            errors: Errors::new(),
+            level: level,
+        },
+    };
+
+    let typ = unifier.try_match(l, r);
+    if unifier.unifier.errors.has_errors() {
+        Err(unifier.unifier.errors)
+    } else {
+        Ok(typ.unwrap_or_else(|| l.clone()))
+    }
+}
+
+struct Merge<'e> {
+    subs: &'e Substitution<TcType>,
+    variables: &'e ScopedMap<Symbol, TcType>,
+    errors: Errors<Error<Symbol>>,
+    level: u32,
+}
+
+impl<'a, 'e> Unifier<State<'a>, TcType> for Merge<'e> {
+    fn report_error(unifier: &mut UnifierState<Self>,
+                    error: UnifyError<TcType, TypeError<Symbol>>) {
+        unifier.unifier.errors.error(error);
+    }
+
+    fn try_match(unifier: &mut UnifierState<Self>, l: &TcType, r: &TcType) -> Option<TcType> {
+        let subs = unifier.unifier.subs;
+        // Retrieve the 'real' types by resolving
+        let l = subs.real(l);
+        let r = subs.real(r);
+        // `l` and `r` must have the same type, if one is a variable that variable is
+        // unified with whatever the other type is
+        let result = match (&**l, &**r) {
+            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
+            (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
+                let left = match unifier.unifier.variables.get(&l_gen.id) {
+                    Some(generic_bound_var) => {
+                        match **generic_bound_var {
+                            // The generic variable is defined outside the current scope. Use the
+                            // type variable instantiated from the generic and unify with that
+                            Type::Variable(ref var) if var.id < unifier.unifier.level => {
+                                generic_bound_var
+                            }
+                            // `r_var` is outside the scope of the generic variable.
+                            Type::Variable(ref var) if var.id > r_var.id => {
+                                let error = UnifyError::Other(TypeError::UnableToGeneralize(l_gen.id
+                                    .clone()));
+                                unifier.unifier.errors.error(error);
+                                return None;
+                            }
+                            _ => l,
+                        }
+                    }
+                    None => l,
+                };
+                match subs.union(r_var, left) {
+                    Ok(()) => Ok(None),
+                    Err(()) => Err(UnifyError::Occurs(r_var.clone(), left.clone())),
+                }
+
+            }
+            (_, &Type::Variable(ref r)) => {
+                match subs.union(r, l) {
+                    Ok(()) => Ok(None),
+                    Err(()) => Err(UnifyError::Occurs(r.clone(), l.clone())),
+                }
+            }
+            (&Type::Variable(ref l), _) => {
+                match subs.union(l, r) {
+                    Ok(()) => Ok(Some(r.clone())),
+                    Err(()) => Err(UnifyError::Occurs(l.clone(), r.clone())),
+                }
+            }
+            _ => {
+                // Both sides are concrete types, the only way they can be equal is if
+                // the matcher finds their top level to be equal (and their sub-terms
+                // unify)
+                l.zip_match(r, unifier)
+            }
+        };
+        match result {
+            Ok(typ) => typ,
+            Err(error) => {
+                unifier.unifier.errors.error(error);
+                Some(subs.new_var())
+            }
         }
     }
 }

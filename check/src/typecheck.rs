@@ -9,7 +9,7 @@ use base::ast::{self, Typed, DisplayEnv, MutVisitor};
 use base::types::{self, RcKind, Type, Generic, Kind};
 use base::error::Errors;
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType};
+use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType, TypeVariable};
 use base::instantiate::{self, Instantiator};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
@@ -209,7 +209,7 @@ pub struct Typecheck<'a> {
     inst: Instantiator,
     errors: Errors<ast::Spanned<TypeError<Symbol>>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
-    type_variables: ScopedMap<Symbol, u32>,
+    type_variables: ScopedMap<Symbol, TcType>,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
@@ -846,16 +846,17 @@ impl<'a> Typecheck<'a> {
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
         let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
-        // When the decfinitions are allowed to be mutually recursive
+        // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
-                let mut typ = self.subs.new_var();
-                if let Some(ref mut type_decl) = bind.typ {
-                    *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                    try!(self.kindcheck(type_decl));
-                    let decl = self.instantiate(type_decl);
-                    typ = self.unify_span(bind.name.span(), &decl, typ);
-                }
+                let typ = match bind.typ {
+                    Some(ref mut type_decl) => {
+                        *type_decl = self.refresh_symbols_in_type(type_decl.clone());
+                        try!(self.kindcheck(type_decl));
+                        self.instantiate_signature(type_decl)
+                    }
+                    None => self.subs.new_var(),
+                };
                 self.typecheck_pattern(&mut bind.name, typ);
                 if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
                     if let ast::Pattern::Identifier(ref name) = bind.name.value {
@@ -872,17 +873,14 @@ impl<'a> Typecheck<'a> {
             // recursive
             let mut typ = if bind.arguments.is_empty() {
                 if let Some(ref mut type_decl) = bind.typ {
-                    self.insert_type_variables(level, type_decl);
+                    self.instantiate_signature(type_decl);
                     *type_decl = self.refresh_symbols_in_type(type_decl.clone());
                     try!(self.kindcheck(type_decl));
                 }
                 self.typecheck(&mut bind.expression)
             } else {
                 let function_type = match bind.typ {
-                    Some(ref type_decl) => {
-                        self.insert_type_variables(level, type_decl);
-                        self.instantiate(type_decl)
-                    }
+                    Some(ref type_decl) => self.instantiate(type_decl),
                     None => self.subs.new_var(),
                 };
                 self.typecheck_lambda(function_type, &mut bind.arguments, &mut bind.expression)
@@ -891,7 +889,7 @@ impl<'a> Typecheck<'a> {
                    bind.name,
                    types::display_type(&self.symbols, &typ));
             if let Some(ref type_decl) = bind.typ {
-                typ = self.unify_span(bind.name.span(), type_decl, typ);
+                typ = self.merge_signature(bind.name.span(), level, type_decl, typ);
             }
             if !is_recursive {
                 // Merge the type declaration and the actual type
@@ -1069,7 +1067,11 @@ impl<'a> Typecheck<'a> {
             s.push(c as char);
             let symbol = self.symbols.symbol(&s[..]);
             if self.type_variables.get(&symbol).is_none() {
-                self.type_variables.insert(symbol, level);
+                self.type_variables.insert(symbol,
+                                           Type::variable(TypeVariable {
+                                               id: level,
+                                               kind: Kind::typ(),
+                                           }));
                 return;
             }
             s.pop();
@@ -1152,14 +1154,16 @@ impl<'a> Typecheck<'a> {
         visitor.visit(typ)
     }
 
-    fn insert_type_variables(&mut self, level: u32, typ: &TcType) {
-        types::walk_type(typ, |typ| {
-            if let Type::Generic(ref generic) = **typ {
-                if self.type_variables.get(&generic.id).is_none() {
-                    self.type_variables.insert(generic.id.clone(), level);
-                }
+    fn instantiate_signature(&mut self, typ: &TcType) -> TcType {
+        let typ = self.instantiate(typ);
+        // Put all new generic variable names into scope
+        let named_variables = self.inst.named_variables.borrow();
+        for (generic, variable) in &*named_variables {
+            if self.type_variables.get(generic).is_none() {
+                self.type_variables.insert(generic.clone(), variable.clone());
             }
-        });
+        }
+        typ
     }
 
     fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
@@ -1219,6 +1223,35 @@ impl<'a> Typecheck<'a> {
             }
         };
         types::walk_move_type(typ, &mut f)
+    }
+
+    fn merge_signature(&mut self,
+                       span: ast::Span,
+                       level: u32,
+                       expected: &TcType,
+                       mut actual: TcType)
+                       -> TcType {
+        let state = unify_type::State::new(&self.environment);
+        match unify_type::merge_signature(&self.subs,
+                                          &mut self.type_variables,
+                                          level,
+                                          state,
+                                          expected,
+                                          &actual) {
+            Ok(typ) => self.subs.set_type(typ),
+            Err(errors) => {
+                let mut expected = expected.clone();
+                expected = self.subs.set_type(expected);
+                actual = self.subs.set_type(actual);
+                let err =
+                    TypeError::Unification(expected, actual, apply_subs(&self.subs, errors.errors));
+                self.errors.error(ast::Spanned {
+                    span: span,
+                    value: err,
+                });
+                self.subs.new_var()
+            }
+        }
     }
 
     fn unify_span(&mut self, span: ast::Span, expected: &TcType, actual: TcType) -> TcType {
@@ -1306,15 +1339,7 @@ fn apply_subs(subs: &Substitution<TcType>,
                     TypeMismatch(subs.set_type(expected), subs.set_type(actual))
                 }
                 Occurs(var, typ) => Occurs(var, subs.set_type(typ)),
-                Other(unify_type::TypeError::UndefinedType(id)) => {
-                    Other(unify_type::TypeError::UndefinedType(id))
-                }
-                Other(unify_type::TypeError::FieldMismatch(expected, actual)) => {
-                    UnifyError::Other(unify_type::TypeError::FieldMismatch(expected, actual))
-                }
-                Other(unify_type::TypeError::SelfRecursive(t)) => {
-                    UnifyError::Other(unify_type::TypeError::SelfRecursive(t))
-                }
+                Other(err) => Other(err),
             }
         })
         .collect()
