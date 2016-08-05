@@ -133,7 +133,6 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         let result = match (l.get_var(), r.get_var()) {
-            (Some(l), Some(r)) if l.get_id() == r.get_id() => Ok(None),
             (_, Some(r)) => {
                 match subs.union(r, l) {
                     Ok(()) => Ok(None),
