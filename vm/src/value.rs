@@ -1,5 +1,4 @@
 use std::fmt;
-use std::any::Any;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::result::Result as StdResult;
@@ -22,8 +21,6 @@ impl PartialEq for Userdata {
         self as *const _ == other as *const _
     }
 }
-
-impl<T> Userdata for T where T: Any + Traverseable + fmt::Debug + Send + Sync {}
 
 #[derive(Debug)]
 pub struct ClosureData {

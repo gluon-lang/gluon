@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
@@ -6,12 +7,12 @@ use base::types::{TcType, Type};
 
 use {Error, Result as VmResult};
 use api::record::{Record, HList};
-use api::{Generic, Userdata, VmType, primitive, WithVM, Function, Pushable};
+use api::{Generic, VmType, primitive, WithVM, Function, Pushable};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
 use vm::{Thread, RootedThread, Status};
 use thread::ThreadInternal;
-use value::Value;
+use value::{Userdata, Value};
 use stack::{State, StackFrame};
 
 pub struct Sender<T> {
@@ -20,6 +21,8 @@ pub struct Sender<T> {
     thread: GcPtr<Thread>,
     queue: Arc<Mutex<VecDeque<T>>>,
 }
+
+impl<T> Userdata for Sender<T> where T: Any + Send + Sync + fmt::Debug + Traverseable { }
 
 impl<T> fmt::Debug for Sender<T>
     where T: fmt::Debug
@@ -51,6 +54,8 @@ impl<T: Traverseable> Traverseable for Receiver<T> {
 pub struct Receiver<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
+
+impl<T> Userdata for Receiver<T> where T: Any + Send + Sync + fmt::Debug + Traverseable { }
 
 impl<T> fmt::Debug for Receiver<T>
     where T: fmt::Debug
@@ -98,13 +103,13 @@ pub type ChannelRecord<S, R> = Record<HList<(_field::sender, S), HList<(_field::
 /// FIXME The dummy `a` argument should not be needed to ensure that the channel can only be used
 /// with a single type
 fn channel(WithVM { vm, .. }: WithVM<Generic<A>>)
-           -> ChannelRecord<Userdata<Sender<Generic<A>>>, Userdata<Receiver<Generic<A>>>> {
+           -> ChannelRecord<Sender<Generic<A>>, Receiver<Generic<A>>> {
     let sender = Sender {
         thread: unsafe { GcPtr::from_raw(vm) },
         queue: Arc::new(Mutex::new(VecDeque::new())),
     };
     let receiver = Receiver { queue: sender.queue.clone() };
-    record_no_decl!(sender => Userdata(sender), receiver => Userdata(receiver))
+    record_no_decl!(sender => sender, receiver => receiver)
 }
 
 fn recv(receiver: &Receiver<Generic<A>>) -> Result<Generic<A>, ()> {

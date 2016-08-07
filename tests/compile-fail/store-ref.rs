@@ -3,10 +3,12 @@ use std::fmt;
 use std::sync::Mutex;
 
 use gluon::new_vm;
-use gluon::vm::api::VmType;
+use gluon::vm::api::{Userdata, VmType};
 use gluon::vm::gc::Traverseable;
 
 struct Test<'vm>(Mutex<&'vm str>);
+
+impl<'vm> Userdata for Test<'vm> { }
 
 impl<'vm> fmt::Debug for Test<'vm> {
     fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {

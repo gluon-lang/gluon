@@ -28,6 +28,8 @@ fn print(s: RootStr) -> IO<()> {
 
 struct GluonFile(Mutex<File>);
 
+impl Userdata for GluonFile { }
+
 impl fmt::Debug for GluonFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "File")
@@ -42,9 +44,9 @@ impl Traverseable for GluonFile {
     fn traverse(&self, _: &mut Gc) {}
 }
 
-fn open_file(s: &str) -> IO<Userdata<GluonFile>> {
+fn open_file(s: &str) -> IO<GluonFile> {
     match File::open(s) {
-        Ok(f) => IO::Value(Userdata(GluonFile(Mutex::new(f)))),
+        Ok(f) => IO::Value(GluonFile(Mutex::new(f))),
         Err(err) => IO::Exception(format!("{}", err)),
     }
 }

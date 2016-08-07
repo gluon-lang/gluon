@@ -86,6 +86,8 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
 
 struct Editor(Mutex<rustyline::Editor<()>>);
 
+impl Userdata for Editor { }
+
 impl fmt::Debug for Editor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Editor(..)")
@@ -100,9 +102,9 @@ impl Traverseable for Editor {
     fn traverse(&self, _: &mut Gc) {}
 }
 
-fn new_editor(_: ()) -> Userdata<Editor> {
+fn new_editor(_: ()) -> Editor {
     let editor = rustyline::Editor::new();
-    Userdata(Editor(Mutex::new(editor)))
+    Editor(Mutex::new(editor))
 }
 
 fn readline(editor: &Editor, prompt: &str) -> IO<Option<String>> {

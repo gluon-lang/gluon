@@ -2,7 +2,7 @@ extern crate env_logger;
 extern crate gluon;
 
 use gluon::base::types::Type;
-use gluon::vm::api::{self, VmType, FunctionRef};
+use gluon::vm::api::{VmType, FunctionRef, Userdata};
 use gluon::vm::thread::{RootedThread, Thread, Traverseable, Root, RootStr};
 use gluon::vm::types::VmInt;
 use gluon::Compiler;
@@ -52,6 +52,7 @@ fn root_data() {
 
     #[derive(Debug)]
     struct Test(VmInt);
+    impl Userdata for Test { }
     impl Traverseable for Test { }
     impl VmType for Test {
         type Type = Test;
@@ -72,8 +73,8 @@ fn root_data() {
       })
       .unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
-    let mut script_fn: FunctionRef<fn(api::Userdata<Test>) -> VmInt> = vm.get_global("script_fn").unwrap();
-    let result = script_fn.call(api::Userdata(Test(123)))
+    let mut script_fn: FunctionRef<fn(Test) -> VmInt> = vm.get_global("script_fn").unwrap();
+    let result = script_fn.call(Test(123))
                           .unwrap();
     assert_eq!(result, 124);
 }
