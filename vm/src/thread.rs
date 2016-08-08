@@ -1,6 +1,5 @@
 //! The thread/vm type
 use std::any::Any;
-use std::collections::HashMap;
 use std::sync::{Mutex, RwLock, RwLockWriteGuard, RwLockReadGuard, MutexGuard};
 use std::cmp::Ordering;
 use std::fmt;
@@ -12,6 +11,7 @@ use base::metadata::Metadata;
 use base::symbol::Symbol;
 use base::types::TcType;
 use base::types;
+use base::types::FnvMap;
 
 use {Variants, Error, Result};
 use macros::MacroEnv;
@@ -676,7 +676,7 @@ impl ThreadInternal for Thread {
     }
 
     fn deep_clone(&self, value: Value) -> Result<Value> {
-        let mut visited = HashMap::new();
+        let mut visited = FnvMap::default();
         ::value::deep_clone(value, &mut visited, &mut self.local_gc.lock().unwrap())
     }
 }

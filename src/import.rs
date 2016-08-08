@@ -1,6 +1,5 @@
 //! Implementation of the `import` macro.
 use std::any::Any;
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock, Mutex};
 use std::fs::File;
 use std::io;
@@ -15,7 +14,7 @@ use vm::thread::{Thread, ThreadInternal};
 use vm::internal::Value;
 use super::{filename_to_module, Compiler};
 use base::types::TcIdent;
-
+use base::types::FnvMap;
 
 quick_error! {
     /// Error type for the import macro
@@ -70,10 +69,10 @@ impl Importer for DefaultImporter {
 }
 
 #[derive(Clone)]
-pub struct CheckImporter(pub Arc<Mutex<HashMap<String, ast::LExpr<ast::TcIdent<Symbol>>>>>);
+pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, ast::LExpr<ast::TcIdent<Symbol>>>>>);
 impl CheckImporter {
     pub fn new() -> CheckImporter {
-        CheckImporter(Arc::new(Mutex::new(HashMap::new())))
+        CheckImporter(Arc::new(Mutex::new(FnvMap::default())))
     }
 }
 impl Importer for CheckImporter {

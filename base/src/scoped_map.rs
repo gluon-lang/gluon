@@ -1,9 +1,10 @@
 //! A map data type which allows the same key to exist at multiple scope levels
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::collections::hash_map;
 use std::collections::hash_map::{Entry, IterMut};
 use std::hash::Hash;
+
+use types::FnvMap;
 
 /// A map struct which allows for the introduction of different scopes
 /// Introducing a new scope will make it possible to introduce additional
@@ -13,7 +14,7 @@ use std::hash::Hash;
 pub struct ScopedMap<K: Eq + Hash + Clone, V> {
     /// A hashmap storing a key -> value mapping
     /// Stores a vector of values in which the value at the top is value returned from 'get'
-    map: HashMap<K, Vec<V>>,
+    map: FnvMap<K, Vec<V>>,
     /// A vector of scopes, when entering a scope, None is added as a marker
     /// when later exiting a scope, values are removed from the map until the marker is found
     scopes: Vec<Option<K>>,
@@ -23,7 +24,7 @@ pub struct ScopedMap<K: Eq + Hash + Clone, V> {
 impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn new() -> ScopedMap<K, V> {
         ScopedMap {
-            map: HashMap::new(),
+            map: FnvMap::default(),
             scopes: Vec::new(),
         }
     }

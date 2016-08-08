@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use base::ast::{AstId, DisplayEnv, IdentEnv, AstType};
+use base::types::FnvMap;
 
 use gc::{GcPtr, Gc, Traverseable};
 use array::Str;
@@ -56,7 +56,7 @@ pub struct Interner {
     // not be expected to be the same as ordinary strings, we use a transmute to &'static str to
     // have the keys as strings without any unsafety as the keys do not escape the interner and they
     // live as long as their values
-    indexes: HashMap<&'static str, InternedStr>,
+    indexes: FnvMap<&'static str, InternedStr>,
 }
 
 impl Traverseable for Interner {
@@ -69,7 +69,7 @@ impl Traverseable for Interner {
 
 impl Interner {
     pub fn new() -> Interner {
-        Interner { indexes: HashMap::new() }
+        Interner { indexes: FnvMap::default() }
     }
 
     pub fn intern(&mut self, gc: &mut Gc, s: &str) -> InternedStr {

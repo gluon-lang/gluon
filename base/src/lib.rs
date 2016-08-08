@@ -5,6 +5,7 @@
 extern crate log;
 #[macro_use]
 extern crate quick_error;
+extern crate fnv;
 
 pub mod ast;
 pub mod fixed;

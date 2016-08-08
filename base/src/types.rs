@@ -5,14 +5,19 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::marker::PhantomData;
 use std::rc::Rc;
+use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
 
 use ast;
 use ast::{AstType, DisplayEnv};
 use symbol::{Symbol, SymbolRef};
 
+use fnv::FnvHasher;
+
 pub type TcType = ast::AstType<Symbol>;
 pub type TcIdent = ast::TcIdent<Symbol>;
 
+pub type FnvMap<K, V> = HashMap<K, V, BuildHasherDefault<FnvHasher>>;
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`

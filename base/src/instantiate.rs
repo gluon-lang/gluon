@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::ops::Deref;
 
 use types;
-use types::{AliasData, Type, Generic, TcType, TypeEnv, merge};
+use types::{AliasData, Type, Generic, TcType, TypeEnv, merge, FnvMap};
 use symbol::Symbol;
 
 quick_error! {
@@ -166,12 +165,12 @@ pub fn type_of_alias(alias: &AliasData<Symbol, TcType>, arguments: &[TcType]) ->
 
 #[derive(Debug, Default)]
 pub struct Instantiator {
-    pub named_variables: RefCell<HashMap<Symbol, TcType>>,
+    pub named_variables: RefCell<FnvMap<Symbol, TcType>>,
 }
 
 impl Instantiator {
     pub fn new() -> Instantiator {
-        Instantiator { named_variables: RefCell::new(HashMap::new()) }
+        Instantiator { named_variables: RefCell::new(FnvMap::default()) }
     }
 
     fn variable_for(&self,
