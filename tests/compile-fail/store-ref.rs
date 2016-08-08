@@ -8,7 +8,7 @@ use gluon::vm::gc::Traverseable;
 
 struct Test<'vm>(Mutex<&'vm str>);
 
-impl<'vm> Userdata for Test<'vm> { }
+impl Userdata for Test<'static> { }
 
 impl<'vm> fmt::Debug for Test<'vm> {
     fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
@@ -28,5 +28,5 @@ fn f<'vm>(test: &'vm Test<'vm>, s: &'vm str) {
 fn main() {
     let vm = new_vm();
     let _ = vm.define_global("f", f as fn (_, _));
-    //~^ Error `vm` does not live long enough
+    //~^ `vm` does not live long enough
 }
