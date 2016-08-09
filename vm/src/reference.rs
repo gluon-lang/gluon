@@ -5,11 +5,10 @@ use std::marker::PhantomData;
 
 use base::types::{Type, TcType};
 use gc::{Gc, GcPtr, Traverseable};
-use stack::Stack;
-use vm::{Thread, Status};
+use vm::{Thread, Userdata};
 use thread::ThreadInternal;
 use value::Value;
-use api::{MaybeError, Generic, Pushable, Userdata, VmType, WithVM};
+use api::{MaybeError, Generic, VmType, WithVM};
 use api::generic::A;
 
 struct Reference<T> {
@@ -17,6 +16,8 @@ struct Reference<T> {
     thread: GcPtr<Thread>,
     _marker: PhantomData<T>,
 }
+
+impl<T> Userdata for Reference<T> where T: Any + Send + Sync { }
 
 impl<T> fmt::Debug for Reference<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -41,15 +42,6 @@ impl<T> VmType for Reference<T>
         let symbol = env.find_type_info("Ref").unwrap().name.clone();
         let ctor = Type::id(symbol);
         Type::app(ctor, vec![T::make_type(vm)])
-    }
-}
-
-impl<'vm, T> Pushable<'vm> for Reference<T>
-    where T: Any + Send + Sync + VmType,
-          T::Type: Sized
-{
-    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
-        Userdata(self).push(vm, stack)
     }
 }
 

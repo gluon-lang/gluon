@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Mutex;
@@ -5,17 +6,19 @@ use std::sync::Mutex;
 use base::types;
 use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
-use api::{Userdata, VmType, Pushable};
+use api::{VmType, Pushable};
 use api::generic::A;
 use vm::{Status, Thread};
 use Result;
-use value::Value;
+use value::{Userdata, Value};
 use thread::ThreadInternal;
 
 pub struct Lazy<T> {
     value: Mutex<Lazy_>,
     _marker: PhantomData<T>,
 }
+
+impl<T> Userdata for Lazy<T> where T: Any + Send + Sync { }
 
 impl<T> fmt::Debug for Lazy<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -102,10 +105,10 @@ fn force(vm: &Thread) -> Status {
 fn lazy(vm: &Thread) -> Status {
     let mut stack = vm.current_frame();
     let f = stack[0];
-    let lazy = Userdata(Lazy::<A> {
+    let lazy = Lazy::<A> {
         value: Mutex::new(Lazy_::Thunk(f)),
         _marker: PhantomData,
-    });
+    };
     lazy.push(vm, &mut stack.stack)
 }
 

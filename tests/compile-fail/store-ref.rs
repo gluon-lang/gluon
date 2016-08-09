@@ -3,10 +3,12 @@ use std::fmt;
 use std::sync::Mutex;
 
 use gluon::new_vm;
-use gluon::vm::api::VmType;
+use gluon::vm::api::{Userdata, VmType};
 use gluon::vm::gc::Traverseable;
 
 struct Test<'vm>(Mutex<&'vm str>);
+
+impl Userdata for Test<'static> { }
 
 impl<'vm> fmt::Debug for Test<'vm> {
     fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
@@ -26,5 +28,5 @@ fn f<'vm>(test: &'vm Test<'vm>, s: &'vm str) {
 fn main() {
     let vm = new_vm();
     let _ = vm.define_global("f", f as fn (_, _));
-    //~^ Error `vm` does not live long enough
+    //~^ `vm` does not live long enough
 }

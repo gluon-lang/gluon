@@ -3,7 +3,7 @@ use {Variants, Error};
 use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, Stack, StackFrame};
-use vm::{Thread, Status, RootStr, RootedValue, Root};
+use vm::{self, Thread, Status, RootStr, RootedValue, Root};
 use value::{ArrayRepr, DataStruct, ExternFunction, Value, ValueArray, Def};
 use thread::RootedThread;
 use thread::ThreadInternal;
@@ -16,6 +16,8 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
+
+pub use value::Userdata;
 
 macro_rules! count {
     () => { 0 };
@@ -31,7 +33,7 @@ pub enum ValueRef<'a> {
     String(&'a str),
     Data(Data<'a>),
     Tag(VmTag),
-    Userdata(&'a ::vm::Userdata),
+    Userdata(&'a vm::Userdata),
     Internal,
 }
 
@@ -255,6 +257,15 @@ pub trait Getable<'vm>: Sized {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self>;
 }
 
+impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
+    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
+        let data: Box<vm::Userdata> = Box::new(self);
+        let userdata = vm.alloc(stack, Move(data));
+        stack.push(Value::Userdata(userdata));
+        Status::Ok
+    }
+}
+
 impl<'vm> Getable<'vm> for Value {
     fn from_value(_vm: &'vm Thread, value: Variants) -> Option<Self> {
         Some(*value.0)
@@ -269,7 +280,7 @@ impl<'vm, T: ?Sized + VmType> VmType for &'vm T {
 }
 
 impl<'vm, T> Getable<'vm> for &'vm T
-    where T: ::vm::Userdata
+    where T: vm::Userdata
 {
     unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants) -> Option<Self> {
         <*const T as Getable<'vm>>::from_value(vm, value).map(|p| &*p)
@@ -645,28 +656,6 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
     }
 }
 
-pub struct Userdata<T>(pub T);
-
-impl<T: VmType> VmType for Userdata<T> {
-    type Type = T::Type;
-}
-impl<'vm, T: ::vm::Userdata> Pushable<'vm> for Userdata<T> {
-    fn push(self, vm: &'vm Thread, stack: &mut Stack) -> Status {
-        let data: Box<::vm::Userdata> = Box::new(self.0);
-        let userdata = vm.alloc(stack, Move(data));
-        stack.push(Value::Userdata(userdata));
-        Status::Ok
-    }
-}
-impl<'vm, T: Clone + ::vm::Userdata> Getable<'vm> for Userdata<T> {
-    fn from_value(_: &'vm Thread, value: Variants) -> Option<Userdata<T>> {
-        match value.as_ref() {
-            ValueRef::Userdata(data) => data.downcast_ref::<T>().map(|x| Userdata(x.clone())),
-            _ => None,
-        }
-    }
-}
-
 impl<'s, T: VmType> VmType for *const T {
     type Type = T::Type;
     fn make_type(vm: &Thread) -> TcType {
@@ -674,7 +663,7 @@ impl<'s, T: VmType> VmType for *const T {
     }
 }
 
-impl<'vm, T: ::vm::Userdata> Getable<'vm> for *const T {
+impl<'vm, T: vm::Userdata> Getable<'vm> for *const T {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<*const T> {
         match value.as_ref() {
             ValueRef::Userdata(data) => data.downcast_ref::<T>().map(|x| x as *const T),
@@ -935,7 +924,7 @@ impl<'vm, T> Getable<'vm> for Array<'vm, T> {
 impl<'vm, T: Any> VmType for Root<'vm, T> {
     type Type = T;
 }
-impl<'vm, T: ::vm::Userdata> Getable<'vm> for Root<'vm, T> {
+impl<'vm, T: vm::Userdata> Getable<'vm> for Root<'vm, T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Root<'vm, T>> {
         match *value.0 {
             Value::Userdata(data) => vm.root::<T>(data).map(From::from),
