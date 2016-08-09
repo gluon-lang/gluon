@@ -769,13 +769,6 @@ fn out_of_memory() {
     match result {
         // FIXME This should just need to match on the explicit out of memory error
         Err(Error::VM(VMError::OutOfMemory { limit: 10, .. })) => (),
-        Err(Error::VM(VMError::Message(msg))) => assert!(msg.starts_with("Thread is out of memory: Limit 10"), "{}", msg),
-        Err(Error::Macro(errors)) => {
-            match *errors.errors[0].downcast_ref::<Error>().unwrap() {
-                Error::VM(VMError::OutOfMemory { limit: 10, .. }) => (),
-                _ => panic!("Unexpected error {:?}", errors.errors[0]),
-            }
-        }
         Err(err) => panic!("Unexpected error `{:?}`", err),
         Ok(_) => panic!("Expected an error"),
     }

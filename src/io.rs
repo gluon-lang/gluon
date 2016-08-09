@@ -28,7 +28,7 @@ fn print(s: RootStr) -> IO<()> {
 
 struct GluonFile(Mutex<File>);
 
-impl Userdata for GluonFile { }
+impl Userdata for GluonFile {}
 
 impl fmt::Debug for GluonFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

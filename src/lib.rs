@@ -37,6 +37,7 @@ use vm::Error as VmError;
 use vm::compiler::CompiledFunction;
 use vm::thread::{RootedValue, ThreadInternal};
 use vm::internal::ClosureDataDef;
+use vm::macros;
 
 quick_error! {
     /// Error type wrapping all possible errors that can be generated from gluon
@@ -67,10 +68,48 @@ quick_error! {
             from()
         }
         /// Error found when expanding macros
-        Macro(err: Errors<::vm::macros::Error>) {
+        Macro(err: macros::Error) {
             description(err.description())
             display("{}", err)
             from()
+        }
+        /// Multiple errors where found
+        Multiple(err: Errors<Error>) {
+            description(err.description())
+            display("{}", err)
+        }
+    }
+}
+
+impl From<Errors<macros::Error>> for Error {
+    fn from(mut errors: Errors<macros::Error>) -> Error {
+        if errors.errors.len() == 1 {
+            let err = errors.errors.pop().unwrap();
+            match err.downcast::<Error>() {
+                Ok(err) => *err,
+                Err(err) => Error::Macro(err),
+            }
+        } else {
+            Error::Multiple(Errors {
+                errors: errors.errors
+                    .into_iter()
+                    .map(|err| match err.downcast::<Error>() {
+                        Ok(err) => *err,
+                        Err(err) => Error::Macro(err),
+                    })
+                    .collect(),
+            })
+        }
+    }
+}
+
+
+impl From<Errors<Error>> for Error {
+    fn from(mut errors: Errors<Error>) -> Error {
+        if errors.errors.len() == 1 {
+            errors.errors.pop().unwrap()
+        } else {
+            Error::Multiple(errors)
         }
     }
 }
