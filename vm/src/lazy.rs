@@ -6,11 +6,11 @@ use std::sync::Mutex;
 use base::types;
 use base::types::{Type, TcType};
 use gc::{Gc, Traverseable};
-use api::{VmType, Pushable};
+use api::{OpaqueValue, Userdata, VmType};
 use api::generic::A;
 use vm::{Status, Thread};
 use Result;
-use value::{Userdata, Value};
+use value::Value;
 use thread::ThreadInternal;
 
 pub struct Lazy<T> {
@@ -65,7 +65,8 @@ fn force(vm: &Thread) -> Status {
             let value = *lazy.value.lock().unwrap();
             match value {
                 Lazy_::Blackhole => {
-                    let _ = "<<loop>>".push(vm, &mut stack.stack);
+                    let result = Value::String(vm.alloc_ignore_limit("<<loop>>"));
+                    stack.push(result);
                     Status::Error
                 }
                 Lazy_::Thunk(value) => {
@@ -87,7 +88,8 @@ fn force(vm: &Thread) -> Status {
                         Err(err) => {
                             let mut stack = vm.get_stack();
                             let err = format!("{}", err);
-                            let _ = err.push(vm, &mut stack);
+                            let result = Value::String(vm.alloc_ignore_limit(&err[..]));
+                            stack.push(result);
                             Status::Error
                         }
                     }
@@ -102,21 +104,18 @@ fn force(vm: &Thread) -> Status {
     }
 }
 
-fn lazy(vm: &Thread) -> Status {
-    let mut stack = vm.current_frame();
-    let f = stack[0];
-    let lazy = Lazy::<A> {
-        value: Mutex::new(Lazy_::Thunk(f)),
-        _marker: PhantomData,
-    };
-    let _ = lazy.push(vm, &mut stack.stack);
-    Status::Ok
+fn lazy(f: OpaqueValue<&Thread, fn (()) -> A>) -> Lazy<A> {
+    unsafe {
+        Lazy {
+            value: Mutex::new(Lazy_::Thunk(f.get_value())),
+            _marker: PhantomData,
+        }
+    }
 }
 
 pub fn load(vm: &Thread) -> Result<()> {
     use api::primitive;
-    try!(vm.define_global("lazy",
-                          primitive::<fn(fn(()) -> A) -> Lazy<A>>("lazy", ::lazy::lazy)));
+    try!(vm.define_global("lazy", primitive!(1 lazy)));
     try!(vm.define_global("force",
                           primitive::<fn(Lazy<A>) -> A>("force", ::lazy::force)));
     Ok(())

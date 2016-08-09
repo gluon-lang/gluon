@@ -831,6 +831,13 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
 /// two different threads.
 pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>) where T: Deref<Target = Thread>;
 
+impl<T, V> OpaqueValue<T, V> where T: Deref<Target = Thread> {
+    /// Unsafe as `Value` are not rooted 
+    pub unsafe fn get_value(&self) -> Value {
+        *self.0
+    }
+}
+
 impl<T, V> VmType for OpaqueValue<T, V>
     where T: Deref<Target = Thread>,
           V: VmType,

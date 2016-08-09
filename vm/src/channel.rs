@@ -144,7 +144,7 @@ fn resume(vm: &Thread) -> Status {
                 Err(err) => {
                     let fmt = format!("{}", err);
                     let result = Value::String(vm.alloc_ignore_limit(&fmt[..]));
-                    let _ = stack.push(result);
+                    stack.push(result);
                     Status::Error
                 }
             }
