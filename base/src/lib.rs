@@ -5,7 +5,6 @@
 extern crate log;
 #[macro_use]
 extern crate quick_error;
-extern crate fnv;
 
 pub mod ast;
 pub mod fixed;
@@ -15,3 +14,4 @@ pub mod types;
 pub mod scoped_map;
 pub mod metadata;
 pub mod instantiate;
+pub mod fnv;

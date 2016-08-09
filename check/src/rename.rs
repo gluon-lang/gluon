@@ -324,7 +324,7 @@ use base::instantiate;
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 
 pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
     let mut unifier = UnifierState {

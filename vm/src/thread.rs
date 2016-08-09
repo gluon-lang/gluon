@@ -11,7 +11,7 @@ use base::metadata::Metadata;
 use base::symbol::Symbol;
 use base::types::TcType;
 use base::types;
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 
 use {Variants, Error, Result};
 use macros::MacroEnv;

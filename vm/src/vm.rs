@@ -9,7 +9,7 @@ use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{Alias, AliasData, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv, TcType,
                   RcKind};
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 
 use macros::MacroEnv;
 use {Error, Result};

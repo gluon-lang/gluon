@@ -4,8 +4,9 @@ use std::collections::hash_map::Entry;
 use std::ops::Deref;
 
 use types;
-use types::{AliasData, Type, Generic, TcType, TypeEnv, merge, FnvMap};
+use types::{AliasData, Type, Generic, TcType, TypeEnv, merge};
 use symbol::Symbol;
+use fnv::FnvMap;
 
 quick_error! {
     #[derive(Debug)]

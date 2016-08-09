@@ -7,7 +7,7 @@ use std::hash::Hash;
 use std::iter::{FromIterator, IntoIterator};
 use std::ops::{Index, IndexMut};
 
-use types::FnvMap;
+use fnv::FnvMap;
 // NOTE: transmute is used to circumvent the borrow checker in this module
 // This is safe since the containers hold boxed values meaning allocating larger
 // storage does not invalidate the references that are handed out and because values

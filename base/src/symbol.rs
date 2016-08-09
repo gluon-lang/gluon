@@ -7,7 +7,7 @@ use std::borrow::Borrow;
 use std::ops::Deref;
 
 use ast::{AstId, DisplayEnv, IdentEnv, AstType};
-use types::FnvMap;
+use fnv::FnvMap;
 
 // FIXME Don't have a double indirection (Arc + String)
 #[derive(Clone, Eq)]

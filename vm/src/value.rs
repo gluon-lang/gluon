@@ -5,7 +5,7 @@ use std::result::Result as StdResult;
 
 use base::symbol::Symbol;
 use types::*;
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 
 use interner::InternedStr;
 use gc::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};

@@ -2,7 +2,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use base::ast::{AstId, DisplayEnv, IdentEnv, AstType};
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 
 use gc::{GcPtr, Gc, Traverseable};
 use array::Str;

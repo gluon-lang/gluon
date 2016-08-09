@@ -10,7 +10,7 @@ use std::cell::Cell;
 use std::any::{Any, TypeId};
 use std::marker::PhantomData;
 
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 
 #[inline]
 unsafe fn allocate(size: usize) -> *mut u8 {

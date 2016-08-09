@@ -2,7 +2,7 @@ use std::fmt;
 use std::hash::Hash;
 
 use base::error::Errors;
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 use substitution::{Substitution, Substitutable, Variable};
 
 #[derive(Debug, PartialEq)]

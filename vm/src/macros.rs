@@ -6,7 +6,7 @@ use base::ast;
 use base::ast::MutVisitor;
 use base::types::TcIdent;
 use base::error::Errors;
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 
 use thread::Thread;
 

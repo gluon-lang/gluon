@@ -14,7 +14,7 @@ use vm::thread::{Thread, ThreadInternal};
 use vm::internal::Value;
 use super::{filename_to_module, Compiler};
 use base::types::TcIdent;
-use base::types::FnvMap;
+use base::fnv::FnvMap;
 
 quick_error! {
     /// Error type for the import macro
