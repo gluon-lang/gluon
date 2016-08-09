@@ -1,3 +1,9 @@
+/// Non-crypto HashMap using Fnv Hasher
+///
+/// The default hashing implementation in std::collections uses `SipHasher`
+/// since gluon doesn't need the cryptographic quarantee provided by SipHasher,
+/// we've opted for the faster fnv hash.
+
 extern crate fnv;
 
 use std::collections::HashMap;
