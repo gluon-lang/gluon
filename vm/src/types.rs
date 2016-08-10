@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use base::symbol::{Symbol, SymbolRef};
 use base::types;
 use base::types::{Alias, KindEnv, TypeEnv, TcType, Type};
+use base::fnv::FnvMap;
 
 pub use self::Instruction::*;
 
@@ -139,8 +139,8 @@ impl Instruction {
 
 #[derive(Debug)]
 pub struct TypeInfos {
-    pub id_to_type: HashMap<String, Alias<Symbol, TcType>>,
-    pub type_to_id: HashMap<TcType, TcType>,
+    pub id_to_type: FnvMap<String, Alias<Symbol, TcType>>,
+    pub type_to_id: FnvMap<TcType, TcType>,
 }
 
 impl KindEnv for TypeInfos {
@@ -209,8 +209,8 @@ impl TypeEnv for TypeInfos {
 impl TypeInfos {
     pub fn new() -> TypeInfos {
         TypeInfos {
-            id_to_type: HashMap::new(),
-            type_to_id: HashMap::new(),
+            id_to_type: FnvMap::default(),
+            type_to_id: FnvMap::default(),
         }
     }
 

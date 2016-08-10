@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::sync::{Mutex, RwLock, RwLockReadGuard};
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 
@@ -10,6 +9,7 @@ use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{Alias, AliasData, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv, TcType,
                   RcKind};
+use base::fnv::FnvMap;
 
 use macros::MacroEnv;
 use {Error, Result};
@@ -74,8 +74,8 @@ impl Typed for Global {
 
 pub struct GlobalVmState {
     env: RwLock<VmEnv>,
-    generics: RwLock<HashMap<StdString, TcType>>,
-    typeids: RwLock<HashMap<TypeId, TcType>>,
+    generics: RwLock<FnvMap<StdString, TcType>>,
+    typeids: RwLock<FnvMap<TypeId, TcType>>,
     interner: RwLock<Interner>,
     macros: MacroEnv,
     // FIXME These fields should not be public
@@ -102,7 +102,7 @@ impl Traverseable for GlobalVmState {
 #[derive(Debug)]
 pub struct VmEnv {
     pub type_infos: TypeInfos,
-    pub globals: HashMap<StdString, Global>,
+    pub globals: FnvMap<StdString, Global>,
 }
 
 impl CompilerEnv for VmEnv {
@@ -315,11 +315,11 @@ impl GlobalVmState {
     pub fn new() -> GlobalVmState {
         let mut vm = GlobalVmState {
             env: RwLock::new(VmEnv {
-                globals: HashMap::new(),
+                globals: FnvMap::default(),
                 type_infos: TypeInfos::new(),
             }),
-            generics: RwLock::new(HashMap::new()),
-            typeids: RwLock::new(HashMap::new()),
+            generics: RwLock::new(FnvMap::default()),
+            typeids: RwLock::new(FnvMap::default()),
             interner: RwLock::new(Interner::new()),
             gc: Mutex::new(Gc::new(0)),
             macros: MacroEnv::new(),
@@ -333,7 +333,7 @@ impl GlobalVmState {
     fn add_types(&mut self) -> StdResult<(), (TypeId, TcType)> {
         use api::generic::A;
         use api::Generic;
-        fn add_type<T: Any>(ids: &mut HashMap<TypeId, TcType>,
+        fn add_type<T: Any>(ids: &mut FnvMap<TypeId, TcType>,
                             env: &mut VmEnv,
                             name: &str,
                             typ: TcType) {

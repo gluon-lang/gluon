@@ -2,12 +2,12 @@
 //! are alive. This is done by storing each value in a stable memory location and preventing an
 //! earlier inserted value to be overwritten.
 use std::cell::{RefCell, Ref};
-use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 use std::iter::{FromIterator, IntoIterator};
 use std::ops::{Index, IndexMut};
 
+use fnv::FnvMap;
 // NOTE: transmute is used to circumvent the borrow checker in this module
 // This is safe since the containers hold boxed values meaning allocating larger
 // storage does not invalidate the references that are handed out and because values
@@ -26,7 +26,7 @@ unsafe fn forget_lifetime_mut<'a, 'b, T: ?Sized>(x: &'a mut T) -> &'b mut T {
 // Through this and the fact the all values are stored as pointers it is possible to safely
 // insert new values without invalidating pointers retrieved from it
 pub struct FixedMap<K, V> {
-    map: RefCell<HashMap<K, Box<V>>>,
+    map: RefCell<FnvMap<K, Box<V>>>,
 }
 
 impl<K: Eq + Hash, V> Default for FixedMap<K, V> {
@@ -43,7 +43,7 @@ impl<K: Eq + Hash + fmt::Debug, V: fmt::Debug> fmt::Debug for FixedMap<K, V> {
 
 impl<K: Eq + Hash, V> FixedMap<K, V> {
     pub fn new() -> FixedMap<K, V> {
-        FixedMap { map: RefCell::new(HashMap::new()) }
+        FixedMap { map: RefCell::new(FnvMap::default()) }
     }
 
     pub fn clear(&mut self) {

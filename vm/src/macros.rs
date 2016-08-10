@@ -1,12 +1,12 @@
 //! Module providing the building blocks to create macros and expand them.
 use std::sync::RwLock;
-use std::collections::HashMap;
 use std::error::Error as StdError;
 
 use base::ast;
 use base::ast::MutVisitor;
 use base::types::TcIdent;
 use base::error::Errors;
+use base::fnv::FnvMap;
 
 use thread::Thread;
 
@@ -41,13 +41,13 @@ impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
 /// Type containing macros bound to symbols which can be applied on an AST expression to transform
 /// it.
 pub struct MacroEnv {
-    macros: RwLock<HashMap<String, Box<Macro>>>,
+    macros: RwLock<FnvMap<String, Box<Macro>>>,
 }
 
 impl MacroEnv {
     /// Creates a new `MacroEnv`
     pub fn new() -> MacroEnv {
-        MacroEnv { macros: RwLock::new(HashMap::new()) }
+        MacroEnv { macros: RwLock::new(FnvMap::default()) }
     }
 
     /// Inserts a `Macro` which acts on any occurance of `symbol` when applied to an expression.

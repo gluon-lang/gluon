@@ -320,16 +320,17 @@ pub fn rename(symbols: &mut SymbolModule,
 }
 
 
-use std::collections::HashMap;
 use base::instantiate;
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
+
+use base::fnv::FnvMap;
 
 pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
     let mut unifier = UnifierState {
         state: State::new(env),
         unifier: Equivalent {
-            map: HashMap::new(),
+            map: FnvMap::default(),
             equiv: true,
         },
     };
@@ -338,7 +339,7 @@ pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
 }
 
 struct Equivalent {
-    map: HashMap<Symbol, TcType>,
+    map: FnvMap<Symbol, TcType>,
     equiv: bool,
 }
 

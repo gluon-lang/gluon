@@ -1,6 +1,5 @@
 //! Module which contains types working with symbols
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::fmt;
 use std::sync::Arc;
@@ -8,6 +7,7 @@ use std::borrow::Borrow;
 use std::ops::Deref;
 
 use ast::{AstId, DisplayEnv, IdentEnv, AstType};
+use fnv::FnvMap;
 
 // FIXME Don't have a double indirection (Arc + String)
 #[derive(Clone, Eq)]
@@ -262,15 +262,15 @@ impl<'a> From<&'a Name> for NameBuf {
 
 #[derive(Debug, Default)]
 pub struct Symbols {
-    strings: HashMap<Symbol, NameBuf>,
-    indexes: HashMap<NameBuf, Symbol>,
+    strings: FnvMap<Symbol, NameBuf>,
+    indexes: FnvMap<NameBuf, Symbol>,
 }
 
 impl Symbols {
     pub fn new() -> Symbols {
         Symbols {
-            strings: HashMap::new(),
-            indexes: HashMap::new(),
+            strings: FnvMap::default(),
+            indexes: FnvMap::default(),
         }
     }
 

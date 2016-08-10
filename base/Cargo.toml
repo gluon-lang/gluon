@@ -13,3 +13,4 @@ documentation = "https://marwes.github.io/gluon/gluon/index.html"
 [dependencies]
 log = "0.3.6"
 quick-error = "1.0.0"
+fnv = "1.0.3"

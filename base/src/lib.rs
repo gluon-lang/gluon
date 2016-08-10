@@ -14,3 +14,4 @@ pub mod types;
 pub mod scoped_map;
 pub mod metadata;
 pub mod instantiate;
+pub mod fnv;

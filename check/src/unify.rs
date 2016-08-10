@@ -1,9 +1,8 @@
-use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 
 use base::error::Errors;
-
+use base::fnv::FnvMap;
 use substitution::{Substitution, Substitutable, Variable};
 
 #[derive(Debug, PartialEq)]
@@ -174,7 +173,7 @@ pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
     let mut unifier = UnifierState {
         state: state,
         unifier: Intersect {
-            mismatch_map: HashMap::new(),
+            mismatch_map: FnvMap::default(),
             subs: subs,
         },
     };
@@ -182,7 +181,7 @@ pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
 }
 
 struct Intersect<'m, T: 'm> {
-    mismatch_map: HashMap<(T, T), T>,
+    mismatch_map: FnvMap<(T, T), T>,
     subs: &'m Substitution<T>,
 }
 

@@ -1,10 +1,12 @@
 use std::fmt;
-use std::collections::HashMap;
+use std::any::Any;
 use std::collections::hash_map::Entry;
 use std::result::Result as StdResult;
 
 use base::symbol::Symbol;
 use types::*;
+use base::fnv::FnvMap;
+
 use interner::InternedStr;
 use gc::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};
 use array::{Array, Str};
@@ -702,7 +704,7 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
 }
 
 fn deep_clone_ptr<T, A>(value: GcPtr<T>,
-                        visited: &mut HashMap<*const (), Value>,
+                        visited: &mut FnvMap<*const (), Value>,
                         alloc: A)
                         -> StdResult<Value, GcPtr<T>>
     where A: FnOnce(&T) -> (Value, GcPtr<T>)
@@ -721,7 +723,7 @@ fn deep_clone_ptr<T, A>(value: GcPtr<T>,
 }
 
 fn deep_clone_str(data: GcPtr<Str>,
-                  visited: &mut HashMap<*const (), Value>,
+                  visited: &mut FnvMap<*const (), Value>,
                   gc: &mut Gc)
                   -> Result<Value> {
     Ok(deep_clone_ptr(data, visited, |data| {
@@ -731,7 +733,7 @@ fn deep_clone_str(data: GcPtr<Str>,
         .unwrap_or_else(String))
 }
 fn deep_clone_data(data: GcPtr<DataStruct>,
-                   visited: &mut HashMap<*const (), Value>,
+                   visited: &mut FnvMap<*const (), Value>,
                    gc: &mut Gc)
                    -> Result<GcPtr<DataStruct>> {
     let result = deep_clone_ptr(data, visited, |data| {
@@ -757,13 +759,13 @@ fn deep_clone_data(data: GcPtr<DataStruct>,
 }
 
 fn deep_clone_array(array: GcPtr<ValueArray>,
-                    visited: &mut HashMap<*const (), Value>,
+                    visited: &mut FnvMap<*const (), Value>,
                     gc: &mut Gc)
                     -> Result<GcPtr<ValueArray>> {
-    type CloneFn<T> = fn(T, &mut HashMap<*const (), Value>, &mut Gc) -> Result<T>;
+    type CloneFn<T> = fn(T, &mut FnvMap<*const (), Value>, &mut Gc) -> Result<T>;
     unsafe fn deep_clone_elems<T: Copy>(deep_clone: CloneFn<T>,
                                         mut new_array: GcPtr<ValueArray>,
-                                        visited: &mut HashMap<*const (), Value>,
+                                        visited: &mut FnvMap<*const (), Value>,
                                         gc: &mut Gc)
                                         -> Result<()> {
         let new_array = new_array.as_mut().unsafe_array_mut::<T>();
@@ -799,7 +801,7 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
 }
 
 fn deep_clone_closure(data: GcPtr<ClosureData>,
-                      visited: &mut HashMap<*const (), Value>,
+                      visited: &mut FnvMap<*const (), Value>,
                       gc: &mut Gc)
                       -> Result<GcPtr<ClosureData>> {
     let result = deep_clone_ptr(data, visited, |data| {
@@ -821,7 +823,7 @@ fn deep_clone_closure(data: GcPtr<ClosureData>,
     }
 }
 fn deep_clone_app(data: GcPtr<PartialApplicationData>,
-                  visited: &mut HashMap<*const (), Value>,
+                  visited: &mut FnvMap<*const (), Value>,
                   gc: &mut Gc)
                   -> Result<GcPtr<PartialApplicationData>> {
     let result = deep_clone_ptr(data, visited, |data| {
@@ -844,7 +846,7 @@ fn deep_clone_app(data: GcPtr<PartialApplicationData>,
     }
 }
 pub fn deep_clone(value: Value,
-                  visited: &mut HashMap<*const (), Value>,
+                  visited: &mut FnvMap<*const (), Value>,
                   gc: &mut Gc)
                   -> Result<Value> {
     // Only need to clone values which belong to a younger generation than the gc that the new
