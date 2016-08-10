@@ -224,51 +224,6 @@ and SExpr = { location: Int, expr: SExpr_ }
 in Atom "name"
 ```
 
-### Types
-
-#### Function types
-
-```
-<type> -> <type>
-```
-
-Function types are written using the `->` operator which is right associative. This means that the type of `(+)` which is usually written as `Int -> Int -> Int` is parsed as `Int -> (Int -> Int)` (A function taking one argument of `Int` and returning a function of `Int -> Int`).
-
-#### Record type
-
-```
-{ (<identifier> : <type>)* }
-{ pi: Float, sin: Float -> Float }
-```
-
-Records are gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records can neither add more fields or change the values of existing fields.
-
-#### Enumeration type
-
-```
-( | <identifier> (<type>)* )*
-
-| Err e | Ok t
-```
-
-Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of gluons standard `Result` type which represents either the value having been successfully computed (`Ok t`) or that an error occurred (`Err e`).
-
-#### Alias type
-
-```
-<identifier> (<type>)*
-Int
-Float
-Option Int
-Ref String
-```
-
-The last kind of type which gluon has is the alias type. An alias type is a type which explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract then the type is only considered equivalent to its own alias (ie if you define an abstract type of `MyInt` which has the same representation as `Int` the typechecker still considers these two types as being not equal to each other).
-
-#### Higher-kinded types (TODO)
-
-Gluon has higher kinded types.
-
 ### Indentation
 
 If you have been following along this far you may be thinking think that the syntax so far is pretty limiting. In particular you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily gluon offers a more convenient way of writing bindings by relying on indentation.
@@ -312,6 +267,68 @@ let module =
 in
 module.id module.pi
 ```
+
+## Typesystem
+
+### Function types
+
+```
+<type> -> <type>
+```
+
+Function types are written using the `->` operator which is right associative. This means that the type of `(+)` which is usually written as `Int -> Int -> Int` is parsed as `Int -> (Int -> Int)` (A function taking one argument of `Int` and returning a function of `Int -> Int`).
+
+### Record type
+
+```
+{ (<identifier> : <type>)* }
+{ pi: Float, sin: Float -> Float }
+```
+
+Records are gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records can neither add more fields or change the values of existing fields.
+
+### Enumeration type
+
+```
+( | <identifier> (<type>)* )*
+
+| Err e | Ok t
+```
+
+Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of gluons standard `Result` type which represents either the value having been successfully computed (`Ok t`) or that an error occurred (`Err e`).
+
+### Alias type
+
+```
+<identifier> (<type>)*
+Int
+Float
+Option Int
+Ref String
+```
+
+The last kind of type which gluon has is the alias type. An alias type is a type which explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract then the type is only considered equivalent to its own alias (ie if you define an abstract type of `MyInt` which has the same representation as `Int` the typechecker still considers these two types as being not equal to each other).
+
+### Higher-kinded types (TODO)
+
+Gluon has higher kinded types.
+
+### Overloading
+
+Sometimes there there is a need to overload a name with multiple differing implementations and let the compiler chose the correct implementation depending on which the inferred type is. If you have written any amount of Gluon code so far you are likely to have already encountered this with numeric operators such as `(+)` or comparison operators such as `(==)`. While these operators are core parts of gluon they are not special cased by the compiler which lets you define and use overloaded bindings yourself.
+
+To explain how overloading works first look at the example below where `showType` has two implementations, one which takes an `Int` and one which takes a `Float`.
+
+```f#,rust
+let showType _: Int -> String = "Int"
+let showType _: Float -> String = "Float"
+
+showType 0 // Returns "Int"
+showType 0.0 // Returns "Float"
+// showType "" // Would be a type error
+```
+
+When the typechecker encounters the second `showType` binding in this example it does not simply shadow the first binding as is common in many programming languages. Instead the typechecker checks the type of the binding already in scope and calculates the 'intersection' of the two bindings. In the example above the binding which already exists has the type `Int -> String` while the added binding is `Float -> String`. By calculating the 'intersection' the typechecker calculates the most specialized type which both bindings can still successfully unify to which in this case is `a -> String`. Any subsequent use of `showType` will then be seen as `a -> String` which succeeds with both a `Int` and `Float` argument. It would however also succeed if a `String` (or any other) type were used as argument which is not acceptable as we have only implemented `showType` for `Int` and `Float`. To catch this case (and to figure out which overload should be use where) the typechecker does an extra pass after successfully typechecking expression. In this pass all uses of overloaded bindings are checked against the overload candidates until a match is found and as the commented out call has the type `String -> String` it would be unable to unify with one of the existing bindings allowing the typechecker to reject the code. 
 
 ## Importing modules
 
