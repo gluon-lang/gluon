@@ -135,53 +135,74 @@ pub mod compiler_pipeline {
     use vm::thread::{RootedValue, ThreadInternal};
     use vm::internal::ClosureDataDef;
 
+    pub trait ExprMut {
+        fn mut_expr(&mut self) -> &mut SpannedExpr<Symbol>;
+    }
+    impl ExprMut for SpannedExpr<Symbol> {
+        fn mut_expr(&mut self) -> &mut SpannedExpr<Symbol> {
+            self
+        }
+    }
+    impl<'s> ExprMut for &'s mut SpannedExpr<Symbol> {
+        fn mut_expr(&mut self) -> &mut SpannedExpr<Symbol> {
+            self
+        }
+    }
+
     pub struct MacroValue(pub SpannedExpr<Symbol>);
 
     pub trait MacroExpandable {
+        type Expr: ExprMut;
         fn expand_macro(self,
                         compiler: &mut Compiler,
                         thread: &Thread,
                         file: &str)
-                        -> Result<MacroValue>;
+                        -> Result<Self::Expr>;
     }
 
     impl<'s> MacroExpandable for &'s str {
+        type Expr = SpannedExpr<Symbol>;
+
         fn expand_macro(self,
                         compiler: &mut Compiler,
                         thread: &Thread,
                         file: &str)
-                        -> Result<MacroValue> {
+                        -> Result<Self::Expr> {
             compiler.parse_expr(file, self)
                 .map_err(From::from)
-                .and_then(|expr| expr.expand_macro(compiler, thread, file))
+                .and_then(|mut expr| {
+                    try!(expr.expand_macro(compiler, thread, file));
+                    Ok(expr)
+                })
         }
     }
 
-    impl MacroExpandable for SpannedExpr<Symbol> {
-        fn expand_macro(mut self,
+    impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
+        type Expr = &'s mut SpannedExpr<Symbol>;
+
+        fn expand_macro(self,
                         compiler: &mut Compiler,
                         thread: &Thread,
                         file: &str)
-                        -> Result<MacroValue> {
+                        -> Result<Self::Expr> {
             if compiler.implicit_prelude {
-                compiler.include_implicit_prelude(file, &mut self);
+                compiler.include_implicit_prelude(file, self);
             }
-            try!(thread.get_macros().run(thread, &mut self));
-            Ok(MacroValue(self))
+            try!(thread.get_macros().run(thread, self));
+            Ok(self)
         }
     }
 
-    pub struct TypecheckValue(pub SpannedExpr<Symbol>, pub ArcType);
+    pub struct TypecheckValue<O>(pub O, pub ArcType);
 
-    pub trait Typecheckable {
+    pub trait Typecheckable: Sized {
+        type Expr: ExprMut;
         fn typecheck(self,
                      compiler: &mut Compiler,
                      thread: &Thread,
                      file: &str,
                      expr_str: &str)
-                     -> Result<TypecheckValue>
-            where Self: Sized,
-        {
+                     -> Result<TypecheckValue<Self::Expr>> {
             self.typecheck_expected(compiler, thread, file, expr_str, None)
         }
         fn typecheck_expected(self,
@@ -190,83 +211,86 @@ pub mod compiler_pipeline {
                               file: &str,
                               expr_str: &str,
                               expected_type: Option<&ArcType>)
-                              -> Result<TypecheckValue>;
+                              -> Result<TypecheckValue<Self::Expr>>;
     }
+
     impl<T> Typecheckable for T
         where T: MacroExpandable,
     {
+        type Expr = T::Expr;
+
         fn typecheck_expected(self,
                               compiler: &mut Compiler,
                               thread: &Thread,
                               file: &str,
                               expr_str: &str,
                               expected_type: Option<&ArcType>)
-                              -> Result<TypecheckValue>
-            where Self: Sized,
-        {
+                              -> Result<TypecheckValue<Self::Expr>> {
             self.expand_macro(compiler, thread, file)
-                .and_then(|expr| {
-                    expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
+                .and_then(|mut expr| {
+                    let typ = {
+                        let value = try!(expr.mut_expr()
+                            .typecheck_expected(compiler, thread, file, expr_str, expected_type));
+                        value.1
+                    };
+                    Ok(TypecheckValue(expr, typ))
                 })
         }
     }
-    impl Typecheckable for MacroValue {
-        fn typecheck_expected(mut self,
-                              compiler: &mut Compiler,
-                              thread: &Thread,
-                              file: &str,
-                              expr_str: &str,
-                              expected_type: Option<&ArcType>)
-                              -> Result<TypecheckValue>
-            where Self: Sized,
-        {
-            compiler.typecheck_expr_expected(thread, file, expr_str, &mut self.0, expected_type)
-                .map(move |typ| TypecheckValue(self.0, typ))
-        }
-    }
 
-    pub struct CompileValue(pub SpannedExpr<Symbol>, pub ArcType, pub CompiledFunction);
+    pub struct CompileValue<O>(pub O, pub ArcType, pub CompiledFunction);
 
     pub trait Compileable<Extra> {
+        type Expr: ExprMut;
         fn compile(self,
                    compiler: &mut Compiler,
                    thread: &Thread,
                    file: &str,
                    arg: Extra)
-                   -> Result<CompileValue>;
+                   -> Result<CompileValue<Self::Expr>>;
     }
     impl<'a, 'b, T> Compileable<(&'a str, Option<&'b ArcType>)> for T
         where T: Typecheckable,
     {
+        type Expr = T::Expr;
+
         fn compile(self,
                    compiler: &mut Compiler,
                    thread: &Thread,
                    file: &str,
                    (expr_str, expected_type): (&'a str, Option<&'b ArcType>))
-                   -> Result<CompileValue> {
+                   -> Result<CompileValue<Self::Expr>> {
             self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
                 .and_then(|tc_value| tc_value.compile(compiler, thread, file, ()))
         }
     }
-    impl<Extra> Compileable<Extra> for TypecheckValue {
-        fn compile(self,
+    impl<O, Extra> Compileable<Extra> for TypecheckValue<O>
+        where O: ExprMut,
+    {
+        type Expr = O;
+
+        fn compile(mut self,
                    compiler: &mut Compiler,
                    thread: &Thread,
                    file: &str,
                    _: Extra)
-                   -> Result<CompileValue> {
-            let function = try!(compiler.compile_script(thread, file, &self.0));
+                   -> Result<CompileValue<Self::Expr>> {
+            let function = try!(compiler.compile_script(thread, file, self.0.mut_expr()));
             Ok(CompileValue(self.0, self.1, function))
         }
     }
 
+    pub struct ExecuteValue<'vm, O>(pub O, pub RootedValue<&'vm Thread>);
+
     pub trait Executable<Extra> {
+        type Expr;
+
         fn run_expr<'vm>(self,
                          compiler: &mut Compiler,
                          vm: &'vm Thread,
                          name: &str,
                          arg: Extra)
-                         -> Result<(RootedValue<&'vm Thread>, ArcType)>;
+                         -> Result<ExecuteValue<'vm, Self::Expr>>;
         fn load_script(self,
                        compiler: &mut Compiler,
                        vm: &Thread,
@@ -277,12 +301,14 @@ pub mod compiler_pipeline {
     impl<C, Extra> Executable<Extra> for C
         where C: Compileable<Extra>,
     {
+        type Expr = C::Expr;
+
         fn run_expr<'vm>(self,
                          compiler: &mut Compiler,
                          vm: &'vm Thread,
                          name: &str,
                          arg: Extra)
-                         -> Result<(RootedValue<&'vm Thread>, ArcType)> {
+                         -> Result<ExecuteValue<'vm, Self::Expr>> {
 
             self.compile(compiler, vm, name, arg)
                 .and_then(|v| v.run_expr(compiler, vm, name, ()))
@@ -297,19 +323,23 @@ pub mod compiler_pipeline {
                 .and_then(|v| v.load_script(compiler, vm, filename, ()))
         }
     }
-    impl Executable<()> for CompileValue {
+    impl<O> Executable<()> for CompileValue<O>
+        where O: ExprMut,
+    {
+        type Expr = O;
+
         fn run_expr<'vm>(self,
                          _compiler: &mut Compiler,
                          vm: &'vm Thread,
                          name: &str,
                          _: ())
-                         -> Result<(RootedValue<&'vm Thread>, ArcType)> {
-            let CompileValue(_, typ, mut function) = self;
+                         -> Result<ExecuteValue<'vm, Self::Expr>> {
+            let CompileValue(output, typ, mut function) = self;
             function.id = Symbol::from(name);
             let function = try!(vm.global_env().new_function(function));
             let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
             let value = try!(vm.call_thunk(closure));
-            Ok((vm.root_value_ref(value), typ))
+            Ok(ExecuteValue(output, vm.root_value_ref(value)))
         }
         fn load_script(self,
                        _compiler: &mut Compiler,
@@ -320,7 +350,7 @@ pub mod compiler_pipeline {
             use check::metadata;
 
             let CompileValue(mut expr, typ, function) = self;
-            let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
+            let metadata = metadata::metadata(&*vm.get_env(), expr.mut_expr());
             let function = try!(vm.global_env().new_function(function));
             let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
             let value = try!(vm.call_thunk(closure));

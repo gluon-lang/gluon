@@ -93,14 +93,14 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
 
     // The parser may find parse errors but still produce an expression
     // For that case still typecheck the expression but return the parse error afterwards
-    let (expr, _parse_result): (_, GluonResult<()>) =
+    let (mut expr, _parse_result): (_, GluonResult<()>) =
         match compiler.parse_partial_expr(&name, fileinput) {
             Ok(expr) => (expr, Ok(())),
             Err((None, err)) => return Err(err.into()),
             Err((Some(expr), err)) => (expr, Err(err.into())),
         };
 
-    let MacroValue(mut expr) = try!(expr.expand_macro(&mut compiler, thread, &name));
+    try!(expr.expand_macro(&mut compiler, thread, &name));
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);
