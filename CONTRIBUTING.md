@@ -22,6 +22,8 @@ Gluon can build with version 1.9.0 of Rust or later but we recommend to use vers
 
 To build and run all tests for Gluon you can use the `test.sh` script. If you look inside it you can see that it actually builds from the `c-api` directory (this is necessary as the `gluon_c-api` crate depends on the `gluon` crate). This means that all build artifacts end up in `c-api/target`. For this reason if you want to run tests only for a single crate you should run something like `(cd c-api && cargo test --features test -p gluon_check testname)`.
 
+If you are building with a nightly version of rust which supports workspaces you can use the `test-nightly.sh` script instead which puts the build artifacts in the root folder instead of in `c-api`.
+
 ## Pull requests
 
 Once you have made some changes you will need to file a pull request to get your changes merged into the main repository. If the code is still a work in progress it can still be a good idea to submit a PR as that will let other contributors see your progress and provide assistance (you may prefix the PR message with [WIP] to make it explicit that the PR is incomplete).

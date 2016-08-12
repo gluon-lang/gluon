@@ -13,6 +13,9 @@ repository = "https://github.com/Marwes/gluon"
 documentation = "https://marwes.github.io/gluon/gluon/index.html"
 readme = "README.md"
 
+[workspace]
+members = ["c-api"]
+
 [lib]
 
 name = "gluon"
