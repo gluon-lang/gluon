@@ -684,7 +684,7 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Standard width for terminals are 80 characters
         const WIDTH: usize = 80;
-        
+
         let arena = Arena::new();
         let mut s = Vec::new();
         try!(self.pretty(&arena)
@@ -715,6 +715,16 @@ fn enclose<'a>(p: Prec,
     }
 }
 
+macro_rules! chain {
+    ($alloc: expr; $first: expr, $($rest: expr),+) => {{
+        let mut doc = ::pretty::DocBuilder($alloc, $first.into());
+        $(
+            doc = doc.append($rest);
+        )*
+        doc
+    }}
+}
+
 impl<'a, I, T, E> DisplayType<'a, I, T, E>
     where E: DisplayEnv<Ident = I> + 'a,
           T: Deref<Target = Type<I, T>> + 'a
@@ -729,12 +739,11 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
             Type::App(ref t, ref args) => {
                 match self.typ.as_function() {
                     Some((arg, ret)) => {
-                        let doc = dt(self.env, Prec::Function, arg)
-                            .pretty(arena)
-                            .group()
-                            .append(" ->")
-                            .append(arena.newline())
-                            .append(top(self.env, ret).pretty(arena));
+                        let doc = chain![arena;
+                                         dt(self.env, Prec::Function, arg).pretty(arena).group(),
+                                         " ->",
+                                         arena.newline(),
+                                         top(self.env, ret).pretty(arena)];
 
                         enclose(p, Prec::Function, arena, doc)
                     }
@@ -759,8 +768,10 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                     doc = doc.append("| ")
                         .append(variant.0.as_ref());
                     for arg in arg_iter(&variant.1) {
-                        doc = doc.append(" ")
-                            .append(dt(self.env, Prec::Constructor, &arg).pretty(arena))
+                        doc = chain![arena;
+                                     doc,
+                                     " ",
+                                     dt(self.env, Prec::Constructor, &arg).pretty(arena)];
                     }
                 }
                 enclose(p, Prec::Constructor, arena, doc).group()
@@ -770,46 +781,45 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                 let mut doc = arena.text("{");
                 if !types.is_empty() {
                     for (i, field) in types.iter().enumerate() {
-                        let comma = if i + 1 != types.len() || !fields.is_empty() {
-                            arena.text(",")
-                        } else {
-                            arena.nil()
-                        };
-                        let mut f = arena.text(self.env.string(&field.name))
-                            .append(" ");
-                        for arg in &field.typ.args {
-                            f = f.append(self.env.string(&arg.id))
-                                .append(" ");
-                        }
-                        f = match field.typ.typ {
-                            Some(ref typ) => {
-                                f.append("= ")
-                                    .append(top(self.env, typ).pretty(arena))
-                            }
-                            None => f.append("= <abstract>"),
-                        };
-                        f = f.append(comma)
+                        let f = chain![arena;
+                            self.env.string(&field.name),
+                            " ",
+                            arena.concat(field.typ.args.iter().map(|arg| {
+                                arena.text(self.env.string(&arg.id)).append(" ").into()
+                            })),
+                            match field.typ.typ {
+                                Some(ref typ) => {
+                                    arena.text("= ")
+                                        .append(top(self.env, typ).pretty(arena))
+                                }
+                                None => arena.text("= <abstract>"),
+                            },
+                            if i + 1 != types.len() || !fields.is_empty() {
+                                arena.text(",")
+                            } else {
+                                arena.nil()
+                            }]
                             .group();
                         doc = doc.append(arena.newline()).append(f);
                     }
                 }
                 if !fields.is_empty() {
                     for (i, field) in fields.iter().enumerate() {
-                        let comma = if i + 1 != fields.len() {
-                            arena.text(",")
-                        } else {
-                            arena.nil()
-                        };
                         let mut rhs = top(self.env, &*field.typ).pretty(arena);
                         match *field.typ {
                             // Records handle nesting on their own
                             Type::Record { .. } => (),
                             _ => rhs = rhs.nest(4),
                         }
-                        let f = arena.text(self.env.string(&field.name))
-                            .append(": ")
-                            .append(rhs.group())
-                            .append(comma)
+                        let f = chain![arena;
+                            self.env.string(&field.name),
+                            ": ",
+                            rhs.group(),
+                            if i + 1 != fields.len() {
+                                arena.text(",")
+                            } else {
+                                arena.nil()
+                            }]
                             .group();
                         doc = doc.append(arena.newline()).append(f);
                     }
