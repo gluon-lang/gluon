@@ -315,20 +315,22 @@ Gluon has higher kinded types.
 
 ### Overloading
 
-Sometimes there there is a need to overload a name with multiple differing implementations and let the compiler chose the correct implementation depending on which the inferred type is. If you have written any amount of Gluon code so far you are likely to have already encountered this with numeric operators such as `(+)` or comparison operators such as `(==)`. While these operators are core parts of gluon they are not special cased by the compiler which lets you define and use overloaded bindings yourself.
+Sometimes there there is a need to overload a name with multiple differing implementations and let the compiler chose the correct implementation. If you have written any amount of Gluon code so far you are likely to have already encountered this with numeric operators such as `(+)` or comparison operators such as `(==)`. While these operators are core parts of gluon they are not special cased by the compiler which lets you define and use overloaded bindings yourself.
 
-To explain how overloading works first look at the example below where `showType` has two implementations, one which takes an `Int` and one which takes a `Float`.
+To explain how overloading works first look at the example below where `show_type` has two implementations, one which takes an `Int` and one which takes a `Float`.
 
 ```f#,rust
-let showType _: Int -> String = "Int"
-let showType _: Float -> String = "Float"
+let show_type _ : Int -> String = "Int"
+let show_type _ : Float -> String = "Float"
 
-showType 0 // Returns "Int"
-showType 0.0 // Returns "Float"
-// showType "" // Would be a type error
+show_type 0 // Returns "Int"
+show_type 0.0 // Returns "Float"
+// show_type "" // Would be a type error
 ```
 
-When the typechecker encounters the second `showType` binding in this example it does not simply shadow the first binding as is common in many programming languages. Instead the typechecker checks the type of the binding already in scope and calculates the 'intersection' of the two bindings. In the example above the binding which already exists has the type `Int -> String` while the added binding is `Float -> String`. By calculating the 'intersection' the typechecker calculates the most specialized type which both bindings can still successfully unify to which in this case is `a -> String`. Any subsequent use of `showType` will then be seen as `a -> String` which succeeds with both a `Int` and `Float` argument. It would however also succeed if a `String` (or any other) type were used as argument which is not acceptable as we have only implemented `showType` for `Int` and `Float`. To catch this case (and to figure out which overload should be use where) the typechecker does an extra pass after successfully typechecking expression. In this pass all uses of overloaded bindings are checked against the overload candidates until a match is found and as the commented out call has the type `String -> String` it would be unable to unify with one of the existing bindings allowing the typechecker to reject the code. 
+When the typechecker encounters the second `show_type` binding in this example it does not simply shadow the first binding as is common in many programming languages. Instead the typechecker checks the type of the binding already in scope and calculates the 'intersection' of the two bindings. In the example above the first binding has the type `Int -> String` while the second is `Float -> String`. By calculating the 'intersection' the typechecker calculates the most specialized type which both bindings can still successfully unify to which in this case is `a -> String`. Any subsequent use of `show_type` will then be observed as `a -> String` which succeeds with both a `Int` and `Float` argument.
+
+Unfortunately it would also succeed if a `String` (or any other) type were used as the argument which is not acceptable as we have only implemented `show_type` for `Int` and `Float`. To catch this case (and to figure out which overload should be use where) the typechecker does an extra pass after successfully typechecking the entire expression. In this pass all uses of overloaded bindings are checked against the overload candidates until a match is found. Thus the third call, were it not commented out, would produce an error as there is no overloaded binding matching the type `String -> String`.
 
 ## Importing modules
 
