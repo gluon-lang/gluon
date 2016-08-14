@@ -281,11 +281,17 @@ Function types are written using the `->` operator which is right associative. T
 ### Record type
 
 ```
-{ (<identifier> : <type>)* }
-{ pi: Float, sin: Float -> Float }
+{ (<identifier> <identifier>* = <type>,)* (<identifier> : <type>,)* }
+{ pi : Float, sin : Float -> Float }
 ```
 
-Records are gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records can neither add more fields or change the values of existing fields.
+Records are gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records are more similiar to a struct in Rust or C as the order of the fields are significant and fields can't be added, removed or modified.
+
+In addition to storing values, records also have a secondary function of storing types which is gluon's way of exporting types. If you have used modules in an ML language this may look rather familiar, looks can be deceiving however as 'type fields' must match exactly in gluon which means there is no subtyping relationship between records (`{ Test = { x : Int } }` is not a subtype of `{ Test = Float }`). This may change in the future.
+
+```f#
+{ Test = { x : Int } }
+```
 
 ### Enumeration type
 
