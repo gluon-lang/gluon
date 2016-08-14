@@ -522,16 +522,6 @@ impl<T: Typed> Typed for Located<T> {
     }
 }
 
-impl Typed for Option<Box<Located<Expr<TcIdent<Symbol>>>>> {
-    type Id = Symbol;
-
-    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
-        match *self {
-            Some(ref t) => t.env_type_of(env),
-            None => Type::unit(),
-        }
-    }
-}
 impl Typed for Pattern<TcIdent<Symbol>> {
     type Id = Symbol;
 
