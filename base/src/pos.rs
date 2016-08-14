@@ -109,7 +109,7 @@ impl fmt::Display for CharPos {
 /// A location in a source file
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
 pub struct Location {
-    pub row: u32,
+    pub line: u32,
     pub column: CharPos,
     pub absolute: BytePos,
 }
@@ -123,7 +123,7 @@ impl Location {
 
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Line: {}, Column: {}", self.row, self.column)
+        write!(f, "Line: {}, Column: {}", self.line, self.column)
     }
 }
 

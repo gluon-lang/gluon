@@ -19,16 +19,16 @@ type PExpr = LExpr<String>;
 
 fn loc(r: u32, c: usize) -> Location {
     Location {
+        line: r,
         column: CharPos(c),
-        row: r,
         absolute: BytePos(0),
     }
 }
 
 fn no_loc<T>(x: T) -> Located<T> {
     let max_loc = Location {
+        line: u32::max_value(),
         column: CharPos(usize::max_value()),
-        row: u32::max_value(),
         absolute: BytePos(u32::max_value()),
     };
 

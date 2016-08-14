@@ -407,7 +407,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         let loc = |expr| {
             located(Location {
                         column: CharPos(position.column as usize),
-                        row: position.line as u32,
+                        line: position.line as u32,
                         absolute: BytePos(0),
                     },
                     expr)
@@ -463,7 +463,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         let loc = |expr| {
             located(Location {
                         column: CharPos(position.column as usize),
-                        row: position.line as u32,
+                        line: position.line as u32,
                         absolute: BytePos(0),
                     },
                     expr)
@@ -610,7 +610,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             let position = input.position();
             let location = Location {
                 column: CharPos(position.column as usize),
-                row: position.line as u32,
+                line: position.line as u32,
                 absolute: BytePos(0),
             };
             self.parser(ParserEnv::<I, F>::parse_ident2)

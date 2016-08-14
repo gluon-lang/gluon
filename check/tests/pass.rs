@@ -722,12 +722,12 @@ in f "123"
     assert_eq!(err.errors[0].span,
                Span {
                    start: Location {
-                       row: 3,
+                       line: 3,
                        column: CharPos(6),
                        absolute: BytePos(0),
                    },
                    end: Location {
-                       row: 3,
+                       line: 3,
                        column: CharPos(11),
                        absolute: BytePos(0),
                    },

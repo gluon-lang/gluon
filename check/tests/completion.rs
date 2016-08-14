@@ -50,7 +50,7 @@ fn identifier() {
                                   &typ_env,
                                   &mut expr,
                                   Location {
-                                      row: 1,
+                                      line: 1,
                                       column: CharPos(16),
                                       absolute: BytePos(0),
                                   });
@@ -61,7 +61,7 @@ fn identifier() {
                                   &typ_env,
                                   &mut expr,
                                   Location {
-                                      row: 1,
+                                      line: 1,
                                       column: CharPos(17),
                                       absolute: BytePos(0),
                                   });
@@ -72,7 +72,7 @@ fn identifier() {
                                   &typ_env,
                                   &mut expr,
                                   Location {
-                                      row: 1,
+                                      line: 1,
                                       column: CharPos(18),
                                       absolute: BytePos(0),
                                   });
@@ -83,7 +83,7 @@ fn identifier() {
                                   &typ_env,
                                   &mut expr,
                                   Location {
-                                      row: 1,
+                                      line: 1,
                                       column: CharPos(19),
                                       absolute: BytePos(0),
                                   });
@@ -95,7 +95,7 @@ fn identifier() {
 fn literal_string() {
     let result = find_type(r#" "asd" "#,
                            Location {
-                               row: 1,
+                               line: 1,
                                column: CharPos(2),
                                absolute: BytePos(0),
                            });
@@ -112,7 +112,7 @@ and g x = "asd"
 1
 "#,
                            Location {
-                               row: 3,
+                               line: 3,
                                column: CharPos(15),
                                absolute: BytePos(0),
                            });
@@ -128,7 +128,7 @@ let f x = f x
 1
 "#,
                            Location {
-                               row: 2,
+                               line: 2,
                                column: CharPos(11),
                                absolute: BytePos(0),
                            });
@@ -155,7 +155,7 @@ let (++) l r =
                                   &typ_env,
                                   &mut expr,
                                   Location {
-                                      row: 6,
+                                      line: 6,
                                       column: CharPos(4),
                                       absolute: BytePos(0),
                                   });
@@ -166,7 +166,7 @@ let (++) l r =
                                   &typ_env,
                                   &mut expr,
                                   Location {
-                                      row: 6,
+                                      line: 6,
                                       column: CharPos(1),
                                       absolute: BytePos(0),
                                   });
@@ -177,7 +177,7 @@ let (++) l r =
                                   &typ_env,
                                   &mut expr,
                                   Location {
-                                      row: 6,
+                                      line: 6,
                                       column: CharPos(6),
                                       absolute: BytePos(0),
                                   });
@@ -194,7 +194,7 @@ fn in_record() {
 }
 "#,
                            Location {
-                               row: 3,
+                               line: 3,
                                column: CharPos(14),
                                absolute: BytePos(0),
                            });
@@ -212,7 +212,7 @@ let aaa = ""
 te
 "#,
                          Location {
-                             row: 5,
+                             line: 5,
                              column: CharPos(1),
                              absolute: BytePos(0),
                          });
@@ -229,7 +229,7 @@ let f test =
 123
 "#,
                          Location {
-                             row: 3,
+                             line: 3,
                              column: CharPos(17),
                              absolute: BytePos(0),
                          });
@@ -246,7 +246,7 @@ let record = { aa = 1, ab = 2, c = "" }
 record.a
 "#,
                          Location {
-                             row: 4,
+                             line: 4,
                              column: CharPos(8),
                              absolute: BytePos(0),
                          });
@@ -264,7 +264,7 @@ let record: Test2 = { abc = \x -> 0 }
 record.ab
 "#,
                          Location {
-                             row: 5,
+                             line: 5,
                              column: CharPos(8),
                              absolute: BytePos(0),
                          });
@@ -280,7 +280,7 @@ let record = { aa = 1, ab = 2, c = "" }
 record.
 "#,
                          Location {
-                             row: 3,
+                             line: 3,
                              column: CharPos(7),
                              absolute: BytePos(0),
                          });
@@ -296,7 +296,7 @@ let { aa, c } = { aa = 1, ab = 2, c = "" }
 a
 "#,
                          Location {
-                             row: 3,
+                             line: 3,
                              column: CharPos(7),
                              absolute: BytePos(0),
                          });
@@ -312,7 +312,7 @@ let record = { aa = 1, ab = 2, c = "" }
 record.aa
 "#,
                          Location {
-                             row: 3,
+                             line: 3,
                              column: CharPos(4),
                              absolute: BytePos(0),
                          });

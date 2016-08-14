@@ -54,9 +54,10 @@ struct SourceContext<E> {
 
 fn extract_context<E>(lines: &[&str], error: Spanned<E>) -> SourceContext<E> {
     SourceContext {
-        context: String::from(lines.get((error.span.start.row - 1) as usize)
+        context: lines.get((error.span.start.line - 1) as usize)
             .cloned()
-            .unwrap_or("N/A")),
+            .unwrap_or("N/A")
+            .to_string(),
         error: error,
     }
 }
@@ -96,7 +97,11 @@ impl<E: fmt::Display> fmt::Display for InFile<E> {
                 try!(write!(f, " "));
             }
             try!(write!(f, "^"));
-            for _ in error.error.span.start.column.to_usize()..(error.error.span.end.column.to_usize() - 1) {
+            for _ in error.error.span.start.column.to_usize()..(error.error
+                .span
+                .end
+                .column
+                .to_usize() - 1) {
                 try!(write!(f, "~"));
             }
             try!(writeln!(f, ""));
