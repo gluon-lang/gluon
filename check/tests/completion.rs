@@ -5,6 +5,7 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::ast::{self, Location};
+use base::pos::{BytePos, CharPos};
 use base::types::{Type, TcType};
 use check::completion;
 
@@ -50,8 +51,8 @@ fn identifier() {
                                   &mut expr,
                                   Location {
                                       row: 1,
-                                      column: 16,
-                                      absolute: 0,
+                                      column: CharPos(16),
+                                      absolute: BytePos(0),
                                   });
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
@@ -61,8 +62,8 @@ fn identifier() {
                                   &mut expr,
                                   Location {
                                       row: 1,
-                                      column: 17,
-                                      absolute: 0,
+                                      column: CharPos(17),
+                                      absolute: BytePos(0),
                                   });
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
@@ -72,8 +73,8 @@ fn identifier() {
                                   &mut expr,
                                   Location {
                                       row: 1,
-                                      column: 18,
-                                      absolute: 0,
+                                      column: CharPos(18),
+                                      absolute: BytePos(0),
                                   });
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
@@ -83,8 +84,8 @@ fn identifier() {
                                   &mut expr,
                                   Location {
                                       row: 1,
-                                      column: 19,
-                                      absolute: 0,
+                                      column: CharPos(19),
+                                      absolute: BytePos(0),
                                   });
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
@@ -95,8 +96,8 @@ fn literal_string() {
     let result = find_type(r#" "asd" "#,
                            Location {
                                row: 1,
-                               column: 2,
-                               absolute: 0,
+                               column: CharPos(2),
+                               absolute: BytePos(0),
                            });
     let expected = Ok(typ("String"));
 
@@ -112,8 +113,8 @@ and g x = "asd"
 "#,
                            Location {
                                row: 3,
-                               column: 15,
-                               absolute: 0,
+                               column: CharPos(15),
+                               absolute: BytePos(0),
                            });
     let expected = Ok(typ("String"));
 
@@ -128,8 +129,8 @@ let f x = f x
 "#,
                            Location {
                                row: 2,
-                               column: 11,
-                               absolute: 0,
+                               column: CharPos(11),
+                               absolute: BytePos(0),
                            });
     let expected = Ok(Type::function(vec![typ("a0")], typ("a1")));
 
@@ -155,8 +156,8 @@ let (++) l r =
                                   &mut expr,
                                   Location {
                                       row: 6,
-                                      column: 4,
-                                      absolute: 0,
+                                      column: CharPos(4),
+                                      absolute: BytePos(0),
                                   });
     let expected = Ok(Type::function(vec![typ("Int"), typ("Float")], typ("Int")));
     assert_eq!(result, expected);
@@ -166,8 +167,8 @@ let (++) l r =
                                   &mut expr,
                                   Location {
                                       row: 6,
-                                      column: 1,
-                                      absolute: 0,
+                                      column: CharPos(1),
+                                      absolute: BytePos(0),
                                   });
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
@@ -177,8 +178,8 @@ let (++) l r =
                                   &mut expr,
                                   Location {
                                       row: 6,
-                                      column: 6,
-                                      absolute: 0,
+                                      column: CharPos(6),
+                                      absolute: BytePos(0),
                                   });
     let expected = Ok(typ("Float"));
     assert_eq!(result, expected);
@@ -194,8 +195,8 @@ fn in_record() {
 "#,
                            Location {
                                row: 3,
-                               column: 14,
-                               absolute: 0,
+                               column: CharPos(14),
+                               absolute: BytePos(0),
                            });
     let expected = Ok(typ("Int"));
 
@@ -212,8 +213,8 @@ te
 "#,
                          Location {
                              row: 5,
-                             column: 1,
-                             absolute: 0,
+                             column: CharPos(1),
+                             absolute: BytePos(0),
                          });
     let expected = Ok(vec!["tes".into(), "test".into()]);
 
@@ -229,8 +230,8 @@ let f test =
 "#,
                          Location {
                              row: 3,
-                             column: 17,
-                             absolute: 0,
+                             column: CharPos(17),
+                             absolute: BytePos(0),
                          });
     let expected = Ok(vec!["test".into(), "test2".into()]);
 
@@ -246,8 +247,8 @@ record.a
 "#,
                          Location {
                              row: 4,
-                             column: 8,
-                             absolute: 0,
+                             column: CharPos(8),
+                             absolute: BytePos(0),
                          });
     let expected = Ok(vec!["aa".into(), "ab".into()]);
 
@@ -264,8 +265,8 @@ record.ab
 "#,
                          Location {
                              row: 5,
-                             column: 8,
-                             absolute: 0,
+                             column: CharPos(8),
+                             absolute: BytePos(0),
                          });
     let expected = Ok(vec!["abc".into()]);
 
@@ -280,8 +281,8 @@ record.
 "#,
                          Location {
                              row: 3,
-                             column: 7,
-                             absolute: 0,
+                             column: CharPos(7),
+                             absolute: BytePos(0),
                          });
     let expected = Ok(vec!["aa".into(), "ab".into(), "c".into()]);
 
@@ -296,8 +297,8 @@ a
 "#,
                          Location {
                              row: 3,
-                             column: 7,
-                             absolute: 0,
+                             column: CharPos(7),
+                             absolute: BytePos(0),
                          });
     let expected = Ok(vec!["aa".into()]);
 
@@ -312,8 +313,8 @@ record.aa
 "#,
                          Location {
                              row: 3,
-                             column: 4,
-                             absolute: 0,
+                             column: CharPos(4),
+                             absolute: BytePos(0),
                          });
     let expected = Ok(vec!["record".into()]);
 

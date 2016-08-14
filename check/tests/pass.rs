@@ -5,8 +5,8 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::ast::{self, Expr, Pattern, Typed};
-use base::types::{Field, Generic, Kind, Type};
-use base::types;
+use base::pos::{BytePos, CharPos};
+use base::types::{self, Field, Generic, Kind, Type};
 
 mod support;
 use support::{MockEnv, alias, intern, typ};
@@ -723,13 +723,13 @@ in f "123"
                ast::Span {
                    start: ast::Location {
                        row: 3,
-                       column: 6,
-                       absolute: 0,
+                       column: CharPos(6),
+                       absolute: BytePos(0),
                    },
                    end: ast::Location {
                        row: 3,
-                       column: 11,
-                       absolute: 0,
+                       column: CharPos(11),
+                       absolute: BytePos(0),
                    },
                });
 }

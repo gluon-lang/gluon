@@ -1,21 +1,22 @@
 use std::fmt;
 
-use base::ast;
-use base::ast::{Typed, DisplayEnv, MutVisitor};
+use base::ast::{self, DisplayEnv, Expr, LExpr, Location, MutVisitor, Spanned, Typed};
+use base::error::Errors;
+use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::types;
-use base::types::{Alias, TcType, Type, TcIdent, RcKind, KindEnv, TypeEnv};
-use base::error::Errors;
+use base::types::{self, Alias, TcType, Type, TcIdent, RcKind, KindEnv, TypeEnv};
+use unify_type::{TypeError, State};
+use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
-pub type Error = Errors<ast::Spanned<RenameError>>;
+pub type Error = Errors<Spanned<RenameError>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RenameError {
     NoMatchingType {
         symbol: String,
         expected: TcType,
-        possible_types: Vec<(Option<ast::Location>, TcType)>,
+        possible_types: Vec<(Option<Location>, TcType)>,
     },
 }
 
@@ -42,8 +43,8 @@ impl fmt::Display for RenameError {
 
 struct Environment<'b> {
     env: &'b TypeEnv,
-    stack: ScopedMap<Symbol, (Symbol, ast::Location, TcType)>,
-    stack_types: ScopedMap<Symbol, types::Alias<Symbol, TcType>>,
+    stack: ScopedMap<Symbol, (Symbol, Location, TcType)>,
+    stack_types: ScopedMap<Symbol, Alias<Symbol, TcType>>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -56,11 +57,13 @@ impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
         self.stack.get(id).map(|t| &t.2).or_else(|| self.env.find_type(id))
     }
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&types::Alias<Symbol, TcType>> {
+
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
         self.stack_types
             .get(id)
             .or_else(|| self.env.find_type_info(id))
     }
+
     fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
         None
     }
@@ -68,13 +71,16 @@ impl<'a> TypeEnv for Environment<'a> {
 
 pub fn rename(symbols: &mut SymbolModule,
               env: &TypeEnv,
-              expr: &mut ast::LExpr<TcIdent>)
+              expr: &mut LExpr<TcIdent>)
               -> Result<(), Error> {
+    use base::instantiate;
+
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
         env: Environment<'b>,
         errors: Error,
     }
+
     impl<'a, 'b> RenameVisitor<'a, 'b> {
         fn find_fields(&self, typ: &TcType) -> Option<Vec<types::Field<Symbol, TcType>>> {
             // Walk through all type aliases
@@ -127,7 +133,7 @@ pub fn rename(symbols: &mut SymbolModule,
             }
         }
 
-        fn stack_var(&mut self, id: Symbol, location: ast::Location, typ: TcType) -> Symbol {
+        fn stack_var(&mut self, id: Symbol, location: Location, typ: TcType) -> Symbol {
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
             let new_id = self.symbols.symbol(format!("{}:{}", name, location));
@@ -140,10 +146,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
         }
 
-        fn stack_type(&mut self,
-                      id: Symbol,
-                      location: ast::Location,
-                      alias: &Alias<Symbol, TcType>) {
+        fn stack_type(&mut self, id: Symbol, location: Location, alias: &Alias<Symbol, TcType>) {
             // Insert variant constructors into the local scope
             if let Some(ref real_type) = alias.typ {
                 if let Type::Variants(ref variants) = **real_type {
@@ -193,15 +196,15 @@ pub fn rename(symbols: &mut SymbolModule,
                 })
         }
 
-        fn rename_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<(), RenameError> {
+        fn rename_expr(&mut self, expr: &mut LExpr<TcIdent>) -> Result<(), RenameError> {
             match expr.value {
-                ast::Expr::Identifier(ref mut id) => {
+                Expr::Identifier(ref mut id) => {
                     if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
                         debug!("Rename identifier {} = {}", id.name, new_id);
                         id.name = new_id;
                     }
                 }
-                ast::Expr::Record { ref mut typ, ref mut exprs, .. } => {
+                Expr::Record { ref mut typ, ref mut exprs, .. } => {
                     let field_types = self.find_fields(&typ.typ).expect("field_types");
                     for (field, &mut (ref id, ref mut maybe_expr)) in field_types.iter()
                         .zip(exprs) {
@@ -210,17 +213,17 @@ pub fn rename(symbols: &mut SymbolModule,
                             None => {
                                 if let Some(new_id) = try!(self.rename(id, &field.typ)) {
                                     debug!("Rename record field {} = {}", id, new_id);
-                                    *maybe_expr =
-                                        Some(ast::no_loc(ast::Expr::Identifier(ast::TcIdent {
-                                            name: new_id,
-                                            typ: field.typ.clone(),
-                                        })));
+                                    *maybe_expr = Some(ast::located(expr.location,
+                                                                    Expr::Identifier(TcIdent {
+                                                                        name: new_id,
+                                                                        typ: field.typ.clone(),
+                                                                    })));
                                 }
                             }
                         }
                     }
                 }
-                ast::Expr::BinOp(ref mut l, ref mut id, ref mut r) => {
+                Expr::BinOp(ref mut l, ref mut id, ref mut r) => {
                     if let Some(new_id) = try!(self.rename(id.id(), &id.typ)) {
                         debug!("Rename {} = {}",
                                self.symbols.string(&id.name),
@@ -230,7 +233,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     self.visit_expr(l);
                     self.visit_expr(r);
                 }
-                ast::Expr::Match(ref mut expr, ref mut alts) => {
+                Expr::Match(ref mut expr, ref mut alts) => {
                     self.visit_expr(expr);
                     for alt in alts {
                         self.env.stack_types.enter_scope();
@@ -242,7 +245,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         self.env.stack_types.exit_scope();
                     }
                 }
-                ast::Expr::Let(ref mut bindings, ref mut expr) => {
+                Expr::Let(ref mut bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
                     self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
@@ -269,7 +272,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     self.env.stack.exit_scope();
                     self.env.stack_types.exit_scope();
                 }
-                ast::Expr::Lambda(ref mut lambda) => {
+                Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
                     for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.arguments) {
                         arg.name = self.stack_var(arg.name.clone(), expr.location, typ.clone());
@@ -277,7 +280,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     self.visit_expr(&mut lambda.body);
                     self.env.stack.exit_scope();
                 }
-                ast::Expr::Type(ref bindings, ref mut body) => {
+                Expr::Type(ref bindings, ref mut body) => {
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
                         self.stack_type(bind.name.clone(), expr.location, &bind.alias);
@@ -290,18 +293,20 @@ pub fn rename(symbols: &mut SymbolModule,
             Ok(())
         }
     }
+
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
         type T = ast::TcIdent<Symbol>;
 
-        fn visit_expr(&mut self, expr: &mut ast::LExpr<Self::T>) {
+        fn visit_expr(&mut self, expr: &mut LExpr<Self::T>) {
             if let Err(err) = self.rename_expr(expr) {
-                self.errors.error(ast::Spanned {
+                self.errors.error(Spanned {
                     span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
                     value: err,
                 });
             }
         }
     }
+
     let mut visitor = RenameVisitor {
         symbols: symbols,
         errors: Errors::new(),
@@ -318,13 +323,6 @@ pub fn rename(symbols: &mut SymbolModule,
         Ok(())
     }
 }
-
-
-use base::instantiate;
-use unify_type::{TypeError, State};
-use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
-
-use base::fnv::FnvMap;
 
 pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
     let mut unifier = UnifierState {

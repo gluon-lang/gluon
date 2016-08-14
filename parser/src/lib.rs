@@ -17,6 +17,7 @@ use std::rc::Rc;
 use base::ast;
 use base::ast::*;
 use base::error::Errors;
+use base::pos::{BytePos, CharPos};
 use base::types::{Type, Generic, Alias, Field, Kind, TypeVariable};
 use base::symbol::{Name, Symbol, SymbolModule};
 
@@ -405,9 +406,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         let position = input.position();
         let loc = |expr| {
             located(Location {
-                        column: position.column,
-                        row: position.line,
-                        absolute: 0,
+                        column: CharPos(position.column as usize),
+                        row: position.line as u32,
+                        absolute: BytePos(0),
                     },
                     expr)
         };
@@ -461,9 +462,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         let position = input.position();
         let loc = |expr| {
             located(Location {
-                        column: position.column,
-                        row: position.line,
-                        absolute: 0,
+                        column: CharPos(position.column as usize),
+                        row: position.line as u32,
+                        absolute: BytePos(0),
                     },
                     expr)
         };
@@ -608,9 +609,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         self.record_parser(self.ident_u(), self.ident_u(), |record| {
             let position = input.position();
             let location = Location {
-                column: position.column,
-                row: position.line,
-                absolute: 0,
+                column: CharPos(position.column as usize),
+                row: position.line as u32,
+                absolute: BytePos(0),
             };
             self.parser(ParserEnv::<I, F>::parse_ident2)
                 .then(|(id, typ)| {

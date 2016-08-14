@@ -7,6 +7,7 @@ extern crate log;
 use base::ast::*;
 use base::ast;
 use base::error::Errors;
+use base::pos::{BytePos, CharPos};
 use base::types::{Type, Generic, Alias, Field, Kind};
 use parser::{parse_string, Error};
 
@@ -16,15 +17,36 @@ pub fn intern(s: &str) -> String {
 
 type PExpr = LExpr<String>;
 
+fn loc(r: u32, c: usize) -> Location {
+    Location {
+        column: CharPos(c),
+        row: r,
+        absolute: BytePos(0),
+    }
+}
+
+fn no_loc<T>(x: T) -> Located<T> {
+    let max_loc = Location {
+        column: CharPos(usize::max_value()),
+        row: u32::max_value(),
+        absolute: BytePos(u32::max_value()),
+    };
+
+    located(max_loc, x)
+}
+
 fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
     no_loc(Expr::BinOp(Box::new(l), intern(s), Box::new(r)))
 }
+
 fn int(i: i64) -> PExpr {
     no_loc(Expr::Literal(LiteralEnum::Integer(i)))
 }
+
 fn let_(s: &str, e: PExpr, b: PExpr) -> PExpr {
     let_a(s, &[], e, b)
 }
+
 fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
     no_loc(Expr::Let(vec![Binding {
                               comment: None,
@@ -35,15 +57,18 @@ fn let_a(s: &str, args: &[&str], e: PExpr, b: PExpr) -> PExpr {
                           }],
                      Box::new(b)))
 }
+
 fn id(s: &str) -> PExpr {
     no_loc(Expr::Identifier(intern(s)))
 }
+
 fn field(s: &str, typ: AstType<String>) -> Field<String> {
     Field {
         name: intern(s),
         typ: typ,
     }
 }
+
 fn typ(s: &str) -> AstType<String> {
     assert!(s.len() != 0);
     let is_var = s.chars().next().unwrap().is_lowercase();
@@ -53,21 +78,26 @@ fn typ(s: &str) -> AstType<String> {
         Err(()) => Type::id(intern(s)),
     }
 }
+
 fn generic_ty(s: &str) -> AstType<String> {
     Type::generic(generic(s))
 }
+
 fn generic(s: &str) -> Generic<String> {
     Generic {
         kind: Kind::variable(0),
         id: intern(s),
     }
 }
+
 fn call(e: PExpr, args: Vec<PExpr>) -> PExpr {
     no_loc(Expr::Call(Box::new(e), args))
 }
+
 fn if_else(p: PExpr, if_true: PExpr, if_false: PExpr) -> PExpr {
     no_loc(Expr::IfElse(Box::new(p), Box::new(if_true), Some(Box::new(if_false))))
 }
+
 fn case(e: PExpr, alts: Vec<(Pattern<String>, PExpr)>) -> PExpr {
     no_loc(Expr::Match(Box::new(e),
                        alts.into_iter()
@@ -79,6 +109,7 @@ fn case(e: PExpr, alts: Vec<(Pattern<String>, PExpr)>) -> PExpr {
                            })
                            .collect()))
 }
+
 fn lambda(name: &str, args: Vec<String>, body: PExpr) -> PExpr {
     no_loc(Expr::Lambda(Lambda {
         id: intern(name),
@@ -103,6 +134,7 @@ fn type_decls(binds: Vec<TypeBinding<String>>, body: PExpr) -> PExpr {
 fn record(fields: Vec<(String, Option<PExpr>)>) -> PExpr {
     record_a(Vec::new(), fields)
 }
+
 fn record_a(types: Vec<(String, Option<AstType<String>>)>,
             fields: Vec<(String, Option<PExpr>)>)
             -> PExpr {
@@ -112,9 +144,11 @@ fn record_a(types: Vec<(String, Option<AstType<String>>)>,
         exprs: fields,
     })
 }
+
 fn field_access(expr: PExpr, field: &str) -> PExpr {
     no_loc(Expr::FieldAccess(Box::new(expr), intern(field)))
 }
+
 fn array(fields: Vec<PExpr>) -> PExpr {
     no_loc(Expr::Array(Array {
         id: intern(""),
@@ -369,15 +403,6 @@ fn associated_record() {
                type_decl(intern("Test"), vec![generic("a")], test_type, record));
 }
 
-
-fn loc(r: i32, c: i32) -> Location {
-    Location {
-        column: c,
-        row: r,
-        absolute: 0,
-    }
-}
-
 #[test]
 fn span_identifier() {
     let _ = ::env_logger::init();
@@ -583,12 +608,14 @@ let x: ((->) Int Int) = x
 x
 "#;
     let e = parse(text);
-    assert_eq!(e, Ok(no_loc(Expr::Let(vec![Binding {
-                              comment: None,
-                              name: no_loc(Pattern::Identifier(intern("x"))),
-                              typ: Some(Type::app(typ("->"), vec![typ("Int"), typ("Int")])),
-                              arguments: vec![],
-                              expression: id("x"),
-                          }],
-                     Box::new(id("x"))))));
+    assert_eq!(e,
+               Ok(no_loc(Expr::Let(vec![Binding {
+                                            comment: None,
+                                            name: no_loc(Pattern::Identifier(intern("x"))),
+                                            typ: Some(Type::app(typ("->"),
+                                                                vec![typ("Int"), typ("Int")])),
+                                            arguments: vec![],
+                                            expression: id("x"),
+                                        }],
+                                   Box::new(id("x"))))));
 }
