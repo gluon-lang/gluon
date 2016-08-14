@@ -12,7 +12,7 @@ use vm::api::{IO, Function, WithVM, VmType, Userdata};
 use vm::gc::{Gc, Traverseable};
 use vm::thread::{Thread, RootStr};
 
-use gluon::{Compiler, new_vm};
+use gluon::{Compiler, new_vm, RootedThread, Result as GluonResult};
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
@@ -84,9 +84,54 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     IO::Value(Ok(buffer))
 }
 
-struct Editor(Mutex<rustyline::Editor<()>>);
+fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
+    use base::pos::{BytePos, CharPos, Location};
+    use base::ast::EmptyEnv;
+    use check::completion::suggest;
+    use gluon::compiler_pipeline::*;
 
-impl Userdata for Editor { }
+    let location = Location {
+        line: 1,
+        column: CharPos(pos),
+        absolute: BytePos(pos as u32),
+    };
+
+    let mut compiler = Compiler::new();
+    // The parser may find parse errors but still produce an expression
+    // For that case still typecheck the expression but return the parse error afterwards
+    let (expr, _parse_result): (_, GluonResult<()>) =
+        match compiler.parse_partial_expr(&name, fileinput) {
+            Ok(expr) => (expr, Ok(())),
+            Err((None, err)) => return Err(err.into()),
+            Err((Some(expr), err)) => (expr, Err(err.into())),
+        };
+    let MacroValue(mut expr) = try!(expr.expand_macro(&mut compiler, thread, &name));
+    // Only need the typechecker to fill infer the types as best it can regardless of errors
+    let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);
+    let suggestions = suggest(&EmptyEnv::new(), &*thread.get_env(), &expr, location);
+    Ok(suggestions.into_iter()
+        .map(|ident| {
+            let s: &str = ident.name.as_ref();
+            s.to_string()
+        })
+        .collect())
+}
+
+struct Completer(RootedThread);
+impl rustyline::completion::Completer for Completer {
+    fn complete(&self, line: &str, pos: usize) -> rustyline::Result<(usize, Vec<String>)> {
+        let result = complete(&self.0, "<repl>", line, pos);
+
+        // Get the start of the completed identifier
+        let ident_start =
+            line[..pos].rfind(|c: char| c.is_whitespace() || c == '.').map_or(0, |i| i + 1);
+        Ok((ident_start, result.unwrap_or(Vec::new())))
+    }
+}
+
+struct Editor(Mutex<rustyline::Editor<Completer>>);
+
+impl Userdata for Editor {}
 
 impl fmt::Debug for Editor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -102,8 +147,9 @@ impl Traverseable for Editor {
     fn traverse(&self, _: &mut Gc) {}
 }
 
-fn new_editor(_: ()) -> Editor {
-    let editor = rustyline::Editor::new();
+fn new_editor(vm: WithVM<()>) -> Editor {
+    let mut editor = rustyline::Editor::new();
+    editor.set_completer(Some(Completer(vm.vm.root_thread())));
     Editor(Mutex::new(editor))
 }
 
