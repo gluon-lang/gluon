@@ -1,9 +1,9 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
-use std::cmp::Ordering;
+
 use std::fmt;
 use std::ops::Deref;
 
-use pos::{BytePos, CharPos};
+use pos::{CharPos, Located, Span};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
 
@@ -166,94 +166,6 @@ impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
             typ: self.typ.clone(),
             name: self.env.from_str(s),
         }
-    }
-}
-
-/// Representation of a location in a source file
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
-pub struct Location {
-    pub row: u32,
-    pub column: CharPos,
-    pub absolute: BytePos,
-}
-
-impl Location {
-    fn line_offset(mut self, offset: CharPos) -> Location {
-        self.column += offset;
-        self
-    }
-}
-
-impl fmt::Display for Location {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Line: {}, Column: {}", self.row, self.column)
-    }
-}
-
-/// Struct which represents a span in a source file
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Span {
-    pub start: Location,
-    pub end: Location,
-}
-
-impl Span {
-    pub fn containment(&self, location: &Location) -> Ordering {
-        use std::cmp::Ordering::*;
-        match (location.cmp(&self.start), location.cmp(&self.end)) {
-            (Equal, _) | (Greater, Less) => Equal,
-            (Less, _) => Less,
-            (_, Equal) | (_, Greater) => Greater,
-        }
-    }
-    pub fn containment_exclusive(&self, location: &Location) -> Ordering {
-        if self.end == *location {
-            Ordering::Greater
-        } else {
-            self.containment(location)
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Spanned<T> {
-    pub span: Span,
-    pub value: T,
-}
-
-impl<T: fmt::Display> fmt::Display for Spanned<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.span.start, self.value)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Located<T> {
-    pub location: Location,
-    pub value: T,
-}
-impl<T: PartialEq> PartialEq for Located<T> {
-    fn eq(&self, other: &Located<T>) -> bool {
-        self.value == other.value
-    }
-}
-impl<T> Deref for Located<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Located<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.location, self.value)
-    }
-}
-
-pub fn located<T>(location: Location, value: T) -> Located<T> {
-    Located {
-        location: location,
-        value: value,
     }
 }
 

@@ -4,8 +4,8 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
-use base::ast::{self, Location};
-use base::pos::{BytePos, CharPos};
+use base::ast;
+use base::pos::{BytePos, CharPos, Location};
 use base::types::{Type, TcType};
 use check::completion;
 

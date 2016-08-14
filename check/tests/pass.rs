@@ -5,7 +5,7 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::ast::{self, Expr, Pattern, Typed};
-use base::pos::{BytePos, CharPos};
+use base::pos::{BytePos, CharPos, Location, Span};
 use base::types::{self, Field, Generic, Kind, Type};
 
 mod support;
@@ -720,13 +720,13 @@ in f "123"
     let err = result.unwrap_err();
     assert_eq!(err.errors.len(), 1);
     assert_eq!(err.errors[0].span,
-               ast::Span {
-                   start: ast::Location {
+               Span {
+                   start: Location {
                        row: 3,
                        column: CharPos(6),
                        absolute: BytePos(0),
                    },
-                   end: ast::Location {
+                   end: Location {
                        row: 3,
                        column: CharPos(11),
                        absolute: BytePos(0),

@@ -17,7 +17,7 @@ use std::rc::Rc;
 use base::ast;
 use base::ast::*;
 use base::error::Errors;
-use base::pos::{BytePos, CharPos};
+use base::pos::{BytePos, CharPos, Located, Location, located};
 use base::types::{Type, Generic, Alias, Field, Kind, TypeVariable};
 use base::symbol::{Name, Symbol, SymbolModule};
 

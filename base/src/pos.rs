@@ -2,8 +2,9 @@
 //!
 //! [libsyntax_pos]: https://github.com/rust-lang/rust/blob/ae774103501337ed63b42b673c6c4fdbf369e80e/src/libsyntax_pos/lib.rs
 
+use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Deref, Sub, SubAssign};
 
 /// A byte offset in a source string
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -102,5 +103,96 @@ impl SubAssign for CharPos {
 impl fmt::Display for CharPos {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// A location in a source file
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
+pub struct Location {
+    pub row: u32,
+    pub column: CharPos,
+    pub absolute: BytePos,
+}
+
+impl Location {
+    pub fn line_offset(mut self, offset: CharPos) -> Location {
+        self.column += offset;
+        self
+    }
+}
+
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Line: {}, Column: {}", self.row, self.column)
+    }
+}
+
+/// A span between two locations in a source file
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Span {
+    pub start: Location,
+    pub end: Location,
+}
+
+impl Span {
+    pub fn containment(&self, location: &Location) -> Ordering {
+        use std::cmp::Ordering::*;
+        match (location.cmp(&self.start), location.cmp(&self.end)) {
+            (Equal, _) | (Greater, Less) => Equal,
+            (Less, _) => Less,
+            (_, Equal) | (_, Greater) => Greater,
+        }
+    }
+
+    pub fn containment_exclusive(&self, location: &Location) -> Ordering {
+        if self.end == *location {
+            Ordering::Greater
+        } else {
+            self.containment(location)
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Spanned<T> {
+    pub span: Span,
+    pub value: T,
+}
+
+impl<T: fmt::Display> fmt::Display for Spanned<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.span.start, self.value)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Located<T> {
+    pub location: Location,
+    pub value: T,
+}
+
+impl<T: PartialEq> PartialEq for Located<T> {
+    fn eq(&self, other: &Located<T>) -> bool {
+        self.value == other.value
+    }
+}
+
+impl<T> Deref for Located<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Located<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.location, self.value)
+    }
+}
+
+pub fn located<T>(location: Location, value: T) -> Located<T> {
+    Located {
+        location: location,
+        value: value,
     }
 }

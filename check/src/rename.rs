@@ -1,6 +1,7 @@
 use std::fmt;
 
-use base::ast::{self, DisplayEnv, Expr, LExpr, Location, MutVisitor, Spanned, Typed};
+use base::ast::{self, DisplayEnv, Expr, LExpr, MutVisitor, Typed};
+use base::pos::{self, Location, Spanned};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
@@ -213,7 +214,7 @@ pub fn rename(symbols: &mut SymbolModule,
                             None => {
                                 if let Some(new_id) = try!(self.rename(id, &field.typ)) {
                                     debug!("Rename record field {} = {}", id, new_id);
-                                    *maybe_expr = Some(ast::located(expr.location,
+                                    *maybe_expr = Some(pos::located(expr.location,
                                                                     Expr::Identifier(TcIdent {
                                                                         name: new_id,
                                                                         typ: field.typ.clone(),

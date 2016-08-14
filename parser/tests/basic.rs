@@ -4,10 +4,10 @@ extern crate env_logger;
 #[macro_use]
 extern crate log;
 
-use base::ast::*;
 use base::ast;
+use base::ast::*;
 use base::error::Errors;
-use base::pos::{BytePos, CharPos};
+use base::pos::{self, BytePos, CharPos, Located, Location, Span};
 use base::types::{Type, Generic, Alias, Field, Kind};
 use parser::{parse_string, Error};
 
@@ -32,7 +32,7 @@ fn no_loc<T>(x: T) -> Located<T> {
         absolute: BytePos(u32::max_value()),
     };
 
-    located(max_loc, x)
+    pos::located(max_loc, x)
 }
 
 fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
