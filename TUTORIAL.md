@@ -307,11 +307,13 @@ Option Int
 Ref String
 ```
 
-The last kind of type which gluon has is the alias type. An alias type is a type which explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract then the type is only considered equivalent to its own alias (ie if you define an abstract type of `MyInt` which has the same representation as `Int` the typechecker still considers these two types as being not equal to each other).
+The last kind of type which gluon has is the alias type. An alias type is a type which explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract then the type is only considered equivalent to itself (ie if you define an abstract type of `MyInt` which happens to have the same representation as `Int` the typechecker will consider these two types as being distinct).
 
-### Higher-kinded types (TODO)
+### Higher-kinded types
 
-Gluon has higher kinded types.
+Higher-kinded types are a fairly abstract concept in gluon and you may very well create entire programs without any knowledge about them. Sometimes they are a very valuable tool to have as they can be used to create very powerful abstractions.
+
+Just as all values such as `0 : Int`, `"Hello World!" : String` and `Some 4.0 : Option Float` each have a type these types themselves have their own 'type' or the 'kind' as it is called. For the types of concrete values the `Kind` is always `Type` so for the earlier examples `Int : Type`, `String : Type` and `Option Float : Type`. That is not very useful on its own but it becomes more interesting when we consider the kind of `Option : Type -> Type`. `Type -> Type` looks rather like the type of a functions such as `show_int : Int -> String` but instead of taking a value it takes a type and produces a new type. In effect this lets us abstract over types instead of just over values. This abstraction facility can be seen in the `Functor : (Type -> Type) -> Type` type which takes a type with kind `Type -> Type` as argument which is exactly the kind of `Option` (or `List`, `Result a`).
 
 ### Overloading
 
