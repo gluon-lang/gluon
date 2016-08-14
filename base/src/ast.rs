@@ -1,7 +1,9 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
-use std::cmp::Ordering;
+
 use std::fmt;
 use std::ops::Deref;
+
+use pos::{CharPos, Located, Span};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
 
@@ -167,106 +169,6 @@ impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
     }
 }
 
-/// Representation of a location in a source file
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
-pub struct Location {
-    pub row: i32,
-    pub column: i32,
-    pub absolute: i32,
-}
-
-impl Location {
-    pub fn eof() -> Location {
-        Location {
-            column: -1,
-            row: -1,
-            absolute: -1,
-        }
-    }
-
-    pub fn line_offset(mut self, offset: i32) -> Location {
-        self.column += offset;
-        self
-    }
-}
-
-impl fmt::Display for Location {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Line: {}, Column: {}", self.row, self.column)
-    }
-}
-
-/// Struct which represents a span in a source file
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Span {
-    pub start: Location,
-    pub end: Location,
-}
-
-impl Span {
-    pub fn containment(&self, location: &Location) -> Ordering {
-        use std::cmp::Ordering::*;
-        match (location.cmp(&self.start), location.cmp(&self.end)) {
-            (Equal, _) | (Greater, Less) => Equal,
-            (Less, _) => Less,
-            (_, Equal) | (_, Greater) => Greater,
-        }
-    }
-    pub fn containment_exclusive(&self, location: &Location) -> Ordering {
-        if self.end == *location {
-            Ordering::Greater
-        } else {
-            self.containment(location)
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Spanned<T> {
-    pub span: Span,
-    pub value: T,
-}
-
-impl<T: fmt::Display> fmt::Display for Spanned<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.span.start, self.value)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Located<T> {
-    pub location: Location,
-    pub value: T,
-}
-impl<T: PartialEq> PartialEq for Located<T> {
-    fn eq(&self, other: &Located<T>) -> bool {
-        self.value == other.value
-    }
-}
-impl<T> Deref for Located<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Located<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.location, self.value)
-    }
-}
-
-pub fn located<T>(location: Location, value: T) -> Located<T> {
-    Located {
-        location: location,
-        value: value,
-    }
-}
-
-pub fn no_loc<T>(x: T) -> Located<T> {
-    located(Location::eof(), x)
-}
-
 #[derive(Clone, PartialEq, Debug)]
 pub enum LiteralEnum {
     Byte(u8),
@@ -359,15 +261,15 @@ impl<Id> LExpr<Id>
     pub fn span<'a>(&self, env: &(DisplayEnv<Ident = Id> + 'a)) -> Span {
         use self::Expr::*;
         let end = match self.value {
-            Identifier(ref id) => self.location.line_offset(env.string(id).len() as i32),
+            Identifier(ref id) => self.location.line_offset(CharPos(env.string(id).len())),
             Literal(ref lit) => {
                 use self::LiteralEnum::*;
                 match *lit {
-                    Integer(i) => self.location.line_offset(format!("{}", i).len() as i32),
-                    Byte(i) => self.location.line_offset(format!("{}", i).len() as i32 + 1),
-                    Float(f) => self.location.line_offset(format!("{}", f).len() as i32),
-                    String(ref s) => self.location.line_offset(s.len() as i32 + 2),
-                    Char(_) => self.location.line_offset(3),
+                    Integer(i) => self.location.line_offset(CharPos::from(format!("{}", i).len())),
+                    Byte(i) => self.location.line_offset(CharPos::from(format!("{}", i).len() + 1)),
+                    Float(f) => self.location.line_offset(CharPos::from(format!("{}", f).len())),
+                    String(ref s) => self.location.line_offset(CharPos::from(s.len() + 2)),
+                    Char(_) => self.location.line_offset(CharPos(3)),
                 }
             }
             Call(ref func, ref args) => {
@@ -387,25 +289,25 @@ impl<Id> LExpr<Id>
             Type(_, ref expr) => expr.span(env).end,
             FieldAccess(ref expr, ref id) => {
                 let base = expr.span(env).end;
-                base.line_offset(1 + env.string(id).len() as i32)
+                base.line_offset(CharPos::from(1 + env.string(id).len()))
             }
             Array(ref array) => {
                 array.expressions
                     .last()
                     .map_or(self.location, |expr| expr.span(env).end)
-                    .line_offset(1)
+                    .line_offset(CharPos(1))
             }
             Record { ref exprs, .. } => {
                 exprs.last()
                     .and_then(|tup| tup.1.as_ref().map(|expr| expr.span(env).end))
                     .unwrap_or(self.location)
-                    .line_offset(2)
+                    .line_offset(CharPos(2))
             }
             Lambda(ref lambda) => lambda.body.span(env).end,
             Tuple(ref args) => {
                 args.last()
                     .map_or(self.location, |expr| expr.span(env).end)
-                    .line_offset(2)
+                    .line_offset(CharPos(2))
             }
             Block(ref exprs) => exprs.last().expect("Expr in block").span(env).end,
         };
@@ -425,7 +327,7 @@ impl<Id> LPattern<Id>
         let end = match self.value {
             Pattern::Constructor(ref id, ref args) => {
                 let offset = args.iter().fold(0, |acc, arg| acc + arg.as_ref().len() + " ".len());
-                self.location.line_offset((id.as_ref().len() + offset) as i32)
+                self.location.line_offset(CharPos::from(id.as_ref().len() + offset))
             }
             Pattern::Record { ref fields, ref types, .. } => {
                 let field_offset = fields.iter().fold(0, |acc, t| {
@@ -438,9 +340,9 @@ impl<Id> LPattern<Id>
                     t.1.as_ref().map(|id| id.as_ref().len()).unwrap_or(0) +
                     ",".len()
                 });
-                self.location.line_offset((field_offset + type_offset + "{".len()) as i32)
+                self.location.line_offset(CharPos::from(field_offset + type_offset + "{".len()))
             }
-            Pattern::Identifier(ref id) => self.location.line_offset(id.as_ref().len() as i32),
+            Pattern::Identifier(ref id) => self.location.line_offset(CharPos::from(id.as_ref().len())),
         };
         Span {
             start: self.location,
@@ -620,16 +522,6 @@ impl<T: Typed> Typed for Located<T> {
     }
 }
 
-impl Typed for Option<Box<Located<Expr<TcIdent<Symbol>>>>> {
-    type Id = Symbol;
-
-    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
-        match *self {
-            Some(ref t) => t.env_type_of(env),
-            None => Type::unit(),
-        }
-    }
-}
 impl Typed for Pattern<TcIdent<Symbol>> {
     type Id = Symbol;
 

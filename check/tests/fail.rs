@@ -4,7 +4,7 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
-use base::ast;
+use base::pos::Spanned;
 use base::types;
 
 mod support;
@@ -25,7 +25,7 @@ macro_rules! assert_err {
                 let mut iter = err.errors.iter();
                 $(
                 match iter.next() {
-                    Some(&ast::Spanned { value: $id, .. }) => (),
+                    Some(&Spanned { value: $id, .. }) => (),
                     _ => assert!(false, "Found errors:\n{}\nbut expected {}",
                                         err, stringify!($id)),
                 }
@@ -52,7 +52,7 @@ macro_rules! assert_unify_err {
             Err(err) => {
                 for err in err.errors.iter() {
                     match *err {
-                        ast::Spanned { value: Unification(_, _, ref errors), .. } => {
+                        Spanned { value: Unification(_, _, ref errors), .. } => {
                             let mut iter = errors.iter();
                             $(
                             match iter.next() {

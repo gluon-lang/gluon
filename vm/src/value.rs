@@ -1,5 +1,4 @@
 use std::fmt;
-use std::any::Any;
 use std::collections::hash_map::Entry;
 use std::result::Result as StdResult;
 
