@@ -67,6 +67,8 @@ REPL features:
         type std.prelude.List a = | Nil | Cons a (std.prelude.List a)
         /// A linked list type
 
+* Tab-completion of identifiers and record fields
+    ![repl completion](http://i.imgur.com/IXLQFtV.gif)
 * Exit the REPL by writing `:q`
 
 ## Documentation
