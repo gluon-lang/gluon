@@ -69,7 +69,7 @@ fn show_record() {
                                     name: "x",
                                     typ: Type::<&str, AstType<&str>>::int(),
                                 }]);
-    assert_eq!(format!("{}", typ), "{ x: Int }");
+    assert_eq!(format!("{}", typ), "{ x : Int }");
 
     let data = |s, a| RcType::from(type_con(s, a));
     let f = Type::function(vec![data("a", vec![])], Type::string());
@@ -86,9 +86,9 @@ fn show_record() {
                                     name: "x",
                                     typ: Type::int(),
                                 }]);
-    assert_eq!(format!("{}", typ), "{ Test a = a -> String, x: Int }");
+    assert_eq!(format!("{}", typ), "{ Test a = a -> String, x : Int }");
     assert_eq!(format!("{}", some_record()),
-               "{ Test a = a -> String, x: Int, test: Test a }");
+               "{ Test a = a -> String, x : Int, test : Test a }");
     let typ = Type::record(vec![Field {
                                     name: "Test",
                                     typ: Alias::new("Test",
@@ -140,19 +140,19 @@ fn show_record_multi_line() {
                                 }]);
     let expected = r#"{
     Test a = a -> String,
-    x: Int,
-    test: Test Int (a -> String) ->
+    x : Int,
+    test : Test Int (a -> String) ->
         Float ->
         (a -> String) ->
         (a -> String) ->
         a ->
         String,
-    record_looooooooooooooooooooooooooooooooooong: {
+    record_looooooooooooooooooooooooooooooooooong : {
         Test a = a -> String,
-        x: Int,
-        test: Test a
+        x : Int,
+        test : Test a
     },
-    looooooooooooooooooooooooooooooooooong_field: Test a
+    looooooooooooooooooooooooooooooooooong_field : Test a
 }"#;
 
     assert_eq!(format!("{}", typ), expected);

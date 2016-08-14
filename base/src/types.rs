@@ -6,6 +6,8 @@ use std::sync::Arc;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+use pretty::{DocAllocator, Arena, DocBuilder};
+
 use ast;
 use ast::{AstType, DisplayEnv};
 use symbol::{Symbol, SymbolRef};
@@ -674,8 +676,6 @@ pub struct DisplayType<'a, I: 'a, T: 'a, E: 'a> {
     env: &'a E,
 }
 
-use pretty::{DocAllocator, Arena, DocBuilder};
-
 impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
     where E: DisplayEnv<Ident = I> + 'a,
           T: Deref<Target = Type<I, T>> + 'a,
@@ -783,7 +783,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                     for (i, field) in types.iter().enumerate() {
                         let f = chain![arena;
                             self.env.string(&field.name),
-                            " ",
+                            arena.newline(),
                             arena.concat(field.typ.args.iter().map(|arg| {
                                 arena.text(self.env.string(&arg.id)).append(" ").into()
                             })),
@@ -813,7 +813,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                         }
                         let f = chain![arena;
                             self.env.string(&field.name),
-                            ": ",
+                            " : ",
                             rhs.group(),
                             if i + 1 != fields.len() {
                                 arena.text(",")
