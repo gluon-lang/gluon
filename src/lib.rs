@@ -37,6 +37,7 @@ use vm::Error as VmError;
 use vm::compiler::CompiledFunction;
 use vm::thread::{RootedValue, ThreadInternal};
 use vm::internal::ClosureDataDef;
+use vm::macros;
 
 quick_error! {
     /// Error type wrapping all possible errors that can be generated from gluon
@@ -67,10 +68,48 @@ quick_error! {
             from()
         }
         /// Error found when expanding macros
-        Macro(err: Errors<::vm::macros::Error>) {
+        Macro(err: macros::Error) {
             description(err.description())
             display("{}", err)
             from()
+        }
+        /// Multiple errors where found
+        Multiple(err: Errors<Error>) {
+            description(err.description())
+            display("{}", err)
+        }
+    }
+}
+
+impl From<Errors<macros::Error>> for Error {
+    fn from(mut errors: Errors<macros::Error>) -> Error {
+        if errors.errors.len() == 1 {
+            let err = errors.errors.pop().unwrap();
+            match err.downcast::<Error>() {
+                Ok(err) => *err,
+                Err(err) => Error::Macro(err),
+            }
+        } else {
+            Error::Multiple(Errors {
+                errors: errors.errors
+                    .into_iter()
+                    .map(|err| match err.downcast::<Error>() {
+                        Ok(err) => *err,
+                        Err(err) => Error::Macro(err),
+                    })
+                    .collect(),
+            })
+        }
+    }
+}
+
+
+impl From<Errors<Error>> for Error {
+    fn from(mut errors: Errors<Error>) -> Error {
+        if errors.errors.len() == 1 {
+            errors.errors.pop().unwrap()
+        } else {
+            Error::Multiple(errors)
         }
     }
 }
@@ -217,7 +256,7 @@ pub mod compiler_pipeline {
                    file: &str,
                    _: Extra)
                    -> Result<CompileValue> {
-            let function = compiler.compile_script(thread, file, &self.0);
+            let function = try!(compiler.compile_script(thread, file, &self.0));
             Ok(CompileValue(self.0, self.1, function))
         }
     }
@@ -268,10 +307,10 @@ pub mod compiler_pipeline {
                          -> Result<(RootedValue<&'vm Thread>, TcType)> {
             let CompileValue(_, typ, mut function) = self;
             function.id = Symbol::new(name);
-            let function = vm.global_env().new_function(function);
+            let function = try!(vm.global_env().new_function(function));
             let closure = {
                 let stack = vm.current_frame();
-                vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
+                try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
             };
             let value = try!(vm.call_module(&typ, closure));
             Ok((vm.root_value_ref(value), typ))
@@ -286,10 +325,10 @@ pub mod compiler_pipeline {
 
             let CompileValue(mut expr, typ, function) = self;
             let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
-            let function = vm.global_env().new_function(function);
+            let function = try!(vm.global_env().new_function(function));
             let closure = {
                 let stack = vm.current_frame();
-                vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
+                try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
             };
             let value = try!(vm.call_module(&typ, closure));
             try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
@@ -382,19 +421,20 @@ impl Compiler {
                           vm: &Thread,
                           filename: &str,
                           expr: &ast::LExpr<ast::TcIdent<Symbol>>)
-                          -> CompiledFunction {
+                          -> Result<CompiledFunction> {
         use vm::compiler::Compiler;
         debug!("Compile `{}`", filename);
         let mut function = {
             let env = vm.get_env();
             let name = Name::new(filename);
             let name = NameBuf::from(name.module());
-            let symbols = SymbolModule::new(StdString::from(AsRef::<str>::as_ref(&name)), &mut self.symbols);
+            let symbols = SymbolModule::new(StdString::from(AsRef::<str>::as_ref(&name)),
+                                            &mut self.symbols);
             let mut compiler = Compiler::new(&*env, vm.global_env(), symbols);
-            compiler.compile_expr(&expr)
+            try!(compiler.compile_expr(&expr))
         };
         function.id = Symbol::new(filename);
-        function
+        Ok(function)
     }
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
@@ -418,11 +458,11 @@ impl Compiler {
     /// the VM.
     pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
         let (expr, typ, metadata) = try!(self.extract_metadata(vm, filename, input));
-        let function = self.compile_script(vm, filename, &expr);
-        let function = vm.global_env().new_function(function);
+        let function = try!(self.compile_script(vm, filename, &expr));
+        let function = try!(vm.global_env().new_function(function));
         let closure = {
             let stack = vm.current_frame();
-            vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
+            try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
         };
         let value = try!(vm.call_module(&typ, closure));
         try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
@@ -450,12 +490,12 @@ impl Compiler {
                       expected_type: Option<&TcType>)
                       -> Result<(RootedValue<&'vm Thread>, TcType)> {
         let (expr, typ) = try!(self.typecheck_str(vm, name, expr_str, expected_type));
-        let mut function = self.compile_script(vm, name, &expr);
+        let mut function = try!(self.compile_script(vm, name, &expr));
         function.id = Symbol::new(name);
-        let function = vm.global_env().new_function(function);
+        let function = try!(vm.global_env().new_function(function));
         let closure = {
             let stack = vm.current_frame();
-            vm.alloc(&stack.stack, ClosureDataDef(function, &[]))
+            try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
         };
         let value = try!(vm.call_module(&typ, closure));
         Ok((vm.root_value_ref(value), typ))
@@ -463,7 +503,11 @@ impl Compiler {
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
-    pub fn run_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<(T, TcType)>
+    pub fn run_expr<'vm, T>(&mut self,
+                            vm: &'vm Thread,
+                            name: &str,
+                            expr_str: &str)
+                            -> Result<(T, TcType)>
         where T: Getable<'vm> + VmType
     {
         let expected = T::make_type(vm);
@@ -476,7 +520,11 @@ impl Compiler {
         }
     }
 
-    pub fn run_io_expr<'vm, T>(&mut self, vm: &'vm Thread, name: &str, expr_str: &str) -> Result<(T, TcType)>
+    pub fn run_io_expr<'vm, T>(&mut self,
+                               vm: &'vm Thread,
+                               name: &str,
+                               expr_str: &str)
+                               -> Result<(T, TcType)>
         where T: Getable<'vm> + VmType,
               T::Type: Sized
     {

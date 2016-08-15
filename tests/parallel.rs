@@ -22,7 +22,7 @@ fn parallel_() -> Result<(), Error> {
     let value: ChannelRecord<OpaqueValue<RootedThread, Sender<i32>>, OpaqueValue<RootedThread, Receiver<i32>>> = value;
     let (sender, receiver) = value.split();
 
-    let child = vm.new_thread();
+    let child = try!(vm.new_thread());
     let handle1 = spawn(move || -> Result<(), Error> {
         let expr = r#"
         let f sender =
@@ -36,7 +36,7 @@ fn parallel_() -> Result<(), Error> {
         Ok(try!(f.call(sender)))
     });
 
-    let child2 = vm.new_thread();
+    let child2 = try!(vm.new_thread());
     let handle2 = spawn(move || -> Result<(), Error> {
         let expr = r#"
         let { assert } = import "std/test.glu"

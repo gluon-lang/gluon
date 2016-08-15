@@ -8,6 +8,7 @@ use gluon::vm::internal::Value;
 use gluon::vm::internal::Value::{Float, Int};
 use gluon::vm::stack::State;
 use gluon::vm::channel::Sender;
+use gluon::vm::Error as VMError;
 use gluon::import::Import;
 use gluon::{Compiler, Error};
 
@@ -140,7 +141,7 @@ fn record() {
 ";
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0, vm.new_data(0, &mut [Int(0), Float(1.0), Value::Tag(0)]));
+    assert_eq!(value.0, vm.new_data(0, &mut [Int(0), Float(1.0), Value::Tag(0)]).unwrap());
 }
 
 #[test]
@@ -153,7 +154,7 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0, vm.new_data(0, &mut [Int(1), Int(2)]));
+    assert_eq!(value.0, vm.new_data(0, &mut [Int(1), Int(2)]).unwrap());
 }
 #[test]
 fn script() {
@@ -172,7 +173,7 @@ let { T, add, sub } = Vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
     let value = run_expr::<Generic<A>>(&mut vm, script);
-    assert_eq!(value.0, vm.new_data(0, &mut [Int(11), Int(7)]));
+    assert_eq!(value.0, vm.new_data(0, &mut [Int(11), Int(7)]).unwrap());
 }
 #[test]
 fn adt() {
@@ -183,7 +184,7 @@ in Some 1
 ";
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0, vm.new_data(1, &mut [Int(1)]));
+    assert_eq!(value.0, vm.new_data(1, &mut [Int(1)]).unwrap());
 }
 
 
@@ -609,7 +610,7 @@ in
 "#;
     let mut vm = make_vm();
     let result = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(result.0, vm.new_data(0, &mut [Int(3), Float(3.0)]));
+    assert_eq!(result.0, vm.new_data(0, &mut [Int(3), Float(3.0)]).unwrap());
 }
 
 test_expr!{ through_overloaded_alias,
@@ -754,6 +755,21 @@ string.slice s 1 (string.length s)
     match result {
         Err(Error::VM(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
+        Ok(_) => panic!("Expected an error"),
+    }
+}
+
+#[test]
+fn out_of_memory() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+    vm.set_memory_limit(10);
+    let result = Compiler::new()
+        .run_expr::<Generic<A>>(&vm, "example", r#" [1, 2, 3, 4] "#);
+    match result {
+        // FIXME This should just need to match on the explicit out of memory error
+        Err(Error::VM(VMError::OutOfMemory { limit: 10, .. })) => (),
+        Err(err) => panic!("Unexpected error `{:?}`", err),
         Ok(_) => panic!("Expected an error"),
     }
 }

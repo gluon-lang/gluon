@@ -3,6 +3,7 @@ use std::sync::{Mutex, RwLock, RwLockReadGuard};
 use std::any::{Any, TypeId};
 use std::result::Result as StdResult;
 use std::string::String as StdString;
+use std::usize;
 
 use base::ast::{Typed, AstType};
 use base::metadata::{Metadata, MetadataEnv};
@@ -27,7 +28,10 @@ pub use value::Value;//FIXME Value should not be exposed
 pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 
 
-fn new_bytecode(gc: &mut Gc, vm: &GlobalVmState, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
+fn new_bytecode(gc: &mut Gc,
+                vm: &GlobalVmState,
+                f: CompiledFunction)
+                -> Result<GcPtr<BytecodeFunction>> {
     let CompiledFunction { id,
                            args,
                            instructions,
@@ -35,9 +39,9 @@ fn new_bytecode(gc: &mut Gc, vm: &GlobalVmState, f: CompiledFunction) -> GcPtr<B
                            strings,
                            module_globals,
                            .. } = f;
-    let fs = inner_functions.into_iter()
+    let fs = try!(inner_functions.into_iter()
         .map(|inner| new_bytecode(gc, vm, inner))
-        .collect();
+        .collect());
     gc.alloc(Move(BytecodeFunction {
         name: id,
         args: args,
@@ -321,7 +325,7 @@ impl GlobalVmState {
             generics: RwLock::new(FnvMap::default()),
             typeids: RwLock::new(FnvMap::default()),
             interner: RwLock::new(Interner::new()),
-            gc: Mutex::new(Gc::new(0)),
+            gc: Mutex::new(Gc::new(0, usize::MAX)),
             macros: MacroEnv::new(),
             generation_0_threads: RwLock::new(Vec::new()),
         };
@@ -363,7 +367,7 @@ impl GlobalVmState {
         Ok(())
     }
 
-    pub fn new_function(&self, f: CompiledFunction) -> GcPtr<BytecodeFunction> {
+    pub fn new_function(&self, f: CompiledFunction) -> Result<GcPtr<BytecodeFunction>> {
         new_bytecode(&mut self.gc.lock().unwrap(), self, f)
     }
 
@@ -450,7 +454,7 @@ impl GlobalVmState {
         &self.macros
     }
 
-    pub fn intern(&self, s: &str) -> InternedStr {
+    pub fn intern(&self, s: &str) -> Result<InternedStr> {
         self.interner.write().unwrap().intern(&mut *self.gc.lock().unwrap(), s)
     }
 

@@ -4,11 +4,12 @@ use std::sync::Mutex;
 use std::marker::PhantomData;
 
 use base::types::{Type, TcType};
+use Result;
 use gc::{Gc, GcPtr, Traverseable};
-use vm::{Thread, Userdata};
+use vm::Thread;
 use thread::ThreadInternal;
 use value::Value;
-use api::{MaybeError, Generic, VmType, WithVM};
+use api::{MaybeError, Generic, Userdata, VmType, WithVM};
 use api::generic::A;
 
 struct Reference<T> {
@@ -17,7 +18,7 @@ struct Reference<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Userdata for Reference<T> where T: Any + Send + Sync { }
+impl<T> Userdata for Reference<T> where T: Any + Send + Sync {}
 
 impl<T> fmt::Debug for Reference<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -74,7 +75,7 @@ fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
     f
 }
 
-pub fn load(vm: &Thread) -> ::Result<()> {
+pub fn load(vm: &Thread) -> Result<()> {
     let _ = vm.register_type::<Reference<A>>("Ref", &["a"]);
     try!(vm.define_global("<-", f2(set)));
     try!(vm.define_global("load", f1(get)));

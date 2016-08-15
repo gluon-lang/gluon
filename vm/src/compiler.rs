@@ -11,6 +11,8 @@ use types::*;
 use vm::GlobalVmState;
 use self::Variable::*;
 
+use Result;
+
 pub type CExpr = LExpr<TcIdent>;
 
 #[derive(Clone, Debug)]
@@ -262,7 +264,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn intern(&mut self, s: &str) -> InternedStr {
+    fn intern(&mut self, s: &str) -> Result<InternedStr> {
         self.vm.intern(s)
     }
 
@@ -355,15 +357,15 @@ impl<'a> Compiler<'a> {
 
     /// Compiles an expression to a zero argument function which can be directly fed to the
     /// interpreter
-    pub fn compile_expr(&mut self, expr: &CExpr) -> CompiledFunction {
+    pub fn compile_expr(&mut self, expr: &CExpr) -> Result<CompiledFunction> {
         let mut env = FunctionEnvs::new();
         let id = self.symbols.symbol("");
         let typ = Type::function(vec![],
                                  TcType::from(expr.env_type_of(&self.globals).clone()));
         env.start_function(self, 0, id, typ);
-        self.compile(expr, &mut env, true);
+        try!(self.compile(expr, &mut env, true));
         let FunctionEnv { function, .. } = env.end_function(self);
-        function
+        Ok(function)
     }
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) {
@@ -383,12 +385,16 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn compile(&mut self, mut expr: &CExpr, function: &mut FunctionEnvs, tail_position: bool) {
+    fn compile(&mut self,
+               mut expr: &CExpr,
+               function: &mut FunctionEnvs,
+               tail_position: bool)
+               -> Result<()> {
         // Store a stack of expressions which need to be cleaned up after this "tailcall" loop is
         // done
         let mut exprs = Vec::new();
         exprs.push(expr);
-        while let Some(next) = self.compile_(expr, function, tail_position) {
+        while let Some(next) = try!(self.compile_(expr, function, tail_position)) {
             exprs.push(next);
             expr = next;
         }
@@ -402,30 +408,31 @@ impl<'a> Compiler<'a> {
             }
             function.emit(Slide(count));
         }
+        Ok(())
     }
 
     fn compile_<'e>(&mut self,
                     expr: &'e CExpr,
                     function: &mut FunctionEnvs,
                     tail_position: bool)
-                    -> Option<&'e CExpr> {
+                    -> Result<Option<&'e CExpr>> {
         match expr.value {
             Expr::Literal(ref lit) => {
                 match *lit {
                     ast::LiteralEnum::Integer(i) => function.emit(PushInt(i as isize)),
                     ast::LiteralEnum::Byte(b) => function.emit(PushByte(b)),
                     ast::LiteralEnum::Float(f) => function.emit(PushFloat(f)),
-                    ast::LiteralEnum::String(ref s) => function.emit_string(self.intern(&s)),
+                    ast::LiteralEnum::String(ref s) => function.emit_string(try!(self.intern(&s))),
                     ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
             Expr::Identifier(ref id) => self.load_identifier(id.id(), function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                self.compile(&**pred, function, false);
+                try!(self.compile(&**pred, function, false));
                 let jump_index = function.function.instructions.len();
                 function.emit(CJump(0));
                 if let Some(ref if_false) = *if_false {
-                    self.compile(&**if_false, function, tail_position);
+                    try!(self.compile(&**if_false, function, tail_position));
                     // The stack size of the true branch should not be increased by the false
                     // branch
                     function.stack_size -= 1;
@@ -434,13 +441,13 @@ impl<'a> Compiler<'a> {
                 function.emit(Jump(0));
                 function.function.instructions[jump_index] =
                     CJump(function.function.instructions.len() as VmIndex);
-                self.compile(&**if_true, function, tail_position);
+                try!(self.compile(&**if_true, function, tail_position));
                 function.function.instructions[false_jump_index] =
                     Jump(function.function.instructions.len() as VmIndex);
             }
             Expr::BinOp(ref lhs, ref op, ref rhs) => {
                 if op.name.as_ref() == "&&" {
-                    self.compile(&**lhs, function, false);
+                    try!(self.compile(&**lhs, function, false));
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(lhs_end as VmIndex + 3));//Jump to rhs evaluation
                     function.emit(Construct { tag: 0, args: 0 });
@@ -448,15 +455,15 @@ impl<'a> Compiler<'a> {
                     // Dont count the integer added added above as the next part of the code never
                     // pushed it
                     function.stack_size -= 1;
-                    self.compile(&**rhs, function, tail_position);
+                    try!(self.compile(&**rhs, function, tail_position));
                     // replace jump instruction
                     function.function.instructions[lhs_end + 2] =
                         Jump(function.function.instructions.len() as VmIndex);
                 } else if op.name.as_ref() == "||" {
-                    self.compile(&**lhs, function, false);
+                    try!(self.compile(&**lhs, function, false));
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(0));
-                    self.compile(&**rhs, function, tail_position);
+                    try!(self.compile(&**rhs, function, tail_position));
                     function.emit(Jump(0));
                     function.function.instructions[lhs_end] =
                         CJump(function.function.instructions.len() as VmIndex);
@@ -490,8 +497,8 @@ impl<'a> Compiler<'a> {
                             Call(2)
                         }
                     };
-                    self.compile(&**lhs, function, false);
-                    self.compile(&**rhs, function, false);
+                    try!(self.compile(&**lhs, function, false));
+                    try!(self.compile(&**rhs, function, false));
                     function.emit(instr);
                 }
             }
@@ -525,8 +532,10 @@ impl<'a> Compiler<'a> {
                             ast::Pattern::Identifier(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
-                        let (function_index, vars, cf) =
-                            self.compile_lambda(name, &bind.arguments, &bind.expression, function);
+                        let (function_index, vars, cf) = try!(self.compile_lambda(name,
+                                                                             &bind.arguments,
+                                                                             &bind.expression,
+                                                                             function));
                         let offset = first_index + i;
                         function.function.instructions[offset] = NewClosure {
                             function_index: function_index,
@@ -536,34 +545,34 @@ impl<'a> Compiler<'a> {
                         function.stack_size -= vars;
                         function.function.inner_functions.push(cf);
                     } else {
-                        self.compile(&bind.expression, function, false);
+                        try!(self.compile(&bind.expression, function, false));
                         let typ = bind.expression.env_type_of(self);
                         self.compile_let_pattern(&bind.name, &typ, function);
                     }
                 }
-                return Some(body);
+                return Ok(Some(body));
             }
             Expr::Call(ref func, ref args) => {
                 if let Expr::Identifier(ref id) = func.value {
                     if let Some(Constructor(tag, num_args)) = self.find(id.id(), function) {
                         for arg in args.iter() {
-                            self.compile(arg, function, false);
+                            try!(self.compile(arg, function, false));
                         }
                         function.emit(Construct {
                             tag: tag,
                             args: num_args,
                         });
-                        return None;
+                        return Ok(None);
                     }
                 }
-                self.compile(&**func, function, false);
+                try!(self.compile(&**func, function, false));
                 for arg in args.iter() {
-                    self.compile(arg, function, false);
+                    try!(self.compile(arg, function, false));
                 }
                 function.emit_call(args.len() as VmIndex, tail_position);
             }
             Expr::FieldAccess(ref expr, ref field) => {
-                self.compile(&**expr, function, false);
+                try!(self.compile(&**expr, function, false));
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.env_type_of(self);
                 debug!("FieldAccess {}", types::display_type(&self.symbols, &typ));
@@ -572,7 +581,7 @@ impl<'a> Compiler<'a> {
                 function.emit(GetField(field_index));
             }
             Expr::Match(ref expr, ref alts) => {
-                self.compile(&**expr, function, false);
+                try!(self.compile(&**expr, function, false));
                 // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
@@ -607,7 +616,7 @@ impl<'a> Compiler<'a> {
                 if !catch_all {
                     let error_fn = self.symbols.symbol("#error");
                     self.load_identifier(&error_fn, function);
-                    function.emit_string(self.intern("Non-exhaustive pattern"));
+                    function.emit_string(try!(self.intern("Non-exhaustive pattern")));
                     function.emit(Call(1));
                     // The stack has been increased by 1 here but it should not affect compiling the
                     // alternatives
@@ -637,7 +646,7 @@ impl<'a> Compiler<'a> {
                             function.new_stack_var(id.id().clone());
                         }
                     }
-                    self.compile(&alt.expression, function, tail_position);
+                    try!(self.compile(&alt.expression, function, tail_position));
                     let count = function.pop_pattern(&alt.pattern);
                     self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
@@ -651,13 +660,15 @@ impl<'a> Compiler<'a> {
             }
             Expr::Array(ref a) => {
                 for expr in a.expressions.iter() {
-                    self.compile(expr, function, false);
+                    try!(self.compile(expr, function, false));
                 }
                 function.emit(ConstructArray(a.expressions.len() as VmIndex));
             }
             Expr::Lambda(ref lambda) => {
-                let (function_index, vars, cf) =
-                    self.compile_lambda(&lambda.id, &lambda.arguments, &lambda.body, function);
+                let (function_index, vars, cf) = try!(self.compile_lambda(&lambda.id,
+                                                                          &lambda.arguments,
+                                                                          &lambda.body,
+                                                                          function));
                 function.emit(MakeClosure {
                     function_index: function_index,
                     upvars: vars,
@@ -671,12 +682,12 @@ impl<'a> Compiler<'a> {
                     let typ = bind.alias.typ.as_ref().expect("TypeBinding type").clone();
                     self.stack_constructors.insert(bind.name.clone(), typ);
                 }
-                return Some(expr);
+                return Ok(Some(expr));
             }
             Expr::Record { exprs: ref fields, .. } => {
                 for field in fields {
                     match field.1 {
-                        Some(ref field_expr) => self.compile(field_expr, function, false),
+                        Some(ref field_expr) => try!(self.compile(field_expr, function, false)),
                         None => self.load_identifier(&field.0, function),
                     }
                 }
@@ -687,7 +698,7 @@ impl<'a> Compiler<'a> {
             }
             Expr::Tuple(ref exprs) => {
                 for expr in exprs {
-                    self.compile(expr, function, false);
+                    try!(self.compile(expr, function, false));
                 }
                 function.emit(Construct {
                     tag: 0,
@@ -697,13 +708,13 @@ impl<'a> Compiler<'a> {
             Expr::Block(ref exprs) => {
                 let (last, exprs) = exprs.split_last().expect("Expr in block");
                 for expr in exprs {
-                    self.compile(expr, function, false);
+                    try!(self.compile(expr, function, false));
                 }
-                self.compile(last, function, tail_position);
+                try!(self.compile(last, function, tail_position));
                 function.emit(Slide(exprs.len() as u32 - 1));
             }
         }
-        None
+        Ok(None)
     }
 
     fn compile_let_pattern(&mut self,
@@ -776,7 +787,7 @@ impl<'a> Compiler<'a> {
                       arguments: &[TcIdent],
                       body: &LExpr<TcIdent>,
                       function: &mut FunctionEnvs)
-                      -> (VmIndex, VmIndex, CompiledFunction) {
+                      -> Result<(VmIndex, VmIndex, CompiledFunction)> {
         function.start_function(self,
                                 arguments.len() as VmIndex,
                                 id.id().clone(),
@@ -784,7 +795,7 @@ impl<'a> Compiler<'a> {
         for arg in arguments {
             function.push_stack_var(arg.id().clone());
         }
-        self.compile(body, function, true);
+        try!(self.compile(body, function, true));
 
         for _ in 0..arguments.len() {
             function.pop_var();
@@ -802,7 +813,7 @@ impl<'a> Compiler<'a> {
         let function_index = function.function.inner_functions.len() as VmIndex;
         let free_vars = f.free_vars.len() as VmIndex;
         let FunctionEnv { function, .. } = f;
-        (function_index, free_vars, function)
+        Ok((function_index, free_vars, function))
     }
 }
 

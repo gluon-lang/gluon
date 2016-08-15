@@ -705,43 +705,43 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
 fn deep_clone_ptr<T, A>(value: GcPtr<T>,
                         visited: &mut FnvMap<*const (), Value>,
                         alloc: A)
-                        -> StdResult<Value, GcPtr<T>>
-    where A: FnOnce(&T) -> (Value, GcPtr<T>)
+                        -> Result<StdResult<Value, GcPtr<T>>>
+    where A: FnOnce(&T) -> Result<(Value, GcPtr<T>)>
 {
     let key = &*value as *const T as *const ();
     let new_ptr = match visited.entry(key) {
-        Entry::Occupied(entry) => return Ok(*entry.get()),
+        Entry::Occupied(entry) => return Ok(Ok(*entry.get())),
         Entry::Vacant(entry) => {
             // FIXME Should allocate the real `Value` and possibly fill it later
-            let (value, new_ptr) = alloc(&value);
+            let (value, new_ptr) = try!(alloc(&value));
             entry.insert(value);
             new_ptr
         }
     };
-    Err(new_ptr)
+    Ok(Err(new_ptr))
 }
 
 fn deep_clone_str(data: GcPtr<Str>,
                   visited: &mut FnvMap<*const (), Value>,
                   gc: &mut Gc)
                   -> Result<Value> {
-    Ok(deep_clone_ptr(data, visited, |data| {
-            let ptr = gc.alloc(&data[..]);
-            (String(ptr), ptr)
-        })
+    Ok(try!(deep_clone_ptr(data, visited, |data| {
+            let ptr = try!(gc.alloc(&data[..]));
+            Ok((String(ptr), ptr))
+        }))
         .unwrap_or_else(String))
 }
 fn deep_clone_data(data: GcPtr<DataStruct>,
                    visited: &mut FnvMap<*const (), Value>,
                    gc: &mut Gc)
                    -> Result<GcPtr<DataStruct>> {
-    let result = deep_clone_ptr(data, visited, |data| {
-        let ptr = gc.alloc(Def {
+    let result = try!(deep_clone_ptr(data, visited, |data| {
+        let ptr = try!(gc.alloc(Def {
             tag: data.tag,
             elems: &data.fields,
-        });
-        (Value::Data(ptr), ptr)
-    });
+        }));
+        Ok((Value::Data(ptr), ptr))
+    }));
     match result {
         Ok(Value::Data(ptr)) => Ok(ptr),
         Ok(_) => unreachable!(),
@@ -774,10 +774,10 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
         Ok(())
     }
 
-    let result = deep_clone_ptr(array, visited, |array| {
-        let ptr = gc.alloc(array);
-        (Value::Array(ptr), ptr)
-    });
+    let result = try!(deep_clone_ptr(array, visited, |array| {
+        let ptr = try!(gc.alloc(array));
+        Ok((Value::Array(ptr), ptr))
+    }));
     match result {
         Ok(Value::Array(ptr)) => Ok(ptr),
         Ok(_) => unreachable!(),
@@ -803,10 +803,10 @@ fn deep_clone_closure(data: GcPtr<ClosureData>,
                       visited: &mut FnvMap<*const (), Value>,
                       gc: &mut Gc)
                       -> Result<GcPtr<ClosureData>> {
-    let result = deep_clone_ptr(data, visited, |data| {
-        let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars));
-        (Closure(ptr), ptr)
-    });
+    let result = try!(deep_clone_ptr(data, visited, |data| {
+        let ptr = try!(gc.alloc(ClosureDataDef(data.function, &data.upvars)));
+        Ok((Closure(ptr), ptr))
+    }));
     match result {
         Ok(Value::Closure(ptr)) => Ok(ptr),
         Ok(_) => unreachable!(),
@@ -825,10 +825,10 @@ fn deep_clone_app(data: GcPtr<PartialApplicationData>,
                   visited: &mut FnvMap<*const (), Value>,
                   gc: &mut Gc)
                   -> Result<GcPtr<PartialApplicationData>> {
-    let result = deep_clone_ptr(data, visited, |data| {
-        let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.arguments));
-        (PartialApplication(ptr), ptr)
-    });
+    let result = try!(deep_clone_ptr(data, visited, |data| {
+        let ptr = try!(gc.alloc(PartialApplicationDataDef(data.function, &data.arguments)));
+        Ok((PartialApplication(ptr), ptr))
+    }));
     match result {
         Ok(Value::PartialApplication(ptr)) => Ok(ptr),
         Ok(_) => unreachable!(),

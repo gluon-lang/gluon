@@ -95,19 +95,19 @@ pub extern "C" fn glu_pop(vm: &Thread, n: usize) {
 }
 
 pub extern "C" fn glu_push_int(vm: &Thread, int: VmInt) {
-    Thread::push(vm, int);
+    Thread::push(vm, int).unwrap();
 }
 
 pub extern "C" fn glu_push_byte(vm: &Thread, b: u8) {
-    Thread::push(vm, b);
+    Thread::push(vm, b).unwrap();
 }
 
 pub extern "C" fn glu_push_float(vm: &Thread, float: f64) {
-    Thread::push(vm, float);
+    Thread::push(vm, float).unwrap();
 }
 
 pub extern "C" fn glu_push_bool(vm: &Thread, b: i8) {
-    Thread::push(vm, b != 0);
+    Thread::push(vm, b != 0).unwrap();
 }
 
 pub unsafe extern "C" fn glu_push_function(vm: &Thread,
@@ -120,8 +120,10 @@ pub unsafe extern "C" fn glu_push_function(vm: &Thread,
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    Thread::push(vm, CPrimitive::new(function, arguments, s));
-    Error::Ok
+    match Thread::push(vm, CPrimitive::new(function, arguments, s)) {
+        Ok(()) => Error::Ok,
+        Err(_) => Error::Unknown,
+    }
 }
 
 /// Push a string to the stack. The string must be valid utf-8 or an error will be returned
@@ -130,19 +132,24 @@ pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Err
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    s.push(vm, &mut vm.get_stack());
-    Error::Ok
+    match s.push(vm, &mut vm.get_stack()) {
+        Ok(()) => Error::Ok,
+        Err(_) => Error::Unknown,
+    }
 }
 
 /// Push a string to the stack. If the string is not utf-8 this function will trigger undefined
 /// behaviour.
-pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usize) {
+pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usize) -> Error {
     let s = str::from_utf8_unchecked(slice::from_raw_parts(s, len));
-    s.push(vm, &mut vm.get_stack());
+    match s.push(vm, &mut vm.get_stack()) {
+        Ok(()) => Error::Ok,
+        Err(_) => Error::Unknown,
+    }
 }
 
 pub extern "C" fn glu_push_light_userdata(vm: &Thread, data: *mut libc::c_void) {
-    Thread::push(vm, data as usize);
+    Thread::push(vm, data as usize).unwrap()
 }
 
 pub extern "C" fn glu_get_byte(vm: &Thread, index: VmIndex, out: &mut u8) -> Error {

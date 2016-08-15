@@ -6,6 +6,7 @@ use std::fmt;
 use std::ops::{Add, Sub, Mul, Div, Deref};
 use std::string::String as StdString;
 use std::sync::Arc;
+use std::usize;
 
 use base::metadata::Metadata;
 use base::symbol::Symbol;
@@ -162,7 +163,7 @@ impl<'b> Context<'b> {
             })
     }
 }
-fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> GcPtr<D::Value>
+fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
     where D: DataDef + Traverseable,
           D::Value: Sized + Any
 {
@@ -215,9 +216,9 @@ impl VmType for RootedThread {
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
-    fn push(self, _vm: &'vm Thread, stack: &mut Stack) -> Status {
+    fn push(self, _vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
         stack.push(Value::Thread(self.0));
-        Status::Ok
+        Ok(())
     }
 }
 
@@ -239,7 +240,7 @@ impl Drop for RootedThread {
             // The last RootedThread was dropped, there is no way to refer to the global state any
             // longer so drop everything
             let mut gc_ref = self.0.global_state.gc.lock().unwrap();
-            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new(0));
+            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new(0, 0));
             // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
             // when the Gc is dropped
             drop(gc_ref);
@@ -273,14 +274,15 @@ impl RootedThread {
         let thread = Thread {
             global_state: Arc::new(GlobalVmState::new()),
             parent: None,
-            local_gc: Mutex::new(Gc::new(1)),
+            local_gc: Mutex::new(Gc::new(1, usize::MAX)),
             stack: Mutex::new(Stack::new()),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
         };
-        let mut gc = Gc::new(0);
-        let vm = gc.alloc(Move(thread)).root_thread();
+        let mut gc = Gc::new(0, usize::MAX);
+        let vm =
+            gc.alloc(Move(thread)).expect("Not enough memory to allocate thread").root_thread();
         *vm.global_state.gc.lock().unwrap() = gc;
         // Enter the top level scope
         StackFrame::frame(vm.stack.lock().unwrap(), 0, State::Unknown);
@@ -306,7 +308,7 @@ impl RootedThread {
 impl Thread {
     /// Spawns a new gluon thread with its own stack and heap but while still sharing the same
     /// global environment
-    pub fn new_thread(&self) -> RootedThread {
+    pub fn new_thread(&self) -> Result<RootedThread> {
         let vm = Thread {
             global_state: self.global_state.clone(),
             parent: Some(self.root_thread()),
@@ -318,7 +320,8 @@ impl Thread {
         };
         // Enter the top level scope
         StackFrame::frame(vm.stack.lock().unwrap(), 0, State::Unknown);
-        self.alloc(&self.stack.lock().unwrap(), Move(vm)).root_thread()
+        let ptr = try!(self.alloc(&self.stack.lock().unwrap(), Move(vm)));
+        Ok(ptr.root_thread())
     }
 
     /// Roots `self`, extending the lifetime of this thread until at least the returned
@@ -336,14 +339,11 @@ impl Thread {
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
         where T: Pushable<'vm> + VmType
     {
-        let (status, value) = {
+        let value = {
             let mut stack = self.get_stack();
-            let status = value.push(self, &mut stack);
-            (status, stack.pop())
+            try!(value.push(self, &mut stack));
+            stack.pop()
         };
-        if status == Status::Error {
-            return Err(Error::Message(format!("{:?}", value)));
-        }
         self.global_env().set_global(Symbol::new(name),
                                      T::make_type(self),
                                      Metadata::default(),
@@ -411,11 +411,11 @@ impl Thread {
     }
 
     /// Pushes a value to the top of the stack
-    pub fn push<'vm, T>(&'vm self, v: T)
+    pub fn push<'vm, T>(&'vm self, v: T) -> Result<()>
         where T: Pushable<'vm>
     {
         let mut stack = self.stack.lock().unwrap();
-        v.push(self, &mut stack);
+        v.push(self, &mut stack)
     }
 
     /// Removes the top value from the stack
@@ -424,6 +424,10 @@ impl Thread {
             .lock()
             .unwrap()
             .pop();
+    }
+
+    pub fn set_memory_limit(&self, memory_limit: usize) {
+        self.local_gc.lock().unwrap().set_memory_limit(memory_limit)
     }
 
     fn current_context(&self) -> Context {
@@ -508,17 +512,22 @@ pub trait ThreadInternal {
 
     /// Allocates a new value from a given `DataDef`.
     /// Takes the stack as it may collect if the collection limit has been reached.
-    fn alloc<D>(&self, stack: &Stack, def: D) -> GcPtr<D::Value>
+    fn alloc<D>(&self, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
               D::Value: Sized + Any;
 
-    fn new_data(&self, tag: VmTag, fields: &[Value]) -> Value;
+    fn alloc_ignore_limit<D>(&self, def: D) -> GcPtr<D::Value>
+        where D: DataDef + Traverseable,
+              D::Value: Sized + Any;
+
+    fn new_data(&self, tag: VmTag, fields: &[Value]) -> Result<Value>;
 
     fn add_bytecode(&self,
                     name: &str,
                     typ: TcType,
                     args: VmIndex,
-                    instructions: Vec<Instruction>);
+                    instructions: Vec<Instruction>)
+                    -> Result<()>;
 
     /// Calls a module, allowed to to run IO expressions
     fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value>;
@@ -586,7 +595,7 @@ impl ThreadInternal for Thread {
 
     /// Allocates a new value from a given `DataDef`.
     /// Takes the stack as it may collect if the collection limit has been reached.
-    fn alloc<D>(&self, stack: &Stack, def: D) -> GcPtr<D::Value>
+    fn alloc<D>(&self, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
               D::Value: Sized + Any
     {
@@ -594,24 +603,37 @@ impl ThreadInternal for Thread {
                         |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
     }
 
-    fn new_data(&self, tag: VmTag, fields: &[Value]) -> Value {
-        Value::Data(self.local_gc.lock().unwrap().alloc(Def {
-            tag: tag,
-            elems: fields,
-        }))
+    fn alloc_ignore_limit<D>(&self, def: D) -> GcPtr<D::Value>
+        where D: DataDef + Traverseable,
+              D::Value: Sized + Any
+    {
+        self.local_gc.lock().unwrap().alloc_ignore_limit(def)
+    }
+
+    fn new_data(&self, tag: VmTag, fields: &[Value]) -> Result<Value> {
+        self.local_gc
+            .lock()
+            .unwrap()
+            .alloc(Def {
+                tag: tag,
+                elems: fields,
+            })
+            .map(Value::Data)
     }
 
     fn add_bytecode(&self,
                     name: &str,
                     typ: TcType,
                     args: VmIndex,
-                    instructions: Vec<Instruction>) {
+                    instructions: Vec<Instruction>)
+                    -> Result<()> {
         let id = Symbol::new(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
-        let f = self.global_env().new_function(compiled_fn);
-        let closure = self.alloc(&self.stack.lock().unwrap(), ClosureDataDef(f, &[]));
+        let f = try!(self.global_env().new_function(compiled_fn));
+        let closure = try!(self.alloc(&self.stack.lock().unwrap(), ClosureDataDef(f, &[])));
         self.global_env().set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
+        Ok(())
     }
 
 
@@ -752,7 +774,10 @@ impl<'b> Context<'b> {
                 let app = {
                     let fields = &self.stack[self.stack.len() - args..];
                     let def = PartialApplicationDataDef(callable, fields);
-                    PartialApplication(alloc(&mut self.gc, self.thread, &self.stack.stack, def))
+                    PartialApplication(try!(alloc(&mut self.gc,
+                                                  self.thread,
+                                                  &self.stack.stack,
+                                                  def)))
                 };
                 for _ in 0..(args + 1) {
                     self.stack.pop();
@@ -764,13 +789,13 @@ impl<'b> Context<'b> {
                 let excess_args = args - required_args;
                 let d = {
                     let fields = &self.stack[self.stack.len() - excess_args..];
-                    alloc(&mut self.gc,
-                          self.thread,
-                          &self.stack.stack,
-                          Def {
-                              tag: 0,
-                              elems: fields,
-                          })
+                    try!(alloc(&mut self.gc,
+                               self.thread,
+                               &self.stack.stack,
+                               Def {
+                                   tag: 0,
+                                   elems: fields,
+                               }))
                 };
                 for _ in 0..excess_args {
                     self.stack.pop();
@@ -924,13 +949,13 @@ impl<'b> Context<'b> {
                             Value::Tag(tag)
                         } else {
                             let fields = &self.stack[self.stack.len() - args..];
-                            Data(alloc(&mut self.gc,
-                                       self.thread,
-                                       &self.stack.stack,
-                                       Def {
-                                           tag: tag,
-                                           elems: fields,
-                                       }))
+                            Data(try!(alloc(&mut self.gc,
+                                            self.thread,
+                                            &self.stack.stack,
+                                            Def {
+                                                tag: tag,
+                                                elems: fields,
+                                            })))
                         }
                     };
                     for _ in 0..args {
@@ -941,10 +966,10 @@ impl<'b> Context<'b> {
                 ConstructArray(args) => {
                     let d = {
                         let fields = &self.stack[self.stack.len() - args..];
-                        alloc(&mut self.gc,
-                              self.thread,
-                              &self.stack.stack,
-                              ::value::ArrayDef(fields))
+                        try!(alloc(&mut self.gc,
+                                   self.thread,
+                                   &self.stack.stack,
+                                   ::value::ArrayDef(fields)))
                     };
                     for _ in 0..args {
                         self.stack.pop();
@@ -1020,10 +1045,10 @@ impl<'b> Context<'b> {
                     let closure = {
                         let args = &self.stack[self.stack.len() - upvars..];
                         let func = function.inner_functions[function_index as usize];
-                        Closure(alloc(&mut self.gc,
-                                      self.thread,
-                                      &self.stack.stack,
-                                      ClosureDataDef(func, args)))
+                        Closure(try!(alloc(&mut self.gc,
+                                           self.thread,
+                                           &self.stack.stack,
+                                           ClosureDataDef(func, args))))
                     };
                     for _ in 0..upvars {
                         self.stack.pop();
@@ -1034,10 +1059,10 @@ impl<'b> Context<'b> {
                     let closure = {
                         // Use dummy variables until it is filled
                         let func = function.inner_functions[function_index as usize];
-                        Closure(alloc(&mut self.gc,
-                                      self.thread,
-                                      &self.stack.stack,
-                                      ClosureInitDef(func, upvars as usize)))
+                        Closure(try!(alloc(&mut self.gc,
+                                           self.thread,
+                                           &self.stack.stack,
+                                           ClosureInitDef(func, upvars as usize))))
                     };
                     self.stack.push(closure);
                 }
@@ -1140,7 +1165,9 @@ fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     match (T::from_value(vm, Variants(&l)), T::from_value(vm, Variants(&r))) {
         (Some(l), Some(r)) => {
             let result = f(l, r);
-            result.push(vm, &mut stack.stack);
+            // pushing numbers should never return an error so unwrap
+            result.push(vm, &mut stack.stack)
+                .unwrap()
         }
         (l, r) => panic!("{:?} `op` {:?}", l, r),
     }

@@ -7,7 +7,7 @@ use base::types::{TcType, Type};
 
 use {Error, Result as VmResult};
 use api::record::{Record, HList};
-use api::{Generic, VmType, primitive, WithVM, Function, Pushable};
+use api::{Generic, VmType, primitive, WithVM, Function, Pushable, MaybeError};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
 use vm::{Thread, RootedThread, Status};
@@ -22,7 +22,7 @@ pub struct Sender<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> Userdata for Sender<T> where T: Any + Send + Sync + fmt::Debug + Traverseable { }
+impl<T> Userdata for Sender<T> where T: Any + Send + Sync + fmt::Debug + Traverseable {}
 
 impl<T> fmt::Debug for Sender<T>
     where T: fmt::Debug
@@ -55,7 +55,7 @@ pub struct Receiver<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> Userdata for Receiver<T> where T: Any + Send + Sync + fmt::Debug + Traverseable { }
+impl<T> Userdata for Receiver<T> where T: Any + Send + Sync + fmt::Debug + Traverseable {}
 
 impl<T> fmt::Debug for Receiver<T>
     where T: fmt::Debug
@@ -135,17 +135,15 @@ fn resume(vm: &Thread) -> Status {
                 Ok(()) |
                 Err(Error::Yield) => {
                     let value: Result<(), &str> = Ok(());
-                    value.push(vm, &mut stack.stack);
-                    Status::Ok
+                    value.status_push(vm, &mut stack.stack)
                 }
                 Err(Error::Dead) => {
                     let value: Result<(), &str> = Err("Attempted to resume a dead thread");
-                    value.push(vm, &mut stack.stack);
-                    Status::Ok
+                    value.status_push(vm, &mut stack.stack)
                 }
                 Err(err) => {
                     let fmt = format!("{}", err);
-                    let result = Value::String(vm.alloc(&stack.stack, &fmt[..]));
+                    let result = Value::String(vm.alloc_ignore_limit(&fmt[..]));
                     stack.push(result);
                     Status::Error
                 }
@@ -159,8 +157,14 @@ fn yield_(_vm: &Thread) -> Status {
     Status::Yield
 }
 
-fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> RootedThread {
-    let thread = value.vm.new_thread();
+fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> MaybeError<RootedThread, Error> {
+    match spawn_(value) {
+        Ok(x) => MaybeError::Ok(x),
+        Err(err) => MaybeError::Err(err),
+    }
+}
+fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<RootedThread> {
+    let thread = try!(value.vm.new_thread());
     {
         let mut stack = thread.get_stack();
         let callable = match value.value.value() {
@@ -168,11 +172,11 @@ fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> RootedThread
             Value::Function(c) => State::Extern(c),
             _ => State::Unknown,
         };
-        value.value.push(value.vm, &mut stack);
+        try!(value.value.push(value.vm, &mut stack));
         stack.push(Value::Int(0));
         StackFrame::current(stack).enter_scope(1, callable);
     }
-    thread
+    Ok(thread)
 }
 
 fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {

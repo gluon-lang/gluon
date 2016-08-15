@@ -1,7 +1,8 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use base::ast::{AstId, DisplayEnv, IdentEnv, AstType};
+use base::ast::{AstId, AstType};
+use Result;
 use base::fnv::FnvMap;
 
 use gc::{GcPtr, Gc, Traverseable};
@@ -72,17 +73,17 @@ impl Interner {
         Interner { indexes: FnvMap::default() }
     }
 
-    pub fn intern(&mut self, gc: &mut Gc, s: &str) -> InternedStr {
+    pub fn intern(&mut self, gc: &mut Gc, s: &str) -> Result<InternedStr> {
         match self.indexes.get(s) {
-            Some(interned_str) => return *interned_str,
+            Some(interned_str) => return Ok(*interned_str),
             None => (),
         }
-        let gc_str = InternedStr(gc.alloc(s));
+        let gc_str = InternedStr(try!(gc.alloc(s)));
         // The key will live as long as the value it refers to and the static str never escapes
         // outside interner so this is safe
         let key: &'static str = unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };
         self.indexes.insert(key, gc_str);
-        gc_str
+        Ok(gc_str)
     }
 }
 
@@ -94,31 +95,6 @@ impl fmt::Debug for InternedStr {
 impl fmt::Display for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", &self[..])
-    }
-}
-
-pub struct InternerEnv<'a>(&'a mut Interner, &'a mut Gc);
-
-impl<'a> InternerEnv<'a> {
-    pub fn intern(&mut self, s: &str) -> InternedStr {
-        self.0.intern(self.1, s)
-    }
-}
-
-impl<'i> DisplayEnv for InternerEnv<'i> {
-    type Ident = InternedStr;
-
-    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-        self.0
-            .indexes
-            .get(&**ident)
-            .map(|x| &**x)
-            .unwrap_or("<UNKNOWN>")
-    }
-}
-impl<'a> IdentEnv for InternerEnv<'a> {
-    fn from_str(&mut self, s: &str) -> InternedStr {
-        self.intern(s)
     }
 }
 
