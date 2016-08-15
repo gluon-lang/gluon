@@ -276,7 +276,7 @@ module.id module.pi
 <type> -> <type>
 ```
 
-Function types are written using the `->` operator which is right associative. This means that the type of `(+)` which is usually written as `Int -> Int -> Int` is parsed as `Int -> (Int -> Int)` (A function taking one argument of `Int` and returning a function of `Int -> Int`).
+Function types are written using the `(->)` operator which is right associative. This means that the function type `Int -> (Int -> Int)` (A function taking one argument of Int and returning a function of `Int -> Int`) can be written as `Int -> Int -> Int`.
 
 ### Record type
 
@@ -285,7 +285,7 @@ Function types are written using the `->` operator which is right associative. T
 { pi : Float, sin : Float -> Float }
 ```
 
-Records are gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records are more similiar to a struct in Rust or C as the order of the fields are significant and fields can't be added, removed or modified.
+Records are gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records are more similar to a struct in Rust or C as the order of the fields are significant, `{ x : Int, y : String } != { y : String, x : Int }`. Furthermore records are immutable meaning fields cannot be added or removed and the values within cannot be modified.
 
 In addition to storing values, records also have a secondary function of storing types which is gluon's way of exporting types. If you have used modules in an ML language this may look rather familiar, looks can be deceiving however as 'type fields' must match exactly in gluon which means there is no subtyping relationship between records (`{ Test = { x : Int } }` is not a subtype of `{ Test = Float }`). This may change in the future.
 
@@ -301,7 +301,7 @@ In addition to storing values, records also have a secondary function of storing
 | Err e | Ok t
 ```
 
-Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of gluons standard `Result` type which represents either the value having been successfully computed (`Ok t`) or that an error occurred (`Err e`).
+Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of gluon's standard `Result` type which represents either the value having been successfully computed (`Ok t`) or that an error occurred (`Err e`).
 
 ### Alias type
 
