@@ -10,6 +10,30 @@ use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
 
+#[derive(Clone)]
+pub struct BytePositioned<I> {
+    position: usize,
+    input: I
+}
+
+impl<I> StreamOnce for BytePositioned<I> where I : StreamOnce<Item = char> {
+    type Item = I::Item;
+    type Range = I::Range;
+    type Position = usize;
+
+    fn uncons(&mut self) -> Result<Self::Item, CombineError<Self::Item, Self::Range>> {
+        self.input.uncons()
+            .map(|c| {
+                self.position += c.len_utf8();
+                c
+            })
+    }
+
+    fn position(&self) -> Self::Position {
+        self.position
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Delimiter {
     Brace,
@@ -195,7 +219,7 @@ pub enum Context {
 }
 
 /// Parser passes the environment to each parser function
-type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, State<I>, T>;
+type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, BytePositioned<I>, T>;
 
 pub struct Contexts {
     stack: Vec<Offside>,
@@ -258,9 +282,9 @@ pub struct Lexer<'a, I, F>
     where I: Stream<Item = char>,
           F: IdentEnv
 {
-    pub env: LanguageEnv<'a, State<I>>,
+    pub env: LanguageEnv<'a, BytePositioned<I>>,
     pub make_ident: Rc<RefCell<F>>,
-    pub input: Option<State<I>>,
+    pub input: Option<BytePositioned<I>>,
     pub unprocessed_tokens: Vec<PToken<F::Ident>>,
     pub indent_levels: Contexts,
     end_position: SourcePosition,
@@ -296,7 +320,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         Lexer {
             env: env,
             make_ident: make_ident,
-            input: Some(State::new(input)),
+            input: Some(BytePositioned { position: 0, input : input }),
             unprocessed_tokens: Vec::new(),
             indent_levels: Contexts { stack: Vec::new() },
             end_position: SourcePosition {
@@ -311,7 +335,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     fn parser<T>(&'s self,
-                 parser: fn(&Lexer<'a, I, F>, State<I>) -> ParseResult<T, State<I>>)
+                 parser: fn(&Lexer<'a, I, F>, BytePositioned<I>) -> ParseResult<T, BytePositioned<I>>)
                  -> LanguageParser<'a, 's, I, F, T> {
         env_parser(self, parser)
     }
@@ -321,7 +345,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         self.parser(Lexer::parse_op)
     }
 
-    fn parse_op(&self, input: State<I>) -> ParseResult<Id, State<I>> {
+    fn parse_op(&self, input: BytePositioned<I>) -> ParseResult<Id, BytePositioned<I>> {
         (optional(char('#').with(many(letter()))), try(self.env.op()))
             .map(|(builtin, op): (Option<String>, String)| {
                 match builtin {
@@ -339,7 +363,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     fn ident(&'s self) -> LanguageParser<'a, 's, I, F, Token<Id>> {
         self.parser(Lexer::parse_ident)
     }
-    fn parse_ident(&self, input: State<I>) -> ParseResult<Token<Id>, State<I>> {
+    fn parse_ident(&self, input: BytePositioned<I>) -> ParseResult<Token<Id>, BytePositioned<I>> {
         self.parser(Lexer::parse_ident2)
             .map(|x| Token::Identifier(x.0, x.1))
             .parse_state(input)
@@ -349,7 +373,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         self.parser(Self::integer_)
     }
 
-    fn integer_<'b>(&'b self, input: State<I>) -> ParseResult<i64, State<I>> {
+    fn integer_<'b>(&'b self, input: BytePositioned<I>) -> ParseResult<i64, BytePositioned<I>> {
         let (s, input) = try!(many1::<String, _>(digit()).parse_lazy(input));
         let mut n = 0;
         for c in s.chars() {
@@ -359,7 +383,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     /// Identifier parser which returns the identifier as well as the type of the identifier
-    fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, IdentType), State<I>> {
+    fn parse_ident2(&self, input: BytePositioned<I>) -> ParseResult<(Id, IdentType), BytePositioned<I>> {
         let id = self.env.identifier().map(|id| {
             let typ = if id.chars().next().unwrap().is_uppercase() {
                 IdentType::Constructor
@@ -442,9 +466,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     fn next_token_(&mut self,
-                   location: &mut SourcePosition,
-                   mut input: State<I>)
-                   -> ParseResult<Token<Id>, State<I>> {
+                   location: &mut usize,
+                   mut input: BytePositioned<I>)
+                   -> ParseResult<Token<Id>, BytePositioned<I>> {
         loop {
             // Skip all whitespace before the token
             let (_, new_input) = try!(spaces().parse_lazy(input));
@@ -544,7 +568,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         }
     }
 
-    fn skip_block_comment(&self, input: State<I>) -> ParseResult<(), State<I>> {
+    fn skip_block_comment(&self, input: BytePositioned<I>) -> ParseResult<(), BytePositioned<I>> {
         let mut block_doc_comment = parser(|input| {
             let mut input = Consumed::Empty(input);
             loop {
@@ -564,7 +588,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         });
         block_doc_comment.parse_state(input)
     }
-    fn block_doc_comment(&self, input: State<I>) -> ParseResult<Token<Id>, State<I>> {
+    fn block_doc_comment(&self, input: BytePositioned<I>) -> ParseResult<Token<Id>, BytePositioned<I>> {
         let mut block_doc_comment = parser(|input| {
             let mut input = Consumed::Empty(input);
             let mut out = String::new();
