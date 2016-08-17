@@ -115,6 +115,16 @@ pub struct Location {
 }
 
 impl Location {
+    pub fn bump(&mut self, ch: char) {
+        if ch == '\n' {
+            self.line += 1;
+            self.column = CharPos(1);
+        } else {
+            self.column += CharPos(1);
+        }
+        self.absolute += BytePos::from(ch.len_utf8());
+    }
+
     pub fn line_offset(mut self, offset: CharPos) -> Location {
         self.column += offset;
         self

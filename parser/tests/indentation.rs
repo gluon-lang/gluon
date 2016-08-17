@@ -7,8 +7,9 @@ extern crate gluon_parser as parser;
 extern crate combine;
 
 use combine::ParseError;
-use combine::primitives::{Error, Info, SourcePosition};
+use combine::primitives::{Error, Info};
 use base::ast::*;
+use base::pos::{BytePos, CharPos, Location};
 use base::error::Errors;
 use parser::parse_string;
 use parser::lexer::Token;
@@ -65,9 +66,10 @@ y
     assert_eq!(result,
                Err(Errors {
                    errors: vec![ParseError {
-                                    position: SourcePosition {
-                                        column: 4,
+                                    position: Location {
                                         line: 5,
+                                        column: CharPos(4),
+                                        absolute: BytePos(32),
                                     },
                                     errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
                                                  Error::Expected("`in` or an expression in the \

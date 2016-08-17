@@ -17,11 +17,11 @@ pub fn intern(s: &str) -> String {
 
 type PExpr = LExpr<String>;
 
-fn loc(r: u32, c: usize) -> Location {
+fn loc(line: u32, column: usize, absolute: u32) -> Location {
     Location {
-        line: r,
-        column: CharPos(c),
-        absolute: BytePos(0),
+        line: line,
+        column: CharPos(column),
+        absolute: BytePos(absolute),
     }
 }
 
@@ -410,8 +410,8 @@ fn span_identifier() {
     let e = parse_new("test");
     assert_eq!(e.span(&EmptyEnv::new()),
                Span {
-                   start: loc(1, 1),
-                   end: loc(1, 5),
+                   start: loc(1, 1, 0),
+                   end: loc(1, 5, 0),
                });
 }
 
@@ -423,8 +423,8 @@ fn span_integer() {
     let e = parse_new("1234");
     assert_eq!(e.span(&EmptyEnv::new()),
                Span {
-                   start: loc(1, 1),
-                   end: loc(1, 5),
+                   start: loc(1, 1, 0),
+                   end: loc(1, 5, 0),
                });
 }
 
@@ -435,8 +435,8 @@ fn span_call() {
     let e = parse_new(r#" f 123 "asd" "#);
     assert_eq!(e.span(&EmptyEnv::new()),
                Span {
-                   start: loc(1, 2),
-                   end: loc(1, 13),
+                   start: loc(1, 2, 1),
+                   end: loc(1, 13, 7), // ???
                });
 }
 
@@ -451,8 +451,8 @@ match False with
 "#);
     assert_eq!(e.span(&EmptyEnv::new()),
                Span {
-                   start: loc(2, 1),
-                   end: loc(4, 18),
+                   start: loc(2, 1, 1),
+                   end: loc(4, 18, 53),
                });
 }
 
@@ -468,8 +468,8 @@ else
 "#);
     assert_eq!(e.span(&EmptyEnv::new()),
                Span {
-                   start: loc(2, 1),
-                   end: loc(5, 11),
+                   start: loc(2, 1, 1),
+                   end: loc(5, 11, 29),
                });
 }
 
@@ -480,8 +480,8 @@ fn span_byte() {
     let e = parse_new(r#"124b"#);
     assert_eq!(e.span(&EmptyEnv::new()),
                Span {
-                   start: loc(1, 1),
-                   end: loc(1, 5),
+                   start: loc(1, 1, 0),
+                   end: loc(1, 5, 0),
                });
 }
 
@@ -575,7 +575,7 @@ fn partial_field_access() {
     assert_eq!(e.unwrap_err().0,
                Some(Located {
                    value: Expr::FieldAccess(Box::new(id("test")), intern("")),
-                   location: loc(0, 0),
+                   location: loc(0, 0, 0),
                }));
 }
 
@@ -590,11 +590,11 @@ test
     assert!(e.is_err());
     assert_eq!(e.unwrap_err().0,
                Some(Located {
-                   location: loc(0, 0),
+                   location: loc(0, 0, 0),
                    value: Expr::Block(vec![Located {
                                                value: Expr::FieldAccess(Box::new(id("test")),
                                                                         intern("")),
-                                               location: loc(0, 0),
+                                               location: loc(0, 0, 0),
                                            },
                                            id("test")]),
                }));
