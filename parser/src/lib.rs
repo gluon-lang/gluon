@@ -17,12 +17,12 @@ use std::rc::Rc;
 use base::ast;
 use base::ast::*;
 use base::error::Errors;
-use base::pos::{BytePos, CharPos, Located, Location, located};
+use base::pos::{Located, Location, located};
 use base::types::{Type, Generic, Alias, Field, Kind, TypeVariable};
 use base::symbol::{Name, Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
-                          BufferedStream, SourcePosition};
+                          BufferedStream};
 use combine::combinator::EnvParser;
 use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy, sep_by1,
               sep_end_by, token, try, value, ParseError, ParseResult, Parser, ParserExt};
@@ -61,7 +61,7 @@ impl<'a, 's, 'l, Id> StreamOnce for Wrapper<'a, 's, 'l, Id>
 {
     type Item = Token<Id>;
     type Range = Token<Id>;
-    type Position = SourcePosition;
+    type Position = Location;
 
     fn uncons(&mut self) -> Result<Token<Id>, ::lexer::Error<Id>> {
         self.stream.uncons()
@@ -110,7 +110,7 @@ fn as_trait<P: Parser>(p: &mut P) -> &mut Parser<Input = P::Input, Output = P::O
 }
 
 impl<'s, I, Id, F> ParserEnv<I, F>
-    where I: Stream<Item = Token<Id>, Range = Token<Id>, Position = SourcePosition>,
+    where I: Stream<Item = Token<Id>, Range = Token<Id>, Position = Location>,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
@@ -403,15 +403,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     /// Parses an expression which could be an argument to a function
     fn parse_arg(&self, input: I) -> ParseResult<LExpr<Id>, I> {
         debug!("Expr start: {:?}", input.clone().uncons());
-        let position = input.position();
-        let loc = |expr| {
-            located(Location {
-                        column: CharPos(position.column as usize),
-                        line: position.line as u32,
-                        absolute: BytePos(0),
-                    },
-                    expr)
-        };
+        let location = input.position();
+        let loc = |expr| located(location, expr);
 
         // To prevent stack overflows we push all binding groups (which are commonly deeply nested)
         // to a stack and construct the expressions afterwards
@@ -459,15 +452,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn rest_expr(&self, input: I) -> ParseResult<LExpr<Id>, I> {
-        let position = input.position();
-        let loc = |expr| {
-            located(Location {
-                        column: CharPos(position.column as usize),
-                        line: position.line as u32,
-                        absolute: BytePos(0),
-                    },
-                    expr)
-        };
+        let location = input.position();
+        let loc = |expr| located(location, expr);
+
         choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 12],
                  _>([&mut parser(|input| self.if_else(input)).map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::case_of).map(&loc),
@@ -607,12 +594,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     fn parse_pattern(&self, input: I) -> ParseResult<LPattern<Id>, I> {
         self.record_parser(self.ident_u(), self.ident_u(), |record| {
-            let position = input.position();
-            let location = Location {
-                column: CharPos(position.column as usize),
-                line: position.line as u32,
-                absolute: BytePos(0),
-            };
+            let location = input.position();
+
             self.parser(ParserEnv::<I, F>::parse_ident2)
                 .then(|(id, typ)| {
                     parser(move |input| {
@@ -816,7 +799,7 @@ pub fn parse_expr<'a, 's, Id>(make_ident: &'a mut IdentEnv<Ident = Id>,
 
 fn static_error<I, Id>(make_ident: &mut IdentEnv<Ident = Id>, err: ParseError<I>) -> Error
     where Id: Clone + fmt::Debug + PartialEq,
-          I: Stream<Item = Token<Id>, Range = Token<Id>, Position = SourcePosition>
+          I: Stream<Item = Token<Id>, Range = Token<Id>, Position = Location>
 {
     let errors = err.errors
         .into_iter()

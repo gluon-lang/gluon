@@ -4,33 +4,34 @@ use std::fmt;
 use std::rc::Rc;
 
 use base::ast::*;
+use base::pos::{BytePos, CharPos, Location};
 
-use combine::primitives::{Consumed, SourcePosition, Error as CombineError};
+use combine::primitives::{Consumed, Error as CombineError};
 use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
 
 #[derive(Clone)]
 pub struct BytePositioned<I> {
-    position: usize,
+    location: Location,
     input: I
 }
 
 impl<I> StreamOnce for BytePositioned<I> where I : StreamOnce<Item = char> {
     type Item = I::Item;
     type Range = I::Range;
-    type Position = usize;
+    type Position = Location;
 
     fn uncons(&mut self) -> Result<Self::Item, CombineError<Self::Item, Self::Range>> {
         self.input.uncons()
-            .map(|c| {
-                self.position += c.len_utf8();
-                c
+            .map(|ch| {
+                self.location.bump(ch);
+                ch
             })
     }
 
     fn position(&self) -> Self::Position {
-        self.position
+        self.location
     }
 }
 
@@ -190,14 +191,14 @@ impl<Id> Token<Id> {
 
 #[derive(Clone, Debug)]
 pub struct PToken<Id> {
-    pub location: SourcePosition,
+    pub location: Location,
     pub token: Token<Id>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Offside {
+    pub location: Location,
     pub context: Context,
-    pub location: SourcePosition,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -287,7 +288,7 @@ pub struct Lexer<'a, I, F>
     pub input: Option<BytePositioned<I>>,
     pub unprocessed_tokens: Vec<PToken<F::Ident>>,
     pub indent_levels: Contexts,
-    end_position: SourcePosition,
+    end_location: Option<Location>,
 }
 
 impl<'a, 's, I, Id, F> Lexer<'a, I, F>
@@ -320,13 +321,17 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         Lexer {
             env: env,
             make_ident: make_ident,
-            input: Some(BytePositioned { position: 0, input : input }),
+            input: Some(BytePositioned {
+                location: Location {
+                    line: 1,
+                    column: CharPos(1),
+                    absolute: BytePos(0),
+                },
+                input: input,
+            }),
             unprocessed_tokens: Vec::new(),
             indent_levels: Contexts { stack: Vec::new() },
-            end_position: SourcePosition {
-                column: -1,
-                line: -1,
-            },
+            end_location: None,
         }
     }
 
@@ -435,9 +440,10 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             Some(input) => input,
             None => {
                 return PToken {
-                    location: SourcePosition {
-                        column: 1,
-                        line: ::std::i32::MAX,
+                    location: Location {
+                        line: ::std::u32::MAX,
+                        column: CharPos(1),
+                        absolute: BytePos(::std::u32::MAX),
                     },
                     token: Token::EOF,
                 }
@@ -456,7 +462,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             Err(err) => {
                 let err = err.into_inner();
                 debug!("Error tokenizing: {:?}", err);
-                self.end_position = err.position;
+                self.end_location = Some(err.position);
                 PToken {
                     location: location,
                     token: Token::CloseBlock,
@@ -466,7 +472,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     fn next_token_(&mut self,
-                   location: &mut usize,
+                   location: &mut Location,
                    mut input: BytePositioned<I>)
                    -> ParseResult<Token<Id>, BytePositioned<I>> {
         loop {
@@ -621,7 +627,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
           I::Range: fmt::Debug
 {
     if token.token == Token::EOF {
-        token.location.column = 0;
+        token.location.column = CharPos(0);
     }
     loop {
         // Retrieve the current indentation level if one exists
@@ -779,8 +785,8 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
         };
         if let Some(context) = push_context {
             let offside = Offside {
-                context: context,
                 location: token.location,
+                context: context,
             };
             return lexer.indent_levels.push(offside).map(move |()| token.token);
         }
@@ -875,8 +881,8 @@ fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
         });
     }
     lexer.indent_levels.push(Offside {
-        context: context,
         location: location,
+        context: context,
     })
 }
 
@@ -888,7 +894,7 @@ impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
 {
     type Item = Token<Id>;
     type Range = Token<Id>;
-    type Position = SourcePosition;
+    type Position = Location;
 
     fn uncons(&mut self) -> Result<Token<Id>, Error<Id>> {
         let token = self.next_token();
@@ -900,7 +906,7 @@ impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
             }
             Err(err) => {
                 if let Some(input) = self.input.take() {
-                    self.end_position = input.position();
+                    self.end_location = Some(input.position());
                 }
                 Err(err)
             }
@@ -910,8 +916,8 @@ impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
     fn position(&self) -> Self::Position {
         self.unprocessed_tokens
             .last()
-            .map(|token| token.location.clone())
-            .or_else(|| self.input.as_ref().map(|input| input.position.clone()))
-            .unwrap_or_else(|| self.end_position.clone())
+            .map(|token| token.location)
+            .or_else(|| self.input.as_ref().map(|input| input.location))
+            .unwrap_or_else(|| self.end_location.unwrap())
     }
 }
