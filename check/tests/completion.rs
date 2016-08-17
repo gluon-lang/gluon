@@ -79,8 +79,7 @@ fn identifier() {
                                       column: CharPos(19),
                                       absolute: BytePos(0),
                                   });
-    let expected = Ok(typ("Int"));
-    assert_eq!(result, expected);
+    assert_eq!(result, Err(()));
 }
 
 #[test]
@@ -285,7 +284,7 @@ a
 "#,
                          Location {
                              line: 3,
-                             column: CharPos(7),
+                             column: CharPos(1),
                              absolute: BytePos(0),
                          });
     let expected = Ok(vec!["aa".into()]);
@@ -305,6 +304,40 @@ record.aa
                              absolute: BytePos(0),
                          });
     let expected = Ok(vec!["record".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_end_of_identifier() {
+    let result = suggest(r#"
+let abc = 1
+let abb = 2
+abc 
+"#,
+                         Location {
+                             line: 4,
+                             column: CharPos(3),
+                             absolute: BytePos(0),
+                         });
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_after_identifier() {
+    let result = suggest(r#"
+let abc = 1
+let abb = 2
+abc 
+"#,
+                         Location {
+                             line: 4,
+                             column: CharPos(5),
+                             absolute: BytePos(0),
+                         });
+    let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
 }

@@ -22,6 +22,9 @@ trait OnFound {
     fn expr(&mut self, expr: &SpannedExpr<TcIdent<Symbol>>);
 
     fn ident(&mut self, context: &SpannedExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>);
+
+    /// Location points to whitespace
+    fn nothing(&mut self);
 }
 
 struct GetType<E> {
@@ -37,6 +40,7 @@ impl<E: TypeEnv> OnFound for GetType<E> {
     fn ident(&mut self, _context: &SpannedExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
         self.typ = Some(ident.env_type_of(&self.env));
     }
+    fn nothing(&mut self) {}
 }
 
 struct Suggest<E> {
@@ -101,6 +105,15 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             }
         }
     }
+
+    fn nothing(&mut self) {
+        self.result.extend(self.stack.iter().map(|(name, typ)| {
+            TcIdent {
+                name: name.clone(),
+                typ: typ.clone(),
+            }
+        }));
+    }
 }
 
 struct FindVisitor<F> {
@@ -155,7 +168,13 @@ impl<F> FindVisitor<F>
         use base::ast::Expr::*;
         
         match current.value {
-            Identifier(_) | Literal(_) => self.on_found.expr(current),
+            Identifier(_) | Literal(_) => {
+                if current.span(self.env).containment(&self.location) == Ordering::Equal {
+                    self.on_found.expr(current)
+                } else {
+                    self.on_found.nothing()
+                }
+            }
             Call(ref func, ref args) => {
                 self.visit_one(once(&**func).chain(args));
             }
