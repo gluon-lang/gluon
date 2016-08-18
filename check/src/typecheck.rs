@@ -1158,8 +1158,7 @@ impl<'a> Typecheck<'a> {
     fn instantiate_signature(&mut self, typ: &TcType) -> TcType {
         let typ = self.instantiate(typ);
         // Put all new generic variable names into scope
-        let named_variables = self.inst.named_variables.borrow();
-        for (generic, variable) in &*named_variables {
+        for (generic, variable) in &self.inst.named_variables {
             if self.type_variables.get(generic).is_none() {
                 self.type_variables.insert(generic.clone(), variable.clone());
             }
