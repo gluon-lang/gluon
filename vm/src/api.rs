@@ -143,9 +143,9 @@ macro_rules! primitive {
         {
             fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
                  $crate::api::VmFunction::unpack_and_call(
-                     &($name as fn (_, _, _ _) -> _), thread)
+                     &($name as fn (_, _, _, _) -> _), thread)
             }
-            $crate::api::primitive_f::<fn (_, _, _ _) -> _>(stringify!($name), wrapper, $name)
+            $crate::api::primitive_f::<fn (_, _, _, _) -> _>(stringify!($name), wrapper, $name)
         }
     };
 }
