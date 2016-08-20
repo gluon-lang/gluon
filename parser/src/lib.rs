@@ -30,10 +30,7 @@ use combine_language::{Assoc, Fixity, expression_parser};
 
 use lexer::{Lexer, Delimiter, Token, IdentType};
 
-pub type Error = ParseError<BufferedStream<'static,
-                                           Lexer<'static,
-                                                 &'static str,
-                                                 &'static mut IdentEnv<Ident = String>>>>;
+pub type Error = ParseError<Wrapper<'static, 'static, 'static, String>>;
 
 /// Parser passes the environment to each parser function
 type LanguageParser<'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<I, F>, I, T>;
@@ -52,7 +49,7 @@ struct ParserEnv<I, F>
 
 // Wrapper type to reduce typechecking times
 #[derive(Clone)]
-struct Wrapper<'a: 'l, 's: 'l, 'l, Id: Clone + PartialEq + fmt::Debug + 'a> {
+pub struct Wrapper<'a: 'l, 's: 'l, 'l, Id: Clone + PartialEq + fmt::Debug + 'a> {
     stream: BufferedStream<'l, Lexer<'s, &'s str, &'a mut IdentEnv<Ident = Id>>>,
 }
 
@@ -68,7 +65,7 @@ impl<'a, 's, 'l, Id> StreamOnce for Wrapper<'a, 's, 'l, Id>
     }
 
     fn position(&self) -> Self::Position {
-        self.stream.position()
+        self.stream.position().start
     }
 }
 
@@ -771,16 +768,18 @@ pub fn parse_tc
 }
 
 #[cfg(feature = "test")]
-pub fn parse_string<'a, 's>(make_ident: &'a mut IdentEnv<Ident = String>,
-                            input: &'s str)
-                            -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
+pub fn parse_string<'a, 's>
+    (make_ident: &'a mut IdentEnv<Ident = String>,
+     input: &'s str)
+     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
     parse_expr(make_ident, input)
 }
 
 /// Parses a gluon expression
-pub fn parse_expr<'a, 's, Id>(make_ident: &'a mut IdentEnv<Ident = Id>,
-                              input: &'s str)
-                              -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
+pub fn parse_expr<'a, 's, Id>
+    (make_ident: &'a mut IdentEnv<Ident = Id>,
+     input: &'s str)
+     -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
     where Id: AstId + Clone + PartialEq + fmt::Debug
 {
     let make_ident = Rc::new(RefCell::new(make_ident));

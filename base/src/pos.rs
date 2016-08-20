@@ -138,7 +138,7 @@ impl fmt::Display for Location {
 }
 
 /// A span between two locations in a source file
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct Span {
     pub start: Location,
     pub end: Location,

@@ -4,7 +4,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use base::ast::*;
-use base::pos::{BytePos, CharPos, Location, Located, Span, Spanned};
+use base::pos::{BytePos, CharPos, Location, Span, Spanned};
 
 use combine::primitives::{Consumed, Error as CombineError};
 use combine::combinator::EnvParser;
@@ -14,16 +14,19 @@ use combine_language::{LanguageEnv, LanguageDef, Identifier};
 #[derive(Clone)]
 pub struct LocatedStream<I> {
     location: Location,
-    input: I
+    input: I,
 }
 
-impl<I> StreamOnce for LocatedStream<I> where I : StreamOnce<Item = char> {
+impl<I> StreamOnce for LocatedStream<I>
+    where I: StreamOnce<Item = char>
+{
     type Item = I::Item;
     type Range = I::Range;
     type Position = Location;
 
     fn uncons(&mut self) -> Result<Self::Item, CombineError<Self::Item, Self::Range>> {
-        self.input.uncons()
+        self.input
+            .uncons()
             .map(|ch| {
                 self.location.bump(ch);
                 ch
@@ -189,8 +192,6 @@ impl<Id> Token<Id> {
     }
 }
 
-pub type LocatedToken<Id> = Located<Token<Id>>;
-
 pub type SpannedToken<Id> = Spanned<Token<Id>>;
 
 #[derive(Clone, Debug)]
@@ -218,7 +219,9 @@ pub enum Context {
 }
 
 /// Parser passes the environment to each parser function
-type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, LocatedStream<I>, T>;
+type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>,
+                                                             LocatedStream<I>,
+                                                             T>;
 
 pub struct Contexts {
     stack: Vec<Offside>,
@@ -284,9 +287,12 @@ pub struct Lexer<'a, I, F>
     pub env: LanguageEnv<'a, LocatedStream<I>>,
     pub make_ident: Rc<RefCell<F>>,
     pub input: Option<LocatedStream<I>>,
-    pub unprocessed_tokens: Vec<LocatedToken<F::Ident>>,
+    pub unprocessed_tokens: Vec<SpannedToken<F::Ident>>,
     pub indent_levels: Contexts,
-    end_location: Option<Location>,
+    /// Since the parser will call `position` before retrieving the token we need to cache one
+    /// token so the span can be returned for it
+    next_token: Option<SpannedToken<F::Ident>>,
+    end_span: Option<Span>,
 }
 
 impl<'a, 's, I, Id, F> Lexer<'a, I, F>
@@ -316,7 +322,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             comment_line: satisfy(|_| false).map(|_| ()),
         });
 
-        Lexer {
+        let mut lexer = Lexer {
             env: env,
             make_ident: make_ident,
             input: Some(LocatedStream {
@@ -329,8 +335,11 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             }),
             unprocessed_tokens: Vec::new(),
             indent_levels: Contexts { stack: Vec::new() },
-            end_location: None,
-        }
+            next_token: None,
+            end_span: None,
+        };
+        lexer.next_token = lexer.uncons_next().ok();
+        lexer
     }
 
     fn intern(&self, s: &str) -> Id {
@@ -386,7 +395,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     /// Identifier parser which returns the identifier as well as the type of the identifier
-    fn parse_ident2(&self, input: LocatedStream<I>) -> ParseResult<(Id, IdentType), LocatedStream<I>> {
+    fn parse_ident2(&self,
+                    input: LocatedStream<I>)
+                    -> ParseResult<(Id, IdentType), LocatedStream<I>> {
         let id = self.env.identifier().map(|id| {
             let typ = if id.chars().next().unwrap().is_uppercase() {
                 IdentType::Constructor
@@ -402,7 +413,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             .parse_state(input)
     }
 
-    fn layout_independent_token(&mut self, token: LocatedToken<Id>) -> Result<Token<Id>, Error<Id>> {
+    fn layout_independent_token(&mut self,
+                                token: SpannedToken<Id>)
+                                -> Result<SpannedToken<Id>, Error<Id>> {
         layout(self, token)
     }
 
@@ -430,39 +443,52 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         }
     }
 
-    pub fn next_token(&mut self) -> LocatedToken<Id> {
+    pub fn next_token(&mut self) -> SpannedToken<Id> {
         if let Some(token) = self.unprocessed_tokens.pop() {
             return token;
         }
         let input = match self.input.take() {
             Some(input) => input,
             None => {
-                return LocatedToken {
-                    location: Location {
-                        line: ::std::u32::MAX,
-                        column: CharPos(1),
-                        absolute: BytePos(::std::u32::MAX),
+                let loc = Location {
+                    line: ::std::u32::MAX,
+                    column: CharPos(1),
+                    absolute: BytePos(::std::u32::MAX),
+                };
+                return SpannedToken {
+                    span: Span {
+                        start: loc,
+                        end: loc,
                     },
                     value: Token::EOF,
-                }
+                };
             }
         };
-        let mut location = input.position();
-        let result = self.next_token_(&mut location, input);
+        let mut start = input.position();
+        let result = self.next_token_(&mut start, input);
         match result {
             Ok((token, input)) => {
-                self.input = Some(input.into_inner());
-                LocatedToken {
-                    location: location,
+                let input = input.into_inner();
+                let end = input.position();
+                self.input = Some(input);
+                SpannedToken {
+                    span: Span {
+                        start: start,
+                        end: end,
+                    },
                     value: token,
                 }
             }
             Err(err) => {
                 let err = err.into_inner();
                 debug!("Error tokenizing: {:?}", err);
-                self.end_location = Some(err.position);
-                LocatedToken {
-                    location: location,
+                let span = Span {
+                    start: start,
+                    end: start,
+                };
+                self.end_span = Some(span);
+                SpannedToken {
+                    span: span,
                     value: Token::CloseBlock,
                 }
             }
@@ -592,7 +618,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         });
         block_doc_comment.parse_state(input)
     }
-    fn block_doc_comment(&self, input: LocatedStream<I>) -> ParseResult<Token<Id>, LocatedStream<I>> {
+    fn block_doc_comment(&self,
+                         input: LocatedStream<I>)
+                         -> ParseResult<Token<Id>, LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
             let mut input = Consumed::Empty(input);
             let mut out = String::new();
@@ -614,18 +642,51 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         });
         block_doc_comment.parse_state(input)
     }
+
+    fn layout_token(&mut self,
+                    token: SpannedToken<Id>,
+                    layout_token: Token<Id>)
+                    -> SpannedToken<Id> {
+        let span = token.span;
+        self.unprocessed_tokens.push(token);
+        Spanned {
+            span: span,
+            value: layout_token,
+        }
+    }
+
+    fn uncons_next(&mut self) -> Result<SpannedToken<Id>, Error<Id>> {
+        let token = self.next_token();
+        match self.layout_independent_token(token) {
+            Ok(Spanned { value: Token::EOF, .. }) => Err(Error::end_of_input()),
+            Ok(token) => {
+                debug!("Lex {:?}", token);
+                Ok(token)
+            }
+            Err(err) => {
+                if let Some(input) = self.input.take() {
+                    let loc = input.position();
+                    self.end_span = Some(Span {
+                        start: loc,
+                        end: loc,
+                    });
+                }
+                Err(err)
+            }
+        }
+    }
 }
 
 fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
-                        mut token: LocatedToken<Id>)
-                        -> Result<Token<Id>, Error<Id>>
+                        mut token: SpannedToken<Id>)
+                        -> Result<SpannedToken<Id>, Error<Id>>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
           Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
 {
     if token.value == Token::EOF {
-        token.location.column = CharPos(0);
+        token.span.start.column = CharPos(0);
     }
     loop {
         // Retrieve the current indentation level if one exists
@@ -633,22 +694,22 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Some(offside) => offside,
             None => {
                 if token.value == Token::EOF {
-                    return Ok(token.value);
+                    return Ok(token);
                 }
                 try!(lexer.indent_levels.push(Offside {
                     context: Context::Block {
                         emit_semi: false,
                         needs_close: true,
                     },
-                    location: token.location,
+                    location: token.span.start,
                 }));
                 debug!("Default block {:?}", token);
-                lexer.unprocessed_tokens.push(token);
-                return Ok(Token::OpenBlock);
+                return Ok(lexer.layout_token(token, Token::OpenBlock));
             }
         };
         debug!("--------\n{:?}\n{:?}", token, offside);
-        let ordering = token.location.column.cmp(&offside.location.column);
+        let ordering = token.span.start.column.cmp(&offside.location.column);
+
         // If it is closing token we remove contexts until a context for that token is found
         if [Token::In,
             Token::CloseBlock,
@@ -663,13 +724,13 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             if token.value == Token::Comma &&
                (offside.context == Context::Delimiter(Delimiter::Brace) ||
                 offside.context == Context::Delimiter(Delimiter::Bracket)) {
-                return Ok(token.value);
+                return Ok(token);
             }
             lexer.indent_levels.pop();
             match (&token.value, &offside.context) {
                 (&Token::Else, &Context::If) => (),
                 (&Token::Close(close_delim), &Context::Delimiter(context_delim))
-                    if close_delim == context_delim => return Ok(token.value),
+                    if close_delim == context_delim => return Ok(token),
                 (&Token::In, &Context::Let) |
                 (&Token::In, &Context::Type) |
                 (&Token::CloseBlock, &Context::Block { .. }) => {
@@ -680,13 +741,12 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                             *emit_semi = false;
                         }
                     }
-                    return Ok(token.value);
+                    return Ok(token);
                 }
                 _ => {
                     match offside.context {
                         Context::Block { needs_close: true, .. } => {
-                            lexer.unprocessed_tokens.push(token);
-                            return Ok(Token::CloseBlock);
+                            return Ok(lexer.layout_token(token, Token::CloseBlock));
                         }
                         _ => (),
                     }
@@ -718,8 +778,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                                         *emit_semi = false;
                                     }
                                 }
-                                lexer.unprocessed_tokens.push(token);
-                                return Ok(Token::Semi);
+                                return Ok(lexer.layout_token(token, Token::Semi));
                             }
                             Token::DocComment(_) |
                             Token::OpenBlock => (),
@@ -765,8 +824,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                             *emit_semi = false;
                         }
                     }
-                    lexer.unprocessed_tokens.push(token);
-                    return Ok(Token::In);
+                    return Ok(lexer.layout_token(token, Token::In));
                 }
             }
             _ => (),
@@ -783,18 +841,17 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
         };
         if let Some(context) = push_context {
             let offside = Offside {
-                location: token.location,
+                location: token.span.start,
                 context: context,
             };
-            return lexer.indent_levels.push(offside).map(move |()| token.value);
+            return lexer.indent_levels.push(offside).map(move |()| token);
         }
         // For other tokens we need to scan for the next token to get its position
         match token.value {
             Token::In => {
                 lexer.indent_levels.pop();
                 if let Context::Block { needs_close: true, .. } = offside.context {
-                    lexer.unprocessed_tokens.push(token);
-                    return Ok(Token::CloseBlock);
+                    return Ok(lexer.layout_token(token, Token::CloseBlock));
                 }
             }
             Token::Equal => {
@@ -827,7 +884,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                 // else
                 //     3
                 let add_block = next.value != Token::If ||
-                                next.location.line != token.location.line;
+                                next.span.start.line != token.span.start.line;
                 lexer.unprocessed_tokens.push(next);
                 if add_block {
                     try!(scan_for_next_block(lexer,
@@ -857,7 +914,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Token::With => try!(scan_for_next_block(lexer, Context::MatchClause)),
             _ => (),
         }
-        return Ok(token.value);
+        return Ok(token);
     }
 }
 
@@ -870,16 +927,16 @@ fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
           I::Range: fmt::Debug + 's
 {
     let next = lexer.next_token();
-    let location = next.location;
+    let span = next.span;
     lexer.unprocessed_tokens.push(next);
     if let Context::Block { needs_close: true, .. } = context {
-        lexer.unprocessed_tokens.push(LocatedToken {
-            location: location,
+        lexer.unprocessed_tokens.push(SpannedToken {
+            span: span,
             value: Token::OpenBlock,
         });
     }
     lexer.indent_levels.push(Offside {
-        location: location,
+        location: span.start,
         context: context,
     })
 }
@@ -892,30 +949,26 @@ impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
 {
     type Item = Token<Id>;
     type Range = Token<Id>;
-    type Position = Location;
+    type Position = Span;
 
     fn uncons(&mut self) -> Result<Token<Id>, Error<Id>> {
-        let token = self.next_token();
-        match self.layout_independent_token(token) {
-            Ok(Token::EOF) => Err(Error::end_of_input()),
-            Ok(token) => {
-                debug!("Lex {:?}", token);
-                Ok(token)
+        match self.next_token.take() {
+            Some(token) => {
+                self.next_token = self.uncons_next().ok();
+                Ok(token.value)
             }
-            Err(err) => {
-                if let Some(input) = self.input.take() {
-                    self.end_location = Some(input.position());
-                }
-                Err(err)
+            None => {
+                self.next_token = Some(try!(self.uncons_next()));
+                self.uncons()
             }
         }
     }
 
     fn position(&self) -> Self::Position {
-        self.unprocessed_tokens
-            .last()
-            .map(|token| token.location)
-            .or_else(|| self.input.as_ref().map(|input| input.location))
-            .unwrap_or_else(|| self.end_location.unwrap())
+        self.next_token
+            .as_ref()
+            .or_else(|| self.unprocessed_tokens.last())
+            .map(|token| token.span)
+            .unwrap_or_else(|| self.end_span.unwrap())
     }
 }
