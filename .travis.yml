@@ -8,7 +8,7 @@ addons:
     - libdw-dev
 rust:
 - nightly
-- beta
+# - beta
 before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
