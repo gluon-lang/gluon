@@ -3,7 +3,7 @@
 use std::fmt;
 use std::ops::Deref;
 
-use pos::{CharPos, Located, Span};
+use pos::Spanned;
 use symbol::Symbol;
 use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
 
@@ -179,7 +179,7 @@ pub enum LiteralEnum {
 }
 
 /// Pattern which contains a location
-pub type LPattern<Id> = Located<Pattern<Id>>;
+pub type SpannedPattern<Id> = Spanned<Pattern<Id>>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id: AstId> {
@@ -194,15 +194,15 @@ pub enum Pattern<Id: AstId> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Alternative<Id: AstId> {
-    pub pattern: LPattern<Id>,
-    pub expression: LExpr<Id>,
+    pub pattern: SpannedPattern<Id>,
+    pub expression: SpannedExpr<Id>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Array<Id: AstId> {
     // Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
-    pub expressions: Vec<LExpr<Id>>,
+    pub expressions: Vec<SpannedExpr<Id>>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -210,32 +210,32 @@ pub struct Lambda<Id: AstId> {
     // Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub arguments: Vec<Id>,
-    pub body: Box<LExpr<Id>>,
+    pub body: Box<SpannedExpr<Id>>,
 }
 
 /// Expression which contains a location
-pub type LExpr<Id> = Located<Expr<Id>>;
+pub type SpannedExpr<Id> = Spanned<Expr<Id>>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
     Identifier(Id),
     Literal(LiteralEnum),
-    Call(Box<LExpr<Id>>, Vec<LExpr<Id>>),
-    IfElse(Box<LExpr<Id>>, Box<LExpr<Id>>, Option<Box<LExpr<Id>>>),
-    Match(Box<LExpr<Id>>, Vec<Alternative<Id>>),
-    BinOp(Box<LExpr<Id>>, Id, Box<LExpr<Id>>),
-    Let(Vec<Binding<Id>>, Box<LExpr<Id>>),
-    FieldAccess(Box<LExpr<Id>>, Id),
+    Call(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
+    IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Option<Box<SpannedExpr<Id>>>),
+    Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
+    BinOp(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
+    Let(Vec<Binding<Id>>, Box<SpannedExpr<Id>>),
+    FieldAccess(Box<SpannedExpr<Id>>, Id),
     Array(Array<Id>),
     Record {
         typ: Id,
         types: Vec<(Id::Untyped, Option<AstType<Id::Untyped>>)>,
-        exprs: Vec<(Id::Untyped, Option<LExpr<Id>>)>,
+        exprs: Vec<(Id::Untyped, Option<SpannedExpr<Id>>)>,
     },
     Lambda(Lambda<Id>),
-    Tuple(Vec<LExpr<Id>>),
-    Type(Vec<TypeBinding<Id::Untyped>>, Box<LExpr<Id>>),
-    Block(Vec<LExpr<Id>>),
+    Tuple(Vec<SpannedExpr<Id>>),
+    Type(Vec<TypeBinding<Id::Untyped>>, Box<SpannedExpr<Id>>),
+    Block(Vec<SpannedExpr<Id>>),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -248,107 +248,10 @@ pub struct TypeBinding<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Binding<Id: AstId> {
     pub comment: Option<String>,
-    pub name: LPattern<Id>,
+    pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id::Untyped>>,
     pub arguments: Vec<Id>,
-    pub expression: LExpr<Id>,
-}
-
-impl<Id> LExpr<Id>
-    where Id: AstId
-{
-    /// Returns the an approximation of the span of the expression
-    pub fn span<'a>(&self, env: &(DisplayEnv<Ident = Id> + 'a)) -> Span {
-        use self::Expr::*;
-        let end = match self.value {
-            Identifier(ref id) => self.location.line_offset(CharPos(env.string(id).len())),
-            Literal(ref lit) => {
-                use self::LiteralEnum::*;
-                match *lit {
-                    Integer(i) => self.location.line_offset(CharPos::from(format!("{}", i).len())),
-                    Byte(i) => self.location.line_offset(CharPos::from(format!("{}", i).len() + 1)),
-                    Float(f) => self.location.line_offset(CharPos::from(format!("{}", f).len())),
-                    String(ref s) => self.location.line_offset(CharPos::from(s.len() + 2)),
-                    Char(_) => self.location.line_offset(CharPos(3)),
-                }
-            }
-            Call(ref func, ref args) => {
-                args.last()
-                    .map_or_else(|| func.span(env).end, |e| e.span(env).end)
-            }
-            IfElse(_, ref if_true, ref if_false) => {
-                if_false.as_ref()
-                    .map_or_else(|| if_true.span(env).end, |e| e.span(env).end)
-            }
-            Match(_, ref alts) => {
-                alts.last()
-                    .map_or(self.location, |alt| alt.expression.span(env).end)
-            }
-            BinOp(_, _, ref r) => r.span(env).end,
-            Let(_, ref expr) |
-            Type(_, ref expr) => expr.span(env).end,
-            FieldAccess(ref expr, ref id) => {
-                let base = expr.span(env).end;
-                base.line_offset(CharPos::from(1 + env.string(id).len()))
-            }
-            Array(ref array) => {
-                array.expressions
-                    .last()
-                    .map_or(self.location, |expr| expr.span(env).end)
-                    .line_offset(CharPos(1))
-            }
-            Record { ref exprs, .. } => {
-                exprs.last()
-                    .and_then(|tup| tup.1.as_ref().map(|expr| expr.span(env).end))
-                    .unwrap_or(self.location)
-                    .line_offset(CharPos(2))
-            }
-            Lambda(ref lambda) => lambda.body.span(env).end,
-            Tuple(ref args) => {
-                args.last()
-                    .map_or(self.location, |expr| expr.span(env).end)
-                    .line_offset(CharPos(2))
-            }
-            Block(ref exprs) => exprs.last().expect("Expr in block").span(env).end,
-        };
-        Span {
-            start: self.location,
-            end: end,
-        }
-    }
-}
-impl<Id> LPattern<Id>
-    where Id: AstId + AsRef<str>,
-          Id::Untyped: AsRef<str>
-{
-    /// Returns the an approximation of the span of the expression
-    pub fn span(&self) -> Span {
-        // FIXME Use exact spans instead of approximations
-        let end = match self.value {
-            Pattern::Constructor(ref id, ref args) => {
-                let offset = args.iter().fold(0, |acc, arg| acc + arg.as_ref().len() + " ".len());
-                self.location.line_offset(CharPos::from(id.as_ref().len() + offset))
-            }
-            Pattern::Record { ref fields, ref types, .. } => {
-                let field_offset = fields.iter().fold(0, |acc, t| {
-                    acc + t.0.as_ref().len() +
-                    t.1.as_ref().map(|id| id.as_ref().len()).unwrap_or(0) +
-                    ",".len()
-                });
-                let type_offset = types.iter().fold(0, |acc, t| {
-                    acc + t.0.as_ref().len() +
-                    t.1.as_ref().map(|id| id.as_ref().len()).unwrap_or(0) +
-                    ",".len()
-                });
-                self.location.line_offset(CharPos::from(field_offset + type_offset + "{".len()))
-            }
-            Pattern::Identifier(ref id) => self.location.line_offset(CharPos::from(id.as_ref().len())),
-        };
-        Span {
-            start: self.location,
-            end: end,
-        }
-    }
+    pub expression: SpannedExpr<Id>,
 }
 
 /// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By
@@ -356,16 +259,16 @@ impl<Id> LPattern<Id>
 /// call `walk_mut_*` to continue traversing the tree.
 pub trait MutVisitor {
     type T: AstId;
-    fn visit_expr(&mut self, e: &mut LExpr<Self::T>) {
+    fn visit_expr(&mut self, e: &mut SpannedExpr<Self::T>) {
         walk_mut_expr(self, e);
     }
-    fn visit_pattern(&mut self, e: &mut LPattern<Self::T>) {
+    fn visit_pattern(&mut self, e: &mut SpannedPattern<Self::T>) {
         walk_mut_pattern(self, &mut e.value);
     }
     fn visit_identifier(&mut self, _: &mut Self::T) {}
 }
 
-pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut LExpr<V::T>) {
+pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T>) {
     match e.value {
         Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
@@ -514,7 +417,7 @@ impl<Id> Typed for Expr<Id>
     }
 }
 
-impl<T: Typed> Typed for Located<T> {
+impl<T: Typed> Typed for Spanned<T> {
     type Id = T::Id;
 
     fn env_type_of(&self, env: &TypeEnv) -> AstType<T::Id> {

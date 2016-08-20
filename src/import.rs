@@ -7,7 +7,7 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use base::ast;
+use base::ast::{self, Expr, LiteralEnum, SpannedExpr};
 use base::metadata::Metadata;
 use base::pos;
 use base::symbol::Symbol;
@@ -71,7 +71,7 @@ impl Importer for DefaultImporter {
 }
 
 #[derive(Clone)]
-pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, ast::LExpr<ast::TcIdent<Symbol>>>>>);
+pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, SpannedExpr<ast::TcIdent<Symbol>>>>>);
 impl CheckImporter {
     pub fn new() -> CheckImporter {
         CheckImporter(Arc::new(Mutex::new(FnvMap::default())))
@@ -119,13 +119,13 @@ impl<I> Macro for Import<I>
 {
     fn expand(&self,
               vm: &Thread,
-              arguments: &mut [ast::LExpr<TcIdent>])
-              -> Result<ast::LExpr<TcIdent>, MacroError> {
+              arguments: &mut [SpannedExpr<TcIdent>])
+              -> Result<SpannedExpr<TcIdent>, MacroError> {
         if arguments.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
-        match *arguments[0] {
-            ast::Expr::Literal(ast::LiteralEnum::String(ref filename)) => {
+        match arguments[0].value {
+            Expr::Literal(LiteralEnum::String(ref filename)) => {
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
@@ -165,8 +165,8 @@ impl<I> Macro for Import<I>
                     try!(self.importer.import(vm, &modulename, file_contents));
                 }
                 // FIXME Does not handle shadowing
-                Ok(pos::located(arguments[0].location,
-                                ast::Expr::Identifier(TcIdent::new(name))))
+                Ok(pos::spanned(arguments[0].span,
+                                Expr::Identifier(TcIdent::new(name))))
             }
             _ => return Err(Error::String("Expected a string literal to import".into()).into()),
         }

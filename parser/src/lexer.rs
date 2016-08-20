@@ -4,11 +4,36 @@ use std::fmt;
 use std::rc::Rc;
 
 use base::ast::*;
+use base::pos::{BytePos, CharPos, Location, Located, Span, Spanned};
 
-use combine::primitives::{Consumed, SourcePosition, Error as CombineError};
+use combine::primitives::{Consumed, Error as CombineError};
 use combine::combinator::EnvParser;
 use combine::*;
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
+
+#[derive(Clone)]
+pub struct LocatedStream<I> {
+    location: Location,
+    input: I
+}
+
+impl<I> StreamOnce for LocatedStream<I> where I : StreamOnce<Item = char> {
+    type Item = I::Item;
+    type Range = I::Range;
+    type Position = Location;
+
+    fn uncons(&mut self) -> Result<Self::Item, CombineError<Self::Item, Self::Range>> {
+        self.input.uncons()
+            .map(|ch| {
+                self.location.bump(ch);
+                ch
+            })
+    }
+
+    fn position(&self) -> Self::Position {
+        self.location
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Delimiter {
@@ -164,16 +189,14 @@ impl<Id> Token<Id> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PToken<Id> {
-    pub location: SourcePosition,
-    pub token: Token<Id>,
-}
+pub type LocatedToken<Id> = Located<Token<Id>>;
+
+pub type SpannedToken<Id> = Spanned<Token<Id>>;
 
 #[derive(Clone, Debug)]
 pub struct Offside {
+    pub location: Location,
     pub context: Context,
-    pub location: SourcePosition,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -195,7 +218,7 @@ pub enum Context {
 }
 
 /// Parser passes the environment to each parser function
-type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, State<I>, T>;
+type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>, LocatedStream<I>, T>;
 
 pub struct Contexts {
     stack: Vec<Offside>,
@@ -258,12 +281,12 @@ pub struct Lexer<'a, I, F>
     where I: Stream<Item = char>,
           F: IdentEnv
 {
-    pub env: LanguageEnv<'a, State<I>>,
+    pub env: LanguageEnv<'a, LocatedStream<I>>,
     pub make_ident: Rc<RefCell<F>>,
-    pub input: Option<State<I>>,
-    pub unprocessed_tokens: Vec<PToken<F::Ident>>,
+    pub input: Option<LocatedStream<I>>,
+    pub unprocessed_tokens: Vec<LocatedToken<F::Ident>>,
     pub indent_levels: Contexts,
-    end_position: SourcePosition,
+    end_location: Option<Location>,
 }
 
 impl<'a, 's, I, Id, F> Lexer<'a, I, F>
@@ -296,13 +319,17 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         Lexer {
             env: env,
             make_ident: make_ident,
-            input: Some(State::new(input)),
+            input: Some(LocatedStream {
+                location: Location {
+                    line: 1,
+                    column: CharPos(1),
+                    absolute: BytePos(0),
+                },
+                input: input,
+            }),
             unprocessed_tokens: Vec::new(),
             indent_levels: Contexts { stack: Vec::new() },
-            end_position: SourcePosition {
-                column: -1,
-                line: -1,
-            },
+            end_location: None,
         }
     }
 
@@ -311,7 +338,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     fn parser<T>(&'s self,
-                 parser: fn(&Lexer<'a, I, F>, State<I>) -> ParseResult<T, State<I>>)
+                 parser: fn(&Lexer<'a, I, F>, LocatedStream<I>) -> ParseResult<T, LocatedStream<I>>)
                  -> LanguageParser<'a, 's, I, F, T> {
         env_parser(self, parser)
     }
@@ -321,7 +348,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         self.parser(Lexer::parse_op)
     }
 
-    fn parse_op(&self, input: State<I>) -> ParseResult<Id, State<I>> {
+    fn parse_op(&self, input: LocatedStream<I>) -> ParseResult<Id, LocatedStream<I>> {
         (optional(char('#').with(many(letter()))), try(self.env.op()))
             .map(|(builtin, op): (Option<String>, String)| {
                 match builtin {
@@ -339,7 +366,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     fn ident(&'s self) -> LanguageParser<'a, 's, I, F, Token<Id>> {
         self.parser(Lexer::parse_ident)
     }
-    fn parse_ident(&self, input: State<I>) -> ParseResult<Token<Id>, State<I>> {
+    fn parse_ident(&self, input: LocatedStream<I>) -> ParseResult<Token<Id>, LocatedStream<I>> {
         self.parser(Lexer::parse_ident2)
             .map(|x| Token::Identifier(x.0, x.1))
             .parse_state(input)
@@ -349,7 +376,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         self.parser(Self::integer_)
     }
 
-    fn integer_<'b>(&'b self, input: State<I>) -> ParseResult<i64, State<I>> {
+    fn integer_<'b>(&'b self, input: LocatedStream<I>) -> ParseResult<i64, LocatedStream<I>> {
         let (s, input) = try!(many1::<String, _>(digit()).parse_lazy(input));
         let mut n = 0;
         for c in s.chars() {
@@ -359,7 +386,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     /// Identifier parser which returns the identifier as well as the type of the identifier
-    fn parse_ident2(&self, input: State<I>) -> ParseResult<(Id, IdentType), State<I>> {
+    fn parse_ident2(&self, input: LocatedStream<I>) -> ParseResult<(Id, IdentType), LocatedStream<I>> {
         let id = self.env.identifier().map(|id| {
             let typ = if id.chars().next().unwrap().is_uppercase() {
                 IdentType::Constructor
@@ -375,7 +402,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             .parse_state(input)
     }
 
-    fn layout_independent_token(&mut self, token: PToken<Id>) -> Result<Token<Id>, Error<Id>> {
+    fn layout_independent_token(&mut self, token: LocatedToken<Id>) -> Result<Token<Id>, Error<Id>> {
         layout(self, token)
     }
 
@@ -403,19 +430,20 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         }
     }
 
-    pub fn next_token(&mut self) -> PToken<Id> {
+    pub fn next_token(&mut self) -> LocatedToken<Id> {
         if let Some(token) = self.unprocessed_tokens.pop() {
             return token;
         }
         let input = match self.input.take() {
             Some(input) => input,
             None => {
-                return PToken {
-                    location: SourcePosition {
-                        column: 1,
-                        line: ::std::i32::MAX,
+                return LocatedToken {
+                    location: Location {
+                        line: ::std::u32::MAX,
+                        column: CharPos(1),
+                        absolute: BytePos(::std::u32::MAX),
                     },
-                    token: Token::EOF,
+                    value: Token::EOF,
                 }
             }
         };
@@ -424,27 +452,27 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         match result {
             Ok((token, input)) => {
                 self.input = Some(input.into_inner());
-                PToken {
+                LocatedToken {
                     location: location,
-                    token: token,
+                    value: token,
                 }
             }
             Err(err) => {
                 let err = err.into_inner();
                 debug!("Error tokenizing: {:?}", err);
-                self.end_position = err.position;
-                PToken {
+                self.end_location = Some(err.position);
+                LocatedToken {
                     location: location,
-                    token: Token::CloseBlock,
+                    value: Token::CloseBlock,
                 }
             }
         }
     }
 
     fn next_token_(&mut self,
-                   location: &mut SourcePosition,
-                   mut input: State<I>)
-                   -> ParseResult<Token<Id>, State<I>> {
+                   location: &mut Location,
+                   mut input: LocatedStream<I>)
+                   -> ParseResult<Token<Id>, LocatedStream<I>> {
         loop {
             // Skip all whitespace before the token
             let (_, new_input) = try!(spaces().parse_lazy(input));
@@ -544,7 +572,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         }
     }
 
-    fn skip_block_comment(&self, input: State<I>) -> ParseResult<(), State<I>> {
+    fn skip_block_comment(&self, input: LocatedStream<I>) -> ParseResult<(), LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
             let mut input = Consumed::Empty(input);
             loop {
@@ -564,7 +592,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         });
         block_doc_comment.parse_state(input)
     }
-    fn block_doc_comment(&self, input: State<I>) -> ParseResult<Token<Id>, State<I>> {
+    fn block_doc_comment(&self, input: LocatedStream<I>) -> ParseResult<Token<Id>, LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
             let mut input = Consumed::Empty(input);
             let mut out = String::new();
@@ -589,23 +617,23 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
 }
 
 fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
-                        mut token: PToken<Id>)
+                        mut token: LocatedToken<Id>)
                         -> Result<Token<Id>, Error<Id>>
     where I: Stream<Item = char> + 'a,
           F: IdentEnv<Ident = Id>,
           Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
 {
-    if token.token == Token::EOF {
-        token.location.column = 0;
+    if token.value == Token::EOF {
+        token.location.column = CharPos(0);
     }
     loop {
         // Retrieve the current indentation level if one exists
         let offside = match lexer.indent_levels.last().cloned() {
             Some(offside) => offside,
             None => {
-                if token.token == Token::EOF {
-                    return Ok(token.token);
+                if token.value == Token::EOF {
+                    return Ok(token.value);
                 }
                 try!(lexer.indent_levels.push(Offside {
                     context: Context::Block {
@@ -630,18 +658,18 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Token::Close(Delimiter::Paren),
             Token::Comma]
             .iter()
-            .any(|t| *t == token.token) {
+            .any(|t| *t == token.value) {
 
-            if token.token == Token::Comma &&
+            if token.value == Token::Comma &&
                (offside.context == Context::Delimiter(Delimiter::Brace) ||
                 offside.context == Context::Delimiter(Delimiter::Bracket)) {
-                return Ok(token.token);
+                return Ok(token.value);
             }
             lexer.indent_levels.pop();
-            match (&token.token, &offside.context) {
+            match (&token.value, &offside.context) {
                 (&Token::Else, &Context::If) => (),
                 (&Token::Close(close_delim), &Context::Delimiter(context_delim))
-                    if close_delim == context_delim => return Ok(token.token),
+                    if close_delim == context_delim => return Ok(token.value),
                 (&Token::In, &Context::Let) |
                 (&Token::In, &Context::Type) |
                 (&Token::CloseBlock, &Context::Block { .. }) => {
@@ -652,7 +680,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                             *emit_semi = false;
                         }
                     }
-                    return Ok(token.token);
+                    return Ok(token.value);
                 }
                 _ => {
                     match offside.context {
@@ -673,14 +701,14 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                     Ordering::Less => {
                         if needs_close {
                             lexer.unprocessed_tokens.push(token.clone());
-                            token.token = Token::CloseBlock;
+                            token.value = Token::CloseBlock;
                         } else {
                             lexer.indent_levels.pop();
                         }
                         continue;
                     }
                     Ordering::Equal => {
-                        match token.token {
+                        match token.value {
                             _ if emit_semi => {
                                 if let Some(offside) = lexer.indent_levels.last_mut() {
                                     // The enclosing block should not emit a block separator for the
@@ -719,15 +747,15 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Context::MatchClause => {
                 // Must allow `|` to be on the same line
                 if ordering == Ordering::Less ||
-                   (ordering == Ordering::Equal && token.token != Token::Pipe) {
+                   (ordering == Ordering::Equal && token.value != Token::Pipe) {
                     lexer.indent_levels.pop();
                     continue;
                 }
             }
             Context::Let | Context::Type => {
                 // `and` and `}` are allowed to be on the same line as the `let` or `type`
-                if ordering == Ordering::Equal && token.token != Token::And &&
-                   token.token != Token::Close(Delimiter::Brace) {
+                if ordering == Ordering::Equal && token.value != Token::And &&
+                   token.value != Token::Close(Delimiter::Brace) {
                     // Insert an `in` token
                     lexer.indent_levels.pop();
                     if let Some(offside) = lexer.indent_levels.last_mut() {
@@ -744,7 +772,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             _ => (),
         }
         // Some tokens directly inserts a new context when emitted
-        let push_context = match token.token {
+        let push_context = match token.value {
             Token::Let => Some(Context::Let),
             Token::If => Some(Context::If),
             Token::Type => Some(Context::Type),
@@ -755,13 +783,13 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
         };
         if let Some(context) = push_context {
             let offside = Offside {
-                context: context,
                 location: token.location,
+                context: context,
             };
-            return lexer.indent_levels.push(offside).map(move |()| token.token);
+            return lexer.indent_levels.push(offside).map(move |()| token.value);
         }
         // For other tokens we need to scan for the next token to get its position
-        match token.token {
+        match token.value {
             Token::In => {
                 lexer.indent_levels.pop();
                 if let Context::Block { needs_close: true, .. } = offside.context {
@@ -798,7 +826,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
                 //     2
                 // else
                 //     3
-                let add_block = next.token != Token::If ||
+                let add_block = next.value != Token::If ||
                                 next.location.line != token.location.line;
                 lexer.unprocessed_tokens.push(next);
                 if add_block {
@@ -829,7 +857,7 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
             Token::With => try!(scan_for_next_block(lexer, Context::MatchClause)),
             _ => (),
         }
-        return Ok(token.token);
+        return Ok(token.value);
     }
 }
 
@@ -845,14 +873,14 @@ fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
     let location = next.location;
     lexer.unprocessed_tokens.push(next);
     if let Context::Block { needs_close: true, .. } = context {
-        lexer.unprocessed_tokens.push(PToken {
+        lexer.unprocessed_tokens.push(LocatedToken {
             location: location,
-            token: Token::OpenBlock,
+            value: Token::OpenBlock,
         });
     }
     lexer.indent_levels.push(Offside {
-        context: context,
         location: location,
+        context: context,
     })
 }
 
@@ -864,7 +892,7 @@ impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
 {
     type Item = Token<Id>;
     type Range = Token<Id>;
-    type Position = SourcePosition;
+    type Position = Location;
 
     fn uncons(&mut self) -> Result<Token<Id>, Error<Id>> {
         let token = self.next_token();
@@ -876,7 +904,7 @@ impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
             }
             Err(err) => {
                 if let Some(input) = self.input.take() {
-                    self.end_position = input.position();
+                    self.end_location = Some(input.position());
                 }
                 Err(err)
             }
@@ -886,8 +914,8 @@ impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
     fn position(&self) -> Self::Position {
         self.unprocessed_tokens
             .last()
-            .map(|token| token.location.clone())
-            .or_else(|| self.input.as_ref().map(|input| input.position.clone()))
-            .unwrap_or_else(|| self.end_position.clone())
+            .map(|token| token.location)
+            .or_else(|| self.input.as_ref().map(|input| input.location))
+            .unwrap_or_else(|| self.end_location.unwrap())
     }
 }
