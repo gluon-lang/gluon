@@ -1,7 +1,7 @@
 use std::fmt;
 
-use base::ast::{self, DisplayEnv, Expr, LExpr, MutVisitor, Typed};
-use base::pos::{self, Location, Spanned};
+use base::ast::{self, DisplayEnv, Expr, SpannedExpr, MutVisitor, Typed};
+use base::pos::{self, Span, Spanned};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
@@ -17,7 +17,7 @@ pub enum RenameError {
     NoMatchingType {
         symbol: String,
         expected: TcType,
-        possible_types: Vec<(Option<Location>, TcType)>,
+        possible_types: Vec<(Option<Span>, TcType)>,
     },
 }
 
@@ -30,9 +30,9 @@ impl fmt::Display for RenameError {
                               symbol,
                               expected));
                 try!(writeln!(f, "Possibilities:"));
-                for &(ref location, ref typ) in possible_types {
-                    match *location {
-                        Some(ref location) => try!(writeln!(f, "{} at {}", typ, location)),
+                for &(ref span, ref typ) in possible_types {
+                    match *span {
+                        Some(ref span) => try!(writeln!(f, "{} at {}", typ, span.start)),
                         None => try!(writeln!(f, "{} at 'global'", typ)),
                     }
                 }
@@ -44,7 +44,7 @@ impl fmt::Display for RenameError {
 
 struct Environment<'b> {
     env: &'b TypeEnv,
-    stack: ScopedMap<Symbol, (Symbol, Location, TcType)>,
+    stack: ScopedMap<Symbol, (Symbol, Span, TcType)>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, TcType>>,
 }
 
@@ -72,7 +72,7 @@ impl<'a> TypeEnv for Environment<'a> {
 
 pub fn rename(symbols: &mut SymbolModule,
               env: &TypeEnv,
-              expr: &mut LExpr<TcIdent>)
+              expr: &mut SpannedExpr<TcIdent>)
               -> Result<(), Error> {
     use base::instantiate;
 
@@ -91,7 +91,7 @@ pub fn rename(symbols: &mut SymbolModule,
             }
         }
 
-        fn new_pattern(&mut self, typ: &TcType, pattern: &mut ast::LPattern<TcIdent>) {
+        fn new_pattern(&mut self, typ: &TcType, pattern: &mut ast::SpannedPattern<TcIdent>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
                     let field_types = self.find_fields(typ).expect("field_types");
@@ -102,7 +102,7 @@ pub fn rename(symbols: &mut SymbolModule,
                             .typ
                             .clone();
                         let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
-                        field.1 = Some(self.stack_var(id, pattern.location, field_type));
+                        field.1 = Some(self.stack_var(id, pattern.span, field_type));
                     }
                     let record_type = instantiate::remove_aliases(&self.env, typ.clone()).clone();
                     let imported_types = match *record_type {
@@ -113,12 +113,12 @@ pub fn rename(symbols: &mut SymbolModule,
                         let field_type = imported_types.iter()
                             .find(|field| field.name.name_eq(name))
                             .expect("field_type");
-                        self.stack_type(name.clone(), pattern.location, &field_type.typ);
+                        self.stack_type(name.clone(), pattern.span, &field_type.typ);
                     }
                 }
                 ast::Pattern::Identifier(ref mut id) => {
                     let new_name =
-                        self.stack_var(id.name.clone(), pattern.location, id.typ.clone());
+                        self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
                     id.name = new_name;
                 }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
@@ -128,31 +128,31 @@ pub fn rename(symbols: &mut SymbolModule,
                         .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
                         arg.name =
-                            self.stack_var(arg.name.clone(), pattern.location, arg_type.clone());
+                            self.stack_var(arg.name.clone(), pattern.span, arg_type.clone());
                     }
                 }
             }
         }
 
-        fn stack_var(&mut self, id: Symbol, location: Location, typ: TcType) -> Symbol {
+        fn stack_var(&mut self, id: Symbol, span: Span, typ: TcType) -> Symbol {
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
-            let new_id = self.symbols.symbol(format!("{}:{}", name, location));
+            let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
             debug!("Rename binding `{}` = `{}` `{}`",
                    self.symbols.string(&old_id),
                    self.symbols.string(&new_id),
                    types::display_type(&self.symbols, &typ));
-            self.env.stack.insert(old_id, (new_id.clone(), location, typ));
+            self.env.stack.insert(old_id, (new_id.clone(), span, typ));
             new_id
 
         }
 
-        fn stack_type(&mut self, id: Symbol, location: Location, alias: &Alias<Symbol, TcType>) {
+        fn stack_type(&mut self, id: Symbol, span: Span, alias: &Alias<Symbol, TcType>) {
             // Insert variant constructors into the local scope
             if let Some(ref real_type) = alias.typ {
                 if let Type::Variants(ref variants) = **real_type {
                     for &(ref name, ref typ) in variants {
-                        self.env.stack.insert(name.clone(), (name.clone(), location, typ.clone()));
+                        self.env.stack.insert(name.clone(), (name.clone(), span, typ.clone()));
                     }
                 }
             }
@@ -197,7 +197,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 })
         }
 
-        fn rename_expr(&mut self, expr: &mut LExpr<TcIdent>) -> Result<(), RenameError> {
+        fn rename_expr(&mut self, expr: &mut SpannedExpr<TcIdent>) -> Result<(), RenameError> {
             match expr.value {
                 Expr::Identifier(ref mut id) => {
                     if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
@@ -214,7 +214,7 @@ pub fn rename(symbols: &mut SymbolModule,
                             None => {
                                 if let Some(new_id) = try!(self.rename(id, &field.typ)) {
                                     debug!("Rename record field {} = {}", id, new_id);
-                                    *maybe_expr = Some(pos::located(expr.location,
+                                    *maybe_expr = Some(pos::spanned(expr.span,
                                                                     Expr::Identifier(TcIdent {
                                                                         name: new_id,
                                                                         typ: field.typ.clone(),
@@ -263,7 +263,7 @@ pub fn rename(symbols: &mut SymbolModule,
                             for (typ, arg) in types::arg_iter(&bind.env_type_of(&self.env))
                                 .zip(&mut bind.arguments) {
                                 arg.name =
-                                    self.stack_var(arg.name.clone(), expr.location, typ.clone());
+                                    self.stack_var(arg.name.clone(), expr.span, typ.clone());
                             }
                             self.visit_expr(&mut bind.expression);
                             self.env.stack.exit_scope();
@@ -276,7 +276,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
                     for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.arguments) {
-                        arg.name = self.stack_var(arg.name.clone(), expr.location, typ.clone());
+                        arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                     }
                     self.visit_expr(&mut lambda.body);
                     self.env.stack.exit_scope();
@@ -284,7 +284,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 Expr::Type(ref bindings, ref mut body) => {
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
-                        self.stack_type(bind.name.clone(), expr.location, &bind.alias);
+                        self.stack_type(bind.name.clone(), expr.span, &bind.alias);
                     }
                     self.visit_expr(body);
                     self.env.stack_types.exit_scope();
@@ -298,10 +298,10 @@ pub fn rename(symbols: &mut SymbolModule,
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
         type T = ast::TcIdent<Symbol>;
 
-        fn visit_expr(&mut self, expr: &mut LExpr<Self::T>) {
+        fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::T>) {
             if let Err(err) = self.rename_expr(expr) {
                 self.errors.error(Spanned {
-                    span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
+                    span: expr.span,
                     value: err,
                 });
             }

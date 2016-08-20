@@ -14,7 +14,7 @@ use base::error::Errors;
 use parser::parse_string;
 use parser::lexer::Token;
 
-fn parse(text: &str) -> Result<LExpr<String>, Errors<::parser::Error>> {
+fn parse(text: &str) -> Result<SpannedExpr<String>, Errors<::parser::Error>> {
     parse_string(&mut EmptyEnv::new(), text)
         .map_err(|(_, err)| err)
 }

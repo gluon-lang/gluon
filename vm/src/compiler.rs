@@ -3,7 +3,7 @@ use interner::InternedStr;
 use base::ast;
 use base::instantiate;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::ast::{Typed, DisplayEnv, LExpr, Expr};
+use base::ast::{Typed, DisplayEnv, SpannedExpr, Expr};
 use base::types;
 use base::types::{Alias, KindEnv, TcIdent, TcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
@@ -13,7 +13,7 @@ use self::Variable::*;
 
 use Result;
 
-pub type CExpr = LExpr<TcIdent>;
+pub type CExpr = SpannedExpr<TcIdent>;
 
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
@@ -402,7 +402,7 @@ impl<'a> Compiler<'a> {
             let mut count = 0;
             if let Expr::Let(ref bindings, _) = expr.value {
                 for binding in bindings {
-                    count += function.pop_pattern(&binding.name);
+                    count += function.pop_pattern(&binding.name.value);
                 }
                 self.stack_constructors.exit_scope();
             }
@@ -547,7 +547,7 @@ impl<'a> Compiler<'a> {
                     } else {
                         try!(self.compile(&bind.expression, function, false));
                         let typ = bind.expression.env_type_of(self);
-                        self.compile_let_pattern(&bind.name, &typ, function);
+                        self.compile_let_pattern(&bind.name.value, &typ, function);
                     }
                 }
                 return Ok(Some(body));
@@ -638,7 +638,7 @@ impl<'a> Compiler<'a> {
                         }
                         ast::Pattern::Record { .. } => {
                             let typ = &expr.env_type_of(self);
-                            self.compile_let_pattern(&alt.pattern, typ, function);
+                            self.compile_let_pattern(&alt.pattern.value, typ, function);
                         }
                         ast::Pattern::Identifier(ref id) => {
                             function.function.instructions[start_index] =
@@ -647,7 +647,7 @@ impl<'a> Compiler<'a> {
                         }
                     }
                     try!(self.compile(&alt.expression, function, tail_position));
-                    let count = function.pop_pattern(&alt.pattern);
+                    let count = function.pop_pattern(&alt.pattern.value);
                     self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
                     end_jumps.push(function.function.instructions.len());
@@ -785,7 +785,7 @@ impl<'a> Compiler<'a> {
     fn compile_lambda(&mut self,
                       id: &TcIdent,
                       arguments: &[TcIdent],
-                      body: &LExpr<TcIdent>,
+                      body: &SpannedExpr<TcIdent>,
                       function: &mut FunctionEnvs)
                       -> Result<(VmIndex, VmIndex, CompiledFunction)> {
         function.start_function(self,
