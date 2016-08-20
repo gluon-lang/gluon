@@ -17,7 +17,7 @@ use std::rc::Rc;
 use base::ast;
 use base::ast::*;
 use base::error::Errors;
-use base::pos::{Located, Location, located};
+use base::pos::{self, Location, Span};
 use base::types::{Type, Generic, Alias, Field, Kind, TypeVariable};
 use base::symbol::{Name, Symbol, SymbolModule};
 
@@ -382,17 +382,17 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn expr(&'s self) -> LanguageParser<'s, I, F, LExpr<Id>> {
+    fn expr(&'s self) -> LanguageParser<'s, I, F, SpannedExpr<Id>> {
         self.parser(ParserEnv::<I, F>::top_expr)
     }
 
-    fn parse_expr(&self, input: I) -> ParseResult<LExpr<Id>, I> {
+    fn parse_expr(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         let arg_expr1 = self.parser(ParserEnv::<I, F>::parse_arg);
         let arg_expr2 = self.parser(ParserEnv::<I, F>::parse_arg);
         (arg_expr1, many(arg_expr2))
-            .map(|(f, args): (LExpr<Id>, Vec<_>)| {
+            .map(|(f, args): (SpannedExpr<Id>, Vec<_>)| {
                 if args.len() > 0 {
-                    located(f.location, Expr::Call(Box::new(f), args))
+                    pos::spanned(f.span, Expr::Call(Box::new(f), args))
                 } else {
                     f
                 }
@@ -401,10 +401,17 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     /// Parses an expression which could be an argument to a function
-    fn parse_arg(&self, input: I) -> ParseResult<LExpr<Id>, I> {
+    fn parse_arg(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         debug!("Expr start: {:?}", input.clone().uncons());
-        let location = input.position();
-        let loc = |expr| located(location, expr);
+        let position = input.position();
+        let loc = |expr| {
+            pos::spanned(Span {
+                             start: position,
+                             // ARGH - TODO
+                             end: position,
+                         },
+                         expr)
+        };
 
         // To prevent stack overflows we push all binding groups (which are commonly deeply nested)
         // to a stack and construct the expressions afterwards
@@ -437,25 +444,32 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                 }
             }
         }
-        for Located { location, value } in let_bindings.into_iter().rev() {
-            resulting_expr = located(location,
-                                     match value {
-                                         LetOrType::Let(bindings) => {
-                                             Expr::Let(bindings, Box::new(resulting_expr))
-                                         }
-                                         LetOrType::Type(bindings) => {
-                                             Expr::Type(bindings, Box::new(resulting_expr))
-                                         }
-                                     });
+        for binding in let_bindings.into_iter().rev() {
+            resulting_expr = pos::spanned(binding.span,
+                                          match binding.value {
+                                              LetOrType::Let(bindings) => {
+                                                  Expr::Let(bindings, Box::new(resulting_expr))
+                                              }
+                                              LetOrType::Type(bindings) => {
+                                                  Expr::Type(bindings, Box::new(resulting_expr))
+                                              }
+                                          });
         }
         Ok((resulting_expr, Consumed::Consumed(input)))
     }
 
-    fn rest_expr(&self, input: I) -> ParseResult<LExpr<Id>, I> {
-        let location = input.position();
-        let loc = |expr| located(location, expr);
+    fn rest_expr(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
+        let position = input.position();
+        let loc = |expr| {
+            pos::spanned(Span {
+                             start: position,
+                             // ARGH - TODO
+                             end: position,
+                         },
+                         expr)
+        };
 
-        choice::<[&mut Parser<Input = I, Output = LExpr<Id>>; 12],
+        choice::<[&mut Parser<Input = I, Output = SpannedExpr<Id>>; 12],
                  _>([&mut parser(|input| self.if_else(input)).map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::case_of).map(&loc),
                      &mut self.parser(ParserEnv::<I, F>::lambda).map(&loc),
@@ -530,7 +544,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     match_parser! { op, Operator -> Id }
 
     /// Parses any sort of expression
-    fn top_expr(&self, input: I) -> ParseResult<LExpr<Id>, I> {
+    fn top_expr(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         let term = self.parser(ParserEnv::<I, F>::parse_expr);
         let op = self.op()
             .map(|op| {
@@ -548,16 +562,15 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                 token(Token::CloseBlock),
                 self.expr())
             .or(sep_by1(expression_parser(term, op, |l, op, r| {
-                            let loc = l.location.clone();
-                            located(loc, Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
+                            pos::spanned(l.span, Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
                         }),
                         token(Token::Semi))
-                .map(|mut exprs: Vec<LExpr<Id>>| {
+                .map(|mut exprs: Vec<SpannedExpr<Id>>| {
                     if exprs.len() == 1 {
                         exprs.pop().unwrap()
                     } else {
-                        located(exprs.first().expect("Expr in block").location,
-                                Expr::Block(exprs))
+                        pos::spanned(exprs.first().expect("Expr in block").span,
+                                     Expr::Block(exprs))
                     }
                 }))
             .parse_state(input)
@@ -588,13 +601,18 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn pattern(&'s self) -> LanguageParser<'s, I, F, LPattern<Id>> {
+    fn pattern(&'s self) -> LanguageParser<'s, I, F, SpannedPattern<Id>> {
         self.parser(ParserEnv::<I, F>::parse_pattern)
     }
 
-    fn parse_pattern(&self, input: I) -> ParseResult<LPattern<Id>, I> {
+    fn parse_pattern(&self, input: I) -> ParseResult<SpannedPattern<Id>, I> {
         self.record_parser(self.ident_u(), self.ident_u(), |record| {
-            let location = input.position();
+            let position = input.position();
+            let span = Span {
+                start: position,
+                // ARGH - TODO
+                end: position,
+            };
 
             self.parser(ParserEnv::<I, F>::parse_ident2)
                 .then(|(id, typ)| {
@@ -625,7 +643,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                         fields: patterns,
                     }
                 }))
-                .map(|p| located(location, p))
+                .map(|p| pos::spanned(span, p))
                 .or(between(token(Token::Open(Delimiter::Paren)),
                             token(Token::Close(Delimiter::Paren)),
                             self.pattern()))
@@ -741,7 +759,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 pub fn parse_tc
     (symbols: &mut SymbolModule,
      input: &str)
-     -> Result<LExpr<TcIdent<Symbol>>, (Option<LExpr<TcIdent<Symbol>>>, Errors<Error>)> {
+     -> Result<SpannedExpr<TcIdent<Symbol>>, (Option<SpannedExpr<TcIdent<Symbol>>>, Errors<Error>)> {
     let mut env = ast::TcIdentEnv {
         typ: Type::variable(TypeVariable {
             id: 0,
@@ -755,14 +773,14 @@ pub fn parse_tc
 #[cfg(feature = "test")]
 pub fn parse_string<'a, 's>(make_ident: &'a mut IdentEnv<Ident = String>,
                             input: &'s str)
-                            -> Result<LExpr<String>, (Option<LExpr<String>>, Errors<Error>)> {
+                            -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
     parse_expr(make_ident, input)
 }
 
 /// Parses a gluon expression
 pub fn parse_expr<'a, 's, Id>(make_ident: &'a mut IdentEnv<Ident = Id>,
                               input: &'s str)
-                              -> Result<LExpr<Id>, (Option<LExpr<Id>>, Errors<Error>)>
+                              -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
     where Id: AstId + Clone + PartialEq + fmt::Debug
 {
     let make_ident = Rc::new(RefCell::new(make_ident));

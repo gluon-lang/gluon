@@ -136,7 +136,7 @@ pub mod compiler_pipeline {
     use vm::thread::{RootedValue, ThreadInternal};
     use vm::internal::ClosureDataDef;
 
-    pub struct MacroValue(pub ast::LExpr<ast::TcIdent<Symbol>>);
+    pub struct MacroValue(pub ast::SpannedExpr<ast::TcIdent<Symbol>>);
 
     pub trait MacroExpandable {
         fn expand_macro(self,
@@ -158,7 +158,7 @@ pub mod compiler_pipeline {
         }
     }
 
-    impl MacroExpandable for ast::LExpr<ast::TcIdent<Symbol>> {
+    impl MacroExpandable for ast::SpannedExpr<ast::TcIdent<Symbol>> {
         fn expand_macro(mut self,
                         compiler: &mut Compiler,
                         thread: &Thread,
@@ -172,7 +172,7 @@ pub mod compiler_pipeline {
         }
     }
 
-    pub struct TypecheckValue(pub ast::LExpr<ast::TcIdent<Symbol>>, pub TcType);
+    pub struct TypecheckValue(pub ast::SpannedExpr<ast::TcIdent<Symbol>>, pub TcType);
 
     pub trait Typecheckable {
         fn typecheck(self,
@@ -226,7 +226,7 @@ pub mod compiler_pipeline {
         }
     }
 
-    pub struct CompileValue(pub ast::LExpr<ast::TcIdent<Symbol>>, pub TcType, pub CompiledFunction);
+    pub struct CompileValue(pub ast::SpannedExpr<ast::TcIdent<Symbol>>, pub TcType, pub CompiledFunction);
 
     pub trait Compileable<Extra> {
         fn compile(self,
@@ -357,7 +357,7 @@ impl Compiler {
     pub fn parse_expr(&mut self,
                       file: &str,
                       input: &str)
-                      -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>, Errors<::parser::Error>> {
+                      -> StdResult<ast::SpannedExpr<ast::TcIdent<Symbol>>, Errors<::parser::Error>> {
         Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols),
                                    input)
             .map_err(|t| t.1)))
@@ -367,8 +367,8 @@ impl Compiler {
     pub fn parse_partial_expr(&mut self,
                               file: &str,
                               input: &str)
-                              -> StdResult<ast::LExpr<ast::TcIdent<Symbol>>,
-                                           (Option<ast::LExpr<ast::TcIdent<Symbol>>>,
+                              -> StdResult<ast::SpannedExpr<ast::TcIdent<Symbol>>,
+                                           (Option<ast::SpannedExpr<ast::TcIdent<Symbol>>>,
                                             Errors<::parser::Error>)> {
         ::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols),
                            input)
@@ -380,7 +380,7 @@ impl Compiler {
                           vm: &Thread,
                           file: &str,
                           expr_str: &str,
-                          expr: &mut ast::LExpr<ast::TcIdent<Symbol>>)
+                          expr: &mut ast::SpannedExpr<ast::TcIdent<Symbol>>)
                           -> Result<TcType> {
         self.typecheck_expr_expected(vm, file, expr_str, expr, None)
     }
@@ -389,7 +389,7 @@ impl Compiler {
                                vm: &Thread,
                                file: &str,
                                expr_str: &str,
-                               expr: &mut ast::LExpr<ast::TcIdent<Symbol>>,
+                               expr: &mut ast::SpannedExpr<ast::TcIdent<Symbol>>,
                                expected_type: Option<&TcType>)
                                -> Result<TcType> {
         use check::typecheck::Typecheck;
@@ -406,7 +406,7 @@ impl Compiler {
                          file: &str,
                          expr_str: &str,
                          expected_type: Option<&TcType>)
-                         -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType)> {
+                         -> Result<(ast::SpannedExpr<ast::TcIdent<Symbol>>, TcType)> {
         let mut expr = try!(self.parse_expr(file, expr_str));
         if self.implicit_prelude {
             self.include_implicit_prelude(file, &mut expr);
@@ -420,7 +420,7 @@ impl Compiler {
     pub fn compile_script(&mut self,
                           vm: &Thread,
                           filename: &str,
-                          expr: &ast::LExpr<ast::TcIdent<Symbol>>)
+                          expr: &ast::SpannedExpr<ast::TcIdent<Symbol>>)
                           -> Result<CompiledFunction> {
         use vm::compiler::Compiler;
         debug!("Compile `{}`", filename);
@@ -443,7 +443,7 @@ impl Compiler {
                             vm: &Thread,
                             file: &str,
                             expr_str: &str)
-                            -> Result<(ast::LExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
+                            -> Result<(ast::SpannedExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
         use check::metadata;
         let (mut expr, typ) = try!(self.typecheck_str(vm, file, expr_str, None));
 
@@ -540,7 +540,7 @@ impl Compiler {
 
     fn include_implicit_prelude(&mut self,
                                 name: &str,
-                                expr: &mut ast::LExpr<ast::TcIdent<Symbol>>) {
+                                expr: &mut ast::SpannedExpr<ast::TcIdent<Symbol>>) {
         use std::mem;
         if name == "std.prelude" {
             return;
@@ -565,8 +565,8 @@ impl Compiler {
     "#;
         let prelude_expr = self.parse_expr("", prelude_import).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
-        fn assign_last_body(l: &mut ast::LExpr<ast::TcIdent<Symbol>>,
-                            original_expr: ast::LExpr<ast::TcIdent<Symbol>>) {
+        fn assign_last_body(l: &mut ast::SpannedExpr<ast::TcIdent<Symbol>>,
+                            original_expr: ast::SpannedExpr<ast::TcIdent<Symbol>>) {
             match l.value {
                 ast::Expr::Let(_, ref mut e) => {
                     assign_last_body(e, original_expr);
