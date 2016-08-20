@@ -5,11 +5,11 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::pos::{BytePos, CharPos, Location};
-use base::types::{Type, TcType};
+use base::types::{Field, Type, TcType};
 use check::completion;
 
 mod support;
-use support::{MockEnv, typ};
+use support::{MockEnv, intern, typ};
 
 fn find_type(s: &str, location: Location) -> Result<TcType, ()> {
     let env = MockEnv::new();
@@ -169,6 +169,44 @@ let (++) l r =
                                       absolute: BytePos(123),
                                   });
     let expected = Ok(typ("Float"));
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn field_access() {
+    let env = ast::EmptyEnv::new();
+    let typ_env = MockEnv::new();
+
+    let (mut expr, result) = support::typecheck_expr(r#"
+let r = { x = 1 }
+r.x
+"#);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let result = completion::find(&env,
+                                  &typ_env,
+                                  &mut expr,
+                                  Location {
+                                      line: 3,
+                                      column: CharPos(1),
+                                      absolute: BytePos(0),
+                                  });
+    let expected = Ok(Type::record(vec![],
+                                   vec![Field {
+                                            name: intern("x"),
+                                            typ: typ("Int"),
+                                        }]));
+    assert_eq!(result, expected);
+
+    let result = completion::find(&env,
+                                  &typ_env,
+                                  &mut expr,
+                                  Location {
+                                      line: 3,
+                                      column: CharPos(3),
+                                      absolute: BytePos(0),
+                                  });
+    let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 }
 
