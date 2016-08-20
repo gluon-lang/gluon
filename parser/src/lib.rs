@@ -17,7 +17,7 @@ use std::rc::Rc;
 use base::ast;
 use base::ast::*;
 use base::error::Errors;
-use base::pos::{self, Location, Span};
+use base::pos::{self, Location, Located, Span};
 use base::types::{Type, Generic, Alias, Field, Kind, TypeVariable};
 use base::symbol::{Name, Symbol, SymbolModule};
 
@@ -30,7 +30,25 @@ use combine_language::{Assoc, Fixity, expression_parser};
 
 use lexer::{Lexer, Delimiter, Token, IdentType};
 
-pub type Error = ParseError<Wrapper<'static, 'static, 'static, String>>;
+pub type Error = ParseError<StreamType>;
+
+// Dummy type for ParseError which has the correct associated types
+#[derive(Clone)]
+pub struct StreamType(());
+impl StreamOnce for StreamType {
+    type Item = Token<String>;
+    type Range = Token<String>;
+    type Position = Location;
+
+    fn uncons(&mut self) -> Result<Token<String>, ::lexer::Error<String>> {
+        unimplemented!()
+    }
+
+    fn position(&self) -> Self::Position {
+        unimplemented!()
+    }
+}
+
 
 /// Parser passes the environment to each parser function
 type LanguageParser<'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<I, F>, I, T>;
@@ -58,14 +76,14 @@ impl<'a, 's, 'l, Id> StreamOnce for Wrapper<'a, 's, 'l, Id>
 {
     type Item = Token<Id>;
     type Range = Token<Id>;
-    type Position = Location;
+    type Position = Span;
 
     fn uncons(&mut self) -> Result<Token<Id>, ::lexer::Error<Id>> {
         self.stream.uncons()
     }
 
     fn position(&self) -> Self::Position {
-        self.stream.position().start
+        self.stream.position()
     }
 }
 
@@ -107,7 +125,7 @@ fn as_trait<P: Parser>(p: &mut P) -> &mut Parser<Input = P::Input, Output = P::O
 }
 
 impl<'s, I, Id, F> ParserEnv<I, F>
-    where I: Stream<Item = Token<Id>, Range = Token<Id>, Position = Location>,
+    where I: Stream<Item = Token<Id>, Range = Token<Id>, Position = Span>,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
@@ -387,9 +405,9 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         let arg_expr1 = self.parser(ParserEnv::<I, F>::parse_arg);
         let arg_expr2 = self.parser(ParserEnv::<I, F>::parse_arg);
         (arg_expr1, many(arg_expr2))
-            .map(|(f, args): (SpannedExpr<Id>, Vec<_>)| {
-                if args.len() > 0 {
-                    pos::spanned(f.span, Expr::Call(Box::new(f), args))
+            .map(|(f, args): (SpannedExpr<Id>, Vec<SpannedExpr<_>>)| {
+                if let Some(end) = args.last().map(|last| last.span.end) {
+                    pos::spanned2(f.span.start, end, Expr::Call(Box::new(f), args))
                 } else {
                     f
                 }
@@ -400,15 +418,8 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     /// Parses an expression which could be an argument to a function
     fn parse_arg(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         debug!("Expr start: {:?}", input.clone().uncons());
-        let position = input.position();
-        let loc = |expr| {
-            pos::spanned(Span {
-                             start: position,
-                             // ARGH - TODO
-                             end: position,
-                         },
-                         expr)
-        };
+        let span = input.position();
+        let loc = |expr| pos::spanned(span, expr);
 
         // To prevent stack overflows we push all binding groups (which are commonly deeply nested)
         // to a stack and construct the expressions afterwards
@@ -456,20 +467,13 @@ impl<'s, I, Id, F> ParserEnv<I, F>
     }
 
     fn rest_expr(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
-        let position = input.position();
-        let loc = |expr| {
-            pos::spanned(Span {
-                             start: position,
-                             // ARGH - TODO
-                             end: position,
-                         },
-                         expr)
-        };
+        let span = input.position();
+        let loc = |expr| pos::spanned(span, expr);
 
         choice::<[&mut Parser<Input = I, Output = SpannedExpr<Id>>; 12],
-                 _>([&mut parser(|input| self.if_else(input)).map(&loc),
-                     &mut self.parser(ParserEnv::<I, F>::case_of).map(&loc),
-                     &mut self.parser(ParserEnv::<I, F>::lambda).map(&loc),
+                 _>([&mut parser(|input| self.if_else(input)),
+                     &mut self.parser(ParserEnv::<I, F>::case_of),
+                     &mut self.parser(ParserEnv::<I, F>::lambda),
                      &mut self.integer()
                          .map(|i| loc(Expr::Literal(LiteralEnum::Integer(i)))),
                      &mut self.byte()
@@ -504,14 +508,18 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .and(self.parser(Self::fields))
             .map(|(expr, fields): (_, Vec<_>)| {
                 debug!("Parsed expr {:?}", expr);
-                fields.into_iter().fold(expr,
-                                        |expr, field| loc(Expr::FieldAccess(Box::new(expr), field)))
+                fields.into_iter().fold(expr, |expr, field: Located<_>| {
+                    pos::spanned2(span.start,
+                                  field.location,
+                                  Expr::FieldAccess(Box::new(expr), field.value))
+                })
             })
             .parse_state(input)
 
     }
 
-    fn fields(&self, input: I) -> ParseResult<Vec<Id>, I> {
+    // The Location is the end of the field
+    fn fields(&self, input: I) -> ParseResult<Vec<Located<Id>>, I> {
         let mut fields = Vec::new();
         let mut input = Consumed::Empty(input);
         loop {
@@ -519,9 +527,10 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                 Ok((_, input)) => input,
                 Err(_) => return Ok((fields, input)),
             };
+            let end = input.clone().into_inner().position().end;
             input = match input.clone().combine(|input| self.ident().parse_lazy(input)) {
                 Ok((field, input)) => {
-                    fields.push(field);
+                    fields.push(pos::located(end, field));
                     input
                 }
                 Err(err) => {
@@ -531,7 +540,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     self.errors
                         .borrow_mut()
                         .error(static_error(&mut *make_ident, err.into_inner()));
-                    fields.push(make_ident.from_str(""));
+                    fields.push(pos::located(end, make_ident.from_str("")));
                     return Ok((fields, input));
                 }
             };
@@ -573,19 +582,22 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn lambda(&self, input: I) -> ParseResult<Expr<Id>, I> {
+    fn lambda(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
+        let start = input.position().start;
         (token(Token::Lambda), many(self.ident()), token(Token::RightArrow), self.expr())
             .map(|(_, args, _, expr)| {
-                Expr::Lambda(Lambda {
-                    id: self.empty_id.clone(),
-                    arguments: args,
-                    body: Box::new(expr),
-                })
+                pos::spanned2(start,
+                              expr.span.end,
+                              Expr::Lambda(Lambda {
+                                  id: self.empty_id.clone(),
+                                  arguments: args,
+                                  body: Box::new(expr),
+                              }))
             })
             .parse_state(input)
     }
 
-    fn case_of(&self, input: I) -> ParseResult<Expr<Id>, I> {
+    fn case_of(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         let alt = (token(Token::Pipe), self.pattern(), token(Token::RightArrow), self.expr())
             .map(|(_, p, _, e)| {
                 Alternative {
@@ -593,8 +605,13 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                     expression: e,
                 }
             });
-        (token(Token::Match), self.expr(), token(Token::With), many1(alt))
-            .map(|(_, e, _, alts)| Expr::Match(Box::new(e), alts))
+        let start = input.position().start;
+        (token(Token::Match), self.expr(), token(Token::With), many1::<Vec<_>, _>(alt))
+            .map(|(_, e, _, alts)| {
+                pos::spanned2(start,
+                              alts.last().expect("No alternatives").expression.span.end,
+                              Expr::Match(Box::new(e), alts))
+            })
             .parse_state(input)
     }
 
@@ -604,12 +621,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     fn parse_pattern(&self, input: I) -> ParseResult<SpannedPattern<Id>, I> {
         self.record_parser(self.ident_u(), self.ident_u(), |record| {
-            let position = input.position();
-            let span = Span {
-                start: position,
-                // ARGH - TODO
-                end: position,
-            };
+            let span = input.position();
 
             self.parser(ParserEnv::<I, F>::parse_ident2)
                 .then(|(id, typ)| {
@@ -648,14 +660,21 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         })
     }
 
-    fn if_else(&self, input: I) -> ParseResult<Expr<Id>, I> {
+    fn if_else(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
+        let start = input.position().start;
         (token(Token::If),
          self.expr(),
          token(Token::Then),
          self.expr(),
          token(Token::Else),
          self.expr())
-            .map(|(_, b, _, t, _, f)| Expr::IfElse(Box::new(b), Box::new(t), Some(Box::new(f))))
+            .map(|(_, b, _, t, _, f)| {
+                pos::spanned(Span {
+                                 start: start,
+                                 end: f.span.end,
+                             },
+                             Expr::IfElse(Box::new(b), Box::new(t), Some(Box::new(f))))
+            })
             .parse_state(input)
     }
 
@@ -816,14 +835,14 @@ pub fn parse_expr<'a, 's, Id>
 
 fn static_error<I, Id>(make_ident: &mut IdentEnv<Ident = Id>, err: ParseError<I>) -> Error
     where Id: Clone + fmt::Debug + PartialEq,
-          I: Stream<Item = Token<Id>, Range = Token<Id>, Position = Location>
+          I: Stream<Item = Token<Id>, Range = Token<Id>, Position = Span>
 {
     let errors = err.errors
         .into_iter()
         .map(|t| static_error_(make_ident, t))
         .collect();
     ParseError {
-        position: err.position,
+        position: err.position.start,
         errors: errors,
     }
 }

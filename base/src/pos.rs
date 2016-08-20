@@ -205,6 +205,16 @@ pub fn spanned<T>(span: Span, value: T) -> Spanned<T> {
     }
 }
 
+pub fn spanned2<T>(start: Location, end: Location, value: T) -> Spanned<T> {
+    Spanned {
+        span: Span {
+            start: start,
+            end: end,
+        },
+        value: value,
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Located<T> {
     pub location: Location,

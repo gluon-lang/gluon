@@ -773,7 +773,7 @@ test 1
         }
         _ => panic!(),
     };
-    let test_id = match *bind.name {
+    let test_id = match bind.name.value {
         Pattern::Identifier(ref id) => id,
         _ => panic!(),
     };

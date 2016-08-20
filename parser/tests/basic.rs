@@ -165,7 +165,9 @@ fn parse(input: &str) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>
 }
 
 fn parse_new(input: &str) -> SpannedExpr<String> {
-    parse(input).unwrap_or_else(|(_, err)| panic!("{:?}", err))
+    // Replace windows line endings so that byte positins match up on multiline expressions
+    let input = input.replace("\r\n", "\n");
+    parse(&input).unwrap_or_else(|(_, err)| panic!("{:?}", err))
 }
 
 #[test]
@@ -415,7 +417,7 @@ fn span_identifier() {
     assert_eq!(e.span,
                Span {
                    start: loc(1, 1, 0),
-                   end: loc(1, 5, 0),
+                   end: loc(1, 5, 4),
                });
 }
 
@@ -428,7 +430,21 @@ fn span_integer() {
     assert_eq!(e.span,
                Span {
                    start: loc(1, 1, 0),
-                   end: loc(1, 5, 0),
+                   end: loc(1, 5, 4),
+               });
+}
+
+// FIXME The span of string literals includes the spaces after them
+#[test]
+#[ignore]
+fn span_string_literal() {
+    let _ = ::env_logger::init();
+
+    let e = parse_new(r#" "test" "#);
+    assert_eq!(e.span,
+               Span {
+                   start: loc(1, 2, 1),
+                   end: loc(1, 8, 7),
                });
 }
 
@@ -436,11 +452,11 @@ fn span_integer() {
 fn span_call() {
     let _ = ::env_logger::init();
 
-    let e = parse_new(r#" f 123 "asd" "#);
+    let e = parse_new(r#" f 123 "asd""#);
     assert_eq!(e.span,
                Span {
                    start: loc(1, 2, 1),
-                   end: loc(1, 13, 7), // ???
+                   end: loc(1, 13, 12),
                });
 }
 
@@ -456,7 +472,7 @@ match False with
     assert_eq!(e.span,
                Span {
                    start: loc(2, 1, 1),
-                   end: loc(4, 18, 53),
+                   end: loc(5, 1, 56),
                });
 }
 
@@ -473,7 +489,7 @@ else
     assert_eq!(e.span,
                Span {
                    start: loc(2, 1, 1),
-                   end: loc(5, 11, 29),
+                   end: loc(6, 1, 36),
                });
 }
 
@@ -485,8 +501,29 @@ fn span_byte() {
     assert_eq!(e.span,
                Span {
                    start: loc(1, 1, 0),
-                   end: loc(1, 5, 0),
+                   end: loc(1, 5, 4),
                });
+}
+
+#[test]
+fn span_field_access() {
+    let _ = ::env_logger::init();
+    let expr = parse_new("record.x");
+    assert_eq!(expr.span,
+                Span {
+                    start: loc(1, 1, 0),
+                    end: loc(1, 9, 8),
+                });
+    match expr.value {
+        Expr::FieldAccess(ref e, _) => {
+            assert_eq!(e.span,
+                       Span {
+                           start: loc(1, 1, 0),
+                           end: loc(1, 7, 6),
+                       });
+        }
+        _ => panic!(),
+    }
 }
 
 #[test]

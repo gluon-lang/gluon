@@ -4,7 +4,6 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
-use base::ast;
 use base::pos::{BytePos, CharPos, Location};
 use base::types::{Type, TcType};
 use check::completion;
@@ -197,7 +196,7 @@ fn suggest_identifier_when_prefix() {
     let result = suggest(r#"
 let test = 1
 let tes = ""
-let aaa = ""
+let aaa = test
 te
 "#,
                          Location {
