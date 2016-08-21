@@ -19,7 +19,7 @@ use base::ast;
 use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, Location, Located, Span};
-use base::types::{Type, Generic, Alias, Field, Kind, TypeVariable};
+use base::types::{Type, Generic, Alias, Field, Kind};
 use base::symbol::{Name, Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
@@ -801,10 +801,7 @@ pub fn parse_tc
      input: &str)
      -> Result<SpannedExpr<TcIdent<Symbol>>, (Option<SpannedExpr<TcIdent<Symbol>>>, Errors<Error>)> {
     let mut env = ast::TcIdentEnv {
-        typ: Type::variable(TypeVariable {
-            id: 0,
-            kind: Kind::typ(),
-        }),
+        typ: Type::hole(),
         env: symbols,
     };
     parse_expr(&mut env, input)

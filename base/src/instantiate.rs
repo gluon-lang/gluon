@@ -262,6 +262,7 @@ fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
                                     |v| walk_move_type2(&v.1, f).map(|t| (v.0.clone(), t)))
                         .map(Type::variants)
                 }
+                Type::Hole |
                 Type::Builtin(_) |
                 Type::Variable(_) |
                 Type::Generic(_) |
