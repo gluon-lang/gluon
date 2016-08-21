@@ -122,7 +122,7 @@ let f x = f x
                            Location {
                                line: 2,
                                column: CharPos(11),
-                               absolute: BytePos(0),
+                               absolute: BytePos(11),
                            });
     let expected = Ok(Type::function(vec![typ("a0")], typ("a1")));
 
@@ -167,7 +167,7 @@ let (++) l r =
                                   Location {
                                       line: 6,
                                       column: CharPos(6),
-                                      absolute: BytePos(0),
+                                      absolute: BytePos(123),
                                   });
     let expected = Ok(typ("Float"));
     assert_eq!(result, expected);
@@ -270,7 +270,7 @@ record.
                          Location {
                              line: 3,
                              column: CharPos(7),
-                             absolute: BytePos(0),
+                             absolute: BytePos(50),
                          });
     let expected = Ok(vec!["aa".into(), "ab".into(), "c".into()]);
 

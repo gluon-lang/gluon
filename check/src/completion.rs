@@ -153,7 +153,7 @@ impl<F> FindVisitor<F>
 
     fn visit_expr(&mut self, current: &SpannedExpr<TcIdent<Symbol>>) {
         use base::ast::Expr::*;
-
+        
         match current.value {
             Identifier(_) | Literal(_) => self.on_found.expr(current),
             Call(ref func, ref args) => {

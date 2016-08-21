@@ -472,7 +472,7 @@ match False with
     assert_eq!(e.span,
                Span {
                    start: loc(2, 1, 1),
-                   end: loc(5, 1, 56),
+                   end: loc(4, 18, 55),
                });
 }
 
@@ -489,7 +489,7 @@ else
     assert_eq!(e.span,
                Span {
                    start: loc(2, 1, 1),
-                   end: loc(6, 1, 36),
+                   end: loc(5, 11, 35),
                });
 }
 

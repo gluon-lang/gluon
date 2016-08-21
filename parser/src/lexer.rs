@@ -358,7 +358,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     fn parse_op(&self, input: LocatedStream<I>) -> ParseResult<Id, LocatedStream<I>> {
-        (optional(char('#').with(many(letter()))), try(self.env.op()))
+        (optional(char('#').with(many(letter()))), try(self.env.op_()))
             .map(|(builtin, op): (Option<String>, String)| {
                 match builtin {
                     Some(mut builtin) => {
@@ -381,24 +381,11 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             .parse_state(input)
     }
 
-    fn integer<'b>(&'b self) -> LanguageParser<'a, 'b, I, F, i64> {
-        self.parser(Self::integer_)
-    }
-
-    fn integer_<'b>(&'b self, input: LocatedStream<I>) -> ParseResult<i64, LocatedStream<I>> {
-        let (s, input) = try!(many1::<String, _>(digit()).parse_lazy(input));
-        let mut n = 0;
-        for c in s.chars() {
-            n = n * 10 + (c as i64 - '0' as i64);
-        }
-        Ok((n, input))
-    }
-
     /// Identifier parser which returns the identifier as well as the type of the identifier
     fn parse_ident2(&self,
                     input: LocatedStream<I>)
                     -> ParseResult<(Id, IdentType), LocatedStream<I>> {
-        let id = self.env.identifier().map(|id| {
+        let id = self.env.identifier_().map(|id| {
             let typ = if id.chars().next().unwrap().is_uppercase() {
                 IdentType::Constructor
             } else {
@@ -406,7 +393,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             };
             (id, typ)
         });
-        let op = self.env.parens(self.env.op()).map(|id| (id, IdentType::Operator));
+        let op = self.env.parens(self.env.op_()).map(|id| (id, IdentType::Operator));
         try(id)
             .or(try(op))
             .map(|(s, typ)| (self.intern(&s), typ))
@@ -470,6 +457,10 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             Ok((token, input)) => {
                 let input = input.into_inner();
                 let end = input.position();
+                let input = match self.env.white_space().parse_state(input.clone()) {
+                    Ok(((), input)) => input.into_inner(),
+                    Err(_) => input,
+                };
                 self.input = Some(input);
                 SpannedToken {
                     span: Span {
@@ -520,6 +511,8 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                     _ => {
                         if s.starts_with("///") {
                             let mut comment = String::new();
+                            let ((), new_input) = try!(spaces().parse_state(input));
+                            input = new_input.into_inner();
                             // Merge consecutive line comments
                             loop {
                                 let mut line = satisfy(|c| c != '\n' && c != '\r').iter(input);
@@ -555,7 +548,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 };
                 return Ok((tok, Consumed::Consumed(input)));
             } else if first.is_digit(10) {
-                let int_or_byte = self.env.lex((self.integer(), optional(char('b'))));
+                let int_or_byte = (self.env.integer_(), optional(char('b')));
                 return try(int_or_byte.skip(not_followed_by(string("."))))
                     .and_then(|(i, byte)| {
                         if byte.is_none() {
@@ -568,7 +561,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                             }
                         }
                     })
-                    .or(self.env.float().map(Token::Float))
+                    .or(self.env.float_().map(Token::Float))
                     .parse_state(input);
             } else if first.is_alphabetic() || first == '_' {
                 return self.ident().map(|t| self.id_to_keyword(t)).parse_state(input);
@@ -590,8 +583,8 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                 ',' => Token::Comma,
                 '.' => Token::Dot,
                 '\\' => Token::Lambda,
-                '"' => return self.env.string_literal().map(Token::String).parse_state(input),
-                '\'' => return self.env.char_literal().map(Token::Char).parse_state(input),
+                '"' => return self.env.string_literal_().map(Token::String).parse_state(input),
+                '\'' => return self.env.char_literal_().map(Token::Char).parse_state(input),
                 _ => Token::EOF,
             };
             return Ok((tok, one_char_consumed));
@@ -622,7 +615,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                          input: LocatedStream<I>)
                          -> ParseResult<Token<Id>, LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
-            let mut input = Consumed::Empty(input);
+            let ((), mut input) = try!(spaces().parse_state(input));
             let mut out = String::new();
             loop {
                 match input.clone()

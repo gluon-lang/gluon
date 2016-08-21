@@ -724,12 +724,12 @@ in f "123"
                    start: Location {
                        line: 3,
                        column: CharPos(6),
-                       absolute: BytePos(0),
+                       absolute: BytePos(26),
                    },
                    end: Location {
                        line: 3,
                        column: CharPos(11),
-                       absolute: BytePos(0),
+                       absolute: BytePos(31),
                    },
                });
 }
