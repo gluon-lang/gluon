@@ -1,9 +1,6 @@
-use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt;
-use std::rc::Rc;
 
-use base::ast::*;
 use base::pos::{BytePos, CharPos, Location, Span, Spanned};
 
 use combine::primitives::{Consumed, Error as CombineError, RangeStream};
@@ -141,8 +138,7 @@ pub enum Token<Id> {
     EOF,
 }
 
-impl<Id> fmt::Display for Token<Id>
-{
+impl<Id> fmt::Display for Token<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Token::*;
         use self::Delimiter::*;
@@ -253,9 +249,7 @@ pub enum Context {
 }
 
 /// Parser passes the environment to each parser function
-type LanguageParser<'a: 'b, 'b, I: 'b, F: 'b, T> = EnvParser<&'b Lexer<'a, I, F>,
-                                                             LocatedStream<I>,
-                                                             T>;
+type LanguageParser<'a: 'b, 'b, I: 'b, T> = EnvParser<&'b Lexer<'a, I>, LocatedStream<I>, T>;
 
 pub struct Contexts {
     stack: Vec<Offside>,
@@ -314,12 +308,10 @@ fn is_operator_char(c: char) -> bool {
     "+-*/&|=<>".chars().any(|x| x == c)
 }
 
-pub struct Lexer<'s, I, F>
-    where I: RangeStream<Item = char, Range = &'s str>,
-          F: IdentEnv
+pub struct Lexer<'s, I>
+    where I: RangeStream<Item = char, Range = &'s str>
 {
     pub env: LanguageEnv<'s, LocatedStream<I>>,
-    pub make_ident: Rc<RefCell<F>>,
     pub input: Option<LocatedStream<I>>,
     pub unprocessed_tokens: Vec<SpannedToken<&'s str>>,
     pub indent_levels: Contexts,
@@ -329,13 +321,11 @@ pub struct Lexer<'s, I, F>
     end_span: Option<Span>,
 }
 
-impl<'s, 'a, I, Id, F> Lexer<'s, I, F>
+impl<'a, 's, I> Lexer<'s, I>
     where I: RangeStream<Item = char, Range = &'s str> + 's,
-          F: IdentEnv<Ident = Id>,
-          Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
-    pub fn new(input: I, make_ident: Rc<RefCell<F>>) -> Lexer<'s, I, F> {
+    pub fn new(input: I) -> Lexer<'s, I> {
         let env = LanguageEnv::new(LanguageDef {
             ident: Identifier {
                 start: letter().or(char('_')),
@@ -358,7 +348,6 @@ impl<'s, 'a, I, Id, F> Lexer<'s, I, F>
 
         let mut lexer = Lexer {
             env: env,
-            make_ident: make_ident,
             input: Some(LocatedStream {
                 location: Location {
                     line: 1,
@@ -376,31 +365,27 @@ impl<'s, 'a, I, Id, F> Lexer<'s, I, F>
         lexer
     }
 
-    fn intern(&self, s: &str) -> Id {
-        self.make_ident.borrow_mut().from_str(s)
-    }
-
     fn parser<T>(&'a self,
-                 parser: fn(&Lexer<'s, I, F>, LocatedStream<I>) -> ParseResult<T, LocatedStream<I>>)
-                 -> LanguageParser<'s, 'a, I, F, T> {
+                 parser: fn(&Lexer<'s, I>, LocatedStream<I>) -> ParseResult<T, LocatedStream<I>>)
+                 -> LanguageParser<'s, 'a, I, T> {
         env_parser(self, parser)
     }
 
     /// Parses an operator
-    fn op(&'a self) -> LanguageParser<'s, 'a, I, F, &'s str> {
+    fn op(&'a self) -> LanguageParser<'s, 'a, I, &'s str> {
         self.parser(Lexer::parse_op)
     }
 
     fn parse_op(&self, input: LocatedStream<I>) -> ParseResult<&'s str, LocatedStream<I>> {
         let initial = input.clone();
-        let ((builtin, typ, op), _) =
-            try!((optional(char('#')), take_while(char::is_alphabetic), self.env.op_())
-                .parse_state(input));
-        let len = builtin.map_or(0, char::len_utf8) + typ.len() + op.len();
+        let ((builtin, op), _) = try!((optional((char('#'), take_while(char::is_alphabetic))),
+                                       try(self.env.op_()))
+            .parse_state(input));
+        let len = builtin.map_or(0, |(c, typ)| c.len_utf8() + typ.len()) + op.len();
         take(len).parse_state(initial)
     }
 
-    fn ident(&'a self) -> LanguageParser<'s, 'a, I, F, Token<&'s str>> {
+    fn ident(&'a self) -> LanguageParser<'s, 'a, I, Token<&'s str>> {
         self.parser(Lexer::parse_ident)
     }
     fn parse_ident(&self,
@@ -529,15 +514,14 @@ impl<'s, 'a, I, Id, F> Lexer<'s, I, F>
             // Decide how to tokenize depending on what the first char is
             // ie if its an operator then more operators will follow
             if is_operator_char(first) || first == '#' {
-                let (s, new_input) = try!(self.op().parse_state(input));
+                let (op, new_input) = try!(self.op().parse_state(input));
                 input = new_input.into_inner();
-                let ids = self.make_ident.borrow();
-                let tok = match s {
+                let tok = match op {
                     "=" => Token::Equal,
                     "->" => Token::RightArrow,
                     "|" => Token::Pipe,
                     _ => {
-                        if s.starts_with("///") {
+                        if op.starts_with("///") {
                             let mut comment = String::new();
                             let ((), new_input) = try!(spaces().parse_state(input));
                             input = new_input.into_inner();
@@ -556,21 +540,21 @@ impl<'s, 'a, I, Id, F> Lexer<'s, I, F>
                             }
                             comment.pop();
                             return Ok((Token::DocComment(comment), Consumed::Consumed(input)));
-                        } else if s.starts_with("/**") {
+                        } else if op.starts_with("/**") {
                             return self.block_doc_comment(input);
-                        } else if s.starts_with("//") {
+                        } else if op.starts_with("//") {
                             let ((), new_input) =
                                 try!(skip_many(satisfy(|c| c != '\n' && c != '\r'))
                                     .parse_lazy(input));
                             input = new_input.into_inner();
                             continue;
-                        } else if s.starts_with("/*") {
+                        } else if op.starts_with("/*") {
                             // Skip over normal comments and try to parse a new token
                             let ((), new_input) = try!(self.skip_block_comment(input));
                             input = new_input.into_inner();
                             continue;
                         } else {
-                            Token::Operator(s.clone())
+                            Token::Operator(op)
                         }
                     }
                 };
@@ -698,12 +682,10 @@ impl<'s, 'a, I, Id, F> Lexer<'s, I, F>
     }
 }
 
-fn layout<'s, I, Id, F>(lexer: &mut Lexer<'s, I, F>,
-                        mut token: SpannedToken<&'s str>)
-                        -> Result<SpannedToken<&'s str>, Error<&'s str>>
+fn layout<'s, I>(lexer: &mut Lexer<'s, I>,
+                 mut token: SpannedToken<&'s str>)
+                 -> Result<SpannedToken<&'s str>, Error<&'s str>>
     where I: RangeStream<Item = char, Range = &'s str> + 's,
-          F: IdentEnv<Ident = Id>,
-          Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
 {
     if token.value == Token::EOF {
@@ -939,12 +921,10 @@ fn layout<'s, I, Id, F>(lexer: &mut Lexer<'s, I, F>,
     }
 }
 
-fn scan_for_next_block<'s, 'a, I, Id, F>(lexer: &mut Lexer<'s, I, F>,
-                                         context: Context)
-                                         -> Result<(), Error<&'s str>>
+fn scan_for_next_block<'s, 'a, I>(lexer: &mut Lexer<'s, I>,
+                                  context: Context)
+                                  -> Result<(), Error<&'s str>>
     where I: RangeStream<Item = char, Range = &'s str> + 's,
-          F: IdentEnv<Ident = Id>,
-          Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
     let next = lexer.next_token();
@@ -962,10 +942,9 @@ fn scan_for_next_block<'s, 'a, I, Id, F>(lexer: &mut Lexer<'s, I, F>,
     })
 }
 
-impl<'s, I, Id, F> StreamOnce for Lexer<'s, I, F>
+impl<'s, I> StreamOnce for Lexer<'s, I>
     where I: RangeStream<Item = char, Range = &'s str> + 's,
-          F: IdentEnv<Ident = Id>,
-          Id: Clone + PartialEq + fmt::Debug,
+
           I::Range: fmt::Debug
 {
     type Item = Token<&'s str>;

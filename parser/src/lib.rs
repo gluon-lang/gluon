@@ -12,6 +12,7 @@ pub mod lexer;
 use std::cell::RefCell;
 use std::fmt;
 use std::iter::FromIterator;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 use base::ast;
@@ -35,6 +36,7 @@ pub type Error = ParseError<StreamType>;
 // Dummy type for ParseError which has the correct associated types
 #[derive(Clone)]
 pub struct StreamType(());
+
 impl StreamOnce for StreamType {
     type Item = Token<String>;
     type Range = Token<String>;
@@ -62,23 +64,21 @@ struct ParserEnv<I, F>
     empty_id: F::Ident,
     make_ident: Rc<RefCell<F>>,
     errors: RefCell<Errors<Error>>,
-    env: ::std::marker::PhantomData<I>,
+    env: PhantomData<I>,
 }
 
 // Wrapper type to reduce typechecking times
 #[derive(Clone)]
-pub struct Wrapper<'a: 'l, 's: 'l, 'l, Id: Clone + PartialEq + fmt::Debug + 'a> {
-    stream: BufferedStream<'l, Lexer<'s, &'s str, &'a mut IdentEnv<Ident = Id>>>,
+pub struct Wrapper<'s: 'l, 'l> {
+    stream: BufferedStream<'l, Lexer<'s, &'s str>>,
 }
 
-impl<'a, 's, 'l, Id> StreamOnce for Wrapper<'a, 's, 'l, Id>
-    where Id: Clone + PartialEq + fmt::Debug
-{
+impl<'s, 'l> StreamOnce for Wrapper<'s, 'l> {
     type Item = Token<&'s str>;
     type Range = Token<&'s str>;
     type Position = Span;
 
-    fn uncons(&mut self) -> Result<Token<&'s str>, ::lexer::Error<&'s str>> {
+    fn uncons(&mut self) -> Result<Token<&'s str>, lexer::Error<&'s str>> {
         self.stream.uncons()
     }
 
@@ -115,6 +115,7 @@ macro_rules! match_parser {
                     })
                     .parse_state(input)
             }
+
             self.parser(inner)
         }
     }
@@ -540,19 +541,18 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
                 Err(err) => {
                     // If not field where found after the '.' add an empty field so that running
                     // completion can be done for the attempt to access the field
-                    let mut make_ident = self.make_ident.borrow_mut();
                     self.errors
                         .borrow_mut()
-                        .error(static_error(&mut *make_ident, err.into_inner()));
-                    fields.push(pos::located(end, make_ident.from_str("")));
+                        .error(static_error(err.into_inner()));
+                    fields.push(pos::located(end, self.empty_id.clone()));
                     return Ok((fields, input));
                 }
             };
         }
     }
 
-    fn op(&'a self) -> LanguageParser<'a, I, F, Id> {
-        fn inner<'s, I, Id, F>(env: &ParserEnv<I, F>, input: I) -> ParseResult<Id, I>
+    fn op(&'a self) -> LanguageParser<'a, I, F, &'s str> {
+        fn inner<'s, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<&'s str, I>
             where I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>,
                   F: IdentEnv<Ident = Id>,
                   Id: AstId + Clone + PartialEq + fmt::Debug,
@@ -566,7 +566,7 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
                 })
                 .map(|t| {
                     match t {
-                        Token::Operator(s) => env.intern(s),
+                        Token::Operator(s) => s,
                         _ => unreachable!(),
                     }
                 })
@@ -580,13 +580,9 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
         let term = self.parser(ParserEnv::<I, F>::parse_expr);
         let op = self.op()
             .map(|op| {
-                let assoc = {
-                    let ids = self.make_ident.borrow();
-                    let op_str = ids.string(&op);
-                    Assoc {
-                        precedence: self.precedence(op_str),
-                        fixity: self.fixity(op_str),
-                    }
+                let assoc = Assoc {
+                    precedence: self.precedence(&op),
+                    fixity: self.fixity(&op),
                 };
                 (op, assoc)
             });
@@ -596,7 +592,7 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
             .or(sep_by1(expression_parser(term, op, |l, op, r| {
                             pos::spanned2(l.span.start,
                                           r.span.end,
-                                          Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
+                                          Expr::BinOp(Box::new(l), self.intern(&op), Box::new(r)))
                         }),
                         token(Token::Semi))
                 .map(|mut exprs: Vec<SpannedExpr<Id>>| {
@@ -830,13 +826,12 @@ pub fn parse_expr<'a, 's, Id>
     where Id: AstId + Clone + PartialEq + fmt::Debug
 {
     let make_ident = Rc::new(RefCell::new(make_ident));
-    let lexer = Lexer::<&str, &mut IdentEnv<Ident = Id>>::new(input, make_ident.clone());
-    let empty_id = make_ident.borrow_mut().from_str("");
+    let lexer = Lexer::new(input);
     let env = ParserEnv {
-        empty_id: empty_id,
+        empty_id: make_ident.borrow_mut().from_str(""),
         make_ident: make_ident.clone(),
         errors: RefCell::new(Errors::new()),
-        env: ::std::marker::PhantomData,
+        env: PhantomData,
     };
     let buffer = BufferedStream::new(lexer, 10);
     let stream = Wrapper { stream: buffer.as_stream() };
@@ -855,30 +850,28 @@ pub fn parse_expr<'a, 's, Id>
             }
         }
         Err(err) => {
-            errors.errors.push(static_error(&mut *make_ident.borrow_mut(), err));
+            errors.errors.push(static_error(err));
             Err((None, errors))
         }
     }
 }
 
-fn static_error<'s, I, Id>(make_ident: &mut IdentEnv<Ident = Id>, err: ParseError<I>) -> Error
-    where Id: Clone + fmt::Debug + PartialEq,
-          I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>
+fn static_error<'s, I>(error: ParseError<I>) -> Error
+    where I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>
 {
-    let errors = err.errors
+    let errors = error.errors
         .into_iter()
-        .map(|t| static_error_(make_ident, t))
+        .map(static_error_)
         .collect();
     ParseError {
-        position: err.position.start,
+        position: error.position.start,
         errors: errors,
     }
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
-fn static_error_<'s, Id>(make_ident: &mut IdentEnv<Ident = Id>,
-                         e: CombineError<Token<&'s str>, Token<&'s str>>)
-                         -> CombineError<Token<String>, Token<String>> {
+fn static_error_<'s>(e: CombineError<Token<&'s str>, Token<&'s str>>)
+                     -> CombineError<Token<String>, Token<String>> {
     let static_info = |i: Info<Token<&'s str>, Token<&'s str>>| {
         match i {
             Info::Token(t) => Info::Token(t.map(|id| String::from(*id))),
