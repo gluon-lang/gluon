@@ -6,9 +6,10 @@ use std::rc::Rc;
 use base::ast::*;
 use base::pos::{BytePos, CharPos, Location, Span, Spanned};
 
-use combine::primitives::{Consumed, Error as CombineError};
-use combine::combinator::EnvParser;
+use combine::primitives::{Consumed, Error as CombineError, RangeStream};
+use combine::combinator::{range, take, take_while, EnvParser};
 use combine::*;
+use combine::char::{alpha_num, char, letter, spaces, string};
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
 
 #[derive(Clone)]
@@ -35,6 +36,38 @@ impl<I> StreamOnce for LocatedStream<I>
 
     fn position(&self) -> Self::Position {
         self.location
+    }
+}
+
+impl<'s, I> RangeStream for LocatedStream<I>
+    where I: RangeStream<Item = char, Range = &'s str>
+{
+    fn uncons_range(&mut self,
+                    len: usize)
+                    -> Result<Self::Range, CombineError<Self::Item, Self::Range>> {
+        self.input
+            .uncons_range(len)
+            .map(|range| {
+                for ch in range.chars() {
+                    self.location.bump(ch)
+                }
+                range
+            })
+    }
+    fn uncons_while<F>(&mut self,
+                       mut predicate: F)
+                       -> Result<Self::Range, CombineError<Self::Item, Self::Range>>
+        where F: FnMut(Self::Item) -> bool
+    {
+        let location = &mut self.location;
+        self.input.uncons_while(|t| {
+            if predicate(t.clone()) {
+                location.bump(t);
+                true
+            } else {
+                false
+            }
+        })
     }
 }
 
@@ -108,7 +141,8 @@ pub enum Token<Id> {
     EOF,
 }
 
-impl<Id> fmt::Display for Token<Id> {
+impl<Id> fmt::Display for Token<Id>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Token::*;
         use self::Delimiter::*;
@@ -280,28 +314,28 @@ fn is_operator_char(c: char) -> bool {
     "+-*/&|=<>".chars().any(|x| x == c)
 }
 
-pub struct Lexer<'a, I, F>
-    where I: Stream<Item = char>,
+pub struct Lexer<'s, I, F>
+    where I: RangeStream<Item = char, Range = &'s str>,
           F: IdentEnv
 {
-    pub env: LanguageEnv<'a, LocatedStream<I>>,
+    pub env: LanguageEnv<'s, LocatedStream<I>>,
     pub make_ident: Rc<RefCell<F>>,
     pub input: Option<LocatedStream<I>>,
-    pub unprocessed_tokens: Vec<SpannedToken<F::Ident>>,
+    pub unprocessed_tokens: Vec<SpannedToken<&'s str>>,
     pub indent_levels: Contexts,
     /// Since the parser will call `position` before retrieving the token we need to cache one
     /// token so the span can be returned for it
-    next_token: Option<SpannedToken<F::Ident>>,
+    next_token: Option<SpannedToken<&'s str>>,
     end_span: Option<Span>,
 }
 
-impl<'a, 's, I, Id, F> Lexer<'a, I, F>
-    where I: Stream<Item = char> + 'a,
+impl<'s, 'a, I, Id, F> Lexer<'s, I, F>
+    where I: RangeStream<Item = char, Range = &'s str> + 's,
           F: IdentEnv<Ident = Id>,
           Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
 {
-    pub fn new(input: I, make_ident: Rc<RefCell<F>>) -> Lexer<'a, I, F> {
+    pub fn new(input: I, make_ident: Rc<RefCell<F>>) -> Lexer<'s, I, F> {
         let env = LanguageEnv::new(LanguageDef {
             ident: Identifier {
                 start: letter().or(char('_')),
@@ -346,36 +380,32 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         self.make_ident.borrow_mut().from_str(s)
     }
 
-    fn parser<T>(&'s self,
-                 parser: fn(&Lexer<'a, I, F>, LocatedStream<I>) -> ParseResult<T, LocatedStream<I>>)
-                 -> LanguageParser<'a, 's, I, F, T> {
+    fn parser<T>(&'a self,
+                 parser: fn(&Lexer<'s, I, F>, LocatedStream<I>) -> ParseResult<T, LocatedStream<I>>)
+                 -> LanguageParser<'s, 'a, I, F, T> {
         env_parser(self, parser)
     }
 
     /// Parses an operator
-    fn op(&'s self) -> LanguageParser<'a, 's, I, F, Id> {
+    fn op(&'a self) -> LanguageParser<'s, 'a, I, F, &'s str> {
         self.parser(Lexer::parse_op)
     }
 
-    fn parse_op(&self, input: LocatedStream<I>) -> ParseResult<Id, LocatedStream<I>> {
-        (optional(char('#').with(many(letter()))), try(self.env.op_()))
-            .map(|(builtin, op): (Option<String>, String)| {
-                match builtin {
-                    Some(mut builtin) => {
-                        builtin.insert(0, '#');
-                        builtin.extend(op.chars());
-                        self.intern(&builtin)
-                    }
-                    None => self.intern(&op),
-                }
-            })
-            .parse_state(input)
+    fn parse_op(&self, input: LocatedStream<I>) -> ParseResult<&'s str, LocatedStream<I>> {
+        let initial = input.clone();
+        let ((builtin, typ, op), _) =
+            try!((optional(char('#')), take_while(char::is_alphabetic), self.env.op_())
+                .parse_state(input));
+        let len = builtin.map_or(0, char::len_utf8) + typ.len() + op.len();
+        take(len).parse_state(initial)
     }
 
-    fn ident(&'s self) -> LanguageParser<'a, 's, I, F, Token<Id>> {
+    fn ident(&'a self) -> LanguageParser<'s, 'a, I, F, Token<&'s str>> {
         self.parser(Lexer::parse_ident)
     }
-    fn parse_ident(&self, input: LocatedStream<I>) -> ParseResult<Token<Id>, LocatedStream<I>> {
+    fn parse_ident(&self,
+                   input: LocatedStream<I>)
+                   -> ParseResult<Token<&'s str>, LocatedStream<I>> {
         self.parser(Lexer::parse_ident2)
             .map(|x| Token::Identifier(x.0, x.1))
             .parse_state(input)
@@ -384,8 +414,8 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     /// Identifier parser which returns the identifier as well as the type of the identifier
     fn parse_ident2(&self,
                     input: LocatedStream<I>)
-                    -> ParseResult<(Id, IdentType), LocatedStream<I>> {
-        let id = self.env.identifier_().map(|id| {
+                    -> ParseResult<(&'s str, IdentType), LocatedStream<I>> {
+        let id = self.env.range_identifier_().map(|id| {
             let typ = if id.chars().next().unwrap().is_uppercase() {
                 IdentType::Constructor
             } else {
@@ -393,23 +423,22 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             };
             (id, typ)
         });
-        let op = self.env.parens(self.env.op_()).map(|id| (id, IdentType::Operator));
+        let op = self.env.parens(self.env.range_op_()).map(|id| (id, IdentType::Operator));
         try(id)
             .or(try(op))
-            .map(|(s, typ)| (self.intern(&s), typ))
             .parse_state(input)
     }
 
     fn layout_independent_token(&mut self,
-                                token: SpannedToken<Id>)
-                                -> Result<SpannedToken<Id>, Error<Id>> {
+                                token: SpannedToken<&'s str>)
+                                -> Result<SpannedToken<&'s str>, Error<&'s str>> {
         layout(self, token)
     }
 
-    fn id_to_keyword(&self, id: Token<Id>) -> Token<Id> {
+    fn id_to_keyword(&self, id: Token<&'s str>) -> Token<&'s str> {
         let t = match id {
-            Token::Identifier(ref id, _) => {
-                match self.make_ident.borrow().string(&id) {
+            Token::Identifier(id, _) => {
+                match id {
                     "let" => Some(Token::Let),
                     "type" => Some(Token::Type),
                     "and" => Some(Token::And),
@@ -430,7 +459,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         }
     }
 
-    pub fn next_token(&mut self) -> SpannedToken<Id> {
+    pub fn next_token(&mut self) -> SpannedToken<&'s str> {
         if let Some(token) = self.unprocessed_tokens.pop() {
             return token;
         }
@@ -489,7 +518,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     fn next_token_(&mut self,
                    location: &mut Location,
                    mut input: LocatedStream<I>)
-                   -> ParseResult<Token<Id>, LocatedStream<I>> {
+                   -> ParseResult<Token<&'s str>, LocatedStream<I>> {
         loop {
             // Skip all whitespace before the token
             let (_, new_input) = try!(spaces().parse_lazy(input));
@@ -500,10 +529,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
             // Decide how to tokenize depending on what the first char is
             // ie if its an operator then more operators will follow
             if is_operator_char(first) || first == '#' {
-                let (op, new_input) = try!(self.op().parse_state(input));
+                let (s, new_input) = try!(self.op().parse_state(input));
                 input = new_input.into_inner();
                 let ids = self.make_ident.borrow();
-                let s = ids.string(&op);
                 let tok = match s {
                     "=" => Token::Equal,
                     "->" => Token::RightArrow,
@@ -542,7 +570,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
                             input = new_input.into_inner();
                             continue;
                         } else {
-                            Token::Operator(op.clone())
+                            Token::Operator(s.clone())
                         }
                     }
                 };
@@ -613,7 +641,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
     fn block_doc_comment(&self,
                          input: LocatedStream<I>)
-                         -> ParseResult<Token<Id>, LocatedStream<I>> {
+                         -> ParseResult<Token<&'s str>, LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
             let ((), mut input) = try!(spaces().parse_state(input));
             let mut out = String::new();
@@ -637,9 +665,9 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 
     fn layout_token(&mut self,
-                    token: SpannedToken<Id>,
-                    layout_token: Token<Id>)
-                    -> SpannedToken<Id> {
+                    token: SpannedToken<&'s str>,
+                    layout_token: Token<&'s str>)
+                    -> SpannedToken<&'s str> {
         let span = token.span;
         self.unprocessed_tokens.push(token);
         Spanned {
@@ -648,7 +676,7 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
         }
     }
 
-    fn uncons_next(&mut self) -> Result<SpannedToken<Id>, Error<Id>> {
+    fn uncons_next(&mut self) -> Result<SpannedToken<&'s str>, Error<&'s str>> {
         let token = self.next_token();
         match self.layout_independent_token(token) {
             Ok(Spanned { value: Token::EOF, .. }) => Err(Error::end_of_input()),
@@ -670,10 +698,10 @@ impl<'a, 's, I, Id, F> Lexer<'a, I, F>
     }
 }
 
-fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
-                        mut token: SpannedToken<Id>)
-                        -> Result<SpannedToken<Id>, Error<Id>>
-    where I: Stream<Item = char> + 'a,
+fn layout<'s, I, Id, F>(lexer: &mut Lexer<'s, I, F>,
+                        mut token: SpannedToken<&'s str>)
+                        -> Result<SpannedToken<&'s str>, Error<&'s str>>
+    where I: RangeStream<Item = char, Range = &'s str> + 's,
           F: IdentEnv<Ident = Id>,
           Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
@@ -911,10 +939,10 @@ fn layout<'a, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
     }
 }
 
-fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
+fn scan_for_next_block<'s, 'a, I, Id, F>(lexer: &mut Lexer<'s, I, F>,
                                          context: Context)
-                                         -> Result<(), Error<Id>>
-    where I: Stream<Item = char> + 'a,
+                                         -> Result<(), Error<&'s str>>
+    where I: RangeStream<Item = char, Range = &'s str> + 's,
           F: IdentEnv<Ident = Id>,
           Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug + 's
@@ -934,17 +962,17 @@ fn scan_for_next_block<'a, 's, I, Id, F>(lexer: &mut Lexer<'a, I, F>,
     })
 }
 
-impl<'a, I, Id, F> StreamOnce for Lexer<'a, I, F>
-    where I: Stream<Item = char> + 'a,
+impl<'s, I, Id, F> StreamOnce for Lexer<'s, I, F>
+    where I: RangeStream<Item = char, Range = &'s str> + 's,
           F: IdentEnv<Ident = Id>,
           Id: Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
 {
-    type Item = Token<Id>;
-    type Range = Token<Id>;
+    type Item = Token<&'s str>;
+    type Range = Token<&'s str>;
     type Position = Span;
 
-    fn uncons(&mut self) -> Result<Token<Id>, Error<Id>> {
+    fn uncons(&mut self) -> Result<Token<&'s str>, Error<&'s str>> {
         match self.next_token.take() {
             Some(token) => {
                 self.next_token = self.uncons_next().ok();
