@@ -339,7 +339,7 @@ impl<'a> Typecheck<'a> {
     /// `let` basically infers that the variables in `id` does not refer to anything outside the
     /// `let` scope and can thus be "generalized" into `a -> a` which is instantiated with a fresh
     /// type variable in the `id 2` call.
-    fn generalize_variables(&mut self, level: u32, expr: &mut ast::LExpr<TcIdent>) {
+    fn generalize_variables(&mut self, level: u32, expr: &mut ast::SpannedExpr<TcIdent>) {
         self.type_variables.enter_scope();
         // Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b: 'a> {
@@ -365,15 +365,15 @@ impl<'a> Typecheck<'a> {
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
-    pub fn typecheck_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Result<TcType, Error> {
+    pub fn typecheck_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) -> Result<TcType, Error> {
         self.typecheck_expr_expected(expr, None)
     }
 
     pub fn typecheck_expr_expected(&mut self,
-                                   expr: &mut ast::LExpr<TcIdent>,
+                                   expr: &mut ast::SpannedExpr<TcIdent>,
                                    expected_type: Option<&TcType>)
                                    -> Result<TcType, Error> {
-        fn tail_expr(e: &mut ast::LExpr<TcIdent>) -> &mut ast::LExpr<TcIdent> {
+        fn tail_expr(e: &mut ast::SpannedExpr<TcIdent>) -> &mut ast::SpannedExpr<TcIdent> {
             match e.value {
                 ast::Expr::Let(_, ref mut b) |
                 ast::Expr::Type(_, ref mut b) => tail_expr(b),
@@ -385,9 +385,8 @@ impl<'a> Typecheck<'a> {
 
         let mut typ = self.typecheck(expr);
         if let Some(expected) = expected_type {
-            let span = expr.span(&ast::TcIdentEnvWrapper(&self.symbols));
             let expected = self.instantiate(expected);
-            typ = self.unify_span(span, &expected, typ)
+            typ = self.unify_span(expr.span, &expected, typ)
         }
         typ = self.finish_type(0, &typ).unwrap_or(typ);
         typ = types::walk_move_type(typ, &mut unroll_app);
@@ -417,7 +416,7 @@ impl<'a> Typecheck<'a> {
 
     /// Main typechecking function. Returns the type of the expression if typechecking was
     /// successful
-    fn typecheck(&mut self, mut expr: &mut ast::LExpr<TcIdent>) -> TcType {
+    fn typecheck(&mut self, mut expr: &mut ast::SpannedExpr<TcIdent>) -> TcType {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -446,7 +445,7 @@ impl<'a> Typecheck<'a> {
                 Err(err) => {
                     returned_type = self.subs.new_var();
                     self.errors.error(Spanned {
-                        span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
+                        span: expr.span,
                         value: err,
                     });
                     break;
@@ -460,7 +459,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_(&mut self,
-                  expr: &mut ast::LExpr<TcIdent>)
+                  expr: &mut ast::SpannedExpr<TcIdent>)
                   -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
             ast::Expr::Identifier(ref mut id) => {
@@ -487,8 +486,7 @@ impl<'a> Typecheck<'a> {
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
                             let actual = self.typecheck(arg);
-                            let span = arg.span(&ast::TcIdentEnvWrapper(&self.symbols));
-                            self.unify_span(span, arg_ty, actual);
+                            self.unify_span(arg.span, arg_ty, actual);
                             ret_ty.clone()
                         }
                         None => return Err(NotAFunction(func_type.clone())),
@@ -498,9 +496,8 @@ impl<'a> Typecheck<'a> {
             }
             ast::Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = self.typecheck(&mut **pred);
-                let span = pred.span(&ast::TcIdentEnvWrapper(&self.symbols));
                 let bool_type = self.bool();
-                self.unify_span(span, &bool_type, pred_type);
+                self.unify_span(pred.span, &bool_type, pred_type);
                 let true_type = self.typecheck(&mut **if_true);
                 let false_type = match *if_false {
                     Some(ref mut if_false) => self.typecheck(&mut **if_false),
@@ -610,14 +607,13 @@ impl<'a> Typecheck<'a> {
                 let mut expected_type = self.subs.new_var();
                 for expr in &mut a.expressions {
                     let typ = self.typecheck(expr);
-                    let span = expr.span(&ast::TcIdentEnvWrapper(&self.symbols));
-                    expected_type = self.unify_span(span, &expected_type, typ);
+                    expected_type = self.unify_span(expr.span, &expected_type, typ);
                 }
                 a.id.typ = Type::array(expected_type);
                 Ok(TailCall::Type(a.id.typ.clone()))
             }
             ast::Expr::Lambda(ref mut lambda) => {
-                let loc = format!("lambda:{}", expr.location);
+                let loc = format!("lambda:{}", expr.span.start);
                 lambda.id.name = self.symbols.symbol(loc);
                 let function_type = self.subs.new_var();
                 let typ =
@@ -687,7 +683,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_lambda(&mut self,
                         function_type: TcType,
                         arguments: &mut [TcIdent],
-                        body: &mut ast::LExpr<TcIdent>)
+                        body: &mut ast::SpannedExpr<TcIdent>)
                         -> TcType {
         self.enter_scope();
         let mut arg_types = Vec::new();
@@ -706,10 +702,10 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_pattern(&mut self,
-                         pattern: &mut ast::LPattern<TcIdent>,
+                         pattern: &mut ast::SpannedPattern<TcIdent>,
                          match_type: TcType)
                          -> TcType {
-        let span = pattern.span();
+        let span = pattern.span;
         match pattern.value {
             ast::Pattern::Constructor(ref mut id, ref mut args) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
@@ -890,7 +886,7 @@ impl<'a> Typecheck<'a> {
                    bind.name,
                    types::display_type(&self.symbols, &typ));
             if let Some(ref type_decl) = bind.typ {
-                typ = self.merge_signature(bind.name.span(), level, type_decl, typ);
+                typ = self.merge_signature(bind.name.span, level, type_decl, typ);
             }
             if !is_recursive {
                 // Merge the type declaration and the actual type
@@ -906,7 +902,7 @@ impl<'a> Typecheck<'a> {
                 // Merge the variable we bound to the name and the type inferred
                 // in the expression
                 let bound_typ = bind.env_type_of(&self.environment);
-                self.unify_span(bind.name.span(), &bound_typ, found_typ);
+                self.unify_span(bind.name.span, &bound_typ, found_typ);
             }
         }
         // Once all variables inside the let has been unified we can quantify them
@@ -922,7 +918,7 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_type_bindings(&mut self,
                                bindings: &mut [ast::TypeBinding<Symbol>],
-                               expr: &ast::LExpr<TcIdent>)
+                               expr: &ast::SpannedExpr<TcIdent>)
                                -> TcResult<()> {
         self.enter_scope();
         // Rename the types so they get a name which is distinct from types from other
@@ -986,7 +982,7 @@ impl<'a> Typecheck<'a> {
         for bind in bindings {
             if self.environment.stack_types.get(&bind.name).is_some() {
                 self.errors.error(Spanned {
-                    span: expr.span(&ast::TcIdentEnvWrapper(&self.symbols)),
+                    span: expr.span,
                     value: DuplicateTypeDefinition(bind.name.clone()),
                 });
             } else {

@@ -86,8 +86,7 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
 
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
     use base::pos::{BytePos, CharPos, Location};
-    use base::ast::EmptyEnv;
-    use check::completion::suggest;
+    use check::completion;
     use gluon::compiler_pipeline::*;
 
     let location = Location {
@@ -108,7 +107,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
     let MacroValue(mut expr) = try!(expr.expand_macro(&mut compiler, thread, &name));
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);
-    let suggestions = suggest(&EmptyEnv::new(), &*thread.get_env(), &expr, location);
+    let suggestions = completion::suggest(&*thread.get_env(), &expr, location);
     Ok(suggestions.into_iter()
         .map(|ident| {
             let s: &str = ident.name.as_ref();

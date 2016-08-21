@@ -7,7 +7,7 @@ extern crate log;
 use base::ast;
 use base::ast::*;
 use base::error::Errors;
-use base::pos::{self, BytePos, CharPos, Located, Location, Span};
+use base::pos::{self, BytePos, CharPos, Location, Span, Spanned};
 use base::types::{Type, Generic, Alias, Field, Kind};
 use parser::{parse_string, Error};
 
@@ -15,24 +15,28 @@ pub fn intern(s: &str) -> String {
     String::from(s)
 }
 
-type PExpr = LExpr<String>;
+type PExpr = SpannedExpr<String>;
 
-fn loc(r: u32, c: usize) -> Location {
+fn loc(line: u32, column: usize, absolute: u32) -> Location {
     Location {
-        line: r,
-        column: CharPos(c),
-        absolute: BytePos(0),
+        line: line,
+        column: CharPos(column),
+        absolute: BytePos(absolute),
     }
 }
 
-fn no_loc<T>(x: T) -> Located<T> {
+fn no_loc<T>(value: T) -> Spanned<T> {
     let max_loc = Location {
         line: u32::max_value(),
         column: CharPos(usize::max_value()),
         absolute: BytePos(u32::max_value()),
     };
 
-    pos::located(max_loc, x)
+    pos::spanned(Span {
+                     start: max_loc,
+                     end: max_loc,
+                 },
+                 value)
 }
 
 fn binop(l: PExpr, s: &str, r: PExpr) -> PExpr {
@@ -156,12 +160,14 @@ fn array(fields: Vec<PExpr>) -> PExpr {
     }))
 }
 
-fn parse(input: &str) -> Result<LExpr<String>, (Option<LExpr<String>>, Errors<Error>)> {
+fn parse(input: &str) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
     parse_string(&mut ast::EmptyEnv::new(), input)
 }
 
-fn parse_new(input: &str) -> LExpr<String> {
-    parse(input).unwrap_or_else(|(_, err)| panic!("{:?}", err))
+fn parse_new(input: &str) -> SpannedExpr<String> {
+    // Replace windows line endings so that byte positins match up on multiline expressions
+    let input = input.replace("\r\n", "\n");
+    parse(&input).unwrap_or_else(|(_, err)| panic!("{:?}", err))
 }
 
 #[test]
@@ -408,10 +414,10 @@ fn span_identifier() {
     let _ = ::env_logger::init();
 
     let e = parse_new("test");
-    assert_eq!(e.span(&EmptyEnv::new()),
+    assert_eq!(e.span,
                Span {
-                   start: loc(1, 1),
-                   end: loc(1, 5),
+                   start: loc(1, 1, 0),
+                   end: loc(1, 5, 4),
                });
 }
 
@@ -421,10 +427,24 @@ fn span_integer() {
     let _ = ::env_logger::init();
 
     let e = parse_new("1234");
-    assert_eq!(e.span(&EmptyEnv::new()),
+    assert_eq!(e.span,
                Span {
-                   start: loc(1, 1),
-                   end: loc(1, 5),
+                   start: loc(1, 1, 0),
+                   end: loc(1, 5, 4),
+               });
+}
+
+// FIXME The span of string literals includes the spaces after them
+#[test]
+#[ignore]
+fn span_string_literal() {
+    let _ = ::env_logger::init();
+
+    let e = parse_new(r#" "test" "#);
+    assert_eq!(e.span,
+               Span {
+                   start: loc(1, 2, 1),
+                   end: loc(1, 8, 7),
                });
 }
 
@@ -432,11 +452,11 @@ fn span_integer() {
 fn span_call() {
     let _ = ::env_logger::init();
 
-    let e = parse_new(r#" f 123 "asd" "#);
-    assert_eq!(e.span(&EmptyEnv::new()),
+    let e = parse_new(r#" f 123 "asd""#);
+    assert_eq!(e.span,
                Span {
-                   start: loc(1, 2),
-                   end: loc(1, 13),
+                   start: loc(1, 2, 1),
+                   end: loc(1, 13, 12),
                });
 }
 
@@ -449,10 +469,10 @@ match False with
     | True -> "asd"
     | False -> ""
 "#);
-    assert_eq!(e.span(&EmptyEnv::new()),
+    assert_eq!(e.span,
                Span {
-                   start: loc(2, 1),
-                   end: loc(4, 18),
+                   start: loc(2, 1, 1),
+                   end: loc(4, 18, 55),
                });
 }
 
@@ -466,10 +486,10 @@ if True then
 else
     123.45
 "#);
-    assert_eq!(e.span(&EmptyEnv::new()),
+    assert_eq!(e.span,
                Span {
-                   start: loc(2, 1),
-                   end: loc(5, 11),
+                   start: loc(2, 1, 1),
+                   end: loc(5, 11, 35),
                });
 }
 
@@ -478,11 +498,32 @@ fn span_byte() {
     let _ = ::env_logger::init();
 
     let e = parse_new(r#"124b"#);
-    assert_eq!(e.span(&EmptyEnv::new()),
+    assert_eq!(e.span,
                Span {
-                   start: loc(1, 1),
-                   end: loc(1, 5),
+                   start: loc(1, 1, 0),
+                   end: loc(1, 5, 4),
                });
+}
+
+#[test]
+fn span_field_access() {
+    let _ = ::env_logger::init();
+    let expr = parse_new("record.x");
+    assert_eq!(expr.span,
+                Span {
+                    start: loc(1, 1, 0),
+                    end: loc(1, 9, 8),
+                });
+    match expr.value {
+        Expr::FieldAccess(ref e, _) => {
+            assert_eq!(e.span,
+                       Span {
+                           start: loc(1, 1, 0),
+                           end: loc(1, 7, 6),
+                       });
+        }
+        _ => panic!(),
+    }
 }
 
 #[test]
@@ -573,9 +614,12 @@ fn partial_field_access() {
     let e = parse(text);
     assert!(e.is_err());
     assert_eq!(e.unwrap_err().0,
-               Some(Located {
+               Some(Spanned {
+                   span: Span {
+                       start: loc(0, 0, 0),
+                       end: loc(0, 0, 0),
+                   },
                    value: Expr::FieldAccess(Box::new(id("test")), intern("")),
-                   location: loc(0, 0),
                }));
 }
 
@@ -589,12 +633,18 @@ test
     let e = parse(text);
     assert!(e.is_err());
     assert_eq!(e.unwrap_err().0,
-               Some(Located {
-                   location: loc(0, 0),
-                   value: Expr::Block(vec![Located {
+               Some(Spanned {
+                   span: Span {
+                       start: loc(0, 0, 0),
+                       end: loc(0, 0, 0),
+                   },
+                   value: Expr::Block(vec![Spanned {
+                                               span: Span {
+                                                   start: loc(0, 0, 0),
+                                                   end: loc(0, 0, 0),
+                                               },
                                                value: Expr::FieldAccess(Box::new(id("test")),
                                                                         intern("")),
-                                               location: loc(0, 0),
                                            },
                                            id("test")]),
                }));

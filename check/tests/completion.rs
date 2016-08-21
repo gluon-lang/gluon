@@ -4,7 +4,6 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
-use base::ast;
 use base::pos::{BytePos, CharPos, Location};
 use base::types::{Type, TcType};
 use check::completion;
@@ -13,22 +12,20 @@ mod support;
 use support::{MockEnv, typ};
 
 fn find_type(s: &str, location: Location) -> Result<TcType, ()> {
-    let env = ast::EmptyEnv::new();
-    let typ_env = MockEnv::new();
+    let env = MockEnv::new();
 
     let (mut expr, result) = support::typecheck_expr(s);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    completion::find(&env, &typ_env, &mut expr, location)
+    completion::find(&env, &mut expr, location)
 }
 
 fn suggest(s: &str, location: Location) -> Result<Vec<String>, ()> {
-    let env = ast::EmptyEnv::new();
-    let typ_env = MockEnv::new();
+    let env = MockEnv::new();
 
     let (mut expr, _result) = support::typecheck_partial_expr(s);
     let mut vec: Vec<String> = {
-        completion::suggest(&env, &typ_env, &mut expr, location)
+        completion::suggest(&env, &mut expr, location)
             .into_iter()
             .map(|ident| ident.name.declared_name().to_string())
             .collect()
@@ -40,14 +37,12 @@ fn suggest(s: &str, location: Location) -> Result<Vec<String>, ()> {
 
 #[test]
 fn identifier() {
-    let env = ast::EmptyEnv::new();
-    let typ_env = MockEnv::new();
+    let env = MockEnv::new();
 
     let (mut expr, result) = support::typecheck_expr("let abc = 1 in abc");
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&env,
-                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       line: 1,
@@ -58,7 +53,6 @@ fn identifier() {
     assert_eq!(result, expected);
 
     let result = completion::find(&env,
-                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       line: 1,
@@ -69,7 +63,6 @@ fn identifier() {
     assert_eq!(result, expected);
 
     let result = completion::find(&env,
-                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       line: 1,
@@ -80,7 +73,6 @@ fn identifier() {
     assert_eq!(result, expected);
 
     let result = completion::find(&env,
-                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       line: 1,
@@ -130,7 +122,7 @@ let f x = f x
                            Location {
                                line: 2,
                                column: CharPos(11),
-                               absolute: BytePos(0),
+                               absolute: BytePos(11),
                            });
     let expected = Ok(Type::function(vec![typ("a0")], typ("a1")));
 
@@ -139,8 +131,7 @@ let f x = f x
 
 #[test]
 fn binop() {
-    let env = ast::EmptyEnv::new();
-    let typ_env = MockEnv::new();
+    let env = MockEnv::new();
 
     let (mut expr, result) = support::typecheck_expr(r#"
 let (++) l r =
@@ -152,7 +143,6 @@ let (++) l r =
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&env,
-                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       line: 6,
@@ -163,7 +153,6 @@ let (++) l r =
     assert_eq!(result, expected);
 
     let result = completion::find(&env,
-                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       line: 6,
@@ -174,12 +163,11 @@ let (++) l r =
     assert_eq!(result, expected);
 
     let result = completion::find(&env,
-                                  &typ_env,
                                   &mut expr,
                                   Location {
                                       line: 6,
                                       column: CharPos(6),
-                                      absolute: BytePos(0),
+                                      absolute: BytePos(123),
                                   });
     let expected = Ok(typ("Float"));
     assert_eq!(result, expected);
@@ -208,7 +196,7 @@ fn suggest_identifier_when_prefix() {
     let result = suggest(r#"
 let test = 1
 let tes = ""
-let aaa = ""
+let aaa = test
 te
 "#,
                          Location {
@@ -282,7 +270,7 @@ record.
                          Location {
                              line: 3,
                              column: CharPos(7),
-                             absolute: BytePos(0),
+                             absolute: BytePos(50),
                          });
     let expected = Ok(vec!["aa".into(), "ab".into(), "c".into()]);
 

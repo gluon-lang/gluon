@@ -724,12 +724,12 @@ in f "123"
                    start: Location {
                        line: 3,
                        column: CharPos(6),
-                       absolute: BytePos(0),
+                       absolute: BytePos(26),
                    },
                    end: Location {
                        line: 3,
                        column: CharPos(11),
-                       absolute: BytePos(0),
+                       absolute: BytePos(31),
                    },
                });
 }
@@ -773,7 +773,7 @@ test 1
         }
         _ => panic!(),
     };
-    let test_id = match *bind.name {
+    let test_id = match bind.name.value {
         Pattern::Identifier(ref id) => id,
         _ => panic!(),
     };

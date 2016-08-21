@@ -2,9 +2,9 @@
 //!
 //! [libsyntax_pos]: https://github.com/rust-lang/rust/blob/ae774103501337ed63b42b673c6c4fdbf369e80e/src/libsyntax_pos/lib.rs
 
-use std::cmp::Ordering;
+use std::cmp::{self, Ordering};
 use std::fmt;
-use std::ops::{Add, AddAssign, Deref, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 /// A byte offset in a source string
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -115,6 +115,16 @@ pub struct Location {
 }
 
 impl Location {
+    pub fn bump(&mut self, ch: char) {
+        if ch == '\n' {
+            self.line += 1;
+            self.column = CharPos(1);
+        } else {
+            self.column += CharPos(1);
+        }
+        self.absolute += BytePos::from(ch.len_utf8());
+    }
+
     pub fn line_offset(mut self, offset: CharPos) -> Location {
         self.column += offset;
         self
@@ -128,15 +138,20 @@ impl fmt::Display for Location {
 }
 
 /// A span between two locations in a source file
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct Span {
     pub start: Location,
     pub end: Location,
 }
 
 impl Span {
-    pub fn containment(&self, location: &Location) -> Ordering {
+    pub fn contains(self, other: Span) -> bool {
+        self.start <= other.start && other.end <= self.end
+    }
+
+    pub fn containment(self, location: &Location) -> Ordering {
         use std::cmp::Ordering::*;
+
         match (location.cmp(&self.start), location.cmp(&self.end)) {
             (Equal, _) | (Greater, Less) => Equal,
             (Less, _) => Less,
@@ -144,24 +159,59 @@ impl Span {
         }
     }
 
-    pub fn containment_exclusive(&self, location: &Location) -> Ordering {
+    pub fn containment_exclusive(self, location: &Location) -> Ordering {
         if self.end == *location {
             Ordering::Greater
         } else {
             self.containment(location)
         }
     }
+
+    pub fn merge(self, other: Span) -> Option<Span> {
+        if (self.start <= other.start && self.end > other.start) ||
+           (self.start >= other.start && self.start < other.end) {
+            Some(Span {
+                start: cmp::min(self.start, other.start),
+                end: cmp::max(self.end, other.end),
+            })
+        } else {
+            None
+        }
+    }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Spanned<T> {
     pub span: Span,
     pub value: T,
 }
 
+impl<T: PartialEq> PartialEq for Spanned<T> {
+    fn eq(&self, other: &Spanned<T>) -> bool {
+        self.value == other.value
+    }
+}
+
 impl<T: fmt::Display> fmt::Display for Spanned<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}", self.span.start, self.value)
+    }
+}
+
+pub fn spanned<T>(span: Span, value: T) -> Spanned<T> {
+    Spanned {
+        span: span,
+        value: value,
+    }
+}
+
+pub fn spanned2<T>(start: Location, end: Location, value: T) -> Spanned<T> {
+    Spanned {
+        span: Span {
+            start: start,
+            end: end,
+        },
+        value: value,
     }
 }
 
@@ -174,13 +224,6 @@ pub struct Located<T> {
 impl<T: PartialEq> PartialEq for Located<T> {
     fn eq(&self, other: &Located<T>) -> bool {
         self.value == other.value
-    }
-}
-
-impl<T> Deref for Located<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        &self.value
     }
 }
 

@@ -13,7 +13,7 @@ struct Environment<'b> {
 }
 
 /// Queries `expr` for the metadata which it contains.
-pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
+pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Metadata {
     struct MetadataVisitor<'b> {
         env: Environment<'b>,
     }
@@ -35,7 +35,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
             }
         }
 
-        fn new_pattern(&mut self, mut metadata: Metadata, pattern: &mut ast::LPattern<TcIdent>) {
+        fn new_pattern(&mut self, mut metadata: Metadata, pattern: &mut ast::SpannedPattern<TcIdent>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref mut types, .. } => {
                     for field in fields.iter_mut().chain(types) {
@@ -67,7 +67,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
                 .or_else(|| self.env.env.get_metadata(id))
         }
 
-        fn metadata_expr(&mut self, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
+        fn metadata_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) -> Metadata {
             match expr.value {
                 ast::Expr::Identifier(ref mut id) => {
                     self.metadata(id.id()).cloned().unwrap_or_else(Metadata::default)
@@ -151,7 +151,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::LExpr<TcIdent>) -> Metadata {
     impl<'b> MutVisitor for MetadataVisitor<'b> {
         type T = ast::TcIdent<Symbol>;
 
-        fn visit_expr(&mut self, expr: &mut ast::LExpr<Self::T>) {
+        fn visit_expr(&mut self, expr: &mut ast::SpannedExpr<Self::T>) {
             self.metadata_expr(expr);
         }
     }
