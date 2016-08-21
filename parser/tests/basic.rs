@@ -188,6 +188,8 @@ y
 #[test]
 fn expression() {
     let _ = ::env_logger::init();
+    let e = parse("2 * 3 + 4");
+    assert_eq!(e, Ok(binop(binop(int(2), "*", int(3)), "+", int(4))));
     let e = parse(r#"\x y -> x + y"#);
     assert_eq!(e,
                Ok(lambda("",
