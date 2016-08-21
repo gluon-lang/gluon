@@ -4,7 +4,7 @@ use std::fmt;
 use base::pos::{BytePos, CharPos, Location, Span, Spanned};
 
 use combine::primitives::{Consumed, Error as CombineError, RangeStream};
-use combine::combinator::{range, take, take_while, EnvParser};
+use combine::combinator::{take, take_while, EnvParser};
 use combine::*;
 use combine::char::{alpha_num, char, letter, spaces, string};
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
