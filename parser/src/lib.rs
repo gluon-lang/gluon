@@ -12,6 +12,7 @@ pub mod lexer;
 use std::cell::RefCell;
 use std::fmt;
 use std::iter::FromIterator;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 use base::ast;
@@ -35,6 +36,7 @@ pub type Error = ParseError<StreamType>;
 // Dummy type for ParseError which has the correct associated types
 #[derive(Clone)]
 pub struct StreamType(());
+
 impl StreamOnce for StreamType {
     type Item = Token<String>;
     type Range = Token<String>;
@@ -62,23 +64,21 @@ struct ParserEnv<I, F>
     empty_id: F::Ident,
     make_ident: Rc<RefCell<F>>,
     errors: RefCell<Errors<Error>>,
-    env: ::std::marker::PhantomData<I>,
+    env: PhantomData<I>,
 }
 
 // Wrapper type to reduce typechecking times
 #[derive(Clone)]
-pub struct Wrapper<'a: 'l, 's: 'l, 'l, Id: Clone + PartialEq + fmt::Debug + 'a> {
-    stream: BufferedStream<'l, Lexer<'s, &'s str, &'a mut IdentEnv<Ident = Id>>>,
+pub struct Wrapper<'s: 'l, 'l> {
+    stream: BufferedStream<'l, Lexer<'s, &'s str>>,
 }
 
-impl<'a, 's, 'l, Id> StreamOnce for Wrapper<'a, 's, 'l, Id>
-    where Id: Clone + PartialEq + fmt::Debug
-{
-    type Item = Token<Id>;
-    type Range = Token<Id>;
+impl<'s, 'l> StreamOnce for Wrapper<'s, 'l> {
+    type Item = Token<&'s str>;
+    type Range = Token<&'s str>;
     type Position = Span;
 
-    fn uncons(&mut self) -> Result<Token<Id>, ::lexer::Error<Id>> {
+    fn uncons(&mut self) -> Result<Token<&'s str>, lexer::Error<&'s str>> {
         self.stream.uncons()
     }
 
@@ -94,14 +94,14 @@ enum LetOrType<Id: AstId> {
 
 macro_rules! match_parser {
     ($function: ident, $variant: ident -> $typ: ty) => {
-        fn $function(&'s self) -> LanguageParser<'s, I, F, $typ> {
-            fn inner<I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<$typ, I>
-                where I: Stream<Item = Token<Id>>,
+        fn $function(&'a self) -> LanguageParser<'a, I, F, $typ> {
+            fn inner<'b, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<$typ, I>
+                where I: Stream<Item = Token<&'b str>>,
                       F: IdentEnv<Ident = Id>,
                       Id: AstId + Clone + PartialEq + fmt::Debug,
                       I::Range: fmt::Debug
             {
-                satisfy(|t: Token<Id>| {
+                satisfy(|t: Token<&'b str>| {
                     match t {
                         Token::$variant(_) => true,
                         _ => false,
@@ -115,6 +115,7 @@ macro_rules! match_parser {
                     })
                     .parse_state(input)
             }
+
             self.parser(inner)
         }
     }
@@ -124,15 +125,19 @@ fn as_trait<P: Parser>(p: &mut P) -> &mut Parser<Input = P::Input, Output = P::O
     p
 }
 
-impl<'s, I, Id, F> ParserEnv<I, F>
-    where I: Stream<Item = Token<Id>, Range = Token<Id>, Position = Span>,
+impl<'a, 's, I, Id, F> ParserEnv<I, F>
+    where I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
 {
-    fn parser<T>(&'s self,
+    fn intern(&self, s: &str) -> Id {
+        self.make_ident.borrow_mut().from_str(s)
+    }
+
+    fn parser<T>(&'a self,
                  parser: fn(&ParserEnv<I, F>, I) -> ParseResult<T, I>)
-                 -> LanguageParser<'s, I, F, T> {
+                 -> LanguageParser<'a, I, F, T> {
         env_parser(self, parser)
     }
 
@@ -170,7 +175,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         }
     }
 
-    fn ident(&'s self) -> LanguageParser<'s, I, F, Id> {
+    fn ident(&'a self) -> LanguageParser<'a, I, F, Id> {
         self.parser(ParserEnv::<I, F>::parse_ident)
     }
     fn parse_ident(&self, input: I) -> ParseResult<Id, I> {
@@ -181,7 +186,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     /// Identifier parser which returns the identifier as well as the type of the identifier
     fn parse_ident2(&self, input: I) -> ParseResult<(Id, IdentType), I> {
-        satisfy(|t: Token<Id>| {
+        satisfy(|t: Token<&'s str>| {
                 match t {
                     Token::Identifier(..) => true,
                     _ => false,
@@ -189,13 +194,13 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             })
             .map(|t| {
                 match t {
-                    Token::Identifier(id, typ) => (id, typ),
+                    Token::Identifier(id, typ) => (self.intern(id), typ),
                     _ => unreachable!(),
                 }
             })
             .parse_state(input)
     }
-    fn ident_u(&'s self) -> LanguageParser<'s, I, F, Id::Untyped> {
+    fn ident_u(&'a self) -> LanguageParser<'a, I, F, Id::Untyped> {
         self.parser(ParserEnv::<I, F>::parse_untyped_ident)
     }
     fn parse_untyped_ident(&self, input: I) -> ParseResult<Id::Untyped, I> {
@@ -204,7 +209,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn ident_type(&'s self) -> LanguageParser<'s, I, F, AstType<Id::Untyped>> {
+    fn ident_type(&'a self) -> LanguageParser<'a, I, F, AstType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_ident_type)
     }
     fn parse_ident_type(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
@@ -239,7 +244,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
 
     match_parser! { doc_comment, DocComment -> String }
 
-    fn typ(&'s self) -> LanguageParser<'s, I, F, AstType<Id::Untyped>> {
+    fn typ(&'a self) -> LanguageParser<'a, I, F, AstType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_type)
     }
 
@@ -397,7 +402,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn expr(&'s self) -> LanguageParser<'s, I, F, SpannedExpr<Id>> {
+    fn expr(&'a self) -> LanguageParser<'a, I, F, SpannedExpr<Id>> {
         self.parser(ParserEnv::<I, F>::top_expr)
     }
 
@@ -536,31 +541,48 @@ impl<'s, I, Id, F> ParserEnv<I, F>
                 Err(err) => {
                     // If not field where found after the '.' add an empty field so that running
                     // completion can be done for the attempt to access the field
-                    let mut make_ident = self.make_ident.borrow_mut();
                     self.errors
                         .borrow_mut()
-                        .error(static_error(&mut *make_ident, err.into_inner()));
-                    fields.push(pos::located(end, make_ident.from_str("")));
+                        .error(static_error(err.into_inner()));
+                    fields.push(pos::located(end, self.empty_id.clone()));
                     return Ok((fields, input));
                 }
             };
         }
     }
 
-    match_parser! { op, Operator -> Id }
+    fn op(&'a self) -> LanguageParser<'a, I, F, &'s str> {
+        fn inner<'s, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<&'s str, I>
+            where I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>,
+                  F: IdentEnv<Ident = Id>,
+                  Id: AstId + Clone + PartialEq + fmt::Debug,
+                  I::Range: fmt::Debug
+        {
+            satisfy(|t: Token<&'s str>| {
+                    match t {
+                        Token::Operator(_) => true,
+                        _ => false,
+                    }
+                })
+                .map(|t| {
+                    match t {
+                        Token::Operator(s) => s,
+                        _ => unreachable!(),
+                    }
+                })
+                .parse_state(input)
+        }
+        self.parser(inner)
+    }
 
     /// Parses any sort of expression
     fn top_expr(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         let term = self.parser(ParserEnv::<I, F>::parse_expr);
         let op = self.op()
             .map(|op| {
-                let assoc = {
-                    let ids = self.make_ident.borrow();
-                    let op_str = ids.string(&op);
-                    Assoc {
-                        precedence: self.precedence(op_str),
-                        fixity: self.fixity(op_str),
-                    }
+                let assoc = Assoc {
+                    precedence: self.precedence(&op),
+                    fixity: self.fixity(&op),
                 };
                 (op, assoc)
             });
@@ -570,7 +592,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .or(sep_by1(expression_parser(term, op, |l, op, r| {
                             pos::spanned2(l.span.start,
                                           r.span.end,
-                                          Expr::BinOp(Box::new(l), op.clone(), Box::new(r)))
+                                          Expr::BinOp(Box::new(l), self.intern(&op), Box::new(r)))
                         }),
                         token(Token::Semi))
                 .map(|mut exprs: Vec<SpannedExpr<Id>>| {
@@ -617,7 +639,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn pattern(&'s self) -> LanguageParser<'s, I, F, SpannedPattern<Id>> {
+    fn pattern(&'a self) -> LanguageParser<'a, I, F, SpannedPattern<Id>> {
         self.parser(ParserEnv::<I, F>::parse_pattern)
     }
 
@@ -743,7 +765,7 @@ impl<'s, I, Id, F> ParserEnv<I, F>
         })
     }
 
-    fn record_parser<P1, P2, O, G, R>(&'s self, ref p1: P1, ref p2: P2, f: G) -> R
+    fn record_parser<P1, P2, O, G, R>(&'a self, ref p1: P1, ref p2: P2, f: G) -> R
         where P1: Parser<Input = I> + Clone,
               P2: Parser<Input = I> + Clone,
               O: FromIterator<(Id::Untyped, Result<Option<P1::Output>, Option<P2::Output>>)>,
@@ -804,13 +826,12 @@ pub fn parse_expr<'a, 's, Id>
     where Id: AstId + Clone + PartialEq + fmt::Debug
 {
     let make_ident = Rc::new(RefCell::new(make_ident));
-    let lexer = Lexer::<&str, &mut IdentEnv<Ident = Id>>::new(input, make_ident.clone());
-    let empty_id = make_ident.borrow_mut().from_str("");
+    let lexer = Lexer::new(input);
     let env = ParserEnv {
-        empty_id: empty_id,
+        empty_id: make_ident.borrow_mut().from_str(""),
         make_ident: make_ident.clone(),
         errors: RefCell::new(Errors::new()),
-        env: ::std::marker::PhantomData,
+        env: PhantomData,
     };
     let buffer = BufferedStream::new(lexer, 10);
     let stream = Wrapper { stream: buffer.as_stream() };
@@ -829,34 +850,32 @@ pub fn parse_expr<'a, 's, Id>
             }
         }
         Err(err) => {
-            errors.errors.push(static_error(&mut *make_ident.borrow_mut(), err));
+            errors.errors.push(static_error(err));
             Err((None, errors))
         }
     }
 }
 
-fn static_error<I, Id>(make_ident: &mut IdentEnv<Ident = Id>, err: ParseError<I>) -> Error
-    where Id: Clone + fmt::Debug + PartialEq,
-          I: Stream<Item = Token<Id>, Range = Token<Id>, Position = Span>
+fn static_error<'s, I>(error: ParseError<I>) -> Error
+    where I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>
 {
-    let errors = err.errors
+    let errors = error.errors
         .into_iter()
-        .map(|t| static_error_(make_ident, t))
+        .map(static_error_)
         .collect();
     ParseError {
-        position: err.position.start,
+        position: error.position.start,
         errors: errors,
     }
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
-fn static_error_<Id>(make_ident: &mut IdentEnv<Ident = Id>,
-                     e: CombineError<Token<Id>, Token<Id>>)
+fn static_error_<'s>(e: CombineError<Token<&'s str>, Token<&'s str>>)
                      -> CombineError<Token<String>, Token<String>> {
-    let static_info = |i: Info<Token<Id>, Token<Id>>| {
+    let static_info = |i: Info<Token<&'s str>, Token<&'s str>>| {
         match i {
-            Info::Token(t) => Info::Token(t.map(|id| String::from(make_ident.string(id)))),
-            Info::Range(t) => Info::Token(t.map(|id| String::from(make_ident.string(id)))),
+            Info::Token(t) => Info::Token(t.map(|id| String::from(*id))),
+            Info::Range(t) => Info::Token(t.map(|id| String::from(*id))),
             Info::Borrowed(t) => Info::Borrowed(t),
             Info::Owned(t) => Info::Owned(t),
         }
