@@ -151,7 +151,7 @@ impl<'a> KindCheck<'a> {
 
     fn kindcheck(&mut self, typ: &TcType) -> Result<(RcKind, TcType)> {
         match **typ {
-            Type::Hole => Ok((self.subs.new_var(), Type::hole())),
+            Type::Hole => Ok((self.subs.new_var(), typ.clone())),
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
                 gen.kind = try!(self.find(&gen.id));
