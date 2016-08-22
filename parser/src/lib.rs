@@ -53,7 +53,7 @@ impl StreamOnce for StreamType {
 
 
 /// Parser passes the environment to each parser function
-type LanguageParser<'b, I: 'b, F: 'b, T> = EnvParser<&'b ParserEnv<I, F>, I, T>;
+type LanguageParser<'parser, I: 'parser, F: 'parser, T> = EnvParser<&'parser ParserEnv<I, F>, I, T>;
 
 /// `ParserEnv` is passed around to all individual parsers so that identifiers can always be
 /// constructed through calling `make_ident`.
@@ -69,16 +69,16 @@ struct ParserEnv<I, F>
 
 // Wrapper type to reduce typechecking times
 #[derive(Clone)]
-pub struct Wrapper<'s: 'l, 'l> {
-    stream: BufferedStream<'l, Lexer<'s, &'s str>>,
+pub struct Wrapper<'input: 'lexer, 'lexer> {
+    stream: BufferedStream<'lexer, Lexer<'input, &'input str>>,
 }
 
-impl<'s, 'l> StreamOnce for Wrapper<'s, 'l> {
-    type Item = Token<&'s str>;
-    type Range = Token<&'s str>;
+impl<'input, 'lexer> StreamOnce for Wrapper<'input, 'lexer> {
+    type Item = Token<&'input str>;
+    type Range = Token<&'input str>;
     type Position = Span;
 
-    fn uncons(&mut self) -> Result<Token<&'s str>, lexer::Error<&'s str>> {
+    fn uncons(&mut self) -> Result<Token<&'input str>, lexer::Error<&'input str>> {
         self.stream.uncons()
     }
 
@@ -94,14 +94,14 @@ enum LetOrType<Id: AstId> {
 
 macro_rules! match_parser {
     ($function: ident, $variant: ident -> $typ: ty) => {
-        fn $function(&'a self) -> LanguageParser<'a, I, F, $typ> {
-            fn inner<'b, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<$typ, I>
-                where I: Stream<Item = Token<&'b str>>,
+        fn $function<'a>(&'a self) -> LanguageParser<'a, I, F, $typ> {
+            fn inner<'input, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<$typ, I>
+                where I: Stream<Item = Token<&'input str>>,
                       F: IdentEnv<Ident = Id>,
                       Id: AstId + Clone + PartialEq + fmt::Debug,
                       I::Range: fmt::Debug
             {
-                satisfy(|t: Token<&'b str>| {
+                satisfy(|t: Token<&'input str>| {
                     match t {
                         Token::$variant(_) => true,
                         _ => false,
@@ -125,8 +125,8 @@ fn as_trait<P: Parser>(p: &mut P) -> &mut Parser<Input = P::Input, Output = P::O
     p
 }
 
-impl<'a, 's, I, Id, F> ParserEnv<I, F>
-    where I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>,
+impl<'input, I, Id, F> ParserEnv<I, F>
+    where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span>,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
           I::Range: fmt::Debug
@@ -135,9 +135,9 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
         self.make_ident.borrow_mut().from_str(s)
     }
 
-    fn parser<T>(&'a self,
-                 parser: fn(&ParserEnv<I, F>, I) -> ParseResult<T, I>)
-                 -> LanguageParser<'a, I, F, T> {
+    fn parser<'a, T>(&'a self,
+                     parser: fn(&ParserEnv<I, F>, I) -> ParseResult<T, I>)
+                     -> LanguageParser<'a, I, F, T> {
         env_parser(self, parser)
     }
 
@@ -175,9 +175,10 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
         }
     }
 
-    fn ident(&'a self) -> LanguageParser<'a, I, F, Id> {
+    fn ident<'a>(&'a self) -> LanguageParser<'a, I, F, Id> {
         self.parser(ParserEnv::<I, F>::parse_ident)
     }
+
     fn parse_ident(&self, input: I) -> ParseResult<Id, I> {
         self.parser(ParserEnv::<I, F>::parse_ident2)
             .map(|x| x.0)
@@ -186,7 +187,7 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
 
     /// Identifier parser which returns the identifier as well as the type of the identifier
     fn parse_ident2(&self, input: I) -> ParseResult<(Id, IdentType), I> {
-        satisfy(|t: Token<&'s str>| {
+        satisfy(|t: Token<&'input str>| {
                 match t {
                     Token::Identifier(..) => true,
                     _ => false,
@@ -200,18 +201,21 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
             })
             .parse_state(input)
     }
-    fn ident_u(&'a self) -> LanguageParser<'a, I, F, Id::Untyped> {
+
+    fn ident_u<'a>(&'a self) -> LanguageParser<'a, I, F, Id::Untyped> {
         self.parser(ParserEnv::<I, F>::parse_untyped_ident)
     }
+
     fn parse_untyped_ident(&self, input: I) -> ParseResult<Id::Untyped, I> {
         self.ident()
             .map(AstId::to_id)
             .parse_state(input)
     }
 
-    fn ident_type(&'a self) -> LanguageParser<'a, I, F, AstType<Id::Untyped>> {
+    fn ident_type<'a>(&'a self) -> LanguageParser<'a, I, F, AstType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_ident_type)
     }
+
     fn parse_ident_type(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
         try(self.parser(ParserEnv::<I, F>::parse_ident2))
             .map(|(s, typ)| {
@@ -244,7 +248,7 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
 
     match_parser! { doc_comment, DocComment -> String }
 
-    fn typ(&'a self) -> LanguageParser<'a, I, F, AstType<Id::Untyped>> {
+    fn typ<'a>(&'a self) -> LanguageParser<'a, I, F, AstType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_type)
     }
 
@@ -402,7 +406,7 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn expr(&'a self) -> LanguageParser<'a, I, F, SpannedExpr<Id>> {
+    fn expr<'a>(&'a self) -> LanguageParser<'a, I, F, SpannedExpr<Id>> {
         self.parser(ParserEnv::<I, F>::top_expr)
     }
 
@@ -551,14 +555,14 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
         }
     }
 
-    fn op(&'a self) -> LanguageParser<'a, I, F, &'s str> {
-        fn inner<'s, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<&'s str, I>
-            where I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>,
+    fn op<'a>(&'a self) -> LanguageParser<'a, I, F, &'input str> {
+        fn inner<'input, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<&'input str, I>
+            where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span>,
                   F: IdentEnv<Ident = Id>,
                   Id: AstId + Clone + PartialEq + fmt::Debug,
                   I::Range: fmt::Debug
         {
-            satisfy(|t: Token<&'s str>| {
+            satisfy(|t: Token<&'input str>| {
                     match t {
                         Token::Operator(_) => true,
                         _ => false,
@@ -639,7 +643,7 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn pattern(&'a self) -> LanguageParser<'a, I, F, SpannedPattern<Id>> {
+    fn pattern<'a>(&'a self) -> LanguageParser<'a, I, F, SpannedPattern<Id>> {
         self.parser(ParserEnv::<I, F>::parse_pattern)
     }
 
@@ -765,7 +769,7 @@ impl<'a, 's, I, Id, F> ParserEnv<I, F>
         })
     }
 
-    fn record_parser<P1, P2, O, G, R>(&'a self, ref p1: P1, ref p2: P2, f: G) -> R
+    fn record_parser<'a, P1, P2, O, G, R>(&'a self, ref p1: P1, ref p2: P2, f: G) -> R
         where P1: Parser<Input = I> + Clone,
               P2: Parser<Input = I> + Clone,
               O: FromIterator<(Id::Untyped, Result<Option<P1::Output>, Option<P2::Output>>)>,
@@ -811,17 +815,17 @@ pub fn parse_tc
 }
 
 #[cfg(feature = "test")]
-pub fn parse_string<'a, 's>
-    (make_ident: &'a mut IdentEnv<Ident = String>,
-     input: &'s str)
+pub fn parse_string<'env, 'input>
+    (make_ident: &'env mut IdentEnv<Ident = String>,
+     input: &'input str)
      -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
     parse_expr(make_ident, input)
 }
 
 /// Parses a gluon expression
-pub fn parse_expr<'a, 's, Id>
-    (make_ident: &'a mut IdentEnv<Ident = Id>,
-     input: &'s str)
+pub fn parse_expr<'env, 'input, Id>
+    (make_ident: &'env mut IdentEnv<Ident = Id>,
+     input: &'input str)
      -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
     where Id: AstId + Clone + PartialEq + fmt::Debug
 {
@@ -856,8 +860,8 @@ pub fn parse_expr<'a, 's, Id>
     }
 }
 
-fn static_error<'s, I>(error: ParseError<I>) -> Error
-    where I: Stream<Item = Token<&'s str>, Range = Token<&'s str>, Position = Span>
+fn static_error<'input, I>(error: ParseError<I>) -> Error
+    where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span>
 {
     let errors = error.errors
         .into_iter()
@@ -870,9 +874,9 @@ fn static_error<'s, I>(error: ParseError<I>) -> Error
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
-fn static_error_<'s>(e: CombineError<Token<&'s str>, Token<&'s str>>)
-                     -> CombineError<Token<String>, Token<String>> {
-    let static_info = |i: Info<Token<&'s str>, Token<&'s str>>| {
+fn static_error_<'input>(e: CombineError<Token<&'input str>, Token<&'input str>>)
+                         -> CombineError<Token<String>, Token<String>> {
+    let static_info = |i: Info<Token<&'input str>, Token<&'input str>>| {
         match i {
             Info::Token(t) => Info::Token(t.map(|id| String::from(*id))),
             Info::Range(t) => Info::Token(t.map(|id| String::from(*id))),
