@@ -1104,7 +1104,7 @@ impl<'a> Typecheck<'a> {
                 typ = &**t;
             }
             match *typ {
-                Type::Variable(ref var) if self.subs.get_level(var.id) > level => {
+                Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
                     // Create a prefix if none exists
                     if generic.is_none() {
                         let mut g = String::new();

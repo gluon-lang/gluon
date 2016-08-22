@@ -358,11 +358,12 @@ mod test {
                    }));
     }
 
-    fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {
-        super::intersection(subs, (), l, r)
-    }
     #[test]
     fn intersection_test() {
+        fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {
+            super::intersection(subs, (), l, r)
+        }
+
         let subs = Substitution::<TType>::new();
         let var1 = subs.new_var();
         let string = TType(Box::new(Type::Id("String".into())));
@@ -371,10 +372,10 @@ mod test {
         let string_fun = mk_fn(&string, &string);
         let int_fun = mk_fn(&int, &int);
         let result = intersection(&subs, &int_fun, &string_fun);
-        assert_eq!(result, mk_fn(&TType::new(2), &TType::new(2)));
+        assert_eq!(result, mk_fn(&TType::new(1), &TType::new(1)));
 
         let var_fun = mk_fn(&var1, &var1);
         let result = intersection(&subs, &int_fun, &var_fun);
-        assert_eq!(result, mk_fn(&TType::new(3), &TType::new(3)));
+        assert_eq!(result, mk_fn(&TType::new(2), &TType::new(2)));
     }
 }

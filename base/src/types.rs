@@ -86,6 +86,8 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Type<Id, T = AstType<Id>> {
+    /// An unbound type `_`, awaiting ascription.
+    Hole,
     /// An application with multiple arguments.
     /// `Map String Int` would be represented as `App(Map, [String, Int])`
     App(T, Vec<T>),
@@ -107,7 +109,7 @@ pub enum Type<Id, T = AstType<Id>> {
         /// The fields of this record type
         fields: Vec<Field<Id, T>>,
     },
-    /// An identifier type. Anything which is not a builting type.
+    /// An identifier type. Anything that is not a builtin type.
     Id(Id),
     Alias(AliasData<Id, T>),
 }
@@ -419,6 +421,10 @@ pub struct Field<Id, T = AstType<Id>> {
 impl<Id, T> Type<Id, T>
     where T: From<Type<Id, T>>
 {
+    pub fn hole() -> T {
+        T::from(Type::Hole)
+    }
+
     pub fn array(typ: T) -> T {
         Type::app(Type::builtin(BuiltinType::Array), vec![typ])
     }
@@ -734,6 +740,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
     {
         let p = self.prec;
         match *self.typ {
+            Type::Hole => arena.text("_"),
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::App(ref t, ref args) => {
@@ -892,6 +899,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
                 f.walk(&variant.1);
             }
         }
+        Type::Hole |
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |
@@ -1037,6 +1045,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
             walk_move_types(variants, |v| f.visit(&v.1).map(|t| (v.0.clone(), t)))
                 .map(Type::variants)
         }
+        Type::Hole |
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |

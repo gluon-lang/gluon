@@ -161,19 +161,15 @@ impl<T: fmt::Debug> fmt::Debug for Substitution<T> {
 
 impl<T> Substitution<T> {
     pub fn var_id(&self) -> u32 {
-        (self.variables.borrow().len() - 1) as u32
+        self.variables.borrow().len() as u32
     }
 }
 
 impl<T: Substitutable> Substitution<T> {
     pub fn new() -> Substitution<T> {
-        let variables = FixedVec::new();
-        // 0 is the default, uninitialized variable so we add it to make sure that the first
-        // variable we create through `new_var` is 1
-        variables.push(T::new(0));
         Substitution {
-            union: RefCell::new(QuickFindUf::new(1)),
-            variables: variables,
+            union: RefCell::new(QuickFindUf::new(0)),
+            variables: FixedVec::new(),
             types: FixedMap::new(),
         }
     }
@@ -181,7 +177,6 @@ impl<T: Substitutable> Substitution<T> {
     pub fn clear(&mut self) {
         self.types.clear();
         self.variables.clear();
-        self.variables.push(T::new(0));
     }
 
     pub fn insert(&self, var: u32, t: T) {
@@ -206,9 +201,10 @@ impl<T: Substitutable> Substitution<T> {
         let var_id = self.variables.len() as u32;
         let id = self.union.borrow_mut().insert(UnionByLevel::default());
         assert!(id == self.variables.len());
-        self.variables.push(T::new(var_id));
-        let last = self.variables.len() - 1;
-        self.variables[last].clone()
+
+        let var = T::new(var_id);
+        self.variables.push(var.clone());
+        var
     }
 
     /// If `typ` is a variable this returns the real unified value of that variable. Otherwise it
