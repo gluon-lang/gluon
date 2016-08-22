@@ -25,10 +25,11 @@ use std::string::String as StdString;
 use std::env;
 
 use base::ast;
-use base::error::Errors;
-use base::types::TcType;
-use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
+use base::error::{Errors, InFile as InFileError};
 use base::metadata::Metadata;
+use base::source::Source;
+use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
+use base::types::TcType;
 
 use vm::Variants;
 use vm::api::generic::A;
@@ -50,7 +51,7 @@ quick_error! {
             from()
         }
         /// Error found when typechecking gluon code
-        Typecheck(err: ::base::error::InFile<::check::typecheck::TypeError<Symbol>>) {
+        Typecheck(err: InFileError) {
             description(err.description())
             display("{}", err)
             from()
@@ -226,7 +227,9 @@ pub mod compiler_pipeline {
         }
     }
 
-    pub struct CompileValue(pub ast::SpannedExpr<ast::TcIdent<Symbol>>, pub TcType, pub CompiledFunction);
+    pub struct CompileValue(pub ast::SpannedExpr<ast::TcIdent<Symbol>>,
+                            pub TcType,
+                            pub CompiledFunction);
 
     pub trait Compileable<Extra> {
         fn compile(self,
@@ -354,10 +357,11 @@ impl Compiler {
     }
 
     /// Parse `input`, returning an expression if successful
-    pub fn parse_expr(&mut self,
-                      file: &str,
-                      input: &str)
-                      -> StdResult<ast::SpannedExpr<ast::TcIdent<Symbol>>, Errors<::parser::Error>> {
+    pub fn parse_expr
+        (&mut self,
+         file: &str,
+         input: &str)
+         -> StdResult<ast::SpannedExpr<ast::TcIdent<Symbol>>, Errors<::parser::Error>> {
         Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols),
                                    input)
             .map_err(|t| t.1)))
@@ -393,11 +397,14 @@ impl Compiler {
                                expected_type: Option<&TcType>)
                                -> Result<TcType> {
         use check::typecheck::Typecheck;
-        use base::error;
+
         let env = vm.get_env();
         let mut tc = Typecheck::new(file.into(), &mut self.symbols, &*env);
+        let source = Source::new(expr_str);
+
         let typ = try!(tc.typecheck_expr_expected(expr, expected_type)
-            .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
+            .map_err(|err| InFileError::new(file, &source, err)));
+
         Ok(typ)
     }
 
@@ -439,11 +446,12 @@ impl Compiler {
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
     /// expression
-    pub fn extract_metadata(&mut self,
-                            vm: &Thread,
-                            file: &str,
-                            expr_str: &str)
-                            -> Result<(ast::SpannedExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
+    pub fn extract_metadata
+        (&mut self,
+         vm: &Thread,
+         file: &str,
+         expr_str: &str)
+         -> Result<(ast::SpannedExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
         use check::metadata;
         let (mut expr, typ) = try!(self.typecheck_str(vm, file, expr_str, None));
 
@@ -587,7 +595,7 @@ pub fn filename_to_module(filename: &str) -> StdString {
                 .map(|ext| &filename[..filename.len() - ext.len() - 1])
                 .unwrap_or(filename)
         });
-    
+
     name.replace(|c: char| c == '/' || c == '\\', ".")
 }
 

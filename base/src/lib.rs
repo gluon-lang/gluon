@@ -15,5 +15,6 @@ pub mod instantiate;
 pub mod metadata;
 pub mod pos;
 pub mod scoped_map;
+pub mod source;
 pub mod symbol;
 pub mod types;

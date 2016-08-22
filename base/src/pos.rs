@@ -139,35 +139,35 @@ impl fmt::Display for Location {
 
 /// A span between two locations in a source file
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub struct Span {
-    pub start: Location,
-    pub end: Location,
+pub struct Span<Pos> {
+    pub start: Pos,
+    pub end: Pos,
 }
 
-impl Span {
-    pub fn contains(self, other: Span) -> bool {
+impl<Pos: Ord> Span<Pos> {
+    pub fn contains(self, other: Span<Pos>) -> bool {
         self.start <= other.start && other.end <= self.end
     }
 
-    pub fn containment(self, location: &Location) -> Ordering {
+    pub fn containment(self, pos: &Pos) -> Ordering {
         use std::cmp::Ordering::*;
 
-        match (location.cmp(&self.start), location.cmp(&self.end)) {
+        match (pos.cmp(&self.start), pos.cmp(&self.end)) {
             (Equal, _) | (Greater, Less) => Equal,
             (Less, _) => Less,
             (_, Equal) | (_, Greater) => Greater,
         }
     }
 
-    pub fn containment_exclusive(self, location: &Location) -> Ordering {
-        if self.end == *location {
+    pub fn containment_exclusive(self, pos: &Pos) -> Ordering {
+        if self.end == *pos {
             Ordering::Greater
         } else {
-            self.containment(location)
+            self.containment(pos)
         }
     }
 
-    pub fn merge(self, other: Span) -> Option<Span> {
+    pub fn merge(self, other: Span<Pos>) -> Option<Span<Pos>> {
         if (self.start <= other.start && self.end > other.start) ||
            (self.start >= other.start && self.start < other.end) {
             Some(Span {
@@ -181,61 +181,36 @@ impl Span {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Spanned<T> {
-    pub span: Span,
+pub struct Spanned<T, Pos> {
+    pub span: Span<Pos>,
     pub value: T,
 }
 
-impl<T: PartialEq> PartialEq for Spanned<T> {
-    fn eq(&self, other: &Spanned<T>) -> bool {
+impl<T: PartialEq, Pos> PartialEq for Spanned<T, Pos> {
+    fn eq(&self, other: &Spanned<T, Pos>) -> bool {
         self.value == other.value
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Spanned<T> {
+impl<T: fmt::Display, Pos: fmt::Display> fmt::Display for Spanned<T, Pos> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}: {}", self.span.start, self.value)
     }
 }
 
-pub fn spanned<T>(span: Span, value: T) -> Spanned<T> {
+pub fn spanned<T, Pos>(span: Span<Pos>, value: T) -> Spanned<T, Pos> {
     Spanned {
         span: span,
         value: value,
     }
 }
 
-pub fn spanned2<T>(start: Location, end: Location, value: T) -> Spanned<T> {
+pub fn spanned2<T, Pos>(start: Pos, end: Pos, value: T) -> Spanned<T, Pos> {
     Spanned {
         span: Span {
             start: start,
             end: end,
         },
-        value: value,
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Located<T> {
-    pub location: Location,
-    pub value: T,
-}
-
-impl<T: PartialEq> PartialEq for Located<T> {
-    fn eq(&self, other: &Located<T>) -> bool {
-        self.value == other.value
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Located<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.location, self.value)
-    }
-}
-
-pub fn located<T>(location: Location, value: T) -> Located<T> {
-    Located {
-        location: location,
         value: value,
     }
 }

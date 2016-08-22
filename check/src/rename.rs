@@ -1,7 +1,7 @@
 use std::fmt;
 
 use base::ast::{self, DisplayEnv, Expr, SpannedExpr, MutVisitor, Typed};
-use base::pos::{self, Span, Spanned};
+use base::pos::{self, BytePos, Span, Spanned};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
@@ -10,14 +10,14 @@ use base::types::{self, Alias, TcType, Type, TcIdent, RcKind, KindEnv, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
-pub type Error = Errors<Spanned<RenameError>>;
+pub type Error = Errors<Spanned<RenameError, BytePos>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RenameError {
     NoMatchingType {
         symbol: String,
         expected: TcType,
-        possible_types: Vec<(Option<Span>, TcType)>,
+        possible_types: Vec<(Option<Span<BytePos>>, TcType)>,
     },
 }
 
@@ -44,7 +44,7 @@ impl fmt::Display for RenameError {
 
 struct Environment<'b> {
     env: &'b TypeEnv,
-    stack: ScopedMap<Symbol, (Symbol, Span, TcType)>,
+    stack: ScopedMap<Symbol, (Symbol, Span<BytePos>, TcType)>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, TcType>>,
 }
 
@@ -134,7 +134,7 @@ pub fn rename(symbols: &mut SymbolModule,
             }
         }
 
-        fn stack_var(&mut self, id: Symbol, span: Span, typ: TcType) -> Symbol {
+        fn stack_var(&mut self, id: Symbol, span: Span<BytePos>, typ: TcType) -> Symbol {
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
             let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
@@ -147,7 +147,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
         }
 
-        fn stack_type(&mut self, id: Symbol, span: Span, alias: &Alias<Symbol, TcType>) {
+        fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, TcType>) {
             // Insert variant constructors into the local scope
             if let Some(ref real_type) = alias.typ {
                 if let Type::Variants(ref variants) = **real_type {

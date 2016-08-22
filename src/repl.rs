@@ -85,17 +85,12 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
 }
 
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
-    use base::pos::{BytePos, CharPos, Location};
+    use base::pos::BytePos;
     use check::completion;
     use gluon::compiler_pipeline::*;
 
-    let location = Location {
-        line: 1,
-        column: CharPos(pos),
-        absolute: BytePos(pos as u32),
-    };
-
     let mut compiler = Compiler::new();
+
     // The parser may find parse errors but still produce an expression
     // For that case still typecheck the expression but return the parse error afterwards
     let (expr, _parse_result): (_, GluonResult<()>) =
@@ -104,10 +99,12 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
             Err((None, err)) => return Err(err.into()),
             Err((Some(expr), err)) => (expr, Err(err.into())),
         };
+
     let MacroValue(mut expr) = try!(expr.expand_macro(&mut compiler, thread, &name));
+
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);
-    let suggestions = completion::suggest(&*thread.get_env(), &expr, location);
+    let suggestions = completion::suggest(&*thread.get_env(), &expr, BytePos(pos as u32));
     Ok(suggestions.into_iter()
         .map(|ident| {
             let s: &str = ident.name.as_ref();
@@ -117,6 +114,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
 }
 
 struct Completer(RootedThread);
+
 impl rustyline::completion::Completer for Completer {
     fn complete(&self, line: &str, pos: usize) -> rustyline::Result<(usize, Vec<String>)> {
         let result = complete(&self.0, "<repl>", line, pos);
