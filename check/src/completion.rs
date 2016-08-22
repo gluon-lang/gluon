@@ -174,7 +174,7 @@ impl<F> FindVisitor<F>
         
         match current.value {
             Identifier(_) | Literal(_) => {
-                if current.span(self.env).containment(&self.location) == Ordering::Equal {
+                if current.span.containment(&self.location) == Ordering::Equal {
                     self.on_found.expr(current)
                 } else {
                     self.on_found.nothing()
@@ -257,7 +257,7 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, location: Location)
 pub fn suggest<T>(env: &T,
                   expr: &SpannedExpr<TcIdent<Symbol>>,
                   location: Location)
-                  -> Vec<TcIdent<Symbol>>
+                  -> Vec<Suggestion>
     where T: TypeEnv
 {
     let mut visitor = FindVisitor {
