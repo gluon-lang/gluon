@@ -376,3 +376,32 @@ abc
 
     assert_eq!(result, expected);
 }
+
+#[test]
+fn suggest_between_expressions() {
+    let text = r#"
+let abc = 1
+let abb = 2
+test  test1
+""  123
+"#;
+    let result = suggest(text,
+                         Location {
+                             line: 4,
+                             column: CharPos(6),
+                             absolute: BytePos(33),
+                         });
+    let expected = Ok(vec!["abb".into(), "abc".into()]);
+
+    assert_eq!(result, expected);
+
+    let result = suggest(text,
+                         Location {
+                             line: 5,
+                             column: CharPos(4),
+                             absolute: BytePos(44),
+                         });
+    let expected = Ok(vec!["abb".into(), "abc".into()]);
+
+    assert_eq!(result, expected);
+}
