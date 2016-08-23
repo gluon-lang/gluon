@@ -153,9 +153,9 @@ impl<Pos: Ord> Span<Pos> {
         use std::cmp::Ordering::*;
 
         match (pos.cmp(&self.start), pos.cmp(&self.end)) {
-            (Equal, _) | (Greater, Less) => Equal,
+            (Equal, _) | (_, Equal) | (Greater, Less) => Equal,
             (Less, _) => Less,
-            (_, Equal) | (_, Greater) => Greater,
+            (_, Greater) => Greater,
         }
     }
 

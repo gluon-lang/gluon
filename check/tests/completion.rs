@@ -42,7 +42,7 @@ fn identifier() {
     let (mut expr, result) = support::typecheck_expr("let abc = 1 in abc");
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, &mut expr, BytePos(45));
+    let result = completion::find(&env, &mut expr, BytePos(15));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
@@ -105,7 +105,7 @@ let (++) l r =
 "#);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, &mut expr, BytePos(63));
+    let result = completion::find(&env, &mut expr, BytePos(57));
     let expected = Ok(Type::function(vec![typ("Int"), typ("Float")], typ("Int")));
     assert_eq!(result, expected);
 
@@ -128,7 +128,7 @@ r.x
 "#);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&typ_env, &mut expr, BytePos(21));
+    let result = completion::find(&typ_env, &mut expr, BytePos(19));
     let expected = Ok(Type::record(vec![],
                                    vec![Field {
                                             name: intern("x"),
@@ -136,7 +136,7 @@ r.x
                                         }]));
     assert_eq!(result, expected);
 
-    let result = completion::find(&typ_env, &mut expr, BytePos(23));
+    let result = completion::find(&typ_env, &mut expr, BytePos(22));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 }
@@ -149,7 +149,7 @@ fn in_record() {
     s = "asd"
 }
 "#,
-                           BytePos(30));
+                           BytePos(15));
     let expected = Ok(typ("Int"));
 
     assert_eq!(result, expected);
@@ -163,7 +163,7 @@ let tes = ""
 let aaa = test
 te
 "#,
-                         BytePos(47));
+                         BytePos(43));
     let expected = Ok(vec!["tes".into(), "test".into()]);
 
     assert_eq!(result, expected);
@@ -176,7 +176,7 @@ let f test =
     \test2 -> tes
 123
 "#,
-                         BytePos(61));
+                         BytePos(31));
     let expected = Ok(vec!["test".into(), "test2".into()]);
 
     assert_eq!(result, expected);
@@ -239,7 +239,7 @@ fn suggest_on_record_in_field_access() {
 let record = { aa = 1, ab = 2, c = "" }
 record.aa
 "#,
-                         BytePos(47));
+                         BytePos(45));
     let expected = Ok(vec!["record".into()]);
 
     assert_eq!(result, expected);
@@ -252,7 +252,7 @@ let abc = 1
 let abb = 2
 abc
 "#,
-                         BytePos(45));
+                         BytePos(28));
     let expected = Ok(vec!["abc".into()]);
 
     assert_eq!(result, expected);
@@ -279,12 +279,12 @@ let abb = 2
 test  test1
 ""  123
 "#;
-    let result = suggest(text, BytePos(33));
+    let result = suggest(text, BytePos(30));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
 
-    let result = suggest(text, BytePos(44));
+    let result = suggest(text, BytePos(40));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
