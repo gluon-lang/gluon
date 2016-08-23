@@ -587,8 +587,8 @@ pub fn filename_to_module(filename: &str) -> StdString {
                 .map(|ext| &filename[..filename.len() - ext.len() - 1])
                 .unwrap_or(filename)
         });
-
-    name.replace("/", ".")
+    
+    name.replace(|c: char| c == '/' || c == '\\', ".")
 }
 
 /// Creates a new virtual machine with support for importing other modules and with all primitives

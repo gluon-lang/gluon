@@ -22,6 +22,9 @@ trait OnFound {
     fn expr(&mut self, expr: &SpannedExpr<TcIdent<Symbol>>);
 
     fn ident(&mut self, context: &SpannedExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>);
+
+    /// Location points to whitespace
+    fn nothing(&mut self);
 }
 
 struct GetType<E> {
@@ -37,12 +40,18 @@ impl<E: TypeEnv> OnFound for GetType<E> {
     fn ident(&mut self, _context: &SpannedExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
         self.typ = Some(ident.env_type_of(&self.env));
     }
+    fn nothing(&mut self) {}
+}
+
+pub struct Suggestion {
+    pub name: String,
+    pub typ: TcType,
 }
 
 struct Suggest<E> {
     env: E,
     stack: ScopedMap<Symbol, TcType>,
-    result: Vec<TcIdent<Symbol>>,
+    result: Vec<Suggestion>,
 }
 
 impl<E: TypeEnv> OnFound for Suggest<E> {
@@ -76,8 +85,8 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         if let Expr::Identifier(ref ident) = expr.value {
             for (k, typ) in self.stack.iter() {
                 if k.declared_name().starts_with(ident.name.declared_name()) {
-                    self.result.push(TcIdent {
-                        name: k.clone(),
+                    self.result.push(Suggestion {
+                        name: k.declared_name().into(),
                         typ: typ.clone(),
                     });
                 }
@@ -92,14 +101,23 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 let id = ident.name.as_ref();
                 for field in fields {
                     if field.name.as_ref().starts_with(id) {
-                        self.result.push(TcIdent {
-                            name: field.name.clone(),
+                        self.result.push(Suggestion {
+                            name: field.name.declared_name().into(),
                             typ: field.typ.clone(),
                         });
                     }
                 }
             }
         }
+    }
+
+    fn nothing(&mut self) {
+        self.result.extend(self.stack.iter().map(|(name, typ)| {
+            Suggestion {
+                name: name.declared_name().into(),
+                typ: typ.clone(),
+            }
+        }));
     }
 }
 
@@ -155,7 +173,13 @@ impl<F> FindVisitor<F>
         use base::ast::Expr::*;
         
         match current.value {
-            Identifier(_) | Literal(_) => self.on_found.expr(current),
+            Identifier(_) | Literal(_) => {
+                if current.span.containment(&self.location) == Ordering::Equal {
+                    self.on_found.expr(current)
+                } else {
+                    self.on_found.nothing()
+                }
+            }
             Call(ref func, ref args) => {
                 self.visit_one(once(&**func).chain(args));
             }
@@ -233,7 +257,7 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, location: Location)
 pub fn suggest<T>(env: &T,
                   expr: &SpannedExpr<TcIdent<Symbol>>,
                   location: Location)
-                  -> Vec<TcIdent<Symbol>>
+                  -> Vec<Suggestion>
     where T: TypeEnv
 {
     let mut visitor = FindVisitor {
