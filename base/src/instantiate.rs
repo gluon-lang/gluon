@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
-use std::ops::Deref;
 
 use types;
-use types::{AliasData, Type, Generic, TcType, TypeEnv, merge};
+use types::{AliasData, Type, Generic, TcType, TypeEnv};
 use symbol::Symbol;
 use fnv::FnvMap;
 
@@ -211,98 +210,11 @@ impl Instantiator {
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
     where F: FnMut(&Generic<Symbol>) -> Option<TcType>
 {
-    walk_move_type_no_recurse(typ,
-                              &mut |typ| {
-                                  match *typ {
-                                      Type::Generic(ref x) => f(x),
-                                      _ => None,
-                                  }
-                              })
-}
-
-/// Walks through a type replacing some types
-/// If a type is replaced the new type will not be traversed
-fn walk_move_type_no_recurse<F, I, T>(typ: T, f: &mut F) -> T
-    where F: FnMut(&Type<I, T>) -> Option<T>,
-          T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
-          I: Clone
-{
-    walk_move_type2(&typ, f).unwrap_or(typ)
-}
-
-fn walk_move_type2<F, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
-    where F: FnMut(&Type<I, T>) -> Option<T>,
-          T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
-          I: Clone
-{
-    let new = f(typ);
-    let result = match new {
-        Some(new_type) => return Some(new_type),
-        None => {
-            let typ = new.as_ref().map_or(typ, |t| &**t);
-            match *typ {
-                Type::App(ref id, ref args) => {
-                    let new_args = walk_move_types(args.iter(), |t| walk_move_type2(t, f));
-                    merge(id, walk_move_type2(id, f), args, new_args, Type::app)
-                }
-                Type::Record { ref types, ref fields } => {
-                    let new_types = None;
-                    let new_fields = walk_move_types(fields.iter(), |field| {
-                        walk_move_type2(&field.typ, f).map(|typ| {
-                            types::Field {
-                                name: field.name.clone(),
-                                typ: typ,
-                            }
-                        })
-                    });
-                    merge(types, new_types, fields, new_fields, Type::record)
-                }
-                Type::Variants(ref variants) => {
-                    walk_move_types(variants.iter(),
-                                    |v| walk_move_type2(&v.1, f).map(|t| (v.0.clone(), t)))
-                        .map(Type::variants)
-                }
-                Type::Hole |
-                Type::Builtin(_) |
-                Type::Variable(_) |
-                Type::Generic(_) |
-                Type::Id(_) |
-                Type::Alias(_) => None,
-            }
-        }
-    };
-    result.or(new)
-}
-fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
-    where I: Iterator<Item = &'a T>,
-          F: FnMut(&'a T) -> Option<T>,
-          T: Clone + 'a
-{
-    let mut out = Vec::new();
-    walk_move_types2(types, false, &mut out, &mut f);
-    if out.is_empty() {
-        None
-    } else {
-        out.reverse();
-        Some(out)
-    }
-}
-fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<T>, f: &mut F)
-    where I: Iterator<Item = &'a T>,
-          F: FnMut(&'a T) -> Option<T>,
-          T: Clone + 'a
-{
-    if let Some(typ) = types.next() {
-        let new = f(typ);
-        walk_move_types2(types, replaced || new.is_some(), output, f);
-        match new {
-            Some(typ) => {
-                output.push(typ);
-            }
-            None if replaced || !output.is_empty() => {
-                output.push(typ.clone());
-            }
-            None => (),
-        }
-    }
+    types::walk_move_type(typ,
+                          &mut |typ| {
+                              match *typ {
+                                  Type::Generic(ref x) => f(x),
+                                  _ => None,
+                              }
+                          })
 }
