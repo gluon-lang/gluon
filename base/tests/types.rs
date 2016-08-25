@@ -15,7 +15,7 @@ fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
         Ok(b) => Type::Builtin(b),
         Err(()) if is_var => {
             Type::Generic(Generic {
-                kind: RcKind::new(Kind::Type),
+                kind: Type::typ(),
                 id: s,
             })
         }
@@ -45,7 +45,7 @@ fn some_record() -> RcType<&'static str> {
                           name: "Test",
                           typ: Alias::new("Test",
                                           vec![Generic {
-                                                   kind: Kind::typ(),
+                                                   kind: Type::typ(),
                                                    id: "a",
                                                }],
                                           f.clone()),
@@ -77,7 +77,7 @@ fn show_record() {
                                     name: "Test",
                                     typ: Alias::new("Test",
                                                     vec![Generic {
-                                                             kind: Kind::typ(),
+                                                             kind: Type::typ(),
                                                              id: "a",
                                                          }],
                                                     f.clone()),
@@ -93,7 +93,7 @@ fn show_record() {
                                     name: "Test",
                                     typ: Alias::new("Test",
                                                     vec![Generic {
-                                                             kind: Kind::typ(),
+                                                             kind: Type::typ(),
                                                              id: "a",
                                                          }],
                                                     f.clone()),
@@ -112,7 +112,7 @@ fn show_record_multi_line() {
                                     name: "Test",
                                     typ: Alias::new("Test",
                                                     vec![Generic {
-                                                             kind: Kind::typ(),
+                                                             kind: Type::typ(),
                                                              id: "a",
                                                          }],
                                                     f.clone()),
@@ -168,8 +168,10 @@ fn variants() {
 
 #[test]
 fn show_kind() {
-    let two_args = Kind::function(Kind::typ(), Kind::function(Kind::typ(), Kind::typ()));
+    let two_args: AstType<&str> = Type::function(vec![Type::typ(), Type::typ()], Type::typ());
     assert_eq!(format!("{}", two_args), "Type -> Type -> Type");
-    let function_arg = Kind::function(Kind::function(Kind::typ(), Kind::typ()), Kind::typ());
+    let function_arg: AstType<&str> = Type::function(vec![Type::function(vec![Type::typ()],
+                                                                         Type::typ())],
+                                                     Type::typ());
     assert_eq!(format!("{}", function_arg), "(Type -> Type) -> Type");
 }

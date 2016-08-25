@@ -8,8 +8,7 @@ use std::usize;
 use base::ast::{Typed, AstType};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv, TcType,
-                  RcKind};
+use base::types::{Alias, AliasData, Generic, Type, KindEnv, TypeEnv, PrimitiveEnv, TcType};
 use base::fnv::FnvMap;
 
 use macros::MacroEnv;
@@ -119,7 +118,7 @@ impl CompilerEnv for VmEnv {
 }
 
 impl KindEnv for VmEnv {
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<TcType> {
         self.type_infos
             .find_kind(type_name)
     }
@@ -412,7 +411,7 @@ impl GlobalVmState {
         }
         let g: TcType = Type::generic(Generic {
             id: Symbol::new(name),
-            kind: Kind::typ(),
+            kind: Type::typ(),
         });
         generics.insert(name.into(), g.clone());
         g

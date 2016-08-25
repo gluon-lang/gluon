@@ -6,7 +6,7 @@ extern crate gluon_check as check;
 
 use base::ast::{self, Expr, Pattern, Typed};
 use base::pos::{BytePos, CharPos, Location, Span};
-use base::types::{self, Field, Generic, Kind, Type};
+use base::types::{self, Field, Generic, Type};
 
 mod support;
 use support::{MockEnv, alias, intern, typ};
@@ -534,7 +534,7 @@ return 1
     };
     let test = alias("Test", &["a"], variant("Test"));
     let m = Generic {
-        kind: Kind::function(Kind::typ(), Kind::typ()),
+        kind: Type::function(vec![Type::typ()], Type::typ()),
         id: intern("m"),
     };
 
@@ -543,7 +543,7 @@ return 1
                            vec![
                                m.clone(),
                                Generic {
-                                   kind: Kind::typ(),
+                                   kind: Type::typ(),
                                    id: intern("a"),
                                },
                             ],

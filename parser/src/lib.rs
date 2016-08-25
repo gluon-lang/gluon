@@ -19,7 +19,7 @@ use base::ast;
 use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, Location, Located, Span};
-use base::types::{Type, Generic, Alias, Field, Kind};
+use base::types::{Type, Generic, Alias, Field};
 use base::symbol::{Name, Symbol, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
@@ -222,7 +222,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                 debug!("Id: {:?}", s);
                 if typ == IdentType::Variable {
                     Type::generic(Generic {
-                        kind: Kind::variable(0),
+                        kind: Type::hole(),
                         id: s.to_id(),
                     })
                 } else {
@@ -373,7 +373,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                 let arg_types = args.iter()
                     .map(|id| {
                         Type::generic(Generic {
-                            kind: Kind::variable(0),
+                            kind: Type::hole(),
                             id: id.clone(),
                         })
                     })
@@ -394,7 +394,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                               args.iter()
                                                   .map(|id| {
                                                       Generic {
-                                                          kind: Kind::variable(0),
+                                                          kind: Type::hole(),
                                                           id: id.clone(),
                                                       }
                                                   })

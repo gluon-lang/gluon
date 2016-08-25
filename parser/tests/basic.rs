@@ -8,7 +8,7 @@ use base::ast;
 use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, BytePos, CharPos, Location, Span, Spanned};
-use base::types::{Type, Generic, Alias, Field, Kind};
+use base::types::{Type, Generic, Alias, Field};
 use parser::{parse_string, Error};
 
 pub fn intern(s: &str) -> String {
@@ -87,9 +87,9 @@ fn generic_ty(s: &str) -> AstType<String> {
     Type::generic(generic(s))
 }
 
-fn generic(s: &str) -> Generic<String> {
+fn generic(s: &str) -> Generic<String, AstType<String>> {
     Generic {
-        kind: Kind::variable(0),
+        kind: Type::hole(),
         id: intern(s),
     }
 }
@@ -122,7 +122,11 @@ fn lambda(name: &str, args: Vec<String>, body: PExpr) -> PExpr {
     }))
 }
 
-fn type_decl(name: String, args: Vec<Generic<String>>, typ: AstType<String>, body: PExpr) -> PExpr {
+fn type_decl(name: String,
+             args: Vec<Generic<String, AstType<String>>>,
+             typ: AstType<String>,
+             body: PExpr)
+             -> PExpr {
     type_decls(vec![TypeBinding {
                         comment: None,
                         name: name.clone(),
@@ -510,10 +514,10 @@ fn span_field_access() {
     let _ = ::env_logger::init();
     let expr = parse_new("record.x");
     assert_eq!(expr.span,
-                Span {
-                    start: loc(1, 1, 0),
-                    end: loc(1, 9, 8),
-                });
+               Span {
+                   start: loc(1, 1, 0),
+                   end: loc(1, 9, 8),
+               });
     match expr.value {
         Expr::FieldAccess(ref e, _) => {
             assert_eq!(e.span,

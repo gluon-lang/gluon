@@ -75,24 +75,24 @@ impl<I> fmt::Display for TypeError<I>
 
 pub type UnifierState<'a, U> = unify::UnifierState<State<'a>, U>;
 
-impl Variable for TypeVariable {
+impl<I> Variable for TypeVariable<AstType<I>> {
     fn get_id(&self) -> u32 {
         self.id
     }
 }
 
 impl<I> Substitutable for AstType<I> {
-    type Variable = TypeVariable;
+    type Variable = TypeVariable<AstType<I>>;
 
     fn new(id: u32) -> AstType<I> {
         Type::variable(TypeVariable::new(id))
     }
 
-    fn from_variable(var: TypeVariable) -> AstType<I> {
+    fn from_variable(var: TypeVariable<AstType<I>>) -> AstType<I> {
         Type::variable(var)
     }
 
-    fn get_var(&self) -> Option<&TypeVariable> {
+    fn get_var(&self) -> Option<&TypeVariable<AstType<I>>> {
         match **self {
             Type::Variable(ref var) => Some(var),
             _ => None,
