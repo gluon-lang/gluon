@@ -5,7 +5,8 @@ use std::ops::Deref;
 
 use pos::Spanned;
 use symbol::Symbol;
-use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
+use types::{Alias, AliasData, BuiltinType, Type, TypeEnv, TypeVariable};
+use instantiate::instantiate;
 
 pub type AstType<Id> = ::types::ArcType<Id>;
 
@@ -110,7 +111,7 @@ impl<Id> TcIdent<Id> {
         TcIdent {
             typ: Type::variable(TypeVariable {
                 id: 0,
-                kind: Kind::variable(0),
+                kind: Type::builtin(BuiltinType::Type),
             }),
             name: name,
         }
@@ -467,7 +468,7 @@ fn get_return_type(env: &TypeEnv,
                             None => panic!("Unexpected type {:?} is not a function", alias_type),
                         };
 
-                        let typ = types::instantiate(typ.clone(), |gen| {
+                        let typ = instantiate(typ.clone(), |gen| {
                             // Replace the generic variable with the type from the list
                             // or if it is not found the make a fresh variable
                             args.iter()

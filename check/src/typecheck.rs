@@ -10,7 +10,7 @@ use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{self, RcKind, Type, Generic, Kind};
+use base::types::{self, Type, Generic};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
@@ -136,15 +136,12 @@ struct Environment<'a> {
 }
 
 impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<TcType> {
         self.stack_types
             .get(type_name)
             .map(|&(_, ref alias)| {
-                let mut kind = Kind::typ();
-                for arg in alias.args.iter().rev() {
-                    kind = Kind::function(arg.kind.clone(), kind);
-                }
-                kind
+                Type::function(alias.args.iter().map(|a| a.kind.clone()).collect(),
+                               Type::typ())
             })
             .or_else(|| self.environment.find_kind(type_name))
     }
@@ -365,7 +362,9 @@ impl<'a> Typecheck<'a> {
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
-    pub fn typecheck_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) -> Result<TcType, Error> {
+    pub fn typecheck_expr(&mut self,
+                          expr: &mut ast::SpannedExpr<TcIdent>)
+                          -> Result<TcType, Error> {
         self.typecheck_expr_expected(expr, None)
     }
 
@@ -951,7 +950,7 @@ impl<'a> Typecheck<'a> {
                 let alias = Alias::make_mut(&mut bind.alias);
                 for gen in alias.args.iter_mut().rev() {
                     gen.kind = check.subs.new_var();
-                    id_kind = Kind::function(gen.kind.clone(), id_kind);
+                    id_kind = Type::function(vec![gen.kind.clone()], id_kind);
                 }
                 check.add_local(alias.name.clone(), id_kind);
             }
@@ -1067,7 +1066,7 @@ impl<'a> Typecheck<'a> {
                 self.type_variables.insert(symbol,
                                            Type::variable(TypeVariable {
                                                id: level,
-                                               kind: Kind::typ(),
+                                               kind: Type::typ(),
                                            }));
                 return;
             }
@@ -1342,7 +1341,7 @@ fn apply_subs(subs: &Substitution<TcType>,
 }
 
 
-pub fn extract_generics(args: &[TcType]) -> Vec<Generic<Symbol>> {
+pub fn extract_generics(args: &[TcType]) -> Vec<Generic<Symbol, TcType>> {
     args.iter()
         .map(|arg| {
             match **arg {

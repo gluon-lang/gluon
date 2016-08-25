@@ -1,7 +1,7 @@
 use base::ast;
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
-use base::types::{Alias, Generic, Kind, Type, KindEnv};
-use base::types::{TcIdent, TcType, TypeEnv, PrimitiveEnv, RcKind};
+use base::types::{Alias, Generic, Type, KindEnv};
+use base::types::{TcIdent, TcType, TypeEnv, PrimitiveEnv};
 use check::typecheck::{self, Typecheck};
 use parser;
 
@@ -69,9 +69,9 @@ impl MockEnv {
 }
 
 impl KindEnv for MockEnv {
-    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<TcType> {
         match id.as_ref() {
-            "Bool" => Some(Kind::typ()),
+            "Bool" => Some(Type::typ()),
             _ => None,
         }
     }
@@ -149,7 +149,7 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
         Ok(b) => Type::builtin(b),
         Err(()) if is_var => {
             Type::generic(Generic {
-                kind: Kind::typ(),
+                kind: Type::typ(),
                 id: intern(s),
             })
         }
@@ -170,7 +170,7 @@ pub fn alias(s: &str, args: &[&str], typ: TcType) -> TcType {
                 args.iter()
                     .map(|id| {
                         Generic {
-                            kind: Kind::typ(),
+                            kind: Type::typ(),
                             id: intern(id),
                         }
                     })

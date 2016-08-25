@@ -18,11 +18,11 @@ pub type TcIdent = ast::TcIdent<Symbol>;
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind>;
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<TcType>;
 }
 
 impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
-    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<TcType> {
         (**self).find_kind(id)
     }
 }
@@ -66,18 +66,6 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     }
 }
 
-pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-    where F: FnMut(&Generic<Symbol>) -> Option<TcType>
-{
-    walk_move_type(typ,
-                   &mut |typ| {
-                       match *typ {
-                           Type::Generic(ref x) => f(x),
-                           _ => None,
-                       }
-                   })
-}
-
 /// The representation of gluon's types.
 ///
 /// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
@@ -96,10 +84,10 @@ pub enum Type<Id, T = AstType<Id>> {
     /// above example means that A's type is `Int -> Float -> A` and B's is `B`
     Variants(Vec<(Id, T)>),
     /// Representation for type variables
-    Variable(TypeVariable),
+    Variable(TypeVariable<T>),
     /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
     /// etc and are what unbound type variables are eventually made into.
-    Generic(Generic<Id>),
+    Generic(Generic<Id, T>),
     /// A builtin type
     Builtin(BuiltinType),
     /// A record type
@@ -229,6 +217,7 @@ pub enum BuiltinType {
     Array,
     /// Type constructor for functions, `(->) a b : Type -> Type -> Type`
     Function,
+    Type,
 }
 
 impl BuiltinType {
@@ -248,6 +237,7 @@ impl ::std::str::FromStr for BuiltinType {
             "Char" => BuiltinType::Char,
             "Array" => BuiltinType::Array,
             "->" => BuiltinType::Function,
+            "Type" => BuiltinType::Type,
             _ => return Err(()),
         };
         Ok(t)
@@ -265,79 +255,20 @@ impl BuiltinType {
             BuiltinType::Unit => "()",
             BuiltinType::Array => "Array",
             BuiltinType::Function => "->",
+            BuiltinType::Type => "Type",
         }
     }
 }
 
-/// Kind representation
-///
-/// All types in gluon has a kind. Most types encountered are of the `Type` kind which
-/// includes things like `Int`, `String` and `Option Int`. There are however other types which
-/// are said to be "higher kinded" and these use the `Function` (a -> b) variant.
-/// These types include `Option` and `(->)` which both have the kind `Type -> Type` as well as
-/// `Functor` which has the kind `(Type -> Type) -> Type`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Kind {
-    /// Representation for a kind which is yet to be inferred.
-    Variable(u32),
-    /// The simplest possible kind. All values in a program have this kind.
-    Type,
-    /// Constructor which takes two kinds, taking the first as argument and returning the second.
-    Function(RcKind, RcKind),
-}
-
-impl Kind {
-    pub fn variable(v: u32) -> RcKind {
-        RcKind::new(Kind::Variable(v))
-    }
-
-    pub fn typ() -> RcKind {
-        RcKind::new(Kind::Type)
-    }
-
-    pub fn function(l: RcKind, r: RcKind) -> RcKind {
-        RcKind::new(Kind::Function(l, r))
-    }
-}
-
-/// Reference counted kind type.
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct RcKind(Arc<Kind>);
-
-impl Deref for RcKind {
-    type Target = Kind;
-    fn deref(&self) -> &Kind {
-        &self.0
-    }
-}
-
-impl fmt::Debug for RcKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl fmt::Display for RcKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl RcKind {
-    pub fn new(k: Kind) -> RcKind {
-        RcKind(Arc::new(k))
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TypeVariable {
-    pub kind: RcKind,
+pub struct TypeVariable<T> {
+    pub kind: T,
     pub id: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Generic<Id> {
-    pub kind: RcKind,
+pub struct Generic<Id, T> {
+    pub kind: T,
     pub id: Id,
 }
 
@@ -379,7 +310,7 @@ impl<Id, T> AsRef<T> for Alias<Id, T> {
 impl<Id, T> Alias<Id, T>
     where T: From<Type<Id, T>>
 {
-    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
+    pub fn new(name: Id, args: Vec<Generic<Id, T>>, typ: T) -> Alias<Id, T> {
         Alias {
             _typ: Type::alias(name, args, typ),
             _marker: PhantomData,
@@ -407,7 +338,7 @@ pub struct AliasData<Id, T> {
     /// Name of the Alias
     pub name: Id,
     /// Arguments to the alias
-    pub args: Vec<Generic<Id>>,
+    pub args: Vec<Generic<Id, T>>,
     /// The type which is being aliased or `None` if the type is abstract
     pub typ: Option<T>,
 }
@@ -458,7 +389,7 @@ impl<Id, T> Type<Id, T>
                   |body, arg| Type::app(function.clone(), vec![arg, body]))
     }
 
-    pub fn generic(typ: Generic<Id>) -> T {
+    pub fn generic(typ: Generic<Id, T>) -> T {
         T::from(Type::Generic(typ))
     }
 
@@ -466,11 +397,11 @@ impl<Id, T> Type<Id, T>
         T::from(Type::Builtin(typ))
     }
 
-    pub fn variable(typ: TypeVariable) -> T {
+    pub fn variable(typ: TypeVariable<T>) -> T {
         T::from(Type::Variable(typ))
     }
 
-    pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
+    pub fn alias(name: Id, args: Vec<Generic<Id, T>>, typ: T) -> T {
         T::from(Type::Alias(AliasData {
             name: name,
             args: args,
@@ -504,6 +435,10 @@ impl<Id, T> Type<Id, T>
 
     pub fn unit() -> T {
         Type::builtin(BuiltinType::Unit)
+    }
+
+    pub fn typ() -> T {
+        Type::builtin(BuiltinType::Type)
     }
 }
 
@@ -602,53 +537,28 @@ impl<Id> AstType<Id> {
     }
 }
 
-impl TypeVariable {
-    pub fn new(var: u32) -> TypeVariable {
-        TypeVariable::with_kind(Kind::Type, var)
+impl<T> TypeVariable<T> {
+    pub fn new<Id>(var: u32) -> TypeVariable<T>
+        where T: From<Type<Id, T>>
+    {
+        TypeVariable::with_kind(Type::typ(), var)
     }
 
-    pub fn with_kind(kind: Kind, var: u32) -> TypeVariable {
+    pub fn with_kind(kind: T, var: u32) -> TypeVariable<T> {
         TypeVariable {
-            kind: RcKind::new(kind),
+            kind: kind,
             id: var,
         }
     }
 }
 
-struct DisplayKind<'a>(Prec, &'a Kind);
-
-impl fmt::Display for Kind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", DisplayKind(Prec::Top, self))
-    }
-}
-
-impl<'a> fmt::Display for DisplayKind<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self.1 {
-            Kind::Variable(i) => i.fmt(f),
-            Kind::Type => "Type".fmt(f),
-            Kind::Function(ref arg, ref ret) => {
-                match self.0 {
-                    Prec::Function => {
-                        write!(f, "({} -> {})", DisplayKind(Prec::Function, arg), ret)
-                    }
-                    Prec::Top | Prec::Constructor => {
-                        write!(f, "{} -> {}", DisplayKind(Prec::Function, arg), ret)
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl fmt::Display for TypeVariable {
+impl<T> fmt::Display for TypeVariable<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.id.fmt(f)
     }
 }
 
-impl<Id: fmt::Display> fmt::Display for Generic<Id> {
+impl<Id: fmt::Display, T> fmt::Display for Generic<Id, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.id.fmt(f)
     }
@@ -919,20 +829,6 @@ pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
     a.expect("fold_type")
 }
 
-pub fn walk_kind<F: ?Sized>(k: &RcKind, f: &mut F)
-    where F: Walker<RcKind>
-{
-    match **k {
-        Kind::Function(ref a, ref r) => {
-            f.walk(a);
-            f.walk(r);
-        }
-        Kind::Variable(_) |
-        Kind::Type => (),
-    }
-}
-
-
 pub trait TypeVisitor<I, T> {
     fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
         where T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
@@ -982,14 +878,6 @@ impl<I, T, F: ?Sized> Walker<T> for F
     }
 }
 
-impl<F: ?Sized> Walker<RcKind> for F
-    where F: FnMut(&RcKind)
-{
-    fn walk(&mut self, typ: &RcKind) {
-        self(typ);
-        walk_kind(typ, self)
-    }
-}
 
 /// Walks through a type calling `f` on each inner type. If `f` return `Some` the type is replaced.
 pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T

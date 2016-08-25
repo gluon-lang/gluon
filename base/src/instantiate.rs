@@ -174,7 +174,7 @@ impl Instantiator {
     }
 
     fn variable_for(&mut self,
-                    generic: &Generic<Symbol>,
+                    generic: &Generic<Symbol, TcType>,
                     on_unbound: &mut FnMut(&Symbol) -> TcType)
                     -> TcType {
         let var = match self.named_variables.entry(generic.id.clone()) {
@@ -208,7 +208,7 @@ impl Instantiator {
 }
 
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-    where F: FnMut(&Generic<Symbol>) -> Option<TcType>
+    where F: FnMut(&Generic<Symbol, TcType>) -> Option<TcType>
 {
     types::walk_move_type(typ,
                           &mut |typ| {

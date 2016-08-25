@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use self::rustyline::error::ReadlineError;
 
 use base::ast::Typed;
-use base::types::Kind;
+use base::types::Type;
 use vm::api::{IO, Function, WithVM, VmType, Userdata};
 use vm::gc::{Gc, Traverseable};
 use vm::thread::{Thread, RootStr};
@@ -31,9 +31,8 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
         Ok(ref alias) => {
-            let kind = alias.args.iter().rev().fold(Kind::typ(), |acc, arg| {
-                Kind::function(arg.kind.clone(), acc)
-            });
+            let kind = Type::function(alias.args.iter().map(|arg| arg.kind.clone()).collect(),
+                                      Type::typ());
             Ok(format!("{}", kind))
         }
         Err(err) => Err(format!("{}", err)),

@@ -26,13 +26,13 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use base::types::{Alias, KindEnv, RcKind, TcType, TypeEnv};
+    use base::types::{Alias, KindEnv, TcType, TypeEnv};
     use base::symbol::{Symbol, Symbols, SymbolModule, SymbolRef};
 
     pub struct MockEnv;
 
     impl KindEnv for MockEnv {
-        fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
+        fn find_kind(&self, _type_name: &SymbolRef) -> Option<TcType> {
             None
         }
     }
