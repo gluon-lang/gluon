@@ -112,9 +112,19 @@ mod tests {
     #[test]
     fn source_line_number_at_byte() {
         assert_eq!(test_source().line_number_at_byte(BytePos(0)), 1);
-        assert_eq!(test_source().line_number_at_byte(BytePos(3)), 1);
+        assert_eq!(test_source().line_number_at_byte(BytePos(6)), 1);
+        assert_eq!(test_source().line_number_at_byte(BytePos(7)), 2);
+        assert_eq!(test_source().line_number_at_byte(BytePos(8)), 2);
+
+        assert_eq!(test_source().line_number_at_byte(BytePos(12)), 2);
         assert_eq!(test_source().line_number_at_byte(BytePos(13)), 3);
+        assert_eq!(test_source().line_number_at_byte(BytePos(14)), 4);
+        assert_eq!(test_source().line_number_at_byte(BytePos(15)), 4);
+
         assert_eq!(test_source().line_number_at_byte(BytePos(18)), 4);
+        assert_eq!(test_source().line_number_at_byte(BytePos(19)), 4);
+        assert_eq!(test_source().line_number_at_byte(BytePos(20)), 5);
+
         assert_eq!(test_source().line_number_at_byte(BytePos(400)), 6);
     }
 
