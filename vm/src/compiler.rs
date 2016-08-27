@@ -335,8 +335,8 @@ impl<'a> Compiler<'a> {
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<VmIndex> {
         // Walk through all type aliases
         match **instantiate::remove_aliases_cow(self, typ) {
-            Type::Record { ref fields, .. } => {
-                fields.iter()
+            ref typ @ Type::Record { .. } => {
+                typ.field_iter()
                     .position(|f| f.name.name_eq(field))
                     .map(|i| i as VmIndex)
             }
@@ -742,7 +742,8 @@ impl<'a> Compiler<'a> {
                     }
                 });
                 match *typ {
-                    Type::Record { fields: ref type_fields, .. } => {
+                    Type::Record { .. } => {
+                        let type_fields: Vec<_> = typ.field_iter().collect();
                         if fields.len() == 0 ||
                            (type_fields.len() > 4 && type_fields.len() / fields.len() >= 4) {
                             // For pattern matches on large records where only a few of the fields

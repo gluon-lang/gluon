@@ -102,8 +102,13 @@ pub enum Type<Id, T = ArcType<Id>> {
     Record {
         /// The associated types of this record type
         types: Vec<Field<Id, Alias<Id, T>>>,
+        row: T,
+    },
+    EmptyRow,
+    ExtendRow {
         /// The fields of this record type
         fields: Vec<Field<Id, T>>,
+        rest: T,
     },
     /// An identifier type. Anything that is not a builtin type.
     Ident(Id),
@@ -278,6 +283,8 @@ pub enum Kind {
     Variable(u32),
     /// The simplest possible kind. All values in a program have this kind.
     Type,
+    /// Kinds of rows (for polymorphic records).
+    Row,
     /// Constructor which takes two kinds, taking the first as argument and returning the second.
     Function(RcKind, RcKind),
 }
@@ -289,6 +296,10 @@ impl Kind {
 
     pub fn typ() -> RcKind {
         RcKind::new(Kind::Type)
+    }
+
+    pub fn row() -> RcKind {
+        RcKind::new(Kind::Row)
     }
 
     pub fn function(l: RcKind, r: RcKind) -> RcKind {
@@ -440,8 +451,23 @@ impl<Id, T> Type<Id, T>
     pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
         T::from(Type::Record {
             types: types,
-            fields: fields,
+            row: if fields.is_empty() {
+                Type::empty_row()
+            } else {
+                Type::extend_row(fields, Type::empty_row())
+            },
         })
+    }
+
+    pub fn extend_row(fields: Vec<Field<Id, T>>, rest: T) -> T {
+        T::from(Type::ExtendRow {
+            fields: fields,
+            rest: rest,
+        })
+    }
+
+    pub fn empty_row() -> T {
+        T::from(Type::EmptyRow)
     }
 
     pub fn function(args: Vec<T>, ret: T) -> T
@@ -531,6 +557,13 @@ impl<Id, T> Type<Id, T>
             _ => None,
         }
     }
+
+    pub fn field_iter(&self) -> FieldIterator<Id, T> {
+        FieldIterator {
+            typ: self,
+            current: 0,
+        }
+    }
 }
 
 impl<T> Type<Symbol, T>
@@ -553,6 +586,37 @@ impl<T> Type<Symbol, T>
                 Type::Builtin(b) => Some(b.symbol()),
                 _ => None,
             })
+    }
+}
+
+pub struct FieldIterator<'a, Id: 'a, T: 'a> {
+    typ: &'a Type<Id, T>,
+    current: usize,
+}
+
+impl<'a, Id, T> Iterator for FieldIterator<'a, Id, T>
+    where T: Deref<Target = Type<Id, T>>
+{
+    type Item = &'a Field<Id, T>;
+
+    fn next(&mut self) -> Option<&'a Field<Id, T>> {
+        match *self.typ {
+            Type::Record { ref row, .. } => {
+                self.typ = &**row;
+                self.next()
+            },
+            Type::ExtendRow { ref fields, ref rest } => {
+                let current = self.current;
+                self.current += 1;
+                fields.get(current)
+                    .or_else(|| {
+                        self.current = 0;
+                        self.typ = &**rest;
+                        self.next()
+                    })
+            }
+            _ => None,
+        }
     }
 }
 
@@ -624,6 +688,7 @@ impl<'a> fmt::Display for DisplayKind<'a> {
         match *self.1 {
             Kind::Variable(i) => i.fmt(f),
             Kind::Type => "Type".fmt(f),
+            Kind::Row => "Row".fmt(f),
             Kind::Function(ref arg, ref ret) => {
                 match self.0 {
                     Prec::Function => {
@@ -780,8 +845,13 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                 enclose(p, Prec::Constructor, arena, doc).group()
             }
             Type::Builtin(ref t) => arena.text(t.to_str()),
-            Type::Record { ref types, ref fields } => {
+            Type::Record { ref types, ref row } => {
                 let mut doc = arena.text("{");
+                let empty_fields = match **row {
+                    Type::EmptyRow => true,
+                    _ => false,
+                };
+
                 if !types.is_empty() {
                     for (i, field) in types.iter().enumerate() {
                         let f = chain![arena;
@@ -797,7 +867,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                                 }
                                 None => arena.text("= <abstract>"),
                             },
-                            if i + 1 != types.len() || !fields.is_empty() {
+                            if i + 1 != types.len() || !empty_fields {
                                 arena.text(",")
                             } else {
                                 arena.nil()
@@ -806,34 +876,38 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                         doc = doc.append(arena.newline()).append(f);
                     }
                 }
-                if !fields.is_empty() {
-                    for (i, field) in fields.iter().enumerate() {
-                        let mut rhs = top(self.env, &*field.typ).pretty(arena);
-                        match *field.typ {
-                            // Records handle nesting on their own
-                            Type::Record { .. } => (),
-                            _ => rhs = rhs.nest(4),
-                        }
-                        let f = chain![arena;
-                            self.env.string(&field.name),
-                            " : ",
-                            rhs.group(),
-                            if i + 1 != fields.len() {
-                                arena.text(",")
-                            } else {
-                                arena.nil()
-                            }]
-                            .group();
-                        doc = doc.append(arena.newline()).append(f);
-                    }
-                }
-                doc = doc.nest(4);
-                if !types.is_empty() || !fields.is_empty() {
+                doc = doc.append(top(self.env, row).pretty(arena)).nest(4);
+                if !types.is_empty() || !empty_fields {
                     doc = doc.append(arena.newline());
                 }
+
                 doc.append("}")
                     .group()
             }
+            Type::ExtendRow { ref fields, ref rest } => {
+                let mut doc = arena.nil();
+                for (i, field) in fields.iter().enumerate() {
+                    let mut rhs = top(self.env, &*field.typ).pretty(arena);
+                    match *field.typ {
+                        // Records handle nesting on their own
+                        Type::Record { .. } => (),
+                        _ => rhs = rhs.nest(4),
+                    }
+                    let f = chain![arena;
+                        self.env.string(&field.name),
+                        " : ",
+                        rhs.group(),
+                        if i + 1 != fields.len() {
+                            arena.text(",")
+                        } else {
+                            arena.nil()
+                        }]
+                        .group();
+                    doc = doc.append(arena.newline()).append(f);
+                }
+                doc.append(top(self.env, rest).pretty(arena))
+            }
+            Type::EmptyRow => arena.nil(),
             Type::Ident(ref id) => arena.text(self.env.string(id)),
             Type::Alias(ref alias) => arena.text(self.env.string(&alias.name)),
         }
@@ -880,15 +954,19 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
                 f.walk(a);
             }
         }
-        Type::Record { ref types, ref fields } => {
+        Type::Record { ref types, ref row } => {
             for field in types {
                 if let Some(ref typ) = field.typ.typ {
                     f.walk(typ);
                 }
             }
+            f.walk(row)
+        }
+        Type::ExtendRow { ref fields, ref rest } => {
             for field in fields {
                 f.walk(&field.typ);
             }
+            f.walk(rest);
         }
         Type::Variants(ref variants) => {
             for variant in variants {
@@ -900,7 +978,8 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
         Type::Variable(_) |
         Type::Generic(_) |
         Type::Ident(_) |
-        Type::Alias(_) => (),
+        Type::Alias(_) |
+        Type::EmptyRow => (),
     }
 }
 
@@ -924,7 +1003,8 @@ pub fn walk_kind<F: ?Sized>(k: &RcKind, f: &mut F)
             f.walk(r);
         }
         Kind::Variable(_) |
-        Kind::Type => (),
+        Kind::Type |
+        Kind::Row => (),
     }
 }
 
@@ -1026,7 +1106,15 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
         }
-        Type::Record { ref types, ref fields } => {
+        Type::Record { ref types, ref row } => {
+            f.visit(row).map(|row| {
+                T::from(Type::Record {
+                    types: types.clone(),
+                    row: row,
+                })
+            })
+        }
+        Type::ExtendRow { ref fields, ref rest } => {
             let new_fields = walk_move_types(fields, |field| {
                 f.visit(&field.typ).map(|typ| {
                     Field {
@@ -1035,7 +1123,8 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
                     }
                 })
             });
-            new_fields.map(|fields| Type::record(types.clone(), fields))
+            let new_rest = f.visit(rest);
+            merge(fields, new_fields, rest, new_rest, Type::extend_row)
         }
         Type::Variants(ref variants) => {
             walk_move_types(variants, |v| f.visit(&v.1).map(|t| (v.0.clone(), t)))
@@ -1046,7 +1135,8 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
         Type::Variable(_) |
         Type::Generic(_) |
         Type::Ident(_) |
-        Type::Alias(_) => None,
+        Type::Alias(_) |
+        Type::EmptyRow => None,
     }
 }
 

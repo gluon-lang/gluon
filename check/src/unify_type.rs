@@ -177,10 +177,19 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                 }
             }
         }
-        (&Type::Record { fields: ref l_args, types: ref l_types },
-         &Type::Record { fields: ref r_args, types: ref r_types }) if l_args.len() == r_args.len() &&
-                                                                     l_types == r_types => {
-            let args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
+        (&Type::Record { types: ref l_types, row: ref l_row },
+         &Type::Record { types: ref r_types, row: ref r_row }) if l_types == r_types => {
+            Ok(unifier.try_match(l_row, r_row)
+                .map(|row| {
+                    ArcType::from(Type::Record {
+                        types: l_types.clone(),
+                        row: row,
+                    })
+                }))
+        }
+        (&Type::ExtendRow { fields: ref l_args, rest: ref l_rest },
+         &Type::ExtendRow { fields: ref r_args, rest: ref r_rest }) => {
+            let new_args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
                 let opt_type = if !l.name.name_eq(&r.name) {
 
                     let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
@@ -196,7 +205,8 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                     }
                 })
             });
-            Ok(args.map(|args| Type::record(l_types.clone(), args)))
+            let new_rest = unifier.try_match(l_rest, r_rest);
+            Ok(merge(l_args, new_args, l_rest, new_rest, Type::extend_row))
         }
         (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
             Ok(Some(other.clone()))

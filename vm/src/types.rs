@@ -189,9 +189,9 @@ impl TypeEnv for TypeInfos {
                     .as_ref()
                     .map(|typ| {
                         match **typ {
-                            Type::Record { fields: ref record_fields, .. } => {
+                            Type::Record { .. } => {
                                 fields.iter().all(|name| {
-                                    record_fields.iter().any(|f| f.name.as_ref() == name.as_ref())
+                                    typ.field_iter().any(|f| f.name.as_ref() == name.as_ref())
                                 })
                             }
                             _ => false,

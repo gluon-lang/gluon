@@ -255,23 +255,18 @@ impl VmEnv {
             };
             // HACK Can't return the data directly due to the use of cow on the type
             let next_type = map_cow_option(typ.clone(), |typ| {
-                match **typ {
-                    Type::Record { ref fields, .. } => {
-                        fields.iter()
-                            .enumerate()
-                            .find(|&(_, field)| field.name.as_ref() == field_name)
-                            .map(|(index, field)| {
-                                match value {
-                                    Value::Data(data) => {
-                                        value = data.fields[index];
-                                        &field.typ
-                                    }
-                                    _ => panic!("Unexpected value {:?}", value),
-                                }
-                            })
-                    }
-                    _ => None,
-                }
+                typ.field_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name.as_ref() == field_name)
+                    .map(|(index, field)| {
+                        match value {
+                            Value::Data(data) => {
+                                value = data.fields[index];
+                                &field.typ
+                            }
+                            _ => panic!("Unexpected value {:?}", value),
+                        }
+                    })
             });
             typ = try!(next_type.ok_or_else(move || {
                 Error::UndefinedField(typ.into_owned(), field_name.into())

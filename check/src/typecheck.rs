@@ -11,7 +11,7 @@ use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{self, ArcType, RcKind, Type, Generic, Kind};
+use base::types::{self, ArcType, RcKind, Type, Generic, Kind, merge};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
@@ -170,11 +170,12 @@ impl<'a> TypeEnv for Environment<'a> {
                 match alias.typ {
                     Some(ref typ) => {
                         match **typ {
-                            Type::Record { fields: ref record_fields, .. } => {
+                            Type::Record { .. } => {
                                 fields.iter()
-                                    .all(|name| record_fields.iter().any(|f| f.name.name_eq(name)))
+                                    .all(|name| typ.field_iter().any(|f| f.name.name_eq(name)))
                             }
                             _ => false,
+
                         }
                     }
                     None => false,
@@ -591,8 +592,8 @@ impl<'a> Typecheck<'a> {
                 }
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
-                    Type::Record { ref fields, .. } => {
-                        let field_type = fields.iter()
+                    Type::Record { .. } => {
+                        let field_type = record.field_iter()
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
                         *field_typ = match field_type {
@@ -601,7 +602,7 @@ impl<'a> Typecheck<'a> {
                         };
                         Ok(TailCall::Type(field_typ.clone()))
                     }
-                    _ => Err(InvalidProjection(record.clone())),
+                    _ => Err(InvalidProjection(record)),
                 }
             }
             Expr::Array(ref mut array) => {
@@ -633,7 +634,6 @@ impl<'a> Typecheck<'a> {
                             *typ = self.create_unifiable_signature(typ.clone());
                         }
                         let alias = try!(self.find_type_info(symbol));
-
                         Ok(types::Field {
                             name: symbol.clone(),
                             typ: alias.clone(),
@@ -727,9 +727,9 @@ impl<'a> Typecheck<'a> {
                 let mut match_type = self.remove_alias(match_type);
                 let mut types = Vec::new();
                 let new_type = match *match_type {
-                    Type::Record { fields: ref expected_fields, .. } => {
+                    Type::Record { ref row, .. } => {
                         for pattern_field in fields {
-                            let found_field = expected_fields.iter()
+                            let found_field = row.field_iter()
                                 .find(|expected_field| {
                                     pattern_field.0
                                         .name_eq(&expected_field.name)
@@ -771,15 +771,7 @@ impl<'a> Typecheck<'a> {
                         typ = self.instantiate(&typ);
                         actual_type = self.instantiate_(&actual_type);
                         self.unify_span(span, &match_type, typ);
-                        match *actual_type {
-                            Type::Record { fields: ref record_types, .. } => {
-                                types.extend(record_types.iter().map(|f| f.typ.clone()));
-                            }
-                            _ => {
-                                panic!("Expected record found {}",
-                                       types::display_type(&self.symbols, &match_type))
-                            }
-                        }
+                        types.extend(actual_type.field_iter().map(|f| f.typ.clone()));
                         Some(actual_type)
                     }
                 };
@@ -1122,7 +1114,7 @@ impl<'a> Typecheck<'a> {
                     self.subs.insert(var.id, gen.clone());
                     Some(gen)
                 }
-                Type::Record { ref types, ref fields, .. } => {
+                Type::ExtendRow { ref fields, ref rest } => {
                     let new_fields = types::walk_move_types(fields, |field| {
                         // Make a new name base for any unbound variables in the record field
                         // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
@@ -1134,7 +1126,8 @@ impl<'a> Typecheck<'a> {
                             }
                         })
                     });
-                    new_fields.map(|fields| Type::record(types.clone(), fields))
+                    let new_rest = self.finish_type(level, rest);
+                    merge(fields, new_fields, rest, new_rest, Type::extend_row)
                         .or_else(|| replacement.clone())
                 }
                 _ => {
@@ -1316,13 +1309,15 @@ impl<'a> Typecheck<'a> {
 fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut f: F)
     where F: FnMut(&Symbol, &Option<Symbol>, &ArcType),
 {
-    if let Type::Record { fields: ref field_types, .. } = **typ {
-        for field in fields {
-            // If the field in the pattern does not exist (undefined field error) then skip it as
-            // the error itself will already have been reported
-            if let Some(associated_type) = field_types.iter()
-                .find(|type_field| type_field.name.name_eq(&field.0)) {
-                f(&field.0, &field.1, &associated_type.typ);
+    if let Type::Record { ref row, .. } = **typ {
+        if let Type::ExtendRow { fields: ref field_types, .. } = **row {
+            for field in fields {
+                // If the field in the pattern does not exist (undefined field error) then skip it as
+                // the error itself will already have been reported
+                if let Some(associated_type) = field_types.iter()
+                    .find(|type_field| type_field.name.name_eq(&field.0)) {
+                    f(&field.0, &field.1, &associated_type.typ);
+                }
             }
         }
     }

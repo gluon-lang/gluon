@@ -83,18 +83,16 @@ pub fn rename(symbols: &mut SymbolModule,
     }
 
     impl<'a, 'b> RenameVisitor<'a, 'b> {
-        fn find_fields(&self, typ: &ArcType) -> Option<Vec<types::Field<Symbol, ArcType>>> {
+        fn find_fields(&self, typ: &ArcType) -> Vec<types::Field<Symbol, ArcType>> {
             // Walk through all type aliases
-            match *instantiate::remove_aliases(&self.env, typ.clone()) {
-                Type::Record { ref fields, .. } => Some(fields.to_owned()),
-                _ => None,
-            }
+            let record = instantiate::remove_aliases(&self.env, typ.clone());
+            record.field_iter().cloned().collect()
         }
 
         fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
-                    let field_types = self.find_fields(typ).expect("field_types");
+                    let field_types = self.find_fields(typ);
                     for field in fields.iter_mut() {
                         let field_type = field_types.iter()
                             .find(|field_type| field_type.name.name_eq(&field.0))
@@ -204,7 +202,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 Expr::Record { ref mut typ, ref mut exprs, .. } => {
-                    let field_types = self.find_fields(typ).expect("field_types");
+                    let field_types = self.find_fields(typ);
                     for (field, &mut (ref id, ref mut maybe_expr)) in field_types.iter()
                         .zip(exprs) {
                         match *maybe_expr {

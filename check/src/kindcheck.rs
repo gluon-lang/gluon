@@ -29,6 +29,8 @@ pub struct KindCheck<'a> {
     function1_kind: RcKind,
     /// A cached two argument kind function, `Type -> Type -> Type`
     function2_kind: RcKind,
+    /// A cached row kind: `Row`
+    row_kind: RcKind,
 }
 
 fn walk_move_kind<F>(kind: RcKind, f: &mut F) -> RcKind
@@ -52,7 +54,8 @@ fn walk_move_kind2<F>(kind: &RcKind, f: &mut F) -> Option<RcKind>
                 merge(arg, arg_new, ret, ret_new, Kind::function)
             }
             Kind::Type |
-            Kind::Variable(_) => None,
+            Kind::Variable(_) |
+            Kind::Row => None,
         }
     };
     new2.or(new)
@@ -74,6 +77,7 @@ impl<'a> KindCheck<'a> {
             type_kind: typ.clone(),
             function1_kind: function1_kind.clone(),
             function2_kind: Kind::function(typ, function1_kind),
+            row_kind: Kind::row(),
         }
     }
 
@@ -96,6 +100,10 @@ impl<'a> KindCheck<'a> {
 
     pub fn function2_kind(&self) -> RcKind {
         self.function2_kind.clone()
+    }
+
+    pub fn row_kind(&self) -> RcKind {
+        self.row_kind.clone()
     }
 
     fn find(&mut self, id: &Symbol) -> Result<RcKind> {
@@ -191,7 +199,17 @@ impl<'a> KindCheck<'a> {
                     .collect());
                 Ok((self.type_kind(), Type::variants(variants)))
             }
-            Type::Record { ref types, ref fields } => {
+            Type::Record { ref types, ref row } => {
+                let (kind, row) = try!(self.kindcheck(row));
+                let row_kind = self.row_kind();
+                try!(self.unify(&row_kind, kind));
+                Ok((self.type_kind(),
+                    ArcType::from(Type::Record {
+                    types: types.clone(),
+                    row: row,
+                })))
+            }
+            Type::ExtendRow { ref fields, ref rest } => {
                 let fields = try!(fields.iter()
                     .map(|field| {
                         let (kind, typ) = try!(self.kindcheck(&field.typ));
@@ -203,8 +221,12 @@ impl<'a> KindCheck<'a> {
                         })
                     })
                     .collect());
-                Ok((self.type_kind(), Type::record(types.clone(), fields)))
+                let (kind, rest) = try!(self.kindcheck(rest));
+                let row_kind = self.row_kind();
+                try!(self.unify(&row_kind, kind));
+                Ok((row_kind, Type::extend_row(fields, rest)))
             }
+            Type::EmptyRow => Ok((self.row_kind(), typ.clone())),
             Type::Ident(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
             Type::Alias(ref alias) => self.find(&alias.name).map(|kind| (kind, typ.clone())),
         }
