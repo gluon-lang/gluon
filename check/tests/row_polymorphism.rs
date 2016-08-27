@@ -4,7 +4,7 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
-use base::types::{Field, Type, TcType};
+use base::types::{Field, Type};
 
 mod support;
 use support::{intern, typ};
@@ -18,7 +18,56 @@ macro_rules! assert_pass {
 }
 
 #[test]
+fn infer_fields() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let f vec = vec.x #Int+ vec.y
+f
+"#;
+    let result = support::typecheck(text);
+    let record = Type::record(vec![],
+                              vec![Field {
+                                       name: intern("x"),
+                                       typ: typ("Int"),
+                                   },
+                                   Field {
+                                       name: intern("y"),
+                                       typ: typ("Int"),
+                                   }]);
+    assert_eq!(result.map(support::close_record),
+               Ok(Type::function(vec![record], typ("Int"))));
+}
+
+#[test]
+fn infer_additional_fields() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let f vec = vec.x #Int+ vec.y
+f { x = 1, y = 2, z = 3 }
+"#;
+    let result = support::typecheck(text);
+    assert_eq!(result, Ok(typ("Int")));
+}
+
+#[test]
+fn field_access_on_record_with_type() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = Int
+let record = { Test, x = 1, y = "" }
+record.y
+"#;
+    let result = support::typecheck(text);
+    assert_eq!(result, Ok(typ("String")));
+}
+
+#[test]
 fn if_else_different_records() {
+    let _ = env_logger::init();
+
     let text = r#"
 if True then
     { y = "" }
@@ -26,47 +75,13 @@ else
     { x = 1 }
 "#;
     let result = support::typecheck(text);
-
-    assert_eq!(result,
-               Ok(TcType::from(Type::Record {
-                   types: vec![],
-                   row: Type::extend_row(vec![Field {
-                                                  name: intern("x"),
-                                                  typ: typ("Int"),
-                                              },
-                                              Field {
-                                                  name: intern("y"),
-                                                  typ: typ("String"),
-                                              }],
-                                         typ("a")),
-               })));
-}
-
-
-#[test]
-fn infer_fields() {
-    let text = r#"
-let f vec = vec.x #Int+ vec.y
-f
-"#;
-    let result = support::typecheck(text);
-    let record = TcType::from(Type::Record {
-        types: vec![],
-        row: Type::extend_row(vec![Field {
-                                       name: intern("x"),
-                                       typ: typ("Int"),
-                                   },
-                                   Field {
-                                       name: intern("y"),
-                                       typ: typ("Int"),
-                                   }],
-                              typ("a")),
-    });
-    assert_eq!(result, Ok(Type::function(vec![record], typ("Int"))));
+    assert!(result.is_err());
 }
 
 #[test]
 fn missing_field() {
+    let _ = env_logger::init();
+
     let text = r#"
 let f vec = vec.x #Int+ vec.y
 f { x = 1 }

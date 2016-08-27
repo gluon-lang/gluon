@@ -136,7 +136,7 @@ r.x
                                             name: intern("x"),
                                             typ: typ("Int"),
                                         }]));
-    assert_eq!(result, expected);
+    assert_eq!(result.map(support::close_record), expected);
 
     let result = completion::find(&typ_env, &mut expr, BytePos(22));
     let expected = Ok(typ("Int"));

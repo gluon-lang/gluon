@@ -6,7 +6,7 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::types::{self, Alias, ArcType, Type, RcKind, KindEnv, TypeEnv};
+use base::types::{self, Alias, ArcType, Type, TypeRef, RcKind, KindEnv, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
@@ -319,8 +319,11 @@ pub fn rename(symbols: &mut SymbolModule,
 }
 
 pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
+    use substitution::Substitution;
+    // FIXME Inneficient and possible wrong
+    let subs = Substitution::new();
     let mut unifier = UnifierState {
-        state: State::new(env),
+        state: State::new(env, &subs),
         unifier: Equivalent {
             map: FnvMap::default(),
             equiv: true,

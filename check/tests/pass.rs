@@ -495,7 +495,7 @@ type Test = | Test String Int in { Test, x = 1 }
     }];
     let expected = Ok(Type::record(types, fields));
 
-    assert_eq!(result, expected);
+    assert_eq!(result.map(support::close_record), expected);
 }
 
 #[test]
@@ -652,7 +652,7 @@ in
     ];
     let expected = Ok(Type::record(vec![], fields));
 
-    assert_eq!(result, expected);
+    assert_eq!(result.map(support::close_record), expected);
 }
 
 #[test]
@@ -679,7 +679,7 @@ in
     ];
     let expected = Ok(Type::record(vec![], fields));
 
-    assert_eq!(result, expected);
+    assert_eq!(result.map(support::close_record), expected);
 }
 
 #[test]

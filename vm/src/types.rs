@@ -1,6 +1,6 @@
 use base::symbol::{Symbol, SymbolRef};
 use base::types;
-use base::types::{Alias, KindEnv, TypeEnv, ArcType, Type};
+use base::types::{Alias, KindEnv, TypeEnv, ArcType, Type, TypeRef};
 use base::fnv::FnvMap;
 
 pub use self::Instruction::*;

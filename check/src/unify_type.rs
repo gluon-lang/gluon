@@ -1,7 +1,7 @@
 use std::fmt;
 
 use base::error::Errors;
-use base::types::{self, ArcType, Type, TypeVariable, TypeEnv, merge};
+use base::types::{self, ArcType, Type, TypeRef, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
 use base::scoped_map::ScopedMap;
@@ -17,13 +17,15 @@ pub struct State<'a> {
     /// A stack of which aliases are currently expanded. Used to determine when an alias is
     /// recursively expanded in which case the unification fails.
     reduced_aliases: Vec<Symbol>,
+    subs: &'a Substitution<ArcType>,
 }
 
 impl<'a> State<'a> {
-    pub fn new(env: &'a (TypeEnv + 'a)) -> State<'a> {
+    pub fn new(env: &'a (TypeEnv + 'a), subs: &'a Substitution<ArcType>) -> State<'a> {
         State {
             env: env,
             reduced_aliases: Vec::new(),
+            subs: subs,
         }
     }
 }
@@ -189,24 +191,29 @@ fn do_zip_match<'a, U>(self_: &ArcType,
         }
         (&Type::ExtendRow { fields: ref l_args, rest: ref l_rest },
          &Type::ExtendRow { fields: ref r_args, rest: ref r_rest }) => {
-            let new_args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
-                let opt_type = if !l.name.name_eq(&r.name) {
+            if l_args.len() == r_args.len() &&
+               l_args.iter().zip(r_args).all(|(l, r)| l.name.name_eq(&r.name)) {
+                let new_args = walk_move_types(l_args.iter().zip(r_args), |l, r| {
+                    let opt_type = if !l.name.name_eq(&r.name) {
 
-                    let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
-                    unifier.report_error(UnifyError::Other(err));
-                    None
-                } else {
-                    unifier.try_match(&l.typ, &r.typ)
-                };
-                opt_type.map(|typ| {
-                    types::Field {
-                        name: l.name.clone(),
-                        typ: typ,
-                    }
-                })
-            });
-            let new_rest = unifier.try_match(l_rest, r_rest);
-            Ok(merge(l_args, new_args, l_rest, new_rest, Type::extend_row))
+                        let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
+                        unifier.report_error(UnifyError::Other(err));
+                        None
+                    } else {
+                        unifier.try_match(&l.typ, &r.typ)
+                    };
+                    opt_type.map(|typ| {
+                        types::Field {
+                            name: l.name.clone(),
+                            typ: typ,
+                        }
+                    })
+                });
+                let new_rest = unifier.try_match(l_rest, r_rest);
+                Ok(merge(l_args, new_args, l_rest, new_rest, Type::extend_row))
+            } else {
+                Ok(unify_rows(unifier, self_, other))
+            }
         }
         (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
             Ok(Some(other.clone()))
@@ -221,6 +228,52 @@ fn do_zip_match<'a, U>(self_: &ArcType,
             }
         }
     }
+}
+
+fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType) -> Option<ArcType>
+    where U: Unifier<State<'a>, ArcType>,
+{
+    let subs = unifier.state.subs;
+    let mut both = Vec::new();
+    let mut missing_left = Vec::new();
+    let mut l_iter = l.field_iter();
+    for l in l_iter.by_ref() {
+        match r.field_iter().find(|r| l.name.name_eq(&r.name)) {
+            Some(r) => both.push((l, r)),
+            None => missing_left.push(l.clone()),
+        }
+    }
+
+    let mut r_iter = r.field_iter();
+    let missing_right = r_iter.by_ref()
+        .filter(|r| l.field_iter().all(|l| !l.name.name_eq(&r.name)))
+        .cloned()
+        .collect();
+    // Unify the fields that exists in both records
+    let new_both = walk_move_types(both.iter().cloned(), |l, r| {
+        unifier.try_match(&l.typ, &r.typ)
+            .map(|typ| {
+                types::Field {
+                    name: l.name.clone(),
+                    typ: typ,
+                }
+            })
+    });
+
+    let l = Type::extend_row(missing_left, subs.new_var());
+    let left = unifier.try_match(&l, r_iter.current_type());
+
+    let r = Type::extend_row(missing_right, subs.new_var());
+    unifier.try_match(l_iter.current_type(), &r);
+
+    let mut fields = match new_both {
+        Some(fields) => fields,
+        None => both.iter().map(|pair| pair.0.clone()).collect(),
+    };
+    let mut rest_fields = left.as_ref().unwrap_or(&l).field_iter();
+    fields.extend(rest_fields.by_ref().cloned());
+    fields.extend(r.field_iter().cloned());
+    Some(Type::extend_row(fields, rest_fields.current_type().clone()))
 }
 
 /// Attempt to unify two alias types.
@@ -497,17 +550,16 @@ mod tests {
     use super::*;
     use base::error::Errors;
 
-    use super::TypeError::FieldMismatch;
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
-    use base::types::{self, ArcType, Type};
+    use base::types::{self, ArcType, Type, TypeRef};
     use tests::*;
 
     #[test]
     fn detect_multiple_type_errors_in_single_type() {
         let _ = ::env_logger::init();
-        let (x, y, z, w) = (intern("x"), intern("y"), intern("z"), intern("w"));
+        let (x, y) = (intern("x"), intern("y"));
         let l: ArcType = Type::record(vec![],
                                       vec![types::Field {
                                                name: x.clone(),
@@ -519,20 +571,21 @@ mod tests {
                                            }]);
         let r = Type::record(vec![],
                              vec![types::Field {
-                                      name: z.clone(),
-                                      typ: Type::int(),
+                                      name: x.clone(),
+                                      typ: Type::string(),
                                   },
                                   types::Field {
-                                      name: w.clone(),
-                                      typ: Type::string(),
+                                      name: y.clone(),
+                                      typ: Type::int(),
                                   }]);
         let subs = Substitution::new();
         let env = MockEnv;
-        let state = State::new(&env);
+        let state = State::new(&env, &subs);
         let result = unify(&subs, state, &l, &r);
         assert_eq!(result,
                    Err(Errors {
-                       errors: vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))],
+                       errors: vec![TypeMismatch(Type::int(), Type::string()),
+                                    TypeMismatch(Type::string(), Type::int())],
                    }));
     }
 
@@ -547,12 +600,24 @@ mod tests {
             name: intern("y"),
             typ: Type::int(),
         };
-        let l: TcType = Type::record(vec![], vec![x.clone()]);
-        let r = Type::record(vec![], vec![y.clone()]);
         let subs = Substitution::new();
+        let l: ArcType = Type::poly_record(vec![], vec![x.clone()], subs.new_var());
+        let r = Type::poly_record(vec![], vec![y.clone()], subs.new_var());
+
         let env = MockEnv;
-        let state = State::new(&env);
+        let state = State::new(&env, &subs);
         let result = unify(&subs, state, &l, &r);
-        assert_eq!(result, Ok(Type::record(vec![], vec![x.clone(), y.clone()])));
+        match result {
+            Ok(result) => {
+                // Get the row variable at the end of the resulting type so we can compare the types
+                let mut iter = result.field_iter();
+                for _ in iter.by_ref() {
+                }
+                let row_variable = iter.current_type().clone();
+                let expected = Type::poly_record(vec![], vec![x.clone(), y.clone()], row_variable);
+                assert_eq!(result, expected);
+            }
+            Err(err) => panic!("{}", err),
+        }
     }
 }

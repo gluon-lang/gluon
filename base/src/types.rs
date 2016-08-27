@@ -449,21 +449,28 @@ impl<Id, T> Type<Id, T>
     }
 
     pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
+        Type::poly_record(types, fields, Type::empty_row())
+    }
+
+    pub fn poly_record(types: Vec<Field<Id, Alias<Id, T>>>,
+                       fields: Vec<Field<Id, T>>,
+                       rest: T)
+                       -> T {
         T::from(Type::Record {
             types: types,
-            row: if fields.is_empty() {
-                Type::empty_row()
-            } else {
-                Type::extend_row(fields, Type::empty_row())
-            },
+            row: Type::extend_row(fields, rest),
         })
     }
 
     pub fn extend_row(fields: Vec<Field<Id, T>>, rest: T) -> T {
-        T::from(Type::ExtendRow {
-            fields: fields,
-            rest: rest,
-        })
+        if fields.is_empty() {
+            rest
+        } else {
+            T::from(Type::ExtendRow {
+                fields: fields,
+                rest: rest,
+            })
+        }
     }
 
     pub fn empty_row() -> T {
@@ -557,14 +564,18 @@ impl<Id, T> Type<Id, T>
             _ => None,
         }
     }
+}
 
-    pub fn field_iter(&self) -> FieldIterator<Id, T> {
+pub trait TypeRef: Sized {
+    fn field_iter(&self) -> FieldIterator<Self> {
         FieldIterator {
             typ: self,
             current: 0,
         }
     }
 }
+
+impl<Id, T> TypeRef for T where T: Deref<Target = Type<Id, T>> {}
 
 impl<T> Type<Symbol, T>
     where T: Deref<Target = Type<Symbol, T>>,
@@ -589,29 +600,35 @@ impl<T> Type<Symbol, T>
     }
 }
 
-pub struct FieldIterator<'a, Id: 'a, T: 'a> {
-    typ: &'a Type<Id, T>,
+pub struct FieldIterator<'a, T: 'a> {
+    typ: &'a T,
     current: usize,
 }
 
-impl<'a, Id, T> Iterator for FieldIterator<'a, Id, T>
+impl<'a, T> FieldIterator<'a, T> {
+    pub fn current_type(&self) -> &'a T {
+        self.typ
+    }
+}
+
+impl<'a, Id: 'a, T> Iterator for FieldIterator<'a, T>
     where T: Deref<Target = Type<Id, T>>
 {
     type Item = &'a Field<Id, T>;
 
     fn next(&mut self) -> Option<&'a Field<Id, T>> {
-        match *self.typ {
+        match **self.typ {
             Type::Record { ref row, .. } => {
-                self.typ = &**row;
+                self.typ = row;
                 self.next()
-            },
+            }
             Type::ExtendRow { ref fields, ref rest } => {
                 let current = self.current;
                 self.current += 1;
                 fields.get(current)
                     .or_else(|| {
                         self.current = 0;
-                        self.typ = &**rest;
+                        self.typ = rest;
                         self.next()
                     })
             }

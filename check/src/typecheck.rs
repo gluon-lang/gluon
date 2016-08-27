@@ -11,7 +11,7 @@ use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{self, ArcType, RcKind, Type, Generic, Kind, merge};
+use base::types::{self, ArcType, Field, RcKind, Type, TypeRef, Generic, Kind, merge};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
@@ -576,31 +576,39 @@ impl<'a> Typecheck<'a> {
                 try!(self.typecheck_bindings(bindings));
                 Ok(TailCall::TailCall)
             }
-            Expr::Projection(ref mut expr, ref field_id, ref mut field_typ) => {
+            Expr::Projection(ref mut expr, ref field_id, ref mut ast_field_typ) => {
                 let mut expr_typ = self.typecheck(&mut **expr);
                 debug!("Projection {} . {:?}",
                        types::display_type(&self.symbols, &expr_typ),
                        self.symbols.string(field_id));
                 self.subs.make_real(&mut expr_typ);
-                if let Type::Variable(_) = *expr_typ {
-                    // Attempt to find a record with `field_access` since inferring to a record
-                    // with only `field_access` as the field is probably useless
-                    let (record_type, _) = try!(self.find_record(&[field_id.clone()])
-                        .map(|t| (t.0.clone(), t.1.clone())));
-                    let record_type = self.instantiate(&record_type);
-                    expr_typ = try!(self.unify(&record_type, expr_typ));
-                }
+
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
+                    Type::Variable(..) |
                     Type::Record { .. } => {
                         let field_type = record.field_iter()
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
-                        *field_typ = match field_type {
+                        *ast_field_typ = match field_type {
                             Some(typ) => self.instantiate(&typ),
-                            None => return Err(UndefinedField(expr_typ.clone(), field_id.clone())),
+                            None => {
+                                // FIXME As the polymorphic `record_type` do not have the type
+                                // fields which `typ` this unification is only done after we
+                                // checked if the field exists which lets field accesses on
+                                // types with type fields still work
+                                let field_var = self.subs.new_var();
+                                let field = Field {
+                                    name: field_id.clone(),
+                                    typ: field_var.clone(),
+                                };
+                                let record_type =
+                                    Type::poly_record(vec![], vec![field], self.subs.new_var());
+                                try!(self.unify(&record_type, record));
+                                field_var
+                            }
                         };
-                        Ok(TailCall::Type(field_typ.clone()))
+                        Ok(TailCall::Type(ast_field_typ.clone()))
                     }
                     _ => Err(InvalidProjection(record)),
                 }
@@ -1037,7 +1045,7 @@ impl<'a> Typecheck<'a> {
                 debug!("Intersect\n{} <> {}",
                        types::display_type(&self.symbols, existing_type),
                        types::display_type(&self.symbols, symbol_type));
-                let state = unify_type::State::new(&self.environment);
+                let state = unify_type::State::new(&self.environment, &self.subs);
                 let result = unify::intersection(&self.subs, state, existing_type, symbol_type);
                 debug!("Intersect result {}", result);
                 result
@@ -1224,7 +1232,7 @@ impl<'a> Typecheck<'a> {
                        expected: &ArcType,
                        mut actual: ArcType)
                        -> ArcType {
-        let state = unify_type::State::new(&self.environment);
+        let state = unify_type::State::new(&self.environment, &self.subs);
         match unify_type::merge_signature(&self.subs,
                                           &mut self.type_variables,
                                           level,
@@ -1264,7 +1272,7 @@ impl<'a> Typecheck<'a> {
         debug!("Unify {} <=> {}",
                types::display_type(&self.symbols, expected),
                types::display_type(&self.symbols, &actual));
-        let state = unify_type::State::new(&self.environment);
+        let state = unify_type::State::new(&self.environment, &self.subs);
         match unify::unify(&self.subs, state, expected, &actual) {
             Ok(typ) => Ok(self.subs.set_type(typ)),
             Err(errors) => {
@@ -1312,8 +1320,8 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut
     if let Type::Record { ref row, .. } = **typ {
         if let Type::ExtendRow { fields: ref field_types, .. } = **row {
             for field in fields {
-                // If the field in the pattern does not exist (undefined field error) then skip it as
-                // the error itself will already have been reported
+                // If the field in the pattern does not exist (undefined field error) then skip it
+                // as the error itself will already have been reported
                 if let Some(associated_type) = field_types.iter()
                     .find(|type_field| type_field.name.name_eq(&field.0)) {
                     f(&field.0, &field.1, &associated_type.typ);
@@ -1455,7 +1463,7 @@ pub fn unroll_app(typ: &Type<Symbol>) -> Option<ArcType> {
             args.extend(rest.iter().rev().cloned());
             l
         }
-        _ => return None,
+        _ => return unroll_record(typ),
     };
     while let Type::App(ref l, ref rest) = **current {
         args.extend(rest.iter().rev().cloned());
@@ -1466,5 +1474,30 @@ pub fn unroll_app(typ: &Type<Symbol>) -> Option<ArcType> {
     } else {
         args.reverse();
         Some(Type::app(current.clone(), args))
+    }
+}
+
+pub fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
+    let mut args = Vec::new();
+    let mut current = match *typ {
+        Type::ExtendRow { ref fields, ref rest } => {
+            match **rest {
+                Type::ExtendRow { .. } => {
+                    args.extend_from_slice(fields);
+                    rest
+                }
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    while let Type::ExtendRow { ref fields, ref rest } = **current {
+        args.extend_from_slice(fields);
+        current = rest;
+    }
+    if args.is_empty() {
+        None
+    } else {
+        Some(Type::extend_row(args, current.clone()))
     }
 }

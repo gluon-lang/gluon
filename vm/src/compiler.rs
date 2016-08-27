@@ -5,7 +5,7 @@ use base::instantiate;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, SpannedExpr, Expr};
 use base::types;
-use base::types::{Alias, KindEnv, ArcType, Type, TypeEnv};
+use base::types::{Alias, KindEnv, ArcType, Type, TypeEnv, TypeRef};
 use base::scoped_map::ScopedMap;
 use types::*;
 use vm::GlobalVmState;
@@ -334,17 +334,11 @@ impl<'a> Compiler<'a> {
 
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<VmIndex> {
         // Walk through all type aliases
-        match **instantiate::remove_aliases_cow(self, typ) {
-            ref typ @ Type::Record { .. } => {
-                typ.field_iter()
-                    .position(|f| f.name.name_eq(field))
-                    .map(|i| i as VmIndex)
-            }
-            ref typ => {
-                panic!("ICE: Projection on {}",
-                       types::display_type(&self.symbols, typ))
-            }
-        }
+        let typ = instantiate::remove_aliases_cow(self, typ);
+        // FIXME Cannot use indexing anymore with row polymorphism
+        typ.field_iter()
+            .position(|f| f.name.name_eq(field))
+            .map(|i| i as VmIndex)
     }
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
