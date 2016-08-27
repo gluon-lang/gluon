@@ -5,7 +5,7 @@ use std::any::Any;
 use std::error::Error as StdError;
 use std::fmt;
 
-use pos::{BytePos, Spanned};
+use pos::{BytePos, Location, Span, Spanned};
 use source::Source;
 
 /// An error type which can represent multiple errors.
@@ -46,54 +46,80 @@ impl<T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
     }
 }
 
+#[derive(Debug)]
+struct SourceContext<E> {
+    line: String,
+    error: Spanned<E, Location>,
+}
+
+impl<E> SourceContext<E> {
+    fn new(source: &Source, error: Spanned<E, BytePos>) -> SourceContext<E> {
+        let start = source.location(error.span.start).unwrap();
+        let end = source.location(error.span.end).unwrap();
+        let (_, line) = source.line_at_byte(error.span.start).unwrap();
+
+        SourceContext {
+            line: line.to_string(),
+            error: Spanned {
+                span: Span {
+                    start: start,
+                    end: end,
+                },
+                value: error.value,
+            },
+        }
+    }
+}
+
 /// Error type which contains information of which file and where in the file the error occured
 #[derive(Debug)]
-pub struct InFile {
-    message: String,
+pub struct InFile<E> {
+    source_name: String,
+    error: Errors<SourceContext<E>>,
 }
 
-impl InFile {
+impl<E: fmt::Display> InFile<E> {
     /// Creates a new `InFile` error which states that the error occured in `file` using the file
     /// contents in `source` to provide a context to the span.
-    pub fn new<E: fmt::Display>(file: &str,
-                                source: &Source,
-                                error: Errors<Spanned<E, BytePos>>)
-                                -> InFile {
-        use std::fmt::Write;
+    pub fn new(source_name: &str, source: &str, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
+        let source = Source::new(source);
 
-        let mut message = String::new();
+        InFile {
+            source_name: source_name.to_string(),
+            error: Errors {
+                errors: error.errors
+                    .into_iter()
+                    .map(|error| SourceContext::new(&source, error))
+                    .collect(),
+            },
+        }
+    }
+}
 
-        for error in &error.errors {
-            let start = source.location(error.span.start).unwrap();
-            let end = source.location(error.span.end).unwrap();
-            let (_, line) = source.line(start.line).unwrap();
+impl<E: fmt::Display> fmt::Display for InFile<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for error in &self.error.errors {
+            let Span { start, end } = error.error.span;
 
-            write!(message, "{}:{}\n{}\n", file, error.value, line).unwrap();
+            try!(write!(f, "{}:{}\n{}\n", self.source_name, error.error, error.line));
 
             for _ in 1..start.column.to_usize() {
-                write!(message, " ").unwrap();
+                try!(write!(f, " "));
             }
 
-            write!(message, "^").unwrap();
+            try!(write!(f, "^"));
 
             for _ in start.column.to_usize()..(end.column.to_usize() - 1) {
-                write!(message, "~").unwrap();
+                try!(write!(f, "~"));
             }
 
-            writeln!(message, "").unwrap();
+            try!(writeln!(f, ""));
         }
-
-        InFile { message: message }
+        Ok(())
     }
 }
 
-impl fmt::Display for InFile {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.message.fmt(f)
-    }
-}
-
-impl StdError for InFile {
+impl<E: fmt::Display + fmt::Debug + Any> StdError for InFile<E> {
     fn description(&self) -> &str {
         "Error in file"
     }

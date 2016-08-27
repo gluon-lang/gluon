@@ -25,12 +25,11 @@ use std::string::String as StdString;
 use std::env;
 
 use base::ast;
-use base::error::{Errors, InFile as InFileError};
+use base::error::{Errors, InFile};
 use base::metadata::Metadata;
-use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
 use base::types::TcType;
-
+use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::generic::A;
 use vm::api::{Getable, VmType, Generic, IO};
@@ -51,7 +50,7 @@ quick_error! {
             from()
         }
         /// Error found when typechecking gluon code
-        Typecheck(err: InFileError) {
+        Typecheck(err: InFile<TypeError<Symbol>>) {
             description(err.description())
             display("{}", err)
             from()
@@ -400,10 +399,9 @@ impl Compiler {
 
         let env = vm.get_env();
         let mut tc = Typecheck::new(file.into(), &mut self.symbols, &*env);
-        let source = Source::new(expr_str);
 
         let typ = try!(tc.typecheck_expr_expected(expr, expected_type)
-            .map_err(|err| InFileError::new(file, &source, err)));
+            .map_err(|err| InFile::new(file, expr_str, err)));
 
         Ok(typ)
     }
