@@ -64,6 +64,25 @@ record.y
     assert_eq!(result, Ok(typ("String")));
 }
 
+// Test that arguments that have an applied (`Test a`) type properly unify even if they are not
+// explicitly specified. The risk is that `x: Test a` is just resolved to `{ value : a }` which
+// then fails to unify if it is unified with only typevariables (`$0 $1`)
+#[test]
+fn late_merge_with_signature() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Monad m = { flat_map : (a -> m b) -> m a -> m b }
+type Test a = { value : a }
+let monad : Monad Test = {
+    flat_map = \f x -> f x.value
+}
+monad
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
 #[test]
 fn if_else_different_records() {
     let _ = env_logger::init();

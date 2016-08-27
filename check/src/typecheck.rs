@@ -582,7 +582,16 @@ impl<'a> Typecheck<'a> {
                        types::display_type(&self.symbols, &expr_typ),
                        self.symbols.string(field_id));
                 self.subs.make_real(&mut expr_typ);
-
+                if let Type::Variable(_) = *typ {
+                    // Eagerly attempt to find a record with `field_access` since infering to just
+                    // a polymorphic record may cause some code to fail to infer such as
+                    // the test `row_polymorphism::late_merge_with_signature`
+                    if let Ok(record_type) = self.find_record(&[field_access.name.clone()])
+                        .map(|t| t.0.clone()) {
+                        let record_type = self.instantiate(&record_type);
+                        typ = try!(self.unify(&record_type, typ));
+                    }
+                }
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
                     Type::Variable(..) |
