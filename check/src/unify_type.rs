@@ -535,4 +535,24 @@ mod tests {
                        errors: vec![Other(FieldMismatch(x, z)), Other(FieldMismatch(y, w))],
                    }));
     }
+
+    #[test]
+    fn unify_row_polymorphism() {
+        let _ = ::env_logger::init();
+        let x = types::Field {
+            name: intern("x"),
+            typ: Type::int(),
+        };
+        let y = types::Field {
+            name: intern("y"),
+            typ: Type::int(),
+        };
+        let l: TcType = Type::record(vec![], vec![x.clone()]);
+        let r = Type::record(vec![], vec![y.clone()]);
+        let subs = Substitution::new();
+        let env = MockEnv;
+        let state = State::new(&env);
+        let result = unify(&subs, state, &l, &r);
+        assert_eq!(result, Ok(Type::record(vec![], vec![x.clone(), y.clone()])));
+    }
 }
