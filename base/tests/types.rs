@@ -174,7 +174,7 @@ fn show_kind() {
 
 #[test]
 fn show_polymorphic_record() {
-    let typ: AstType<&str> = Type::poly_record(vec![],
+    let typ: ArcType<&str> = Type::poly_record(vec![],
                                                vec![Field {
                                                         name: "x",
                                                         typ: Type::string(),
@@ -185,7 +185,7 @@ fn show_polymorphic_record() {
 
 #[test]
 fn show_polymorphic_record_associated_type() {
-    let typ: AstType<&str> = Type::poly_record(vec![Field {
+    let typ: ArcType<&str> = Type::poly_record(vec![Field {
                                                         name: "Test",
                                                         typ: Alias::new("Test",
                                                                         vec![Generic {

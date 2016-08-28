@@ -44,9 +44,19 @@ pub enum Instruction {
         /// How many arguments that is taken from the stack to construct the data.
         args: VmIndex,
     },
+    ConstructRecord {
+        /// Index to the specification describing which fields this record contains
+        record: VmIndex,
+        /// How many arguments that is taken from the stack to construct the data.
+        args: VmIndex,
+    },
     /// Constructs an array containing `args` values.
     ConstructArray(VmIndex),
-    /// Retrieves the field at `index` of an object at the top of the stack. The result of the
+    /// Retrieves the field at `offset` of an object at the top of the stack. The result of the
+    /// field access replaces the object on the stack.
+    GetOffset(VmIndex),
+    /// Retrieves the field of a polymorphic record by retrieving the string constant at `index`
+    /// and using that to retrieve lookup the field. The result of the
     /// field access replaces the object on the stack.
     GetField(VmIndex),
     /// Splits a object, pushing all contained values to the stack.
@@ -115,9 +125,10 @@ impl Instruction {
             PushInt(_) | PushByte(_) | PushFloat(_) | PushString(_) | Push(_) | PushGlobal(_) => 1,
             Call(n) => -(n as i32),
             TailCall(n) => -(n as i32),
-            Construct { args: n, .. } |
-            ConstructArray(n) => 1 - n as i32,
-            GetField(_) => 0,
+            Construct { args, .. } |
+            ConstructRecord { args, .. } |
+            ConstructArray(args) => 1 - args as i32,
+            GetField(_) | GetOffset(_) => 0,
             // The number of added stack slots are handled separately as the type is needed to
             // calculate the number of slots needed
             Split => -1,

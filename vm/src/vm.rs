@@ -37,9 +37,21 @@ fn new_bytecode(gc: &mut Gc,
                            inner_functions,
                            strings,
                            module_globals,
+                           records,
                            .. } = f;
     let fs = try!(inner_functions.into_iter()
         .map(|inner| new_bytecode(gc, vm, inner))
+        .collect());
+
+    let globals = module_globals.into_iter()
+        .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
+        .collect();
+    let records = try!(records.into_iter()
+        .map(|vec| {
+            vec.into_iter()
+                .map(|field| Ok(try!(vm.interner.write().unwrap().intern(gc, field.as_ref()))))
+                .collect::<Result<_>>()
+        })
         .collect());
     gc.alloc(Move(BytecodeFunction {
         name: id,
@@ -47,9 +59,8 @@ fn new_bytecode(gc: &mut Gc,
         instructions: instructions,
         inner_functions: fs,
         strings: strings,
-        globals: module_globals.into_iter()
-            .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
-            .collect(),
+        globals: globals,
+        records: records,
     }))
 }
 

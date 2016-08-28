@@ -651,7 +651,7 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
             }
         }
         let result = {
-            let Context { ref mut gc, ref stack } = *context;
+            let Context { ref mut gc, ref stack, .. } = *context;
             let values = &stack[stack.len() - len..];
             try!(thread::alloc(gc,
                                thread,
