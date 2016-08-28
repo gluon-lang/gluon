@@ -84,6 +84,22 @@ monad
 }
 
 #[test]
+fn equality_of_records_with_differing_fields() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let eq x y : a -> a -> () = ()
+let f v1 v2 =
+    v1.x
+    v2.y
+    eq v1 v2
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
 fn if_else_different_records() {
     let _ = env_logger::init();
 
