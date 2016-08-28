@@ -218,7 +218,7 @@ mod tests {
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut type_of: FunctionRef<QueryFn> = vm.get_global("repl_prim.type_of_expr").unwrap();
-        assert!(type_of.call("std.prelude.Option").is_ok());
+        assert_eq!(type_of.call("123"), Ok(IO::Value(Ok("Int".into()))));
     }
 
     #[test]
