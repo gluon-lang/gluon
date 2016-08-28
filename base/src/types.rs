@@ -865,8 +865,8 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
             Type::Record { ref types, ref row } => {
                 let mut doc = arena.text("{");
                 let empty_fields = match **row {
-                    Type::EmptyRow => true,
-                    _ => false,
+                    Type::ExtendRow { .. } => false,
+                    _ => true,
                 };
 
                 if !types.is_empty() {
@@ -893,7 +893,16 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                         doc = doc.append(arena.newline()).append(f);
                     }
                 }
-                doc = doc.append(top(self.env, row).pretty(arena)).nest(4);
+                doc = match **row {
+                    Type::EmptyRow => doc,
+                    Type::ExtendRow { .. } => doc.append(top(self.env, row).pretty(arena)).nest(4),
+                    _ => {
+                        doc.append(arena.newline())
+                            .append("| ")
+                            .append(top(self.env, row).pretty(arena))
+                            .nest(4)
+                    }
+                };
                 if !types.is_empty() || !empty_fields {
                     doc = doc.append(arena.newline());
                 }
@@ -901,30 +910,43 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                 doc.append("}")
                     .group()
             }
-            Type::ExtendRow { ref fields, ref rest } => {
+            Type::ExtendRow { .. } => {
                 let mut doc = arena.nil();
-                for (i, field) in fields.iter().enumerate() {
-                    let mut rhs = top(self.env, &*field.typ).pretty(arena);
-                    match *field.typ {
-                        // Records handle nesting on their own
-                        Type::Record { .. } => (),
-                        _ => rhs = rhs.nest(4),
+                let mut typ = self.typ;
+                while let Type::ExtendRow { ref fields, ref rest } = *typ {
+                    for (i, field) in fields.iter().enumerate() {
+                        let mut rhs = top(self.env, &*field.typ).pretty(arena);
+                        match *field.typ {
+                            // Records handle nesting on their own
+                            Type::Record { .. } => (),
+                            _ => rhs = rhs.nest(4),
+                        }
+                        let f = chain![arena;
+                            self.env.string(&field.name),
+                            " : ",
+                            rhs.group(),
+                            if i + 1 != fields.len() {
+                                arena.text(",")
+                            } else {
+                                arena.nil()
+                            }]
+                            .group();
+                        doc = doc.append(arena.newline()).append(f);
+                        typ = rest;
                     }
-                    let f = chain![arena;
-                        self.env.string(&field.name),
-                        " : ",
-                        rhs.group(),
-                        if i + 1 != fields.len() {
-                            arena.text(",")
-                        } else {
-                            arena.nil()
-                        }]
-                        .group();
-                    doc = doc.append(arena.newline()).append(f);
                 }
-                doc.append(top(self.env, rest).pretty(arena))
+                match *typ {
+                    Type::EmptyRow => doc,
+                    _ => {
+                        doc.append(arena.newline())
+                            .append("| ")
+                            .append(top(self.env, typ).pretty(arena))
+                    }
+                }
             }
-            Type::EmptyRow => arena.nil(),
+            // This should not be displayed normally as it should only exist in `ExtendRow`
+            // which handles `EmptyRow` explicitly
+            Type::EmptyRow => arena.text("EmptyRow"),
             Type::Ident(ref id) => arena.text(self.env.string(id)),
             Type::Alias(ref alias) => arena.text(self.env.string(&alias.name)),
         }

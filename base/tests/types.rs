@@ -171,3 +171,30 @@ fn show_kind() {
     let function_arg = Kind::function(Kind::function(Kind::typ(), Kind::typ()), Kind::typ());
     assert_eq!(format!("{}", function_arg), "(Type -> Type) -> Type");
 }
+
+#[test]
+fn show_polymorphic_record() {
+    let typ: AstType<&str> = Type::poly_record(vec![],
+                                               vec![Field {
+                                                        name: "x",
+                                                        typ: Type::string(),
+                                                    }],
+                                               Type::ident("r"));
+    assert_eq!(format!("{}", typ), "{ x : String | r }");
+}
+
+#[test]
+fn show_polymorphic_record_associated_type() {
+    let typ: AstType<&str> = Type::poly_record(vec![Field {
+                                                        name: "Test",
+                                                        typ: Alias::new("Test",
+                                                                        vec![Generic {
+                                                                                 kind: Kind::typ(),
+                                                                                 id: "a",
+                                                                             }],
+                                                                        Type::ident("a")),
+                                                    }],
+                                               vec![],
+                                               Type::ident("r"));
+    assert_eq!(format!("{}", typ), "{ Test a = a | r }");
+}
