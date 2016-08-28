@@ -21,9 +21,6 @@ use unify_type;
 
 use self::TypeError::*;
 
-type ErrType = ArcType<String>;
-
-
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
 pub enum TypeError<I> {
@@ -781,7 +778,7 @@ impl<'a> Typecheck<'a> {
                                         }
                                     })
                                     .collect();
-                                let t = Type::record(Vec::new(), fields);
+                                let t = Type::poly_record(Vec::new(), fields, self.subs.new_var());
                                 (t.clone(), t)
                             }
                         };

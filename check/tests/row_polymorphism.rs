@@ -64,6 +64,20 @@ record.y
     assert_eq!(result, Ok(typ("String")));
 }
 
+#[test]
+fn record_unpack() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let f record =
+    let { x, y } = record
+    y
+f { y = 1.0, z = 0, x = 123 }
+"#;
+    let result = support::typecheck(text);
+    assert_eq!(result, Ok(typ("Float")));
+}
+
 // Test that arguments that have an applied (`Test a`) type properly unify even if they are not
 // explicitly specified. The risk is that `x: Test a` is just resolved to `{ value : a }` which
 // then fails to unify if it is unified with only typevariables (`$0 $1`)
@@ -123,5 +137,19 @@ f { x = 1 }
 "#;
     let result = support::typecheck(text);
 
+    assert!(result.is_err());
+}
+
+#[test]
+fn record_unpack_missing_field() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let f record =
+    let { x, y } = record
+    y
+f { y = 1.0, z = 0 }
+"#;
+    let result = support::typecheck(text);
     assert!(result.is_err());
 }
