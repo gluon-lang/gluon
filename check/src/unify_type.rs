@@ -191,29 +191,24 @@ fn do_zip_match<'a, U>(self_: &ArcType,
         }
         (&Type::ExtendRow { fields: ref l_args, rest: ref l_rest },
          &Type::ExtendRow { fields: ref r_args, rest: ref r_rest }) => {
-            if l_args.len() == r_args.len() &&
-               l_args.iter().zip(r_args).all(|(l, r)| l.name.name_eq(&r.name)) {
+            // When the field names of both rows match exactly we special case
+            // unification to maximize sharing through `merge` and `walk_move_type`
+            Ok(if l_args.len() == r_args.len() &&
+                  l_args.iter().zip(r_args).all(|(l, r)| l.name.name_eq(&r.name)) {
                 let new_args = walk_move_types(l_args.iter().zip(r_args), |l, r| {
-                    let opt_type = if !l.name.name_eq(&r.name) {
-
-                        let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
-                        unifier.report_error(UnifyError::Other(err));
-                        None
-                    } else {
-                        unifier.try_match(&l.typ, &r.typ)
-                    };
-                    opt_type.map(|typ| {
-                        types::Field {
-                            name: l.name.clone(),
-                            typ: typ,
-                        }
-                    })
+                    unifier.try_match(&l.typ, &r.typ)
+                        .map(|typ| {
+                            types::Field {
+                                name: l.name.clone(),
+                                typ: typ,
+                            }
+                        })
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
-                Ok(merge(l_args, new_args, l_rest, new_rest, Type::extend_row))
+                merge(l_args, new_args, l_rest, new_rest, Type::extend_row)
             } else {
-                Ok(unify_rows(unifier, self_, other))
-            }
+                unify_rows(unifier, self_, other)
+            })
         }
         (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
             Ok(Some(other.clone()))
@@ -235,17 +230,17 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
 {
     let subs = unifier.state.subs;
     let mut both = Vec::new();
-    let mut missing_left = Vec::new();
+    let mut missing_from_right = Vec::new();
     let mut l_iter = l.field_iter();
     for l in l_iter.by_ref() {
         match r.field_iter().find(|r| l.name.name_eq(&r.name)) {
             Some(r) => both.push((l, r)),
-            None => missing_left.push(l.clone()),
+            None => missing_from_right.push(l.clone()),
         }
     }
 
     let mut r_iter = r.field_iter();
-    let missing_right = r_iter.by_ref()
+    let missing_from_left = r_iter.by_ref()
         .filter(|r| l.field_iter().all(|l| !l.name.name_eq(&r.name)))
         .cloned()
         .collect();
@@ -260,12 +255,19 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
             })
     });
 
-    let l = Type::extend_row(missing_left, subs.new_var());
+    // Unify the fields missing from the left and right record with the variable (that hopefully)
+    // exists as the 'extension' in the other record
+    // Example:
+    // `{ x : Int | $0 } <=> `{ y : String | $1 }`
+    // `Row (x : Int | Fresh var) <=> $1`
+    // `Row (y : String | Fresh var 2) <=> $0`
+    let l = Type::extend_row(missing_from_right, subs.new_var());
     let left = unifier.try_match(&l, r_iter.current_type());
 
-    let r = Type::extend_row(missing_right, subs.new_var());
+    let r = Type::extend_row(missing_from_left, subs.new_var());
     unifier.try_match(l_iter.current_type(), &r);
 
+    // Pack all the fields from both records into a single `Type::ExtendRow` value
     let mut fields = match new_both {
         Some(fields) => fields,
         None => both.iter().map(|pair| pair.0.clone()).collect(),
