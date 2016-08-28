@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 
 use base::ast::{Expr, SpannedExpr, SpannedPattern, Pattern, TcIdent, Typed};
 use base::instantiate;
-use base::pos::{Location, Span};
+use base::pos::{BytePos, Span};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{TcType, Type, TypeEnv};
@@ -122,21 +122,21 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 }
 
 struct FindVisitor<F> {
-    location: Location,
+    pos: BytePos,
     on_found: F,
 }
 
 impl<F> FindVisitor<F> {
     fn select_spanned<'e, I, S, T>(&self, iter: I, mut span: S) -> (bool, Option<&'e T>)
         where I: IntoIterator<Item = &'e T>,
-              S: FnMut(&T) -> Span
+              S: FnMut(&T) -> Span<BytePos>
     {
         let mut iter = iter.into_iter().peekable();
         let mut prev = None;
         loop {
             match iter.peek() {
                 Some(expr) => {
-                    match span(expr).containment(&self.location) {
+                    match span(expr).containment(&self.pos) {
                         Ordering::Equal => {
                             break;
                         }
@@ -171,10 +171,10 @@ impl<F> FindVisitor<F>
 
     fn visit_expr(&mut self, current: &SpannedExpr<TcIdent<Symbol>>) {
         use base::ast::Expr::*;
-        
+
         match current.value {
             Identifier(_) | Literal(_) => {
-                if current.span.containment(&self.location) == Ordering::Equal {
+                if current.span.containment(&self.pos) == Ordering::Equal {
                     self.on_found.expr(current)
                 } else {
                     self.on_found.nothing()
@@ -192,7 +192,7 @@ impl<F> FindVisitor<F>
                 self.visit_one(once(&**expr).chain(alts.iter().map(|alt| &alt.expression)))
             }
             BinOp(ref l, ref op, ref r) => {
-                match (l.span.containment(&self.location), r.span.containment(&self.location)) {
+                match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => self.on_found.ident(current, op),
                     (_, Ordering::Greater) |
                     (_, Ordering::Equal) => self.visit_expr(r),
@@ -215,7 +215,7 @@ impl<F> FindVisitor<F>
             }
             Type(_, ref expr) => self.visit_expr(expr),
             FieldAccess(ref expr, ref id) => {
-                if expr.span.containment(&self.location) <= Ordering::Equal {
+                if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
                     self.on_found.ident(current, id);
@@ -240,11 +240,11 @@ impl<F> FindVisitor<F>
     }
 }
 
-pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, location: Location) -> Result<TcType, ()>
+pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Result<TcType, ()>
     where T: TypeEnv
 {
     let mut visitor = FindVisitor {
-        location: location,
+        pos: pos,
         on_found: GetType {
             env: env,
             typ: None,
@@ -256,12 +256,12 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, location: Location)
 
 pub fn suggest<T>(env: &T,
                   expr: &SpannedExpr<TcIdent<Symbol>>,
-                  location: Location)
+                  pos: BytePos)
                   -> Vec<Suggestion>
     where T: TypeEnv
 {
     let mut visitor = FindVisitor {
-        location: location,
+        pos: pos,
         on_found: Suggest {
             env: env,
             stack: ScopedMap::new(),

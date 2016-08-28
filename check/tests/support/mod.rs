@@ -41,7 +41,7 @@ pub fn parse_new(s: &str)
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parser::parse_tc(&mut module, s)
+    parser::parse_tc(&mut module, &s)
 }
 
 #[allow(dead_code)]

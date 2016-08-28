@@ -9,8 +9,8 @@ extern crate combine;
 use combine::ParseError;
 use combine::primitives::{Error, Info};
 use base::ast::*;
-use base::pos::{BytePos, CharPos, Location};
 use base::error::Errors;
+use base::pos::BytePos;
 use parser::parse_string;
 use parser::lexer::Token;
 
@@ -66,11 +66,7 @@ y
     assert_eq!(result,
                Err(Errors {
                    errors: vec![ParseError {
-                                    position: Location {
-                                        line: 5,
-                                        column: CharPos(4),
-                                        absolute: BytePos(32),
-                                    },
+                                    position: BytePos(32),
                                     errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
                                                  Error::Expected("`in` or an expression in the \
                                                                   same column as the `let`"
