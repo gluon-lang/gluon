@@ -3,7 +3,7 @@ use std::any::Any;
 use std::sync::{Mutex, RwLock, RwLockWriteGuard, RwLockReadGuard, MutexGuard};
 use std::cmp::Ordering;
 use std::fmt;
-use std::ops::{Add, Sub, Mul, Div, Deref};
+use std::ops::{Add, Sub, Mul, Div, Deref, DerefMut};
 use std::string::String as StdString;
 use std::result::Result as StdResult;
 use std::sync::Arc;
@@ -147,20 +147,19 @@ pub struct Thread {
     // The parent of this thread, if it exists must live at least as long as this thread as this
     // thread can refer to any value in the parent thread
     parent: Option<RootedThread>,
-    local_gc: Mutex<Gc>,
     roots: RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
     rooted_values: RwLock<Vec<Value>>,
     /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
     /// the roots of all its children as well since those may contain references to this threads
     /// garbage collected values
     child_threads: RwLock<Vec<GcPtr<Thread>>>,
-    stack: Mutex<Stack>,
+    context: Mutex<Context>,
 }
 
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
-        self.stack.lock().unwrap().get_values().traverse(gc);
+        self.context.lock().unwrap().stack.get_values().traverse(gc);
         self.child_threads.read().unwrap().traverse(gc);
     }
 }
@@ -176,8 +175,8 @@ impl VmType for RootedThread {
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
-    fn push(self, _vm: &'vm Thread, stack: &mut Stack) -> Result<()> {
-        stack.push(Value::Thread(self.0));
+    fn push(self, _vm: &'vm Thread, context: &mut Context) -> Result<()> {
+        context.stack.push(Value::Thread(self.0));
         Ok(())
     }
 }
@@ -234,8 +233,10 @@ impl RootedThread {
         let thread = Thread {
             global_state: Arc::new(GlobalVmState::new()),
             parent: None,
-            local_gc: Mutex::new(Gc::new(1, usize::MAX)),
-            stack: Mutex::new(Stack::new()),
+            context: Mutex::new(Context {
+                gc: Gc::new(1, usize::MAX),
+                stack: Stack::new(),
+            }),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
@@ -246,8 +247,8 @@ impl RootedThread {
         *vm.global_state.gc.lock().unwrap() = gc;
         // Enter the top level scope
         {
-            let mut stack = vm.stack.lock().unwrap();
-            StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut context = vm.context.lock().unwrap();
+            StackFrame::frame(&mut context.stack, 0, State::Unknown);
         }
         vm
     }
@@ -275,18 +276,21 @@ impl Thread {
         let vm = Thread {
             global_state: self.global_state.clone(),
             parent: Some(self.root_thread()),
-            local_gc: Mutex::new(self.local_gc.lock().unwrap().new_child_gc()),
-            stack: Mutex::new(Stack::new()),
+            context: Mutex::new(Context {
+                gc: self.current_context().gc.new_child_gc(),
+                stack: Stack::new(),
+            }),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
         };
         // Enter the top level scope
         {
-            let mut stack = vm.stack.lock().unwrap();
-            StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut context = vm.current_context();
+            StackFrame::frame(&mut context.stack, 0, State::Unknown);
         }
-        let ptr = try!(self.alloc(&self.stack.lock().unwrap(), Move(vm)));
+        let ptr = try!(self.context().alloc(Move(vm)));
+
         Ok(ptr.root_thread())
     }
 
@@ -306,9 +310,9 @@ impl Thread {
         where T: Pushable<'vm> + VmType
     {
         let value = {
-            let mut stack = self.get_stack();
-            try!(value.push(self, &mut stack));
-            stack.pop()
+            let mut context = self.context();
+            try!(value.push(self, &mut context));
+            context.stack.pop()
         };
         self.global_env().set_global(Symbol::new(name),
                                      T::make_type(self),
@@ -356,11 +360,6 @@ impl Thread {
         self.global_env().get_env()
     }
 
-    /// Locks and retrives this threads stack
-    pub fn get_stack(&self) -> MutexGuard<Stack> {
-        self.stack.lock().unwrap()
-    }
-
     /// Retrieves the macros defined for this vm
     pub fn get_macros(&self) -> &MacroEnv {
         self.global_env().get_macros()
@@ -368,8 +367,8 @@ impl Thread {
 
     /// Runs a garbage collection.
     pub fn collect(&self) {
-        let stack = self.stack.lock().unwrap();
-        self.with_roots(&stack, |gc, roots| {
+        let mut context = self.current_context();
+        self.with_roots(&mut context, |gc, roots| {
             unsafe {
                 gc.collect(roots);
             }
@@ -380,26 +379,24 @@ impl Thread {
     pub fn push<'vm, T>(&'vm self, v: T) -> Result<()>
         where T: Pushable<'vm>
     {
-        let mut stack = self.stack.lock().unwrap();
-        v.push(self, &mut stack)
+        let mut context = self.current_context();
+        v.push(self, &mut context)
     }
 
     /// Removes the top value from the stack
     pub fn pop(&self) {
-        self.stack
-            .lock()
-            .unwrap()
+        self.current_context()
+            .stack
             .pop();
     }
 
     pub fn set_memory_limit(&self, memory_limit: usize) {
-        self.local_gc.lock().unwrap().set_memory_limit(memory_limit)
+        self.current_context().gc.set_memory_limit(memory_limit)
     }
     fn current_context(&self) -> OwnedContext {
         OwnedContext {
             thread: self,
-            gc: self.local_gc.lock().unwrap(),
-            stack: self.stack.lock().unwrap(),
+            context: self.context.lock().unwrap(),
         }
     }
 
@@ -416,37 +413,31 @@ impl Thread {
         }
     }
 
-    fn with_roots<F, R>(&self, stack: &Stack, f: F) -> R
+    fn with_roots<F, R>(&self, context: &mut Context, f: F) -> R
         where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R
     {
         // For this to be safe we require that the received stack is the same one that is in this
         // VM
         assert!(unsafe {
-            stack as *const _ as usize >= &self.stack as *const _ as usize &&
-            stack as *const _ as usize <= (&self.stack as *const _).offset(1) as usize
+            context as *const _ as usize >= &self.context as *const _ as usize &&
+            context as *const _ as usize <= (&self.context as *const _).offset(1) as usize
         });
         let roots = Roots {
             vm: unsafe {
                 // Threads must only be on the garbage collectors heap which makes this safe
                 GcPtr::from_raw(self)
             },
-            stack: stack,
+            stack: &context.stack,
         };
-        let mut gc = self.local_gc.lock().unwrap();
-        f(&mut gc, roots)
+        f(&mut context.gc, roots)
     }
 
     fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
-        self.stack.lock().unwrap().push(Closure(closure));
-        let mut context = OwnedContext {
-            thread: self,
-            gc: self.local_gc.lock().unwrap(),
-            stack: self.stack.lock().unwrap(),
-        };
+        let mut context = self.current_context();
+        context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
         try!(context.execute());
-        let mut stack = self.stack.lock().unwrap();
-        Ok(stack.pop())
+        Ok(self.current_context().stack.pop())
     }
 
     fn call_context<'b>(&'b self,
@@ -461,6 +452,8 @@ impl Thread {
 /// Internal functions for interacting with threads. These functions should be considered both
 /// unsafe and unstable
 pub trait ThreadInternal {
+    /// Locks and retrives this threads stack
+    fn context(&self) -> OwnedContext;
 
     /// Roots a userdata
     fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>>;
@@ -473,18 +466,6 @@ pub trait ThreadInternal {
 
     /// Roots a value
     fn root_value_ref(&self, value: Value) -> RootedValue<&Thread>;
-
-    /// Allocates a new value from a given `DataDef`.
-    /// Takes the stack as it may collect if the collection limit has been reached.
-    fn alloc<D>(&self, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
-        where D: DataDef + Traverseable,
-              D::Value: Sized + Any;
-
-    fn alloc_ignore_limit<D>(&self, def: D) -> GcPtr<D::Value>
-        where D: DataDef + Traverseable,
-              D::Value: Sized + Any;
-
-    fn new_data(&self, tag: VmTag, fields: &[Value]) -> Result<Value>;
 
     fn add_bytecode(&self,
                     name: &str,
@@ -500,9 +481,9 @@ pub trait ThreadInternal {
     /// When this function is called it is expected that the function exists at
     /// `stack.len() - args - 1` and that the arguments are of the correct type
     fn call_function<'b>(&'b self,
-                             stack: MutexGuard<'b, Stack>,
+                         stack: OwnedContext<'b>,
                          args: VmIndex)
-                             -> Result<Option<MutexGuard<'b, Stack>>>;
+                         -> Result<Option<OwnedContext<'b>>>;
 
     fn resume(&self) -> Result<()>;
 
@@ -513,7 +494,12 @@ pub trait ThreadInternal {
 
 
 impl ThreadInternal for Thread {
-
+    fn context(&self) -> OwnedContext {
+        OwnedContext {
+            thread: self,
+            context: self.context.lock().unwrap(),
+        }
+    }
     /// Roots a userdata
     fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
         v.downcast_ref::<T>()
@@ -553,34 +539,6 @@ impl ThreadInternal for Thread {
         }
     }
 
-    /// Allocates a new value from a given `DataDef`.
-    /// Takes the stack as it may collect if the collection limit has been reached.
-    fn alloc<D>(&self, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
-        where D: DataDef + Traverseable,
-              D::Value: Sized + Any
-    {
-        self.with_roots(stack,
-                        |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
-    }
-
-    fn alloc_ignore_limit<D>(&self, def: D) -> GcPtr<D::Value>
-        where D: DataDef + Traverseable,
-              D::Value: Sized + Any
-    {
-        self.local_gc.lock().unwrap().alloc_ignore_limit(def)
-    }
-
-    fn new_data(&self, tag: VmTag, fields: &[Value]) -> Result<Value> {
-        self.local_gc
-            .lock()
-            .unwrap()
-            .alloc(Def {
-                tag: tag,
-                elems: fields,
-            })
-            .map(Value::Data)
-    }
-
     fn add_bytecode(&self,
                     name: &str,
                     typ: TcType,
@@ -591,7 +549,7 @@ impl ThreadInternal for Thread {
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
         let f = try!(self.global_env().new_function(compiled_fn));
-        let closure = try!(self.alloc(&self.stack.lock().unwrap(), ClosureDataDef(f, &[])));
+        let closure = try!(self.current_context().alloc(ClosureDataDef(f, &[])));
         self.global_env().set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
         Ok(())
     }
@@ -609,15 +567,14 @@ impl ThreadInternal for Thread {
             };
             if is_io {
                 debug!("Run IO {:?}", value);
-                let mut stack = self.stack.lock().unwrap();
-                stack.push(Int(0));// Dummy value to fill the place of the function for TailCall
-                stack.push(value);
-                stack.push(Int(0));
                 let mut context = OwnedContext {
                     thread: self,
-                    gc: self.local_gc.lock().unwrap(),
-                    stack: stack,
+                    context: self.context.lock().unwrap(),
                 };
+                context.stack.push(Int(0));// Dummy value to fill the place of the function for TailCall
+                context.stack.push(value);
+                context.stack.push(Int(0));
+
                 context.borrow_mut().enter_scope(2, State::Unknown);
                 context = try!(self.call_context(context, 1))
                     .expect("call_module to have the stack remaining");
@@ -639,16 +596,10 @@ impl ThreadInternal for Thread {
     /// When this function is called it is expected that the function exists at
     /// `stack.len() - args - 1` and that the arguments are of the correct type
     fn call_function<'b>(&'b self,
-                             stack: MutexGuard<'b, Stack>,
+                         context: OwnedContext<'b>,
                          args: VmIndex)
-                             -> Result<Option<MutexGuard<'b, Stack>>> {
-        let context = OwnedContext {
-            thread: self,
-            gc: self.local_gc.lock().unwrap(),
-            stack: stack,
-        };
+                         -> Result<Option<OwnedContext<'b>>> {
         self.call_context(context, args)
-            .map(|context| context.map(|context| context.stack))
     }
 
     fn resume(&self) -> Result<()> {
@@ -667,50 +618,52 @@ impl ThreadInternal for Thread {
 
     fn deep_clone(&self, value: Value) -> Result<Value> {
         let mut visited = FnvMap::default();
-        ::value::deep_clone(value, &mut visited, &mut self.local_gc.lock().unwrap())
+        let mut context = self.current_context();
+        ::value::deep_clone(value, &mut visited, &mut context.gc)
     }
 }
 
-struct Context_<'b, S, G> {
-    thread: &'b Thread,
-    stack: S,
-    gc: G
+pub struct Context {
+    // FIXME It is dangerous to write to gc and stack
+    pub stack: Stack,
+    pub gc: Gc,
 }
 
-type Context<'b> = Context_<'b, StackFrame<'b>, &'b mut Gc>;
-type OwnedContext<'b> = Context_<'b, MutexGuard<'b, Stack>, MutexGuard<'b, Gc>>;
-
-impl<'b> Context<'b> {
-    fn current(thread: &'b Thread, stack: &'b mut Stack, gc: &'b mut Gc) -> Context<'b> {
-        Context {
-            thread: thread,
-            gc: gc,
-            stack: StackFrame::current(stack),
-        }
-    }
-    fn enter_scope(self, args: VmIndex, state: State) -> Context<'b> {
-        Context {
-            thread: self.thread,
-            gc: self.gc,
-            stack: self.stack.enter_scope(args, state),
-        }
+impl Context {
+    pub fn new_data(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
+        self.alloc_with(thread, Def {
+                tag: tag,
+                elems: fields,
+            })
+            .map(Value::Data)
     }
 
-    fn exit_scope(self) -> StdResult<Context<'b>, (&'b mut Stack, &'b mut Gc)> {
-        let Context { thread, stack, gc } = self;
-        match stack.exit_scope() {
-            Ok(stack) => {
-                 Ok(Context {
-                     thread: thread,
-                     stack: stack,
-                     gc: gc,
-                 })
-            }
-            Err(stack) => Err((stack, gc)),
-        }
+    pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>
+        where D: DataDef + Traverseable,
+              D::Value: Sized + Any
+    {
+        alloc(&mut self.gc, thread, &self.stack, data)
+    }
+
+    pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcPtr<D::Value>
+        where D: DataDef + Traverseable,
+              D::Value: Sized + Any
+    {
+        self.gc.alloc_ignore_limit(data)
     }
 }
-fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
+
+impl<'b> OwnedContext<'b> {
+    pub fn alloc<D>(&mut self, data: D) -> Result<GcPtr<D::Value>>
+        where D: DataDef + Traverseable,
+              D::Value: Sized + Any
+    {
+        let Context { ref mut gc, ref stack } = **self;
+        alloc(gc, self.thread, &stack, data)
+    }
+}
+
+pub fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
     where D: DataDef + Traverseable,
           D::Value: Sized + Any
 {
@@ -724,11 +677,32 @@ fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr
     unsafe { gc.alloc_and_collect(roots, def) }
 }
 
+pub struct OwnedContext<'b> {
+    thread: &'b Thread,
+    context: MutexGuard<'b, Context>,
+}
+
+impl<'b> Deref for OwnedContext<'b> {
+    type Target = Context;
+    fn deref(&self) -> &Context {
+        &self.context
+    }
+}
+
+impl<'b> DerefMut for OwnedContext<'b> {
+    fn deref_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
+}
 
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
-        let exists = self.borrow_mut().exit_scope().is_ok();
-        if exists { Ok(self) } else { Err(()) }
+        let exists = StackFrame::current(&mut self.stack).exit_scope().is_ok();
+        if exists {
+            Ok(self)
+        } else {
+            Err(())
+        }
     }
 
     fn execute(self) -> Result<Option<OwnedContext<'b>>> {
@@ -758,24 +732,23 @@ impl<'b> OwnedContext<'b> {
                         ReturnContext,
                     }
                     let state = {
-                        let context = context.borrow_mut();
+                        let mut context = context.borrow_mut();
 
                         if context.stack.stack.get_frames().len() == 0 {
                             State::ReturnContext
-                        }
-                        else {
+                        } else {
                             let instruction_index = context.stack.frame.instruction_index;
                             debug!("Continue with {}\nAt: {}/{}",
                                    closure.function.name,
                                    instruction_index,
                                    closure.function.instructions.len());
                             let new_context = try!(context.execute_(instruction_index,
-                                                                    &closure.function.instructions,
+                                                                    &closure.function
+                                                                        .instructions,
                                                                     &closure.function));
                             if new_context.is_some() {
                                 State::Exists
-                            }
-                            else {
+                            } else {
                                 State::DoesNotExist
                             }
                         }
@@ -792,7 +765,7 @@ impl<'b> OwnedContext<'b> {
     }
 
     fn execute_function(mut self, function: &ExternFunction) -> Result<OwnedContext<'b>> {
-        debug!("CALL EXTERN {} {:?}", function.id, &*self.stack);
+        debug!("CALL EXTERN {} {:?}", function.id, self.stack);
         // Make sure that the stack is not borrowed during the external function call
         // Necessary since we do not know what will happen during the function call
         let thread = self.thread;
@@ -829,37 +802,56 @@ impl<'b> OwnedContext<'b> {
         }
     }
 
-    fn borrow_mut(&mut self) -> Context {
-        Context {
+    fn borrow_mut(&mut self) -> ExecuteContext {
+        let context = &mut **self;
+        ExecuteContext {
             thread: self.thread,
-            gc: &mut self.gc,
-            stack: StackFrame::current(&mut self.stack),
+            gc: &mut context.gc,
+            stack: StackFrame::current(&mut context.stack),
         }
     }
 }
 
-impl<'b> Context<'b> {
-    fn execute_callable(mut self, function: &Callable, excess: bool) -> Result<Context<'b>> {
+struct ExecuteContext<'b> {
+    thread: &'b Thread,
+    stack: StackFrame<'b>,
+    gc: &'b mut Gc,
+}
+
+impl<'b> ExecuteContext<'b> {
+    fn enter_scope(&mut self, args: VmIndex, state: State) {
+        self.stack.enter_scope(args, state);
+    }
+
+    fn exit_scope(&mut self) -> StdResult<(), ()> {
+        match self.stack.exit_scope() {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn execute_callable(&mut self, function: &Callable, excess: bool) -> Result<()> {
         match *function {
             Callable::Closure(closure) => {
-                self = self.enter_scope(closure.function.args, State::Closure(closure));
+                self.enter_scope(closure.function.args, State::Closure(closure));
                 self.stack.frame.excess = excess;
-                Ok(self)
+                Ok(())
             }
             Callable::Extern(ref ext) => {
                 assert!(self.stack.len() >= ext.args + 1);
                 let function_index = self.stack.len() - ext.args - 1;
                 debug!("------- {} {:?}", function_index, &self.stack[..]);
-                Ok(self.enter_scope(ext.args, State::Extern(*ext)))
+                self.enter_scope(ext.args, State::Extern(*ext));
+                Ok(())
             }
         }
     }
 
-    fn call_function_with_upvars(mut self,
+    fn call_function_with_upvars(&mut self,
                                  args: VmIndex,
                                  required_args: VmIndex,
                                  callable: Callable)
-                                 -> Result<Context<'b>> {
+                                 -> Result<()> {
         debug!("cmp {} {} {:?} {:?}", args, required_args, callable, {
             let function_index = self.stack.len() - 1 - args;
             &(*self.stack)[(function_index + 1) as usize..]
@@ -879,7 +871,7 @@ impl<'b> Context<'b> {
                     self.stack.pop();
                 }
                 self.stack.push(app);
-                Ok(self)
+                Ok(())
             }
             Ordering::Greater => {
                 let excess_args = args - required_args;
@@ -908,7 +900,7 @@ impl<'b> Context<'b> {
         }
     }
 
-    fn do_call(mut self, args: VmIndex) -> Result<Context<'b>> {
+    fn do_call(&mut self, args: VmIndex) -> Result<()> {
         let function_index = self.stack.len() - 1 - args;
         debug!("Do call {:?} {:?}",
                self.stack[function_index],
@@ -932,11 +924,11 @@ impl<'b> Context<'b> {
         }
     }
 
-    fn execute_(mut self,
+    fn execute_(&mut self,
                 mut index: usize,
                 instructions: &[Instruction],
                 function: &BytecodeFunction)
-                -> Result<Option<Context<'b>>> {
+                -> Result<Option<()>> {
         {
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
                    function.name,
@@ -983,17 +975,10 @@ impl<'b> Context<'b> {
                             None => panic!("Expected excess args"),
                         }
                     }
-                    let thread = self.thread;
-                    self = match self.exit_scope() {
-                        Ok(context) => context,
-                        Err((stack, gc)) => {
-                            Context {
-                                thread: thread,
-                                gc: gc,
-                                stack: StackFrame::frame(stack,
-                                                         args + amount + 1,
-                                                         State::Excess),
-                            }
+                    match self.exit_scope() {
+                        Ok(_) => (),
+                        Err(_) => {
+                            self.enter_scope(args + amount + 1, State::Excess);
                         }
                     };
                     debug!("{} {} {:?}", self.stack.len(), amount, &self.stack[..]);
@@ -1146,26 +1131,26 @@ impl<'b> Context<'b> {
                     let v = self.stack.get_upvar(i).clone();
                     self.stack.push(v);
                 }
-                AddInt => binop(self.thread, &mut self.stack, VmInt::add),
-                SubtractInt => binop(self.thread, &mut self.stack, VmInt::sub),
-                MultiplyInt => binop(self.thread, &mut self.stack, VmInt::mul),
-                DivideInt => binop(self.thread, &mut self.stack, VmInt::div),
-                IntLT => binop(self.thread, &mut self.stack, |l: VmInt, r| l < r),
-                IntEQ => binop(self.thread, &mut self.stack, |l: VmInt, r| l == r),
+                AddInt => binop_int(self.thread, &mut self.stack, VmInt::add),
+                SubtractInt => binop_int(self.thread, &mut self.stack, VmInt::sub),
+                MultiplyInt => binop_int(self.thread, &mut self.stack, VmInt::mul),
+                DivideInt => binop_int(self.thread, &mut self.stack, VmInt::div),
+                IntLT => binop_bool(self.thread, &mut self.stack, |l: VmInt, r| l < r),
+                IntEQ => binop_bool(self.thread, &mut self.stack, |l: VmInt, r| l == r),
 
-                AddByte => binop(self.thread, &mut self.stack, u8::add),
-                SubtractByte => binop(self.thread, &mut self.stack, u8::sub),
-                MultiplyByte => binop(self.thread, &mut self.stack, u8::mul),
-                DivideByte => binop(self.thread, &mut self.stack, u8::div),
-                ByteLT => binop(self.thread, &mut self.stack, |l: u8, r| l < r),
-                ByteEQ => binop(self.thread, &mut self.stack, |l: u8, r| l == r),
+                AddByte => binop_byte(self.thread, &mut self.stack, u8::add),
+                SubtractByte => binop_byte(self.thread, &mut self.stack, u8::sub),
+                MultiplyByte => binop_byte(self.thread, &mut self.stack, u8::mul),
+                DivideByte => binop_byte(self.thread, &mut self.stack, u8::div),
+                ByteLT => binop_bool(self.thread, &mut self.stack, |l: u8, r| l < r),
+                ByteEQ => binop_bool(self.thread, &mut self.stack, |l: u8, r| l == r),
 
-                AddFloat => binop(self.thread, &mut self.stack, f64::add),
-                SubtractFloat => binop(self.thread, &mut self.stack, f64::sub),
-                MultiplyFloat => binop(self.thread, &mut self.stack, f64::mul),
-                DivideFloat => binop(self.thread, &mut self.stack, f64::div),
-                FloatLT => binop(self.thread, &mut self.stack, |l: f64, r| l < r),
-                FloatEQ => binop(self.thread, &mut self.stack, |l: f64, r| l == r),
+                AddFloat => binop_f64(self.thread, &mut self.stack, f64::add),
+                SubtractFloat => binop_f64(self.thread, &mut self.stack, f64::sub),
+                MultiplyFloat => binop_f64(self.thread, &mut self.stack, f64::mul),
+                DivideFloat => binop_f64(self.thread, &mut self.stack, f64::div),
+                FloatLT => binop_bool(self.thread, &mut self.stack, |l: f64, r| l < r),
+                FloatEQ => binop_bool(self.thread, &mut self.stack, |l: f64, r| l == r),
             }
             index += 1;
         }
@@ -1174,27 +1159,19 @@ impl<'b> Context<'b> {
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame.excess;
         // We might not get access to the frame above the current as it could be locked
-        let thread = self.thread;
-        let ((stack, gc), stack_exists) = match self.exit_scope() {
-            Ok(stack) => ((stack.stack.take_stack(), stack.gc), true),
-            Err(err) => (err, false),
-        };
-        stack.pop();
+        let stack_exists = self.exit_scope().is_ok();
+        self.stack.pop();
         for _ in 0..len {
-            stack.pop();
+            self.stack.pop();
         }
-        stack.push(result);
+        self.stack.push(result);
         if frame_has_excess {
-            stack.pop();
+            self.stack.pop();
             // If the function that just finished had extra arguments we need to call the result of
             // the call with the extra arguments
-            match stack.pop() {
+            match self.stack.pop() {
                 Data(excess) => {
-                    self = Context {
-                        thread: thread,
-                        gc: gc,
-                        stack: StackFrame::frame(stack, 0, State::Excess),
-                    };
+                    self.enter_scope(0, State::Excess);
                     debug!("Push excess args {:?}", &excess.fields);
                     self.stack.push(result);
                     for value in &excess.fields {
@@ -1206,7 +1183,7 @@ impl<'b> Context<'b> {
             }
         } else {
             Ok(if stack_exists {
-                Some(Context::current(thread, stack, gc))
+                Some(())
             } else {
                 None
             })
@@ -1215,10 +1192,48 @@ impl<'b> Context<'b> {
 }
 
 #[inline]
-fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> R,
-          T: Getable<'b> + fmt::Debug,
-          R: Pushable<'b>
+fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+    where F: FnOnce(T, T) -> VmInt,
+          T: Getable<'b> + fmt::Debug
+{
+    binop(vm, stack, |l, r| Value::Int(f(l, r)))
+}
+
+#[inline]
+fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+    where F: FnOnce(T, T) -> f64,
+          T: Getable<'b> + fmt::Debug
+{
+    binop(vm, stack, |l, r| Value::Float(f(l, r)))
+}
+
+#[inline]
+fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+    where F: FnOnce(T, T) -> u8,
+          T: Getable<'b> + fmt::Debug
+{
+    binop(vm, stack, |l, r| Value::Byte(f(l, r)))
+}
+
+#[inline]
+fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+    where F: FnOnce(T, T) -> bool,
+          T: Getable<'b> + fmt::Debug
+{
+    binop(vm, stack, |l, r| {
+        Value::Tag(if f(l, r) {
+            1
+        } else {
+            0
+        })
+    })
+}
+
+
+#[inline]
+fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+    where F: FnOnce(T, T) -> Value,
+          T: Getable<'b> + fmt::Debug
 {
     let r = stack.pop();
     let l = stack.pop();
@@ -1226,8 +1241,7 @@ fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
         (Some(l), Some(r)) => {
             let result = f(l, r);
             // pushing numbers should never return an error so unwrap
-            result.push(vm, &mut stack.stack)
-                .unwrap()
+            stack.stack.push(result);
         }
         (l, r) => panic!("{:?} `op` {:?}", l, r),
     }

@@ -123,29 +123,29 @@ fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
 }
 
 fn resume(vm: &Thread) -> Status {
-    let mut stack = vm.get_stack();
-    let value = StackFrame::current(&mut stack)[0];
+    let mut context = vm.context();
+    let value = StackFrame::current(&mut context.stack)[0];
     match value {
         Value::Thread(child) => {
-            let lock = StackFrame::current(&mut stack).into_lock();
-            drop(stack);
+            let lock = StackFrame::current(&mut context.stack).into_lock();
+            drop(context);
             let result = child.resume();
-            stack = vm.get_stack();
-            stack.release_lock(lock);
+            context = vm.context();
+            context.stack.release_lock(lock);
             match result {
                 Ok(()) |
                 Err(Error::Yield) => {
                     let value: Result<(), &str> = Ok(());
-                    value.status_push(vm, &mut stack)
+                    value.status_push(vm, &mut context)
                 }
                 Err(Error::Dead) => {
                     let value: Result<(), &str> = Err("Attempted to resume a dead thread");
-                    value.status_push(vm, &mut stack)
+                    value.status_push(vm, &mut context)
                 }
                 Err(err) => {
                     let fmt = format!("{}", err);
-                    let result = Value::String(vm.alloc_ignore_limit(&fmt[..]));
-                    stack.push(result);
+                    let result = Value::String(context.alloc_ignore_limit(&fmt[..]));
+                    context.stack.push(result);
                     Status::Error
                 }
             }
@@ -167,15 +167,15 @@ fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> MaybeError<R
 fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<RootedThread> {
     let thread = try!(value.vm.new_thread());
     {
-        let mut stack = thread.get_stack();
+        let mut context = thread.context();
         let callable = match value.value.value() {
             Value::Closure(c) => State::Closure(c),
             Value::Function(c) => State::Extern(c),
             _ => State::Unknown,
         };
-        try!(value.value.push(value.vm, &mut stack));
-        stack.push(Value::Int(0));
-        StackFrame::current(&mut stack).enter_scope(1, callable);
+        try!(value.value.push(value.vm, &mut context));
+        context.stack.push(Value::Int(0));
+        StackFrame::current(&mut context.stack).enter_scope(1, callable);
     }
     Ok(thread)
 }

@@ -65,12 +65,11 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
     }
     let vm = lhs.vm();
     let value = {
-        let stack = vm.get_stack();
-        let result = vm.alloc(&stack,
-                              Append {
-                                  lhs: &lhs,
-                                  rhs: &rhs,
-                              });
+        let mut context = vm.context();
+        let result = context.alloc(Append {
+            lhs: &lhs,
+            rhs: &rhs,
+        });
         match result {
             Ok(x) => x,
             Err(err) => return MaybeError::Err(err),
@@ -111,12 +110,11 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> MaybeError<String, Error> {
     let vm = lhs.vm;
     let lhs = lhs.value;
     let value = {
-        let stack = vm.get_stack();
-        let result = vm.alloc(&stack,
-                              StrAppend {
-                                  lhs: lhs,
-                                  rhs: rhs,
-                              });
+        let mut context = vm.context();
+        let result = context.alloc(StrAppend {
+            lhs: lhs,
+            rhs: rhs,
+        });
         match result {
             Ok(x) => x,
             Err(err) => return MaybeError::Err(err),

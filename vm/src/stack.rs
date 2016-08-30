@@ -218,16 +218,15 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         }
     }
 
-    pub fn enter_scope(mut self, args: VmIndex, state: State) -> StackFrame<'b> {
+    pub fn enter_scope(&mut self, args: VmIndex, state: State) {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
         let frame = StackFrame::add_new_frame(&mut self.stack, args, state);
         self.frame = frame;
-        self
     }
 
-    pub fn exit_scope(mut self) -> Result<StackFrame<'b>, &'b mut Stack> {
+    pub fn exit_scope(&mut self) -> Result<(), ()> {
         let current_frame = self.stack.frames.pop().expect("Expected frame");
         // The root frame should always exist
         debug_assert!(!self.stack.frames.is_empty(), "Poped the last frame");
@@ -242,13 +241,13 @@ impl<'a: 'b, 'b> StackFrame<'b> {
                 self.frame = frame;
                 if frame.state == State::Lock {
                     // Locks must be unlocked manually using release lock
-                    Err(self.stack)
+                    Err(())
                 } else {
                     debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
-                    Ok(self)
+                    Ok(())
                 }
             }
-            None => Err(self.stack)
+            None => Err(())
         }
     }
 
@@ -411,17 +410,21 @@ mod tests {
         let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
         frame.push(Int(0));
         frame.push(Int(1));
-        let mut frame = frame.enter_scope(2, State::Unknown);
+
+        frame.enter_scope(2, State::Unknown);
         frame.push(Int(2));
         frame.push(Int(3));
-        frame = frame.enter_scope(1, State::Unknown);
+        
+        frame.enter_scope(1, State::Unknown);
         frame.push(Int(4));
         frame.push(Int(5));
         frame.push(Int(6));
-        frame = frame.exit_scope().unwrap();
+
+        frame.exit_scope().unwrap();
         frame.remove_range(2, 5);
         assert_eq!(frame.stack.values, vec![Int(0), Int(1), Int(5), Int(6)]);
-        frame = frame.exit_scope().unwrap();
+        
+        frame.exit_scope().unwrap();
         frame.remove_range(1, 3);
         assert_eq!(frame.stack.values, vec![Int(0), Int(6)]);
     }
@@ -436,7 +439,7 @@ mod tests {
             let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
             frame.push(Int(1));
-            let frame = frame.enter_scope(2, State::Unknown);
+            frame.enter_scope(2, State::Unknown);
             let _lock = frame.into_lock();
         }
         // Panic as it attempts to access past the lock
@@ -452,7 +455,7 @@ mod tests {
             let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
             frame.push(Int(1));
-            frame = frame.enter_scope(2, State::Unknown);
+            frame.enter_scope(2, State::Unknown);
             frame.into_lock()
         };
         {

@@ -226,7 +226,9 @@ pub mod compiler_pipeline {
         }
     }
 
-    pub struct CompileValue(pub ast::SpannedExpr<ast::TcIdent<Symbol>>, pub TcType, pub CompiledFunction);
+    pub struct CompileValue(pub ast::SpannedExpr<ast::TcIdent<Symbol>>,
+                            pub TcType,
+                            pub CompiledFunction);
 
     pub trait Compileable<Extra> {
         fn compile(self,
@@ -308,10 +310,7 @@ pub mod compiler_pipeline {
             let CompileValue(_, typ, mut function) = self;
             function.id = Symbol::new(name);
             let function = try!(vm.global_env().new_function(function));
-            let closure = {
-                let stack = vm.get_stack();
-                try!(vm.alloc(&stack, ClosureDataDef(function, &[])))
-            };
+            let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
             let value = try!(vm.call_module(&typ, closure));
             Ok((vm.root_value_ref(value), typ))
         }
@@ -326,10 +325,7 @@ pub mod compiler_pipeline {
             let CompileValue(mut expr, typ, function) = self;
             let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
             let function = try!(vm.global_env().new_function(function));
-            let closure = {
-                let stack = vm.get_stack();
-                try!(vm.alloc(&stack, ClosureDataDef(function, &[])))
-            };
+            let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
             let value = try!(vm.call_module(&typ, closure));
             try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
             Ok(())
@@ -354,10 +350,11 @@ impl Compiler {
     }
 
     /// Parse `input`, returning an expression if successful
-    pub fn parse_expr(&mut self,
-                      file: &str,
-                      input: &str)
-                      -> StdResult<ast::SpannedExpr<ast::TcIdent<Symbol>>, Errors<::parser::Error>> {
+    pub fn parse_expr
+        (&mut self,
+         file: &str,
+         input: &str)
+         -> StdResult<ast::SpannedExpr<ast::TcIdent<Symbol>>, Errors<::parser::Error>> {
         Ok(try!(::parser::parse_tc(&mut SymbolModule::new(file.into(), &mut self.symbols),
                                    input)
             .map_err(|t| t.1)))
@@ -439,11 +436,12 @@ impl Compiler {
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
     /// expression
-    pub fn extract_metadata(&mut self,
-                            vm: &Thread,
-                            file: &str,
-                            expr_str: &str)
-                            -> Result<(ast::SpannedExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
+    pub fn extract_metadata
+        (&mut self,
+         vm: &Thread,
+         file: &str,
+         expr_str: &str)
+         -> Result<(ast::SpannedExpr<ast::TcIdent<Symbol>>, TcType, Metadata)> {
         use check::metadata;
         let (mut expr, typ) = try!(self.typecheck_str(vm, file, expr_str, None));
 
@@ -460,10 +458,7 @@ impl Compiler {
         let (expr, typ, metadata) = try!(self.extract_metadata(vm, filename, input));
         let function = try!(self.compile_script(vm, filename, &expr));
         let function = try!(vm.global_env().new_function(function));
-        let closure = {
-            let stack = vm.get_stack();
-            try!(vm.alloc(&stack, ClosureDataDef(function, &[])))
-        };
+        let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
         let value = try!(vm.call_module(&typ, closure));
         try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
         info!("Loaded module `{}` filename", filename);
@@ -493,10 +488,7 @@ impl Compiler {
         let mut function = try!(self.compile_script(vm, name, &expr));
         function.id = Symbol::new(name);
         let function = try!(vm.global_env().new_function(function));
-        let closure = {
-            let stack = vm.get_stack();
-            try!(vm.alloc(&stack, ClosureDataDef(function, &[])))
-        };
+        let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
         let value = try!(vm.call_module(&typ, closure));
         Ok((vm.root_value_ref(value), typ))
     }
@@ -587,7 +579,7 @@ pub fn filename_to_module(filename: &str) -> StdString {
                 .map(|ext| &filename[..filename.len() - ext.len() - 1])
                 .unwrap_or(filename)
         });
-    
+
     name.replace(|c: char| c == '/' || c == '\\', ".")
 }
 
