@@ -199,10 +199,10 @@ fn do_zip_match<'a, U>(self_: &TcType,
             });
             Ok(args.map(|args| Type::record(l_types.clone(), args)))
         }
-        (&Type::Id(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
+        (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
             Ok(Some(other.clone()))
         }
-        (&Type::Alias(ref alias), &Type::Id(ref id)) if *id == alias.name => Ok(None),
+        (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
         _ => {
             if self_ == other {
                 // Successful unification

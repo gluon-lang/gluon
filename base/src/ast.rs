@@ -189,7 +189,7 @@ pub enum Pattern<Id: AstId> {
         types: Vec<(Id::Untyped, Option<Id::Untyped>)>,
         fields: Vec<(Id::Untyped, Option<Id::Untyped>)>,
     },
-    Identifier(Id),
+    Ident(Id),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -218,7 +218,7 @@ pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
-    Identifier(Id),
+    Ident(Id),
     Literal(LiteralEnum),
     Call(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
     IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Option<Box<SpannedExpr<Id>>>),
@@ -330,7 +330,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
             v.visit_expr(&mut *lambda.body);
         }
         Expr::Type(_, ref mut expr) => v.visit_expr(&mut *expr),
-        Expr::Identifier(ref mut id) => v.visit_identifier(id),
+        Expr::Ident(ref mut id) => v.visit_identifier(id),
         Expr::Literal(..) => (),
         Expr::Block(ref mut exprs) => {
             for expr in exprs {
@@ -352,7 +352,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
         Pattern::Record { ref mut id, .. } => {
             v.visit_identifier(id);
         }
-        Pattern::Identifier(ref mut id) => v.visit_identifier(id),
+        Pattern::Ident(ref mut id) => v.visit_identifier(id),
     }
 }
 
@@ -379,7 +379,7 @@ impl<Id> Typed for Expr<Id>
 
     fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
         match *self {
-            Expr::Identifier(ref id) |
+            Expr::Ident(ref id) |
             Expr::FieldAccess(_, ref id) => id.env_type_of(env),
             Expr::Literal(ref lit) => {
                 match *lit {
@@ -431,7 +431,7 @@ impl Typed for Pattern<TcIdent<Symbol>> {
     fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
-            Pattern::Identifier(ref name) => name.env_type_of(env),
+            Pattern::Ident(ref name) => name.env_type_of(env),
             Pattern::Record { ref id, .. } => id.env_type_of(env),
             Pattern::Constructor(ref id, ref args) => get_return_type(env, &id.typ, args.len()),
         }

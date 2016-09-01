@@ -173,7 +173,7 @@ impl FunctionEnv {
                 }
                 fields.len() as VmIndex
             }
-            ast::Pattern::Identifier(_) => {
+            ast::Pattern::Ident(_) => {
                 self.pop_var();
                 1
             }
@@ -426,7 +426,7 @@ impl<'a> Compiler<'a> {
                     ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
-            Expr::Identifier(ref id) => self.load_identifier(id.id(), function),
+            Expr::Ident(ref id) => self.load_identifier(id.id(), function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 try!(self.compile(&**pred, function, false));
                 let jump_index = function.function.instructions.len();
@@ -517,7 +517,7 @@ impl<'a> Compiler<'a> {
                             upvars: 0,
                         });
                         match bind.name.value {
-                            ast::Pattern::Identifier(ref name) => {
+                            ast::Pattern::Ident(ref name) => {
                                 function.new_stack_var(name.id().clone());
                             }
                             _ => panic!("ICE: Unexpected non identifer pattern"),
@@ -529,7 +529,7 @@ impl<'a> Compiler<'a> {
                     if is_recursive {
                         function.emit(Push(stack_start + i as VmIndex));
                         let name = match bind.name.value {
-                            ast::Pattern::Identifier(ref name) => name,
+                            ast::Pattern::Ident(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
                         let (function_index, vars, cf) = try!(self.compile_lambda(name,
@@ -553,7 +553,7 @@ impl<'a> Compiler<'a> {
                 return Ok(Some(body));
             }
             Expr::Call(ref func, ref args) => {
-                if let Expr::Identifier(ref id) = func.value {
+                if let Expr::Ident(ref id) = func.value {
                     if let Some(Constructor(tag, num_args)) = self.find(id.id(), function) {
                         for arg in args.iter() {
                             try!(self.compile(arg, function, false));
@@ -640,7 +640,7 @@ impl<'a> Compiler<'a> {
                             let typ = &expr.env_type_of(self);
                             self.compile_let_pattern(&alt.pattern.value, typ, function);
                         }
-                        ast::Pattern::Identifier(ref id) => {
+                        ast::Pattern::Ident(ref id) => {
                             function.function.instructions[start_index] =
                                 Jump(function.function.instructions.len() as VmIndex);
                             function.new_stack_var(id.id().clone());
@@ -722,7 +722,7 @@ impl<'a> Compiler<'a> {
                            pattern_type: &TcType,
                            function: &mut FunctionEnvs) {
         match *pattern {
-            ast::Pattern::Identifier(ref name) => {
+            ast::Pattern::Ident(ref name) => {
                 function.new_stack_var(name.id().clone());
             }
             ast::Pattern::Record { ref types, ref fields, .. } => {

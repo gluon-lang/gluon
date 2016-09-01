@@ -19,7 +19,7 @@ fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
                 id: s,
             })
         }
-        Err(()) => Type::App(Type::id(s), args),
+        Err(()) => Type::App(Type::ident(s), args),
     }
 }
 
@@ -161,8 +161,8 @@ fn show_record_multi_line() {
 #[test]
 fn variants() {
     let typ: AstType<&str> = Type::variants(vec![("A",
-                                                  Type::function(vec![Type::int()], Type::id("A"))),
-                                                 ("B", Type::id("A"))]);
+                                                  Type::function(vec![Type::int()], Type::ident("A"))),
+                                                 ("B", Type::ident("A"))]);
     assert_eq!(format!("{}", typ), "| A Int | B");
 }
 

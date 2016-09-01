@@ -40,7 +40,7 @@ fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
 fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
     no_loc(Expr::Let(vec![Binding {
                               comment: None,
-                              name: no_loc(Pattern::Identifier(intern(s))),
+                              name: no_loc(Pattern::Ident(intern(s))),
                               typ: None,
                               arguments: args.iter().map(|i| intern(i)).collect(),
                               expression: e,
@@ -49,7 +49,7 @@ fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
 }
 
 fn id(s: &str) -> SpExpr {
-    no_loc(Expr::Identifier(intern(s)))
+    no_loc(Expr::Ident(intern(s)))
 }
 
 fn field(s: &str, typ: AstType<String>) -> Field<String> {
@@ -65,7 +65,7 @@ fn typ(s: &str) -> AstType<String> {
     match s.parse() {
         Ok(b) => Type::builtin(b),
         Err(()) if is_var => generic_ty(s),
-        Err(()) => Type::id(intern(s)),
+        Err(()) => Type::ident(intern(s)),
     }
 }
 
@@ -524,7 +524,7 @@ id
     assert_eq!(e,
                no_loc(Expr::Let(vec![Binding {
                                          comment: Some("The identity function".into()),
-                                         name: no_loc(Pattern::Identifier(intern("id"))),
+                                         name: no_loc(Pattern::Ident(intern("id"))),
                                          typ: None,
                                          arguments: vec![intern("x")],
                                          expression: id("x"),
@@ -647,7 +647,7 @@ x
     assert_eq!(e,
                Ok(no_loc(Expr::Let(vec![Binding {
                                             comment: None,
-                                            name: no_loc(Pattern::Identifier(intern("x"))),
+                                            name: no_loc(Pattern::Ident(intern("x"))),
                                             typ: Some(Type::app(typ("->"),
                                                                 vec![typ("Int"), typ("Int")])),
                                             arguments: vec![],

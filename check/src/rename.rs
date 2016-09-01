@@ -116,7 +116,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         self.stack_type(name.clone(), pattern.span, &field_type.typ);
                     }
                 }
-                ast::Pattern::Identifier(ref mut id) => {
+                ast::Pattern::Ident(ref mut id) => {
                     let new_name =
                         self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
                     id.name = new_name;
@@ -199,7 +199,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn rename_expr(&mut self, expr: &mut SpannedExpr<TcIdent>) -> Result<(), RenameError> {
             match expr.value {
-                Expr::Identifier(ref mut id) => {
+                Expr::Ident(ref mut id) => {
                     if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
                         debug!("Rename identifier {} = {}", id.name, new_id);
                         id.name = new_id;
@@ -215,7 +215,7 @@ pub fn rename(symbols: &mut SymbolModule,
                                 if let Some(new_id) = try!(self.rename(id, &field.typ)) {
                                     debug!("Rename record field {} = {}", id, new_id);
                                     *maybe_expr = Some(pos::spanned(expr.span,
-                                                                    Expr::Identifier(TcIdent {
+                                                                    Expr::Ident(TcIdent {
                                                                         name: new_id,
                                                                         typ: field.typ.clone(),
                                                                     })));

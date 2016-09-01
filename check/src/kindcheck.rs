@@ -205,7 +205,7 @@ impl<'a> KindCheck<'a> {
                     .collect());
                 Ok((self.type_kind(), Type::record(types.clone(), fields)))
             }
-            Type::Id(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
+            Type::Ident(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
             Type::Alias(ref alias) => self.find(&alias.name).map(|kind| (kind, typ.clone())),
         }
     }

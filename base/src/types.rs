@@ -110,7 +110,7 @@ pub enum Type<Id, T = AstType<Id>> {
         fields: Vec<Field<Id, T>>,
     },
     /// An identifier type. Anything that is not a builtin type.
-    Id(Id),
+    Ident(Id),
     Alias(AliasData<Id, T>),
 }
 
@@ -478,8 +478,8 @@ impl<Id, T> Type<Id, T>
         }))
     }
 
-    pub fn id(id: Id) -> T {
-        T::from(Type::Id(id))
+    pub fn ident(id: Id) -> T {
+        T::from(Type::Ident(id))
     }
 
     pub fn string() -> T {
@@ -525,12 +525,12 @@ impl<Id, T> Type<Id, T>
         match *self {
             Type::App(ref id, ref args) => {
                 match **id {
-                    Type::Id(ref id) => Some((id, args)),
+                    Type::Ident(ref id) => Some((id, args)),
                     Type::Alias(ref alias) => Some((&alias.name, args)),
                     _ => None,
                 }
             }
-            Type::Id(ref id) => Some((id, &[][..])),
+            Type::Ident(ref id) => Some((id, &[][..])),
             Type::Alias(ref alias) => Some((&alias.name, &[][..])),
             _ => None,
         }
@@ -838,7 +838,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                 doc.append("}")
                     .group()
             }
-            Type::Id(ref id) => arena.text(self.env.string(id)),
+            Type::Ident(ref id) => arena.text(self.env.string(id)),
             Type::Alias(ref alias) => arena.text(self.env.string(&alias.name)),
         }
     }
@@ -903,7 +903,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |
-        Type::Id(_) |
+        Type::Ident(_) |
         Type::Alias(_) => (),
     }
 }
@@ -1049,7 +1049,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |
-        Type::Id(_) |
+        Type::Ident(_) |
         Type::Alias(_) => None,
     }
 }
