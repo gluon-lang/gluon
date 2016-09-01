@@ -165,8 +165,7 @@ impl<I> Macro for Import<I>
                     try!(self.importer.import(vm, &modulename, file_contents));
                 }
                 // FIXME Does not handle shadowing
-                Ok(pos::spanned(arguments[0].span,
-                                Expr::Identifier(TcIdent::new(name))))
+                Ok(pos::spanned(arguments[0].span, Expr::Ident(TcIdent::new(name))))
             }
             _ => return Err(Error::String("Expected a string literal to import".into()).into()),
         }

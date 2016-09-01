@@ -70,7 +70,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                     }
                 }
             }
-            Pattern::Identifier(ref id) => {
+            Pattern::Ident(ref id) => {
                 self.stack.insert(id.name.clone(), id.typ.clone());
             }
             Pattern::Constructor(_, ref args) => {
@@ -82,7 +82,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     }
 
     fn expr(&mut self, expr: &SpannedExpr<TcIdent<Symbol>>) {
-        if let Expr::Identifier(ref ident) = expr.value {
+        if let Expr::Ident(ref ident) = expr.value {
             for (k, typ) in self.stack.iter() {
                 if k.declared_name().starts_with(ident.name.declared_name()) {
                     self.result.push(Suggestion {
@@ -173,7 +173,7 @@ impl<F> FindVisitor<F>
         use base::ast::Expr::*;
 
         match current.value {
-            Identifier(_) | Literal(_) => {
+            Ident(_) | Literal(_) => {
                 if current.span.containment(&self.pos) == Ordering::Equal {
                     self.on_found.expr(current)
                 } else {

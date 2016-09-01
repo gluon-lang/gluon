@@ -230,10 +230,9 @@ mod test {
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub enum Type<T> {
         Variable(u32),
-        Id(String),
+        Ident(String),
         Arrow(T, T),
     }
-
 
     impl Substitutable for TType {
         type Variable = u32;
@@ -256,7 +255,7 @@ mod test {
                         f.walk(r);
                     }
                     Type::Variable(_) |
-                    Type::Id(_) => (),
+                    Type::Ident(_) => (),
                 }
             }
             traverse_(self, f)
@@ -272,7 +271,7 @@ mod test {
             where F: Unifier<(), Self>
         {
             match (&*self.0, &*other.0) {
-                (&Type::Id(ref l), &Type::Id(ref r)) if l == r => Ok(None),
+                (&Type::Ident(ref l), &Type::Ident(ref r)) if l == r => Ok(None),
                 (&Type::Arrow(ref l1, ref l2), &Type::Arrow(ref r1, ref r2)) => {
                     let arg = f.try_match(l1, r1);
                     let ret = f.try_match(l2, r2);
@@ -303,11 +302,11 @@ mod test {
         let result = unify(&subs, &var1, &var2);
         assert!(result.is_ok());
 
-        let string = TType(Box::new(Type::Id("String".into())));
+        let string = TType(Box::new(Type::Ident("String".into())));
         let result = unify(&subs, &var1, &string);
         assert!(result.is_ok());
 
-        let int = TType(Box::new(Type::Id("Int".into())));
+        let int = TType(Box::new(Type::Ident("Int".into())));
         let result = unify(&subs, &int, &string);
         assert!(result.is_err());
     }
@@ -317,7 +316,7 @@ mod test {
         let subs = Substitution::<TType>::new();
         let var1 = subs.new_var();
 
-        let string = TType(Box::new(Type::Id("String".into())));
+        let string = TType(Box::new(Type::Ident("String".into())));
         let fun = TType(Box::new(Type::Arrow(string.clone(), var1.clone())));
         let result = unify(&subs, &fun, &string);
         assert!(result.is_err());
@@ -333,11 +332,11 @@ mod test {
         let subs = Substitution::<TType>::new();
         let var1 = subs.new_var();
 
-        let string = TType(Box::new(Type::Id("String".into())));
+        let string = TType(Box::new(Type::Ident("String".into())));
         let result = unify(&subs, &var1, &string);
         assert_eq!(result, Ok(string.clone()));
 
-        let int = TType(Box::new(Type::Id("Int".into())));
+        let int = TType(Box::new(Type::Ident("Int".into())));
         // Check that var1 does not unify with int as it should already be a string
         let result = unify(&subs, &var1, &int);
         assert_eq!(result,
@@ -349,7 +348,7 @@ mod test {
         let subs = Substitution::<TType>::new();
         let var1 = subs.new_var();
 
-        let string = TType(Box::new(Type::Id("String".into())));
+        let string = TType(Box::new(Type::Ident("String".into())));
         let fun = TType(Box::new(Type::Arrow(string.clone(), var1.clone())));
         let result = unify(&subs, &fun, &var1);
         assert_eq!(result,
@@ -366,8 +365,8 @@ mod test {
 
         let subs = Substitution::<TType>::new();
         let var1 = subs.new_var();
-        let string = TType(Box::new(Type::Id("String".into())));
-        let int = TType(Box::new(Type::Id("Int".into())));
+        let string = TType(Box::new(Type::Ident("String".into())));
+        let int = TType(Box::new(Type::Ident("Int".into())));
 
         let string_fun = mk_fn(&string, &string);
         let int_fun = mk_fn(&int, &int);

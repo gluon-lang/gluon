@@ -278,7 +278,7 @@ in eq_Int
     let result = support::typecheck(text);
     let bool = Type::alias(support::intern_unscoped("Bool"),
                            vec![],
-                           Type::id(support::intern_unscoped("Bool")));
+                           Type::ident(support::intern_unscoped("Bool")));
     let eq = alias("Eq",
                    &["a"],
                    Type::record(vec![],
@@ -759,14 +759,14 @@ test 1
     let call_id = match call.value {
         Expr::Call(ref f, _) => {
             match f.value {
-                Expr::Identifier(ref id) => id,
+                Expr::Ident(ref id) => id,
                 _ => panic!(),
             }
         }
         _ => panic!(),
     };
     let test_id = match bind.name.value {
-        Pattern::Identifier(ref id) => id,
+        Pattern::Ident(ref id) => id,
         _ => panic!(),
     };
     assert_eq!(test_id.name, call_id.name);

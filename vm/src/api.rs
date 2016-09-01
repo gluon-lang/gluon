@@ -508,7 +508,7 @@ impl VmType for Ordering {
     type Type = Self;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.find_type_info("std.types.Ordering").unwrap().name.clone();
-        Type::app(Type::id(symbol), vec![])
+        Type::app(Type::ident(symbol), vec![])
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
@@ -692,7 +692,7 @@ impl<T: VmType> VmType for Option<T>
     type Type = Option<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.find_type_info("std.types.Option").unwrap().name.clone();
-        Type::app(Type::id(symbol), vec![T::make_type(vm)])
+        Type::app(Type::ident(symbol), vec![T::make_type(vm)])
     }
 }
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
@@ -733,7 +733,7 @@ impl<T: VmType, E: VmType> VmType for StdResult<T, E>
     type Type = StdResult<T::Type, E::Type>;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.find_type_info("std.types.Result").unwrap().name.clone();
-        Type::app(Type::id(symbol), vec![E::make_type(vm), T::make_type(vm)])
+        Type::app(Type::ident(symbol), vec![E::make_type(vm), T::make_type(vm)])
     }
 }
 
@@ -832,7 +832,7 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
 pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>) where T: Deref<Target = Thread>;
 
 impl<T, V> OpaqueValue<T, V> where T: Deref<Target = Thread> {
-    /// Unsafe as `Value` are not rooted 
+    /// Unsafe as `Value` are not rooted
     pub unsafe fn get_value(&self) -> Value {
         *self.0
     }

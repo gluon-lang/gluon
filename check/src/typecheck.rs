@@ -464,7 +464,7 @@ impl<'a> Typecheck<'a> {
                   expr: &mut ast::SpannedExpr<TcIdent>)
                   -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
-            ast::Expr::Identifier(ref mut id) => {
+            ast::Expr::Ident(ref mut id) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
@@ -819,7 +819,7 @@ impl<'a> Typecheck<'a> {
                 }
                 match_type
             }
-            ast::Pattern::Identifier(ref mut id) => {
+            ast::Pattern::Ident(ref mut id) => {
                 self.stack_var(id.id().clone(), match_type.clone());
                 id.typ = match_type.clone();
                 match_type
@@ -858,7 +858,7 @@ impl<'a> Typecheck<'a> {
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
                 if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
-                    if let ast::Pattern::Identifier(ref name) = bind.name.value {
+                    if let ast::Pattern::Ident(ref name) = bind.name.value {
                         lambda.id.name = name.name.clone();
                     }
                 }
@@ -1003,7 +1003,7 @@ impl<'a> Typecheck<'a> {
 
     fn finish_binding(&mut self, level: u32, bind: &mut ast::Binding<TcIdent>) {
         match bind.name.value {
-            ast::Pattern::Identifier(ref mut id) => {
+            ast::Pattern::Ident(ref mut id) => {
                 if let Some(typ) = self.finish_type(level, &id.typ) {
                     id.typ = typ;
                 }
@@ -1182,7 +1182,7 @@ impl<'a> Typecheck<'a> {
                                         alias.typ.clone().expect("Type"))
                         })
                 }
-                Type::Id(ref id) => {
+                Type::Ident(ref id) => {
                     // Substitute the Id by its alias if possible
                     let new_id = self.original_symbols
                         .get(id)
@@ -1193,7 +1193,7 @@ impl<'a> Typecheck<'a> {
                         .or_else(|| if id == new_id {
                             None
                         } else {
-                            Some(Type::id(new_id.clone()))
+                            Some(Type::ident(new_id.clone()))
                         })
                 }
                 Type::Variants(ref variants) => {

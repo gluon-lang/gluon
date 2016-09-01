@@ -20,7 +20,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
     impl<'b> MetadataVisitor<'b> {
         fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::Binding<TcIdent>) {
             match bind.name.value {
-                ast::Pattern::Identifier(ref mut id) => {
+                ast::Pattern::Ident(ref mut id) => {
                     let metadata = bind.comment
                         .as_ref()
                         .map_or(metadata, |comment| {
@@ -45,7 +45,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                         }
                     }
                 }
-                ast::Pattern::Identifier(ref mut id) => {
+                ast::Pattern::Ident(ref mut id) => {
                     self.stack_var(id.name.clone(), metadata);
                 }
                 ast::Pattern::Constructor(..) => (),
@@ -69,7 +69,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
 
         fn metadata_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) -> Metadata {
             match expr.value {
-                ast::Expr::Identifier(ref mut id) => {
+                ast::Expr::Ident(ref mut id) => {
                     self.metadata(id.id()).cloned().unwrap_or_else(Metadata::default)
                 }
                 ast::Expr::Record { ref mut exprs, ref mut types, .. } => {
