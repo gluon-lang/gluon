@@ -95,8 +95,11 @@ let { T, add, sub } = Vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
     let value = run_expr::<Generic<A>>(&mut vm, script);
-    assert_eq!(value.0,
-               vm.context().new_data(&vm, 0, &mut [Int(11), Int(7)]).unwrap());
+    match value.0 {
+        Value::Data(data) => assert_eq!(&data.fields[..], &[Int(11), Int(7)]),
+        _ => panic!(),
+    }
+
 }
 #[test]
 fn adt() {
