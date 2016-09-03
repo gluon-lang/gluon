@@ -132,7 +132,7 @@ fn record_a(types: Vec<(String, Option<AstType<String>>)>,
             fields: Vec<(String, Option<SpExpr>)>)
             -> SpExpr {
     no_loc(Expr::Record {
-        typ: intern(""),
+        typ: Type::hole(),
         types: types,
         exprs: fields,
     })
@@ -144,7 +144,7 @@ fn field_access(expr: SpExpr, field: &str) -> SpExpr {
 
 fn array(fields: Vec<SpExpr>) -> SpExpr {
     no_loc(Expr::Array(Array {
-        id: intern(""),
+        typ: Type::hole(),
         expressions: fields,
     }))
 }
@@ -353,7 +353,7 @@ fn record_pattern() {
     let _ = ::env_logger::init();
     let e = parse_new("match x with | { y, x = z } -> z");
     let pattern = Pattern::Record {
-        id: String::new(),
+        typ: Type::hole(),
         types: Vec::new(),
         fields: vec![(intern("y"), None), (intern("x"), Some(intern("z")))],
     };
@@ -367,7 +367,7 @@ fn let_pattern() {
                no_loc(Expr::LetBindings(vec![ValueBinding {
                                                  comment: None,
                                                  name: no_loc(Pattern::Record {
-                                                     id: String::new(),
+                                                     typ: Type::hole(),
                                                      types: Vec::new(),
                                                      fields: vec![(intern("x"), None),
                                                                   (intern("y"), None)],
