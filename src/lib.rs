@@ -310,10 +310,7 @@ pub mod compiler_pipeline {
             let CompileValue(_, typ, mut function) = self;
             function.id = Symbol::new(name);
             let function = try!(vm.global_env().new_function(function));
-            let closure = {
-                let stack = vm.current_frame();
-                try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
-            };
+            let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
             let value = try!(vm.call_module(&typ, closure));
             Ok((vm.root_value_ref(value), typ))
         }
@@ -328,10 +325,7 @@ pub mod compiler_pipeline {
             let CompileValue(mut expr, typ, function) = self;
             let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
             let function = try!(vm.global_env().new_function(function));
-            let closure = {
-                let stack = vm.current_frame();
-                try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
-            };
+            let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
             let value = try!(vm.call_module(&typ, closure));
             try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
             Ok(())
@@ -466,10 +460,7 @@ impl Compiler {
         let (expr, typ, metadata) = try!(self.extract_metadata(vm, filename, input));
         let function = try!(self.compile_script(vm, filename, &expr));
         let function = try!(vm.global_env().new_function(function));
-        let closure = {
-            let stack = vm.current_frame();
-            try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
-        };
+        let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
         let value = try!(vm.call_module(&typ, closure));
         try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
         info!("Loaded module `{}` filename", filename);
@@ -499,10 +490,7 @@ impl Compiler {
         let mut function = try!(self.compile_script(vm, name, &expr));
         function.id = Symbol::new(name);
         let function = try!(vm.global_env().new_function(function));
-        let closure = {
-            let stack = vm.current_frame();
-            try!(vm.alloc(&stack.stack, ClosureDataDef(function, &[])))
-        };
+        let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
         let value = try!(vm.call_module(&typ, closure));
         Ok((vm.root_value_ref(value), typ))
     }

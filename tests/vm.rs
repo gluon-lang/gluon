@@ -6,7 +6,7 @@ use gluon::vm::api::{FunctionRef, Generic, Getable, VmType, OpaqueValue};
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
 use gluon::vm::internal::Value;
 use gluon::vm::internal::Value::{Float, Int};
-use gluon::vm::stack::State;
+use gluon::vm::stack::{State, StackFrame};
 use gluon::vm::channel::Sender;
 use gluon::vm::Error as VMError;
 use gluon::import::Import;
@@ -143,7 +143,7 @@ fn record() {
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
     assert_eq!(value.0,
-               vm.new_data(0, &mut [Int(0), Float(1.0), Value::Tag(0)]).unwrap());
+               vm.context().new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)]).unwrap());
 }
 
 #[test]
@@ -156,7 +156,7 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0, vm.new_data(0, &mut [Int(1), Int(2)]).unwrap());
+    assert_eq!(value.0, vm.context().new_data(&vm, 0, &mut [Int(1), Int(2)]).unwrap());
 }
 #[test]
 fn script() {
@@ -175,7 +175,7 @@ let { T, add, sub } = Vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
     let value = run_expr::<Generic<A>>(&mut vm, script);
-    assert_eq!(value.0, vm.new_data(0, &mut [Int(11), Int(7)]).unwrap());
+    assert_eq!(value.0, vm.context().new_data(&vm, 0, &mut [Int(11), Int(7)]).unwrap());
 }
 #[test]
 fn adt() {
@@ -186,7 +186,7 @@ in Some 1
 ";
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0, vm.new_data(1, &mut [Int(1)]).unwrap());
+    assert_eq!(value.0, vm.context().new_data(&vm, 1, &mut [Int(1)]).unwrap());
 }
 
 
@@ -224,11 +224,12 @@ in f 4
 fn insert_stack_slice() {
     let _ = ::env_logger::init();
     let vm = make_vm();
-    let mut stack = vm.current_frame();
+    let mut context = vm.context();
+    let mut stack = StackFrame::current(&mut context.stack);
     stack.push(Int(0));
     stack.insert_slice(0, &[Int(2), Int(1)]);
     assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
-    stack = stack.enter_scope(2, State::Unknown);
+    stack.enter_scope(2, State::Unknown);
     stack.insert_slice(1, &[Int(10)]);
     assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
     stack.insert_slice(1, &[]);
@@ -612,7 +613,7 @@ in
 "#;
     let mut vm = make_vm();
     let result = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(result.0, vm.new_data(0, &mut [Int(3), Float(3.0)]).unwrap());
+    assert_eq!(result.0, vm.context().new_data(&vm, 0, &mut [Int(3), Float(3.0)]).unwrap());
 }
 
 test_expr!{ through_overloaded_alias,

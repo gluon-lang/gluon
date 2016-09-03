@@ -1,5 +1,4 @@
 use std::fmt;
-use std::sync::MutexGuard;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
 use base::symbol::Symbol;
@@ -88,6 +87,13 @@ impl Stack {
         &self.frames
     }
 
+    pub fn current_frame(&mut self) -> StackFrame {
+        StackFrame {
+            frame: self.get_frames().last().expect("Frame").clone(),
+            stack: self,
+        }
+    }
+
     /// Release a lock on the stack.
     ///
     /// Panics if the lock is not the top-most lock
@@ -124,7 +130,7 @@ impl Index<RangeTo<VmIndex>> for Stack {
 }
 
 pub struct StackFrame<'b> {
-    pub stack: MutexGuard<'b, Stack>,
+    pub stack: &'b mut Stack,
     pub frame: Frame,
 }
 
@@ -145,6 +151,10 @@ impl<'b> fmt::Debug for StackFrame<'b> {
 }
 
 impl<'a: 'b, 'b> StackFrame<'b> {
+    pub fn take_stack(mut self) -> &'b mut Stack {
+        *self.stack.frames.last_mut().unwrap() = self.frame;
+        self.stack
+    }
     pub fn len(&self) -> VmIndex {
         self.stack.len() - self.frame.offset
     }
@@ -208,48 +218,49 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         }
     }
 
-    pub fn enter_scope(mut self, args: VmIndex, state: State) -> StackFrame<'b> {
+    pub fn enter_scope(&mut self, args: VmIndex, state: State) {
         if let Some(frame) = self.stack.frames.last_mut() {
             *frame = self.frame;
         }
         let frame = StackFrame::add_new_frame(&mut self.stack, args, state);
         self.frame = frame;
-        self
     }
 
-    pub fn exit_scope(mut self) -> Option<StackFrame<'b>> {
+    pub fn exit_scope(&mut self) -> Result<(), ()> {
         let current_frame = self.stack.frames.pop().expect("Expected frame");
+        // The root frame should always exist
+        debug_assert!(!self.stack.frames.is_empty(), "Poped the last frame");
         assert!(current_frame.offset == self.frame.offset,
                 "Attempted to exit a scope other than the top-most scope");
         let frame = self.stack
             .frames
             .last()
             .cloned();
-        frame.and_then(move |frame| {
-            self.frame = frame;
-            if frame.state == State::Lock {
-                // Locks must be unlocked manually using release lock
-                None
-            } else {
-                debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
-                Some(self)
+        match frame {
+            Some(frame) => {
+                self.frame = frame;
+                if frame.state == State::Lock {
+                    // Locks must be unlocked manually using release lock
+                    Err(())
+                } else {
+                    debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
+                    Ok(())
+                }
             }
-        })
+            None => Err(())
+        }
     }
 
-    pub fn frame(mut stack: MutexGuard<'b, Stack>, args: VmIndex, state: State) -> StackFrame<'b> {
-        let frame = StackFrame::add_new_frame(&mut stack, args, state);
+    pub fn frame(stack: &'b mut Stack, args: VmIndex, state: State) -> StackFrame<'b> {
+        let frame = StackFrame::add_new_frame(stack, args, state);
         StackFrame {
             stack: stack,
             frame: frame,
         }
     }
 
-    pub fn current(stack: MutexGuard<Stack>) -> StackFrame {
-        StackFrame {
-            frame: stack.get_frames().last().expect("Frame").clone(),
-            stack: stack,
-        }
+    pub fn current(stack: &mut Stack) -> StackFrame {
+        stack.current_frame()
     }
 
     /// Lock the stack below the current offset
@@ -388,8 +399,6 @@ impl fmt::Display for Stacktrace {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
     use value::Value::*;
 
@@ -397,22 +406,25 @@ mod tests {
     fn remove_range() {
         let _ = ::env_logger::init();
 
-        let stack = Mutex::new(Stack::new());
-        let stack = stack.lock().unwrap();
-        let mut frame = StackFrame::frame(stack, 0, State::Unknown);
+        let mut stack = Stack::new();
+        let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
         frame.push(Int(0));
         frame.push(Int(1));
-        let mut frame = frame.enter_scope(2, State::Unknown);
+
+        frame.enter_scope(2, State::Unknown);
         frame.push(Int(2));
         frame.push(Int(3));
-        frame = frame.enter_scope(1, State::Unknown);
+        
+        frame.enter_scope(1, State::Unknown);
         frame.push(Int(4));
         frame.push(Int(5));
         frame.push(Int(6));
-        frame = frame.exit_scope().unwrap();
+
+        frame.exit_scope().unwrap();
         frame.remove_range(2, 5);
         assert_eq!(frame.stack.values, vec![Int(0), Int(1), Int(5), Int(6)]);
-        frame = frame.exit_scope().unwrap();
+        
+        frame.exit_scope().unwrap();
         frame.remove_range(1, 3);
         assert_eq!(frame.stack.values, vec![Int(0), Int(6)]);
     }
@@ -422,31 +434,37 @@ mod tests {
     fn attempt_take_locked_range() {
         let _ = ::env_logger::init();
 
-        let stack = Mutex::new(Stack::new());
-        let mut frame = StackFrame::frame(stack.lock().unwrap(), 0, State::Unknown);
-        frame.push(Int(0));
-        frame.push(Int(1));
-        let frame = frame.enter_scope(2, State::Unknown);
-        let _lock = frame.into_lock();
+        let mut stack = Stack::new();
+        {
+            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            frame.push(Int(0));
+            frame.push(Int(1));
+            frame.enter_scope(2, State::Unknown);
+            let _lock = frame.into_lock();
+        }
         // Panic as it attempts to access past the lock
-        StackFrame::frame(stack.lock().unwrap(), 1, State::Unknown);
+        StackFrame::frame(&mut stack, 1, State::Unknown);
     }
 
     #[test]
     fn lock_unlock() {
         let _ = ::env_logger::init();
 
-        let stack = Mutex::new(Stack::new());
-        let mut frame = StackFrame::frame(stack.lock().unwrap(), 0, State::Unknown);
-        frame.push(Int(0));
-        frame.push(Int(1));
-        frame = frame.enter_scope(2, State::Unknown);
-        let lock = frame.into_lock();
-        frame = StackFrame::frame(stack.lock().unwrap(), 0, State::Unknown);
-        frame.push(Int(2));
-        frame.exit_scope();
-        stack.lock().unwrap().release_lock(lock);
-        frame = StackFrame::current(stack.lock().unwrap());
+        let mut stack = Stack::new();
+        let lock = {
+            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            frame.push(Int(0));
+            frame.push(Int(1));
+            frame.enter_scope(2, State::Unknown);
+            frame.into_lock()
+        };
+        {
+            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            frame.push(Int(2));
+            frame.exit_scope().unwrap_err();
+        }
+        stack.release_lock(lock);
+        let mut frame = StackFrame::current(&mut stack);
         assert_eq!(frame.pop(), Int(2));
     }
 }

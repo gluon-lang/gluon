@@ -5,7 +5,8 @@ extern crate test;
 extern crate gluon;
 
 use gluon::{Compiler, new_vm};
-use gluon::vm::api::FunctionRef;
+use gluon::vm::thread::{Status, Thread};
+use gluon::vm::api::{FunctionRef, primitive};
 
 // Benchmarks function calls
 #[bench]
@@ -51,22 +52,35 @@ fn factorial_tail_call(b: &mut ::test::Bencher) {
 #[bench]
 fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
     let vm = new_vm();
+
+    fn test_fn(_: &Thread) -> Status { Status::Ok }
+    vm.define_global("test_fn", primitive::<fn (i32)>("test_fn", test_fn)).unwrap();
+
     let text = r#"
-    let { trim } = import "std/string.glu"
     let for n f =
         if n #Int== 0 then
             ()
         else
             f n
+            f n
+            f n
+            f n
+            f n
+            f n
+            f n
+            f n
+            f n
+            f n
             for (n #Int- 10) f
-    \n -> for n \_ -> trim ""
+    \n -> for n test_fn
     "#;
     Compiler::new()
         .load_script(&vm, "test", text)
         .unwrap();
-    let mut factorial: FunctionRef<fn(i32) -> ()> = vm.get_global("test").unwrap();
+
+    let mut test: FunctionRef<fn (i32) -> ()> = vm.get_global("test").unwrap();
     b.iter(|| {
-        let result = factorial.call(1000).unwrap();
+        let result = test.call(1000).unwrap();
         ::test::black_box(result)
     })
 }
