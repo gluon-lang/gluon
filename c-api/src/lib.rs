@@ -204,7 +204,7 @@ pub extern "C" fn glu_get_light_userdata(vm: &Thread,
 }
 
 fn get_value<T>(vm: &Thread, index: VmIndex, out: &mut T) -> Error
-    where T: for<'vm> Getable<'vm>
+    where T: for<'vm> Getable<'vm>,
 {
     let stack = vm.current_frame();
     match stack.get_variants(index).and_then(|value| T::from_value(vm, value)) {

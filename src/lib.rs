@@ -181,7 +181,7 @@ pub mod compiler_pipeline {
                      file: &str,
                      expr_str: &str)
                      -> Result<TypecheckValue>
-            where Self: Sized
+            where Self: Sized,
         {
             self.typecheck_expected(compiler, thread, file, expr_str, None)
         }
@@ -194,7 +194,7 @@ pub mod compiler_pipeline {
                               -> Result<TypecheckValue>;
     }
     impl<T> Typecheckable for T
-        where T: MacroExpandable
+        where T: MacroExpandable,
     {
         fn typecheck_expected(self,
                               compiler: &mut Compiler,
@@ -203,7 +203,7 @@ pub mod compiler_pipeline {
                               expr_str: &str,
                               expected_type: Option<&TcType>)
                               -> Result<TypecheckValue>
-            where Self: Sized
+            where Self: Sized,
         {
             self.expand_macro(compiler, thread, file)
                 .and_then(|expr| {
@@ -219,7 +219,7 @@ pub mod compiler_pipeline {
                               expr_str: &str,
                               expected_type: Option<&TcType>)
                               -> Result<TypecheckValue>
-            where Self: Sized
+            where Self: Sized,
         {
             compiler.typecheck_expr_expected(thread, file, expr_str, &mut self.0, expected_type)
                 .map(move |typ| TypecheckValue(self.0, typ))
@@ -239,7 +239,7 @@ pub mod compiler_pipeline {
                    -> Result<CompileValue>;
     }
     impl<'a, 'b, T> Compileable<(&'a str, Option<&'b TcType>)> for T
-        where T: Typecheckable
+        where T: Typecheckable,
     {
         fn compile(self,
                    compiler: &mut Compiler,
@@ -278,7 +278,7 @@ pub mod compiler_pipeline {
                        -> Result<()>;
     }
     impl<C, Extra> Executable<Extra> for C
-        where C: Compileable<Extra>
+        where C: Compileable<Extra>,
     {
         fn run_expr<'vm>(self,
                          compiler: &mut Compiler,
@@ -514,7 +514,7 @@ impl Compiler {
                             name: &str,
                             expr_str: &str)
                             -> Result<(T, TcType)>
-        where T: Getable<'vm> + VmType
+        where T: Getable<'vm> + VmType,
     {
         let expected = T::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
@@ -532,7 +532,7 @@ impl Compiler {
                                expr_str: &str)
                                -> Result<(T, TcType)>
         where T: Getable<'vm> + VmType,
-              T::Type: Sized
+              T::Type: Sized,
     {
         let expected = IO::<T>::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));

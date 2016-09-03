@@ -141,7 +141,7 @@ pub fn typ(s: &str) -> TcType {
 }
 
 pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
-    where T: From<Type<Symbol, T>>
+    where T: From<Type<Symbol, T>>,
 {
     assert!(s.len() != 0);
 

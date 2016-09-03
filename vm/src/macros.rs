@@ -26,7 +26,7 @@ pub trait Macro: ::mopa::Any + Send + Sync {
 mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
-    where F: Fn(&Thread, &mut [SpannedExpr<TcIdent>]) -> Result<SpannedExpr<TcIdent>, Error>
+    where F: Fn(&Thread, &mut [SpannedExpr<TcIdent>]) -> Result<SpannedExpr<TcIdent>, Error>,
 {
     fn expand(&self,
               env: &Thread,
@@ -54,7 +54,7 @@ impl MacroEnv {
 
     /// Inserts a `Macro` which acts on any occurance of `symbol` when applied to an expression.
     pub fn insert<M>(&self, name: String, mac: M)
-        where M: Macro + 'static
+        where M: Macro + 'static,
     {
         self.macros.write().unwrap().insert(name, Box::new(mac));
     }

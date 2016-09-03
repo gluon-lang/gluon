@@ -103,7 +103,7 @@ impl<T> FixedVec<T> {
     }
 
     pub fn find<F>(&self, mut test: F) -> Option<(usize, &T)>
-        where F: FnMut(&T) -> bool
+        where F: FnMut(&T) -> bool,
     {
         self.vec
             .borrow()

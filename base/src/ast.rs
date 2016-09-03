@@ -16,7 +16,7 @@ pub trait AstId: Sized {
     /// The type used instead of `Self` when the identifier does not need a type
     type Untyped: Clone + PartialEq + Eq + fmt::Debug;
     fn from_str<E>(env: &mut E, s: &str) -> Self
-        where E: IdentEnv<Ident = Self>
+        where E: IdentEnv<Ident = Self>,
     {
         env.from_str(s)
     }
@@ -87,7 +87,7 @@ impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
 }
 
 impl<T> IdentEnv for EmptyEnv<T>
-    where T: AsRef<str> + for<'a> From<&'a str>
+    where T: AsRef<str> + for<'a> From<&'a str>,
 {
     fn from_str(&mut self, s: &str) -> Self::Ident {
         T::from(s)
@@ -121,7 +121,7 @@ impl<Id> TcIdent<Id> {
 }
 
 impl<Id> AsRef<str> for TcIdent<Id>
-    where Id: AsRef<str>
+    where Id: AsRef<str>,
 {
     fn as_ref(&self) -> &str {
         self.name.as_ref()
@@ -134,7 +134,7 @@ pub struct TcIdentEnv<Id, Env> {
 }
 
 impl<Id> AstId for TcIdent<Id>
-    where Id: Clone + PartialEq + Eq + fmt::Debug + AstId
+    where Id: Clone + PartialEq + Eq + fmt::Debug + AstId,
 {
     type Untyped = Id;
 
@@ -148,7 +148,7 @@ impl<Id> AstId for TcIdent<Id>
 }
 
 impl<Id, Env> DisplayEnv for TcIdentEnv<Id, Env>
-    where Env: DisplayEnv<Ident = Id>
+    where Env: DisplayEnv<Ident = Id>,
 {
     type Ident = TcIdent<Id>;
 
@@ -159,7 +159,7 @@ impl<Id, Env> DisplayEnv for TcIdentEnv<Id, Env>
 
 impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
     where Id: Clone,
-          Env: IdentEnv<Ident = Id>
+          Env: IdentEnv<Ident = Id>,
 {
     fn from_str(&mut self, s: &str) -> TcIdent<Id> {
         TcIdent {
@@ -386,7 +386,7 @@ impl<Id: Clone> Typed for TcIdent<Id> {
 }
 
 impl<Id> Typed for Expr<Id>
-    where Id: Typed<Id = Symbol> + AstId<Untyped = Symbol>
+    where Id: Typed<Id = Symbol> + AstId<Untyped = Symbol>,
 {
     type Id = Id::Id;
 

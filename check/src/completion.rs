@@ -129,7 +129,7 @@ struct FindVisitor<F> {
 impl<F> FindVisitor<F> {
     fn select_spanned<'e, I, S, T>(&self, iter: I, mut span: S) -> (bool, Option<&'e T>)
         where I: IntoIterator<Item = &'e T>,
-              S: FnMut(&T) -> Span<BytePos>
+              S: FnMut(&T) -> Span<BytePos>,
     {
         let mut iter = iter.into_iter().peekable();
         let mut prev = None;
@@ -156,10 +156,10 @@ impl<F> FindVisitor<F> {
 }
 
 impl<F> FindVisitor<F>
-    where F: OnFound
+    where F: OnFound,
 {
     fn visit_one<'e, I>(&mut self, iter: I)
-        where I: IntoIterator<Item = &'e SpannedExpr<TcIdent<Symbol>>>
+        where I: IntoIterator<Item = &'e SpannedExpr<TcIdent<Symbol>>>,
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span);
         self.visit_expr(expr.unwrap());
@@ -239,7 +239,7 @@ impl<F> FindVisitor<F>
 }
 
 pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Result<TcType, ()>
-    where T: TypeEnv
+    where T: TypeEnv,
 {
     let mut visitor = FindVisitor {
         pos: pos,
@@ -253,7 +253,7 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Re
 }
 
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Vec<Suggestion>
-    where T: TypeEnv
+    where T: TypeEnv,
 {
     let mut visitor = FindVisitor {
         pos: pos,

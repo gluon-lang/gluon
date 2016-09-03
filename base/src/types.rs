@@ -67,7 +67,7 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
 }
 
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-    where F: FnMut(&Generic<Symbol>) -> Option<TcType>
+    where F: FnMut(&Generic<Symbol>) -> Option<TcType>,
 {
     walk_move_type(typ,
                    &mut |typ| {
@@ -115,7 +115,7 @@ pub enum Type<Id, T = AstType<Id>> {
 }
 
 impl<Id, T> Type<Id, T>
-    where T: Deref<Target = Type<Id, T>>
+    where T: Deref<Target = Type<Id, T>>,
 {
     pub fn is_uninitialized(&self) -> bool {
         match *self {
@@ -348,7 +348,7 @@ pub struct Alias<Id, T> {
 }
 
 impl<Id, T> Deref for Alias<Id, T>
-    where T: Deref<Target = Type<Id, T>>
+    where T: Deref<Target = Type<Id, T>>,
 {
     type Target = AliasData<Id, T>;
     fn deref(&self) -> &AliasData<Id, T> {
@@ -360,7 +360,7 @@ impl<Id, T> Deref for Alias<Id, T>
 }
 
 impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
-    where T: From<Type<Id, T>>
+    where T: From<Type<Id, T>>,
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
@@ -377,7 +377,7 @@ impl<Id, T> AsRef<T> for Alias<Id, T> {
 }
 
 impl<Id, T> Alias<Id, T>
-    where T: From<Type<Id, T>>
+    where T: From<Type<Id, T>>,
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
         Alias {
@@ -392,7 +392,7 @@ impl<Id, T> Alias<Id, T>
 }
 
 impl<Id> Alias<Id, AstType<Id>>
-    where Id: Clone
+    where Id: Clone,
 {
     pub fn make_mut(alias: &mut Alias<Id, AstType<Id>>) -> &mut AliasData<Id, AstType<Id>> {
         match *Arc::make_mut(&mut alias._typ.typ) {
@@ -419,7 +419,7 @@ pub struct Field<Id, T = AstType<Id>> {
 }
 
 impl<Id, T> Type<Id, T>
-    where T: From<Type<Id, T>>
+    where T: From<Type<Id, T>>,
 {
     pub fn hole() -> T {
         T::from(Type::Hole)
@@ -449,7 +449,7 @@ impl<Id, T> Type<Id, T>
     }
 
     pub fn function(args: Vec<T>, ret: T) -> T
-        where T: Clone
+        where T: Clone,
     {
         let function: T = Type::builtin(BuiltinType::Function);
         args.into_iter()
@@ -508,7 +508,7 @@ impl<Id, T> Type<Id, T>
 }
 
 impl<Id, T> Type<Id, T>
-    where T: Deref<Target = Type<Id, T>>
+    where T: Deref<Target = Type<Id, T>>,
 {
     pub fn as_function(&self) -> Option<(&T, &T)> {
         if let Type::App(ref app, ref args) = *self {
@@ -538,7 +538,7 @@ impl<Id, T> Type<Id, T>
 }
 
 impl<T> Type<Symbol, T>
-    where T: Deref<Target = Type<Symbol, T>>
+    where T: Deref<Target = Type<Symbol, T>>,
 {
     /// Returns the name of `self`
     /// Example:
@@ -568,14 +568,14 @@ pub struct ArgIterator<'a, T: 'a> {
 
 /// Constructs an iterator over a functions arguments
 pub fn arg_iter<Id, T>(typ: &T) -> ArgIterator<T>
-    where T: Deref<Target = Type<Id, T>>
+    where T: Deref<Target = Type<Id, T>>,
 {
     ArgIterator { typ: typ }
 }
 
 impl<'a, Id, T> Iterator for ArgIterator<'a, T>
     where Id: 'a,
-          T: Deref<Target = Type<Id, T>>
+          T: Deref<Target = Type<Id, T>>,
 {
     type Item = &'a T;
     fn next(&mut self) -> Option<&'a T> {
@@ -685,7 +685,7 @@ pub struct DisplayType<'a, I: 'a, T: 'a, E: 'a> {
 impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
     where E: DisplayEnv<Ident = I> + 'a,
           T: Deref<Target = Type<I, T>> + 'a,
-          I: AsRef<str>
+          I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Standard width for terminals are 80 characters
@@ -733,10 +733,10 @@ macro_rules! chain {
 
 impl<'a, I, T, E> DisplayType<'a, I, T, E>
     where E: DisplayEnv<Ident = I> + 'a,
-          T: Deref<Target = Type<I, T>> + 'a
+          T: Deref<Target = Type<I, T>> + 'a,
 {
     fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
-        where I: AsRef<str>
+        where I: AsRef<str>,
     {
         let p = self.prec;
         match *self.typ {
@@ -859,7 +859,7 @@ enum Prec {
 
 impl<I, T> fmt::Display for Type<I, T>
     where I: AsRef<str>,
-          T: Deref<Target = Type<I, T>>
+          T: Deref<Target = Type<I, T>>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", dt(&ast::EmptyEnv::new(), Prec::Top, self))
@@ -868,14 +868,14 @@ impl<I, T> fmt::Display for Type<I, T>
 
 pub fn walk_type<I, T, F>(typ: &T, mut f: F)
     where F: FnMut(&T),
-          T: Deref<Target = Type<I, T>>
+          T: Deref<Target = Type<I, T>>,
 {
     f.walk(typ)
 }
 
 pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
     where F: Walker<T>,
-          T: Deref<Target = Type<I, T>>
+          T: Deref<Target = Type<I, T>>,
 {
     match **typ {
         Type::App(ref t, ref args) => {
@@ -910,7 +910,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
 
 pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
     where F: FnMut(&T, A) -> A,
-          T: Deref<Target = Type<I, T>>
+          T: Deref<Target = Type<I, T>>,
 {
     let mut a = Some(a);
     walk_type(typ, |t| {
@@ -920,7 +920,7 @@ pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
 }
 
 pub fn walk_kind<F: ?Sized>(k: &RcKind, f: &mut F)
-    where F: Walker<RcKind>
+    where F: Walker<RcKind>,
 {
     match **k {
         Kind::Function(ref a, ref r) => {
@@ -936,7 +936,7 @@ pub fn walk_kind<F: ?Sized>(k: &RcKind, f: &mut F)
 pub trait TypeVisitor<I, T> {
     fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
         where T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
-              I: Clone
+              I: Clone,
     {
         walk_move_type_opt(typ, self)
     }
@@ -947,11 +947,11 @@ pub trait Walker<T> {
 }
 
 impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
-    where F: FnMut(&Type<I, T>) -> Option<T>
+    where F: FnMut(&Type<I, T>) -> Option<T>,
 {
     fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
         where T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
-              I: Clone
+              I: Clone,
     {
         let new_type = walk_move_type_opt(typ, self);
         let new_type2 = self(new_type.as_ref().map_or(typ, |t| t));
@@ -962,11 +962,11 @@ impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
 /// Wrapper type which allows functions to control how to traverse the members of the type
 pub struct ControlVisitation<F>(pub F);
 impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
-    where F: FnMut(&Type<I, T>) -> Option<T>
+    where F: FnMut(&Type<I, T>) -> Option<T>,
 {
     fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
         where T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
-              I: Clone
+              I: Clone,
     {
         (self.0)(typ)
     }
@@ -974,7 +974,7 @@ impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
 
 impl<I, T, F: ?Sized> Walker<T> for F
     where F: FnMut(&T),
-          T: Deref<Target = Type<I, T>>
+          T: Deref<Target = Type<I, T>>,
 {
     fn walk(&mut self, typ: &T) {
         self(typ);
@@ -983,7 +983,7 @@ impl<I, T, F: ?Sized> Walker<T> for F
 }
 
 impl<F: ?Sized> Walker<RcKind> for F
-    where F: FnMut(&RcKind)
+    where F: FnMut(&RcKind),
 {
     fn walk(&mut self, typ: &RcKind) {
         self(typ);
@@ -995,7 +995,7 @@ impl<F: ?Sized> Walker<RcKind> for F
 pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
     where F: FnMut(&Type<I, T>) -> Option<T>,
           T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
-          I: Clone
+          I: Clone,
 {
     f.visit(&typ).unwrap_or(typ)
 }
@@ -1010,7 +1010,7 @@ pub fn merge<F, A: ?Sized, B: ?Sized, R>(a_original: &A,
                                          -> Option<R>
     where A: ToOwned,
           B: ToOwned,
-          F: FnOnce(A::Owned, B::Owned) -> R
+          F: FnOnce(A::Owned, B::Owned) -> R,
 {
     match (a, b) {
         (Some(a), Some(b)) => Some(f(a, b)),
@@ -1023,7 +1023,7 @@ pub fn merge<F, A: ?Sized, B: ?Sized, R>(a_original: &A,
 pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
     where F: TypeVisitor<I, T>,
           T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
-          I: Clone
+          I: Clone,
 {
     match *typ {
         Type::App(ref id, ref args) => {
@@ -1057,7 +1057,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
 pub fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
     where I: IntoIterator<Item = &'a T>,
           F: FnMut(&'a T) -> Option<T>,
-          T: Clone + 'a
+          T: Clone + 'a,
 {
     let mut out = Vec::new();
     walk_move_types2(types.into_iter(), false, &mut out, &mut f);
@@ -1071,7 +1071,7 @@ pub fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
 fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<T>, f: &mut F)
     where I: Iterator<Item = &'a T>,
           F: FnMut(&'a T) -> Option<T>,
-          T: Clone + 'a
+          T: Clone + 'a,
 {
     if let Some(typ) = types.next() {
         let new = f(typ);

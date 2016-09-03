@@ -817,7 +817,7 @@ impl<'a> Compiler<'a> {
 }
 
 fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(&Symbol, &Alias<Symbol, TcType>)
+    where F: FnMut(&Symbol, &Alias<Symbol, TcType>),
 {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {

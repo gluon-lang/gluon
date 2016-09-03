@@ -18,7 +18,7 @@ pub struct Lazy<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Userdata for Lazy<T> where T: Any + Send + Sync {}
+impl<T> Userdata for Lazy<T> where T: Any + Send + Sync, {}
 
 impl<T> fmt::Debug for Lazy<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -45,7 +45,7 @@ impl<T> Traverseable for Lazy<T> {
 
 impl<T> VmType for Lazy<T>
     where T: VmType,
-          T::Type: Sized
+          T::Type: Sized,
 {
     type Type = Lazy<T::Type>;
 

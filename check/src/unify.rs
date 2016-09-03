@@ -15,7 +15,7 @@ pub enum Error<T: Substitutable, E> {
 impl<T, E> fmt::Display for Error<T, E>
     where T: Substitutable + fmt::Display,
           T::Variable: fmt::Display,
-          E: fmt::Display
+          E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use unify::Error::*;
@@ -38,14 +38,14 @@ pub struct UnifierState<S, U> {
 impl<S, U> UnifierState<S, U> {
     pub fn report_error<Type>(&mut self, error: Error<Type, Type::Error>)
         where U: Unifier<S, Type>,
-              Type: Unifiable<S>
+              Type: Unifiable<S>,
     {
         Unifier::report_error(self, error)
     }
 
     pub fn try_match<Type>(&mut self, l: &Type, r: &Type) -> Option<Type>
         where U: Unifier<S, Type>,
-              Type: Unifiable<S>
+              Type: Unifiable<S>,
     {
         Unifier::try_match(self, l, r)
     }
@@ -53,7 +53,7 @@ impl<S, U> UnifierState<S, U> {
 
 /// A `Unifier` is a type which implements a unifying strategy between two values.
 pub trait Unifier<S, Type>: Sized
-    where Type: Unifiable<S>
+    where Type: Unifiable<S>,
 {
     /// Reports an error to the `unifier` for cases when returning the error is not possible.
     fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<Type, Type::Error>);
@@ -91,7 +91,7 @@ pub fn unify<S, T>(subs: &Substitution<T>,
                    r: &T)
                    -> Result<T, Errors<Error<T, T::Error>>>
     where T: Unifiable<S> + PartialEq + Clone,
-          T::Variable: Clone
+          T::Variable: Clone,
 {
     let mut state = UnifierState {
         state: state,
@@ -110,7 +110,7 @@ pub fn unify<S, T>(subs: &Substitution<T>,
 }
 
 struct Unify<'e, T, E>
-    where T: Substitutable + 'e
+    where T: Substitutable + 'e,
 {
     errors: Errors<Error<T, E>>,
     subs: &'e Substitution<T>,
@@ -118,7 +118,7 @@ struct Unify<'e, T, E>
 
 impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
     where T: Unifiable<S> + PartialEq + Clone + 'e,
-          T::Variable: Clone
+          T::Variable: Clone,
 {
     fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<T, T::Error>) {
         unifier.unifier.errors.error(error);
@@ -168,7 +168,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 /// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
 pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
     where T: Unifiable<S> + Eq + Clone + Hash,
-          T::Variable: Clone
+          T::Variable: Clone,
 {
     let mut unifier = UnifierState {
         state: state,
@@ -187,7 +187,7 @@ struct Intersect<'m, T: 'm> {
 
 impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
     where T: Unifiable<S> + Eq + Hash + Clone,
-          T::Variable: Clone
+          T::Variable: Clone,
 {
     fn report_error(_unifier: &mut UnifierState<S, Self>, _error: Error<T, T::Error>) {}
 
@@ -246,7 +246,7 @@ mod test {
             }
         }
         fn traverse<F>(&self, f: &mut F)
-            where F: Walker<Self>
+            where F: Walker<Self>,
         {
             fn traverse_(typ: &TType, f: &mut Walker<TType>) {
                 match *typ.0 {
@@ -268,7 +268,7 @@ mod test {
                         other: &Self,
                         f: &mut UnifierState<(), F>)
                         -> Result<Option<Self>, Error<Self, Self::Error>>
-            where F: Unifier<(), Self>
+            where F: Unifier<(), Self>,
         {
             match (&*self.0, &*other.0) {
                 (&Type::Ident(ref l), &Type::Ident(ref r)) if l == r => Ok(None),

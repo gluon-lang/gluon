@@ -7,7 +7,7 @@ use base::ast::AstType;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
     where I: Deref<Target = str>,
-          T: From<Type<I, T>>
+          T: From<Type<I, T>>,
 {
     assert!(s.len() != 0);
     match s.parse() {

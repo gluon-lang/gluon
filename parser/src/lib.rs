@@ -60,7 +60,7 @@ type LanguageParser<'parser, I: 'parser, F: 'parser, T> = EnvParser<&'parser Par
 /// constructed through calling `make_ident`.
 struct ParserEnv<I, F>
     where F: IdentEnv,
-          I: Stream
+          I: Stream,
 {
     empty_id: F::Ident,
     make_ident: Rc<RefCell<F>>,
@@ -135,7 +135,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
-          I::Range: fmt::Debug
+          I::Range: fmt::Debug,
 {
     fn intern(&self, s: &str) -> Id {
         self.make_ident.borrow_mut().from_str(s)
@@ -567,7 +567,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                             Position = Span<BytePos>>,
                   F: IdentEnv<Ident = Id>,
                   Id: AstId + Clone + PartialEq + fmt::Debug,
-                  I::Range: fmt::Debug
+                  I::Range: fmt::Debug,
         {
             satisfy(|t: Token<&'input str>| {
                     match t {
@@ -778,7 +778,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         where P1: Parser<Input = I> + Clone,
               P2: Parser<Input = I> + Clone,
               O: FromIterator<(Id::Untyped, Result<Option<P1::Output>, Option<P2::Output>>)>,
-              G: FnOnce(&mut Parser<Input = I, Output = O>) -> R
+              G: FnOnce(&mut Parser<Input = I, Output = O>) -> R,
     {
         let mut field = self.parser(ParserEnv::<I, F>::parse_ident2)
             .then(move |(id, typ)| {
@@ -829,7 +829,7 @@ pub fn parse_expr<'env, 'input, Id>
     (make_ident: &'env mut IdentEnv<Ident = Id>,
      input: &'input str)
      -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
-    where Id: AstId + Clone + PartialEq + fmt::Debug
+    where Id: AstId + Clone + PartialEq + fmt::Debug,
 {
     let make_ident = Rc::new(RefCell::new(make_ident));
     let lexer = Lexer::new(input);
@@ -863,7 +863,7 @@ pub fn parse_expr<'env, 'input, Id>
 }
 
 fn static_error<'input, I>(error: ParseError<I>) -> Error
-    where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>
+    where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
 {
     let errors = error.errors
         .into_iter()

@@ -16,7 +16,7 @@ pub struct LocatedStream<I> {
 }
 
 impl<I> StreamOnce for LocatedStream<I>
-    where I: StreamOnce<Item = char>
+    where I: StreamOnce<Item = char>,
 {
     type Item = I::Item;
     type Range = I::Range;
@@ -37,7 +37,7 @@ impl<I> StreamOnce for LocatedStream<I>
 }
 
 impl<'input, I> RangeStream for LocatedStream<I>
-    where I: RangeStream<Item = char, Range = &'input str>
+    where I: RangeStream<Item = char, Range = &'input str>,
 {
     fn uncons_range(&mut self,
                     len: usize)
@@ -54,7 +54,7 @@ impl<'input, I> RangeStream for LocatedStream<I>
     fn uncons_while<F>(&mut self,
                        mut predicate: F)
                        -> Result<Self::Range, CombineError<Self::Item, Self::Range>>
-        where F: FnMut(Self::Item) -> bool
+        where F: FnMut(Self::Item) -> bool,
     {
         let location = &mut self.location;
         self.input.uncons_while(|t| {
@@ -184,7 +184,7 @@ impl<Id> fmt::Display for Token<Id> {
 
 impl<Id> Token<Id> {
     pub fn map<Id2, F>(&self, f: F) -> Token<Id2>
-        where F: FnOnce(&Id) -> Id2
+        where F: FnOnce(&Id) -> Id2,
     {
         use self::Token::*;
         match *self {
@@ -308,7 +308,7 @@ fn is_operator_char(c: char) -> bool {
 }
 
 pub struct Lexer<'input, I>
-    where I: RangeStream<Item = char, Range = &'input str>
+    where I: RangeStream<Item = char, Range = &'input str>,
 {
     pub env: LanguageEnv<'input, LocatedStream<I>>,
     pub input: Option<LocatedStream<I>>,
@@ -322,7 +322,7 @@ pub struct Lexer<'input, I>
 
 impl<'input, I> Lexer<'input, I>
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug + 'input
+          I::Range: fmt::Debug + 'input,
 {
     pub fn new(input: I) -> Lexer<'input, I> {
         let env = LanguageEnv::new(LanguageDef {
@@ -688,7 +688,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                      mut token: SpannedToken<&'input str>)
                      -> Result<SpannedToken<&'input str>, Error<&'input str>>
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug
+          I::Range: fmt::Debug,
 {
     if token.value == Token::EOF {
         token.span.start.column = CharPos(0);
@@ -927,7 +927,7 @@ fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
                                       context: Context)
                                       -> Result<(), Error<&'input str>>
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug + 'input
+          I::Range: fmt::Debug + 'input,
 {
     let next = lexer.next_token();
     let span = next.span;
@@ -946,7 +946,7 @@ fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
 
 impl<'input, I> StreamOnce for Lexer<'input, I>
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug
+          I::Range: fmt::Debug,
 {
     type Item = Token<&'input str>;
     type Range = Token<&'input str>;
