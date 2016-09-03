@@ -377,8 +377,8 @@ impl<'a> Typecheck<'a> {
                                    -> Result<TcType, Error> {
         fn tail_expr(e: &mut SpannedExpr<TcIdent>) -> &mut SpannedExpr<TcIdent> {
             match e.value {
-                ast::Expr::Let(_, ref mut b) |
-                ast::Expr::Type(_, ref mut b) => tail_expr(b),
+                Expr::LetBindings(_, ref mut b) |
+                Expr::TypeBindings(_, ref mut b) => tail_expr(b),
                 _ => e,
             }
         }
@@ -432,8 +432,8 @@ impl<'a> Typecheck<'a> {
                         TailCall::TailCall => {
                             // Call typecheck_ again with the next expression
                             expr = match moving(expr).value {
-                                ast::Expr::Let(_, ref mut new_expr) |
-                                ast::Expr::Type(_, ref mut new_expr) => new_expr,
+                                Expr::LetBindings(_, ref mut new_expr) |
+                                Expr::TypeBindings(_, ref mut new_expr) => new_expr,
                                 _ => panic!("Only Let and Type expressions can tailcall"),
                             };
                             scope_count += 1;
@@ -568,7 +568,7 @@ impl<'a> Typecheck<'a> {
                 expected_alt_type.ok_or(EmptyCase)
                     .map(TailCall::Type)
             }
-            Expr::Let(ref mut bindings, _) => {
+            Expr::LetBindings(ref mut bindings, _) => {
                 try!(self.typecheck_bindings(bindings));
                 Ok(TailCall::TailCall)
             }
@@ -621,7 +621,7 @@ impl<'a> Typecheck<'a> {
                 lambda.id.typ = typ.clone();
                 Ok(TailCall::Type(typ))
             }
-            Expr::Type(ref mut bindings, ref expr) => {
+            Expr::TypeBindings(ref mut bindings, ref expr) => {
                 try!(self.typecheck_type_bindings(bindings, expr));
                 Ok(TailCall::TailCall)
             }
@@ -855,7 +855,7 @@ impl<'a> Typecheck<'a> {
                     None => self.subs.new_var(),
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
-                if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
+                if let Expr::Lambda(ref mut lambda) = bind.expression.value {
                     if let Pattern::Ident(ref name) = bind.name.value {
                         lambda.id.name = name.name.clone();
                     }

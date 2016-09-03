@@ -38,7 +38,7 @@ fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
 }
 
 fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
-    no_loc(Expr::Let(vec![Binding {
+    no_loc(Expr::LetBindings(vec![Binding {
                               comment: None,
                               name: no_loc(Pattern::Ident(intern(s))),
                               typ: None,
@@ -118,7 +118,7 @@ fn type_decl(name: String, args: Vec<Generic<String>>, typ: AstType<String>, bod
 }
 
 fn type_decls(binds: Vec<TypeBinding<String>>, body: SpExpr) -> SpExpr {
-    no_loc(Expr::Type(binds, Box::new(body)))
+    no_loc(Expr::TypeBindings(binds, Box::new(body)))
 }
 
 fn record(fields: Vec<(String, Option<SpExpr>)>) -> SpExpr {
@@ -210,7 +210,7 @@ fn let_type_decl() {
     let _ = ::env_logger::init();
     let e = parse_new("let f: Int = \\x y -> x + y in f 1 2");
     match e.value {
-        Expr::Let(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
+        Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
         _ => assert!(false),
     }
 }
@@ -361,17 +361,17 @@ fn let_pattern() {
     let _ = ::env_logger::init();
     let e = parse_new("let {x, y} = test in x");
     assert_eq!(e,
-               no_loc(Expr::Let(vec![Binding {
-                                         comment: None,
-                                         name: no_loc(Pattern::Record {
-                                             id: String::new(),
-                                             types: Vec::new(),
-                                             fields: vec![(intern("x"), None), (intern("y"), None)],
-                                         }),
-                                         typ: None,
-                                         arguments: vec![],
-                                         expression: id("test"),
-                                     }],
+               no_loc(Expr::LetBindings(vec![Binding {
+                                                 comment: None,
+                                                 name: no_loc(Pattern::Record {
+                                                     id: String::new(),
+                                                     types: Vec::new(),
+                                                     fields: vec![(intern("x"), None), (intern("y"), None)],
+                                                 }),
+                                                 typ: None,
+                                                 arguments: vec![],
+                                                 expression: id("test"),
+                                             }],
                                 Box::new(id("x")))));
 }
 
@@ -522,13 +522,13 @@ id
 "#;
     let e = parse_new(text);
     assert_eq!(e,
-               no_loc(Expr::Let(vec![Binding {
-                                         comment: Some("The identity function".into()),
-                                         name: no_loc(Pattern::Ident(intern("id"))),
-                                         typ: None,
-                                         arguments: vec![intern("x")],
-                                         expression: id("x"),
-                                     }],
+               no_loc(Expr::LetBindings(vec![Binding {
+                                                 comment: Some("The identity function".into()),
+                                                 name: no_loc(Pattern::Ident(intern("id"))),
+                                                 typ: None,
+                                                 arguments: vec![intern("x")],
+                                                 expression: id("x"),
+                                             }],
                                 Box::new(id("id")))));
 }
 
@@ -645,13 +645,13 @@ x
 "#;
     let e = parse(text);
     assert_eq!(e,
-               Ok(no_loc(Expr::Let(vec![Binding {
-                                            comment: None,
-                                            name: no_loc(Pattern::Ident(intern("x"))),
-                                            typ: Some(Type::app(typ("->"),
-                                                                vec![typ("Int"), typ("Int")])),
-                                            arguments: vec![],
-                                            expression: id("x"),
-                                        }],
+               Ok(no_loc(Expr::LetBindings(vec![Binding {
+                                                    comment: None,
+                                                    name: no_loc(Pattern::Ident(intern("x"))),
+                                                    typ: Some(Type::app(typ("->"),
+                                                                        vec![typ("Int"), typ("Int")])),
+                                                    arguments: vec![],
+                                                    expression: id("x"),
+                                                }],
                                    Box::new(id("x"))))));
 }

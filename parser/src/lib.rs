@@ -94,8 +94,8 @@ impl<'input, 'lexer> StreamOnce for Wrapper<'input, 'lexer> {
 }
 
 enum LetOrType<Id: AstId> {
-    Let(Vec<Binding<Id>>),
-    Type(Vec<TypeBinding<Id::Untyped>>),
+    LetBindings(Vec<Binding<Id>>),
+    TypeBindings(Vec<TypeBinding<Id::Untyped>>),
 }
 
 macro_rules! match_parser {
@@ -368,7 +368,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
          token(Token::In).expected("`in` or an expression in the same column as the `let`"))
             .map(|(first, mut bindings, _): (_, Vec<_>, _)| {
                 bindings.insert(0, first);
-                LetOrType::Type(bindings)
+                LetOrType::TypeBindings(bindings)
             })
             .parse_state(input)
     }
@@ -470,11 +470,11 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         for binding in let_bindings.into_iter().rev() {
             resulting_expr = pos::spanned(binding.span,
                                           match binding.value {
-                                              LetOrType::Let(bindings) => {
-                                                  Expr::Let(bindings, Box::new(resulting_expr))
+                                              LetOrType::LetBindings(bindings) => {
+                                                  Expr::LetBindings(bindings, Box::new(resulting_expr))
                                               }
-                                              LetOrType::Type(bindings) => {
-                                                  Expr::Type(bindings, Box::new(resulting_expr))
+                                              LetOrType::TypeBindings(bindings) => {
+                                                  Expr::TypeBindings(bindings, Box::new(resulting_expr))
                                               }
                                           });
         }
@@ -725,7 +725,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .map(|(b, bindings, _)| {
                 let mut bindings: Vec<_> = bindings;
                 bindings.insert(0, b);
-                LetOrType::Let(bindings)
+                LetOrType::LetBindings(bindings)
             })
             .parse_state(input)
     }

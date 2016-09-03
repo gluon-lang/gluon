@@ -197,7 +197,7 @@ impl<F> FindVisitor<F>
                     _ => self.visit_expr(l),
                 }
             }
-            Expr::Let(ref bindings, ref expr) => {
+            Expr::LetBindings(ref bindings, ref expr) => {
                 for bind in bindings {
                     self.visit_pattern(&bind.name);
                 }
@@ -211,7 +211,7 @@ impl<F> FindVisitor<F>
                     _ => self.visit_expr(expr),
                 }
             }
-            Expr::Type(_, ref expr) => self.visit_expr(expr),
+            Expr::TypeBindings(_, ref expr) => self.visit_expr(expr),
             Expr::Projection(ref expr, ref id) => {
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);

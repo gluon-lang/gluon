@@ -400,7 +400,7 @@ impl<'a> Compiler<'a> {
         }
         for expr in exprs.iter().rev() {
             let mut count = 0;
-            if let Expr::Let(ref bindings, _) = expr.value {
+            if let Expr::LetBindings(ref bindings, _) = expr.value {
                 for binding in bindings {
                     count += function.pop_pattern(&binding.name.value);
                 }
@@ -501,7 +501,7 @@ impl<'a> Compiler<'a> {
                     function.emit(instr);
                 }
             }
-            Expr::Let(ref bindings, ref body) => {
+            Expr::LetBindings(ref bindings, ref body) => {
                 self.stack_constructors.enter_scope();
                 let stack_start = function.stack_size;
                 // Index where the instruction to create the first closure should be at
@@ -675,7 +675,7 @@ impl<'a> Compiler<'a> {
                 function.stack_size -= vars;
                 function.function.inner_functions.push(cf);
             }
-            Expr::Type(ref type_bindings, ref expr) => {
+            Expr::TypeBindings(ref type_bindings, ref expr) => {
                 for bind in type_bindings {
                     self.stack_types.insert(bind.alias.name.clone(), bind.alias.clone());
                     let typ = bind.alias.typ.as_ref().expect("TypeBinding type").clone();

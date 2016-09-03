@@ -224,7 +224,7 @@ pub enum Expr<Id: AstId> {
     IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     BinOp(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
-    Let(Vec<Binding<Id>>, Box<SpannedExpr<Id>>),
+    LetBindings(Vec<Binding<Id>>, Box<SpannedExpr<Id>>),
     Projection(Box<SpannedExpr<Id>>, Id),
     Array(Array<Id>),
     Record {
@@ -234,7 +234,7 @@ pub enum Expr<Id: AstId> {
     },
     Lambda(Lambda<Id>),
     Tuple(Vec<SpannedExpr<Id>>),
-    Type(Vec<TypeBinding<Id::Untyped>>, Box<SpannedExpr<Id>>),
+    TypeBindings(Vec<TypeBinding<Id::Untyped>>, Box<SpannedExpr<Id>>),
     Block(Vec<SpannedExpr<Id>>),
 }
 
@@ -280,7 +280,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
             v.visit_identifier(id);
             v.visit_expr(&mut **rhs);
         }
-        Expr::Let(ref mut bindings, ref mut body) => {
+        Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 v.visit_expr(&mut bind.expression);
@@ -327,7 +327,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
             v.visit_identifier(&mut lambda.id);
             v.visit_expr(&mut *lambda.body);
         }
-        Expr::Type(_, ref mut expr) => v.visit_expr(&mut *expr),
+        Expr::TypeBindings(_, ref mut expr) => v.visit_expr(&mut *expr),
         Expr::Ident(ref mut id) => v.visit_identifier(id),
         Expr::Literal(..) => (),
         Expr::Block(ref mut exprs) => {
@@ -401,8 +401,8 @@ impl<Id> Typed for Expr<Id>
                 }
                 panic!("Expected function type in binop");
             }
-            Expr::Let(_, ref expr) |
-            Expr::Type(_, ref expr) => expr.env_type_of(env),
+            Expr::LetBindings(_, ref expr) |
+            Expr::TypeBindings(_, ref expr) => expr.env_type_of(env),
             Expr::App(ref func, ref args) => {
                 get_return_type(env, &func.env_type_of(env), args.len())
             }
