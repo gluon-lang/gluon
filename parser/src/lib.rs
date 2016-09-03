@@ -517,7 +517,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                   sep_end_by(self.expr(), token(Token::Comma)))
                          .map(|exprs| {
                              loc(Expr::Array(Array {
-                                 id: self.empty_id.clone(),
+                                 typ: Type::hole(),
                                  expressions: exprs,
                              }))
                          })])
@@ -682,7 +682,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                         }
                     }
                     Pattern::Record {
-                        id: self.empty_id.clone(),
+                        typ: Type::hole(),
                         types: types,
                         fields: patterns,
                     }
@@ -765,7 +765,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                         }
                     }
                     Expr::Record {
-                        typ: self.empty_id.clone(),
+                        typ: Type::hole(),
                         types: types,
                         exprs: exprs,
                     }

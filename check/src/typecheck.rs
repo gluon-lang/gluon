@@ -342,7 +342,8 @@ impl<'a> Typecheck<'a> {
     /// type variable in the `id 2` call.
     fn generalize_variables(&mut self, level: u32, expr: &mut SpannedExpr<TcIdent>) {
         self.type_variables.enter_scope();
-        // Replace all type variables with their inferred types
+
+        // Replaces all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b: 'a> {
             level: u32,
             tc: &'a mut Typecheck<'b>,
@@ -351,8 +352,14 @@ impl<'a> Typecheck<'a> {
             type T = TcIdent;
 
             fn visit_identifier(&mut self, id: &mut TcIdent) {
-                if let Some(typ) = self.tc.finish_type(self.level, &id.typ) {
-                    id.typ = typ;
+                if let Some(finished) = self.tc.finish_type(self.level, &id.typ) {
+                    id.typ = finished;
+                }
+            }
+
+            fn visit_typ(&mut self, typ: &mut ast::AstType<Symbol>) {
+                if let Some(finished) = self.tc.finish_type(self.level, typ) {
+                    *typ = finished;
                 }
             }
         }
@@ -361,6 +368,7 @@ impl<'a> Typecheck<'a> {
                 tc: self,
             }
             .visit_expr(expr);
+
         self.type_variables.exit_scope();
     }
 
@@ -602,14 +610,14 @@ impl<'a> Typecheck<'a> {
                     _ => Err(InvalidProjection(record.clone())),
                 }
             }
-            Expr::Array(ref mut a) => {
+            Expr::Array(ref mut array) => {
                 let mut expected_type = self.subs.new_var();
-                for expr in &mut a.expressions {
+                for expr in &mut array.expressions {
                     let typ = self.typecheck(expr);
                     expected_type = self.unify_span(expr.span, &expected_type, typ);
                 }
-                a.id.typ = Type::array(expected_type);
-                Ok(TailCall::Type(a.id.typ.clone()))
+                array.typ = Type::array(expected_type);
+                Ok(TailCall::Type(array.typ.clone()))
             }
             Expr::Lambda(ref mut lambda) => {
                 let loc = format!("lambda:{}", expr.span.start);
@@ -624,7 +632,7 @@ impl<'a> Typecheck<'a> {
                 try!(self.typecheck_type_bindings(bindings, expr));
                 Ok(TailCall::TailCall)
             }
-            Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
+            Expr::Record { ref mut typ, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
                     .map(|&mut (ref mut symbol, ref mut typ)| {
                         if let Some(ref mut typ) = *typ {
@@ -659,14 +667,14 @@ impl<'a> Typecheck<'a> {
                 let (id_type, record_type) = match result {
                     Ok(x) => x,
                     Err(_) => {
-                        id.typ = Type::record(types.clone(), fields);
-                        return Ok(TailCall::Type(id.typ.clone()));
+                        *typ = Type::record(types.clone(), fields);
+                        return Ok(TailCall::Type(typ.clone()));
                     }
                 };
                 let id_type = self.instantiate(&id_type);
                 let record_type = self.instantiate_(&record_type);
                 try!(self.unify(&Type::record(types, fields), record_type));
-                id.typ = id_type.clone();
+                *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
             }
             Expr::Block(ref mut exprs) => {
@@ -718,8 +726,10 @@ impl<'a> Typecheck<'a> {
                 };
                 self.unify_span(span, &match_type, return_type)
             }
-            Pattern::Record { ref mut id, types: ref mut associated_types, ref fields } => {
-                id.typ = match_type.clone();
+            Pattern::Record { typ: ref mut curr_typ,
+                              types: ref mut associated_types,
+                              ref fields } => {
+                *curr_typ = match_type.clone();
                 let mut match_type = self.remove_alias(match_type);
                 let mut types = Vec::new();
                 let new_type = match *match_type {
@@ -1009,15 +1019,15 @@ impl<'a> Typecheck<'a> {
                        types::display_type(&self.symbols, &id.typ));
                 self.intersect_type(level, &id.name, &id.typ);
             }
-            Pattern::Record { ref mut id, ref mut fields, .. } => {
+            Pattern::Record { ref mut typ, ref mut fields, .. } => {
                 debug!("{{ .. }}: {}",
                        types::display_type(&self.symbols,
                                            &bind.expression
                                                .env_type_of(&self.environment)));
-                if let Some(typ) = self.finish_type(level, &id.typ) {
-                    id.typ = typ;
+                if let Some(finished) = self.finish_type(level, typ) {
+                    *typ = finished;
                 }
-                let record_type = self.remove_alias(id.typ.clone());
+                let record_type = self.remove_alias(typ.clone());
                 with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
                     let field_name = binding.as_ref().unwrap_or(field_name);
                     self.intersect_type(level, field_name, field_type);

@@ -185,7 +185,7 @@ pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
 pub enum Pattern<Id: AstId> {
     Constructor(Id, Vec<Id>),
     Record {
-        id: Id,
+        typ: AstType<Id::Untyped>,
         types: Vec<(Id::Untyped, Option<Id::Untyped>)>,
         fields: Vec<(Id::Untyped, Option<Id::Untyped>)>,
     },
@@ -200,14 +200,12 @@ pub struct Alternative<Id: AstId> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Array<Id: AstId> {
-    // Field to store the type of the array since type_of returns a borrowed reference
-    pub id: Id,
+    pub typ: AstType<Id::Untyped>,
     pub expressions: Vec<SpannedExpr<Id>>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Lambda<Id: AstId> {
-    // Field to store the type of the array since type_of returns a borrowed reference
     pub id: Id,
     pub arguments: Vec<Id>,
     pub body: Box<SpannedExpr<Id>>,
@@ -239,7 +237,7 @@ pub enum Expr<Id: AstId> {
     Array(Array<Id>),
     /// Record construction
     Record {
-        typ: Id,
+        typ: AstType<Id::Untyped>,
         types: Vec<(Id::Untyped, Option<AstType<Id::Untyped>>)>,
         exprs: Vec<(Id::Untyped, Option<SpannedExpr<Id>>)>,
     },
@@ -274,12 +272,17 @@ pub struct ValueBinding<Id: AstId> {
 /// call `walk_mut_*` to continue traversing the tree.
 pub trait MutVisitor {
     type T: AstId;
+
     fn visit_expr(&mut self, e: &mut SpannedExpr<Self::T>) {
         walk_mut_expr(self, e);
     }
+
     fn visit_pattern(&mut self, e: &mut SpannedPattern<Self::T>) {
         walk_mut_pattern(self, &mut e.value);
     }
+
+    fn visit_typ(&mut self, _: &mut AstType<<Self::T as AstId>::Untyped>) {}
+
     fn visit_identifier(&mut self, _: &mut Self::T) {}
 }
 
@@ -320,13 +323,13 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
             }
         }
         Expr::Array(ref mut a) => {
-            v.visit_identifier(&mut a.id);
+            v.visit_typ(&mut a.typ);
             for expr in &mut a.expressions {
                 v.visit_expr(expr);
             }
         }
         Expr::Record { ref mut typ, ref mut exprs, .. } => {
-            v.visit_identifier(typ);
+            v.visit_typ(typ);
             for field in exprs {
                 if let Some(ref mut expr) = field.1 {
                     v.visit_expr(expr);
@@ -362,8 +365,8 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
                 v.visit_identifier(a);
             }
         }
-        Pattern::Record { ref mut id, .. } => {
-            v.visit_identifier(id);
+        Pattern::Record { ref mut typ, .. } => {
+            v.visit_typ(typ);
         }
         Pattern::Ident(ref mut id) => v.visit_identifier(id),
     }
@@ -422,9 +425,9 @@ impl<Id> Typed for Expr<Id>
                 get_return_type(env, &func.env_type_of(env), args.len())
             }
             Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),
-            Expr::Array(ref a) => a.id.env_type_of(env),
+            Expr::Array(ref array) => array.typ.clone(),
             Expr::Lambda(ref lambda) => lambda.id.env_type_of(env),
-            Expr::Record { ref typ, .. } => typ.env_type_of(env),
+            Expr::Record { ref typ, .. } => typ.clone(),
             Expr::Block(ref exprs) => exprs.last().expect("Expr in block").env_type_of(env),
         }
     }
@@ -445,7 +448,7 @@ impl Typed for Pattern<TcIdent<Symbol>> {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
             Pattern::Ident(ref name) => name.env_type_of(env),
-            Pattern::Record { ref id, .. } => id.env_type_of(env),
+            Pattern::Record { ref typ, .. } => typ.clone(),
             Pattern::Constructor(ref id, ref args) => get_return_type(env, &id.typ, args.len()),
         }
     }
