@@ -170,7 +170,7 @@ impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum LiteralEnum {
+pub enum Literal {
     Byte(u8),
     Integer(i64),
     Float(f64),
@@ -216,25 +216,40 @@ pub struct Lambda<Id: AstId> {
 /// Expression which contains a location
 pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
 
+/// The representation of gluon's expression syntax
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
+    /// Identifiers
     Ident(Id),
-    Literal(LiteralEnum),
-    Call(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
-    IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Option<Box<SpannedExpr<Id>>>),
+    /// Literal values
+    Literal(Literal),
+    /// Function application, eg. `f x`
+    App(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
+    /// Lambda abstraction, eg. `\x y -> x * y`
+    Lambda(Lambda<Id>),
+    /// If-then-else conditional
+    IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
+    /// Pattern match expression
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
-    BinOp(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
-    Let(Vec<Binding<Id>>, Box<SpannedExpr<Id>>),
-    FieldAccess(Box<SpannedExpr<Id>>, Id),
+    /// Infix operator expression eg. `f >> g`
+    Infix(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
+    /// Record field projection, eg. `value.field`
+    Projection(Box<SpannedExpr<Id>>, Id),
+    /// Array construction
     Array(Array<Id>),
+    /// Record construction
     Record {
         typ: Id,
         types: Vec<(Id::Untyped, Option<AstType<Id::Untyped>>)>,
         exprs: Vec<(Id::Untyped, Option<SpannedExpr<Id>>)>,
     },
-    Lambda(Lambda<Id>),
+    /// Tuple construction
     Tuple(Vec<SpannedExpr<Id>>),
-    Type(Vec<TypeBinding<Id::Untyped>>, Box<SpannedExpr<Id>>),
+    /// Declare a series of value bindings
+    LetBindings(Vec<ValueBinding<Id>>, Box<SpannedExpr<Id>>),
+    /// Declare a series of type aliases
+    TypeBindings(Vec<TypeBinding<Id::Untyped>>, Box<SpannedExpr<Id>>),
+    /// A group of sequenced expressions
     Block(Vec<SpannedExpr<Id>>),
 }
 
@@ -246,7 +261,7 @@ pub struct TypeBinding<Id> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Binding<Id: AstId> {
+pub struct ValueBinding<Id: AstId> {
     pub comment: Option<String>,
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id::Untyped>>,
@@ -273,29 +288,27 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
         Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
             v.visit_expr(&mut **if_true);
-            if let Some(ref mut if_false) = *if_false {
-                v.visit_expr(&mut **if_false);
-            }
+            v.visit_expr(&mut **if_false);
         }
-        Expr::BinOp(ref mut lhs, ref mut id, ref mut rhs) => {
+        Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
             v.visit_expr(&mut **lhs);
             v.visit_identifier(id);
             v.visit_expr(&mut **rhs);
         }
-        Expr::Let(ref mut bindings, ref mut body) => {
+        Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 v.visit_expr(&mut bind.expression);
             }
             v.visit_expr(&mut **body);
         }
-        Expr::Call(ref mut func, ref mut args) => {
+        Expr::App(ref mut func, ref mut args) => {
             v.visit_expr(&mut **func);
             for arg in args {
                 v.visit_expr(arg);
             }
         }
-        Expr::FieldAccess(ref mut expr, ref mut id) => {
+        Expr::Projection(ref mut expr, ref mut id) => {
             v.visit_expr(&mut **expr);
             v.visit_identifier(id);
         }
@@ -329,7 +342,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
             v.visit_identifier(&mut lambda.id);
             v.visit_expr(&mut *lambda.body);
         }
-        Expr::Type(_, ref mut expr) => v.visit_expr(&mut *expr),
+        Expr::TypeBindings(_, ref mut expr) => v.visit_expr(&mut *expr),
         Expr::Ident(ref mut id) => v.visit_identifier(id),
         Expr::Literal(..) => (),
         Expr::Block(ref mut exprs) => {
@@ -380,14 +393,14 @@ impl<Id> Typed for Expr<Id>
     fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
         match *self {
             Expr::Ident(ref id) |
-            Expr::FieldAccess(_, ref id) => id.env_type_of(env),
+            Expr::Projection(_, ref id) => id.env_type_of(env),
             Expr::Literal(ref lit) => {
                 match *lit {
-                    LiteralEnum::Integer(_) => Type::int(),
-                    LiteralEnum::Float(_) => Type::float(),
-                    LiteralEnum::Byte(_) => Type::byte(),
-                    LiteralEnum::String(_) => Type::string(),
-                    LiteralEnum::Char(_) => Type::char(),
+                    Literal::Integer(_) => Type::int(),
+                    Literal::Float(_) => Type::float(),
+                    Literal::Byte(_) => Type::byte(),
+                    Literal::String(_) => Type::string(),
+                    Literal::Char(_) => Type::char(),
                 }
             }
             Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),
@@ -395,7 +408,7 @@ impl<Id> Typed for Expr<Id>
                 assert!(exprs.is_empty());
                 Type::unit()
             }
-            Expr::BinOp(_, ref op, _) => {
+            Expr::Infix(_, ref op, _) => {
                 if let Type::App(_, ref args) = *op.env_type_of(env) {
                     if let Type::App(_, ref args) = *args[1] {
                         return args[1].clone();
@@ -403,9 +416,9 @@ impl<Id> Typed for Expr<Id>
                 }
                 panic!("Expected function type in binop");
             }
-            Expr::Let(_, ref expr) |
-            Expr::Type(_, ref expr) => expr.env_type_of(env),
-            Expr::Call(ref func, ref args) => {
+            Expr::LetBindings(_, ref expr) |
+            Expr::TypeBindings(_, ref expr) => expr.env_type_of(env),
+            Expr::App(ref func, ref args) => {
                 get_return_type(env, &func.env_type_of(env), args.len())
             }
             Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),
@@ -438,7 +451,7 @@ impl Typed for Pattern<TcIdent<Symbol>> {
     }
 }
 
-impl Typed for Binding<TcIdent<Symbol>> {
+impl Typed for ValueBinding<TcIdent<Symbol>> {
     type Id = Symbol;
 
     fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {

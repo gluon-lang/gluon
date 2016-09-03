@@ -137,7 +137,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
 
     assert_eq!(result, expected);
     match expr.value {
-        ast::Expr::Let(ref bindings, _) => {
+        ast::Expr::LetBindings(ref bindings, _) => {
             assert_eq!(bindings[0].expression.env_type_of(&env), expr_expected)
         }
         _ => assert!(false),
@@ -194,7 +194,7 @@ in test2 1";
     let expected = Ok(typ("Int"));
 
     assert_eq!(result, expected);
-    assert_match!(expr.value, ast::Expr::Let(ref binds, _) => {
+    assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
         assert_match!(*binds[0].env_type_of(&env), Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
@@ -743,11 +743,11 @@ test 1
 
     assert!(result.is_ok());
     let (bind, call) = match expr.value {
-        Expr::Type(_, ref body) => {
+        Expr::TypeBindings(_, ref body) => {
             match body.value {
-                Expr::Let(_, ref body) => {
+                Expr::LetBindings(_, ref body) => {
                     match body.value {
-                        Expr::Let(ref binds, ref body) => (&binds[0], body),
+                        Expr::LetBindings(ref binds, ref body) => (&binds[0], body),
                         _ => panic!(),
                     }
                 }
@@ -757,7 +757,7 @@ test 1
         _ => panic!(),
     };
     let call_id = match call.value {
-        Expr::Call(ref f, _) => {
+        Expr::App(ref f, _) => {
             match f.value {
                 Expr::Ident(ref id) => id,
                 _ => panic!(),
@@ -782,9 +782,9 @@ a.id
 "#;
     let (expr, _result) = support::typecheck_expr(text);
     let t = match expr.value {
-        Expr::Let(_, ref body) => {
+        Expr::LetBindings(_, ref body) => {
             match body.value {
-                Expr::FieldAccess(_, ref ident) => &ident.typ,
+                Expr::Projection(_, ref ident) => &ident.typ,
                 _ => panic!(),
             }
         }

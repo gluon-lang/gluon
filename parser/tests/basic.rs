@@ -26,11 +26,11 @@ fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
 }
 
 fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
-    no_loc(Expr::BinOp(Box::new(l), intern(s), Box::new(r)))
+    no_loc(Expr::Infix(Box::new(l), intern(s), Box::new(r)))
 }
 
 fn int(i: i64) -> SpExpr {
-    no_loc(Expr::Literal(LiteralEnum::Integer(i)))
+    no_loc(Expr::Literal(Literal::Integer(i)))
 }
 
 fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
@@ -38,7 +38,7 @@ fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
 }
 
 fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
-    no_loc(Expr::Let(vec![Binding {
+    no_loc(Expr::LetBindings(vec![ValueBinding {
                               comment: None,
                               name: no_loc(Pattern::Ident(intern(s))),
                               typ: None,
@@ -61,10 +61,9 @@ fn field(s: &str, typ: AstType<String>) -> Field<String> {
 
 fn typ(s: &str) -> AstType<String> {
     assert!(s.len() != 0);
-    let is_var = s.chars().next().unwrap().is_lowercase();
     match s.parse() {
         Ok(b) => Type::builtin(b),
-        Err(()) if is_var => generic_ty(s),
+        Err(()) if s.starts_with(char::is_lowercase) => generic_ty(s),
         Err(()) => Type::ident(intern(s)),
     }
 }
@@ -80,12 +79,12 @@ fn generic(s: &str) -> Generic<String> {
     }
 }
 
-fn call(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
-    no_loc(Expr::Call(Box::new(e), args))
+fn app(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
+    no_loc(Expr::App(Box::new(e), args))
 }
 
 fn if_else(p: SpExpr, if_true: SpExpr, if_false: SpExpr) -> SpExpr {
-    no_loc(Expr::IfElse(Box::new(p), Box::new(if_true), Some(Box::new(if_false))))
+    no_loc(Expr::IfElse(Box::new(p), Box::new(if_true), Box::new(if_false)))
 }
 
 fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
@@ -118,7 +117,7 @@ fn type_decl(name: String, args: Vec<Generic<String>>, typ: AstType<String>, bod
 }
 
 fn type_decls(binds: Vec<TypeBinding<String>>, body: SpExpr) -> SpExpr {
-    no_loc(Expr::Type(binds, Box::new(body)))
+    no_loc(Expr::TypeBindings(binds, Box::new(body)))
 }
 
 fn record(fields: Vec<(String, Option<SpExpr>)>) -> SpExpr {
@@ -136,7 +135,7 @@ fn record_a(types: Vec<(String, Option<AstType<String>>)>,
 }
 
 fn field_access(expr: SpExpr, field: &str) -> SpExpr {
-    no_loc(Expr::FieldAccess(Box::new(expr), intern(field)))
+    no_loc(Expr::Projection(Box::new(expr), intern(field)))
 }
 
 fn array(fields: Vec<SpExpr>) -> SpExpr {
@@ -193,7 +192,7 @@ fn application() {
                  lambda("",
                         vec![intern("x"), intern("y")],
                         binop(id("x"), "+", id("y"))),
-                 call(id("f"), vec![int(1), int(2)]));
+                 app(id("f"), vec![int(1), int(2)]));
     assert_eq!(e, a);
 }
 
@@ -210,7 +209,7 @@ fn let_type_decl() {
     let _ = ::env_logger::init();
     let e = parse_new("let f: Int = \\x y -> x + y in f 1 2");
     match e.value {
-        Expr::Let(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
+        Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
         _ => assert!(false),
     }
 }
@@ -219,7 +218,7 @@ fn let_args() {
     let _ = ::env_logger::init();
     let e = parse_new("let f x y = y in f 2");
     assert_eq!(e,
-               let_a("f", &["x", "y"], id("y"), call(id("f"), vec![int(2)])));
+               let_a("f", &["x", "y"], id("y"), app(id("f"), vec![int(2)])));
 }
 
 #[test]
@@ -286,7 +285,7 @@ fn op_identifier() {
                     lambda("",
                            vec![intern("x"), intern("y")],
                            binop(id("x"), "#Int==", id("y"))),
-                    call(id("=="), vec![int(1), int(2)])));
+                    app(id("=="), vec![int(1), int(2)])));
 }
 #[test]
 fn variant_type() {
@@ -299,7 +298,7 @@ fn variant_type() {
                type_decl(intern("Option"),
                          vec![generic("a")],
                          Type::variants(vec![(intern("None"), none), (intern("Some"), some)]),
-                         call(id("Some"), vec![int(1)])));
+                         app(id("Some"), vec![int(1)])));
 }
 #[test]
 fn case_expr() {
@@ -361,17 +360,17 @@ fn let_pattern() {
     let _ = ::env_logger::init();
     let e = parse_new("let {x, y} = test in x");
     assert_eq!(e,
-               no_loc(Expr::Let(vec![Binding {
-                                         comment: None,
-                                         name: no_loc(Pattern::Record {
-                                             id: String::new(),
-                                             types: Vec::new(),
-                                             fields: vec![(intern("x"), None), (intern("y"), None)],
-                                         }),
-                                         typ: None,
-                                         arguments: vec![],
-                                         expression: id("test"),
-                                     }],
+               no_loc(Expr::LetBindings(vec![ValueBinding {
+                                                 comment: None,
+                                                 name: no_loc(Pattern::Record {
+                                                     id: String::new(),
+                                                     types: Vec::new(),
+                                                     fields: vec![(intern("x"), None), (intern("y"), None)],
+                                                 }),
+                                                 typ: None,
+                                                 arguments: vec![],
+                                                 expression: id("test"),
+                                             }],
                                 Box::new(id("x")))));
 }
 
@@ -435,7 +434,7 @@ fn span_string_literal() {
 }
 
 #[test]
-fn span_call() {
+fn span_app() {
     let _ = ::env_logger::init();
 
     let e = parse_new(r#" f 123 "asd""#);
@@ -501,7 +500,7 @@ fn span_field_access() {
                    end: BytePos(8),
                });
     match expr.value {
-        Expr::FieldAccess(ref e, _) => {
+        Expr::Projection(ref e, _) => {
             assert_eq!(e.span,
                        Span {
                            start: BytePos(0),
@@ -522,13 +521,13 @@ id
 "#;
     let e = parse_new(text);
     assert_eq!(e,
-               no_loc(Expr::Let(vec![Binding {
-                                         comment: Some("The identity function".into()),
-                                         name: no_loc(Pattern::Ident(intern("id"))),
-                                         typ: None,
-                                         arguments: vec![intern("x")],
-                                         expression: id("x"),
-                                     }],
+               no_loc(Expr::LetBindings(vec![ValueBinding {
+                                                 comment: Some("The identity function".into()),
+                                                 name: no_loc(Pattern::Ident(intern("id"))),
+                                                 typ: None,
+                                                 arguments: vec![intern("x")],
+                                                 expression: id("x"),
+                                             }],
                                 Box::new(id("id")))));
 }
 
@@ -605,7 +604,7 @@ fn partial_field_access() {
                        start: BytePos(0),
                        end: BytePos(0),
                    },
-                   value: Expr::FieldAccess(Box::new(id("test")), intern("")),
+                   value: Expr::Projection(Box::new(id("test")), intern("")),
                }));
 }
 
@@ -629,7 +628,7 @@ test
                                                    start: BytePos(0),
                                                    end: BytePos(0),
                                                },
-                                               value: Expr::FieldAccess(Box::new(id("test")),
+                                               value: Expr::Projection(Box::new(id("test")),
                                                                         intern("")),
                                            },
                                            id("test")]),
@@ -645,13 +644,13 @@ x
 "#;
     let e = parse(text);
     assert_eq!(e,
-               Ok(no_loc(Expr::Let(vec![Binding {
-                                            comment: None,
-                                            name: no_loc(Pattern::Ident(intern("x"))),
-                                            typ: Some(Type::app(typ("->"),
-                                                                vec![typ("Int"), typ("Int")])),
-                                            arguments: vec![],
-                                            expression: id("x"),
-                                        }],
+               Ok(no_loc(Expr::LetBindings(vec![ValueBinding {
+                                                    comment: None,
+                                                    name: no_loc(Pattern::Ident(intern("x"))),
+                                                    typ: Some(Type::app(typ("->"),
+                                                                        vec![typ("Int"), typ("Int")])),
+                                                    arguments: vec![],
+                                                    expression: id("x"),
+                                                }],
                                    Box::new(id("x"))))));
 }

@@ -224,7 +224,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         }
                     }
                 }
-                Expr::BinOp(ref mut l, ref mut id, ref mut r) => {
+                Expr::Infix(ref mut l, ref mut id, ref mut r) => {
                     if let Some(new_id) = try!(self.rename(id.id(), &id.typ)) {
                         debug!("Rename {} = {}",
                                self.symbols.string(&id.name),
@@ -246,7 +246,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         self.env.stack_types.exit_scope();
                     }
                 }
-                Expr::Let(ref mut bindings, ref mut expr) => {
+                Expr::LetBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
                     self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
@@ -281,7 +281,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     self.visit_expr(&mut lambda.body);
                     self.env.stack.exit_scope();
                 }
-                Expr::Type(ref bindings, ref mut body) => {
+                Expr::TypeBindings(ref bindings, ref mut body) => {
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
                         self.stack_type(bind.name.clone(), expr.span, &bind.alias);

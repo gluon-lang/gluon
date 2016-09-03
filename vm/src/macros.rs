@@ -2,8 +2,7 @@
 use std::sync::RwLock;
 use std::error::Error as StdError;
 
-use base::ast;
-use base::ast::MutVisitor;
+use base::ast::{self, Expr, MutVisitor, SpannedExpr};
 use base::types::TcIdent;
 use base::error::Errors;
 use base::fnv::FnvMap;
@@ -18,21 +17,24 @@ pub type Error = Box<StdError + Send + Sync>;
 pub trait Macro: ::mopa::Any + Send + Sync {
     fn expand(&self,
               env: &Thread,
-              arguments: &mut [ast::SpannedExpr<TcIdent>])
-              -> Result<ast::SpannedExpr<TcIdent>, Error>;
+              arguments: &mut [SpannedExpr<TcIdent>])
+              -> Result<SpannedExpr<TcIdent>, Error>;
+
     fn clone(&self) -> Box<Macro>;
 }
+
 mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
-    where F: Fn(&Thread, &mut [ast::SpannedExpr<TcIdent>]) -> Result<ast::SpannedExpr<TcIdent>, Error>
+    where F: Fn(&Thread, &mut [SpannedExpr<TcIdent>]) -> Result<SpannedExpr<TcIdent>, Error>
 {
     fn expand(&self,
               env: &Thread,
-              arguments: &mut [ast::SpannedExpr<TcIdent>])
-              -> Result<ast::SpannedExpr<TcIdent>, Error> {
+              arguments: &mut [SpannedExpr<TcIdent>])
+              -> Result<SpannedExpr<TcIdent>, Error> {
         self(env, arguments)
     }
+
     fn clone(&self) -> Box<Macro> {
         Box::new(Clone::clone(self))
     }
@@ -63,7 +65,7 @@ impl MacroEnv {
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub fn run(&self, env: &Thread, expr: &mut ast::SpannedExpr<TcIdent>) -> Result<(), Errors<Error>> {
+    pub fn run(&self, env: &Thread, expr: &mut SpannedExpr<TcIdent>) -> Result<(), Errors<Error>> {
         let mut expander = MacroExpander {
             env: env,
             macros: self,
@@ -87,11 +89,11 @@ struct MacroExpander<'a> {
 impl<'a> MutVisitor for MacroExpander<'a> {
     type T = TcIdent;
 
-    fn visit_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) {
+    fn visit_expr(&mut self, expr: &mut SpannedExpr<TcIdent>) {
         let replacement = match expr.value {
-            ast::Expr::Call(ref mut id, ref mut args) => {
+            Expr::App(ref mut id, ref mut args) => {
                 match id.value {
-                    ast::Expr::Ident(ref id) => {
+                    Expr::Ident(ref id) => {
                         match self.macros.get(id.name.as_ref()) {
                             Some(m) => {
                                 match m.expand(self.env, args) {

@@ -7,7 +7,7 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use base::ast::{self, Expr, LiteralEnum, SpannedExpr};
+use base::ast::{self, Expr, Literal, SpannedExpr};
 use base::metadata::Metadata;
 use base::pos;
 use base::symbol::Symbol;
@@ -125,7 +125,7 @@ impl<I> Macro for Import<I>
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
         match arguments[0].value {
-            Expr::Literal(LiteralEnum::String(ref filename)) => {
+            Expr::Literal(Literal::String(ref filename)) => {
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded

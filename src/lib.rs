@@ -574,7 +574,7 @@ impl Compiler {
         fn assign_last_body(l: &mut ast::SpannedExpr<ast::TcIdent<Symbol>>,
                             original_expr: ast::SpannedExpr<ast::TcIdent<Symbol>>) {
             match l.value {
-                ast::Expr::Let(_, ref mut e) => {
+                ast::Expr::LetBindings(_, ref mut e) => {
                     assign_last_body(e, original_expr);
                 }
                 _ => *l = original_expr,

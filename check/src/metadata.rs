@@ -18,7 +18,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
         env: Environment<'b>,
     }
     impl<'b> MetadataVisitor<'b> {
-        fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::Binding<TcIdent>) {
+        fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::ValueBinding<TcIdent>) {
             match bind.name.value {
                 ast::Pattern::Ident(ref mut id) => {
                     let metadata = bind.comment
@@ -102,7 +102,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                         module: module,
                     }
                 }
-                ast::Expr::Let(ref mut bindings, ref mut expr) => {
+                ast::Expr::LetBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
                     if is_recursive {
@@ -124,7 +124,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                     self.env.stack.exit_scope();
                     result
                 }
-                ast::Expr::Type(ref mut bindings, ref mut expr) => {
+                ast::Expr::TypeBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
                     for bind in bindings.iter_mut() {
                         let maybe_metadata = bind.comment.as_ref().map(|comment| {

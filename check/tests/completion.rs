@@ -81,7 +81,7 @@ and g x = "asd"
 }
 
 #[test]
-fn function_call() {
+fn function_app() {
     let result = find_type(r#"
 let f x = f x
 1

@@ -93,9 +93,9 @@ impl<'input, 'lexer> StreamOnce for Wrapper<'input, 'lexer> {
     }
 }
 
-enum LetOrType<Id: AstId> {
-    Let(Vec<Binding<Id>>),
-    Type(Vec<TypeBinding<Id::Untyped>>),
+enum Bindings<Id: AstId> {
+    LetBindings(Vec<ValueBinding<Id>>),
+    TypeBindings(Vec<TypeBinding<Id::Untyped>>),
 }
 
 macro_rules! match_parser {
@@ -353,7 +353,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn type_decl(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
+    fn type_decl(&self, input: I) -> ParseResult<Bindings<Id>, I> {
         debug!("type_decl");
         let type_binding = |t| {
             (try(optional(self.doc_comment()).skip(token(t))),
@@ -368,7 +368,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
          token(Token::In).expected("`in` or an expression in the same column as the `let`"))
             .map(|(first, mut bindings, _): (_, Vec<_>, _)| {
                 bindings.insert(0, first);
-                LetOrType::Type(bindings)
+                Bindings::TypeBindings(bindings)
             })
             .parse_state(input)
     }
@@ -422,7 +422,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         (arg_expr1, many(arg_expr2))
             .map(|(f, args): (SpannedExpr<Id>, Vec<SpannedExpr<_>>)| {
                 if let Some(end) = args.last().map(|last| last.span.end) {
-                    pos::spanned2(f.span.start, end, Expr::Call(Box::new(f), args))
+                    pos::spanned2(f.span.start, end, Expr::App(Box::new(f), args))
                 } else {
                     f
                 }
@@ -470,11 +470,11 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         for binding in let_bindings.into_iter().rev() {
             resulting_expr = pos::spanned(binding.span,
                                           match binding.value {
-                                              LetOrType::Let(bindings) => {
-                                                  Expr::Let(bindings, Box::new(resulting_expr))
+                                              Bindings::LetBindings(bindings) => {
+                                                  Expr::LetBindings(bindings, Box::new(resulting_expr))
                                               }
-                                              LetOrType::Type(bindings) => {
-                                                  Expr::Type(bindings, Box::new(resulting_expr))
+                                              Bindings::TypeBindings(bindings) => {
+                                                  Expr::TypeBindings(bindings, Box::new(resulting_expr))
                                               }
                                           });
         }
@@ -490,11 +490,11 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                      &mut self.parser(ParserEnv::<I, F>::case_of),
                      &mut self.parser(ParserEnv::<I, F>::lambda),
                      &mut self.integer()
-                         .map(|i| loc(Expr::Literal(LiteralEnum::Integer(i)))),
+                         .map(|i| loc(Expr::Literal(Literal::Integer(i)))),
                      &mut self.byte()
-                         .map(|i| loc(Expr::Literal(LiteralEnum::Byte(i)))),
+                         .map(|i| loc(Expr::Literal(Literal::Byte(i)))),
                      &mut self.float()
-                         .map(|f| loc(Expr::Literal(LiteralEnum::Float(f)))),
+                         .map(|f| loc(Expr::Literal(Literal::Float(f)))),
                      &mut self.ident()
                          .map(Expr::Ident)
                          .map(&loc),
@@ -508,9 +508,9 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                       }
                                   })),
                      &mut self.string_literal()
-                         .map(|s| loc(Expr::Literal(LiteralEnum::String(s)))),
+                         .map(|s| loc(Expr::Literal(Literal::String(s)))),
                      &mut self.char_literal()
-                         .map(|s| loc(Expr::Literal(LiteralEnum::Char(s)))),
+                         .map(|s| loc(Expr::Literal(Literal::Char(s)))),
                      &mut between(token(Token::Open(Delimiter::Bracket)),
                                   token(Token::Close(Delimiter::Bracket)),
                                   sep_end_by(self.expr(), token(Token::Comma)))
@@ -524,7 +524,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .map(|(expr, fields): (_, Vec<_>)| {
                 debug!("Parsed expr {:?}", expr);
                 fields.into_iter().fold(expr, |expr, (id, end)| {
-                    pos::spanned2(span.start, end, Expr::FieldAccess(Box::new(expr), id))
+                    pos::spanned2(span.start, end, Expr::Projection(Box::new(expr), id))
                 })
             })
             .parse_state(input)
@@ -600,7 +600,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .or(sep_by1(expression_parser(term, op, |l, op, r| {
                             pos::spanned2(l.span.start,
                                           r.span.end,
-                                          Expr::BinOp(Box::new(l), self.intern(&op), Box::new(r)))
+                                          Expr::Infix(Box::new(l), self.intern(&op), Box::new(r)))
                         }),
                         token(Token::Semi))
                 .map(|mut exprs: Vec<SpannedExpr<Id>>| {
@@ -705,12 +705,12 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                  start: start,
                                  end: f.span.end,
                              },
-                             Expr::IfElse(Box::new(b), Box::new(t), Some(Box::new(f))))
+                             Expr::IfElse(Box::new(b), Box::new(t), Box::new(f)))
             })
             .parse_state(input)
     }
 
-    fn let_in(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
+    fn let_in(&self, input: I) -> ParseResult<Bindings<Id>, I> {
         let binding = |t| {
             (try(optional(self.doc_comment()).skip(token(t))),
              self.parser(ParserEnv::<I, F>::binding))
@@ -725,12 +725,12 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .map(|(b, bindings, _)| {
                 let mut bindings: Vec<_> = bindings;
                 bindings.insert(0, b);
-                LetOrType::Let(bindings)
+                Bindings::LetBindings(bindings)
             })
             .parse_state(input)
     }
 
-    fn binding(&self, input: I) -> ParseResult<Binding<Id>, I> {
+    fn binding(&self, input: I) -> ParseResult<ValueBinding<Id>, I> {
         let (name, input) = try!(self.pattern().parse_state(input));
         let (arguments, input) = match name.value {
             Pattern::Ident(_) => {
@@ -742,7 +742,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         let ((typ, _, e), input) = try!(input.combine(|input| {
             (optional(type_sig), token(Token::Equal), self.expr()).parse_state(input)
         }));
-        Ok((Binding {
+        Ok((ValueBinding {
             comment: None,
             name: name,
             typ: typ,
