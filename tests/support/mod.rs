@@ -6,6 +6,7 @@ use gluon::vm::thread::{RootedThread, Thread};
 use gluon::import::Import;
 use gluon::Compiler;
 
+#[allow(dead_code)]
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
         .implicit_prelude(false)
