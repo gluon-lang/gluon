@@ -80,8 +80,8 @@ fn generic(s: &str) -> Generic<String> {
     }
 }
 
-fn call(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
-    no_loc(Expr::Call(Box::new(e), args))
+fn app(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
+    no_loc(Expr::App(Box::new(e), args))
 }
 
 fn if_else(p: SpExpr, if_true: SpExpr, if_false: SpExpr) -> SpExpr {
@@ -193,7 +193,7 @@ fn application() {
                  lambda("",
                         vec![intern("x"), intern("y")],
                         binop(id("x"), "+", id("y"))),
-                 call(id("f"), vec![int(1), int(2)]));
+                 app(id("f"), vec![int(1), int(2)]));
     assert_eq!(e, a);
 }
 
@@ -219,7 +219,7 @@ fn let_args() {
     let _ = ::env_logger::init();
     let e = parse_new("let f x y = y in f 2");
     assert_eq!(e,
-               let_a("f", &["x", "y"], id("y"), call(id("f"), vec![int(2)])));
+               let_a("f", &["x", "y"], id("y"), app(id("f"), vec![int(2)])));
 }
 
 #[test]
@@ -286,7 +286,7 @@ fn op_identifier() {
                     lambda("",
                            vec![intern("x"), intern("y")],
                            binop(id("x"), "#Int==", id("y"))),
-                    call(id("=="), vec![int(1), int(2)])));
+                    app(id("=="), vec![int(1), int(2)])));
 }
 #[test]
 fn variant_type() {
@@ -299,7 +299,7 @@ fn variant_type() {
                type_decl(intern("Option"),
                          vec![generic("a")],
                          Type::variants(vec![(intern("None"), none), (intern("Some"), some)]),
-                         call(id("Some"), vec![int(1)])));
+                         app(id("Some"), vec![int(1)])));
 }
 #[test]
 fn case_expr() {
@@ -435,7 +435,7 @@ fn span_string_literal() {
 }
 
 #[test]
-fn span_call() {
+fn span_app() {
     let _ = ::env_logger::init();
 
     let e = parse_new(r#" f 123 "asd""#);

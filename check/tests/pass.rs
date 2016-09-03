@@ -757,7 +757,7 @@ test 1
         _ => panic!(),
     };
     let call_id = match call.value {
-        Expr::Call(ref f, _) => {
+        Expr::App(ref f, _) => {
             match f.value {
                 Expr::Ident(ref id) => id,
                 _ => panic!(),

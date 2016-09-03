@@ -180,7 +180,7 @@ impl<F> FindVisitor<F>
                     self.on_found.nothing()
                 }
             }
-            Call(ref func, ref args) => {
+            App(ref func, ref args) => {
                 self.visit_one(once(&**func).chain(args));
             }
             IfElse(ref pred, ref if_true, ref if_false) => {

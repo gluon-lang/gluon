@@ -480,7 +480,7 @@ impl<'a> Typecheck<'a> {
                     ast::LiteralEnum::Char(_) => Type::char(),
                 }))
             }
-            ast::Expr::Call(ref mut func, ref mut args) => {
+            ast::Expr::App(ref mut func, ref mut args) => {
                 let mut func_type = self.typecheck(&mut **func);
                 for arg in args.iter_mut() {
                     let f = Type::function(vec![self.subs.new_var()], self.subs.new_var());

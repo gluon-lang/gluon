@@ -220,7 +220,7 @@ pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
 pub enum Expr<Id: AstId> {
     Ident(Id),
     Literal(LiteralEnum),
-    Call(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
+    App(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
     IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     BinOp(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
@@ -287,7 +287,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
             }
             v.visit_expr(&mut **body);
         }
-        Expr::Call(ref mut func, ref mut args) => {
+        Expr::App(ref mut func, ref mut args) => {
             v.visit_expr(&mut **func);
             for arg in args {
                 v.visit_expr(arg);
@@ -403,7 +403,7 @@ impl<Id> Typed for Expr<Id>
             }
             Expr::Let(_, ref expr) |
             Expr::Type(_, ref expr) => expr.env_type_of(env),
-            Expr::Call(ref func, ref args) => {
+            Expr::App(ref func, ref args) => {
                 get_return_type(env, &func.env_type_of(env), args.len())
             }
             Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),

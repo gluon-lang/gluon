@@ -422,7 +422,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         (arg_expr1, many(arg_expr2))
             .map(|(f, args): (SpannedExpr<Id>, Vec<SpannedExpr<_>>)| {
                 if let Some(end) = args.last().map(|last| last.span.end) {
-                    pos::spanned2(f.span.start, end, Expr::Call(Box::new(f), args))
+                    pos::spanned2(f.span.start, end, Expr::App(Box::new(f), args))
                 } else {
                     f
                 }

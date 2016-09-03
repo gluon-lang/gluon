@@ -551,7 +551,7 @@ impl<'a> Compiler<'a> {
                 }
                 return Ok(Some(body));
             }
-            Expr::Call(ref func, ref args) => {
+            Expr::App(ref func, ref args) => {
                 if let Expr::Ident(ref id) = func.value {
                     if let Some(Constructor(tag, num_args)) = self.find(id.id(), function) {
                         for arg in args.iter() {

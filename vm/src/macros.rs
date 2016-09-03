@@ -89,7 +89,7 @@ impl<'a> MutVisitor for MacroExpander<'a> {
 
     fn visit_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) {
         let replacement = match expr.value {
-            ast::Expr::Call(ref mut id, ref mut args) => {
+            ast::Expr::App(ref mut id, ref mut args) => {
                 match id.value {
                     ast::Expr::Ident(ref id) => {
                         match self.macros.get(id.name.as_ref()) {
