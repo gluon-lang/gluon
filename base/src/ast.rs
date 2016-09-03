@@ -216,25 +216,40 @@ pub struct Lambda<Id: AstId> {
 /// Expression which contains a location
 pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
 
+/// The representation of gluon's expression syntax
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
+    /// Identifiers
     Ident(Id),
+    /// Literal values
     Literal(Literal),
+    /// Function application, eg. `f x`
     App(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
+    /// Lambda abstraction, eg. `\x y -> x * y`
+    Lambda(Lambda<Id>),
+    /// If-then-else conditional
     IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
+    /// Pattern match expression
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
+    /// Infix operator expression eg. `f >> g`
     Infix(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
-    LetBindings(Vec<ValueBinding<Id>>, Box<SpannedExpr<Id>>),
+    /// Record field projection, eg. `value.field`
     Projection(Box<SpannedExpr<Id>>, Id),
+    /// Array construction
     Array(Array<Id>),
+    /// Record construction
     Record {
         typ: Id,
         types: Vec<(Id::Untyped, Option<AstType<Id::Untyped>>)>,
         exprs: Vec<(Id::Untyped, Option<SpannedExpr<Id>>)>,
     },
-    Lambda(Lambda<Id>),
+    /// Tuple construction
     Tuple(Vec<SpannedExpr<Id>>),
+    /// Declare a series of value bindings
+    LetBindings(Vec<ValueBinding<Id>>, Box<SpannedExpr<Id>>),
+    /// Declare a series of type aliases
     TypeBindings(Vec<TypeBinding<Id::Untyped>>, Box<SpannedExpr<Id>>),
+    /// A group of sequenced expressions
     Block(Vec<SpannedExpr<Id>>),
 }
 
