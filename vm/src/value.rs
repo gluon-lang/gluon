@@ -566,7 +566,7 @@ impl ValueArray {
     }
 
     pub unsafe fn initialize<I>(&mut self, iter: I)
-        where I: IntoIterator<Item = Value>
+        where I: IntoIterator<Item = Value>,
     {
         let iter = iter.into_iter();
         match self.repr {
@@ -706,7 +706,7 @@ fn deep_clone_ptr<T, A>(value: GcPtr<T>,
                         visited: &mut FnvMap<*const (), Value>,
                         alloc: A)
                         -> Result<StdResult<Value, GcPtr<T>>>
-    where A: FnOnce(&T) -> Result<(Value, GcPtr<T>)>
+    where A: FnOnce(&T) -> Result<(Value, GcPtr<T>)>,
 {
     let key = &*value as *const T as *const ();
     let new_ptr = match visited.entry(key) {

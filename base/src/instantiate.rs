@@ -193,14 +193,14 @@ impl Instantiator {
 
     /// Instantiates a type, replacing all generic variables with fresh type variables
     pub fn instantiate<F>(&mut self, typ: &TcType, on_unbound: F) -> TcType
-        where F: FnMut(&Symbol) -> TcType
+        where F: FnMut(&Symbol) -> TcType,
     {
         self.named_variables.clear();
         self.instantiate_(typ, on_unbound)
     }
 
     pub fn instantiate_<F>(&mut self, typ: &TcType, mut on_unbound: F) -> TcType
-        where F: FnMut(&Symbol) -> TcType
+        where F: FnMut(&Symbol) -> TcType,
     {
         instantiate(typ.clone(),
                     |id| Some(self.variable_for(id, &mut on_unbound)))
@@ -208,7 +208,7 @@ impl Instantiator {
 }
 
 pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-    where F: FnMut(&Generic<Symbol>) -> Option<TcType>
+    where F: FnMut(&Generic<Symbol>) -> Option<TcType>,
 {
     types::walk_move_type(typ,
                           &mut |typ| {

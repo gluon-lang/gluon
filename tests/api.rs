@@ -9,17 +9,16 @@ use gluon::Compiler;
 use gluon::import::Import;
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new()
-        .load_script(vm, filename, input)
+    Compiler::new().load_script(vm, filename, input)
 }
 
 fn make_vm() -> RootedThread {
     let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
-          .and_then(|import| import.downcast_ref::<Import>())
-          .expect("Import macro")
-          .add_path("..");
+        .and_then(|import| import.downcast_ref::<Import>())
+        .expect("Import macro")
+        .add_path("..");
     vm
 }
 
@@ -37,7 +36,7 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
     load_script(&mut vm, "mul", &mul).unwrap_or_else(|err| panic!("{}", err));
     {
         let mut f: FunctionRef<fn(VmInt) -> VmInt> = vm.get_global("add10")
-                                                    .unwrap();
+            .unwrap();
         let result = f.call(2).unwrap();
         assert_eq!(result, 12);
     }
@@ -52,8 +51,8 @@ fn root_data() {
 
     #[derive(Debug)]
     struct Test(VmInt);
-    impl Userdata for Test { }
-    impl Traverseable for Test { }
+    impl Userdata for Test {}
+    impl Traverseable for Test {}
     impl VmType for Test {
         type Type = Test;
     }
@@ -66,16 +65,16 @@ fn root_data() {
         r.0 + i
     }
     vm.register_type::<Test>("Test", &[])
-      .unwrap_or_else(|_| panic!("Could not add type"));
+        .unwrap_or_else(|_| panic!("Could not add type"));
     vm.define_global("test", {
-          let test: fn(_, _) -> _ = test;
-          test
-      })
-      .unwrap();
+            let test: fn(_, _) -> _ = test;
+            test
+        })
+        .unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
     let mut script_fn: FunctionRef<fn(Test) -> VmInt> = vm.get_global("script_fn").unwrap();
     let result = script_fn.call(Test(123))
-                          .unwrap();
+        .unwrap();
     assert_eq!(result, 124);
 }
 
@@ -94,10 +93,10 @@ test "hello"
 
     let vm = make_vm();
     vm.define_global("test", {
-          let test: fn(_) -> _ = test;
-          test
-      })
-      .unwrap();
+            let test: fn(_) -> _ = test;
+            test
+        })
+        .unwrap();
 
     let result = Compiler::new().run_expr::<String>(&vm, "<top>", expr).unwrap();
     let expected = ("hello world".to_string(), Type::string());
@@ -118,10 +117,10 @@ sum_bytes [100b, 42b, 3b, 15b]
 
     let vm = make_vm();
     vm.define_global("sum_bytes", {
-          let sum_bytes: fn(_) -> _ = sum_bytes;
-          sum_bytes
-      })
-      .unwrap();
+            let sum_bytes: fn(_) -> _ = sum_bytes;
+            sum_bytes
+        })
+        .unwrap();
 
     let result = Compiler::new().run_expr::<u8>(&vm, "<top>", expr).unwrap();
     let expected = (160, Type::byte());

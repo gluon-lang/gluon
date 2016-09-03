@@ -18,7 +18,7 @@ struct Reference<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Userdata for Reference<T> where T: Any + Send + Sync {}
+impl<T> Userdata for Reference<T> where T: Any + Send + Sync, {}
 
 impl<T> fmt::Debug for Reference<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -34,7 +34,7 @@ impl<T> Traverseable for Reference<T> {
 
 impl<T> VmType for Reference<T>
     where T: VmType,
-          T::Type: Sized
+          T::Type: Sized,
 {
     type Type = Reference<T::Type>;
 

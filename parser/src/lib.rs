@@ -60,7 +60,7 @@ type LanguageParser<'parser, I: 'parser, F: 'parser, T> = EnvParser<&'parser Par
 /// constructed through calling `make_ident`.
 struct ParserEnv<I, F>
     where F: IdentEnv,
-          I: Stream
+          I: Stream,
 {
     empty_id: F::Ident,
     make_ident: Rc<RefCell<F>>,
@@ -135,7 +135,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
           F: IdentEnv<Ident = Id>,
           Id: AstId + Clone + PartialEq + fmt::Debug,
-          I::Range: fmt::Debug
+          I::Range: fmt::Debug,
 {
     fn intern(&self, s: &str) -> Id {
         self.make_ident.borrow_mut().from_str(s)
@@ -468,15 +468,16 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             }
         }
         for binding in let_bindings.into_iter().rev() {
-            resulting_expr = pos::spanned(binding.span,
-                                          match binding.value {
-                                              Bindings::LetBindings(bindings) => {
-                                                  Expr::LetBindings(bindings, Box::new(resulting_expr))
-                                              }
-                                              Bindings::TypeBindings(bindings) => {
-                                                  Expr::TypeBindings(bindings, Box::new(resulting_expr))
-                                              }
-                                          });
+            resulting_expr =
+                pos::spanned(binding.span,
+                             match binding.value {
+                                 Bindings::LetBindings(bindings) => {
+                                     Expr::LetBindings(bindings, Box::new(resulting_expr))
+                                 }
+                                 Bindings::TypeBindings(bindings) => {
+                                     Expr::TypeBindings(bindings, Box::new(resulting_expr))
+                                 }
+                             });
         }
         Ok((resulting_expr, Consumed::Consumed(input)))
     }
@@ -561,10 +562,12 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 
     fn op<'a>(&'a self) -> LanguageParser<'a, I, F, &'input str> {
         fn inner<'input, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<&'input str, I>
-            where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
+            where I: Stream<Item = Token<&'input str>,
+                            Range = Token<&'input str>,
+                            Position = Span<BytePos>>,
                   F: IdentEnv<Ident = Id>,
                   Id: AstId + Clone + PartialEq + fmt::Debug,
-                  I::Range: fmt::Debug
+                  I::Range: fmt::Debug,
         {
             satisfy(|t: Token<&'input str>| {
                     match t {
@@ -733,9 +736,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     fn binding(&self, input: I) -> ParseResult<ValueBinding<Id>, I> {
         let (name, input) = try!(self.pattern().parse_state(input));
         let (arguments, input) = match name.value {
-            Pattern::Ident(_) => {
-                try!(input.combine(|input| many(self.ident()).parse_state(input)))
-            }
+            Pattern::Ident(_) => try!(input.combine(|input| many(self.ident()).parse_state(input))),
             _ => (Vec::new(), input),
         };
         let type_sig = token(Token::Colon).with(self.typ());
@@ -777,7 +778,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         where P1: Parser<Input = I> + Clone,
               P2: Parser<Input = I> + Clone,
               O: FromIterator<(Id::Untyped, Result<Option<P1::Output>, Option<P2::Output>>)>,
-              G: FnOnce(&mut Parser<Input = I, Output = O>) -> R
+              G: FnOnce(&mut Parser<Input = I, Output = O>) -> R,
     {
         let mut field = self.parser(ParserEnv::<I, F>::parse_ident2)
             .then(move |(id, typ)| {
@@ -828,7 +829,7 @@ pub fn parse_expr<'env, 'input, Id>
     (make_ident: &'env mut IdentEnv<Ident = Id>,
      input: &'input str)
      -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
-    where Id: AstId + Clone + PartialEq + fmt::Debug
+    where Id: AstId + Clone + PartialEq + fmt::Debug,
 {
     let make_ident = Rc::new(RefCell::new(make_ident));
     let lexer = Lexer::new(input);
@@ -862,7 +863,7 @@ pub fn parse_expr<'env, 'input, Id>
 }
 
 fn static_error<'input, I>(error: ParseError<I>) -> Error
-    where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>
+    where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
 {
     let errors = error.errors
         .into_iter()

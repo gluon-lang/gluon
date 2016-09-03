@@ -47,7 +47,7 @@ impl From<instantiate::Error> for Error<Symbol> {
 }
 
 impl<I> fmt::Display for TypeError<I>
-    where I: fmt::Display + AsRef<str>
+    where I: fmt::Display + AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -100,7 +100,7 @@ impl<I> Substitutable for AstType<I> {
     }
 
     fn traverse<F>(&self, f: &mut F)
-        where F: types::Walker<AstType<I>>
+        where F: types::Walker<AstType<I>>,
     {
         types::walk_type_(self, f)
     }
@@ -113,7 +113,7 @@ impl<'a> Unifiable<State<'a>> for TcType {
                     other: &Self,
                     unifier: &mut UnifierState<'a, U>)
                     -> Result<Option<Self>, Error<Symbol>>
-        where U: Unifier<State<'a>, Self>
+        where U: Unifier<State<'a>, Self>,
     {
         let reduced_aliases = unifier.state.reduced_aliases.len();
         debug!("{:?} <=> {:?}", self, other);
@@ -147,7 +147,7 @@ fn do_zip_match<'a, U>(self_: &TcType,
                        other: &TcType,
                        unifier: &mut UnifierState<'a, U>)
                        -> Result<Option<TcType>, Error<Symbol>>
-    where U: Unifier<State<'a>, TcType>
+    where U: Unifier<State<'a>, TcType>,
 {
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
     match (&**self_, &**other) {
@@ -221,7 +221,7 @@ fn find_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
                      l: TcType,
                      r_id: &SymbolRef)
                      -> Result<Option<TcType>, ()>
-    where U: Unifier<State<'a>, TcType>
+    where U: Unifier<State<'a>, TcType>,
 {
     let reduced_aliases = unifier.state.reduced_aliases.len();
     let result = find_alias_(unifier, l, r_id);
@@ -239,7 +239,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                       mut l: TcType,
                       r_id: &SymbolRef)
                       -> Result<Option<TcType>, ()>
-    where U: Unifier<State<'a>, TcType>
+    where U: Unifier<State<'a>, TcType>,
 {
     let mut did_alias = false;
     loop {
@@ -254,11 +254,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                 if l_id == r_id {
                     // If the aliases matched before going through an alias there is no need to
                     // return a replacement type
-                    return Ok(if did_alias {
-                        Some(l.clone())
-                    } else {
-                        None
-                    });
+                    return Ok(if did_alias { Some(l.clone()) } else { None });
                 }
                 did_alias = true;
                 match instantiate::maybe_remove_alias(unifier.state.env, &l) {
@@ -297,7 +293,7 @@ fn try_zip_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
                         actual: &TcType,
                         through_alias: &mut bool)
                         -> Result<(TcType, TcType), ()>
-    where U: Unifier<State<'a>, TcType>
+    where U: Unifier<State<'a>, TcType>,
 {
     let mut l = expected.clone();
     if let Some(r_id) = actual.name() {
@@ -328,7 +324,7 @@ fn try_with_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
                          expected: &TcType,
                          actual: &TcType)
                          -> Result<Option<TcType>, Error<Symbol>>
-    where U: Unifier<State<'a>, TcType>
+    where U: Unifier<State<'a>, TcType>,
 {
     let l = try!(instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
                                                      unifier.state.env,
@@ -353,7 +349,7 @@ fn try_with_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
 fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
     where I: Iterator<Item = (&'a T, &'a T)>,
           F: FnMut(&'a T, &'a T) -> Option<T>,
-          T: Clone + 'a
+          T: Clone + 'a,
 {
     let mut out = Vec::new();
     walk_move_types2(types, false, &mut out, &mut f);
@@ -367,7 +363,7 @@ fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
 fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<T>, f: &mut F)
     where I: Iterator<Item = (&'a T, &'a T)>,
           F: FnMut(&'a T, &'a T) -> Option<T>,
-          T: Clone + 'a
+          T: Clone + 'a,
 {
     if let Some((l, r)) = types.next() {
         let new = f(l, r);

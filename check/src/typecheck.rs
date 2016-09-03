@@ -5,7 +5,8 @@ use std::fmt;
 use std::mem;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{self, DisplayEnv, Expr, Literal, MutVisitor, Pattern, SpannedExpr, SpannedPattern, Typed};
+use base::ast::{self, DisplayEnv, Expr, Literal, MutVisitor, Pattern};
+use base::ast::{SpannedExpr, SpannedPattern, Typed};
 use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
@@ -47,15 +48,13 @@ pub enum TypeError<I> {
     /// Type is not a type which has any fields
     InvalidProjection(ast::AstType<I>),
     /// Expected to find a record with the following fields
-    UndefinedRecord {
-        fields: Vec<I>,
-    },
+    UndefinedRecord { fields: Vec<I> },
     /// Found a case expression without any alternatives
     EmptyCase,
 }
 
 impl<I> From<kindcheck::Error<I>> for TypeError<I>
-    where I: PartialEq + Clone
+    where I: PartialEq + Clone,
 {
     fn from(e: kindcheck::Error<I>) -> TypeError<I> {
         match e {
@@ -1310,7 +1309,7 @@ impl<'a> Typecheck<'a> {
 }
 
 fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(&Symbol, &Option<Symbol>, &TcType)
+    where F: FnMut(&Symbol, &Option<Symbol>, &TcType),
 {
     if let Type::Record { fields: ref field_types, .. } = **typ {
         for field in fields {

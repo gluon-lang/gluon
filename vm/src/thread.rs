@@ -43,14 +43,14 @@ pub enum Status {
 /// A rooted value
 #[derive(Clone, PartialEq)]
 pub struct RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     vm: T,
     value: Value,
 }
 
 impl<T> Drop for RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     fn drop(&mut self) {
         // TODO not safe if the root changes order of being dropped with another root
@@ -59,7 +59,7 @@ impl<T> Drop for RootedValue<T>
 }
 
 impl<T> fmt::Debug for RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.value)
@@ -67,7 +67,7 @@ impl<T> fmt::Debug for RootedValue<T>
 }
 
 impl<T> Deref for RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     type Target = Value;
     fn deref(&self) -> &Value {
@@ -76,7 +76,7 @@ impl<T> Deref for RootedValue<T>
 }
 
 impl<T> RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     pub fn vm(&self) -> &Thread {
         &self.vm
@@ -165,7 +165,7 @@ impl<'b> Context<'b> {
 }
 fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
     where D: DataDef + Traverseable,
-          D::Value: Sized + Any
+          D::Value: Sized + Any,
 {
     let roots = Roots {
         vm: unsafe {
@@ -337,7 +337,7 @@ impl Thread {
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
-        where T: Pushable<'vm> + VmType
+        where T: Pushable<'vm> + VmType,
     {
         let value = {
             let mut stack = self.get_stack();
@@ -353,7 +353,7 @@ impl Thread {
     /// Retrieves the global called `name`.
     /// Fails if the global does not exist or it does not have the correct type.
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
-        where T: Getable<'vm> + VmType
+        where T: Getable<'vm> + VmType,
     {
         let env = self.get_env();
         let (value, actual) = try!(env.get_binding(name));
@@ -412,7 +412,7 @@ impl Thread {
 
     /// Pushes a value to the top of the stack
     pub fn push<'vm, T>(&'vm self, v: T) -> Result<()>
-        where T: Pushable<'vm>
+        where T: Pushable<'vm>,
     {
         let mut stack = self.stack.lock().unwrap();
         v.push(self, &mut stack)
@@ -452,7 +452,7 @@ impl Thread {
     }
 
     fn with_roots<F, R>(&self, stack: &Stack, f: F) -> R
-        where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R
+        where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R,
     {
         // For this to be safe we require that the received stack is the same one that is in this
         // VM
@@ -597,7 +597,7 @@ impl ThreadInternal for Thread {
     /// Takes the stack as it may collect if the collection limit has been reached.
     fn alloc<D>(&self, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+              D::Value: Sized + Any,
     {
         self.with_roots(stack,
                         |gc, roots| unsafe { gc.alloc_and_collect(roots, def) })
@@ -605,7 +605,7 @@ impl ThreadInternal for Thread {
 
     fn alloc_ignore_limit<D>(&self, def: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+              D::Value: Sized + Any,
     {
         self.local_gc.lock().unwrap().alloc_ignore_limit(def)
     }
@@ -994,11 +994,7 @@ impl<'b> Context<'b> {
                                 .to_string()))
                         }
                     };
-                    self.stack.push(Value::Tag(if data_tag == tag {
-                        1
-                    } else {
-                        0
-                    }));
+                    self.stack.push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
                 }
                 Split => {
                     match self.stack.pop() {
@@ -1158,7 +1154,7 @@ impl<'b> Context<'b> {
 fn binop<'b, F, T, R>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> R,
           T: Getable<'b> + fmt::Debug,
-          R: Pushable<'b>
+          R: Pushable<'b>,
 {
     let r = stack.pop();
     let l = stack.pop();

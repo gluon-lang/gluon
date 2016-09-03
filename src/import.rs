@@ -115,7 +115,7 @@ impl<I> Import<I> {
 }
 
 impl<I> Macro for Import<I>
-    where I: Importer
+    where I: Importer,
 {
     fn expand(&self,
               vm: &Thread,

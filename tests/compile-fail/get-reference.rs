@@ -4,8 +4,9 @@ use gluon::vm::Variants;
 use gluon::vm::internal::Value;
 use gluon::vm::api::Getable;
 
-fn f(_: &'static str) { }
+fn f(_: &'static str) {}
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 fn main() {
     unsafe {
         let vm = new_vm();

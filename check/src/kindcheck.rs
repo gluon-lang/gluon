@@ -32,7 +32,7 @@ pub struct KindCheck<'a> {
 }
 
 fn walk_move_kind<F>(kind: RcKind, f: &mut F) -> RcKind
-    where F: FnMut(&Kind) -> Option<RcKind>
+    where F: FnMut(&Kind) -> Option<RcKind>,
 {
     match walk_move_kind2(&kind, f) {
         Some(kind) => kind,
@@ -40,7 +40,7 @@ fn walk_move_kind<F>(kind: RcKind, f: &mut F) -> RcKind
     }
 }
 fn walk_move_kind2<F>(kind: &RcKind, f: &mut F) -> Option<RcKind>
-    where F: FnMut(&Kind) -> Option<RcKind>
+    where F: FnMut(&Kind) -> Option<RcKind>,
 {
     let new = f(kind);
     let new2 = {
@@ -270,7 +270,7 @@ pub enum KindError<I> {
 }
 
 pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
-    where I: fmt::Display
+    where I: fmt::Display,
 {
     use unify::Error::*;
     match *error {
@@ -304,7 +304,7 @@ impl Substitutable for RcKind {
     }
 
     fn traverse<F>(&self, f: &mut F)
-        where F: Walker<RcKind>
+        where F: Walker<RcKind>,
     {
         types::walk_kind(self, f);
     }
@@ -317,7 +317,7 @@ impl<S> unify::Unifiable<S> for RcKind {
                     other: &Self,
                     unifier: &mut unify::UnifierState<S, U>)
                     -> ::std::result::Result<Option<Self>, Error<Symbol>>
-        where U: unify::Unifier<S, Self>
+        where U: unify::Unifier<S, Self>,
     {
         match (&**self, &**other) {
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {

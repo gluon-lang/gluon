@@ -7,7 +7,7 @@ use base::ast::AstType;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
     where I: Deref<Target = str>,
-          T: From<Type<I, T>>
+          T: From<Type<I, T>>,
 {
     assert!(s.len() != 0);
     match s.parse() {
@@ -159,9 +159,9 @@ fn show_record_multi_line() {
 
 #[test]
 fn variants() {
-    let typ: AstType<&str> = Type::variants(vec![("A",
-                                                  Type::function(vec![Type::int()], Type::ident("A"))),
-                                                 ("B", Type::ident("A"))]);
+    let typ: AstType<&str> =
+        Type::variants(vec![("A", Type::function(vec![Type::int()], Type::ident("A"))),
+                            ("B", Type::ident("A"))]);
     assert_eq!(format!("{}", typ), "| A Int | B");
 }
 

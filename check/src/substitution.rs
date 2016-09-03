@@ -56,7 +56,7 @@ pub trait Substitutable: Sized {
 }
 
 fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
-    where T: Substitutable
+    where T: Substitutable,
 {
     struct Occurs<'a, T: Substitutable + 'a> {
         occurs: bool,
@@ -64,7 +64,7 @@ fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
         subs: &'a Substitution<T>,
     }
     impl<'a, T> Walker<T> for Occurs<'a, T>
-        where T: Substitutable
+        where T: Substitutable,
     {
         fn walk(&mut self, typ: &T) {
             if self.occurs {
@@ -196,7 +196,7 @@ impl<T: Substitutable> Substitution<T> {
 
     /// Creates a new variable
     pub fn new_var(&self) -> T
-        where T: Clone
+        where T: Clone,
     {
         let var_id = self.variables.len() as u32;
         let id = self.union.borrow_mut().insert(UnionByLevel::default());
@@ -288,7 +288,7 @@ impl<T: Substitutable + Clone> Substitution<T> {
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
     pub fn union(&self, id: &T::Variable, typ: &T) -> Result<(), ()>
-        where T::Variable: Clone
+        where T::Variable: Clone,
     {
         // Nothing needs to be done if both are the same variable already (also prevents the occurs check from failing)
         if typ.get_var().map_or(false, |other| other.get_id() == id.get_id()) {
