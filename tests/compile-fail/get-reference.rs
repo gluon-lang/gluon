@@ -6,12 +6,13 @@ use gluon::vm::api::Getable;
 
 fn f(_: &'static str) {}
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 fn main() {
     unsafe {
         let vm = new_vm();
         let v = Value::Int(0);
         let v = Variants::new(&v);
         let s: Option<&'static str> = <&'static str>::from_value(&vm, v);
-        // ~^ Error `vm` does not live long enough
+        //~^ Error `vm` does not live long enough
     }
 }
