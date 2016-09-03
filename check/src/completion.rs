@@ -170,28 +170,26 @@ impl<F> FindVisitor<F>
     }
 
     fn visit_expr(&mut self, current: &SpannedExpr<TcIdent<Symbol>>) {
-        use base::ast::Expr::*;
-
         match current.value {
-            Ident(_) | Literal(_) => {
+            Expr::Ident(_) | Expr::Literal(_) => {
                 if current.span.containment(&self.pos) == Ordering::Equal {
                     self.on_found.expr(current)
                 } else {
                     self.on_found.nothing()
                 }
             }
-            App(ref func, ref args) => {
+            Expr::App(ref func, ref args) => {
                 self.visit_one(once(&**func).chain(args));
             }
-            IfElse(ref pred, ref if_true, ref if_false) => {
+            Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 self.visit_one([pred, if_true, if_false]
                     .iter()
                     .map(|x| &***x))
             }
-            Match(ref expr, ref alts) => {
+            Expr::Match(ref expr, ref alts) => {
                 self.visit_one(once(&**expr).chain(alts.iter().map(|alt| &alt.expression)))
             }
-            BinOp(ref l, ref op, ref r) => {
+            Expr::BinOp(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => self.on_found.ident(current, op),
                     (_, Ordering::Greater) |
@@ -199,7 +197,7 @@ impl<F> FindVisitor<F>
                     _ => self.visit_expr(l),
                 }
             }
-            Let(ref bindings, ref expr) => {
+            Expr::Let(ref bindings, ref expr) => {
                 for bind in bindings {
                     self.visit_pattern(&bind.name);
                 }
@@ -213,29 +211,29 @@ impl<F> FindVisitor<F>
                     _ => self.visit_expr(expr),
                 }
             }
-            Type(_, ref expr) => self.visit_expr(expr),
-            FieldAccess(ref expr, ref id) => {
+            Expr::Type(_, ref expr) => self.visit_expr(expr),
+            Expr::FieldAccess(ref expr, ref id) => {
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
                     self.on_found.ident(current, id);
                 }
             }
-            Array(ref array) => self.visit_one(&array.expressions),
-            Record { ref exprs, .. } => {
+            Expr::Array(ref array) => self.visit_one(&array.expressions),
+            Expr::Record { ref exprs, .. } => {
                 let exprs = exprs.iter().filter_map(|tup| tup.1.as_ref());
                 if let (_, Some(expr)) = self.select_spanned(exprs, |e| e.span) {
                     self.visit_expr(expr);
                 }
             }
-            Lambda(ref lambda) => {
+            Expr::Lambda(ref lambda) => {
                 for arg in &lambda.arguments {
                     self.on_found.on_ident(arg);
                 }
                 self.visit_expr(&lambda.body)
             }
-            Tuple(ref args) => self.visit_one(args),
-            Block(ref exprs) => self.visit_one(exprs),
+            Expr::Tuple(ref args) => self.visit_one(args),
+            Expr::Block(ref exprs) => self.visit_one(exprs),
         };
     }
 }

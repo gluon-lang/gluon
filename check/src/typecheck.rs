@@ -5,7 +5,7 @@ use std::fmt;
 use std::mem;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{self, Typed, DisplayEnv, MutVisitor};
+use base::ast::{self, DisplayEnv, Expr, LiteralEnum, MutVisitor, Pattern, SpannedExpr, SpannedPattern, Typed};
 use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
@@ -341,7 +341,7 @@ impl<'a> Typecheck<'a> {
     /// `let` basically infers that the variables in `id` does not refer to anything outside the
     /// `let` scope and can thus be "generalized" into `a -> a` which is instantiated with a fresh
     /// type variable in the `id 2` call.
-    fn generalize_variables(&mut self, level: u32, expr: &mut ast::SpannedExpr<TcIdent>) {
+    fn generalize_variables(&mut self, level: u32, expr: &mut SpannedExpr<TcIdent>) {
         self.type_variables.enter_scope();
         // Replace all type variables with their inferred types
         struct ReplaceVisitor<'a, 'b: 'a> {
@@ -367,15 +367,15 @@ impl<'a> Typecheck<'a> {
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
-    pub fn typecheck_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) -> Result<TcType, Error> {
+    pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<TcIdent>) -> Result<TcType, Error> {
         self.typecheck_expr_expected(expr, None)
     }
 
     pub fn typecheck_expr_expected(&mut self,
-                                   expr: &mut ast::SpannedExpr<TcIdent>,
+                                   expr: &mut SpannedExpr<TcIdent>,
                                    expected_type: Option<&TcType>)
                                    -> Result<TcType, Error> {
-        fn tail_expr(e: &mut ast::SpannedExpr<TcIdent>) -> &mut ast::SpannedExpr<TcIdent> {
+        fn tail_expr(e: &mut SpannedExpr<TcIdent>) -> &mut SpannedExpr<TcIdent> {
             match e.value {
                 ast::Expr::Let(_, ref mut b) |
                 ast::Expr::Type(_, ref mut b) => tail_expr(b),
@@ -418,7 +418,7 @@ impl<'a> Typecheck<'a> {
 
     /// Main typechecking function. Returns the type of the expression if typechecking was
     /// successful
-    fn typecheck(&mut self, mut expr: &mut ast::SpannedExpr<TcIdent>) -> TcType {
+    fn typecheck(&mut self, mut expr: &mut SpannedExpr<TcIdent>) -> TcType {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -461,26 +461,26 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_(&mut self,
-                  expr: &mut ast::SpannedExpr<TcIdent>)
+                  expr: &mut SpannedExpr<TcIdent>)
                   -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
-            ast::Expr::Ident(ref mut id) => {
+            Expr::Ident(ref mut id) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
                 id.typ = try!(self.find(id.id()));
                 Ok(TailCall::Type(id.typ.clone()))
             }
-            ast::Expr::Literal(ref lit) => {
+            Expr::Literal(ref lit) => {
                 Ok(TailCall::Type(match *lit {
-                    ast::LiteralEnum::Integer(_) => Type::int(),
-                    ast::LiteralEnum::Byte(_) => Type::byte(),
-                    ast::LiteralEnum::Float(_) => Type::float(),
-                    ast::LiteralEnum::String(_) => Type::string(),
-                    ast::LiteralEnum::Char(_) => Type::char(),
+                    LiteralEnum::Integer(_) => Type::int(),
+                    LiteralEnum::Byte(_) => Type::byte(),
+                    LiteralEnum::Float(_) => Type::float(),
+                    LiteralEnum::String(_) => Type::string(),
+                    LiteralEnum::Char(_) => Type::char(),
                 }))
             }
-            ast::Expr::App(ref mut func, ref mut args) => {
+            Expr::App(ref mut func, ref mut args) => {
                 let mut func_type = self.typecheck(&mut **func);
                 for arg in args.iter_mut() {
                     let f = Type::function(vec![self.subs.new_var()], self.subs.new_var());
@@ -496,7 +496,7 @@ impl<'a> Typecheck<'a> {
                 }
                 Ok(TailCall::Type(func_type))
             }
-            ast::Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
+            Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = self.typecheck(&mut **pred);
                 let bool_type = self.bool();
                 self.unify_span(pred.span, &bool_type, pred_type);
@@ -506,7 +506,7 @@ impl<'a> Typecheck<'a> {
                 let false_type = self.typecheck(&mut **if_false);
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
-            ast::Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
+            Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = self.typecheck(&mut **lhs);
                 let rhs_type = self.typecheck(&mut **rhs);
                 let op_name = String::from(self.symbols.string(&op.name));
@@ -546,11 +546,11 @@ impl<'a> Typecheck<'a> {
                 };
                 result.map(TailCall::Type)
             }
-            ast::Expr::Tuple(ref mut exprs) => {
+            Expr::Tuple(ref mut exprs) => {
                 assert!(exprs.len() == 0);
                 Ok(TailCall::Type(Type::unit()))
             }
-            ast::Expr::Match(ref mut expr, ref mut alts) => {
+            Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = self.typecheck(&mut **expr);
                 let mut expected_alt_type = None;
 
@@ -568,11 +568,11 @@ impl<'a> Typecheck<'a> {
                 expected_alt_type.ok_or(EmptyCase)
                     .map(TailCall::Type)
             }
-            ast::Expr::Let(ref mut bindings, _) => {
+            Expr::Let(ref mut bindings, _) => {
                 try!(self.typecheck_bindings(bindings));
                 Ok(TailCall::TailCall)
             }
-            ast::Expr::FieldAccess(ref mut expr, ref mut field_access) => {
+            Expr::FieldAccess(ref mut expr, ref mut field_access) => {
                 let mut typ = self.typecheck(&mut **expr);
                 debug!("FieldAccess {} . {:?}",
                        types::display_type(&self.symbols, &typ),
@@ -603,7 +603,7 @@ impl<'a> Typecheck<'a> {
                     _ => Err(InvalidFieldAccess(record.clone())),
                 }
             }
-            ast::Expr::Array(ref mut a) => {
+            Expr::Array(ref mut a) => {
                 let mut expected_type = self.subs.new_var();
                 for expr in &mut a.expressions {
                     let typ = self.typecheck(expr);
@@ -612,7 +612,7 @@ impl<'a> Typecheck<'a> {
                 a.id.typ = Type::array(expected_type);
                 Ok(TailCall::Type(a.id.typ.clone()))
             }
-            ast::Expr::Lambda(ref mut lambda) => {
+            Expr::Lambda(ref mut lambda) => {
                 let loc = format!("lambda:{}", expr.span.start);
                 lambda.id.name = self.symbols.symbol(loc);
                 let function_type = self.subs.new_var();
@@ -621,11 +621,11 @@ impl<'a> Typecheck<'a> {
                 lambda.id.typ = typ.clone();
                 Ok(TailCall::Type(typ))
             }
-            ast::Expr::Type(ref mut bindings, ref expr) => {
+            Expr::Type(ref mut bindings, ref expr) => {
                 try!(self.typecheck_type_bindings(bindings, expr));
                 Ok(TailCall::TailCall)
             }
-            ast::Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
+            Expr::Record { typ: ref mut id, ref mut types, exprs: ref mut fields } => {
                 let types = try!(types.iter_mut()
                     .map(|&mut (ref mut symbol, ref mut typ)| {
                         if let Some(ref mut typ) = *typ {
@@ -670,7 +670,7 @@ impl<'a> Typecheck<'a> {
                 id.typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
             }
-            ast::Expr::Block(ref mut exprs) => {
+            Expr::Block(ref mut exprs) => {
                 let (last, exprs) = exprs.split_last_mut().expect("Expr in block");
                 for expr in exprs {
                     self.typecheck(expr);
@@ -683,7 +683,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_lambda(&mut self,
                         function_type: TcType,
                         arguments: &mut [TcIdent],
-                        body: &mut ast::SpannedExpr<TcIdent>)
+                        body: &mut SpannedExpr<TcIdent>)
                         -> TcType {
         self.enter_scope();
         let mut arg_types = Vec::new();
@@ -702,12 +702,12 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_pattern(&mut self,
-                         pattern: &mut ast::SpannedPattern<TcIdent>,
+                         pattern: &mut SpannedPattern<TcIdent>,
                          match_type: TcType)
                          -> TcType {
         let span = pattern.span;
         match pattern.value {
-            ast::Pattern::Constructor(ref mut id, ref mut args) => {
+            Pattern::Constructor(ref mut id, ref mut args) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
@@ -719,7 +719,7 @@ impl<'a> Typecheck<'a> {
                 };
                 self.unify_span(span, &match_type, return_type)
             }
-            ast::Pattern::Record { ref mut id, types: ref mut associated_types, ref fields } => {
+            Pattern::Record { ref mut id, types: ref mut associated_types, ref fields } => {
                 id.typ = match_type.clone();
                 let mut match_type = self.remove_alias(match_type);
                 let mut types = Vec::new();
@@ -817,7 +817,7 @@ impl<'a> Typecheck<'a> {
                 }
                 match_type
             }
-            ast::Pattern::Ident(ref mut id) => {
+            Pattern::Ident(ref mut id) => {
                 self.stack_var(id.id().clone(), match_type.clone());
                 id.typ = match_type.clone();
                 match_type
@@ -856,7 +856,7 @@ impl<'a> Typecheck<'a> {
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
                 if let ast::Expr::Lambda(ref mut lambda) = bind.expression.value {
-                    if let ast::Pattern::Ident(ref name) = bind.name.value {
+                    if let Pattern::Ident(ref name) = bind.name.value {
                         lambda.id.name = name.name.clone();
                     }
                 }
@@ -918,7 +918,7 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_type_bindings(&mut self,
                                bindings: &mut [ast::TypeBinding<Symbol>],
-                               expr: &ast::SpannedExpr<TcIdent>)
+                               expr: &SpannedExpr<TcIdent>)
                                -> TcResult<()> {
         self.enter_scope();
         // Rename the types so they get a name which is distinct from types from other
@@ -1001,7 +1001,7 @@ impl<'a> Typecheck<'a> {
 
     fn finish_binding(&mut self, level: u32, bind: &mut ast::Binding<TcIdent>) {
         match bind.name.value {
-            ast::Pattern::Ident(ref mut id) => {
+            Pattern::Ident(ref mut id) => {
                 if let Some(typ) = self.finish_type(level, &id.typ) {
                     id.typ = typ;
                 }
@@ -1010,7 +1010,7 @@ impl<'a> Typecheck<'a> {
                        types::display_type(&self.symbols, &id.typ));
                 self.intersect_type(level, &id.name, &id.typ);
             }
-            ast::Pattern::Record { ref mut id, ref mut fields, .. } => {
+            Pattern::Record { ref mut id, ref mut fields, .. } => {
                 debug!("{{ .. }}: {}",
                        types::display_type(&self.symbols,
                                            &bind.expression
@@ -1024,7 +1024,7 @@ impl<'a> Typecheck<'a> {
                     self.intersect_type(level, field_name, field_type);
                 });
             }
-            ast::Pattern::Constructor(ref id, ref arguments) => {
+            Pattern::Constructor(ref id, ref arguments) => {
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
                        types::display_type(&self.symbols,
