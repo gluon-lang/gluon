@@ -93,7 +93,7 @@ impl<'input, 'lexer> StreamOnce for Wrapper<'input, 'lexer> {
     }
 }
 
-enum LetOrType<Id: AstId> {
+enum Bindings<Id: AstId> {
     LetBindings(Vec<Binding<Id>>),
     TypeBindings(Vec<TypeBinding<Id::Untyped>>),
 }
@@ -353,7 +353,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn type_decl(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
+    fn type_decl(&self, input: I) -> ParseResult<Bindings<Id>, I> {
         debug!("type_decl");
         let type_binding = |t| {
             (try(optional(self.doc_comment()).skip(token(t))),
@@ -368,7 +368,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
          token(Token::In).expected("`in` or an expression in the same column as the `let`"))
             .map(|(first, mut bindings, _): (_, Vec<_>, _)| {
                 bindings.insert(0, first);
-                LetOrType::TypeBindings(bindings)
+                Bindings::TypeBindings(bindings)
             })
             .parse_state(input)
     }
@@ -470,10 +470,10 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         for binding in let_bindings.into_iter().rev() {
             resulting_expr = pos::spanned(binding.span,
                                           match binding.value {
-                                              LetOrType::LetBindings(bindings) => {
+                                              Bindings::LetBindings(bindings) => {
                                                   Expr::LetBindings(bindings, Box::new(resulting_expr))
                                               }
-                                              LetOrType::TypeBindings(bindings) => {
+                                              Bindings::TypeBindings(bindings) => {
                                                   Expr::TypeBindings(bindings, Box::new(resulting_expr))
                                               }
                                           });
@@ -710,7 +710,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn let_in(&self, input: I) -> ParseResult<LetOrType<Id>, I> {
+    fn let_in(&self, input: I) -> ParseResult<Bindings<Id>, I> {
         let binding = |t| {
             (try(optional(self.doc_comment()).skip(token(t))),
              self.parser(ParserEnv::<I, F>::binding))
@@ -725,7 +725,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .map(|(b, bindings, _)| {
                 let mut bindings: Vec<_> = bindings;
                 bindings.insert(0, b);
-                LetOrType::LetBindings(bindings)
+                Bindings::LetBindings(bindings)
             })
             .parse_state(input)
     }
