@@ -10,10 +10,9 @@ fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
           T: From<Type<I, T>>
 {
     assert!(s.len() != 0);
-    let is_var = s.chars().next().unwrap().is_lowercase();
     match s.parse() {
         Ok(b) => Type::Builtin(b),
-        Err(()) if is_var => {
+        Err(()) if s.starts_with(char::is_lowercase) => {
             Type::Generic(Generic {
                 kind: RcKind::new(Kind::Type),
                 id: s,

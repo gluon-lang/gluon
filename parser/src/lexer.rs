@@ -405,7 +405,7 @@ impl<'input, I> Lexer<'input, I>
                     input: LocatedStream<I>)
                     -> ParseResult<(&'input str, IdentType), LocatedStream<I>> {
         let id = self.env.range_identifier_().map(|id| {
-            let typ = if id.chars().next().unwrap().is_uppercase() {
+            let typ = if id.starts_with(char::is_uppercase) {
                 IdentType::Constructor
             } else {
                 IdentType::Variable

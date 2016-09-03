@@ -25,13 +25,13 @@ pub fn intern_unscoped(s: &str) -> Symbol {
 }
 
 pub fn intern(s: &str) -> Symbol {
-    let i = get_local_interner();
-    let mut i = i.borrow_mut();
+    let interner = get_local_interner();
+    let mut interner = interner.borrow_mut();
 
-    if s.chars().next().map(char::is_lowercase).unwrap_or(false) {
-        i.symbol(s)
+    if s.starts_with(char::is_lowercase) {
+        interner.symbol(s)
     } else {
-        SymbolModule::new("test".into(), &mut i).scoped_symbol(s)
+        SymbolModule::new("test".into(), &mut interner).scoped_symbol(s)
     }
 }
 
@@ -144,10 +144,10 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
     where T: From<Type<Symbol, T>>
 {
     assert!(s.len() != 0);
-    let is_var = s.chars().next().unwrap().is_lowercase();
+
     match s.parse() {
         Ok(b) => Type::builtin(b),
-        Err(()) if is_var => {
+        Err(()) if s.starts_with(char::is_lowercase) => {
             Type::generic(Generic {
                 kind: Kind::typ(),
                 id: intern(s),

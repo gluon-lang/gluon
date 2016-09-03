@@ -61,10 +61,9 @@ fn field(s: &str, typ: AstType<String>) -> Field<String> {
 
 fn typ(s: &str) -> AstType<String> {
     assert!(s.len() != 0);
-    let is_var = s.chars().next().unwrap().is_lowercase();
     match s.parse() {
         Ok(b) => Type::builtin(b),
-        Err(()) if is_var => generic_ty(s),
+        Err(()) if s.starts_with(char::is_lowercase) => generic_ty(s),
         Err(()) => Type::ident(intern(s)),
     }
 }
