@@ -223,7 +223,7 @@ pub enum Expr<Id: AstId> {
     App(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
     IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
-    BinOp(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
+    Infix(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
     LetBindings(Vec<ValueBinding<Id>>, Box<SpannedExpr<Id>>),
     Projection(Box<SpannedExpr<Id>>, Id),
     Array(Array<Id>),
@@ -275,7 +275,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
             v.visit_expr(&mut **if_true);
             v.visit_expr(&mut **if_false);
         }
-        Expr::BinOp(ref mut lhs, ref mut id, ref mut rhs) => {
+        Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
             v.visit_expr(&mut **lhs);
             v.visit_identifier(id);
             v.visit_expr(&mut **rhs);
@@ -393,7 +393,7 @@ impl<Id> Typed for Expr<Id>
                 assert!(exprs.is_empty());
                 Type::unit()
             }
-            Expr::BinOp(_, ref op, _) => {
+            Expr::Infix(_, ref op, _) => {
                 if let Type::App(_, ref args) = *op.env_type_of(env) {
                     if let Type::App(_, ref args) = *args[1] {
                         return args[1].clone();

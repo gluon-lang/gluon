@@ -506,7 +506,7 @@ impl<'a> Typecheck<'a> {
                 let false_type = self.typecheck(&mut **if_false);
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
-            Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {
+            Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = self.typecheck(&mut **lhs);
                 let rhs_type = self.typecheck(&mut **rhs);
                 let op_name = String::from(self.symbols.string(&op.name));

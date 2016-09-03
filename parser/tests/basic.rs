@@ -26,7 +26,7 @@ fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
 }
 
 fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
-    no_loc(Expr::BinOp(Box::new(l), intern(s), Box::new(r)))
+    no_loc(Expr::Infix(Box::new(l), intern(s), Box::new(r)))
 }
 
 fn int(i: i64) -> SpExpr {

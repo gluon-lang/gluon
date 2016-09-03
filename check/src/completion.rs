@@ -189,7 +189,7 @@ impl<F> FindVisitor<F>
             Expr::Match(ref expr, ref alts) => {
                 self.visit_one(once(&**expr).chain(alts.iter().map(|alt| &alt.expression)))
             }
-            Expr::BinOp(ref l, ref op, ref r) => {
+            Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => self.on_found.ident(current, op),
                     (_, Ordering::Greater) |

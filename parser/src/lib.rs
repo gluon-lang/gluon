@@ -600,7 +600,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .or(sep_by1(expression_parser(term, op, |l, op, r| {
                             pos::spanned2(l.span.start,
                                           r.span.end,
-                                          Expr::BinOp(Box::new(l), self.intern(&op), Box::new(r)))
+                                          Expr::Infix(Box::new(l), self.intern(&op), Box::new(r)))
                         }),
                         token(Token::Semi))
                 .map(|mut exprs: Vec<SpannedExpr<Id>>| {

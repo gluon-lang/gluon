@@ -224,7 +224,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         }
                     }
                 }
-                Expr::BinOp(ref mut l, ref mut id, ref mut r) => {
+                Expr::Infix(ref mut l, ref mut id, ref mut r) => {
                     if let Some(new_id) = try!(self.rename(id.id(), &id.typ)) {
                         debug!("Rename {} = {}",
                                self.symbols.string(&id.name),

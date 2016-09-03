@@ -444,7 +444,7 @@ impl<'a> Compiler<'a> {
                 function.function.instructions[false_jump_index] =
                     Jump(function.function.instructions.len() as VmIndex);
             }
-            Expr::BinOp(ref lhs, ref op, ref rhs) => {
+            Expr::Infix(ref lhs, ref op, ref rhs) => {
                 if op.name.as_ref() == "&&" {
                     try!(self.compile(&**lhs, function, false));
                     let lhs_end = function.function.instructions.len();
