@@ -838,7 +838,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_bindings(&mut self, bindings: &mut [ast::Binding<TcIdent>]) -> TcResult<()> {
+    fn typecheck_bindings(&mut self, bindings: &mut [ast::ValueBinding<TcIdent>]) -> TcResult<()> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
@@ -999,7 +999,7 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn finish_binding(&mut self, level: u32, bind: &mut ast::Binding<TcIdent>) {
+    fn finish_binding(&mut self, level: u32, bind: &mut ast::ValueBinding<TcIdent>) {
         match bind.name.value {
             Pattern::Ident(ref mut id) => {
                 if let Some(typ) = self.finish_type(level, &id.typ) {

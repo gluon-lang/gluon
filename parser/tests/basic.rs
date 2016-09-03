@@ -38,7 +38,7 @@ fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
 }
 
 fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
-    no_loc(Expr::LetBindings(vec![Binding {
+    no_loc(Expr::LetBindings(vec![ValueBinding {
                               comment: None,
                               name: no_loc(Pattern::Ident(intern(s))),
                               typ: None,
@@ -361,7 +361,7 @@ fn let_pattern() {
     let _ = ::env_logger::init();
     let e = parse_new("let {x, y} = test in x");
     assert_eq!(e,
-               no_loc(Expr::LetBindings(vec![Binding {
+               no_loc(Expr::LetBindings(vec![ValueBinding {
                                                  comment: None,
                                                  name: no_loc(Pattern::Record {
                                                      id: String::new(),
@@ -522,7 +522,7 @@ id
 "#;
     let e = parse_new(text);
     assert_eq!(e,
-               no_loc(Expr::LetBindings(vec![Binding {
+               no_loc(Expr::LetBindings(vec![ValueBinding {
                                                  comment: Some("The identity function".into()),
                                                  name: no_loc(Pattern::Ident(intern("id"))),
                                                  typ: None,
@@ -645,7 +645,7 @@ x
 "#;
     let e = parse(text);
     assert_eq!(e,
-               Ok(no_loc(Expr::LetBindings(vec![Binding {
+               Ok(no_loc(Expr::LetBindings(vec![ValueBinding {
                                                     comment: None,
                                                     name: no_loc(Pattern::Ident(intern("x"))),
                                                     typ: Some(Type::app(typ("->"),

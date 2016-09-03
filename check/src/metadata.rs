@@ -18,7 +18,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
         env: Environment<'b>,
     }
     impl<'b> MetadataVisitor<'b> {
-        fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::Binding<TcIdent>) {
+        fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::ValueBinding<TcIdent>) {
             match bind.name.value {
                 ast::Pattern::Ident(ref mut id) => {
                     let metadata = bind.comment

@@ -94,7 +94,7 @@ impl<'input, 'lexer> StreamOnce for Wrapper<'input, 'lexer> {
 }
 
 enum Bindings<Id: AstId> {
-    LetBindings(Vec<Binding<Id>>),
+    LetBindings(Vec<ValueBinding<Id>>),
     TypeBindings(Vec<TypeBinding<Id::Untyped>>),
 }
 
@@ -730,7 +730,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn binding(&self, input: I) -> ParseResult<Binding<Id>, I> {
+    fn binding(&self, input: I) -> ParseResult<ValueBinding<Id>, I> {
         let (name, input) = try!(self.pattern().parse_state(input));
         let (arguments, input) = match name.value {
             Pattern::Ident(_) => {
@@ -742,7 +742,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         let ((typ, _, e), input) = try!(input.combine(|input| {
             (optional(type_sig), token(Token::Equal), self.expr()).parse_state(input)
         }));
-        Ok((Binding {
+        Ok((ValueBinding {
             comment: None,
             name: name,
             typ: typ,

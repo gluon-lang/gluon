@@ -224,7 +224,7 @@ pub enum Expr<Id: AstId> {
     IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     BinOp(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
-    LetBindings(Vec<Binding<Id>>, Box<SpannedExpr<Id>>),
+    LetBindings(Vec<ValueBinding<Id>>, Box<SpannedExpr<Id>>),
     Projection(Box<SpannedExpr<Id>>, Id),
     Array(Array<Id>),
     Record {
@@ -246,7 +246,7 @@ pub struct TypeBinding<Id> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Binding<Id: AstId> {
+pub struct ValueBinding<Id: AstId> {
     pub comment: Option<String>,
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id::Untyped>>,
@@ -436,7 +436,7 @@ impl Typed for Pattern<TcIdent<Symbol>> {
     }
 }
 
-impl Typed for Binding<TcIdent<Symbol>> {
+impl Typed for ValueBinding<TcIdent<Symbol>> {
     type Id = Symbol;
 
     fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
