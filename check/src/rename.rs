@@ -117,8 +117,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 ast::Pattern::Ident(ref mut id) => {
-                    let new_name =
-                        self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
+                    let new_name = self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
                     id.name = new_name;
                 }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
@@ -127,8 +126,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         .expect("ICE: Expected constructor")
                         .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
-                        arg.name =
-                            self.stack_var(arg.name.clone(), pattern.span, arg_type.clone());
+                        arg.name = self.stack_var(arg.name.clone(), pattern.span, arg_type.clone());
                     }
                 }
             }
@@ -262,8 +260,7 @@ pub fn rename(symbols: &mut SymbolModule,
                             self.env.stack.enter_scope();
                             for (typ, arg) in types::arg_iter(&bind.env_type_of(&self.env))
                                 .zip(&mut bind.arguments) {
-                                arg.name =
-                                    self.stack_var(arg.name.clone(), expr.span, typ.clone());
+                                arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                             }
                             self.visit_expr(&mut bind.expression);
                             self.env.stack.exit_scope();

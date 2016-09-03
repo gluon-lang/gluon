@@ -159,9 +159,9 @@ fn show_record_multi_line() {
 
 #[test]
 fn variants() {
-    let typ: AstType<&str> = Type::variants(vec![("A",
-                                                  Type::function(vec![Type::int()], Type::ident("A"))),
-                                                 ("B", Type::ident("A"))]);
+    let typ: AstType<&str> =
+        Type::variants(vec![("A", Type::function(vec![Type::int()], Type::ident("A"))),
+                            ("B", Type::ident("A"))]);
     assert_eq!(format!("{}", typ), "| A Int | B");
 }
 

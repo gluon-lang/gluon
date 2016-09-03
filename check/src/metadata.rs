@@ -35,7 +35,9 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
             }
         }
 
-        fn new_pattern(&mut self, mut metadata: Metadata, pattern: &mut ast::SpannedPattern<TcIdent>) {
+        fn new_pattern(&mut self,
+                       mut metadata: Metadata,
+                       pattern: &mut ast::SpannedPattern<TcIdent>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref mut types, .. } => {
                     for field in fields.iter_mut().chain(types) {
@@ -78,11 +80,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                         let maybe_metadata = match *maybe_expr {
                             Some(ref mut expr) => {
                                 let m = self.metadata_expr(expr);
-                                if m.has_data() {
-                                    Some(m)
-                                } else {
-                                    None
-                                }
+                                if m.has_data() { Some(m) } else { None }
                             }
                             None => self.metadata(id).cloned(),
                         };

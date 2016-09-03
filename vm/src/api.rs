@@ -486,11 +486,7 @@ impl VmType for bool {
 }
 impl<'vm> Pushable<'vm> for bool {
     fn push(self, _: &'vm Thread, stack: &mut Stack) -> Result<()> {
-        stack.push(Value::Tag(if self {
-            1
-        } else {
-            0
-        }));
+        stack.push(Value::Tag(if self { 1 } else { 0 }));
         Ok(())
     }
 }
@@ -733,7 +729,8 @@ impl<T: VmType, E: VmType> VmType for StdResult<T, E>
     type Type = StdResult<T::Type, E::Type>;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.find_type_info("std.types.Result").unwrap().name.clone();
-        Type::app(Type::ident(symbol), vec![E::make_type(vm), T::make_type(vm)])
+        Type::app(Type::ident(symbol),
+                  vec![E::make_type(vm), T::make_type(vm)])
     }
 }
 
@@ -831,7 +828,9 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
 /// two different threads.
 pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>) where T: Deref<Target = Thread>;
 
-impl<T, V> OpaqueValue<T, V> where T: Deref<Target = Thread> {
+impl<T, V> OpaqueValue<T, V>
+    where T: Deref<Target = Thread>
+{
     /// Unsafe as `Value` are not rooted
     pub unsafe fn get_value(&self) -> Value {
         *self.0

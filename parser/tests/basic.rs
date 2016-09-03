@@ -39,13 +39,13 @@ fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
 
 fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
     no_loc(Expr::LetBindings(vec![ValueBinding {
-                              comment: None,
-                              name: no_loc(Pattern::Ident(intern(s))),
-                              typ: None,
-                              arguments: args.iter().map(|i| intern(i)).collect(),
-                              expression: e,
-                          }],
-                     Box::new(b)))
+                                      comment: None,
+                                      name: no_loc(Pattern::Ident(intern(s))),
+                                      typ: None,
+                                      arguments: args.iter().map(|i| intern(i)).collect(),
+                                      expression: e,
+                                  }],
+                             Box::new(b)))
 }
 
 fn id(s: &str) -> SpExpr {
@@ -107,7 +107,11 @@ fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
     }))
 }
 
-fn type_decl(name: String, args: Vec<Generic<String>>, typ: AstType<String>, body: SpExpr) -> SpExpr {
+fn type_decl(name: String,
+             args: Vec<Generic<String>>,
+             typ: AstType<String>,
+             body: SpExpr)
+             -> SpExpr {
     type_decls(vec![TypeBinding {
                         comment: None,
                         name: name.clone(),
@@ -365,13 +369,14 @@ fn let_pattern() {
                                                  name: no_loc(Pattern::Record {
                                                      id: String::new(),
                                                      types: Vec::new(),
-                                                     fields: vec![(intern("x"), None), (intern("y"), None)],
+                                                     fields: vec![(intern("x"), None),
+                                                                  (intern("y"), None)],
                                                  }),
                                                  typ: None,
                                                  arguments: vec![],
                                                  expression: id("test"),
                                              }],
-                                Box::new(id("x")))));
+                                        Box::new(id("x")))));
 }
 
 #[test]
@@ -528,7 +533,7 @@ id
                                                  arguments: vec![intern("x")],
                                                  expression: id("x"),
                                              }],
-                                Box::new(id("id")))));
+                                        Box::new(id("id")))));
 }
 
 #[test]
@@ -629,7 +634,7 @@ test
                                                    end: BytePos(0),
                                                },
                                                value: Expr::Projection(Box::new(id("test")),
-                                                                        intern("")),
+                                                                       intern("")),
                                            },
                                            id("test")]),
                }));
@@ -648,9 +653,10 @@ x
                                                     comment: None,
                                                     name: no_loc(Pattern::Ident(intern("x"))),
                                                     typ: Some(Type::app(typ("->"),
-                                                                        vec![typ("Int"), typ("Int")])),
+                                                                        vec![typ("Int"),
+                                                                             typ("Int")])),
                                                     arguments: vec![],
                                                     expression: id("x"),
                                                 }],
-                                   Box::new(id("x"))))));
+                                           Box::new(id("x"))))));
 }

@@ -468,15 +468,16 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             }
         }
         for binding in let_bindings.into_iter().rev() {
-            resulting_expr = pos::spanned(binding.span,
-                                          match binding.value {
-                                              Bindings::LetBindings(bindings) => {
-                                                  Expr::LetBindings(bindings, Box::new(resulting_expr))
-                                              }
-                                              Bindings::TypeBindings(bindings) => {
-                                                  Expr::TypeBindings(bindings, Box::new(resulting_expr))
-                                              }
-                                          });
+            resulting_expr =
+                pos::spanned(binding.span,
+                             match binding.value {
+                                 Bindings::LetBindings(bindings) => {
+                                     Expr::LetBindings(bindings, Box::new(resulting_expr))
+                                 }
+                                 Bindings::TypeBindings(bindings) => {
+                                     Expr::TypeBindings(bindings, Box::new(resulting_expr))
+                                 }
+                             });
         }
         Ok((resulting_expr, Consumed::Consumed(input)))
     }
@@ -561,7 +562,9 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 
     fn op<'a>(&'a self) -> LanguageParser<'a, I, F, &'input str> {
         fn inner<'input, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<&'input str, I>
-            where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
+            where I: Stream<Item = Token<&'input str>,
+                            Range = Token<&'input str>,
+                            Position = Span<BytePos>>,
                   F: IdentEnv<Ident = Id>,
                   Id: AstId + Clone + PartialEq + fmt::Debug,
                   I::Range: fmt::Debug
@@ -733,9 +736,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     fn binding(&self, input: I) -> ParseResult<ValueBinding<Id>, I> {
         let (name, input) = try!(self.pattern().parse_state(input));
         let (arguments, input) = match name.value {
-            Pattern::Ident(_) => {
-                try!(input.combine(|input| many(self.ident()).parse_state(input)))
-            }
+            Pattern::Ident(_) => try!(input.combine(|input| many(self.ident()).parse_state(input))),
             _ => (Vec::new(), input),
         };
         let type_sig = token(Token::Colon).with(self.typ());

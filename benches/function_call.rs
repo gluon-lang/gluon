@@ -21,7 +21,7 @@ fn factorial(b: &mut ::test::Bencher) {
     Compiler::new()
         .load_script(&vm, "factorial", text)
         .unwrap();
-    let mut factorial: FunctionRef<fn (i32) -> i32> = vm.get_global("factorial").unwrap();
+    let mut factorial: FunctionRef<fn(i32) -> i32> = vm.get_global("factorial").unwrap();
     b.iter(|| {
         let result = factorial.call(100).unwrap();
         ::test::black_box(result)
@@ -41,7 +41,7 @@ fn factorial_tail_call(b: &mut ::test::Bencher) {
     Compiler::new()
         .load_script(&vm, "factorial", text)
         .unwrap();
-    let mut factorial: FunctionRef<fn (i32) -> i32> = vm.get_global("factorial").unwrap();
+    let mut factorial: FunctionRef<fn(i32) -> i32> = vm.get_global("factorial").unwrap();
     b.iter(|| {
         let result = factorial.call(100).unwrap();
         ::test::black_box(result)
@@ -64,7 +64,7 @@ fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
     Compiler::new()
         .load_script(&vm, "test", text)
         .unwrap();
-    let mut factorial: FunctionRef<fn (i32) -> ()> = vm.get_global("test").unwrap();
+    let mut factorial: FunctionRef<fn(i32) -> ()> = vm.get_global("test").unwrap();
     b.iter(|| {
         let result = factorial.call(1000).unwrap();
         ::test::black_box(result)

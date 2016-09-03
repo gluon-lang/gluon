@@ -104,7 +104,7 @@ fn force(vm: &Thread) -> Status {
     }
 }
 
-fn lazy(f: OpaqueValue<&Thread, fn (()) -> A>) -> Lazy<A> {
+fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
     unsafe {
         Lazy {
             value: Mutex::new(Lazy_::Thunk(f.get_value())),

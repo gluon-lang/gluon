@@ -252,10 +252,7 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Re
     visitor.on_found.typ.ok_or(())
 }
 
-pub fn suggest<T>(env: &T,
-                  expr: &SpannedExpr<TcIdent<Symbol>>,
-                  pos: BytePos)
-                  -> Vec<Suggestion>
+pub fn suggest<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Vec<Suggestion>
     where T: TypeEnv
 {
     let mut visitor = FindVisitor {

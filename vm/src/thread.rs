@@ -994,11 +994,7 @@ impl<'b> Context<'b> {
                                 .to_string()))
                         }
                     };
-                    self.stack.push(Value::Tag(if data_tag == tag {
-                        1
-                    } else {
-                        0
-                    }));
+                    self.stack.push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
                 }
                 Split => {
                     match self.stack.pop() {

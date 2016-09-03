@@ -8,8 +8,7 @@ use base::error::Errors;
 use parser::{parse_string, Error};
 
 fn parse(text: &str) -> Result<SpannedExpr<String>, Errors<Error>> {
-    parse_string(&mut EmptyEnv::new(), text)
-        .map_err(|(_, err)| err)
+    parse_string(&mut EmptyEnv::new(), text).map_err(|(_, err)| err)
 }
 
 #[test]

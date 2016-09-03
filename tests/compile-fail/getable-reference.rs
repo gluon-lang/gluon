@@ -6,21 +6,21 @@ use gluon::vm::api::{Pushable, VmType, Userdata};
 #[derive(Debug)]
 struct Test;
 
-impl Userdata for Test { }
+impl Userdata for Test {}
 
 impl VmType for Test {
     type Type = Test;
 }
 
 impl Traverseable for Test {
-    fn traverse(&self, _: &mut Gc) { }
+    fn traverse(&self, _: &mut Gc) {}
 }
 
-fn f(_: &'static Test) { }
+fn f(_: &'static Test) {}
 
 fn main() {
     let vm = new_vm();
-    let f: fn (_) = f;
+    let f: fn(_) = f;
     vm.define_global("test", f);
-    //~^ Error `vm` does not live long enough
+    // ~^ Error `vm` does not live long enough
 }
