@@ -500,12 +500,10 @@ impl<'a> Typecheck<'a> {
                 let pred_type = self.typecheck(&mut **pred);
                 let bool_type = self.bool();
                 self.unify_span(pred.span, &bool_type, pred_type);
-                let true_type = self.typecheck(&mut **if_true);
-                let false_type = match *if_false {
-                    Some(ref mut if_false) => self.typecheck(&mut **if_false),
-                    None => Type::unit(),
-                };
+
                 // Both branches must unify to the same type
+                let true_type = self.typecheck(&mut **if_true);
+                let false_type = self.typecheck(&mut **if_false);
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
             ast::Expr::BinOp(ref mut lhs, ref mut op, ref mut rhs) => {

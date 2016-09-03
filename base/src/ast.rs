@@ -221,7 +221,7 @@ pub enum Expr<Id: AstId> {
     Ident(Id),
     Literal(LiteralEnum),
     Call(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
-    IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Option<Box<SpannedExpr<Id>>>),
+    IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     BinOp(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
     Let(Vec<Binding<Id>>, Box<SpannedExpr<Id>>),
@@ -273,9 +273,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
         Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(&mut **pred);
             v.visit_expr(&mut **if_true);
-            if let Some(ref mut if_false) = *if_false {
-                v.visit_expr(&mut **if_false);
-            }
+            v.visit_expr(&mut **if_false);
         }
         Expr::BinOp(ref mut lhs, ref mut id, ref mut rhs) => {
             v.visit_expr(&mut **lhs);

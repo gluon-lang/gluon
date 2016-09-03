@@ -208,7 +208,7 @@ else
     assert!(result.is_ok(), "{}", result.unwrap_err());
     if let Expr::Let(_, ref expr) = result.as_ref().unwrap().value {
         if let Expr::IfElse(_, _, ref if_false) = expr.value {
-            if let Expr::Block(_) = if_false.as_ref().unwrap().value {
+            if let Expr::Block(_) = if_false.as_ref().value {
                 return;
             }
         }

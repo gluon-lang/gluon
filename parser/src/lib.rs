@@ -705,7 +705,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                  start: start,
                                  end: f.span.end,
                              },
-                             Expr::IfElse(Box::new(b), Box::new(t), Some(Box::new(f))))
+                             Expr::IfElse(Box::new(b), Box::new(t), Box::new(f)))
             })
             .parse_state(input)
     }

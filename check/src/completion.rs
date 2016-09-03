@@ -184,7 +184,7 @@ impl<F> FindVisitor<F>
                 self.visit_one(once(&**func).chain(args));
             }
             IfElse(ref pred, ref if_true, ref if_false) => {
-                self.visit_one([pred, if_true, if_false.as_ref().expect("false branch")]
+                self.visit_one([pred, if_true, if_false]
                     .iter()
                     .map(|x| &***x))
             }

@@ -431,14 +431,13 @@ impl<'a> Compiler<'a> {
                 try!(self.compile(&**pred, function, false));
                 let jump_index = function.function.instructions.len();
                 function.emit(CJump(0));
-                if let Some(ref if_false) = *if_false {
-                    try!(self.compile(&**if_false, function, tail_position));
-                    // The stack size of the true branch should not be increased by the false
-                    // branch
-                    function.stack_size -= 1;
-                }
+
+                try!(self.compile(&**if_false, function, tail_position));
+                // The stack size of the true branch should not be increased by the false branch
+                function.stack_size -= 1;
                 let false_jump_index = function.function.instructions.len();
                 function.emit(Jump(0));
+
                 function.function.instructions[jump_index] =
                     CJump(function.function.instructions.len() as VmIndex);
                 try!(self.compile(&**if_true, function, tail_position));

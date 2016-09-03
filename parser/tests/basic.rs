@@ -85,7 +85,7 @@ fn call(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
 }
 
 fn if_else(p: SpExpr, if_true: SpExpr, if_false: SpExpr) -> SpExpr {
-    no_loc(Expr::IfElse(Box::new(p), Box::new(if_true), Some(Box::new(if_false))))
+    no_loc(Expr::IfElse(Box::new(p), Box::new(if_true), Box::new(if_false)))
 }
 
 fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
