@@ -9,14 +9,13 @@ extern crate combine;
 use combine::ParseError;
 use combine::primitives::{Error, Info};
 use base::ast::*;
-use base::pos::{BytePos, CharPos, Location};
 use base::error::Errors;
+use base::pos::BytePos;
 use parser::parse_string;
 use parser::lexer::Token;
 
 fn parse(text: &str) -> Result<SpannedExpr<String>, Errors<::parser::Error>> {
-    parse_string(&mut EmptyEnv::new(), text)
-        .map_err(|(_, err)| err)
+    parse_string(&mut EmptyEnv::new(), text).map_err(|(_, err)| err)
 }
 
 #[test]
@@ -66,15 +65,11 @@ y
     assert_eq!(result,
                Err(Errors {
                    errors: vec![ParseError {
-                                    position: Location {
-                                        line: 5,
-                                        column: CharPos(4),
-                                        absolute: BytePos(32),
-                                    },
+                                    position: BytePos(32),
                                     errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
                                                  Error::Expected("`in` or an expression in the \
                                                                   same column as the `let`"
-                                                                     .into())],
+                                                     .into())],
                                 }],
                }));
 }
@@ -210,9 +205,9 @@ else
 "#;
     let result = parse(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
-    if let Expr::Let(_, ref expr) = result.as_ref().unwrap().value {
+    if let Expr::LetBindings(_, ref expr) = result.as_ref().unwrap().value {
         if let Expr::IfElse(_, _, ref if_false) = expr.value {
-            if let Expr::Block(_) = if_false.as_ref().unwrap().value {
+            if let Expr::Block(_) = if_false.as_ref().value {
                 return;
             }
         }

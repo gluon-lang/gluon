@@ -19,16 +19,17 @@ pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<
 }
 
 pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
-    where T: Getable<'vm> + VmType
+    where T: Getable<'vm> + VmType,
 {
     Compiler::new()
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s)
-        .unwrap_or_else(|err| panic!("{}", err)).0
+        .unwrap_or_else(|err| panic!("{}", err))
+        .0
 }
 
 pub fn run_expr<'vm, T>(vm: &'vm Thread, s: &str) -> T
-    where T: Getable<'vm> + VmType
+    where T: Getable<'vm> + VmType,
 {
     run_expr_(vm, s, false)
 }
@@ -38,9 +39,9 @@ fn make_vm() -> RootedThread {
     let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
-          .and_then(|import| import.downcast_ref::<Import>())
-          .expect("Import macro")
-          .add_path("..");
+        .and_then(|import| import.downcast_ref::<Import>())
+        .expect("Import macro")
+        .add_path("..");
     vm
 }
 
@@ -141,7 +142,8 @@ fn record() {
 ";
     let mut vm = make_vm();
     let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0, vm.context().new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)]).unwrap());
+    assert_eq!(value.0,
+               vm.context().new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)]).unwrap());
 }
 
 #[test]
@@ -660,8 +662,8 @@ in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
-                    .run_expr::<bool>(&mut vm, "<top>", text)
-                    .unwrap_or_else(|err| panic!("{}", err));
+        .run_expr::<bool>(&mut vm, "<top>", text)
+        .unwrap_or_else(|err| panic!("{}", err));
     let expected = false;
 
     assert_eq!(result, expected);
@@ -696,8 +698,8 @@ fn access_operator_without_parentheses() {
     Compiler::new()
         .run_expr::<Generic<A>>(&vm, "example", r#" import "std/prelude.glu" "#)
         .unwrap();
-    let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> = vm.get_global("std.prelude.num_Int.\
-                                                                             +");
+    let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
+        vm.get_global("std.prelude.num_Int.+");
     assert!(result.is_err());
 }
 
@@ -734,8 +736,8 @@ send sender 1
 sender
 "#;
     let result = Compiler::new()
-                     .implicit_prelude(false)
-                     .run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
+        .implicit_prelude(false)
+        .run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
     match result {
         Err(Error::Typecheck(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -765,8 +767,7 @@ fn out_of_memory() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     vm.set_memory_limit(10);
-    let result = Compiler::new()
-        .run_expr::<Generic<A>>(&vm, "example", r#" [1, 2, 3, 4] "#);
+    let result = Compiler::new().run_expr::<Generic<A>>(&vm, "example", r#" [1, 2, 3, 4] "#);
     match result {
         // FIXME This should just need to match on the explicit out of memory error
         Err(Error::VM(VMError::OutOfMemory { limit: 10, .. })) => (),

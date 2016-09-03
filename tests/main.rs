@@ -39,14 +39,14 @@ fn test_files(path: &str) -> Result<Box<Iterator<Item = PathBuf>>, Box<Error>> {
     let dir = try!(read_dir(path));
     Ok(Box::new(dir.filter_map(|f| {
         f.ok()
-         .and_then(|f| {
-             let path = f.path();
-             if path.extension().and_then(|e| e.to_str()) == Some("hs") {
-                 Some(path)
-             } else {
-                 None
-             }
-         })
+            .and_then(|f| {
+                let path = f.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("hs") {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
     })))
 }
 
@@ -75,7 +75,7 @@ fn main_() -> Result<(), Box<Error>> {
                 return Err(StringError(format!("Expected test '{}' to fail got {:?}",
                                                filename.to_str().unwrap(),
                                                x))
-                               .into())
+                    .into())
             }
             Err(_) => (),
         }

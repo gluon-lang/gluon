@@ -18,9 +18,9 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
         env: Environment<'b>,
     }
     impl<'b> MetadataVisitor<'b> {
-        fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::Binding<TcIdent>) {
+        fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::ValueBinding<TcIdent>) {
             match bind.name.value {
-                ast::Pattern::Identifier(ref mut id) => {
+                ast::Pattern::Ident(ref mut id) => {
                     let metadata = bind.comment
                         .as_ref()
                         .map_or(metadata, |comment| {
@@ -35,7 +35,9 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
             }
         }
 
-        fn new_pattern(&mut self, mut metadata: Metadata, pattern: &mut ast::SpannedPattern<TcIdent>) {
+        fn new_pattern(&mut self,
+                       mut metadata: Metadata,
+                       pattern: &mut ast::SpannedPattern<TcIdent>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref mut types, .. } => {
                     for field in fields.iter_mut().chain(types) {
@@ -45,7 +47,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                         }
                     }
                 }
-                ast::Pattern::Identifier(ref mut id) => {
+                ast::Pattern::Ident(ref mut id) => {
                     self.stack_var(id.name.clone(), metadata);
                 }
                 ast::Pattern::Constructor(..) => (),
@@ -69,7 +71,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
 
         fn metadata_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) -> Metadata {
             match expr.value {
-                ast::Expr::Identifier(ref mut id) => {
+                ast::Expr::Ident(ref mut id) => {
                     self.metadata(id.id()).cloned().unwrap_or_else(Metadata::default)
                 }
                 ast::Expr::Record { ref mut exprs, ref mut types, .. } => {
@@ -78,11 +80,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                         let maybe_metadata = match *maybe_expr {
                             Some(ref mut expr) => {
                                 let m = self.metadata_expr(expr);
-                                if m.has_data() {
-                                    Some(m)
-                                } else {
-                                    None
-                                }
+                                if m.has_data() { Some(m) } else { None }
                             }
                             None => self.metadata(id).cloned(),
                         };
@@ -102,7 +100,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                         module: module,
                     }
                 }
-                ast::Expr::Let(ref mut bindings, ref mut expr) => {
+                ast::Expr::LetBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
                     if is_recursive {
@@ -124,7 +122,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                     self.env.stack.exit_scope();
                     result
                 }
-                ast::Expr::Type(ref mut bindings, ref mut expr) => {
+                ast::Expr::TypeBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
                     for bind in bindings.iter_mut() {
                         let maybe_metadata = bind.comment.as_ref().map(|comment| {

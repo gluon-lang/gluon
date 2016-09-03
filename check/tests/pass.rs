@@ -5,7 +5,7 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::ast::{self, Expr, Pattern, Typed};
-use base::pos::{BytePos, CharPos, Location, Span};
+use base::pos::{BytePos, Span};
 use base::types::{self, Field, Generic, Kind, Type};
 
 mod support;
@@ -137,7 +137,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
 
     assert_eq!(result, expected);
     match expr.value {
-        ast::Expr::Let(ref bindings, _) => {
+        ast::Expr::LetBindings(ref bindings, _) => {
             assert_eq!(bindings[0].expression.env_type_of(&env), expr_expected)
         }
         _ => assert!(false),
@@ -194,7 +194,7 @@ in test2 1";
     let expected = Ok(typ("Int"));
 
     assert_eq!(result, expected);
-    assert_match!(expr.value, ast::Expr::Let(ref binds, _) => {
+    assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
         assert_match!(*binds[0].env_type_of(&env), Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
@@ -278,7 +278,7 @@ in eq_Int
     let result = support::typecheck(text);
     let bool = Type::alias(support::intern_unscoped("Bool"),
                            vec![],
-                           Type::id(support::intern_unscoped("Bool")));
+                           Type::ident(support::intern_unscoped("Bool")));
     let eq = alias("Eq",
                    &["a"],
                    Type::record(vec![],
@@ -721,16 +721,8 @@ in f "123"
     assert_eq!(err.errors.len(), 1);
     assert_eq!(err.errors[0].span,
                Span {
-                   start: Location {
-                       line: 3,
-                       column: CharPos(6),
-                       absolute: BytePos(26),
-                   },
-                   end: Location {
-                       line: 3,
-                       column: CharPos(11),
-                       absolute: BytePos(31),
-                   },
+                   start: BytePos(26),
+                   end: BytePos(31),
                });
 }
 
@@ -751,11 +743,11 @@ test 1
 
     assert!(result.is_ok());
     let (bind, call) = match expr.value {
-        Expr::Type(_, ref body) => {
+        Expr::TypeBindings(_, ref body) => {
             match body.value {
-                Expr::Let(_, ref body) => {
+                Expr::LetBindings(_, ref body) => {
                     match body.value {
-                        Expr::Let(ref binds, ref body) => (&binds[0], body),
+                        Expr::LetBindings(ref binds, ref body) => (&binds[0], body),
                         _ => panic!(),
                     }
                 }
@@ -765,16 +757,16 @@ test 1
         _ => panic!(),
     };
     let call_id = match call.value {
-        Expr::Call(ref f, _) => {
+        Expr::App(ref f, _) => {
             match f.value {
-                Expr::Identifier(ref id) => id,
+                Expr::Ident(ref id) => id,
                 _ => panic!(),
             }
         }
         _ => panic!(),
     };
     let test_id = match bind.name.value {
-        Pattern::Identifier(ref id) => id,
+        Pattern::Ident(ref id) => id,
         _ => panic!(),
     };
     assert_eq!(test_id.name, call_id.name);
@@ -790,9 +782,9 @@ a.id
 "#;
     let (expr, _result) = support::typecheck_expr(text);
     let t = match expr.value {
-        Expr::Let(_, ref body) => {
+        Expr::LetBindings(_, ref body) => {
             match body.value {
-                Expr::FieldAccess(_, ref ident) => &ident.typ,
+                Expr::Projection(_, ref ident) => &ident.typ,
                 _ => panic!(),
             }
         }

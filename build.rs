@@ -48,10 +48,10 @@ fn generate_skeptic_tests(file: &str) -> String {
 
 fn main() {
     let test_locations: Vec<_> = ["README.md", "TUTORIAL.md"]
-                                     .iter()
-                                     .cloned()
-                                     .map(generate_skeptic_tests)
-                                     .collect();
+        .iter()
+        .cloned()
+        .map(generate_skeptic_tests)
+        .collect();
 
     let str_vec: Vec<_> = test_locations.iter().map(|s| &s[..]).collect();
     skeptic::generate_doc_tests(&str_vec);

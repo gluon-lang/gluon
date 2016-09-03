@@ -181,7 +181,7 @@ impl MetadataEnv for VmEnv {
 fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
     where T: Clone,
           U: Clone,
-          F: FnOnce(&T) -> Option<&U>
+          F: FnOnce(&T) -> Option<&U>,
 {
     match cow {
         Cow::Borrowed(b) => f(b).map(Cow::Borrowed),
@@ -434,7 +434,7 @@ impl GlobalVmState {
                 })
                 .collect();
             let n = Symbol::new(name);
-            let typ: TcType = Type::app(Type::id(n.clone()), arg_types);
+            let typ: TcType = Type::app(Type::ident(n.clone()), arg_types);
             self.typeids
                 .write()
                 .unwrap()

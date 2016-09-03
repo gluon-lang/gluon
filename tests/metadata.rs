@@ -9,9 +9,9 @@ fn make_vm() -> RootedThread {
     let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
-          .and_then(|import| import.downcast_ref::<Import>())
-          .expect("Import macro")
-          .add_path("..");
+        .and_then(|import| import.downcast_ref::<Import>())
+        .expect("Import macro")
+        .add_path("..");
     vm
 }
 
@@ -24,7 +24,7 @@ let { List, id } = import "std/prelude.hs"
 { List, id }
 "#;
     Compiler::new().load_script(&vm, "test", text).unwrap();
-    
+
     let env = vm.get_env();
     assert!(env.get_metadata("test.id").is_ok());
     assert!(env.get_metadata("test.List").is_ok());

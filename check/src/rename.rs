@@ -1,7 +1,7 @@
 use std::fmt;
 
 use base::ast::{self, DisplayEnv, Expr, SpannedExpr, MutVisitor, Typed};
-use base::pos::{self, Span, Spanned};
+use base::pos::{self, BytePos, Span, Spanned};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
@@ -10,14 +10,14 @@ use base::types::{self, Alias, TcType, Type, TcIdent, RcKind, KindEnv, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
-pub type Error = Errors<Spanned<RenameError>>;
+pub type Error = Errors<Spanned<RenameError, BytePos>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RenameError {
     NoMatchingType {
         symbol: String,
         expected: TcType,
-        possible_types: Vec<(Option<Span>, TcType)>,
+        possible_types: Vec<(Option<Span<BytePos>>, TcType)>,
     },
 }
 
@@ -44,7 +44,7 @@ impl fmt::Display for RenameError {
 
 struct Environment<'b> {
     env: &'b TypeEnv,
-    stack: ScopedMap<Symbol, (Symbol, Span, TcType)>,
+    stack: ScopedMap<Symbol, (Symbol, Span<BytePos>, TcType)>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, TcType>>,
 }
 
@@ -116,9 +116,8 @@ pub fn rename(symbols: &mut SymbolModule,
                         self.stack_type(name.clone(), pattern.span, &field_type.typ);
                     }
                 }
-                ast::Pattern::Identifier(ref mut id) => {
-                    let new_name =
-                        self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
+                ast::Pattern::Ident(ref mut id) => {
+                    let new_name = self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
                     id.name = new_name;
                 }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
@@ -127,14 +126,13 @@ pub fn rename(symbols: &mut SymbolModule,
                         .expect("ICE: Expected constructor")
                         .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
-                        arg.name =
-                            self.stack_var(arg.name.clone(), pattern.span, arg_type.clone());
+                        arg.name = self.stack_var(arg.name.clone(), pattern.span, arg_type.clone());
                     }
                 }
             }
         }
 
-        fn stack_var(&mut self, id: Symbol, span: Span, typ: TcType) -> Symbol {
+        fn stack_var(&mut self, id: Symbol, span: Span<BytePos>, typ: TcType) -> Symbol {
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
             let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
@@ -147,7 +145,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
         }
 
-        fn stack_type(&mut self, id: Symbol, span: Span, alias: &Alias<Symbol, TcType>) {
+        fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, TcType>) {
             // Insert variant constructors into the local scope
             if let Some(ref real_type) = alias.typ {
                 if let Type::Variants(ref variants) = **real_type {
@@ -199,7 +197,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn rename_expr(&mut self, expr: &mut SpannedExpr<TcIdent>) -> Result<(), RenameError> {
             match expr.value {
-                Expr::Identifier(ref mut id) => {
+                Expr::Ident(ref mut id) => {
                     if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
                         debug!("Rename identifier {} = {}", id.name, new_id);
                         id.name = new_id;
@@ -215,7 +213,7 @@ pub fn rename(symbols: &mut SymbolModule,
                                 if let Some(new_id) = try!(self.rename(id, &field.typ)) {
                                     debug!("Rename record field {} = {}", id, new_id);
                                     *maybe_expr = Some(pos::spanned(expr.span,
-                                                                    Expr::Identifier(TcIdent {
+                                                                    Expr::Ident(TcIdent {
                                                                         name: new_id,
                                                                         typ: field.typ.clone(),
                                                                     })));
@@ -224,7 +222,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         }
                     }
                 }
-                Expr::BinOp(ref mut l, ref mut id, ref mut r) => {
+                Expr::Infix(ref mut l, ref mut id, ref mut r) => {
                     if let Some(new_id) = try!(self.rename(id.id(), &id.typ)) {
                         debug!("Rename {} = {}",
                                self.symbols.string(&id.name),
@@ -246,7 +244,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         self.env.stack_types.exit_scope();
                     }
                 }
-                Expr::Let(ref mut bindings, ref mut expr) => {
+                Expr::LetBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
                     self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
@@ -262,8 +260,7 @@ pub fn rename(symbols: &mut SymbolModule,
                             self.env.stack.enter_scope();
                             for (typ, arg) in types::arg_iter(&bind.env_type_of(&self.env))
                                 .zip(&mut bind.arguments) {
-                                arg.name =
-                                    self.stack_var(arg.name.clone(), expr.span, typ.clone());
+                                arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                             }
                             self.visit_expr(&mut bind.expression);
                             self.env.stack.exit_scope();
@@ -281,7 +278,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     self.visit_expr(&mut lambda.body);
                     self.env.stack.exit_scope();
                 }
-                Expr::Type(ref bindings, ref mut body) => {
+                Expr::TypeBindings(ref bindings, ref mut body) => {
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
                         self.stack_type(bind.name.clone(), expr.span, &bind.alias);

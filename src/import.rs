@@ -7,7 +7,7 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use base::ast::{self, Expr, LiteralEnum, SpannedExpr};
+use base::ast::{self, Expr, Literal, SpannedExpr};
 use base::metadata::Metadata;
 use base::pos;
 use base::symbol::Symbol;
@@ -115,7 +115,7 @@ impl<I> Import<I> {
 }
 
 impl<I> Macro for Import<I>
-    where I: Importer
+    where I: Importer,
 {
     fn expand(&self,
               vm: &Thread,
@@ -125,7 +125,7 @@ impl<I> Macro for Import<I>
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
         match arguments[0].value {
-            Expr::Literal(LiteralEnum::String(ref filename)) => {
+            Expr::Literal(Literal::String(ref filename)) => {
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
@@ -165,8 +165,7 @@ impl<I> Macro for Import<I>
                     try!(self.importer.import(vm, &modulename, file_contents));
                 }
                 // FIXME Does not handle shadowing
-                Ok(pos::spanned(arguments[0].span,
-                                Expr::Identifier(TcIdent::new(name))))
+                Ok(pos::spanned(arguments[0].span, Expr::Ident(TcIdent::new(name))))
             }
             _ => return Err(Error::String("Expected a string literal to import".into()).into()),
         }

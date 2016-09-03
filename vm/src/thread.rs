@@ -44,14 +44,14 @@ pub enum Status {
 /// A rooted value
 #[derive(Clone, PartialEq)]
 pub struct RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     vm: T,
     value: Value,
 }
 
 impl<T> Drop for RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     fn drop(&mut self) {
         // TODO not safe if the root changes order of being dropped with another root
@@ -60,7 +60,7 @@ impl<T> Drop for RootedValue<T>
 }
 
 impl<T> fmt::Debug for RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.value)
@@ -68,7 +68,7 @@ impl<T> fmt::Debug for RootedValue<T>
 }
 
 impl<T> Deref for RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     type Target = Value;
     fn deref(&self) -> &Value {
@@ -77,7 +77,7 @@ impl<T> Deref for RootedValue<T>
 }
 
 impl<T> RootedValue<T>
-    where T: Deref<Target = Thread>
+    where T: Deref<Target = Thread>,
 {
     pub fn vm(&self) -> &Thread {
         &self.vm
@@ -307,7 +307,7 @@ impl Thread {
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
-        where T: Pushable<'vm> + VmType
+        where T: Pushable<'vm> + VmType,
     {
         let value = {
             let mut context = self.context();
@@ -323,7 +323,7 @@ impl Thread {
     /// Retrieves the global called `name`.
     /// Fails if the global does not exist or it does not have the correct type.
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
-        where T: Getable<'vm> + VmType
+        where T: Getable<'vm> + VmType,
     {
         let env = self.get_env();
         let (value, actual) = try!(env.get_binding(name));
@@ -377,7 +377,7 @@ impl Thread {
 
     /// Pushes a value to the top of the stack
     pub fn push<'vm, T>(&'vm self, v: T) -> Result<()>
-        where T: Pushable<'vm>
+        where T: Pushable<'vm>,
     {
         let mut context = self.current_context();
         v.push(self, &mut context)
@@ -414,7 +414,7 @@ impl Thread {
     }
 
     fn with_roots<F, R>(&self, context: &mut Context, f: F) -> R
-        where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R
+        where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R,
     {
         // For this to be safe we require that the received stack is the same one that is in this
         // VM
@@ -1038,11 +1038,7 @@ impl<'b> ExecuteContext<'b> {
                                 .to_string()))
                         }
                     };
-                    self.stack.push(Value::Tag(if data_tag == tag {
-                        1
-                    } else {
-                        0
-                    }));
+                    self.stack.push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
                 }
                 Split => {
                     match self.stack.pop() {

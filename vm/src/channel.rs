@@ -22,10 +22,10 @@ pub struct Sender<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> Userdata for Sender<T> where T: Any + Send + Sync + fmt::Debug + Traverseable {}
+impl<T> Userdata for Sender<T> where T: Any + Send + Sync + fmt::Debug + Traverseable, {}
 
 impl<T> fmt::Debug for Sender<T>
-    where T: fmt::Debug
+    where T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", *self.queue.lock().unwrap())
@@ -55,10 +55,10 @@ pub struct Receiver<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> Userdata for Receiver<T> where T: Any + Send + Sync + fmt::Debug + Traverseable {}
+impl<T> Userdata for Receiver<T> where T: Any + Send + Sync + fmt::Debug + Traverseable, {}
 
 impl<T> fmt::Debug for Receiver<T>
-    where T: fmt::Debug
+    where T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", *self.queue.lock().unwrap())
@@ -76,22 +76,22 @@ impl<T> Receiver<T> {
 }
 
 impl<T: VmType> VmType for Sender<T>
-    where T::Type: Sized
+    where T::Type: Sized,
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.global_env().get_env().find_type_info("Sender").unwrap().name.clone();
-        Type::app(Type::id(symbol), vec![T::make_type(vm)])
+        Type::app(Type::ident(symbol), vec![T::make_type(vm)])
     }
 }
 
 impl<T: VmType> VmType for Receiver<T>
-    where T::Type: Sized
+    where T::Type: Sized,
 {
     type Type = Receiver<T::Type>;
     fn make_type(vm: &Thread) -> TcType {
         let symbol = vm.global_env().get_env().find_type_info("Receiver").unwrap().name.clone();
-        Type::app(Type::id(symbol), vec![T::make_type(vm)])
+        Type::app(Type::ident(symbol), vec![T::make_type(vm)])
     }
 }
 
@@ -158,7 +158,8 @@ fn yield_(_vm: &Thread) -> Status {
     Status::Yield
 }
 
-fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> MaybeError<RootedThread, Error> {
+fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>)
+              -> MaybeError<RootedThread, Error> {
     match spawn_(value) {
         Ok(x) => MaybeError::Ok(x),
         Err(err) => MaybeError::Err(err),

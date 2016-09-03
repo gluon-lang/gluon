@@ -173,7 +173,7 @@ impl FunctionEnv {
                 }
                 fields.len() as VmIndex
             }
-            ast::Pattern::Identifier(_) => {
+            ast::Pattern::Ident(_) => {
                 self.pop_var();
                 1
             }
@@ -337,7 +337,7 @@ impl<'a> Compiler<'a> {
                     .map(|i| i as VmIndex)
             }
             ref typ => {
-                panic!("ICE: FieldAccess on {}",
+                panic!("ICE: Projection on {}",
                        types::display_type(&self.symbols, typ))
             }
         }
@@ -400,7 +400,7 @@ impl<'a> Compiler<'a> {
         }
         for expr in exprs.iter().rev() {
             let mut count = 0;
-            if let Expr::Let(ref bindings, _) = expr.value {
+            if let Expr::LetBindings(ref bindings, _) = expr.value {
                 for binding in bindings {
                     count += function.pop_pattern(&binding.name.value);
                 }
@@ -419,33 +419,32 @@ impl<'a> Compiler<'a> {
         match expr.value {
             Expr::Literal(ref lit) => {
                 match *lit {
-                    ast::LiteralEnum::Integer(i) => function.emit(PushInt(i as isize)),
-                    ast::LiteralEnum::Byte(b) => function.emit(PushByte(b)),
-                    ast::LiteralEnum::Float(f) => function.emit(PushFloat(f)),
-                    ast::LiteralEnum::String(ref s) => function.emit_string(try!(self.intern(&s))),
-                    ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
+                    ast::Literal::Integer(i) => function.emit(PushInt(i as isize)),
+                    ast::Literal::Byte(b) => function.emit(PushByte(b)),
+                    ast::Literal::Float(f) => function.emit(PushFloat(f)),
+                    ast::Literal::String(ref s) => function.emit_string(try!(self.intern(&s))),
+                    ast::Literal::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
-            Expr::Identifier(ref id) => self.load_identifier(id.id(), function),
+            Expr::Ident(ref id) => self.load_identifier(id.id(), function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 try!(self.compile(&**pred, function, false));
                 let jump_index = function.function.instructions.len();
                 function.emit(CJump(0));
-                if let Some(ref if_false) = *if_false {
-                    try!(self.compile(&**if_false, function, tail_position));
-                    // The stack size of the true branch should not be increased by the false
-                    // branch
-                    function.stack_size -= 1;
-                }
+
+                try!(self.compile(&**if_false, function, tail_position));
+                // The stack size of the true branch should not be increased by the false branch
+                function.stack_size -= 1;
                 let false_jump_index = function.function.instructions.len();
                 function.emit(Jump(0));
+
                 function.function.instructions[jump_index] =
                     CJump(function.function.instructions.len() as VmIndex);
                 try!(self.compile(&**if_true, function, tail_position));
                 function.function.instructions[false_jump_index] =
                     Jump(function.function.instructions.len() as VmIndex);
             }
-            Expr::BinOp(ref lhs, ref op, ref rhs) => {
+            Expr::Infix(ref lhs, ref op, ref rhs) => {
                 if op.name.as_ref() == "&&" {
                     try!(self.compile(&**lhs, function, false));
                     let lhs_end = function.function.instructions.len();
@@ -502,7 +501,7 @@ impl<'a> Compiler<'a> {
                     function.emit(instr);
                 }
             }
-            Expr::Let(ref bindings, ref body) => {
+            Expr::LetBindings(ref bindings, ref body) => {
                 self.stack_constructors.enter_scope();
                 let stack_start = function.stack_size;
                 // Index where the instruction to create the first closure should be at
@@ -517,7 +516,7 @@ impl<'a> Compiler<'a> {
                             upvars: 0,
                         });
                         match bind.name.value {
-                            ast::Pattern::Identifier(ref name) => {
+                            ast::Pattern::Ident(ref name) => {
                                 function.new_stack_var(name.id().clone());
                             }
                             _ => panic!("ICE: Unexpected non identifer pattern"),
@@ -529,7 +528,7 @@ impl<'a> Compiler<'a> {
                     if is_recursive {
                         function.emit(Push(stack_start + i as VmIndex));
                         let name = match bind.name.value {
-                            ast::Pattern::Identifier(ref name) => name,
+                            ast::Pattern::Ident(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
                         let (function_index, vars, cf) = try!(self.compile_lambda(name,
@@ -552,8 +551,8 @@ impl<'a> Compiler<'a> {
                 }
                 return Ok(Some(body));
             }
-            Expr::Call(ref func, ref args) => {
-                if let Expr::Identifier(ref id) = func.value {
+            Expr::App(ref func, ref args) => {
+                if let Expr::Ident(ref id) = func.value {
                     if let Some(Constructor(tag, num_args)) = self.find(id.id(), function) {
                         for arg in args.iter() {
                             try!(self.compile(arg, function, false));
@@ -571,11 +570,11 @@ impl<'a> Compiler<'a> {
                 }
                 function.emit_call(args.len() as VmIndex, tail_position);
             }
-            Expr::FieldAccess(ref expr, ref field) => {
+            Expr::Projection(ref expr, ref field) => {
                 try!(self.compile(&**expr, function, false));
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.env_type_of(self);
-                debug!("FieldAccess {}", types::display_type(&self.symbols, &typ));
+                debug!("Projection {}", types::display_type(&self.symbols, &typ));
                 let field_index = self.find_field(&typ, field.id())
                     .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));
@@ -640,7 +639,7 @@ impl<'a> Compiler<'a> {
                             let typ = &expr.env_type_of(self);
                             self.compile_let_pattern(&alt.pattern.value, typ, function);
                         }
-                        ast::Pattern::Identifier(ref id) => {
+                        ast::Pattern::Ident(ref id) => {
                             function.function.instructions[start_index] =
                                 Jump(function.function.instructions.len() as VmIndex);
                             function.new_stack_var(id.id().clone());
@@ -676,7 +675,7 @@ impl<'a> Compiler<'a> {
                 function.stack_size -= vars;
                 function.function.inner_functions.push(cf);
             }
-            Expr::Type(ref type_bindings, ref expr) => {
+            Expr::TypeBindings(ref type_bindings, ref expr) => {
                 for bind in type_bindings {
                     self.stack_types.insert(bind.alias.name.clone(), bind.alias.clone());
                     let typ = bind.alias.typ.as_ref().expect("TypeBinding type").clone();
@@ -722,7 +721,7 @@ impl<'a> Compiler<'a> {
                            pattern_type: &TcType,
                            function: &mut FunctionEnvs) {
         match *pattern {
-            ast::Pattern::Identifier(ref name) => {
+            ast::Pattern::Ident(ref name) => {
                 function.new_stack_var(name.id().clone());
             }
             ast::Pattern::Record { ref types, ref fields, .. } => {
@@ -818,7 +817,7 @@ impl<'a> Compiler<'a> {
 }
 
 fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(&Symbol, &Alias<Symbol, TcType>)
+    where F: FnMut(&Symbol, &Alias<Symbol, TcType>),
 {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {

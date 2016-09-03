@@ -57,12 +57,13 @@ mod tests {
     }
 
     pub fn intern(s: &str) -> Symbol {
-        let i = get_local_interner();
-        let mut i = i.borrow_mut();
-        if s.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
-            i.symbol(s)
+        let interner = get_local_interner();
+        let mut interner = interner.borrow_mut();
+
+        if s.starts_with(char::is_lowercase) {
+            interner.symbol(s)
         } else {
-            SymbolModule::new("test".into(), &mut i).scoped_symbol(s)
+            SymbolModule::new("test".into(), &mut interner).scoped_symbol(s)
         }
     }
 }

@@ -52,7 +52,7 @@ impl<T: Copy + Ord> Ord for Array<T> {
 
 impl<T: Copy + Hash> Hash for Array<T> {
     fn hash<H>(&self, hasher: &mut H)
-        where H: Hasher
+        where H: Hasher,
     {
         (&**self).hash(hasher)
     }
@@ -83,7 +83,7 @@ impl<T: Copy> Array<T> {
     /// To be safe it is required that the iterators length is known and exactly the same as the
     /// length of the allocated array.
     pub unsafe fn initialize<I>(&mut self, iterable: I)
-        where I: IntoIterator<Item = T>
+        where I: IntoIterator<Item = T>,
     {
         let iter = iterable.into_iter();
         self.len = iter.size_hint().1.expect("initialize expected a known length");

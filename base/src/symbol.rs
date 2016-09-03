@@ -183,7 +183,7 @@ impl Name {
 impl NameBuf {
     #[inline]
     pub fn new<T>(name: T) -> NameBuf
-        where T: Into<String>
+        where T: Into<String>,
     {
         NameBuf(name.into())
     }
@@ -282,7 +282,7 @@ impl Symbols {
     }
 
     pub fn symbol<N>(&mut self, name: N) -> Symbol
-        where N: Into<NameBuf> + AsRef<Name>
+        where N: Into<NameBuf> + AsRef<Name>,
     {
         if let Some(symbol) = self.indexes.get(name.as_ref()) {
             return symbol.clone();
@@ -306,7 +306,7 @@ impl<'a> SymbolModule<'a> {
     }
 
     pub fn symbol<N>(&mut self, name: N) -> Symbol
-        where N: Into<NameBuf> + AsRef<Name>
+        where N: Into<NameBuf> + AsRef<Name>,
     {
         self.symbols.symbol(name)
     }

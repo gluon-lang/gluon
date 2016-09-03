@@ -19,7 +19,7 @@ pub struct Lazy<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Userdata for Lazy<T> where T: Any + Send + Sync {}
+impl<T> Userdata for Lazy<T> where T: Any + Send + Sync, {}
 
 impl<T> fmt::Debug for Lazy<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -46,14 +46,14 @@ impl<T> Traverseable for Lazy<T> {
 
 impl<T> VmType for Lazy<T>
     where T: VmType,
-          T::Type: Sized
+          T::Type: Sized,
 {
     type Type = Lazy<T::Type>;
 
     fn make_type(vm: &Thread) -> TcType {
         let env = vm.global_env().get_env();
         let symbol = env.find_type_info("Lazy").unwrap().name.clone();
-        let ctor = Type::id(symbol);
+        let ctor = Type::ident(symbol);
         types::Type::app(ctor, vec![T::make_type(vm)])
     }
 }
@@ -107,7 +107,7 @@ fn force(vm: &Thread) -> Status {
     }
 }
 
-fn lazy(f: OpaqueValue<&Thread, fn (()) -> A>) -> Lazy<A> {
+fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
     unsafe {
         Lazy {
             value: Mutex::new(Lazy_::Thunk(f.get_value())),

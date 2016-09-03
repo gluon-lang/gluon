@@ -25,23 +25,24 @@ pub fn intern_unscoped(s: &str) -> Symbol {
 }
 
 pub fn intern(s: &str) -> Symbol {
-    let i = get_local_interner();
-    let mut i = i.borrow_mut();
+    let interner = get_local_interner();
+    let mut interner = interner.borrow_mut();
 
-    if s.chars().next().map(char::is_lowercase).unwrap_or(false) {
-        i.symbol(s)
+    if s.starts_with(char::is_lowercase) {
+        interner.symbol(s)
     } else {
-        SymbolModule::new("test".into(), &mut i).scoped_symbol(s)
+        SymbolModule::new("test".into(), &mut interner).scoped_symbol(s)
     }
 }
 
 pub fn parse_new(s: &str)
                  -> Result<ast::SpannedExpr<TcIdent>,
-                           (Option<ast::SpannedExpr<TcIdent>>, ::base::error::Errors<::parser::Error>)> {
+                           (Option<ast::SpannedExpr<TcIdent>>,
+                            ::base::error::Errors<::parser::Error>)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parser::parse_tc(&mut module, s)
+    parser::parse_tc(&mut module, &s)
 }
 
 #[allow(dead_code)]
@@ -60,11 +61,9 @@ impl MockEnv {
         let mut interner = interner.borrow_mut();
 
         let bool_sym = interner.symbol("Bool");
-        let bool_ty = Type::app(Type::id(bool_sym.clone()), vec![]);
+        let bool_ty = Type::app(Type::ident(bool_sym.clone()), vec![]);
 
-        MockEnv {
-            bool: Alias::new(bool_sym, vec![], bool_ty),
-        }
+        MockEnv { bool: Alias::new(bool_sym, vec![], bool_ty) }
     }
 }
 
@@ -117,7 +116,8 @@ pub fn typecheck_expr(text: &str) -> (ast::SpannedExpr<TcIdent>, Result<TcType, 
 }
 
 #[allow(dead_code)]
-pub fn typecheck_partial_expr(text: &str) -> (ast::SpannedExpr<TcIdent>, Result<TcType, typecheck::Error>) {
+pub fn typecheck_partial_expr(text: &str)
+                              -> (ast::SpannedExpr<TcIdent>, Result<TcType, typecheck::Error>) {
     let mut expr = match parse_new(text) {
         Ok(e) => e,
         Err((Some(e), _)) => e,
@@ -141,13 +141,13 @@ pub fn typ(s: &str) -> TcType {
 }
 
 pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
-    where T: From<Type<Symbol, T>>
+    where T: From<Type<Symbol, T>>,
 {
     assert!(s.len() != 0);
-    let is_var = s.chars().next().unwrap().is_lowercase();
+
     match s.parse() {
         Ok(b) => Type::builtin(b),
-        Err(()) if is_var => {
+        Err(()) if s.starts_with(char::is_lowercase) => {
             Type::generic(Generic {
                 kind: Kind::typ(),
                 id: intern(s),
@@ -155,9 +155,9 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
         }
         Err(()) => {
             if args.len() == 0 {
-                Type::id(intern(s))
+                Type::ident(intern(s))
             } else {
-                Type::app(Type::id(intern(s)), args)
+                Type::app(Type::ident(intern(s)), args)
             }
         }
     }

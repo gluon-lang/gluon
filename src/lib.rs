@@ -25,11 +25,11 @@ use std::string::String as StdString;
 use std::env;
 
 use base::ast;
-use base::error::Errors;
-use base::types::TcType;
-use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
+use base::error::{Errors, InFile};
 use base::metadata::Metadata;
-
+use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
+use base::types::TcType;
+use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::generic::A;
 use vm::api::{Getable, VmType, Generic, IO};
@@ -50,7 +50,7 @@ quick_error! {
             from()
         }
         /// Error found when typechecking gluon code
-        Typecheck(err: ::base::error::InFile<::check::typecheck::TypeError<Symbol>>) {
+        Typecheck(err: InFile<TypeError<Symbol>>) {
             description(err.description())
             display("{}", err)
             from()
@@ -181,7 +181,7 @@ pub mod compiler_pipeline {
                      file: &str,
                      expr_str: &str)
                      -> Result<TypecheckValue>
-            where Self: Sized
+            where Self: Sized,
         {
             self.typecheck_expected(compiler, thread, file, expr_str, None)
         }
@@ -194,7 +194,7 @@ pub mod compiler_pipeline {
                               -> Result<TypecheckValue>;
     }
     impl<T> Typecheckable for T
-        where T: MacroExpandable
+        where T: MacroExpandable,
     {
         fn typecheck_expected(self,
                               compiler: &mut Compiler,
@@ -203,7 +203,7 @@ pub mod compiler_pipeline {
                               expr_str: &str,
                               expected_type: Option<&TcType>)
                               -> Result<TypecheckValue>
-            where Self: Sized
+            where Self: Sized,
         {
             self.expand_macro(compiler, thread, file)
                 .and_then(|expr| {
@@ -219,7 +219,7 @@ pub mod compiler_pipeline {
                               expr_str: &str,
                               expected_type: Option<&TcType>)
                               -> Result<TypecheckValue>
-            where Self: Sized
+            where Self: Sized,
         {
             compiler.typecheck_expr_expected(thread, file, expr_str, &mut self.0, expected_type)
                 .map(move |typ| TypecheckValue(self.0, typ))
@@ -239,7 +239,7 @@ pub mod compiler_pipeline {
                    -> Result<CompileValue>;
     }
     impl<'a, 'b, T> Compileable<(&'a str, Option<&'b TcType>)> for T
-        where T: Typecheckable
+        where T: Typecheckable,
     {
         fn compile(self,
                    compiler: &mut Compiler,
@@ -278,7 +278,7 @@ pub mod compiler_pipeline {
                        -> Result<()>;
     }
     impl<C, Extra> Executable<Extra> for C
-        where C: Compileable<Extra>
+        where C: Compileable<Extra>,
     {
         fn run_expr<'vm>(self,
                          compiler: &mut Compiler,
@@ -390,11 +390,13 @@ impl Compiler {
                                expected_type: Option<&TcType>)
                                -> Result<TcType> {
         use check::typecheck::Typecheck;
-        use base::error;
+
         let env = vm.get_env();
         let mut tc = Typecheck::new(file.into(), &mut self.symbols, &*env);
+
         let typ = try!(tc.typecheck_expr_expected(expr, expected_type)
-            .map_err(|err| error::InFile::new(StdString::from(file), expr_str, err)));
+            .map_err(|err| InFile::new(file, expr_str, err)));
+
         Ok(typ)
     }
 
@@ -500,7 +502,7 @@ impl Compiler {
                             name: &str,
                             expr_str: &str)
                             -> Result<(T, TcType)>
-        where T: Getable<'vm> + VmType
+        where T: Getable<'vm> + VmType,
     {
         let expected = T::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
@@ -518,7 +520,7 @@ impl Compiler {
                                expr_str: &str)
                                -> Result<(T, TcType)>
         where T: Getable<'vm> + VmType,
-              T::Type: Sized
+              T::Type: Sized,
     {
         let expected = IO::<T>::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
@@ -560,7 +562,7 @@ impl Compiler {
         fn assign_last_body(l: &mut ast::SpannedExpr<ast::TcIdent<Symbol>>,
                             original_expr: ast::SpannedExpr<ast::TcIdent<Symbol>>) {
             match l.value {
-                ast::Expr::Let(_, ref mut e) => {
+                ast::Expr::LetBindings(_, ref mut e) => {
                     assign_last_body(e, original_expr);
                 }
                 _ => *l = original_expr,
