@@ -45,7 +45,7 @@ pub enum TypeError<I> {
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// Type is not a type which has any fields
-    InvalidFieldAccess(ast::AstType<I>),
+    InvalidProjection(ast::AstType<I>),
     /// Expected to find a record with the following fields
     UndefinedRecord {
         fields: Vec<I>,
@@ -106,7 +106,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                        "Type '{}' has been already been defined in this module",
                        id)
             }
-            InvalidFieldAccess(ref typ) => {
+            InvalidProjection(ref typ) => {
                 write!(f,
                        "Type '{}' is not a type which allows field accesses",
                        typ)
@@ -572,9 +572,9 @@ impl<'a> Typecheck<'a> {
                 try!(self.typecheck_bindings(bindings));
                 Ok(TailCall::TailCall)
             }
-            Expr::FieldAccess(ref mut expr, ref mut field_access) => {
+            Expr::Projection(ref mut expr, ref mut field_access) => {
                 let mut typ = self.typecheck(&mut **expr);
-                debug!("FieldAccess {} . {:?}",
+                debug!("Projection {} . {:?}",
                        types::display_type(&self.symbols, &typ),
                        self.symbols.string(&field_access.name));
                 self.subs.make_real(&mut typ);
@@ -600,7 +600,7 @@ impl<'a> Typecheck<'a> {
                         };
                         Ok(TailCall::Type(field_access.typ.clone()))
                     }
-                    _ => Err(InvalidFieldAccess(record.clone())),
+                    _ => Err(InvalidProjection(record.clone())),
                 }
             }
             Expr::Array(ref mut a) => {

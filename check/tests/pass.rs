@@ -784,7 +784,7 @@ a.id
     let t = match expr.value {
         Expr::Let(_, ref body) => {
             match body.value {
-                Expr::FieldAccess(_, ref ident) => &ident.typ,
+                Expr::Projection(_, ref ident) => &ident.typ,
                 _ => panic!(),
             }
         }

@@ -225,7 +225,7 @@ pub enum Expr<Id: AstId> {
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     BinOp(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
     Let(Vec<Binding<Id>>, Box<SpannedExpr<Id>>),
-    FieldAccess(Box<SpannedExpr<Id>>, Id),
+    Projection(Box<SpannedExpr<Id>>, Id),
     Array(Array<Id>),
     Record {
         typ: Id,
@@ -293,7 +293,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
                 v.visit_expr(arg);
             }
         }
-        Expr::FieldAccess(ref mut expr, ref mut id) => {
+        Expr::Projection(ref mut expr, ref mut id) => {
             v.visit_expr(&mut **expr);
             v.visit_identifier(id);
         }
@@ -378,7 +378,7 @@ impl<Id> Typed for Expr<Id>
     fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
         match *self {
             Expr::Ident(ref id) |
-            Expr::FieldAccess(_, ref id) => id.env_type_of(env),
+            Expr::Projection(_, ref id) => id.env_type_of(env),
             Expr::Literal(ref lit) => {
                 match *lit {
                     LiteralEnum::Integer(_) => Type::int(),

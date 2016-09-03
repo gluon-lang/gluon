@@ -95,7 +95,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     }
 
     fn ident(&mut self, context: &SpannedExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
-        if let Expr::FieldAccess(ref expr, _) = context.value {
+        if let Expr::Projection(ref expr, _) = context.value {
             let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
             if let Type::Record { ref fields, .. } = *typ {
                 let id = ident.name.as_ref();
@@ -212,7 +212,7 @@ impl<F> FindVisitor<F>
                 }
             }
             Expr::Type(_, ref expr) => self.visit_expr(expr),
-            Expr::FieldAccess(ref expr, ref id) => {
+            Expr::Projection(ref expr, ref id) => {
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {

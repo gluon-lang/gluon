@@ -337,7 +337,7 @@ impl<'a> Compiler<'a> {
                     .map(|i| i as VmIndex)
             }
             ref typ => {
-                panic!("ICE: FieldAccess on {}",
+                panic!("ICE: Projection on {}",
                        types::display_type(&self.symbols, typ))
             }
         }
@@ -570,11 +570,11 @@ impl<'a> Compiler<'a> {
                 }
                 function.emit_call(args.len() as VmIndex, tail_position);
             }
-            Expr::FieldAccess(ref expr, ref field) => {
+            Expr::Projection(ref expr, ref field) => {
                 try!(self.compile(&**expr, function, false));
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.env_type_of(self);
-                debug!("FieldAccess {}", types::display_type(&self.symbols, &typ));
+                debug!("Projection {}", types::display_type(&self.symbols, &typ));
                 let field_index = self.find_field(&typ, field.id())
                     .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));

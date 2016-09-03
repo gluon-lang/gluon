@@ -136,7 +136,7 @@ fn record_a(types: Vec<(String, Option<AstType<String>>)>,
 }
 
 fn field_access(expr: SpExpr, field: &str) -> SpExpr {
-    no_loc(Expr::FieldAccess(Box::new(expr), intern(field)))
+    no_loc(Expr::Projection(Box::new(expr), intern(field)))
 }
 
 fn array(fields: Vec<SpExpr>) -> SpExpr {
@@ -501,7 +501,7 @@ fn span_field_access() {
                    end: BytePos(8),
                });
     match expr.value {
-        Expr::FieldAccess(ref e, _) => {
+        Expr::Projection(ref e, _) => {
             assert_eq!(e.span,
                        Span {
                            start: BytePos(0),
@@ -605,7 +605,7 @@ fn partial_field_access() {
                        start: BytePos(0),
                        end: BytePos(0),
                    },
-                   value: Expr::FieldAccess(Box::new(id("test")), intern("")),
+                   value: Expr::Projection(Box::new(id("test")), intern("")),
                }));
 }
 
@@ -629,7 +629,7 @@ test
                                                    start: BytePos(0),
                                                    end: BytePos(0),
                                                },
-                                               value: Expr::FieldAccess(Box::new(id("test")),
+                                               value: Expr::Projection(Box::new(id("test")),
                                                                         intern("")),
                                            },
                                            id("test")]),

@@ -524,7 +524,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .map(|(expr, fields): (_, Vec<_>)| {
                 debug!("Parsed expr {:?}", expr);
                 fields.into_iter().fold(expr, |expr, (id, end)| {
-                    pos::spanned2(span.start, end, Expr::FieldAccess(Box::new(expr), id))
+                    pos::spanned2(span.start, end, Expr::Projection(Box::new(expr), id))
                 })
             })
             .parse_state(input)
