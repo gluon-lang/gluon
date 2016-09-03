@@ -61,8 +61,10 @@ type LanguageParser<'parser, I: 'parser, F: 'parser, T> = EnvParser<&'parser Par
 struct ParserEnv<I, F>
     where F: IdentEnv,
           I: Stream,
+          F::Ident: AstId,
 {
     empty_id: F::Ident,
+    hole_typ: AstType<<F::Ident as AstId>::Untyped>,
     make_ident: Rc<RefCell<F>>,
     errors: RefCell<Errors<Error>>,
     env: PhantomData<I>,
@@ -517,7 +519,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                   sep_end_by(self.expr(), token(Token::Comma)))
                          .map(|exprs| {
                              loc(Expr::Array(Array {
-                                 typ: Type::hole(),
+                                 typ: self.hole_typ.clone(),
                                  expressions: exprs,
                              }))
                          })])
@@ -682,7 +684,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                         }
                     }
                     Pattern::Record {
-                        typ: Type::hole(),
+                        typ: self.hole_typ.clone(),
                         types: types,
                         fields: patterns,
                     }
@@ -765,7 +767,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                         }
                     }
                     Expr::Record {
-                        typ: Type::hole(),
+                        typ: self.hole_typ.clone(),
                         types: types,
                         exprs: exprs,
                     }
@@ -835,6 +837,7 @@ pub fn parse_expr<'env, 'input, Id>
     let lexer = Lexer::new(input);
     let env = ParserEnv {
         empty_id: make_ident.borrow_mut().from_str(""),
+        hole_typ: Type::hole(),
         make_ident: make_ident.clone(),
         errors: RefCell::new(Errors::new()),
         env: PhantomData,
