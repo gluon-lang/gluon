@@ -5,7 +5,7 @@ use std::fmt;
 use std::mem;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{self, DisplayEnv, Expr, LiteralEnum, MutVisitor, Pattern, SpannedExpr, SpannedPattern, Typed};
+use base::ast::{self, DisplayEnv, Expr, Literal, MutVisitor, Pattern, SpannedExpr, SpannedPattern, Typed};
 use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
@@ -473,11 +473,11 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Literal(ref lit) => {
                 Ok(TailCall::Type(match *lit {
-                    LiteralEnum::Integer(_) => Type::int(),
-                    LiteralEnum::Byte(_) => Type::byte(),
-                    LiteralEnum::Float(_) => Type::float(),
-                    LiteralEnum::String(_) => Type::string(),
-                    LiteralEnum::Char(_) => Type::char(),
+                    Literal::Integer(_) => Type::int(),
+                    Literal::Byte(_) => Type::byte(),
+                    Literal::Float(_) => Type::float(),
+                    Literal::String(_) => Type::string(),
+                    Literal::Char(_) => Type::char(),
                 }))
             }
             Expr::App(ref mut func, ref mut args) => {

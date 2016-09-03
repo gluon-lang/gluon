@@ -419,11 +419,11 @@ impl<'a> Compiler<'a> {
         match expr.value {
             Expr::Literal(ref lit) => {
                 match *lit {
-                    ast::LiteralEnum::Integer(i) => function.emit(PushInt(i as isize)),
-                    ast::LiteralEnum::Byte(b) => function.emit(PushByte(b)),
-                    ast::LiteralEnum::Float(f) => function.emit(PushFloat(f)),
-                    ast::LiteralEnum::String(ref s) => function.emit_string(try!(self.intern(&s))),
-                    ast::LiteralEnum::Char(c) => function.emit(PushInt(c as isize)),
+                    ast::Literal::Integer(i) => function.emit(PushInt(i as isize)),
+                    ast::Literal::Byte(b) => function.emit(PushByte(b)),
+                    ast::Literal::Float(f) => function.emit(PushFloat(f)),
+                    ast::Literal::String(ref s) => function.emit_string(try!(self.intern(&s))),
+                    ast::Literal::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
             Expr::Ident(ref id) => self.load_identifier(id.id(), function),

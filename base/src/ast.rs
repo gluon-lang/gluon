@@ -170,7 +170,7 @@ impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum LiteralEnum {
+pub enum Literal {
     Byte(u8),
     Integer(i64),
     Float(f64),
@@ -219,7 +219,7 @@ pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
     Ident(Id),
-    Literal(LiteralEnum),
+    Literal(Literal),
     App(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
     IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
@@ -381,11 +381,11 @@ impl<Id> Typed for Expr<Id>
             Expr::Projection(_, ref id) => id.env_type_of(env),
             Expr::Literal(ref lit) => {
                 match *lit {
-                    LiteralEnum::Integer(_) => Type::int(),
-                    LiteralEnum::Float(_) => Type::float(),
-                    LiteralEnum::Byte(_) => Type::byte(),
-                    LiteralEnum::String(_) => Type::string(),
-                    LiteralEnum::Char(_) => Type::char(),
+                    Literal::Integer(_) => Type::int(),
+                    Literal::Float(_) => Type::float(),
+                    Literal::Byte(_) => Type::byte(),
+                    Literal::String(_) => Type::string(),
+                    Literal::Char(_) => Type::char(),
                 }
             }
             Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),

@@ -30,7 +30,7 @@ fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
 }
 
 fn int(i: i64) -> SpExpr {
-    no_loc(Expr::Literal(LiteralEnum::Integer(i)))
+    no_loc(Expr::Literal(Literal::Integer(i)))
 }
 
 fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {

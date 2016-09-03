@@ -490,11 +490,11 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                      &mut self.parser(ParserEnv::<I, F>::case_of),
                      &mut self.parser(ParserEnv::<I, F>::lambda),
                      &mut self.integer()
-                         .map(|i| loc(Expr::Literal(LiteralEnum::Integer(i)))),
+                         .map(|i| loc(Expr::Literal(Literal::Integer(i)))),
                      &mut self.byte()
-                         .map(|i| loc(Expr::Literal(LiteralEnum::Byte(i)))),
+                         .map(|i| loc(Expr::Literal(Literal::Byte(i)))),
                      &mut self.float()
-                         .map(|f| loc(Expr::Literal(LiteralEnum::Float(f)))),
+                         .map(|f| loc(Expr::Literal(Literal::Float(f)))),
                      &mut self.ident()
                          .map(Expr::Ident)
                          .map(&loc),
@@ -508,9 +508,9 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                       }
                                   })),
                      &mut self.string_literal()
-                         .map(|s| loc(Expr::Literal(LiteralEnum::String(s)))),
+                         .map(|s| loc(Expr::Literal(Literal::String(s)))),
                      &mut self.char_literal()
-                         .map(|s| loc(Expr::Literal(LiteralEnum::Char(s)))),
+                         .map(|s| loc(Expr::Literal(Literal::Char(s)))),
                      &mut between(token(Token::Open(Delimiter::Bracket)),
                                   token(Token::Close(Delimiter::Bracket)),
                                   sep_end_by(self.expr(), token(Token::Comma)))
