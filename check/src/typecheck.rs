@@ -1323,16 +1323,12 @@ impl<'a> Typecheck<'a> {
 fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut f: F)
     where F: FnMut(&Symbol, &Option<Symbol>, &ArcType),
 {
-    if let Type::Record { ref row, .. } = **typ {
-        if let Type::ExtendRow { fields: ref field_types, .. } = **row {
-            for field in fields {
-                // If the field in the pattern does not exist (undefined field error) then skip it
-                // as the error itself will already have been reported
-                if let Some(associated_type) = field_types.iter()
-                    .find(|type_field| type_field.name.name_eq(&field.0)) {
-                    f(&field.0, &field.1, &associated_type.typ);
-                }
-            }
+    for field in fields {
+        // If the field in the pattern does not exist (undefined field error) then skip it as
+        // the error itself will already have been reported
+        if let Some(associated_type) = typ.field_iter()
+            .find(|type_field| type_field.name.name_eq(&field.0)) {
+            f(&field.0, &field.1, &associated_type.typ);
         }
     }
 }
