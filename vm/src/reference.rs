@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::Mutex;
 use std::marker::PhantomData;
 
-use base::types::{Type, TcType};
+use base::types::{Type, ArcType};
 use Result;
 use gc::{Gc, GcPtr, Traverseable};
 use vm::Thread;
@@ -38,7 +38,7 @@ impl<T> VmType for Reference<T>
 {
     type Type = Reference<T::Type>;
 
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let env = vm.global_env().get_env();
         let symbol = env.find_type_info("Ref").unwrap().name.clone();
         let ctor = Type::ident(symbol);

@@ -8,7 +8,7 @@ use value::{ArrayRepr, DataStruct, ExternFunction, Value, ValueArray, Def};
 use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
 use base::types;
-use base::types::{TcType, Type};
+use base::types::{ArcType, Type};
 use types::{VmIndex, VmTag, VmInt};
 use std::any::Any;
 use std::cell::Ref;
@@ -168,7 +168,7 @@ impl<T> From<Value> for Generic<T> {
 impl<T: VmType> VmType for Generic<T> {
     type Type = T::Type;
 
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
 
@@ -197,7 +197,7 @@ impl<T> Traverseable for Generic<T> {
 /// Module containing types which represent generic variables in gluon's type system
 pub mod generic {
     use super::VmType;
-    use base::types::TcType;
+    use base::types::ArcType;
     use vm::Thread;
     use thread::ThreadInternal;
 
@@ -208,7 +208,7 @@ pub mod generic {
             pub enum $i { }
             impl VmType for $i {
                 type Type = $i;
-                fn make_type(vm: &Thread) -> TcType {
+                fn make_type(vm: &Thread) -> ArcType {
                     let s = stringify!($i);
                     let lower  = [s.as_bytes()[0] + 32];
                     let lower_str = unsafe { ::std::str::from_utf8_unchecked(&lower) };
@@ -227,7 +227,7 @@ pub trait VmType {
     type Type: ?Sized + Any;
 
     /// Creates an gluon type which maps to `Self` in rust
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         vm.get_type::<Self::Type>()
     }
 
@@ -288,7 +288,7 @@ impl<'vm> Getable<'vm> for Value {
 
 impl<'vm, T: ?Sized + VmType> VmType for &'vm T {
     type Type = T::Type;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
 }
@@ -331,7 +331,7 @@ impl<'vm, T> VmType for WithVM<'vm, T>
 {
     type Type = T::Type;
 
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
 
@@ -480,7 +480,7 @@ impl<'vm> Getable<'vm> for f64 {
 }
 impl VmType for bool {
     type Type = Self;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         (*vm.global_env().get_env().find_type_info("std.types.Bool").unwrap()).clone().into_type()
     }
 }
@@ -502,7 +502,7 @@ impl<'vm> Getable<'vm> for bool {
 
 impl VmType for Ordering {
     type Type = Self;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.find_type_info("std.types.Ordering").unwrap().name.clone();
         Type::app(Type::ident(symbol), vec![])
     }
@@ -586,7 +586,7 @@ impl<'vm> Getable<'vm> for char {
 
 impl<'s, T: VmType> VmType for Ref<'s, T> {
     type Type = T::Type;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
 }
@@ -606,7 +606,7 @@ impl<'s, T> VmType for &'s [T]
 {
     type Type = &'static [T::Type];
 
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         Type::array(T::make_type(vm))
     }
 }
@@ -671,7 +671,7 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
 
 impl<'s, T: VmType> VmType for *const T {
     type Type = T::Type;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
 }
@@ -689,7 +689,7 @@ impl<T: VmType> VmType for Option<T>
     where T::Type: Sized,
 {
     type Type = Option<T::Type>;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.find_type_info("std.types.Option").unwrap().name.clone();
         Type::app(Type::ident(symbol), vec![T::make_type(vm)])
     }
@@ -731,7 +731,7 @@ impl<T: VmType, E: VmType> VmType for StdResult<T, E>
           E::Type: Sized,
 {
     type Type = StdResult<T::Type, E::Type>;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.find_type_info("std.types.Result").unwrap().name.clone();
         Type::app(Type::ident(symbol),
                   vec![E::make_type(vm), T::make_type(vm)])
@@ -783,7 +783,7 @@ pub enum MaybeError<T, E> {
 
 impl<T: VmType, E> VmType for MaybeError<T, E> {
     type Type = T::Type;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
 }
@@ -801,7 +801,7 @@ impl<T> VmType for IO<T>
           T::Type: Sized,
 {
     type Type = IO<T::Type>;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let env = vm.global_env().get_env();
         let alias = env.find_type_info("IO").unwrap().into_owned();
         Type::app(alias.into_type(), vec![T::make_type(vm)])
@@ -847,7 +847,7 @@ impl<T, V> VmType for OpaqueValue<T, V>
           V::Type: Sized,
 {
     type Type = V::Type;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         V::make_type(vm)
     }
 }
@@ -910,7 +910,7 @@ impl<'vm, T: VmType> VmType for Array<'vm, T>
     where T::Type: Sized,
 {
     type Type = Array<'static, T::Type>;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         Type::array(T::make_type(vm))
     }
 }
@@ -963,7 +963,7 @@ macro_rules! define_tuple {
         {
             type Type = ($($id::Type),+);
 
-            fn make_type(vm: &Thread) -> TcType {
+            fn make_type(vm: &Thread) -> ArcType {
                 let fields = vec![$(
                     types::Field {
                         name: Symbol::new(stringify!($id)),
@@ -1029,7 +1029,7 @@ pub use self::record::Record;
 
 pub mod record {
     use base::types;
-    use base::types::{Type, TcType};
+    use base::types::{Type, ArcType};
     use base::symbol::Symbol;
 
     use {Variants, Result};
@@ -1061,7 +1061,7 @@ pub mod record {
     }
 
     pub trait FieldTypes: FieldList {
-        fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, TcType>>);
+        fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>);
     }
 
     impl FieldList for () {
@@ -1071,7 +1071,7 @@ pub mod record {
     }
 
     impl FieldTypes for () {
-        fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, TcType>>) {}
+        fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, ArcType>>) {}
     }
 
     impl<F, H, T> FieldList for HList<(F, H), T>
@@ -1085,7 +1085,7 @@ pub mod record {
     impl<F: Field, H: VmType, T> FieldTypes for HList<(F, H), T>
         where T: FieldTypes,
     {
-        fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, TcType>>) {
+        fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
             fields.push(types::Field {
                 name: Symbol::new(F::name()),
                 typ: H::make_type(vm),
@@ -1141,7 +1141,7 @@ pub mod record {
         where A::Type: Sized,
     {
         type Type = Record<((&'static str, A::Type),)>;
-        fn make_type(vm: &Thread) -> TcType {
+        fn make_type(vm: &Thread) -> ArcType {
             let len = HList::<(F, A), T>::len() as usize;
             let mut fields = Vec::with_capacity(len);
             HList::<(F, A), T>::field_types(vm, &mut fields);
@@ -1251,7 +1251,7 @@ macro_rules! record {
 
 impl<F: VmType> VmType for Primitive<F> {
     type Type = F::Type;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         F::make_type(vm)
     }
 }
@@ -1314,7 +1314,7 @@ impl<'vm> Pushable<'vm> for CPrimitive {
 }
 
 
-fn make_type<T: ?Sized + VmType>(vm: &Thread) -> TcType {
+fn make_type<T: ?Sized + VmType>(vm: &Thread) -> ArcType {
     <T as VmType>::make_type(vm)
 }
 
@@ -1342,7 +1342,7 @@ impl<T, F> VmType for Function<T, F>
           F: VmType,
 {
     type Type = F::Type;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         F::make_type(vm)
     }
 }
@@ -1413,7 +1413,7 @@ impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
     type Type = fn ($($args::Type),*) -> R::Type;
     #[allow(non_snake_case)]
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let args = vec![$(make_type::<$args>(vm)),*];
         Type::function(args, make_type::<R>(vm))
     }
@@ -1490,7 +1490,7 @@ impl <'s, $($args: VmType,)* R: VmType> VmType for Fn($($args),*) -> R + 's {
     type Type = fn ($($args::Type),*) -> R::Type;
 
     #[allow(non_snake_case)]
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let args = vec![$(make_type::<$args>(vm)),*];
         Type::function(args, make_type::<R>(vm))
     }

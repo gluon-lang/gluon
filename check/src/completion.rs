@@ -8,7 +8,7 @@ use base::instantiate;
 use base::pos::{BytePos, Span};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
-use base::types::{TcType, Type, TypeEnv};
+use base::types::{ArcType, Type, TypeEnv};
 
 trait OnFound {
     fn on_ident(&mut self, ident: &TypedIdent) {
@@ -29,7 +29,7 @@ trait OnFound {
 
 struct GetType<E> {
     env: E,
-    typ: Option<TcType>,
+    typ: Option<ArcType>,
 }
 
 impl<E: TypeEnv> OnFound for GetType<E> {
@@ -45,12 +45,12 @@ impl<E: TypeEnv> OnFound for GetType<E> {
 
 pub struct Suggestion {
     pub name: String,
-    pub typ: TcType,
+    pub typ: ArcType,
 }
 
 struct Suggest<E> {
     env: E,
-    stack: ScopedMap<Symbol, TcType>,
+    stack: ScopedMap<Symbol, ArcType>,
     result: Vec<Suggestion>,
 }
 
@@ -238,7 +238,7 @@ impl<F> FindVisitor<F>
     }
 }
 
-pub fn find<T>(env: &T, expr: &SpannedExpr<TypedIdent>, pos: BytePos) -> Result<TcType, ()>
+pub fn find<T>(env: &T, expr: &SpannedExpr<TypedIdent>, pos: BytePos) -> Result<ArcType, ()>
     where T: TypeEnv,
 {
     let mut visitor = FindVisitor {

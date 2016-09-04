@@ -1,7 +1,7 @@
 use base::ast::{self, TypedIdent};
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{Alias, Generic, Kind, Type, KindEnv};
-use base::types::{TcType, TypeEnv, PrimitiveEnv, RcKind};
+use base::types::{ArcType, TypeEnv, PrimitiveEnv, RcKind};
 use check::typecheck::{self, Typecheck};
 use parser;
 
@@ -46,13 +46,13 @@ pub fn parse_new(s: &str)
 }
 
 #[allow(dead_code)]
-pub fn typecheck(text: &str) -> Result<TcType, typecheck::Error> {
+pub fn typecheck(text: &str) -> Result<ArcType, typecheck::Error> {
     let (_, t) = typecheck_expr(text);
     t
 }
 
 pub struct MockEnv {
-    bool: Alias<Symbol, TcType>,
+    bool: Alias<Symbol, ArcType>,
 }
 
 impl MockEnv {
@@ -77,33 +77,33 @@ impl KindEnv for MockEnv {
 }
 
 impl TypeEnv for MockEnv {
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         match id.as_ref() {
             "False" | "True" => Some(&self.bool.typ.as_ref().unwrap()),
             _ => None,
         }
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         match id.as_ref() {
             "Bool" => Some(&self.bool),
             _ => None,
         }
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         None
     }
 }
 
 impl PrimitiveEnv for MockEnv {
-    fn get_bool(&self) -> &TcType {
+    fn get_bool(&self) -> &ArcType {
         self.bool.typ.as_ref().unwrap()
     }
 }
 
 pub fn typecheck_expr(text: &str)
-                      -> (ast::SpannedExpr<TypedIdent>, Result<TcType, typecheck::Error>) {
+                      -> (ast::SpannedExpr<TypedIdent>, Result<ArcType, typecheck::Error>) {
     let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
 
     let env = MockEnv::new();
@@ -119,7 +119,7 @@ pub fn typecheck_expr(text: &str)
 #[allow(dead_code)]
 pub fn typecheck_partial_expr
     (text: &str)
-     -> (ast::SpannedExpr<TypedIdent>, Result<TcType, typecheck::Error>) {
+     -> (ast::SpannedExpr<TypedIdent>, Result<ArcType, typecheck::Error>) {
     let mut expr = match parse_new(text) {
         Ok(e) => e,
         Err((Some(e), _)) => e,
@@ -137,7 +137,7 @@ pub fn typecheck_partial_expr
 }
 
 #[allow(dead_code)]
-pub fn typ(s: &str) -> TcType {
+pub fn typ(s: &str) -> ArcType {
     assert!(s.len() != 0);
     typ_a(s, Vec::new())
 }
@@ -166,7 +166,7 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
 }
 
 #[allow(dead_code)]
-pub fn alias(s: &str, args: &[&str], typ: TcType) -> TcType {
+pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
     assert!(s.len() != 0);
     Type::alias(intern(s),
                 args.iter()

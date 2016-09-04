@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
-use base::types::{TcType, Type};
+use base::types::{ArcType, Type};
 
 use {Error, Result as VmResult};
 use api::record::{Record, HList};
@@ -79,7 +79,7 @@ impl<T: VmType> VmType for Sender<T>
     where T::Type: Sized,
 {
     type Type = Sender<T::Type>;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.global_env().get_env().find_type_info("Sender").unwrap().name.clone();
         Type::app(Type::ident(symbol), vec![T::make_type(vm)])
     }
@@ -89,7 +89,7 @@ impl<T: VmType> VmType for Receiver<T>
     where T::Type: Sized,
 {
     type Type = Receiver<T::Type>;
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.global_env().get_env().find_type_info("Receiver").unwrap().name.clone();
         Type::app(Type::ident(symbol), vec![T::make_type(vm)])
     }

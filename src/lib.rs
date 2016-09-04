@@ -28,7 +28,7 @@ use base::ast::{self, TypedIdent};
 use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
-use base::types::TcType;
+use base::types::ArcType;
 use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::generic::A;
@@ -129,7 +129,7 @@ pub mod compiler_pipeline {
     use super::*;
 
     use base::ast::{self, TypedIdent};
-    use base::types::TcType;
+    use base::types::ArcType;
     use base::symbol::Symbol;
 
     use vm::compiler::CompiledFunction;
@@ -172,7 +172,7 @@ pub mod compiler_pipeline {
         }
     }
 
-    pub struct TypecheckValue(pub ast::SpannedExpr<TypedIdent>, pub TcType);
+    pub struct TypecheckValue(pub ast::SpannedExpr<TypedIdent>, pub ArcType);
 
     pub trait Typecheckable {
         fn typecheck(self,
@@ -190,7 +190,7 @@ pub mod compiler_pipeline {
                               thread: &Thread,
                               file: &str,
                               expr_str: &str,
-                              expected_type: Option<&TcType>)
+                              expected_type: Option<&ArcType>)
                               -> Result<TypecheckValue>;
     }
     impl<T> Typecheckable for T
@@ -201,7 +201,7 @@ pub mod compiler_pipeline {
                               thread: &Thread,
                               file: &str,
                               expr_str: &str,
-                              expected_type: Option<&TcType>)
+                              expected_type: Option<&ArcType>)
                               -> Result<TypecheckValue>
             where Self: Sized,
         {
@@ -217,7 +217,7 @@ pub mod compiler_pipeline {
                               thread: &Thread,
                               file: &str,
                               expr_str: &str,
-                              expected_type: Option<&TcType>)
+                              expected_type: Option<&ArcType>)
                               -> Result<TypecheckValue>
             where Self: Sized,
         {
@@ -226,7 +226,7 @@ pub mod compiler_pipeline {
         }
     }
 
-    pub struct CompileValue(pub ast::SpannedExpr<TypedIdent>, pub TcType, pub CompiledFunction);
+    pub struct CompileValue(pub ast::SpannedExpr<TypedIdent>, pub ArcType, pub CompiledFunction);
 
     pub trait Compileable<Extra> {
         fn compile(self,
@@ -236,14 +236,14 @@ pub mod compiler_pipeline {
                    arg: Extra)
                    -> Result<CompileValue>;
     }
-    impl<'a, 'b, T> Compileable<(&'a str, Option<&'b TcType>)> for T
+    impl<'a, 'b, T> Compileable<(&'a str, Option<&'b ArcType>)> for T
         where T: Typecheckable,
     {
         fn compile(self,
                    compiler: &mut Compiler,
                    thread: &Thread,
                    file: &str,
-                   (expr_str, expected_type): (&'a str, Option<&'b TcType>))
+                   (expr_str, expected_type): (&'a str, Option<&'b ArcType>))
                    -> Result<CompileValue> {
             self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
                 .and_then(|tc_value| tc_value.compile(compiler, thread, file, ()))
@@ -267,7 +267,7 @@ pub mod compiler_pipeline {
                          vm: &'vm Thread,
                          name: &str,
                          arg: Extra)
-                         -> Result<(RootedValue<&'vm Thread>, TcType)>;
+                         -> Result<(RootedValue<&'vm Thread>, ArcType)>;
         fn load_script(self,
                        compiler: &mut Compiler,
                        vm: &Thread,
@@ -283,7 +283,7 @@ pub mod compiler_pipeline {
                          vm: &'vm Thread,
                          name: &str,
                          arg: Extra)
-                         -> Result<(RootedValue<&'vm Thread>, TcType)> {
+                         -> Result<(RootedValue<&'vm Thread>, ArcType)> {
 
             self.compile(compiler, vm, name, arg)
                 .and_then(|v| v.run_expr(compiler, vm, name, ()))
@@ -304,7 +304,7 @@ pub mod compiler_pipeline {
                          vm: &'vm Thread,
                          name: &str,
                          _: ())
-                         -> Result<(RootedValue<&'vm Thread>, TcType)> {
+                         -> Result<(RootedValue<&'vm Thread>, ArcType)> {
             let CompileValue(_, typ, mut function) = self;
             function.id = Symbol::new(name);
             let function = try!(vm.global_env().new_function(function));
@@ -375,7 +375,7 @@ impl Compiler {
                           file: &str,
                           expr_str: &str,
                           expr: &mut ast::SpannedExpr<TypedIdent>)
-                          -> Result<TcType> {
+                          -> Result<ArcType> {
         self.typecheck_expr_expected(vm, file, expr_str, expr, None)
     }
 
@@ -384,8 +384,8 @@ impl Compiler {
                                file: &str,
                                expr_str: &str,
                                expr: &mut ast::SpannedExpr<TypedIdent>,
-                               expected_type: Option<&TcType>)
-                               -> Result<TcType> {
+                               expected_type: Option<&ArcType>)
+                               -> Result<ArcType> {
         use check::typecheck::Typecheck;
 
         let env = vm.get_env();
@@ -401,8 +401,8 @@ impl Compiler {
                          vm: &Thread,
                          file: &str,
                          expr_str: &str,
-                         expected_type: Option<&TcType>)
-                         -> Result<(ast::SpannedExpr<TypedIdent>, TcType)> {
+                         expected_type: Option<&ArcType>)
+                         -> Result<(ast::SpannedExpr<TypedIdent>, ArcType)> {
         let mut expr = try!(self.parse_expr(file, expr_str));
         if self.implicit_prelude {
             self.include_implicit_prelude(file, &mut expr);
@@ -439,7 +439,7 @@ impl Compiler {
                             vm: &Thread,
                             file: &str,
                             expr_str: &str)
-                            -> Result<(ast::SpannedExpr<TypedIdent>, TcType, Metadata)> {
+                            -> Result<(ast::SpannedExpr<TypedIdent>, ArcType, Metadata)> {
         use check::metadata;
         let (mut expr, typ) = try!(self.typecheck_str(vm, file, expr_str, None));
 
@@ -480,8 +480,8 @@ impl Compiler {
                       vm: &'vm Thread,
                       name: &str,
                       expr_str: &str,
-                      expected_type: Option<&TcType>)
-                      -> Result<(RootedValue<&'vm Thread>, TcType)> {
+                      expected_type: Option<&ArcType>)
+                      -> Result<(RootedValue<&'vm Thread>, ArcType)> {
         let (expr, typ) = try!(self.typecheck_str(vm, name, expr_str, expected_type));
         let mut function = try!(self.compile_script(vm, name, &expr));
         function.id = Symbol::new(name);
@@ -497,7 +497,7 @@ impl Compiler {
                             vm: &'vm Thread,
                             name: &str,
                             expr_str: &str)
-                            -> Result<(T, TcType)>
+                            -> Result<(T, ArcType)>
         where T: Getable<'vm> + VmType,
     {
         let expected = T::make_type(vm);
@@ -514,7 +514,7 @@ impl Compiler {
                                vm: &'vm Thread,
                                name: &str,
                                expr_str: &str)
-                               -> Result<(T, TcType)>
+                               -> Result<(T, ArcType)>
         where T: Getable<'vm> + VmType,
               T::Type: Sized,
     {

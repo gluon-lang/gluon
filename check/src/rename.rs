@@ -6,7 +6,7 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::types::{self, Alias, TcType, Type, RcKind, KindEnv, TypeEnv};
+use base::types::{self, Alias, ArcType, Type, RcKind, KindEnv, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
@@ -16,8 +16,8 @@ pub type Error = Errors<Spanned<RenameError, BytePos>>;
 pub enum RenameError {
     NoMatchingType {
         symbol: String,
-        expected: TcType,
-        possible_types: Vec<(Option<Span<BytePos>>, TcType)>,
+        expected: ArcType,
+        possible_types: Vec<(Option<Span<BytePos>>, ArcType)>,
     },
 }
 
@@ -44,8 +44,8 @@ impl fmt::Display for RenameError {
 
 struct Environment<'b> {
     env: &'b TypeEnv,
-    stack: ScopedMap<Symbol, (Symbol, Span<BytePos>, TcType)>,
-    stack_types: ScopedMap<Symbol, Alias<Symbol, TcType>>,
+    stack: ScopedMap<Symbol, (Symbol, Span<BytePos>, ArcType)>,
+    stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -55,17 +55,17 @@ impl<'a> KindEnv for Environment<'a> {
 }
 
 impl<'a> TypeEnv for Environment<'a> {
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         self.stack.get(id).map(|t| &t.2).or_else(|| self.env.find_type(id))
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         self.stack_types
             .get(id)
             .or_else(|| self.env.find_type_info(id))
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         None
     }
 }
@@ -83,7 +83,7 @@ pub fn rename(symbols: &mut SymbolModule,
     }
 
     impl<'a, 'b> RenameVisitor<'a, 'b> {
-        fn find_fields(&self, typ: &TcType) -> Option<Vec<types::Field<Symbol, TcType>>> {
+        fn find_fields(&self, typ: &ArcType) -> Option<Vec<types::Field<Symbol, ArcType>>> {
             // Walk through all type aliases
             match *instantiate::remove_aliases(&self.env, typ.clone()) {
                 Type::Record { ref fields, .. } => Some(fields.to_owned()),
@@ -91,7 +91,7 @@ pub fn rename(symbols: &mut SymbolModule,
             }
         }
 
-        fn new_pattern(&mut self, typ: &TcType, pattern: &mut ast::SpannedPattern<TypedIdent>) {
+        fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<TypedIdent>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
                     let field_types = self.find_fields(typ).expect("field_types");
@@ -132,7 +132,7 @@ pub fn rename(symbols: &mut SymbolModule,
             }
         }
 
-        fn stack_var(&mut self, id: Symbol, span: Span<BytePos>, typ: TcType) -> Symbol {
+        fn stack_var(&mut self, id: Symbol, span: Span<BytePos>, typ: ArcType) -> Symbol {
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
             let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
@@ -145,7 +145,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
         }
 
-        fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, TcType>) {
+        fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
             // Insert variant constructors into the local scope
             if let Some(ref real_type) = alias.typ {
                 if let Type::Variants(ref variants) = **real_type {
@@ -163,7 +163,7 @@ pub fn rename(symbols: &mut SymbolModule,
         /// Renames `id` to the unique identifier which have the type `expected`
         /// Returns `Some(new_id)` if renaming was necessary or `None` if no renaming was necessary
         /// as `id` was currently unique (#Int+, #Float*, etc)
-        fn rename(&self, id: &Symbol, expected: &TcType) -> Result<Option<Symbol>, RenameError> {
+        fn rename(&self, id: &Symbol, expected: &ArcType) -> Result<Option<Symbol>, RenameError> {
             let locals = self.env
                 .stack
                 .get_all(id);
@@ -322,7 +322,7 @@ pub fn rename(symbols: &mut SymbolModule,
     }
 }
 
-pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
+pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
     let mut unifier = UnifierState {
         state: State::new(env),
         unifier: Equivalent {
@@ -335,19 +335,19 @@ pub fn equivalent(env: &TypeEnv, actual: &TcType, inferred: &TcType) -> bool {
 }
 
 struct Equivalent {
-    map: FnvMap<Symbol, TcType>,
+    map: FnvMap<Symbol, ArcType>,
     equiv: bool,
 }
 
-impl<'a> Unifier<State<'a>, TcType> for Equivalent {
+impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
     fn report_error(_unifier: &mut UnifierState<State<'a>, Self>,
-                    _error: UnifyError<TcType, TypeError<Symbol>>) {
+                    _error: UnifyError<ArcType, TypeError<Symbol>>) {
     }
 
     fn try_match(unifier: &mut UnifierState<State<'a>, Self>,
-                 l: &TcType,
-                 r: &TcType)
-                 -> Option<TcType> {
+                 l: &ArcType,
+                 r: &ArcType)
+                 -> Option<ArcType> {
         debug!("{} ====> {}", l, r);
         match (&**l, &**r) {
             (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => None,

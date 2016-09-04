@@ -392,7 +392,7 @@ impl<Id> Typed for Expr<Id>
 {
     type Id = Id::Id;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         match *self {
             Expr::Ident(ref id) |
             Expr::Projection(_, ref id) => id.env_type_of(env),
@@ -443,7 +443,7 @@ impl<T: Typed> Typed for Spanned<T, BytePos> {
 impl Typed for Pattern<TypedIdent> {
     type Id = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
             Pattern::Ident(ref name) => name.env_type_of(env),
@@ -456,7 +456,7 @@ impl Typed for Pattern<TypedIdent> {
 impl Typed for ValueBinding<TypedIdent> {
     type Id = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         match self.typ {
             Some(ref typ) => typ.clone(),
             None => self.name.env_type_of(env),
@@ -464,10 +464,7 @@ impl Typed for ValueBinding<TypedIdent> {
     }
 }
 
-fn get_return_type(env: &TypeEnv,
-                   alias_type: &ArcType<Symbol>,
-                   arg_count: usize)
-                   -> ArcType<Symbol> {
+fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
     if arg_count == 0 {
         alias_type.clone()
     } else {

@@ -26,7 +26,7 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use base::types::{Alias, KindEnv, RcKind, TcType, TypeEnv};
+    use base::types::{Alias, KindEnv, RcKind, ArcType, TypeEnv};
     use base::symbol::{Symbol, Symbols, SymbolModule, SymbolRef};
 
     pub struct MockEnv;
@@ -38,13 +38,13 @@ mod tests {
     }
 
     impl TypeEnv for MockEnv {
-        fn find_type(&self, _id: &SymbolRef) -> Option<&TcType> {
+        fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
             None
         }
-        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
             None
         }
-        fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+        fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
             None
         }
     }

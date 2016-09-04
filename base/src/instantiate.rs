@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 
 use types;
-use types::{AliasData, Type, Generic, TcType, TypeEnv};
+use types::{AliasData, Type, Generic, ArcType, TypeEnv};
 use symbol::Symbol;
 use fnv::FnvMap;
 
@@ -21,14 +21,14 @@ quick_error! {
 }
 
 /// Removes type aliases from `typ` until it is an actual type
-pub fn remove_aliases(env: &TypeEnv, mut typ: TcType) -> TcType {
+pub fn remove_aliases(env: &TypeEnv, mut typ: ArcType) -> ArcType {
     while let Ok(Some(new)) = maybe_remove_alias(env, &typ) {
         typ = new;
     }
     typ
 }
 
-pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t TcType) -> Cow<'t, TcType> {
+pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t ArcType) -> Cow<'t, ArcType> {
     let mut typ = match maybe_remove_alias(env, typ) {
         Ok(Some(new)) => new,
         _ => return Cow::Borrowed(typ),
@@ -42,8 +42,8 @@ pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t TcType) -> Cow<'t, TcType>
 /// Removes all possible aliases while checking that
 pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
                               env: &TypeEnv,
-                              typ: &TcType)
-                              -> Result<Option<TcType>, Error> {
+                              typ: &ArcType)
+                              -> Result<Option<ArcType>, Error> {
     if let Some((alias_id, _)) = typ.as_alias() {
         if reduced_aliases.iter().any(|name| name == alias_id) {
             return Err(Error::SelfRecursive(alias_id.clone()));
@@ -69,13 +69,13 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
     Ok(Some(typ))
 }
 
-pub fn remove_alias(env: &TypeEnv, typ: TcType) -> TcType {
+pub fn remove_alias(env: &TypeEnv, typ: ArcType) -> ArcType {
     maybe_remove_alias(env, &typ).unwrap_or(None).unwrap_or(typ)
 }
 
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
-pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>, Error> {
+pub fn maybe_remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
         Type::App(ref alias, ref args) => {
@@ -108,7 +108,7 @@ pub fn maybe_remove_alias(env: &TypeEnv, typ: &TcType) -> Result<Option<TcType>,
 ///     alias = Result e t (| Err e | Ok t)
 ///     arguments = [Error, Option a]
 ///     result = | Err Error | Ok (Option a)
-pub fn type_of_alias(alias: &AliasData<Symbol, TcType>, arguments: &[TcType]) -> Option<TcType> {
+pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, arguments: &[ArcType]) -> Option<ArcType> {
     let args = &alias.args;
     let mut typ = match alias.typ {
         Some(ref typ) => typ.clone(),
@@ -165,7 +165,7 @@ pub fn type_of_alias(alias: &AliasData<Symbol, TcType>, arguments: &[TcType]) ->
 
 #[derive(Debug, Default)]
 pub struct Instantiator {
-    pub named_variables: FnvMap<Symbol, TcType>,
+    pub named_variables: FnvMap<Symbol, ArcType>,
 }
 
 impl Instantiator {
@@ -175,8 +175,8 @@ impl Instantiator {
 
     fn variable_for(&mut self,
                     generic: &Generic<Symbol>,
-                    on_unbound: &mut FnMut(&Symbol) -> TcType)
-                    -> TcType {
+                    on_unbound: &mut FnMut(&Symbol) -> ArcType)
+                    -> ArcType {
         let var = match self.named_variables.entry(generic.id.clone()) {
             Entry::Vacant(entry) => {
                 let t = on_unbound(&generic.id);
@@ -188,27 +188,27 @@ impl Instantiator {
         if let Type::Variable(ref mut var) = var {
             var.kind = generic.kind.clone();
         }
-        TcType::from(var)
+        ArcType::from(var)
     }
 
     /// Instantiates a type, replacing all generic variables with fresh type variables
-    pub fn instantiate<F>(&mut self, typ: &TcType, on_unbound: F) -> TcType
-        where F: FnMut(&Symbol) -> TcType,
+    pub fn instantiate<F>(&mut self, typ: &ArcType, on_unbound: F) -> ArcType
+        where F: FnMut(&Symbol) -> ArcType,
     {
         self.named_variables.clear();
         self.instantiate_(typ, on_unbound)
     }
 
-    pub fn instantiate_<F>(&mut self, typ: &TcType, mut on_unbound: F) -> TcType
-        where F: FnMut(&Symbol) -> TcType,
+    pub fn instantiate_<F>(&mut self, typ: &ArcType, mut on_unbound: F) -> ArcType
+        where F: FnMut(&Symbol) -> ArcType,
     {
         instantiate(typ.clone(),
                     |id| Some(self.variable_for(id, &mut on_unbound)))
     }
 }
 
-pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-    where F: FnMut(&Generic<Symbol>) -> Option<TcType>,
+pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
+    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
 {
     types::walk_move_type(typ,
                           &mut |typ| {

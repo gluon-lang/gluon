@@ -11,7 +11,7 @@ use std::usize;
 
 use base::metadata::Metadata;
 use base::symbol::Symbol;
-use base::types::TcType;
+use base::types::ArcType;
 use base::types;
 use base::fnv::FnvMap;
 
@@ -339,19 +339,19 @@ impl Thread {
 
     /// Retrieves type information about the type `name`. Types inside records can be accessed
     /// using dot notation (std.prelude.Option)
-    pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, TcType>> {
+    pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, ArcType>> {
         let env = self.get_env();
         env.find_type_info(name)
             .map(|alias| alias.into_owned())
     }
 
     /// Returns the gluon type that was bound to `T`
-    pub fn get_type<T: ?Sized + Any>(&self) -> TcType {
+    pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
         self.global_env().get_type::<T>()
     }
 
     /// Registers the type `T` as being a gluon type called `name` with generic arguments `args`
-    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<TcType> {
+    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<ArcType> {
         self.global_env().register_type::<T>(name, args)
     }
 
@@ -469,13 +469,13 @@ pub trait ThreadInternal {
 
     fn add_bytecode(&self,
                     name: &str,
-                    typ: TcType,
+                    typ: ArcType,
                     args: VmIndex,
                     instructions: Vec<Instruction>)
                     -> Result<()>;
 
     /// Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value>;
+    fn call_module(&self, typ: &ArcType, closure: GcPtr<ClosureData>) -> Result<Value>;
 
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
@@ -541,7 +541,7 @@ impl ThreadInternal for Thread {
 
     fn add_bytecode(&self,
                     name: &str,
-                    typ: TcType,
+                    typ: ArcType,
                     args: VmIndex,
                     instructions: Vec<Instruction>)
                     -> Result<()> {
@@ -556,7 +556,7 @@ impl ThreadInternal for Thread {
 
 
     /// Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
+    fn call_module(&self, typ: &ArcType, closure: GcPtr<ClosureData>) -> Result<Value> {
         let value = try!(self.call_bytecode(closure));
         if let Some((id, _)) = typ.as_alias() {
             let is_io = {

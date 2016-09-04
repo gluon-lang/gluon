@@ -30,7 +30,7 @@ mod vm;
 
 use api::ValueRef;
 use value::Value;
-use base::types::TcType;
+use base::types::ArcType;
 use base::symbol::Symbol;
 
 #[derive(Debug)]
@@ -64,7 +64,7 @@ quick_error! {
         UndefinedBinding(symbol: String) {
             display("Binding `{}` is not defined", symbol)
         }
-        UndefinedField(typ: TcType, field: String) {
+        UndefinedField(typ: ArcType, field: String) {
             display("Type `{}` does not have the field `{}`", typ, field)
         }
         TypeAlreadyExists(symbol: String) {
@@ -76,7 +76,7 @@ quick_error! {
         MetadataDoesNotExist(symbol: String) {
             display("No metadata exists for `{}`", symbol)
         }
-        WrongType(expected: TcType, actual: TcType) {
+        WrongType(expected: ArcType, actual: ArcType) {
             display("Expected a value of type `{}` but the inferred type was `{}`",
                     expected, actual)
         }

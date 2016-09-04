@@ -9,7 +9,7 @@ use base::ast::Typed;
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{Alias, AliasData, ArcType, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv,
-                  TcType, RcKind};
+                  RcKind};
 use base::fnv::FnvMap;
 
 use macros::MacroEnv;
@@ -58,7 +58,7 @@ fn new_bytecode(gc: &mut Gc,
 #[derive(Debug)]
 pub struct Global {
     pub id: Symbol,
-    pub typ: TcType,
+    pub typ: ArcType,
     pub metadata: Metadata,
     pub value: Value,
 }
@@ -71,15 +71,15 @@ impl Traverseable for Global {
 
 impl Typed for Global {
     type Id = Symbol;
-    fn env_type_of(&self, _: &TypeEnv) -> ArcType<Symbol> {
+    fn env_type_of(&self, _: &TypeEnv) -> ArcType {
         self.typ.clone()
     }
 }
 
 pub struct GlobalVmState {
     env: RwLock<VmEnv>,
-    generics: RwLock<FnvMap<StdString, TcType>>,
-    typeids: RwLock<FnvMap<TypeId, TcType>>,
+    generics: RwLock<FnvMap<StdString, ArcType>>,
+    typeids: RwLock<FnvMap<TypeId, ArcType>>,
     interner: RwLock<Interner>,
     macros: MacroEnv,
     // FIXME These fields should not be public
@@ -125,7 +125,7 @@ impl KindEnv for VmEnv {
     }
 }
 impl TypeEnv for VmEnv {
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         self.globals
             .get(AsRef::<str>::as_ref(id))
             .map(|g| &g.typ)
@@ -149,17 +149,17 @@ impl TypeEnv for VmEnv {
                     .map(|ctor| ctor)
             })
     }
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         self.type_infos
             .find_type_info(id)
     }
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         self.type_infos.find_record(fields)
     }
 }
 
 impl PrimitiveEnv for VmEnv {
-    fn get_bool(&self) -> &TcType {
+    fn get_bool(&self) -> &ArcType {
         self.find_type_info("std.types.Bool")
             .ok()
             .and_then(|alias| match alias {
@@ -190,7 +190,7 @@ fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
 }
 
 impl VmEnv {
-    pub fn find_type_info(&self, name: &str) -> Result<Cow<Alias<Symbol, TcType>>> {
+    pub fn find_type_info(&self, name: &str) -> Result<Cow<Alias<Symbol, ArcType>>> {
         let name = Name::new(name);
         let module_str = name.module().as_str();
         if module_str == "" {
@@ -216,7 +216,7 @@ impl VmEnv {
         })
     }
 
-    pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<TcType>)> {
+    pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
         use base::instantiate;
         let globals = &self.globals;
         let mut module = Name::new(name);
@@ -334,13 +334,13 @@ impl GlobalVmState {
         vm
     }
 
-    fn add_types(&mut self) -> StdResult<(), (TypeId, TcType)> {
+    fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
         use api::generic::A;
         use api::Generic;
-        fn add_type<T: Any>(ids: &mut FnvMap<TypeId, TcType>,
+        fn add_type<T: Any>(ids: &mut FnvMap<TypeId, ArcType>,
                             env: &mut VmEnv,
                             name: &str,
-                            typ: TcType) {
+                            typ: ArcType) {
             ids.insert(TypeId::of::<T>(), typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(name.into(),
@@ -371,7 +371,7 @@ impl GlobalVmState {
         new_bytecode(&mut self.gc.lock().unwrap(), self, f)
     }
 
-    pub fn get_type<T: ?Sized + Any>(&self) -> TcType {
+    pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
         let id = TypeId::of::<T>();
         self.typeids
             .read()
@@ -389,7 +389,7 @@ impl GlobalVmState {
     /// TODO dont expose this directly
     pub fn set_global(&self,
                       id: Symbol,
-                      typ: TcType,
+                      typ: ArcType,
                       metadata: Metadata,
                       value: Value)
                       -> Result<()> {
@@ -405,12 +405,12 @@ impl GlobalVmState {
         Ok(())
     }
 
-    pub fn get_generic(&self, name: &str) -> TcType {
+    pub fn get_generic(&self, name: &str) -> ArcType {
         let mut generics = self.generics.write().unwrap();
         if let Some(g) = generics.get(name) {
             return g.clone();
         }
-        let g: TcType = Type::generic(Generic {
+        let g: ArcType = Type::generic(Generic {
             id: Symbol::new(name),
             kind: Kind::typ(),
         });
@@ -419,7 +419,7 @@ impl GlobalVmState {
     }
 
     /// Registers a new type called `name`
-    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<TcType> {
+    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<ArcType> {
         let mut env = self.env.write().unwrap();
         let type_infos = &mut env.type_infos;
         if type_infos.id_to_type.contains_key(name) {
@@ -434,7 +434,7 @@ impl GlobalVmState {
                 })
                 .collect();
             let n = Symbol::new(name);
-            let typ: TcType = Type::app(Type::ident(n.clone()), arg_types);
+            let typ: ArcType = Type::app(Type::ident(n.clone()), arg_types);
             self.typeids
                 .write()
                 .unwrap()

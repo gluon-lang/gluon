@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::Mutex;
 
 use base::types;
-use base::types::{Type, TcType};
+use base::types::{Type, ArcType};
 use gc::{Gc, Traverseable};
 use api::{OpaqueValue, Userdata, VmType};
 use api::generic::A;
@@ -50,7 +50,7 @@ impl<T> VmType for Lazy<T>
 {
     type Type = Lazy<T::Type>;
 
-    fn make_type(vm: &Thread) -> TcType {
+    fn make_type(vm: &Thread) -> ArcType {
         let env = vm.global_env().get_env();
         let symbol = env.find_type_info("Lazy").unwrap().name.clone();
         let ctor = Type::ident(symbol);

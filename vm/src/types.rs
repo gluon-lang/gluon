@@ -1,6 +1,6 @@
 use base::symbol::{Symbol, SymbolRef};
 use base::types;
-use base::types::{Alias, KindEnv, TypeEnv, TcType, Type};
+use base::types::{Alias, KindEnv, TypeEnv, ArcType, Type};
 use base::fnv::FnvMap;
 
 pub use self::Instruction::*;
@@ -139,8 +139,8 @@ impl Instruction {
 
 #[derive(Debug)]
 pub struct TypeInfos {
-    pub id_to_type: FnvMap<String, Alias<Symbol, TcType>>,
-    pub type_to_id: FnvMap<TcType, TcType>,
+    pub id_to_type: FnvMap<String, Alias<Symbol, ArcType>>,
+    pub type_to_id: FnvMap<ArcType, ArcType>,
 }
 
 impl KindEnv for TypeInfos {
@@ -157,7 +157,7 @@ impl KindEnv for TypeInfos {
 }
 
 impl TypeEnv for TypeInfos {
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .iter()
@@ -175,13 +175,13 @@ impl TypeEnv for TypeInfos {
             .map(|x| &x.1)
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .get(id)
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         self.id_to_type
             .iter()
             .find(|&(_, alias)| {

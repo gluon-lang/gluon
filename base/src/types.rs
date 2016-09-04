@@ -11,8 +11,6 @@ use pretty::{DocAllocator, Arena, DocBuilder};
 use ast::{self, DisplayEnv};
 use symbol::{Symbol, SymbolRef};
 
-pub type TcType = ArcType<Symbol>;
-
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`
@@ -28,26 +26,26 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
     /// Returns the type of the value bound at `id`
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType>;
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType>;
 
     /// Returns information about the type `id`
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>>;
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>>;
 
     /// Returns a record which contains all `fields`. The first element is the record type and the
     /// second is the alias type.
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)>;
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         (**self).find_type(id)
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         (**self).find_type_info(id)
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         (**self).find_record(fields)
     }
 }
@@ -55,17 +53,17 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
 /// Trait which is a `TypeEnv` which also provides access to the type representation of some
 /// primitive types
 pub trait PrimitiveEnv: TypeEnv {
-    fn get_bool(&self) -> &TcType;
+    fn get_bool(&self) -> &ArcType;
 }
 
 impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
-    fn get_bool(&self) -> &TcType {
+    fn get_bool(&self) -> &ArcType {
         (**self).get_bool()
     }
 }
 
-pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-    where F: FnMut(&Generic<Symbol>) -> Option<TcType>,
+pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
+    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
 {
     walk_move_type(typ,
                    &mut |typ| {
@@ -125,7 +123,7 @@ impl<Id, T> Type<Id, T>
 
 /// A shared type which is atomically reference counted
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct ArcType<Id> {
+pub struct ArcType<Id = Symbol> {
     typ: Arc<Type<Id, ArcType<Id>>>,
 }
 

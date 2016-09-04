@@ -12,7 +12,7 @@ use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{self, ArcType, RcKind, Type, Generic, Kind};
-use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TcType, TypeVariable};
+use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
 use unify::Error as UnifyError;
@@ -131,9 +131,9 @@ struct Environment<'a> {
     /// The global environment which the typechecker extracts types from
     environment: &'a (PrimitiveEnv + 'a),
     /// Stack allocated variables
-    stack: ScopedMap<Symbol, TcType>,
+    stack: ScopedMap<Symbol, ArcType>,
     /// Types which exist in some scope (`type Test = ... in ...`)
-    stack_types: ScopedMap<Symbol, (TcType, Alias<Symbol, TcType>)>,
+    stack_types: ScopedMap<Symbol, (ArcType, Alias<Symbol, ArcType>)>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -152,18 +152,18 @@ impl<'a> KindEnv for Environment<'a> {
 }
 
 impl<'a> TypeEnv for Environment<'a> {
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         self.stack.get(id).or_else(|| self.environment.find_type(id))
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         self.stack_types
             .get(id)
             .map(|&(_, ref alias)| alias)
             .or_else(|| self.environment.find_type_info(id))
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         self.stack_types
             .iter()
             .find(|&(_, &(_, ref alias))| {
@@ -186,7 +186,7 @@ impl<'a> TypeEnv for Environment<'a> {
 }
 
 impl<'a> PrimitiveEnv for Environment<'a> {
-    fn get_bool(&self) -> &TcType {
+    fn get_bool(&self) -> &ArcType {
         self.environment.get_bool()
     }
 }
@@ -194,7 +194,7 @@ impl<'a> PrimitiveEnv for Environment<'a> {
 /// Type returned from the main typecheck function to make sure that nested `type` and `let`
 /// expressions dont overflow the stack
 enum TailCall {
-    Type(TcType),
+    Type(ArcType),
     /// Returned from typechecking a `let` or `type` expresion to indicate that the expression body
     /// should be typechecked now.
     TailCall,
@@ -207,11 +207,11 @@ pub struct Typecheck<'a> {
     /// Mapping from the fresh symbol generated during typechecking to the symbol that was assigned
     /// during typechecking
     original_symbols: ScopedMap<Symbol, Symbol>,
-    subs: Substitution<TcType>,
+    subs: Substitution<ArcType>,
     inst: Instantiator,
     errors: Errors<SpannedTypeError<Symbol>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
-    type_variables: ScopedMap<Symbol, TcType>,
+    type_variables: ScopedMap<Symbol, ArcType>,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
@@ -239,7 +239,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn error(&mut self, span: Span<BytePos>, error: TypeError<Symbol>) -> TcType {
+    fn error(&mut self, span: Span<BytePos>, error: TypeError<Symbol>) -> ArcType {
         self.errors.error(Spanned {
             span: span,
             value: error,
@@ -247,18 +247,18 @@ impl<'a> Typecheck<'a> {
         self.subs.new_var()
     }
 
-    fn bool(&self) -> TcType {
+    fn bool(&self) -> ArcType {
         self.environment.get_bool().clone()
     }
 
-    fn find_at(&mut self, span: Span<BytePos>, id: &Symbol) -> TcType {
+    fn find_at(&mut self, span: Span<BytePos>, id: &Symbol) -> ArcType {
         match self.find(id) {
             Ok(typ) => typ,
             Err(err) => self.error(span, err),
         }
     }
 
-    fn find(&mut self, id: &Symbol) -> TcResult<TcType> {
+    fn find(&mut self, id: &Symbol) -> TcResult<ArcType> {
         let symbols = &mut self.symbols;
         let subs = &mut self.subs;
         let inst = &mut self.inst;
@@ -275,23 +275,23 @@ impl<'a> Typecheck<'a> {
             })
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> TcResult<(&TcType, &TcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> TcResult<(&ArcType, &ArcType)> {
         self.environment
             .find_record(fields)
             .ok_or(UndefinedRecord { fields: fields.to_owned() })
     }
 
-    fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, ArcType>> {
         self.environment
             .find_type_info(id)
             .ok_or_else(|| UndefinedType(id.clone()))
     }
 
-    fn stack_var(&mut self, id: Symbol, typ: TcType) {
+    fn stack_var(&mut self, id: Symbol, typ: ArcType) {
         self.environment.stack.insert(id, typ);
     }
 
-    fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, TcType>) {
+    fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
         if let Some(ref real_type) = alias.typ {
             if let Type::Variants(ref variants) = **real_type {
@@ -303,7 +303,7 @@ impl<'a> Typecheck<'a> {
             }
         }
         let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
-        let typ = Type::<_, TcType>::app(alias.as_ref().clone(), generic_args);
+        let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
@@ -357,7 +357,7 @@ impl<'a> Typecheck<'a> {
                 }
             }
 
-            fn visit_typ(&mut self, typ: &mut ArcType<Symbol>) {
+            fn visit_typ(&mut self, typ: &mut ArcType) {
                 if let Some(finished) = self.tc.finish_type(self.level, typ) {
                     *typ = finished;
                 }
@@ -374,14 +374,14 @@ impl<'a> Typecheck<'a> {
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
-    pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<TypedIdent>) -> Result<TcType, Error> {
+    pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<TypedIdent>) -> Result<ArcType, Error> {
         self.typecheck_expr_expected(expr, None)
     }
 
     pub fn typecheck_expr_expected(&mut self,
                                    expr: &mut SpannedExpr<TypedIdent>,
-                                   expected_type: Option<&TcType>)
-                                   -> Result<TcType, Error> {
+                                   expected_type: Option<&ArcType>)
+                                   -> Result<ArcType, Error> {
         fn tail_expr(e: &mut SpannedExpr<TypedIdent>) -> &mut SpannedExpr<TypedIdent> {
             match e.value {
                 Expr::LetBindings(_, ref mut b) |
@@ -425,7 +425,7 @@ impl<'a> Typecheck<'a> {
 
     /// Main typechecking function. Returns the type of the expression if typechecking was
     /// successful
-    fn typecheck(&mut self, mut expr: &mut SpannedExpr<TypedIdent>) -> TcType {
+    fn typecheck(&mut self, mut expr: &mut SpannedExpr<TypedIdent>) -> ArcType {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -688,10 +688,10 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_lambda(&mut self,
-                        function_type: TcType,
+                        function_type: ArcType,
                         arguments: &mut [TypedIdent],
                         body: &mut SpannedExpr<TypedIdent>)
-                        -> TcType {
+                        -> ArcType {
         self.enter_scope();
         let mut arg_types = Vec::new();
         {
@@ -710,8 +710,8 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_pattern(&mut self,
                          pattern: &mut SpannedPattern<TypedIdent>,
-                         match_type: TcType)
-                         -> TcType {
+                         match_type: ArcType)
+                         -> ArcType {
         let span = pattern.span;
         match pattern.value {
             Pattern::Constructor(ref mut id, ref mut args) => {
@@ -834,7 +834,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_pattern_rec(&mut self, args: &[TypedIdent], typ: TcType) -> TcResult<TcType> {
+    fn typecheck_pattern_rec(&mut self, args: &[TypedIdent], typ: ArcType) -> TcResult<ArcType> {
         if args.len() == 0 {
             return Ok(typ);
         }
@@ -1003,7 +1003,7 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn kindcheck(&self, typ: &mut TcType) -> TcResult<()> {
+    fn kindcheck(&self, typ: &mut ArcType) -> TcResult<()> {
         let subs = Substitution::new();
         let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
         try!(check.kindcheck_type(typ));
@@ -1048,7 +1048,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &TcType) {
+    fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &ArcType) {
         let typ = {
             let existing_types =
                 self.environment.stack.get_all(symbol).expect("Symbol is not in scope");
@@ -1089,7 +1089,7 @@ impl<'a> Typecheck<'a> {
     }
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
-    fn finish_type(&mut self, level: u32, typ: &TcType) -> Option<TcType> {
+    fn finish_type(&mut self, level: u32, typ: &ArcType) -> Option<ArcType> {
         let mut generic = None;
         let mut i = 0;
         self.finish_type_(level, &mut generic, &mut i, typ)
@@ -1100,7 +1100,7 @@ impl<'a> Typecheck<'a> {
                     generic: &mut Option<String>,
                     i: &mut i32,
                     typ: &Type<Symbol>)
-                    -> Option<TcType> {
+                    -> Option<ArcType> {
         use base::types::TypeVisitor;
 
         let mut visitor = types::ControlVisitation(|typ: &Type<_, _>| {
@@ -1127,7 +1127,7 @@ impl<'a> Typecheck<'a> {
                     let generic = format!("{}{}", generic, i);
                     *i += 1;
                     let id = self.symbols.symbol(generic);
-                    let gen: TcType = Type::generic(Generic {
+                    let gen: ArcType = Type::generic(Generic {
                         kind: var.kind.clone(),
                         id: id.clone(),
                     });
@@ -1162,7 +1162,7 @@ impl<'a> Typecheck<'a> {
         visitor.visit(typ)
     }
 
-    fn instantiate_signature(&mut self, typ: &TcType) -> TcType {
+    fn instantiate_signature(&mut self, typ: &ArcType) -> ArcType {
         let typ = self.instantiate(typ);
         // Put all new generic variable names into scope
         for (generic, variable) in &self.inst.named_variables {
@@ -1173,8 +1173,8 @@ impl<'a> Typecheck<'a> {
         typ
     }
 
-    fn refresh_symbols_in_type(&mut self, typ: TcType) -> TcType {
-        let mut f = |typ: &Type<Symbol, TcType>| {
+    fn refresh_symbols_in_type(&mut self, typ: ArcType) -> ArcType {
+        let mut f = |typ: &Type<Symbol, ArcType>| {
             match *typ {
                 Type::Alias(ref alias) => {
                     self.original_symbols
@@ -1235,9 +1235,9 @@ impl<'a> Typecheck<'a> {
     fn merge_signature(&mut self,
                        span: Span<BytePos>,
                        level: u32,
-                       expected: &TcType,
-                       mut actual: TcType)
-                       -> TcType {
+                       expected: &ArcType,
+                       mut actual: ArcType)
+                       -> ArcType {
         let state = unify_type::State::new(&self.environment);
         match unify_type::merge_signature(&self.subs,
                                           &mut self.type_variables,
@@ -1261,7 +1261,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn unify_span(&mut self, span: Span<BytePos>, expected: &TcType, actual: TcType) -> TcType {
+    fn unify_span(&mut self, span: Span<BytePos>, expected: &ArcType, actual: ArcType) -> ArcType {
         match self.unify(expected, actual) {
             Ok(typ) => typ,
             Err(err) => {
@@ -1274,7 +1274,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn unify(&self, expected: &TcType, mut actual: TcType) -> TcResult<TcType> {
+    fn unify(&self, expected: &ArcType, mut actual: ArcType) -> TcResult<ArcType> {
         debug!("Unify {} <=> {}",
                types::display_type(&self.symbols, expected),
                types::display_type(&self.symbols, &actual));
@@ -1294,34 +1294,34 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn remove_alias(&self, typ: TcType) -> TcType {
+    fn remove_alias(&self, typ: ArcType) -> ArcType {
         instantiate::remove_alias(&self.environment, typ)
     }
 
-    fn remove_aliases(&self, typ: TcType) -> TcType {
+    fn remove_aliases(&self, typ: ArcType) -> ArcType {
         instantiate::remove_aliases(&self.environment, typ)
     }
 
     fn type_of_alias(&self,
-                     id: &AliasData<Symbol, TcType>,
-                     arguments: &[TcType])
-                     -> Result<Option<TcType>, unify_type::Error<Symbol>> {
+                     id: &AliasData<Symbol, ArcType>,
+                     arguments: &[ArcType])
+                     -> Result<Option<ArcType>, unify_type::Error<Symbol>> {
         Ok(instantiate::type_of_alias(id, arguments))
     }
 
-    fn instantiate(&mut self, typ: &TcType) -> TcType {
+    fn instantiate(&mut self, typ: &ArcType) -> ArcType {
         let subs = &mut self.subs;
         self.inst.instantiate(typ, |_| subs.new_var())
     }
 
-    fn instantiate_(&mut self, typ: &TcType) -> TcType {
+    fn instantiate_(&mut self, typ: &ArcType) -> ArcType {
         let subs = &mut self.subs;
         self.inst.instantiate_(typ, |_| subs.new_var())
     }
 }
 
-fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(&Symbol, &Option<Symbol>, &TcType),
+fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut f: F)
+    where F: FnMut(&Symbol, &Option<Symbol>, &ArcType),
 {
     if let Type::Record { fields: ref field_types, .. } = **typ {
         for field in fields {
@@ -1335,7 +1335,7 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &TcType, mut 
     }
 }
 
-fn apply_subs(subs: &Substitution<TcType>,
+fn apply_subs(subs: &Substitution<ArcType>,
               error: Vec<unify_type::Error<Symbol>>)
               -> Vec<unify_type::Error<Symbol>> {
     use unify::Error::*;
@@ -1353,7 +1353,7 @@ fn apply_subs(subs: &Substitution<TcType>,
 }
 
 
-pub fn extract_generics(args: &[TcType]) -> Vec<Generic<Symbol>> {
+pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
     args.iter()
         .map(|arg| {
             match **arg {
@@ -1368,8 +1368,8 @@ pub fn extract_generics(args: &[TcType]) -> Vec<Generic<Symbol>> {
 }
 
 fn get_alias_app<'a>(env: &'a TypeEnv,
-                     typ: &'a TcType)
-                     -> Option<(&'a AliasData<Symbol, TcType>, &'a [TcType])> {
+                     typ: &'a ArcType)
+                     -> Option<(&'a AliasData<Symbol, ArcType>, &'a [ArcType])> {
     match **typ {
         Type::Alias(ref alias) => Some((alias, &[][..])),
         Type::App(ref alias, ref args) => {
@@ -1387,12 +1387,12 @@ fn get_alias_app<'a>(env: &'a TypeEnv,
 
 struct FunctionArgIter<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
-    typ: TcType,
+    typ: ArcType,
 }
 
 impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
-    type Item = TcType;
-    fn next(&mut self) -> Option<TcType> {
+    type Item = ArcType;
+    fn next(&mut self) -> Option<ArcType> {
         loop {
             let (arg, new) = match self.typ.as_function() {
                 Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
@@ -1417,11 +1417,11 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     }
 }
 
-fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: TcType) -> FunctionArgIter<'a, 'b> {
+fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: ArcType) -> FunctionArgIter<'a, 'b> {
     FunctionArgIter { tc: tc, typ: typ }
 }
 
-fn primitive_type(op_type: &str) -> TcType {
+fn primitive_type(op_type: &str) -> ArcType {
     match op_type {
         "Int" => Type::int(),
         "Float" => Type::float(),
@@ -1439,22 +1439,22 @@ fn primitive_type(op_type: &str) -> TcType {
 /// extern crate gluon_base;
 /// extern crate gluon_check;
 ///
-/// use gluon_base::types::{Type, TcType, BuiltinType};
+/// use gluon_base::types::{Type, ArcType, BuiltinType};
 /// use gluon_check::typecheck::unroll_app;
 ///
 /// # fn main() {
-/// let i: TcType = Type::int();
-/// let s: TcType = Type::string();
+/// let i: ArcType = Type::int();
+/// let s: ArcType = Type::string();
 /// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![s.clone()]), vec![i.clone()])),
 ///            Some(Type::app(i.clone(), vec![s.clone(), i.clone()])));
 /// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![i.clone()]), vec![s.clone()])),
 ///            Some(Type::app(i.clone(), vec![i.clone(), s.clone()])));
-/// let f: TcType = Type::builtin(BuiltinType::Function);
+/// let f: ArcType = Type::builtin(BuiltinType::Function);
 /// assert_eq!(unroll_app(&*Type::app(Type::app(f.clone(), vec![i.clone()]), vec![s.clone()])),
 ///            Some(Type::function(vec![i.clone()], s.clone())));
 /// # }
 /// ```
-pub fn unroll_app(typ: &Type<Symbol>) -> Option<TcType> {
+pub fn unroll_app(typ: &Type<Symbol>) -> Option<ArcType> {
     let mut args = Vec::new();
     let mut current = match *typ {
         Type::App(ref l, ref rest) => {
