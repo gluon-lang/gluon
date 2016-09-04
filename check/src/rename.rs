@@ -1,12 +1,12 @@
 use std::fmt;
 
-use base::ast::{self, DisplayEnv, Expr, SpannedExpr, MutVisitor, Typed};
+use base::ast::{self, DisplayEnv, Expr, SpannedExpr, MutVisitor, Typed, TypedIdent};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::types::{self, Alias, TcType, Type, TcIdent, RcKind, KindEnv, TypeEnv};
+use base::types::{self, Alias, TcType, Type, RcKind, KindEnv, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
@@ -72,7 +72,7 @@ impl<'a> TypeEnv for Environment<'a> {
 
 pub fn rename(symbols: &mut SymbolModule,
               env: &TypeEnv,
-              expr: &mut SpannedExpr<TcIdent>)
+              expr: &mut SpannedExpr<TypedIdent>)
               -> Result<(), Error> {
     use base::instantiate;
 
@@ -91,7 +91,7 @@ pub fn rename(symbols: &mut SymbolModule,
             }
         }
 
-        fn new_pattern(&mut self, typ: &TcType, pattern: &mut ast::SpannedPattern<TcIdent>) {
+        fn new_pattern(&mut self, typ: &TcType, pattern: &mut ast::SpannedPattern<TypedIdent>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
                     let field_types = self.find_fields(typ).expect("field_types");
@@ -195,7 +195,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 })
         }
 
-        fn rename_expr(&mut self, expr: &mut SpannedExpr<TcIdent>) -> Result<(), RenameError> {
+        fn rename_expr(&mut self, expr: &mut SpannedExpr<TypedIdent>) -> Result<(), RenameError> {
             match expr.value {
                 Expr::Ident(ref mut id) => {
                     if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
@@ -213,7 +213,7 @@ pub fn rename(symbols: &mut SymbolModule,
                                 if let Some(new_id) = try!(self.rename(id, &field.typ)) {
                                     debug!("Rename record field {} = {}", id, new_id);
                                     *maybe_expr = Some(pos::spanned(expr.span,
-                                                                    Expr::Ident(TcIdent {
+                                                                    Expr::Ident(TypedIdent {
                                                                         name: new_id,
                                                                         typ: field.typ.clone(),
                                                                     })));
@@ -293,7 +293,7 @@ pub fn rename(symbols: &mut SymbolModule,
     }
 
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
-        type T = ast::TcIdent<Symbol>;
+        type T = TypedIdent;
 
         fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::T>) {
             if let Err(err) = self.rename_expr(expr) {

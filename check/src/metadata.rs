@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
-use base::ast;
+use base::ast::{self, TypedIdent};
 use base::ast::MutVisitor;
 use base::metadata::{Metadata, MetadataEnv};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Name, Symbol};
-use base::types::TcIdent;
 
 struct Environment<'b> {
     env: &'b MetadataEnv,
@@ -13,12 +12,12 @@ struct Environment<'b> {
 }
 
 /// Queries `expr` for the metadata which it contains.
-pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Metadata {
+pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TypedIdent>) -> Metadata {
     struct MetadataVisitor<'b> {
         env: Environment<'b>,
     }
     impl<'b> MetadataVisitor<'b> {
-        fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::ValueBinding<TcIdent>) {
+        fn new_binding(&mut self, metadata: Metadata, bind: &mut ast::ValueBinding<TypedIdent>) {
             match bind.name.value {
                 ast::Pattern::Ident(ref mut id) => {
                     let metadata = bind.comment
@@ -37,7 +36,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
 
         fn new_pattern(&mut self,
                        mut metadata: Metadata,
-                       pattern: &mut ast::SpannedPattern<TcIdent>) {
+                       pattern: &mut ast::SpannedPattern<TypedIdent>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref mut types, .. } => {
                     for field in fields.iter_mut().chain(types) {
@@ -69,7 +68,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
                 .or_else(|| self.env.env.get_metadata(id))
         }
 
-        fn metadata_expr(&mut self, expr: &mut ast::SpannedExpr<TcIdent>) -> Metadata {
+        fn metadata_expr(&mut self, expr: &mut ast::SpannedExpr<TypedIdent>) -> Metadata {
             match expr.value {
                 ast::Expr::Ident(ref mut id) => {
                     self.metadata(id.id()).cloned().unwrap_or_else(Metadata::default)
@@ -147,7 +146,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TcIdent>) -> Meta
         }
     }
     impl<'b> MutVisitor for MetadataVisitor<'b> {
-        type T = ast::TcIdent<Symbol>;
+        type T = ast::TypedIdent;
 
         fn visit_expr(&mut self, expr: &mut ast::SpannedExpr<Self::T>) {
             self.metadata_expr(expr);

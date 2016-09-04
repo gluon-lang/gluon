@@ -13,7 +13,6 @@ use ast::{AstType, DisplayEnv};
 use symbol::{Symbol, SymbolRef};
 
 pub type TcType = ast::AstType<Symbol>;
-pub type TcIdent = ast::TcIdent<Symbol>;
 
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {

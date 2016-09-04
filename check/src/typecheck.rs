@@ -5,14 +5,14 @@ use std::fmt;
 use std::mem;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{self, DisplayEnv, Expr, Literal, MutVisitor, Pattern};
+use base::ast::{self, DisplayEnv, Expr, Literal, MutVisitor, Pattern, TypedIdent};
 use base::ast::{SpannedExpr, SpannedPattern, Typed};
 use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{self, RcKind, Type, Generic, Kind};
-use base::types::{KindEnv, TypeEnv, PrimitiveEnv, TcIdent, Alias, AliasData, TcType, TypeVariable};
+use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TcType, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
 use unify::Error as UnifyError;
@@ -340,7 +340,7 @@ impl<'a> Typecheck<'a> {
     /// `let` basically infers that the variables in `id` does not refer to anything outside the
     /// `let` scope and can thus be "generalized" into `a -> a` which is instantiated with a fresh
     /// type variable in the `id 2` call.
-    fn generalize_variables(&mut self, level: u32, expr: &mut SpannedExpr<TcIdent>) {
+    fn generalize_variables(&mut self, level: u32, expr: &mut SpannedExpr<TypedIdent>) {
         self.type_variables.enter_scope();
 
         // Replaces all type variables with their inferred types
@@ -349,9 +349,9 @@ impl<'a> Typecheck<'a> {
             tc: &'a mut Typecheck<'b>,
         }
         impl<'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
-            type T = TcIdent;
+            type T = TypedIdent;
 
-            fn visit_identifier(&mut self, id: &mut TcIdent) {
+            fn visit_identifier(&mut self, id: &mut TypedIdent) {
                 if let Some(finished) = self.tc.finish_type(self.level, &id.typ) {
                     id.typ = finished;
                 }
@@ -374,15 +374,15 @@ impl<'a> Typecheck<'a> {
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
-    pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<TcIdent>) -> Result<TcType, Error> {
+    pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<TypedIdent>) -> Result<TcType, Error> {
         self.typecheck_expr_expected(expr, None)
     }
 
     pub fn typecheck_expr_expected(&mut self,
-                                   expr: &mut SpannedExpr<TcIdent>,
+                                   expr: &mut SpannedExpr<TypedIdent>,
                                    expected_type: Option<&TcType>)
                                    -> Result<TcType, Error> {
-        fn tail_expr(e: &mut SpannedExpr<TcIdent>) -> &mut SpannedExpr<TcIdent> {
+        fn tail_expr(e: &mut SpannedExpr<TypedIdent>) -> &mut SpannedExpr<TypedIdent> {
             match e.value {
                 Expr::LetBindings(_, ref mut b) |
                 Expr::TypeBindings(_, ref mut b) => tail_expr(b),
@@ -425,7 +425,7 @@ impl<'a> Typecheck<'a> {
 
     /// Main typechecking function. Returns the type of the expression if typechecking was
     /// successful
-    fn typecheck(&mut self, mut expr: &mut SpannedExpr<TcIdent>) -> TcType {
+    fn typecheck(&mut self, mut expr: &mut SpannedExpr<TypedIdent>) -> TcType {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -468,7 +468,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_(&mut self,
-                  expr: &mut SpannedExpr<TcIdent>)
+                  expr: &mut SpannedExpr<TypedIdent>)
                   -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
             Expr::Ident(ref mut id) => {
@@ -689,8 +689,8 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_lambda(&mut self,
                         function_type: TcType,
-                        arguments: &mut [TcIdent],
-                        body: &mut SpannedExpr<TcIdent>)
+                        arguments: &mut [TypedIdent],
+                        body: &mut SpannedExpr<TypedIdent>)
                         -> TcType {
         self.enter_scope();
         let mut arg_types = Vec::new();
@@ -709,7 +709,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_pattern(&mut self,
-                         pattern: &mut SpannedPattern<TcIdent>,
+                         pattern: &mut SpannedPattern<TypedIdent>,
                          match_type: TcType)
                          -> TcType {
         let span = pattern.span;
@@ -834,7 +834,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_pattern_rec(&mut self, args: &[TcIdent], typ: TcType) -> TcResult<TcType> {
+    fn typecheck_pattern_rec(&mut self, args: &[TypedIdent], typ: TcType) -> TcResult<TcType> {
         if args.len() == 0 {
             return Ok(typ);
         }
@@ -847,7 +847,9 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_bindings(&mut self, bindings: &mut [ast::ValueBinding<TcIdent>]) -> TcResult<()> {
+    fn typecheck_bindings(&mut self,
+                          bindings: &mut [ast::ValueBinding<TypedIdent>])
+                          -> TcResult<()> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
@@ -927,7 +929,7 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_type_bindings(&mut self,
                                bindings: &mut [ast::TypeBinding<Symbol>],
-                               expr: &SpannedExpr<TcIdent>)
+                               expr: &SpannedExpr<TypedIdent>)
                                -> TcResult<()> {
         self.enter_scope();
         // Rename the types so they get a name which is distinct from types from other
@@ -1008,7 +1010,7 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn finish_binding(&mut self, level: u32, bind: &mut ast::ValueBinding<TcIdent>) {
+    fn finish_binding(&mut self, level: u32, bind: &mut ast::ValueBinding<TypedIdent>) {
         match bind.name.value {
             Pattern::Ident(ref mut id) => {
                 if let Some(typ) = self.finish_type(level, &id.typ) {

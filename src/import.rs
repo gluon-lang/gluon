@@ -7,7 +7,7 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use base::ast::{self, Expr, Literal, SpannedExpr};
+use base::ast::{Expr, Literal, SpannedExpr, TypedIdent};
 use base::metadata::Metadata;
 use base::pos;
 use base::symbol::Symbol;
@@ -15,7 +15,6 @@ use vm::macros::{Macro, Error as MacroError};
 use vm::thread::{Thread, ThreadInternal};
 use vm::internal::Value;
 use super::{filename_to_module, Compiler};
-use base::types::TcIdent;
 use base::fnv::FnvMap;
 
 quick_error! {
@@ -71,7 +70,7 @@ impl Importer for DefaultImporter {
 }
 
 #[derive(Clone)]
-pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, SpannedExpr<ast::TcIdent<Symbol>>>>>);
+pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, SpannedExpr<TypedIdent>>>>);
 impl CheckImporter {
     pub fn new() -> CheckImporter {
         CheckImporter(Arc::new(Mutex::new(FnvMap::default())))
@@ -119,8 +118,8 @@ impl<I> Macro for Import<I>
 {
     fn expand(&self,
               vm: &Thread,
-              arguments: &mut [SpannedExpr<TcIdent>])
-              -> Result<SpannedExpr<TcIdent>, MacroError> {
+              arguments: &mut [SpannedExpr<TypedIdent>])
+              -> Result<SpannedExpr<TypedIdent>, MacroError> {
         if arguments.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
@@ -165,7 +164,7 @@ impl<I> Macro for Import<I>
                     try!(self.importer.import(vm, &modulename, file_contents));
                 }
                 // FIXME Does not handle shadowing
-                Ok(pos::spanned(arguments[0].span, Expr::Ident(TcIdent::new(name))))
+                Ok(pos::spanned(arguments[0].span, Expr::Ident(TypedIdent::new(name))))
             }
             _ => return Err(Error::String("Expected a string literal to import".into()).into()),
         }

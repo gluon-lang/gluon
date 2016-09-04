@@ -21,7 +21,7 @@ use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, BytePos, Span};
 use base::types::{Type, Generic, Alias, Field, Kind};
-use base::symbol::{Name, Symbol, SymbolModule};
+use base::symbol::{Name, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream};
@@ -810,8 +810,8 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 pub fn parse_tc
     (symbols: &mut SymbolModule,
      input: &str)
-     -> Result<SpannedExpr<TcIdent<Symbol>>, (Option<SpannedExpr<TcIdent<Symbol>>>, Errors<Error>)> {
-    let mut env = ast::TcIdentEnv {
+     -> Result<SpannedExpr<TypedIdent>, (Option<SpannedExpr<TypedIdent>>, Errors<Error>)> {
+    let mut env = ast::TypedIdentEnv {
         typ: Type::hole(),
         env: symbols,
     };

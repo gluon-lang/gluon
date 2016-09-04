@@ -1,11 +1,11 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast;
+use base::ast::{self, TypedIdent};
 use base::instantiate;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, SpannedExpr, Expr};
 use base::types;
-use base::types::{Alias, KindEnv, TcIdent, TcType, Type, TypeEnv};
+use base::types::{Alias, KindEnv, TcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
 use vm::GlobalVmState;
@@ -13,7 +13,7 @@ use self::Variable::*;
 
 use Result;
 
-pub type CExpr = SpannedExpr<TcIdent>;
+pub type CExpr = SpannedExpr<TypedIdent>;
 
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
@@ -159,7 +159,7 @@ impl FunctionEnv {
         debug!("Pop var: {:?}", x);
     }
 
-    fn pop_pattern(&mut self, pattern: &ast::Pattern<TcIdent>) -> VmIndex {
+    fn pop_pattern(&mut self, pattern: &ast::Pattern<TypedIdent>) -> VmIndex {
         match *pattern {
             ast::Pattern::Constructor(_, ref args) => {
                 for _ in 0..args.len() {
@@ -717,7 +717,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile_let_pattern(&mut self,
-                           pattern: &ast::Pattern<TcIdent>,
+                           pattern: &ast::Pattern<TypedIdent>,
                            pattern_type: &TcType,
                            function: &mut FunctionEnvs) {
         match *pattern {
@@ -782,9 +782,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile_lambda(&mut self,
-                      id: &TcIdent,
-                      arguments: &[TcIdent],
-                      body: &SpannedExpr<TcIdent>,
+                      id: &TypedIdent,
+                      arguments: &[TypedIdent],
+                      body: &SpannedExpr<TypedIdent>,
                       function: &mut FunctionEnvs)
                       -> Result<(VmIndex, VmIndex, CompiledFunction)> {
         function.start_function(self,
