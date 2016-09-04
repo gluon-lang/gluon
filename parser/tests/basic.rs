@@ -41,7 +41,7 @@ fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
     no_loc(Expr::LetBindings(vec![ValueBinding {
                                       comment: None,
                                       name: no_loc(Pattern::Ident(intern(s))),
-                                      typ: None,
+                                      typ: Type::hole(),
                                       arguments: args.iter().map(|i| intern(i)).collect(),
                                       expression: e,
                                   }],
@@ -213,7 +213,7 @@ fn let_type_decl() {
     let _ = ::env_logger::init();
     let e = parse_new("let f: Int = \\x y -> x + y in f 1 2");
     match e.value {
-        Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
+        Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, typ("Int")),
         _ => assert!(false),
     }
 }
@@ -372,7 +372,7 @@ fn let_pattern() {
                                                      fields: vec![(intern("x"), None),
                                                                   (intern("y"), None)],
                                                  }),
-                                                 typ: None,
+                                                 typ: Type::hole(),
                                                  arguments: vec![],
                                                  expression: id("test"),
                                              }],
@@ -529,7 +529,7 @@ id
                no_loc(Expr::LetBindings(vec![ValueBinding {
                                                  comment: Some("The identity function".into()),
                                                  name: no_loc(Pattern::Ident(intern("id"))),
-                                                 typ: None,
+                                                 typ: Type::hole(),
                                                  arguments: vec![intern("x")],
                                                  expression: id("x"),
                                              }],
@@ -652,9 +652,8 @@ x
                Ok(no_loc(Expr::LetBindings(vec![ValueBinding {
                                                     comment: None,
                                                     name: no_loc(Pattern::Ident(intern("x"))),
-                                                    typ: Some(Type::app(typ("->"),
-                                                                        vec![typ("Int"),
-                                                                             typ("Int")])),
+                                                    typ: Type::app(typ("->"),
+                                                                   vec![typ("Int"), typ("Int")]),
                                                     arguments: vec![],
                                                     expression: id("x"),
                                                 }],

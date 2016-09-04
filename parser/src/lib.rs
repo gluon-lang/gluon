@@ -748,7 +748,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         Ok((ValueBinding {
             comment: None,
             name: name,
-            typ: typ,
+            typ: typ.unwrap_or_else(|| self.hole_typ.clone()),
             arguments: arguments,
             expression: e,
         },

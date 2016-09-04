@@ -5,8 +5,8 @@ use std::fmt;
 use std::mem;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{self, DisplayEnv, Expr, Literal, MutVisitor, Pattern, TypedIdent};
-use base::ast::{SpannedExpr, SpannedPattern, Typed};
+use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, SpannedExpr};
+use base::ast::{SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
@@ -636,7 +636,7 @@ impl<'a> Typecheck<'a> {
                 let types = try!(types.iter_mut()
                     .map(|&mut (ref mut symbol, ref mut typ)| {
                         if let Some(ref mut typ) = *typ {
-                            *typ = self.refresh_symbols_in_type(typ.clone());
+                            *typ = self.create_unifiable_signature(typ.clone());
                         }
                         let alias = try!(self.find_type_info(symbol));
 
@@ -847,9 +847,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_bindings(&mut self,
-                          bindings: &mut [ast::ValueBinding<TypedIdent>])
-                          -> TcResult<()> {
+    fn typecheck_bindings(&mut self, bindings: &mut [ValueBinding<TypedIdent>]) -> TcResult<()> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
@@ -857,13 +855,10 @@ impl<'a> Typecheck<'a> {
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
-                let typ = match bind.typ {
-                    Some(ref mut type_decl) => {
-                        *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                        try!(self.kindcheck(type_decl));
-                        self.instantiate_signature(type_decl)
-                    }
-                    None => self.subs.new_var(),
+                let typ = {
+                    bind.typ = self.create_unifiable_signature(bind.typ.clone());
+                    try!(self.kindcheck(&mut bind.typ));
+                    self.instantiate_signature(&bind.typ)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
                 if let Expr::Lambda(ref mut lambda) = bind.expression.value {
@@ -880,25 +875,21 @@ impl<'a> Typecheck<'a> {
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let mut typ = if bind.arguments.is_empty() {
-                if let Some(ref mut type_decl) = bind.typ {
-                    self.instantiate_signature(type_decl);
-                    *type_decl = self.refresh_symbols_in_type(type_decl.clone());
-                    try!(self.kindcheck(type_decl));
-                }
+                self.instantiate_signature(&bind.typ);
+                bind.typ = self.create_unifiable_signature(bind.typ.clone());
+                try!(self.kindcheck(&mut bind.typ));
                 self.typecheck(&mut bind.expression)
             } else {
-                let function_type = match bind.typ {
-                    Some(ref type_decl) => self.instantiate(type_decl),
-                    None => self.subs.new_var(),
-                };
-                self.typecheck_lambda(function_type, &mut bind.arguments, &mut bind.expression)
+                let function_typ = self.instantiate(&bind.typ);
+                self.typecheck_lambda(function_typ, &mut bind.arguments, &mut bind.expression)
             };
+
             debug!("let {:?} : {}",
                    bind.name,
                    types::display_type(&self.symbols, &typ));
-            if let Some(ref type_decl) = bind.typ {
-                typ = self.merge_signature(bind.name.span, level, type_decl, typ);
-            }
+
+            typ = self.merge_signature(bind.name.span, level, &bind.typ, typ);
+
             if !is_recursive {
                 // Merge the type declaration and the actual type
                 self.generalize_variables(level, &mut bind.expression);
@@ -906,6 +897,7 @@ impl<'a> Typecheck<'a> {
             } else {
                 types.push(typ);
             }
+
             self.type_variables.exit_scope();
         }
         if is_recursive {
@@ -920,6 +912,9 @@ impl<'a> Typecheck<'a> {
         debug!("Generalize {}", level);
         for bind in bindings {
             self.generalize_variables(level, &mut bind.expression);
+            if let Some(typ) = self.finish_type(level, &bind.typ) {
+                bind.typ = typ;
+            }
             self.finish_binding(level, bind);
         }
         debug!("Typecheck `in`");
@@ -928,7 +923,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_type_bindings(&mut self,
-                               bindings: &mut [ast::TypeBinding<Symbol>],
+                               bindings: &mut [TypeBinding<Symbol>],
                                expr: &SpannedExpr<TypedIdent>)
                                -> TcResult<()> {
         self.enter_scope();
@@ -946,7 +941,7 @@ impl<'a> Typecheck<'a> {
                 .typ
                 .as_mut()
                 .expect("Expected binding to have an aliased type");
-            *typ = self.refresh_symbols_in_type(typ.clone());
+            *typ = self.create_unifiable_signature(typ.clone());
         }
         {
             let subs = Substitution::new();
@@ -1010,7 +1005,7 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn finish_binding(&mut self, level: u32, bind: &mut ast::ValueBinding<TypedIdent>) {
+    fn finish_binding(&mut self, level: u32, bind: &mut ValueBinding<TypedIdent>) {
         match bind.name.value {
             Pattern::Ident(ref mut id) => {
                 if let Some(typ) = self.finish_type(level, &id.typ) {
@@ -1173,7 +1168,11 @@ impl<'a> Typecheck<'a> {
         typ
     }
 
-    fn refresh_symbols_in_type(&mut self, typ: ArcType) -> ArcType {
+    // Replaces `Type::Id` types with the actual `Type::Alias` type it refers to
+    // Replaces variant names with the actual symbol they should refer to
+    // Instantiates Type::Hole with a fresh type variable to ensure the hole only ever refers to a
+    // single type variable
+    fn create_unifiable_signature(&mut self, typ: ArcType) -> ArcType {
         let mut f = |typ: &Type<Symbol, ArcType>| {
             match *typ {
                 Type::Alias(ref alias) => {
@@ -1226,6 +1225,7 @@ impl<'a> Typecheck<'a> {
                         None
                     }
                 }
+                Type::Hole => Some(self.subs.new_var()),
                 _ => None,
             }
         };
