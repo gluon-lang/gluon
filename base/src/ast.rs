@@ -261,7 +261,7 @@ pub struct TypeBinding<Id> {
 pub struct ValueBinding<Id: AstId> {
     pub comment: Option<String>,
     pub name: SpannedPattern<Id>,
-    pub typ: Option<ArcType<Id::Untyped>>,
+    pub typ: ArcType<Id::Untyped>,
     pub arguments: Vec<Id>,
     pub expression: SpannedExpr<Id>,
 }
@@ -456,11 +456,8 @@ impl Typed for Pattern<TypedIdent> {
 impl Typed for ValueBinding<TypedIdent> {
     type Id = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
-        match self.typ {
-            Some(ref typ) => typ.clone(),
-            None => self.name.env_type_of(env),
-        }
+    fn env_type_of(&self, _: &TypeEnv) -> ArcType<Symbol> {
+        self.typ.clone()
     }
 }
 
