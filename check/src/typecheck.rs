@@ -391,7 +391,7 @@ impl<'a> Typecheck<'a> {
         let mut typ = self.typecheck(expr);
         if let Some(expected) = expected_type {
             let expected = self.instantiate(expected);
-            typ = self.unify_span(expr.span, &expected, typ)
+            typ = self.from(expr.span, &expected, typ)
         }
         typ = self.finish_type(0, &typ).unwrap_or(typ);
         typ = types::walk_move_type(typ, &mut unroll_app);
@@ -491,7 +491,7 @@ impl<'a> Typecheck<'a> {
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
                             let actual = self.typecheck(arg);
-                            self.unify_span(arg.span, arg_ty, actual);
+                            self.from(arg.span, arg_ty, actual);
                             ret_ty.clone()
                         }
                         None => return Err(NotAFunction(func_type.clone())),
@@ -502,7 +502,7 @@ impl<'a> Typecheck<'a> {
             Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let pred_type = self.typecheck(&mut **pred);
                 let bool_type = self.bool();
-                self.unify_span(pred.span, &bool_type, pred_type);
+                self.from(pred.span, &bool_type, pred_type);
 
                 // Both branches must unify to the same type
                 let true_type = self.typecheck(&mut **if_true);
@@ -625,7 +625,7 @@ impl<'a> Typecheck<'a> {
                 let mut expected_type = self.subs.new_var();
                 for expr in &mut array.expressions {
                     let typ = self.typecheck(expr);
-                    expected_type = self.unify_span(expr.span, &expected_type, typ);
+                    expected_type = self.from(expr.span, &expected_type, typ);
                 }
                 array.typ = Type::array(expected_type);
                 Ok(TailCall::Type(array.typ.clone()))
@@ -734,7 +734,7 @@ impl<'a> Typecheck<'a> {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
                 };
-                self.unify_span(span, &match_type, return_type)
+                self.from(span, &match_type, return_type)
             }
             Pattern::Record { typ: ref mut curr_typ,
                               types: ref mut associated_types,
@@ -761,7 +761,7 @@ impl<'a> Typecheck<'a> {
                             };
                             let var = self.subs.new_var();
                             types.push(var.clone());
-                            self.unify_span(span, &var, expected_field.typ.clone());
+                            self.from(span, &var, expected_field.typ.clone());
                         }
                         None
                     }
@@ -786,7 +786,7 @@ impl<'a> Typecheck<'a> {
                         };
                         typ = self.instantiate(&typ);
                         actual_type = self.instantiate_(&actual_type);
-                        self.unify_span(span, &match_type, typ);
+                        self.from(span, &match_type, typ);
                         types.extend(actual_type.field_iter().map(|f| f.typ.clone()));
                         Some(actual_type)
                     }
@@ -1261,7 +1261,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn unify_span(&mut self, span: Span<BytePos>, expected: &ArcType, actual: ArcType) -> ArcType {
+    fn from(&mut self, span: Span<BytePos>, expected: &ArcType, actual: ArcType) -> ArcType {
         match self.unify(expected, actual) {
             Ok(typ) => typ,
             Err(err) => {
@@ -1349,7 +1349,6 @@ fn apply_subs(subs: &Substitution<ArcType>,
         })
         .collect()
 }
-
 
 pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
     args.iter()

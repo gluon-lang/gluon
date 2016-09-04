@@ -1,4 +1,5 @@
 use std::fmt;
+use std::mem;
 
 use base::error::Errors;
 use base::types::{self, ArcType, Type, TypeRef, TypeVariable, TypeEnv, merge};
@@ -18,6 +19,7 @@ pub struct State<'a> {
     /// recursively expanded in which case the unification fails.
     reduced_aliases: Vec<Symbol>,
     subs: &'a Substitution<ArcType>,
+    context: Option<(ArcType, ArcType)>,
 }
 
 impl<'a> State<'a> {
@@ -26,6 +28,7 @@ impl<'a> State<'a> {
             env: env,
             reduced_aliases: Vec::new(),
             subs: subs,
+            context: None,
         }
     }
 }
@@ -36,6 +39,7 @@ pub enum TypeError<I> {
     FieldMismatch(I, I),
     SelfRecursive(I),
     UnableToGeneralize(I),
+    MissingFields(ArcType<I>, Vec<I>),
 }
 
 impl From<instantiate::Error> for Error<Symbol> {
@@ -69,6 +73,21 @@ impl<I> fmt::Display for TypeError<I>
                        "Could not generalize the variable bound to `{}` as the variable was used \
                         outside its scope",
                        id)
+            }
+            TypeError::MissingFields(ref typ, ref fields) => {
+                try!(write!(f, "The type `{}` lacks the following fields: ", typ));
+                for (i, field) in fields.iter().enumerate() {
+                    let sep = if i == 0 {
+                        ""
+                    } else if i == fields.len() - 1 {
+                        " and "
+                    } else {
+                        ", "
+                    };
+                    try!(write!(f, "{}{}", sep, field));
+
+                }
+                Ok(())
             }
         }
     }
@@ -181,13 +200,17 @@ fn do_zip_match<'a, U>(self_: &ArcType,
         }
         (&Type::Record { types: ref l_types, row: ref l_row },
          &Type::Record { types: ref r_types, row: ref r_row }) if l_types == r_types => {
-            Ok(unifier.try_match(l_row, r_row)
+            let previous = mem::replace(&mut unifier.state.context,
+                                        Some((self_.clone(), other.clone())));
+            let result = Ok(unifier.try_match(l_row, r_row)
                 .map(|row| {
                     ArcType::from(Type::Record {
                         types: l_types.clone(),
                         row: row,
                     })
-                }))
+                }));
+            unifier.state.context = previous;
+            result
         }
         (&Type::ExtendRow { fields: ref l_args, rest: ref l_rest },
          &Type::ExtendRow { fields: ref r_args, rest: ref r_rest }) => {
@@ -240,7 +263,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
     }
 
     let mut r_iter = r.field_iter();
-    let missing_from_left = r_iter.by_ref()
+    let missing_from_left: Vec<_> = r_iter.by_ref()
         .filter(|r| l.field_iter().all(|l| !l.name.name_eq(&r.name)))
         .cloned()
         .collect();
@@ -261,20 +284,53 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
     // `{ x : Int | $0 } <=> `{ y : String | $1 }`
     // `Row (x : Int | Fresh var) <=> $1`
     // `Row (y : String | Fresh var 2) <=> $0`
-    let l = Type::extend_row(missing_from_right, subs.new_var());
-    let left = unifier.try_match(&l, r_iter.current_type());
 
-    let r = Type::extend_row(missing_from_left, subs.new_var());
-    unifier.try_match(l_iter.current_type(), &r);
+    let mut left = None;
+    let l_rest = Type::extend_row(missing_from_right, subs.new_var());
+    // No need to do anything of no fields are missing
+    if l_rest.field_iter().next().is_some() {
+        // If we attempt to unify with a non-polymorphic record we intercept the unification to
+        // display a better error message
+        left = match **r_iter.current_type() {
+            Type::EmptyRow => {
+                let context = unifier.state.context.as_ref().map_or(r, |p| &p.1).clone();
+                let err = TypeError::MissingFields(context,
+                                                   l_rest.field_iter()
+                                                       .map(|field| field.name.clone())
+                                                       .collect());
+                unifier.report_error(UnifyError::Other(err));
+                None
+            }
+            _ => unifier.try_match(&l_rest, r_iter.current_type()),
+        };
+    }
+
+    let r_rest = Type::extend_row(missing_from_left, subs.new_var());
+    // No need to do anything of no fields are missing
+    if r_rest.field_iter().next().is_some() {
+        match **l_iter.current_type() {
+            Type::EmptyRow => {
+                let context = unifier.state.context.as_ref().map_or(l, |p| &p.0).clone();
+                let err = TypeError::MissingFields(context,
+                                                r_rest.field_iter()
+                                                    .map(|field| field.name.clone())
+                                                    .collect());
+                unifier.report_error(UnifyError::Other(err));
+            }
+            _ => {
+                unifier.try_match(&l_iter.current_type(), &r_rest);
+            }
+        }
+    }
 
     // Pack all the fields from both records into a single `Type::ExtendRow` value
     let mut fields = match new_both {
         Some(fields) => fields,
         None => both.iter().map(|pair| pair.0.clone()).collect(),
     };
-    let mut rest_fields = left.as_ref().unwrap_or(&l).field_iter();
+    let mut rest_fields = left.as_ref().unwrap_or(&l_rest).field_iter();
     fields.extend(rest_fields.by_ref().cloned());
-    fields.extend(r.field_iter().cloned());
+    fields.extend(r_rest.field_iter().cloned());
     Some(Type::extend_row(fields, rest_fields.current_type().clone()))
 }
 
@@ -318,11 +374,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                 if l_id == r_id {
                     // If the aliases matched before going through an alias there is no need to
                     // return a replacement type
-                    return Ok(if did_alias {
-                        Some(l.clone())
-                    } else {
-                        None
-                    });
+                    return Ok(if did_alias { Some(l.clone()) } else { None });
                 }
                 did_alias = true;
                 match instantiate::maybe_remove_alias(unifier.state.env, &l) {
