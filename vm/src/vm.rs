@@ -343,7 +343,7 @@ impl GlobalVmState {
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(name.into(),
                                              Alias::from(AliasData {
-                                                 name: Symbol::new(name),
+                                                 name: Symbol::from(name),
                                                  args: Vec::new(),
                                                  typ: None,
                                              }));
@@ -409,7 +409,7 @@ impl GlobalVmState {
             return g.clone();
         }
         let g: ArcType = Type::generic(Generic {
-            id: Symbol::new(name),
+            id: Symbol::from(name),
             kind: Kind::typ(),
         });
         generics.insert(name.into(), g.clone());
@@ -431,7 +431,7 @@ impl GlobalVmState {
                     _ => unreachable!(),
                 })
                 .collect();
-            let n = Symbol::new(name);
+            let n = Symbol::from(name);
             let typ: ArcType = Type::app(Type::ident(n.clone()), arg_types);
             self.typeids
                 .write()

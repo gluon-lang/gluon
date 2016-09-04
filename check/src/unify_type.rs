@@ -318,7 +318,11 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                 if l_id == r_id {
                     // If the aliases matched before going through an alias there is no need to
                     // return a replacement type
-                    return Ok(if did_alias { Some(l.clone()) } else { None });
+                    return Ok(if did_alias {
+                        Some(l.clone())
+                    } else {
+                        None
+                    });
                 }
                 did_alias = true;
                 match instantiate::maybe_remove_alias(unifier.state.env, &l) {

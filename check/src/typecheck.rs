@@ -45,7 +45,9 @@ pub enum TypeError<I> {
     /// Type is not a type which has any fields
     InvalidProjection(ArcType<I>),
     /// Expected to find a record with the following fields
-    UndefinedRecord { fields: Vec<I> },
+    UndefinedRecord {
+        fields: Vec<I>,
+    },
     /// Found a case expression without any alternatives
     EmptyCase,
 }
@@ -943,8 +945,7 @@ impl<'a> Typecheck<'a> {
             *typ = self.create_unifiable_signature(typ.clone());
         }
         {
-            let subs = Substitution::new();
-            let mut check = KindCheck::new(&self.environment, &self.symbols, subs);
+            let mut check = KindCheck::new(&self.environment, &self.symbols);
             // Setup kind variables for all type variables and insert the types in the
             // this type expression into the kindcheck environment
             for bind in bindings.iter_mut() {
@@ -998,8 +999,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn kindcheck(&self, typ: &mut ArcType) -> TcResult<()> {
-        let subs = Substitution::new();
-        let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols, subs);
+        let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols);
         try!(check.kindcheck_type(typ));
         Ok(())
     }

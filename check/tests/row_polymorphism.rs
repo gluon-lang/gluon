@@ -4,7 +4,10 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
-use base::types::{Field, Type};
+use base::types::{Field, Type, Kind};
+use base::ast::EmptyEnv;
+
+use check::kindcheck::KindCheck;
 
 mod support;
 use support::{intern, typ};
@@ -151,5 +154,49 @@ let f record =
 f { y = 1.0, z = 0 }
 "#;
     let result = support::typecheck(text);
+    assert!(result.is_err());
+}
+
+
+#[test]
+fn row_kinds() {
+    let env = support::MockEnv::new();
+    let ident_env = EmptyEnv::new();
+    let mut kindcheck = KindCheck::new(&env, &ident_env);
+
+    let mut typ = Type::empty_row();
+    let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
+    assert_eq!(result, Ok(Kind::row()));
+
+    let mut typ = Type::extend_row(vec![Field {
+                                            name: intern("x"),
+                                            typ: Type::int(),
+                                        }],
+                                   Type::empty_row());
+    let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
+    assert_eq!(result, Ok(Kind::row()));
+}
+
+
+#[test]
+fn row_kinds_error() {
+    let env = support::MockEnv::new();
+    let ident_env = EmptyEnv::new();
+    let mut kindcheck = KindCheck::new(&env, &ident_env);
+
+    let mut typ = Type::extend_row(vec![Field {
+                                            name: intern("x"),
+                                            typ: Type::int(),
+                                        }],
+                                   Type::int());
+    let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
+    assert!(result.is_err());
+
+    let mut typ = Type::extend_row(vec![Field {
+                                            name: intern("x"),
+                                            typ: Type::empty_row(),
+                                        }],
+                                   Type::empty_row());
+    let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());
 }

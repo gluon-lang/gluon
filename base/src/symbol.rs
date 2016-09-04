@@ -70,8 +70,8 @@ impl Hash for Symbol {
     }
 }
 
-impl Symbol {
-    pub fn new(name: &str) -> Symbol {
+impl<'a> From<&'a str> for Symbol {
+    fn from(name: &'a str) -> Symbol {
         Symbol(Arc::new(NameBuf(String::from(name))))
     }
 }

@@ -318,7 +318,7 @@ impl Thread {
             try!(value.push(self, &mut context));
             context.stack.pop()
         };
-        self.global_env().set_global(Symbol::new(name),
+        self.global_env().set_global(Symbol::from(name),
                                      T::make_type(self),
                                      Metadata::default(),
                                      value)
@@ -549,7 +549,7 @@ impl ThreadInternal for Thread {
                     args: VmIndex,
                     instructions: Vec<Instruction>)
                     -> Result<()> {
-        let id = Symbol::new(name);
+        let id = Symbol::from(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
         let f = try!(self.global_env().new_function(compiled_fn));
@@ -575,7 +575,9 @@ impl ThreadInternal for Thread {
                     thread: self,
                     context: self.context.lock().unwrap(),
                 };
-                context.stack.push(Int(0));// Dummy value to fill the place of the function for TailCall
+                // Dummy value to fill the place of the function for TailCall
+                context.stack.push(Int(0));
+
                 context.stack.push(value);
                 context.stack.push(Int(0));
 
@@ -704,7 +706,11 @@ impl<'b> DerefMut for OwnedContext<'b> {
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
         let exists = StackFrame::current(&mut self.stack).exit_scope().is_ok();
-        if exists { Ok(self) } else { Err(()) }
+        if exists {
+            Ok(self)
+        } else {
+            Err(())
+        }
     }
 
     fn execute(self) -> Result<Option<OwnedContext<'b>>> {
@@ -1027,7 +1033,8 @@ impl<'b> ExecuteContext<'b> {
                             let fields = &self.stack[self.stack.len() - args..];
                             unsafe {
                                 let roots = Roots {
-                                    // Threads must only be on the garbage collectors heap which makes this safe
+                                    // Threads must only be on the garbage collectors heap which
+                                    // makes this safe
                                     vm: GcPtr::from_raw(self.thread),
                                     stack: &self.stack.stack,
                                 };
@@ -1088,7 +1095,11 @@ impl<'b> ExecuteContext<'b> {
                                 .to_string()))
                         }
                     };
-                    self.stack.push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
+                    self.stack.push(Value::Tag(if data_tag == tag {
+                        1
+                    } else {
+                        0
+                    }));
                 }
                 Split => {
                     match self.stack.pop() {
@@ -1228,7 +1239,11 @@ impl<'b> ExecuteContext<'b> {
                 x => panic!("Expected excess arguments found {:?}", x),
             }
         } else {
-            Ok(if stack_exists { Some(()) } else { None })
+            Ok(if stack_exists {
+                Some(())
+            } else {
+                None
+            })
         }
     }
 }
@@ -1262,7 +1277,13 @@ fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> bool,
           T: Getable<'b> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| Value::Tag(if f(l, r) { 1 } else { 0 }))
+    binop(vm, stack, |l, r| {
+        Value::Tag(if f(l, r) {
+            1
+        } else {
+            0
+        })
+    })
 }
 
 
