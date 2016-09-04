@@ -66,7 +66,7 @@ y
                Err(Errors {
                    errors: vec![ParseError {
                                     position: BytePos(32),
-                                    errors: vec![Error::Unexpected(Info::Token(Token::Integer(2))),
+                                    errors: vec![Error::Unexpected(Info::Token(Token::Int(2))),
                                                  Error::Expected("`in` or an expression in the \
                                                                   same column as the `let`"
                                                      .into())],

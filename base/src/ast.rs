@@ -80,7 +80,7 @@ impl<Id> AsRef<str> for TypedIdent<Id>
 #[derive(Clone, PartialEq, Debug)]
 pub enum Literal {
     Byte(u8),
-    Integer(i64),
+    Int(i64),
     Float(f64),
     String(String),
     Char(char),
@@ -303,7 +303,7 @@ impl Typed for Expr<Symbol> {
             Expr::Projection(_, _, ref typ) => typ.clone(),
             Expr::Literal(ref lit) => {
                 match *lit {
-                    Literal::Integer(_) => Type::int(),
+                    Literal::Int(_) => Type::int(),
                     Literal::Float(_) => Type::float(),
                     Literal::Byte(_) => Type::byte(),
                     Literal::String(_) => Type::string(),
