@@ -636,7 +636,7 @@ impl<'a> Typecheck<'a> {
                 let types = try!(types.iter_mut()
                     .map(|&mut (ref mut symbol, ref mut typ)| {
                         if let Some(ref mut typ) = *typ {
-                            *typ = self.refresh_symbols_in_type(typ.clone());
+                            *typ = self.create_unifiable_signature(typ.clone());
                         }
                         let alias = try!(self.find_type_info(symbol));
 
@@ -856,7 +856,7 @@ impl<'a> Typecheck<'a> {
         if is_recursive {
             for bind in bindings.iter_mut() {
                 let typ = {
-                    bind.typ = self.refresh_symbols_in_type(bind.typ.clone());
+                    bind.typ = self.create_unifiable_signature(bind.typ.clone());
                     try!(self.kindcheck(&mut bind.typ));
                     self.instantiate_signature(&bind.typ)
                 };
@@ -876,7 +876,7 @@ impl<'a> Typecheck<'a> {
             // recursive
             let mut typ = if bind.arguments.is_empty() {
                 self.instantiate_signature(&bind.typ);
-                bind.typ = self.refresh_symbols_in_type(bind.typ.clone());
+                bind.typ = self.create_unifiable_signature(bind.typ.clone());
                 try!(self.kindcheck(&mut bind.typ));
                 self.typecheck(&mut bind.expression)
             } else {
@@ -912,6 +912,9 @@ impl<'a> Typecheck<'a> {
         debug!("Generalize {}", level);
         for bind in bindings {
             self.generalize_variables(level, &mut bind.expression);
+            if let Some(typ) = self.finish_type(level, &bind.typ) {
+                bind.typ = typ;
+            }
             self.finish_binding(level, bind);
         }
         debug!("Typecheck `in`");
@@ -938,7 +941,7 @@ impl<'a> Typecheck<'a> {
                 .typ
                 .as_mut()
                 .expect("Expected binding to have an aliased type");
-            *typ = self.refresh_symbols_in_type(typ.clone());
+            *typ = self.create_unifiable_signature(typ.clone());
         }
         {
             let subs = Substitution::new();
@@ -1165,7 +1168,11 @@ impl<'a> Typecheck<'a> {
         typ
     }
 
-    fn refresh_symbols_in_type(&mut self, typ: ArcType) -> ArcType {
+    // Replaces `Type::Id` types with the actual `Type::Alias` type it refers to
+    // Replaces variant names with the actual symbol they should refer to
+    // Instantiates Type::Hole with a fresh type variable to ensure the hole only ever refers to a
+    // single type variable
+    fn create_unifiable_signature(&mut self, typ: ArcType) -> ArcType {
         let mut f = |typ: &Type<Symbol, ArcType>| {
             match *typ {
                 Type::Alias(ref alias) => {
@@ -1218,6 +1225,7 @@ impl<'a> Typecheck<'a> {
                         None
                     }
                 }
+                Type::Hole => Some(self.subs.new_var()),
                 _ => None,
             }
         };

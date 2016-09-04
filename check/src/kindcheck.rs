@@ -157,7 +157,7 @@ impl<'a> KindCheck<'a> {
                 gen.kind = try!(self.find(&gen.id));
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
-            Type::Variable(_) => panic!("kindcheck called on variable"),
+            Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
             Type::App(ref ctor, ref args) => {
                 let (mut kind, ctor) = try!(self.kindcheck(ctor));

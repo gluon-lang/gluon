@@ -176,7 +176,7 @@ macro_rules! assert_match {
     ($i: expr, $p: pat => $e: expr) => {
         match $i {
             $p => $e,
-            ref x => assert!(false, "Unexpected {}, found {:?}", stringify!($p), x)
+            ref x => assert!(false, "Expected {}, found {:?}", stringify!($p), x)
         }
     };
 }
