@@ -11,7 +11,7 @@ use std::usize;
 
 use base::metadata::Metadata;
 use base::symbol::Symbol;
-use base::types::TcType;
+use base::types::ArcType;
 use base::types;
 use base::fnv::FnvMap;
 
@@ -339,19 +339,19 @@ impl Thread {
 
     /// Retrieves type information about the type `name`. Types inside records can be accessed
     /// using dot notation (std.prelude.Option)
-    pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, TcType>> {
+    pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, ArcType>> {
         let env = self.get_env();
         env.find_type_info(name)
             .map(|alias| alias.into_owned())
     }
 
     /// Returns the gluon type that was bound to `T`
-    pub fn get_type<T: ?Sized + Any>(&self) -> TcType {
+    pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
         self.global_env().get_type::<T>()
     }
 
     /// Registers the type `T` as being a gluon type called `name` with generic arguments `args`
-    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<TcType> {
+    pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<ArcType> {
         self.global_env().register_type::<T>(name, args)
     }
 
@@ -469,13 +469,13 @@ pub trait ThreadInternal {
 
     fn add_bytecode(&self,
                     name: &str,
-                    typ: TcType,
+                    typ: ArcType,
                     args: VmIndex,
                     instructions: Vec<Instruction>)
                     -> Result<()>;
 
     /// Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value>;
+    fn call_module(&self, typ: &ArcType, closure: GcPtr<ClosureData>) -> Result<Value>;
 
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
@@ -541,7 +541,7 @@ impl ThreadInternal for Thread {
 
     fn add_bytecode(&self,
                     name: &str,
-                    typ: TcType,
+                    typ: ArcType,
                     args: VmIndex,
                     instructions: Vec<Instruction>)
                     -> Result<()> {
@@ -556,7 +556,7 @@ impl ThreadInternal for Thread {
 
 
     /// Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &TcType, closure: GcPtr<ClosureData>) -> Result<Value> {
+    fn call_module(&self, typ: &ArcType, closure: GcPtr<ClosureData>) -> Result<Value> {
         let value = try!(self.call_bytecode(closure));
         if let Some((id, _)) = typ.as_alias() {
             let is_io = {
@@ -631,23 +631,24 @@ pub struct Context {
 
 impl Context {
     pub fn new_data(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
-        self.alloc_with(thread, Def {
-                tag: tag,
-                elems: fields,
-            })
+        self.alloc_with(thread,
+                        Def {
+                            tag: tag,
+                            elems: fields,
+                        })
             .map(Value::Data)
     }
 
     pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+              D::Value: Sized + Any,
     {
         alloc(&mut self.gc, thread, &self.stack, data)
     }
 
     pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+              D::Value: Sized + Any,
     {
         self.gc.alloc_ignore_limit(data)
     }
@@ -656,7 +657,7 @@ impl Context {
 impl<'b> OwnedContext<'b> {
     pub fn alloc<D>(&mut self, data: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+              D::Value: Sized + Any,
     {
         let Context { ref mut gc, ref stack } = **self;
         alloc(gc, self.thread, &stack, data)
@@ -665,7 +666,7 @@ impl<'b> OwnedContext<'b> {
 
 pub fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
     where D: DataDef + Traverseable,
-          D::Value: Sized + Any
+          D::Value: Sized + Any,
 {
     let roots = Roots {
         vm: unsafe {
@@ -698,11 +699,7 @@ impl<'b> DerefMut for OwnedContext<'b> {
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
         let exists = StackFrame::current(&mut self.stack).exit_scope().is_ok();
-        if exists {
-            Ok(self)
-        } else {
-            Err(())
-        }
+        if exists { Ok(self) } else { Err(()) }
     }
 
     fn execute(self) -> Result<Option<OwnedContext<'b>>> {
@@ -1178,11 +1175,7 @@ impl<'b> ExecuteContext<'b> {
                 x => panic!("Expected excess arguments found {:?}", x),
             }
         } else {
-            Ok(if stack_exists {
-                Some(())
-            } else {
-                None
-            })
+            Ok(if stack_exists { Some(()) } else { None })
         }
     }
 }
@@ -1190,7 +1183,7 @@ impl<'b> ExecuteContext<'b> {
 #[inline]
 fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> VmInt,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Int(f(l, r)))
 }
@@ -1198,7 +1191,7 @@ fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> f64,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Float(f(l, r)))
 }
@@ -1206,7 +1199,7 @@ fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> u8,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Byte(f(l, r)))
 }
@@ -1214,22 +1207,16 @@ fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> bool,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| {
-        Value::Tag(if f(l, r) {
-            1
-        } else {
-            0
-        })
-    })
+    binop(vm, stack, |l, r| Value::Tag(if f(l, r) { 1 } else { 0 }))
 }
 
 
 #[inline]
 fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> Value,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
     let r = stack.pop();
     let l = stack.pop();

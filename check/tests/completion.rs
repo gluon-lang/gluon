@@ -5,13 +5,13 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::pos::BytePos;
-use base::types::{Field, Type, TcType};
+use base::types::{Field, Type, ArcType};
 use check::completion;
 
 mod support;
 use support::{MockEnv, intern, typ};
 
-fn find_type(s: &str, pos: BytePos) -> Result<TcType, ()> {
+fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
     let env = MockEnv::new();
 
     let (mut expr, result) = support::typecheck_expr(s);

@@ -1,11 +1,11 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast;
+use base::ast::{self, TypedIdent};
 use base::instantiate;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, SpannedExpr, Expr};
 use base::types;
-use base::types::{Alias, KindEnv, TcIdent, TcType, Type, TypeEnv};
+use base::types::{Alias, KindEnv, ArcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
 use vm::GlobalVmState;
@@ -13,7 +13,7 @@ use self::Variable::*;
 
 use Result;
 
-pub type CExpr = SpannedExpr<TcIdent>;
+pub type CExpr = SpannedExpr<TypedIdent>;
 
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
@@ -27,7 +27,7 @@ pub enum Variable<G> {
 pub struct CompiledFunction {
     pub args: VmIndex,
     pub id: Symbol,
-    pub typ: TcType,
+    pub typ: ArcType,
     pub instructions: Vec<Instruction>,
     pub inner_functions: Vec<CompiledFunction>,
     pub strings: Vec<InternedStr>,
@@ -36,7 +36,7 @@ pub struct CompiledFunction {
 }
 
 impl CompiledFunction {
-    pub fn new(args: VmIndex, id: Symbol, typ: TcType) -> CompiledFunction {
+    pub fn new(args: VmIndex, id: Symbol, typ: ArcType) -> CompiledFunction {
         CompiledFunction {
             args: args,
             id: id,
@@ -78,7 +78,11 @@ impl FunctionEnvs {
         FunctionEnvs { envs: vec![] }
     }
 
-    fn start_function(&mut self, compiler: &mut Compiler, args: VmIndex, id: Symbol, typ: TcType) {
+    fn start_function(&mut self,
+                      compiler: &mut Compiler,
+                      args: VmIndex,
+                      id: Symbol,
+                      typ: ArcType) {
         compiler.stack_types.enter_scope();
         compiler.stack_constructors.enter_scope();
         self.envs.push(FunctionEnv::new(args, id, typ));
@@ -92,7 +96,7 @@ impl FunctionEnvs {
 }
 
 impl FunctionEnv {
-    fn new(args: VmIndex, id: Symbol, typ: TcType) -> FunctionEnv {
+    fn new(args: VmIndex, id: Symbol, typ: ArcType) -> FunctionEnv {
         FunctionEnv {
             free_vars: Vec::new(),
             stack: Vec::new(),
@@ -159,7 +163,7 @@ impl FunctionEnv {
         debug!("Pop var: {:?}", x);
     }
 
-    fn pop_pattern(&mut self, pattern: &ast::Pattern<TcIdent>) -> VmIndex {
+    fn pop_pattern(&mut self, pattern: &ast::Pattern<TypedIdent>) -> VmIndex {
         match *pattern {
             ast::Pattern::Constructor(_, ref args) => {
                 for _ in 0..args.len() {
@@ -187,7 +191,7 @@ pub trait CompilerEnv: TypeEnv {
 
 impl CompilerEnv for TypeInfos {
     fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
-        fn count_function_args(typ: &TcType) -> VmIndex {
+        fn count_function_args(typ: &ArcType) -> VmIndex {
             match typ.as_function() {
                 Some((_, ret)) => 1 + count_function_args(ret),
                 None => 0,
@@ -219,8 +223,8 @@ pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
     vm: &'a GlobalVmState,
     symbols: SymbolModule<'a>,
-    stack_constructors: ScopedMap<Symbol, TcType>,
-    stack_types: ScopedMap<Symbol, Alias<Symbol, TcType>>,
+    stack_constructors: ScopedMap<Symbol, ArcType>,
+    stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
 }
 
 impl<'a> KindEnv for Compiler<'a> {
@@ -230,16 +234,16 @@ impl<'a> KindEnv for Compiler<'a> {
 }
 
 impl<'a> TypeEnv for Compiler<'a> {
-    fn find_type(&self, _id: &SymbolRef) -> Option<&TcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
         None
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         self.stack_types
             .get(id)
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         None
     }
 }
@@ -328,7 +332,7 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    fn find_field(&self, typ: &TcType, field: &Symbol) -> Option<VmIndex> {
+    fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<VmIndex> {
         // Walk through all type aliases
         match **instantiate::remove_aliases_cow(self, typ) {
             Type::Record { ref fields, .. } => {
@@ -343,7 +347,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn find_tag(&self, typ: &TcType, constructor: &Symbol) -> Option<VmTag> {
+    fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
         match **instantiate::remove_aliases_cow(self, typ) {
             Type::Variants(ref variants) => {
                 variants.iter()
@@ -361,7 +365,7 @@ impl<'a> Compiler<'a> {
         let mut env = FunctionEnvs::new();
         let id = self.symbols.symbol("");
         let typ = Type::function(vec![],
-                                 TcType::from(expr.env_type_of(&self.globals).clone()));
+                                 ArcType::from(expr.env_type_of(&self.globals).clone()));
         env.start_function(self, 0, id, typ);
         try!(self.compile(expr, &mut env, true));
         let FunctionEnv { function, .. } = env.end_function(self);
@@ -717,8 +721,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile_let_pattern(&mut self,
-                           pattern: &ast::Pattern<TcIdent>,
-                           pattern_type: &TcType,
+                           pattern: &ast::Pattern<TypedIdent>,
+                           pattern_type: &ArcType,
                            function: &mut FunctionEnvs) {
         match *pattern {
             ast::Pattern::Ident(ref name) => {
@@ -782,9 +786,9 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile_lambda(&mut self,
-                      id: &TcIdent,
-                      arguments: &[TcIdent],
-                      body: &SpannedExpr<TcIdent>,
+                      id: &TypedIdent,
+                      arguments: &[TypedIdent],
+                      body: &SpannedExpr<TypedIdent>,
                       function: &mut FunctionEnvs)
                       -> Result<(VmIndex, VmIndex, CompiledFunction)> {
         function.start_function(self,
@@ -816,8 +820,8 @@ impl<'a> Compiler<'a> {
     }
 }
 
-fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &TcType, mut f: F)
-    where F: FnMut(&Symbol, &Alias<Symbol, TcType>),
+fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut f: F)
+    where F: FnMut(&Symbol, &Alias<Symbol, ArcType>),
 {
     if let Type::Record { types: ref record_type_fields, .. } = **typ {
         for field in types {

@@ -3,25 +3,25 @@
 use std::iter::once;
 use std::cmp::Ordering;
 
-use base::ast::{Expr, SpannedExpr, SpannedPattern, Pattern, TcIdent, Typed};
+use base::ast::{Expr, SpannedExpr, SpannedPattern, Pattern, TypedIdent, Typed};
 use base::instantiate;
 use base::pos::{BytePos, Span};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
-use base::types::{TcType, Type, TypeEnv};
+use base::types::{ArcType, Type, TypeEnv};
 
 trait OnFound {
-    fn on_ident(&mut self, ident: &TcIdent<Symbol>) {
+    fn on_ident(&mut self, ident: &TypedIdent) {
         let _ = ident;
     }
 
-    fn on_pattern(&mut self, pattern: &SpannedPattern<TcIdent<Symbol>>) {
+    fn on_pattern(&mut self, pattern: &SpannedPattern<TypedIdent>) {
         let _ = pattern;
     }
 
-    fn expr(&mut self, expr: &SpannedExpr<TcIdent<Symbol>>);
+    fn expr(&mut self, expr: &SpannedExpr<TypedIdent>);
 
-    fn ident(&mut self, context: &SpannedExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>);
+    fn ident(&mut self, context: &SpannedExpr<TypedIdent>, ident: &TypedIdent);
 
     /// Location points to whitespace
     fn nothing(&mut self);
@@ -29,15 +29,15 @@ trait OnFound {
 
 struct GetType<E> {
     env: E,
-    typ: Option<TcType>,
+    typ: Option<ArcType>,
 }
 
 impl<E: TypeEnv> OnFound for GetType<E> {
-    fn expr(&mut self, expr: &SpannedExpr<TcIdent<Symbol>>) {
+    fn expr(&mut self, expr: &SpannedExpr<TypedIdent>) {
         self.typ = Some(expr.env_type_of(&self.env));
     }
 
-    fn ident(&mut self, _context: &SpannedExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
+    fn ident(&mut self, _context: &SpannedExpr<TypedIdent>, ident: &TypedIdent) {
         self.typ = Some(ident.env_type_of(&self.env));
     }
     fn nothing(&mut self) {}
@@ -45,21 +45,21 @@ impl<E: TypeEnv> OnFound for GetType<E> {
 
 pub struct Suggestion {
     pub name: String,
-    pub typ: TcType,
+    pub typ: ArcType,
 }
 
 struct Suggest<E> {
     env: E,
-    stack: ScopedMap<Symbol, TcType>,
+    stack: ScopedMap<Symbol, ArcType>,
     result: Vec<Suggestion>,
 }
 
 impl<E: TypeEnv> OnFound for Suggest<E> {
-    fn on_ident(&mut self, ident: &TcIdent<Symbol>) {
+    fn on_ident(&mut self, ident: &TypedIdent) {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
 
-    fn on_pattern(&mut self, pattern: &SpannedPattern<TcIdent<Symbol>>) {
+    fn on_pattern(&mut self, pattern: &SpannedPattern<TypedIdent>) {
         match pattern.value {
             Pattern::Record { ref typ, fields: ref field_ids, .. } => {
                 let unaliased = instantiate::remove_aliases(&self.env, typ.clone());
@@ -81,7 +81,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         }
     }
 
-    fn expr(&mut self, expr: &SpannedExpr<TcIdent<Symbol>>) {
+    fn expr(&mut self, expr: &SpannedExpr<TypedIdent>) {
         if let Expr::Ident(ref ident) = expr.value {
             for (k, typ) in self.stack.iter() {
                 if k.declared_name().starts_with(ident.name.declared_name()) {
@@ -94,7 +94,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         }
     }
 
-    fn ident(&mut self, context: &SpannedExpr<TcIdent<Symbol>>, ident: &TcIdent<Symbol>) {
+    fn ident(&mut self, context: &SpannedExpr<TypedIdent>, ident: &TypedIdent) {
         if let Expr::Projection(ref expr, _) = context.value {
             let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
             if let Type::Record { ref fields, .. } = *typ {
@@ -159,17 +159,17 @@ impl<F> FindVisitor<F>
     where F: OnFound,
 {
     fn visit_one<'e, I>(&mut self, iter: I)
-        where I: IntoIterator<Item = &'e SpannedExpr<TcIdent<Symbol>>>,
+        where I: IntoIterator<Item = &'e SpannedExpr<TypedIdent>>,
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span);
         self.visit_expr(expr.unwrap());
     }
 
-    fn visit_pattern(&mut self, pattern: &SpannedPattern<TcIdent<Symbol>>) {
+    fn visit_pattern(&mut self, pattern: &SpannedPattern<TypedIdent>) {
         self.on_found.on_pattern(pattern);
     }
 
-    fn visit_expr(&mut self, current: &SpannedExpr<TcIdent<Symbol>>) {
+    fn visit_expr(&mut self, current: &SpannedExpr<TypedIdent>) {
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
                 if current.span.containment(&self.pos) == Ordering::Equal {
@@ -238,7 +238,7 @@ impl<F> FindVisitor<F>
     }
 }
 
-pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Result<TcType, ()>
+pub fn find<T>(env: &T, expr: &SpannedExpr<TypedIdent>, pos: BytePos) -> Result<ArcType, ()>
     where T: TypeEnv,
 {
     let mut visitor = FindVisitor {
@@ -252,7 +252,7 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Re
     visitor.on_found.typ.ok_or(())
 }
 
-pub fn suggest<T>(env: &T, expr: &SpannedExpr<TcIdent<Symbol>>, pos: BytePos) -> Vec<Suggestion>
+pub fn suggest<T>(env: &T, expr: &SpannedExpr<TypedIdent>, pos: BytePos) -> Vec<Suggestion>
     where T: TypeEnv,
 {
     let mut visitor = FindVisitor {

@@ -1,8 +1,7 @@
 use std::fmt;
 
-use base::ast::AstType;
 use base::error::Errors;
-use base::types::{self, TcType, Type, TypeVariable, TypeEnv, merge};
+use base::types::{self, ArcType, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
 use base::scoped_map::ScopedMap;
@@ -11,7 +10,7 @@ use unify;
 use unify::{Error as UnifyError, Unifier, Unifiable};
 use substitution::{Variable, Substitutable, Substitution};
 
-pub type Error<I> = UnifyError<AstType<I>, TypeError<I>>;
+pub type Error<I> = UnifyError<ArcType<I>, TypeError<I>>;
 
 pub struct State<'a> {
     env: &'a (TypeEnv + 'a),
@@ -81,14 +80,14 @@ impl Variable for TypeVariable {
     }
 }
 
-impl<I> Substitutable for AstType<I> {
+impl<I> Substitutable for ArcType<I> {
     type Variable = TypeVariable;
 
-    fn new(id: u32) -> AstType<I> {
+    fn new(id: u32) -> ArcType<I> {
         Type::variable(TypeVariable::new(id))
     }
 
-    fn from_variable(var: TypeVariable) -> AstType<I> {
+    fn from_variable(var: TypeVariable) -> ArcType<I> {
         Type::variable(var)
     }
 
@@ -100,13 +99,13 @@ impl<I> Substitutable for AstType<I> {
     }
 
     fn traverse<F>(&self, f: &mut F)
-        where F: types::Walker<AstType<I>>,
+        where F: types::Walker<ArcType<I>>,
     {
         types::walk_type_(self, f)
     }
 }
 
-impl<'a> Unifiable<State<'a>> for TcType {
+impl<'a> Unifiable<State<'a>> for ArcType {
     type Error = TypeError<Symbol>;
 
     fn zip_match<U>(&self,
@@ -143,11 +142,11 @@ impl<'a> Unifiable<State<'a>> for TcType {
     }
 }
 
-fn do_zip_match<'a, U>(self_: &TcType,
-                       other: &TcType,
+fn do_zip_match<'a, U>(self_: &ArcType,
+                       other: &ArcType,
                        unifier: &mut UnifierState<'a, U>)
-                       -> Result<Option<TcType>, Error<Symbol>>
-    where U: Unifier<State<'a>, TcType>,
+                       -> Result<Option<ArcType>, Error<Symbol>>
+    where U: Unifier<State<'a>, ArcType>,
 {
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
     match (&**self_, &**other) {
@@ -218,10 +217,10 @@ fn do_zip_match<'a, U>(self_: &TcType,
 /// To find a possible successful unification we walk through the alias expansions of `l` to find
 /// an expansion which has `r_id` in the spine of the expanded type
 fn find_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
-                     l: TcType,
+                     l: ArcType,
                      r_id: &SymbolRef)
-                     -> Result<Option<TcType>, ()>
-    where U: Unifier<State<'a>, TcType>,
+                     -> Result<Option<ArcType>, ()>
+    where U: Unifier<State<'a>, ArcType>,
 {
     let reduced_aliases = unifier.state.reduced_aliases.len();
     let result = find_alias_(unifier, l, r_id);
@@ -236,10 +235,10 @@ fn find_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
 }
 
 fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
-                      mut l: TcType,
+                      mut l: ArcType,
                       r_id: &SymbolRef)
-                      -> Result<Option<TcType>, ()>
-    where U: Unifier<State<'a>, TcType>,
+                      -> Result<Option<ArcType>, ()>
+    where U: Unifier<State<'a>, ArcType>,
 {
     let mut did_alias = false;
     loop {
@@ -289,11 +288,11 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
 /// // try_zip_alias(Float, Test 0) => Ok((Float, Test 0))
 /// ```
 fn try_zip_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
-                        expected: &TcType,
-                        actual: &TcType,
+                        expected: &ArcType,
+                        actual: &ArcType,
                         through_alias: &mut bool)
-                        -> Result<(TcType, TcType), ()>
-    where U: Unifier<State<'a>, TcType>,
+                        -> Result<(ArcType, ArcType), ()>
+    where U: Unifier<State<'a>, ArcType>,
 {
     let mut l = expected.clone();
     if let Some(r_id) = actual.name() {
@@ -321,10 +320,10 @@ fn try_zip_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
 /// As a last ditch effort attempt to unify the types again by expanding the aliases (if the types
 /// are alias types).
 fn try_with_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
-                         expected: &TcType,
-                         actual: &TcType)
-                         -> Result<Option<TcType>, Error<Symbol>>
-    where U: Unifier<State<'a>, TcType>,
+                         expected: &ArcType,
+                         actual: &ArcType)
+                         -> Result<Option<ArcType>, Error<Symbol>>
+    where U: Unifier<State<'a>, ArcType>,
 {
     let l = try!(instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
                                                      unifier.state.env,
@@ -380,13 +379,13 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
     }
 }
 
-pub fn merge_signature(subs: &Substitution<TcType>,
-                       variables: &mut ScopedMap<Symbol, TcType>,
+pub fn merge_signature(subs: &Substitution<ArcType>,
+                       variables: &mut ScopedMap<Symbol, ArcType>,
                        level: u32,
                        state: State,
-                       l: &TcType,
-                       r: &TcType)
-                       -> Result<TcType, Errors<Error<Symbol>>> {
+                       l: &ArcType,
+                       r: &ArcType)
+                       -> Result<ArcType, Errors<Error<Symbol>>> {
     let mut unifier = UnifierState {
         state: state,
         unifier: Merge {
@@ -406,19 +405,19 @@ pub fn merge_signature(subs: &Substitution<TcType>,
 }
 
 struct Merge<'e> {
-    subs: &'e Substitution<TcType>,
-    variables: &'e ScopedMap<Symbol, TcType>,
+    subs: &'e Substitution<ArcType>,
+    variables: &'e ScopedMap<Symbol, ArcType>,
     errors: Errors<Error<Symbol>>,
     level: u32,
 }
 
-impl<'a, 'e> Unifier<State<'a>, TcType> for Merge<'e> {
+impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
     fn report_error(unifier: &mut UnifierState<Self>,
-                    error: UnifyError<TcType, TypeError<Symbol>>) {
+                    error: UnifyError<ArcType, TypeError<Symbol>>) {
         unifier.unifier.errors.error(error);
     }
 
-    fn try_match(unifier: &mut UnifierState<Self>, l: &TcType, r: &TcType) -> Option<TcType> {
+    fn try_match(unifier: &mut UnifierState<Self>, l: &ArcType, r: &ArcType) -> Option<ArcType> {
         let subs = unifier.unifier.subs;
         // Retrieve the 'real' types by resolving
         let l = subs.real(l);
@@ -492,22 +491,22 @@ mod tests {
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
-    use base::types::{self, TcType, Type};
+    use base::types::{self, ArcType, Type};
     use tests::*;
 
     #[test]
     fn detect_multiple_type_errors_in_single_type() {
         let _ = ::env_logger::init();
         let (x, y, z, w) = (intern("x"), intern("y"), intern("z"), intern("w"));
-        let l: TcType = Type::record(vec![],
-                                     vec![types::Field {
-                                              name: x.clone(),
-                                              typ: Type::int(),
-                                          },
-                                          types::Field {
-                                              name: y.clone(),
-                                              typ: Type::string(),
-                                          }]);
+        let l: ArcType = Type::record(vec![],
+                                      vec![types::Field {
+                                               name: x.clone(),
+                                               typ: Type::int(),
+                                           },
+                                           types::Field {
+                                               name: y.clone(),
+                                               typ: Type::string(),
+                                           }]);
         let r = Type::record(vec![],
                              vec![types::Field {
                                       name: z.clone(),

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use base::ast;
-use base::types::{self, BuiltinType, Generic, RcKind, TcType, Type, Kind, merge};
+use base::types::{self, BuiltinType, Generic, RcKind, ArcType, Type, Kind, merge};
 use base::symbol::Symbol;
 use base::types::{KindEnv, Walker};
 
@@ -130,7 +130,7 @@ impl<'a> KindCheck<'a> {
     }
 
     // Kindhecks `typ`, infering it to be of kind `Type`
-    pub fn kindcheck_type(&mut self, typ: &mut TcType) -> Result<RcKind> {
+    pub fn kindcheck_type(&mut self, typ: &mut ArcType) -> Result<RcKind> {
         debug!("Kindcheck {:?}", typ);
         let (kind, t) = try!(self.kindcheck(typ));
         let type_kind = self.type_kind();
@@ -149,7 +149,7 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    fn kindcheck(&mut self, typ: &TcType) -> Result<(RcKind, TcType)> {
+    fn kindcheck(&mut self, typ: &ArcType) -> Result<(RcKind, ArcType)> {
         match **typ {
             Type::Hole => Ok((self.subs.new_var(), typ.clone())),
             Type::Generic(ref gen) => {
@@ -224,7 +224,7 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    pub fn finalize_type(&self, typ: TcType) -> TcType {
+    pub fn finalize_type(&self, typ: ArcType) -> ArcType {
         let default = Some(&self.type_kind);
         types::walk_move_type(typ,
                               &mut |typ| {

@@ -5,9 +5,7 @@ use std::ops::Deref;
 
 use pos::{BytePos, Spanned};
 use symbol::Symbol;
-use types::{self, Alias, AliasData, Kind, Type, TypeEnv, TypeVariable};
-
-pub type AstType<Id> = ::types::ArcType<Id>;
+use types::{self, Alias, AliasData, ArcType, Kind, Type, TypeEnv, TypeVariable};
 
 /// Trait representing a type that can by used as in identifier in the AST
 /// Used to allow the AST to both have a representation which has typed expressions etc as well
@@ -21,7 +19,7 @@ pub trait AstId: Sized {
         env.from_str(s)
     }
     fn to_id(self) -> Self::Untyped;
-    fn set_type(&mut self, typ: AstType<Self::Untyped>);
+    fn set_type(&mut self, typ: ArcType<Self::Untyped>);
 }
 
 impl AstId for String {
@@ -30,7 +28,7 @@ impl AstId for String {
     fn to_id(self) -> String {
         self
     }
-    fn set_type(&mut self, _typ: AstType<Self::Untyped>) {}
+    fn set_type(&mut self, _typ: ArcType<Self::Untyped>) {}
 }
 
 pub trait DisplayEnv {
@@ -44,11 +42,11 @@ pub trait IdentEnv: DisplayEnv {
 
 
 /// Newtype wrapper which allows `DisplayEnv<Ident = I>` to be used where
-/// `DisplayEnv<Ident = TcIdent<Ident = I>` is expected
-pub struct TcIdentEnvWrapper<T>(pub T);
+/// `DisplayEnv<Ident = TypedIdent<Ident = I>` is expected
+pub struct TypedIdentEnvWrapper<T>(pub T);
 
-impl<I, T: DisplayEnv<Ident = I>> DisplayEnv for TcIdentEnvWrapper<T> {
-    type Ident = TcIdent<I>;
+impl<I, T: DisplayEnv<Ident = I>> DisplayEnv for TypedIdentEnvWrapper<T> {
+    type Ident = TypedIdent<I>;
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
         self.0.string(&ident.name)
     }
@@ -101,13 +99,14 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct TcIdent<Id> {
-    pub typ: AstType<Id>,
+pub struct TypedIdent<Id = Symbol> {
+    pub typ: ArcType<Id>,
     pub name: Id,
 }
-impl<Id> TcIdent<Id> {
-    pub fn new(name: Id) -> TcIdent<Id> {
-        TcIdent {
+
+impl<Id> TypedIdent<Id> {
+    pub fn new(name: Id) -> TypedIdent<Id> {
+        TypedIdent {
             typ: Type::variable(TypeVariable {
                 id: 0,
                 kind: Kind::variable(0),
@@ -120,7 +119,7 @@ impl<Id> TcIdent<Id> {
     }
 }
 
-impl<Id> AsRef<str> for TcIdent<Id>
+impl<Id> AsRef<str> for TypedIdent<Id>
     where Id: AsRef<str>,
 {
     fn as_ref(&self) -> &str {
@@ -128,12 +127,12 @@ impl<Id> AsRef<str> for TcIdent<Id>
     }
 }
 
-pub struct TcIdentEnv<Id, Env> {
-    pub typ: AstType<Id>,
+pub struct TypedIdentEnv<Id, Env> {
+    pub typ: ArcType<Id>,
     pub env: Env,
 }
 
-impl<Id> AstId for TcIdent<Id>
+impl<Id> AstId for TypedIdent<Id>
     where Id: Clone + PartialEq + Eq + fmt::Debug + AstId,
 {
     type Untyped = Id;
@@ -142,27 +141,27 @@ impl<Id> AstId for TcIdent<Id>
         self.name
     }
 
-    fn set_type(&mut self, typ: AstType<Self::Untyped>) {
+    fn set_type(&mut self, typ: ArcType<Self::Untyped>) {
         self.typ = typ;
     }
 }
 
-impl<Id, Env> DisplayEnv for TcIdentEnv<Id, Env>
+impl<Id, Env> DisplayEnv for TypedIdentEnv<Id, Env>
     where Env: DisplayEnv<Ident = Id>,
 {
-    type Ident = TcIdent<Id>;
+    type Ident = TypedIdent<Id>;
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
         self.env.string(&ident.name)
     }
 }
 
-impl<Id, Env> IdentEnv for TcIdentEnv<Id, Env>
+impl<Id, Env> IdentEnv for TypedIdentEnv<Id, Env>
     where Id: Clone,
           Env: IdentEnv<Ident = Id>,
 {
-    fn from_str(&mut self, s: &str) -> TcIdent<Id> {
-        TcIdent {
+    fn from_str(&mut self, s: &str) -> TypedIdent<Id> {
+        TypedIdent {
             typ: self.typ.clone(),
             name: self.env.from_str(s),
         }
@@ -185,7 +184,7 @@ pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
 pub enum Pattern<Id: AstId> {
     Constructor(Id, Vec<Id>),
     Record {
-        typ: AstType<Id::Untyped>,
+        typ: ArcType<Id::Untyped>,
         types: Vec<(Id::Untyped, Option<Id::Untyped>)>,
         fields: Vec<(Id::Untyped, Option<Id::Untyped>)>,
     },
@@ -200,7 +199,7 @@ pub struct Alternative<Id: AstId> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Array<Id: AstId> {
-    pub typ: AstType<Id::Untyped>,
+    pub typ: ArcType<Id::Untyped>,
     pub expressions: Vec<SpannedExpr<Id>>,
 }
 
@@ -237,8 +236,8 @@ pub enum Expr<Id: AstId> {
     Array(Array<Id>),
     /// Record construction
     Record {
-        typ: AstType<Id::Untyped>,
-        types: Vec<(Id::Untyped, Option<AstType<Id::Untyped>>)>,
+        typ: ArcType<Id::Untyped>,
+        types: Vec<(Id::Untyped, Option<ArcType<Id::Untyped>>)>,
         exprs: Vec<(Id::Untyped, Option<SpannedExpr<Id>>)>,
     },
     /// Tuple construction
@@ -255,14 +254,14 @@ pub enum Expr<Id: AstId> {
 pub struct TypeBinding<Id> {
     pub comment: Option<String>,
     pub name: Id,
-    pub alias: Alias<Id, AstType<Id>>,
+    pub alias: Alias<Id, ArcType<Id>>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ValueBinding<Id: AstId> {
     pub comment: Option<String>,
     pub name: SpannedPattern<Id>,
-    pub typ: Option<AstType<Id::Untyped>>,
+    pub typ: Option<ArcType<Id::Untyped>>,
     pub arguments: Vec<Id>,
     pub expression: SpannedExpr<Id>,
 }
@@ -281,7 +280,7 @@ pub trait MutVisitor {
         walk_mut_pattern(self, &mut e.value);
     }
 
-    fn visit_typ(&mut self, _: &mut AstType<<Self::T as AstId>::Untyped>) {}
+    fn visit_typ(&mut self, _: &mut ArcType<<Self::T as AstId>::Untyped>) {}
 
     fn visit_identifier(&mut self, _: &mut Self::T) {}
 }
@@ -377,13 +376,13 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>
 pub trait Typed {
     type Id;
 
-    fn env_type_of(&self, env: &TypeEnv) -> AstType<Self::Id>;
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType<Self::Id>;
 }
 
-impl<Id: Clone> Typed for TcIdent<Id> {
+impl<Id: Clone> Typed for TypedIdent<Id> {
     type Id = Id;
 
-    fn env_type_of(&self, _: &TypeEnv) -> AstType<Id> {
+    fn env_type_of(&self, _: &TypeEnv) -> ArcType<Id> {
         self.typ.clone()
     }
 }
@@ -393,7 +392,7 @@ impl<Id> Typed for Expr<Id>
 {
     type Id = Id::Id;
 
-    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         match *self {
             Expr::Ident(ref id) |
             Expr::Projection(_, ref id) => id.env_type_of(env),
@@ -436,15 +435,15 @@ impl<Id> Typed for Expr<Id>
 impl<T: Typed> Typed for Spanned<T, BytePos> {
     type Id = T::Id;
 
-    fn env_type_of(&self, env: &TypeEnv) -> AstType<T::Id> {
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType<T::Id> {
         self.value.env_type_of(env)
     }
 }
 
-impl Typed for Pattern<TcIdent<Symbol>> {
+impl Typed for Pattern<TypedIdent> {
     type Id = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
             Pattern::Ident(ref name) => name.env_type_of(env),
@@ -454,10 +453,10 @@ impl Typed for Pattern<TcIdent<Symbol>> {
     }
 }
 
-impl Typed for ValueBinding<TcIdent<Symbol>> {
+impl Typed for ValueBinding<TypedIdent> {
     type Id = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> AstType<Symbol> {
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         match self.typ {
             Some(ref typ) => typ.clone(),
             None => self.name.env_type_of(env),
@@ -465,10 +464,7 @@ impl Typed for ValueBinding<TcIdent<Symbol>> {
     }
 }
 
-fn get_return_type(env: &TypeEnv,
-                   alias_type: &AstType<Symbol>,
-                   arg_count: usize)
-                   -> AstType<Symbol> {
+fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
     if arg_count == 0 {
         alias_type.clone()
     } else {

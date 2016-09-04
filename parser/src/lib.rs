@@ -20,8 +20,8 @@ use base::ast;
 use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, BytePos, Span};
-use base::types::{Type, Generic, Alias, Field, Kind};
-use base::symbol::{Name, Symbol, SymbolModule};
+use base::types::{Alias, ArcType, Generic, Field, Kind, Type};
+use base::symbol::{Name, SymbolModule};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream};
@@ -64,7 +64,7 @@ struct ParserEnv<I, F>
           F::Ident: AstId,
 {
     empty_id: F::Ident,
-    hole_typ: AstType<<F::Ident as AstId>::Untyped>,
+    hole_typ: ArcType<<F::Ident as AstId>::Untyped>,
     make_ident: Rc<RefCell<F>>,
     errors: RefCell<Errors<Error>>,
     env: PhantomData<I>,
@@ -220,11 +220,11 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn ident_type<'a>(&'a self) -> LanguageParser<'a, I, F, AstType<Id::Untyped>> {
+    fn ident_type<'a>(&'a self) -> LanguageParser<'a, I, F, ArcType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_ident_type)
     }
 
-    fn parse_ident_type(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
+    fn parse_ident_type(&self, input: I) -> ParseResult<ArcType<Id::Untyped>, I> {
         try(self.parser(ParserEnv::<I, F>::parse_ident2))
             .map(|(s, typ)| {
                 debug!("Id: {:?}", s);
@@ -256,14 +256,14 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 
     match_parser! { doc_comment, DocComment -> String }
 
-    fn typ<'a>(&'a self) -> LanguageParser<'a, I, F, AstType<Id::Untyped>> {
+    fn typ<'a>(&'a self) -> LanguageParser<'a, I, F, ArcType<Id::Untyped>> {
         self.parser(ParserEnv::<I, F>::parse_type)
     }
 
     fn parse_adt(&self,
-                 return_type: &AstType<Id::Untyped>,
+                 return_type: &ArcType<Id::Untyped>,
                  input: I)
-                 -> ParseResult<AstType<Id::Untyped>, I> {
+                 -> ParseResult<ArcType<Id::Untyped>, I> {
         let variant = (token(Token::Pipe),
                        self.ident_u(),
                        many(self.parser(ParserEnv::<I, F>::type_arg)))
@@ -273,7 +273,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn parse_type(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
+    fn parse_type(&self, input: I) -> ParseResult<ArcType<Id::Untyped>, I> {
         (many1(self.parser(ParserEnv::<I, F>::type_arg)),
          optional(token(Token::RightArrow).with(self.typ())))
             .map(|(mut arg, ret): (Vec<_>, _)| {
@@ -292,7 +292,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn record_type(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
+    fn record_type(&self, input: I) -> ParseResult<ArcType<Id::Untyped>, I> {
         let field = self.parser(ParserEnv::<I, F>::parse_ident2)
             .then(|(id, typ)| {
                 parser(move |input| {
@@ -339,8 +339,8 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .parse_state(input)
     }
 
-    fn type_arg(&self, input: I) -> ParseResult<AstType<Id::Untyped>, I> {
-        choice::<[&mut Parser<Input = I, Output = AstType<Id::Untyped>>; 3],
+    fn type_arg(&self, input: I) -> ParseResult<ArcType<Id::Untyped>, I> {
+        choice::<[&mut Parser<Input = I, Output = ArcType<Id::Untyped>>; 3],
                  _>([&mut self.parser(ParserEnv::<I, F>::record_type),
                      &mut between(token(Token::Open(Delimiter::Paren)),
                                   token(Token::Close(Delimiter::Paren)),
@@ -810,8 +810,8 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 pub fn parse_tc
     (symbols: &mut SymbolModule,
      input: &str)
-     -> Result<SpannedExpr<TcIdent<Symbol>>, (Option<SpannedExpr<TcIdent<Symbol>>>, Errors<Error>)> {
-    let mut env = ast::TcIdentEnv {
+     -> Result<SpannedExpr<TypedIdent>, (Option<SpannedExpr<TypedIdent>>, Errors<Error>)> {
+    let mut env = ast::TypedIdentEnv {
         typ: Type::hole(),
         env: symbols,
     };

@@ -8,12 +8,8 @@ use std::rc::Rc;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
 
-use ast;
-use ast::{AstType, DisplayEnv};
+use ast::{self, DisplayEnv};
 use symbol::{Symbol, SymbolRef};
-
-pub type TcType = ast::AstType<Symbol>;
-pub type TcIdent = ast::TcIdent<Symbol>;
 
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
@@ -30,26 +26,26 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
     /// Returns the type of the value bound at `id`
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType>;
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType>;
 
     /// Returns information about the type `id`
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>>;
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>>;
 
     /// Returns a record which contains all `fields`. The first element is the record type and the
     /// second is the alias type.
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)>;
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)>;
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
-    fn find_type(&self, id: &SymbolRef) -> Option<&TcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         (**self).find_type(id)
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, TcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         (**self).find_type_info(id)
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&TcType, &TcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         (**self).find_record(fields)
     }
 }
@@ -57,17 +53,17 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
 /// Trait which is a `TypeEnv` which also provides access to the type representation of some
 /// primitive types
 pub trait PrimitiveEnv: TypeEnv {
-    fn get_bool(&self) -> &TcType;
+    fn get_bool(&self) -> &ArcType;
 }
 
 impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
-    fn get_bool(&self) -> &TcType {
+    fn get_bool(&self) -> &ArcType {
         (**self).get_bool()
     }
 }
 
-pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
-    where F: FnMut(&Generic<Symbol>) -> Option<TcType>,
+pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
+    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
 {
     walk_move_type(typ,
                    &mut |typ| {
@@ -85,7 +81,7 @@ pub fn instantiate<F>(typ: TcType, mut f: F) -> TcType
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Type<Id, T = AstType<Id>> {
+pub enum Type<Id, T = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
     /// An application with multiple arguments.
@@ -127,7 +123,7 @@ impl<Id, T> Type<Id, T>
 
 /// A shared type which is atomically reference counted
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct ArcType<Id> {
+pub struct ArcType<Id = Symbol> {
     typ: Arc<Type<Id, ArcType<Id>>>,
 }
 
@@ -391,10 +387,10 @@ impl<Id, T> Alias<Id, T>
     }
 }
 
-impl<Id> Alias<Id, AstType<Id>>
+impl<Id> Alias<Id, ArcType<Id>>
     where Id: Clone,
 {
-    pub fn make_mut(alias: &mut Alias<Id, AstType<Id>>) -> &mut AliasData<Id, AstType<Id>> {
+    pub fn make_mut(alias: &mut Alias<Id, ArcType<Id>>) -> &mut AliasData<Id, ArcType<Id>> {
         match *Arc::make_mut(&mut alias._typ.typ) {
             Type::Alias(ref mut alias) => alias,
             _ => unreachable!(),
@@ -413,7 +409,7 @@ pub struct AliasData<Id, T> {
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
-pub struct Field<Id, T = AstType<Id>> {
+pub struct Field<Id, T = ArcType<Id>> {
     pub name: Id,
     pub typ: T,
 }
@@ -586,7 +582,7 @@ impl<'a, Id, T> Iterator for ArgIterator<'a, T>
     }
 }
 
-impl<Id> AstType<Id> {
+impl<Id> ArcType<Id> {
     /// Returns the lowest level which this type contains. The level informs from where type
     /// variables where created.
     pub fn level(&self) -> u32 {

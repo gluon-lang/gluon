@@ -6,7 +6,7 @@ use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use base::fixed::{FixedMap, FixedVec};
 use base::types;
-use base::types::{TcType, Type, Walker};
+use base::types::{ArcType, Type, Walker};
 use base::symbol::Symbol;
 
 use typecheck::unroll_app;
@@ -253,8 +253,8 @@ impl<T: Substitutable> Substitution<T> {
     }
 }
 
-impl Substitution<TcType> {
-    pub fn replace_variable(&self, typ: &Type<Symbol>) -> Option<TcType> {
+impl Substitution<ArcType> {
+    pub fn replace_variable(&self, typ: &Type<Symbol>) -> Option<ArcType> {
         match *typ {
             Type::Variable(ref id) => {
                 self.find_type_for_var(id.id)
@@ -264,7 +264,7 @@ impl Substitution<TcType> {
         }
     }
 
-    pub fn set_type(&self, t: TcType) -> TcType {
+    pub fn set_type(&self, t: ArcType) -> ArcType {
         types::walk_move_type(t,
                               &mut |typ| {
             let replacement = self.replace_variable(typ);

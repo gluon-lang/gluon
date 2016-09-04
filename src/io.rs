@@ -131,7 +131,7 @@ fn catch_io(vm: &Thread) -> Status {
             {
                 let mut stack = StackFrame::current(&mut context.stack);
                 while stack.stack.get_frames().len() > frame_level {
-                    if let Err(_) =stack.exit_scope() {
+                    if let Err(_) = stack.exit_scope() {
                         return Status::Error;
                     }
                 }
