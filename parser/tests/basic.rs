@@ -8,7 +8,7 @@ use base::ast;
 use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
-use base::types::{Type, Generic, Alias, Field, Kind};
+use base::types::{Alias, ArcType, Field, Generic, Kind, Type};
 use parser::{parse_string, Error};
 
 pub fn intern(s: &str) -> String {
@@ -52,14 +52,14 @@ fn id(s: &str) -> SpExpr {
     no_loc(Expr::Ident(intern(s)))
 }
 
-fn field(s: &str, typ: AstType<String>) -> Field<String> {
+fn field(s: &str, typ: ArcType<String>) -> Field<String> {
     Field {
         name: intern(s),
         typ: typ,
     }
 }
 
-fn typ(s: &str) -> AstType<String> {
+fn typ(s: &str) -> ArcType<String> {
     assert!(s.len() != 0);
     match s.parse() {
         Ok(b) => Type::builtin(b),
@@ -68,7 +68,7 @@ fn typ(s: &str) -> AstType<String> {
     }
 }
 
-fn generic_ty(s: &str) -> AstType<String> {
+fn generic_ty(s: &str) -> ArcType<String> {
     Type::generic(generic(s))
 }
 
@@ -109,7 +109,7 @@ fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
 
 fn type_decl(name: String,
              args: Vec<Generic<String>>,
-             typ: AstType<String>,
+             typ: ArcType<String>,
              body: SpExpr)
              -> SpExpr {
     type_decls(vec![TypeBinding {
@@ -128,7 +128,7 @@ fn record(fields: Vec<(String, Option<SpExpr>)>) -> SpExpr {
     record_a(Vec::new(), fields)
 }
 
-fn record_a(types: Vec<(String, Option<AstType<String>>)>,
+fn record_a(types: Vec<(String, Option<ArcType<String>>)>,
             fields: Vec<(String, Option<SpExpr>)>)
             -> SpExpr {
     no_loc(Expr::Record {

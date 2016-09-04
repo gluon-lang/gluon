@@ -1,8 +1,7 @@
 use std::fmt;
 
-use base::ast::AstType;
 use base::error::Errors;
-use base::types::{self, TcType, Type, TypeVariable, TypeEnv, merge};
+use base::types::{self, ArcType, TcType, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
 use base::scoped_map::ScopedMap;
@@ -11,7 +10,7 @@ use unify;
 use unify::{Error as UnifyError, Unifier, Unifiable};
 use substitution::{Variable, Substitutable, Substitution};
 
-pub type Error<I> = UnifyError<AstType<I>, TypeError<I>>;
+pub type Error<I> = UnifyError<ArcType<I>, TypeError<I>>;
 
 pub struct State<'a> {
     env: &'a (TypeEnv + 'a),
@@ -81,14 +80,14 @@ impl Variable for TypeVariable {
     }
 }
 
-impl<I> Substitutable for AstType<I> {
+impl<I> Substitutable for ArcType<I> {
     type Variable = TypeVariable;
 
-    fn new(id: u32) -> AstType<I> {
+    fn new(id: u32) -> ArcType<I> {
         Type::variable(TypeVariable::new(id))
     }
 
-    fn from_variable(var: TypeVariable) -> AstType<I> {
+    fn from_variable(var: TypeVariable) -> ArcType<I> {
         Type::variable(var)
     }
 
@@ -100,7 +99,7 @@ impl<I> Substitutable for AstType<I> {
     }
 
     fn traverse<F>(&self, f: &mut F)
-        where F: types::Walker<AstType<I>>,
+        where F: types::Walker<ArcType<I>>,
     {
         types::walk_type_(self, f)
     }

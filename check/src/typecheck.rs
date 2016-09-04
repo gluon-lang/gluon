@@ -11,7 +11,7 @@ use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{self, RcKind, Type, Generic, Kind};
+use base::types::{self, ArcType, RcKind, Type, Generic, Kind};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TcType, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
@@ -21,7 +21,7 @@ use unify_type;
 
 use self::TypeError::*;
 
-type ErrType = ast::AstType<String>;
+type ErrType = ArcType<String>;
 
 
 /// Type representing a single error when checking a type
@@ -30,15 +30,15 @@ pub enum TypeError<I> {
     /// Variable has not been defined before it was used
     UndefinedVariable(I),
     /// Attempt to call a type which is not a function
-    NotAFunction(ast::AstType<I>),
+    NotAFunction(ArcType<I>),
     /// Type has not been defined before it was used
     UndefinedType(I),
     /// Type were expected to have a certain field
-    UndefinedField(ast::AstType<I>, I),
+    UndefinedField(ArcType<I>, I),
     /// Constructor type was found in a pattern but did not have the expected number of arguments
-    PatternError(ast::AstType<I>, usize),
+    PatternError(ArcType<I>, usize),
     /// Errors found when trying to unify two types
-    Unification(ast::AstType<I>, ast::AstType<I>, Vec<unify_type::Error<I>>),
+    Unification(ArcType<I>, ArcType<I>, Vec<unify_type::Error<I>>),
     /// Error were found when trying to unify the kinds of two types
     KindError(kindcheck::Error<I>),
     /// Errors found during renaming (overload resolution)
@@ -46,7 +46,7 @@ pub enum TypeError<I> {
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// Type is not a type which has any fields
-    InvalidProjection(ast::AstType<I>),
+    InvalidProjection(ArcType<I>),
     /// Expected to find a record with the following fields
     UndefinedRecord { fields: Vec<I> },
     /// Found a case expression without any alternatives
@@ -357,7 +357,7 @@ impl<'a> Typecheck<'a> {
                 }
             }
 
-            fn visit_typ(&mut self, typ: &mut ast::AstType<Symbol>) {
+            fn visit_typ(&mut self, typ: &mut ArcType<Symbol>) {
                 if let Some(finished) = self.tc.finish_type(self.level, typ) {
                     *typ = finished;
                 }

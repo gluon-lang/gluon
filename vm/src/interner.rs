@@ -1,9 +1,10 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use base::ast::{AstId, AstType};
 use Result;
+use base::ast::AstId;
 use base::fnv::FnvMap;
+use base::types::ArcType;
 
 use gc::{GcPtr, Gc, Traverseable};
 use array::Str;
@@ -104,5 +105,5 @@ impl AstId for InternedStr {
     fn to_id(self) -> InternedStr {
         self
     }
-    fn set_type(&mut self, _: AstType<Self::Untyped>) {}
+    fn set_type(&mut self, _: ArcType<Self::Untyped>) {}
 }

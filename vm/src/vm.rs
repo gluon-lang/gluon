@@ -5,11 +5,11 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::usize;
 
-use base::ast::{Typed, AstType};
+use base::ast::Typed;
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv, TcType,
-                  RcKind};
+use base::types::{Alias, AliasData, ArcType, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv,
+                  TcType, RcKind};
 use base::fnv::FnvMap;
 
 use macros::MacroEnv;
@@ -71,7 +71,7 @@ impl Traverseable for Global {
 
 impl Typed for Global {
     type Id = Symbol;
-    fn env_type_of(&self, _: &TypeEnv) -> AstType<Symbol> {
+    fn env_type_of(&self, _: &TypeEnv) -> ArcType<Symbol> {
         self.typ.clone()
     }
 }
