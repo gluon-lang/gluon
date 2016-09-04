@@ -247,7 +247,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
                     Ok(())
                 }
             }
-            None => Err(())
+            None => Err(()),
         }
     }
 
@@ -414,7 +414,7 @@ mod tests {
         frame.enter_scope(2, State::Unknown);
         frame.push(Int(2));
         frame.push(Int(3));
-        
+
         frame.enter_scope(1, State::Unknown);
         frame.push(Int(4));
         frame.push(Int(5));
@@ -423,7 +423,7 @@ mod tests {
         frame.exit_scope().unwrap();
         frame.remove_range(2, 5);
         assert_eq!(frame.stack.values, vec![Int(0), Int(1), Int(5), Int(6)]);
-        
+
         frame.exit_scope().unwrap();
         frame.remove_range(1, 3);
         assert_eq!(frame.stack.values, vec![Int(0), Int(6)]);

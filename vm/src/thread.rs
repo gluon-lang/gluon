@@ -631,23 +631,24 @@ pub struct Context {
 
 impl Context {
     pub fn new_data(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
-        self.alloc_with(thread, Def {
-                tag: tag,
-                elems: fields,
-            })
+        self.alloc_with(thread,
+                        Def {
+                            tag: tag,
+                            elems: fields,
+                        })
             .map(Value::Data)
     }
 
     pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+              D::Value: Sized + Any,
     {
         alloc(&mut self.gc, thread, &self.stack, data)
     }
 
     pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+              D::Value: Sized + Any,
     {
         self.gc.alloc_ignore_limit(data)
     }
@@ -656,7 +657,7 @@ impl Context {
 impl<'b> OwnedContext<'b> {
     pub fn alloc<D>(&mut self, data: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+              D::Value: Sized + Any,
     {
         let Context { ref mut gc, ref stack } = **self;
         alloc(gc, self.thread, &stack, data)
@@ -665,7 +666,7 @@ impl<'b> OwnedContext<'b> {
 
 pub fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
     where D: DataDef + Traverseable,
-          D::Value: Sized + Any
+          D::Value: Sized + Any,
 {
     let roots = Roots {
         vm: unsafe {
@@ -698,11 +699,7 @@ impl<'b> DerefMut for OwnedContext<'b> {
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
         let exists = StackFrame::current(&mut self.stack).exit_scope().is_ok();
-        if exists {
-            Ok(self)
-        } else {
-            Err(())
-        }
+        if exists { Ok(self) } else { Err(()) }
     }
 
     fn execute(self) -> Result<Option<OwnedContext<'b>>> {
@@ -1178,11 +1175,7 @@ impl<'b> ExecuteContext<'b> {
                 x => panic!("Expected excess arguments found {:?}", x),
             }
         } else {
-            Ok(if stack_exists {
-                Some(())
-            } else {
-                None
-            })
+            Ok(if stack_exists { Some(()) } else { None })
         }
     }
 }
@@ -1190,7 +1183,7 @@ impl<'b> ExecuteContext<'b> {
 #[inline]
 fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> VmInt,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Int(f(l, r)))
 }
@@ -1198,7 +1191,7 @@ fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> f64,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Float(f(l, r)))
 }
@@ -1206,7 +1199,7 @@ fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> u8,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Byte(f(l, r)))
 }
@@ -1214,22 +1207,16 @@ fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> bool,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| {
-        Value::Tag(if f(l, r) {
-            1
-        } else {
-            0
-        })
-    })
+    binop(vm, stack, |l, r| Value::Tag(if f(l, r) { 1 } else { 0 }))
 }
 
 
 #[inline]
 fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> Value,
-          T: Getable<'b> + fmt::Debug
+          T: Getable<'b> + fmt::Debug,
 {
     let r = stack.pop();
     let l = stack.pop();

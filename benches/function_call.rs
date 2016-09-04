@@ -53,8 +53,11 @@ fn factorial_tail_call(b: &mut ::test::Bencher) {
 fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
     let vm = new_vm();
 
-    fn test_fn(_: &Thread) -> Status { Status::Ok }
-    vm.define_global("test_fn", primitive::<fn (i32)>("test_fn", test_fn)).unwrap();
+    fn test_fn(_: &Thread) -> Status {
+        Status::Ok
+    }
+
+    vm.define_global("test_fn", primitive::<fn(i32)>("test_fn", test_fn)).unwrap();
 
     let text = r#"
     let for n f =
@@ -78,7 +81,7 @@ fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
         .load_script(&vm, "test", text)
         .unwrap();
 
-    let mut test: FunctionRef<fn (i32) -> ()> = vm.get_global("test").unwrap();
+    let mut test: FunctionRef<fn(i32) -> ()> = vm.get_global("test").unwrap();
     b.iter(|| {
         let result = test.call(1000).unwrap();
         ::test::black_box(result)
