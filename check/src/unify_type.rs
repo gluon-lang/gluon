@@ -425,6 +425,9 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         let result = match (&**l, &**r) {
+            (&Type::Hole, &Type::Hole) => Ok(Some(subs.new_var())),
+            (_, &Type::Hole) => Ok(Some(l.clone())),
+            (&Type::Hole, _) => Ok(Some(r.clone())),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
             (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
                 let left = match unifier.unifier.variables.get(&l_gen.id) {
