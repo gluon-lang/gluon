@@ -19,7 +19,7 @@ pub struct State<'a> {
     /// recursively expanded in which case the unification fails.
     reduced_aliases: Vec<Symbol>,
     subs: &'a Substitution<ArcType>,
-    context: Option<(ArcType, ArcType)>,
+    record_context: Option<(ArcType, ArcType)>,
 }
 
 impl<'a> State<'a> {
@@ -28,7 +28,7 @@ impl<'a> State<'a> {
             env: env,
             reduced_aliases: Vec::new(),
             subs: subs,
-            context: None,
+            record_context: None,
         }
     }
 }
@@ -140,7 +140,7 @@ impl<'a> Unifiable<State<'a>> for ArcType {
         let (l_temp, r_temp);
         let (mut l, mut r) = (self, other);
         let mut through_alias = false;
-        match try_zip_alias(unifier, self, other, &mut through_alias) {
+        match find_common_alias(unifier, self, other, &mut through_alias) {
             Ok((l2, r2)) => {
                 l_temp = l2;
                 r_temp = r2;
@@ -200,7 +200,8 @@ fn do_zip_match<'a, U>(self_: &ArcType,
         }
         (&Type::Record { types: ref l_types, row: ref l_row },
          &Type::Record { types: ref r_types, row: ref r_row }) if l_types == r_types => {
-            let previous = mem::replace(&mut unifier.state.context,
+            // Store the current records so that they can be used when displaying field errors
+            let previous = mem::replace(&mut unifier.state.record_context,
                                         Some((self_.clone(), other.clone())));
             let result = Ok(unifier.try_match(l_row, r_row)
                 .map(|row| {
@@ -209,7 +210,7 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                         row: row,
                     })
                 }));
-            unifier.state.context = previous;
+            unifier.state.record_context = previous;
             result
         }
         (&Type::ExtendRow { fields: ref l_args, rest: ref l_rest },
@@ -248,6 +249,11 @@ fn do_zip_match<'a, U>(self_: &ArcType,
     }
 }
 
+/// Do unification between two rows. Each row is either `Type::ExtendRow` or `Type::EmptyRow`.
+/// Two rows will unify successfully if all fields they have in common unifies and if either
+/// record have additional fields not found in the other record, the other record can be extended.
+/// A record can be extended if the `rest` part of `Type::ExtendRow` is a type variable in which
+/// case that variable is unified with the missing fields.
 fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType) -> Option<ArcType>
     where U: Unifier<State<'a>, ArcType>,
 {
@@ -293,7 +299,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
         // display a better error message
         left = match **r_iter.current_type() {
             Type::EmptyRow => {
-                let context = unifier.state.context.as_ref().map_or(r, |p| &p.1).clone();
+                let context = unifier.state.record_context.as_ref().map_or(r, |p| &p.1).clone();
                 let err = TypeError::MissingFields(context,
                                                    l_rest.field_iter()
                                                        .map(|field| field.name.clone())
@@ -310,7 +316,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
     if r_rest.field_iter().next().is_some() {
         match **l_iter.current_type() {
             Type::EmptyRow => {
-                let context = unifier.state.context.as_ref().map_or(l, |p| &p.0).clone();
+                let context = unifier.state.record_context.as_ref().map_or(l, |p| &p.0).clone();
                 let err = TypeError::MissingFields(context,
                                                    r_rest.field_iter()
                                                        .map(|field| field.name.clone())
@@ -323,7 +329,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
         }
     }
 
-    // Pack all the fields from both records into a single `Type::ExtendRow` value
+    // Pack all fields from both records into a single `Type::ExtendRow` value
     let mut fields = match new_both {
         Some(fields) => fields,
         None => both.iter().map(|pair| pair.0.clone()).collect(),
@@ -335,8 +341,8 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
 }
 
 /// Attempt to unify two alias types.
-/// To find a possible successful unification we walk through the alias expansions of `l` to find
-/// an expansion which has `r_id` in the spine of the expanded type
+/// To find a possible successful unification we walk through the alias expansions of `l` in an
+/// attempt to find that `l` expands to the alias `r_id`
 fn find_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
                      l: ArcType,
                      r_id: &SymbolRef)
@@ -405,14 +411,14 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
 /// type Test a = | Test a Int
 /// type Test2 = Test String
 ///
-/// // try_zip_alias(Test2, Test 0) => Ok((Test String, Test 0))
-/// // try_zip_alias(Float, Test 0) => Ok((Float, Test 0))
+/// // find_common_alias(Test2, Test 0) => Ok((Test String, Test 0))
+/// // find_common_alias(Float, Test 0) => Ok((Float, Test 0))
 /// ```
-fn try_zip_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
-                        expected: &ArcType,
-                        actual: &ArcType,
-                        through_alias: &mut bool)
-                        -> Result<(ArcType, ArcType), ()>
+fn find_common_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
+                            expected: &ArcType,
+                            actual: &ArcType,
+                            through_alias: &mut bool)
+                            -> Result<(ArcType, ArcType), ()>
     where U: Unifier<State<'a>, ArcType>,
 {
     let mut l = expected.clone();

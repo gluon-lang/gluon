@@ -1029,8 +1029,6 @@ impl<'b> ExecuteContext<'b> {
                             let fields = &self.stack[self.stack.len() - args..];
                             unsafe {
                                 let roots = Roots {
-                                    // Threads must only be on the garbage collectors heap which
-                                    // makes this safe
                                     vm: GcPtr::from_raw(self.thread),
                                     stack: &self.stack.stack,
                                 };

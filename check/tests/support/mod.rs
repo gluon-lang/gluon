@@ -177,6 +177,8 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
                 typ)
 }
 
+
+/// Replace the variable at the `rest` part of a record for easier equality checks
 #[allow(dead_code)]
 pub fn close_record(typ: ArcType) -> ArcType {
     walk_move_type(typ,

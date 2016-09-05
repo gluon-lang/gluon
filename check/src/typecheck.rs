@@ -392,7 +392,7 @@ impl<'a> Typecheck<'a> {
             typ = self.unify_span(expr.span, &expected, typ)
         }
         typ = self.finish_type(0, &typ).unwrap_or(typ);
-        typ = types::walk_move_type(typ, &mut unroll_app);
+        typ = types::walk_move_type(typ, &mut unroll_typ);
         // Only the 'tail' expression need to be generalized at this point as all bindings
         // will have already been generalized
         self.generalize_variables(0, tail_expr(expr));
@@ -1148,7 +1148,7 @@ impl<'a> Typecheck<'a> {
                                                   &mut |typ: &Type<Symbol>| {
                                                       self.finish_type_(level, generic, i, typ)
                                                   });
-                    new_type.map(|t| unroll_app(&t).unwrap_or(t)).or_else(|| replacement.clone())
+                    new_type.map(|t| unroll_typ(&t).unwrap_or(t)).or_else(|| replacement.clone())
                 }
             }
         });
@@ -1435,21 +1435,21 @@ fn primitive_type(op_type: &str) -> ArcType {
 /// extern crate gluon_check;
 ///
 /// use gluon_base::types::{Type, ArcType, BuiltinType};
-/// use gluon_check::typecheck::unroll_app;
+/// use gluon_check::typecheck::unroll_typ;
 ///
 /// # fn main() {
 /// let i: ArcType = Type::int();
 /// let s: ArcType = Type::string();
-/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![s.clone()]), vec![i.clone()])),
+/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), vec![s.clone()]), vec![i.clone()])),
 ///            Some(Type::app(i.clone(), vec![s.clone(), i.clone()])));
-/// assert_eq!(unroll_app(&*Type::app(Type::app(i.clone(), vec![i.clone()]), vec![s.clone()])),
+/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), vec![i.clone()]), vec![s.clone()])),
 ///            Some(Type::app(i.clone(), vec![i.clone(), s.clone()])));
 /// let f: ArcType = Type::builtin(BuiltinType::Function);
-/// assert_eq!(unroll_app(&*Type::app(Type::app(f.clone(), vec![i.clone()]), vec![s.clone()])),
+/// assert_eq!(unroll_typ(&*Type::app(Type::app(f.clone(), vec![i.clone()]), vec![s.clone()])),
 ///            Some(Type::function(vec![i.clone()], s.clone())));
 /// # }
 /// ```
-pub fn unroll_app(typ: &Type<Symbol>) -> Option<ArcType> {
+pub fn unroll_typ(typ: &Type<Symbol>) -> Option<ArcType> {
     let mut args = Vec::new();
     let mut current = match *typ {
         Type::App(ref l, ref rest) => {
@@ -1476,7 +1476,7 @@ pub fn unroll_app(typ: &Type<Symbol>) -> Option<ArcType> {
     }
 }
 
-pub fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
+fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
     let mut args = Vec::new();
     let mut current = match *typ {
         Type::ExtendRow { ref fields, ref rest } => {

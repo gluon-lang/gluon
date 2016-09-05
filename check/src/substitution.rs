@@ -9,7 +9,7 @@ use base::types;
 use base::types::{ArcType, Type, Walker};
 use base::symbol::Symbol;
 
-use typecheck::unroll_app;
+use typecheck::unroll_typ;
 
 pub struct Substitution<T> {
     /// Union-find data structure used to store the relationships of all variables in the
@@ -273,7 +273,7 @@ impl Substitution<ArcType> {
                 if let Some(ref t) = replacement {
                     typ = &**t;
                 }
-                unroll_app(typ)
+                unroll_typ(typ)
             };
             result.or(replacement)
         })

@@ -320,7 +320,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
 pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
     use substitution::Substitution;
-    // FIXME Inneficient and possible wrong
+    // FIXME This Substitution is unnecessary for equivalence unification
     let subs = Substitution::new();
     let mut unifier = UnifierState {
         state: State::new(env, &subs),

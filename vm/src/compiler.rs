@@ -23,6 +23,7 @@ pub enum Variable<G> {
     UpVar(VmIndex),
 }
 
+/// Field accesses on records can either be by offset on a non-polymorphic record, or
 enum FieldAccess {
     Name,
     Index(VmIndex),
@@ -371,7 +372,6 @@ impl<'a> Compiler<'a> {
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
         // Remove all type aliases to get the actual record type
         let typ = instantiate::remove_aliases_cow(self, typ);
-        // FIXME Cannot use indexing anymore with row polymorphism
         let mut iter = typ.field_iter();
         match iter.by_ref().position(|f| f.name.name_eq(field)) {
             Some(index) => {
