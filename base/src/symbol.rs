@@ -6,9 +6,8 @@ use std::sync::Arc;
 use std::borrow::Borrow;
 use std::ops::Deref;
 
-use ast::{AstId, DisplayEnv, IdentEnv};
+use ast::{DisplayEnv, IdentEnv};
 use fnv::FnvMap;
-use types::ArcType;
 
 // FIXME Don't have a double indirection (Arc + String)
 #[derive(Clone, Eq)]
@@ -344,13 +343,4 @@ impl<'a> IdentEnv for SymbolModule<'a> {
     fn from_str(&mut self, s: &str) -> Symbol {
         self.symbol(s)
     }
-}
-
-impl AstId for Symbol {
-    type Untyped = Symbol;
-
-    fn to_id(self) -> Symbol {
-        self
-    }
-    fn set_type(&mut self, _: ArcType<Self::Untyped>) {}
 }

@@ -133,7 +133,7 @@ pub struct TypedIdentEnv<Id, Env> {
 }
 
 impl<Id> AstId for TypedIdent<Id>
-    where Id: Clone + PartialEq + Eq + fmt::Debug + AstId,
+    where Id: Clone + PartialEq + Eq + fmt::Debug,
 {
     type Untyped = Id;
 

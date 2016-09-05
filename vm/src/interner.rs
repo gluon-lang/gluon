@@ -2,9 +2,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use Result;
-use base::ast::AstId;
 use base::fnv::FnvMap;
-use base::types::ArcType;
 
 use gc::{GcPtr, Gc, Traverseable};
 use array::Str;
@@ -97,13 +95,4 @@ impl fmt::Display for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", &self[..])
     }
-}
-
-impl AstId for InternedStr {
-    type Untyped = InternedStr;
-
-    fn to_id(self) -> InternedStr {
-        self
-    }
-    fn set_type(&mut self, _: ArcType<Self::Untyped>) {}
 }
