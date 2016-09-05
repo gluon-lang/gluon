@@ -176,13 +176,13 @@ pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id: AstId> {
-    Constructor(Id, Vec<Id>),
+    Constructor(TypedIdent<Id::Untyped>, Vec<TypedIdent<Id::Untyped>>),
     Record {
         typ: ArcType<Id::Untyped>,
         types: Vec<(Id::Untyped, Option<Id::Untyped>)>,
         fields: Vec<(Id::Untyped, Option<Id::Untyped>)>,
     },
-    Ident(Id),
+    Ident(TypedIdent<Id::Untyped>),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -199,8 +199,8 @@ pub struct Array<Id: AstId> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Lambda<Id: AstId> {
-    pub id: Id,
-    pub arguments: Vec<Id>,
+    pub id: TypedIdent<Id::Untyped>,
+    pub arguments: Vec<TypedIdent<Id::Untyped>>,
     pub body: Box<SpannedExpr<Id>>,
 }
 
@@ -211,7 +211,7 @@ pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id: AstId> {
     /// Identifiers
-    Ident(Id),
+    Ident(TypedIdent<Id::Untyped>),
     /// Literal values
     Literal(Literal),
     /// Function application, eg. `f x`
@@ -223,9 +223,9 @@ pub enum Expr<Id: AstId> {
     /// Pattern match expression
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     /// Infix operator expression eg. `f >> g`
-    Infix(Box<SpannedExpr<Id>>, Id, Box<SpannedExpr<Id>>),
+    Infix(Box<SpannedExpr<Id>>, TypedIdent<Id::Untyped>, Box<SpannedExpr<Id>>),
     /// Record field projection, eg. `value.field`
-    Projection(Box<SpannedExpr<Id>>, Id),
+    Projection(Box<SpannedExpr<Id>>, Id::Untyped, ArcType<Id::Untyped>),
     /// Array construction
     Array(Array<Id>),
     /// Record construction
@@ -256,7 +256,7 @@ pub struct ValueBinding<Id: AstId> {
     pub comment: Option<String>,
     pub name: SpannedPattern<Id>,
     pub typ: ArcType<Id::Untyped>,
-    pub arguments: Vec<Id>,
+    pub arguments: Vec<TypedIdent<Id::Untyped>>,
     pub expression: SpannedExpr<Id>,
 }
 
@@ -288,7 +288,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
         }
         Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
             v.visit_expr(&mut **lhs);
-            v.visit_identifier(id);
+            v.visit_typ(&mut id.typ);
             v.visit_expr(&mut **rhs);
         }
         Expr::LetBindings(ref mut bindings, ref mut body) => {
@@ -304,9 +304,9 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
                 v.visit_expr(arg);
             }
         }
-        Expr::Projection(ref mut expr, ref mut id) => {
+        Expr::Projection(ref mut expr, _, ref mut typ) => {
             v.visit_expr(&mut **expr);
-            v.visit_identifier(id);
+            v.visit_typ(typ);
         }
         Expr::Match(ref mut expr, ref mut alts) => {
             v.visit_expr(&mut **expr);
@@ -335,11 +335,11 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
             }
         }
         Expr::Lambda(ref mut lambda) => {
-            v.visit_identifier(&mut lambda.id);
+            v.visit_typ(&mut lambda.id.typ);
             v.visit_expr(&mut *lambda.body);
         }
         Expr::TypeBindings(_, ref mut expr) => v.visit_expr(&mut *expr),
-        Expr::Ident(ref mut id) => v.visit_identifier(id),
+        Expr::Ident(ref mut id) => v.visit_typ(&mut id.typ),
         Expr::Literal(..) => (),
         Expr::Block(ref mut exprs) => {
             for expr in exprs {
@@ -353,15 +353,15 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::T
 pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::T>) {
     match *p {
         Pattern::Constructor(ref mut id, ref mut args) => {
-            v.visit_identifier(id);
-            for a in args {
-                v.visit_identifier(a);
+            v.visit_typ(&mut id.typ);
+            for arg in args {
+                v.visit_typ(&mut arg.typ);
             }
         }
         Pattern::Record { ref mut typ, .. } => {
             v.visit_typ(typ);
         }
-        Pattern::Ident(ref mut id) => v.visit_identifier(id),
+        Pattern::Ident(ref mut id) => v.visit_typ(&mut id.typ),
     }
 }
 
@@ -388,8 +388,8 @@ impl<Id> Typed for Expr<Id>
 
     fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         match *self {
-            Expr::Ident(ref id) |
-            Expr::Projection(_, ref id) => id.env_type_of(env),
+            Expr::Ident(ref id) => id.typ.clone(),
+            Expr::Projection(_, _, ref typ) => typ.clone(),
             Expr::Literal(ref lit) => {
                 match *lit {
                     Literal::Integer(_) => Type::int(),
@@ -405,7 +405,7 @@ impl<Id> Typed for Expr<Id>
                 Type::unit()
             }
             Expr::Infix(_, ref op, _) => {
-                if let Type::App(_, ref args) = *op.env_type_of(env) {
+                if let Type::App(_, ref args) = *op.typ.clone() {
                     if let Type::App(_, ref args) = *args[1] {
                         return args[1].clone();
                     }
@@ -419,7 +419,7 @@ impl<Id> Typed for Expr<Id>
             }
             Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),
             Expr::Array(ref array) => array.typ.clone(),
-            Expr::Lambda(ref lambda) => lambda.id.env_type_of(env),
+            Expr::Lambda(ref lambda) => lambda.id.typ.clone(),
             Expr::Record { ref typ, .. } => typ.clone(),
             Expr::Block(ref exprs) => exprs.last().expect("Expr in block").env_type_of(env),
         }
@@ -440,7 +440,7 @@ impl Typed for Pattern<TypedIdent> {
     fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
-            Pattern::Ident(ref name) => name.env_type_of(env),
+            Pattern::Ident(ref id) => id.typ.clone(),
             Pattern::Record { ref typ, .. } => typ.clone(),
             Pattern::Constructor(ref id, ref args) => get_return_type(env, &id.typ, args.len()),
         }

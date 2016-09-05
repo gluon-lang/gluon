@@ -574,12 +574,12 @@ impl<'a> Compiler<'a> {
                 }
                 function.emit_call(args.len() as VmIndex, tail_position);
             }
-            Expr::Projection(ref expr, ref field) => {
+            Expr::Projection(ref expr, ref id, ref typ) => {
                 try!(self.compile(&**expr, function, false));
-                debug!("{:?} {:?}", expr, field);
+                debug!("{:?} {:?} {:?}", expr, id, typ);
                 let typ = expr.env_type_of(self);
                 debug!("Projection {}", types::display_type(&self.symbols, &typ));
-                let field_index = self.find_field(&typ, &field.name)
+                let field_index = self.find_field(&typ, id)
                     .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));
             }

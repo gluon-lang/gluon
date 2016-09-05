@@ -579,33 +579,31 @@ impl<'a> Typecheck<'a> {
                 try!(self.typecheck_bindings(bindings));
                 Ok(TailCall::TailCall)
             }
-            Expr::Projection(ref mut expr, ref mut field_access) => {
-                let mut typ = self.typecheck(&mut **expr);
+            Expr::Projection(ref mut expr, ref field_id, ref mut field_typ) => {
+                let mut expr_typ = self.typecheck(&mut **expr);
                 debug!("Projection {} . {:?}",
-                       types::display_type(&self.symbols, &typ),
-                       self.symbols.string(&field_access.name));
-                self.subs.make_real(&mut typ);
-                if let Type::Variable(_) = *typ {
+                       types::display_type(&self.symbols, &expr_typ),
+                       self.symbols.string(field_id));
+                self.subs.make_real(&mut expr_typ);
+                if let Type::Variable(_) = *expr_typ {
                     // Attempt to find a record with `field_access` since inferring to a record
                     // with only `field_access` as the field is probably useless
-                    let (record_type, _) = try!(self.find_record(&[field_access.name.clone()])
+                    let (record_type, _) = try!(self.find_record(&[field_id.clone()])
                         .map(|t| (t.0.clone(), t.1.clone())));
                     let record_type = self.instantiate(&record_type);
-                    typ = try!(self.unify(&record_type, typ));
+                    expr_typ = try!(self.unify(&record_type, expr_typ));
                 }
-                let record = self.remove_aliases(typ.clone());
+                let record = self.remove_aliases(expr_typ.clone());
                 match *record {
                     Type::Record { ref fields, .. } => {
                         let field_type = fields.iter()
-                            .find(|field| field.name.name_eq(&field_access.name))
+                            .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
-                        field_access.typ = match field_type {
+                        *field_typ = match field_type {
                             Some(typ) => self.instantiate(&typ),
-                            None => {
-                                return Err(UndefinedField(typ.clone(), field_access.name.clone()))
-                            }
+                            None => return Err(UndefinedField(expr_typ.clone(), field_id.clone())),
                         };
-                        Ok(TailCall::Type(field_access.typ.clone()))
+                        Ok(TailCall::Type(field_typ.clone()))
                     }
                     _ => Err(InvalidProjection(record.clone())),
                 }

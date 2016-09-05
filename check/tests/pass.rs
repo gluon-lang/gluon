@@ -784,7 +784,7 @@ a.id
     let t = match expr.value {
         Expr::LetBindings(_, ref body) => {
             match body.value {
-                Expr::Projection(_, ref ident) => &ident.typ,
+                Expr::Projection(_, _, ref typ) => typ,
                 _ => panic!(),
             }
         }

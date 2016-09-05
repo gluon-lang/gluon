@@ -21,7 +21,7 @@ trait OnFound {
 
     fn expr(&mut self, expr: &SpannedExpr<TypedIdent>);
 
-    fn ident(&mut self, context: &SpannedExpr<TypedIdent>, ident: &TypedIdent);
+    fn ident(&mut self, context: &SpannedExpr<TypedIdent>, ident: &Symbol, typ: &ArcType);
 
     /// Location points to whitespace
     fn nothing(&mut self);
@@ -37,9 +37,10 @@ impl<E: TypeEnv> OnFound for GetType<E> {
         self.typ = Some(expr.env_type_of(&self.env));
     }
 
-    fn ident(&mut self, _context: &SpannedExpr<TypedIdent>, ident: &TypedIdent) {
-        self.typ = Some(ident.env_type_of(&self.env));
+    fn ident(&mut self, _context: &SpannedExpr<TypedIdent>, _: &Symbol, typ: &ArcType) {
+        self.typ = Some(typ.clone());
     }
+
     fn nothing(&mut self) {}
 }
 
@@ -94,11 +95,11 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         }
     }
 
-    fn ident(&mut self, context: &SpannedExpr<TypedIdent>, ident: &TypedIdent) {
-        if let Expr::Projection(ref expr, _) = context.value {
+    fn ident(&mut self, context: &SpannedExpr<TypedIdent>, ident: &Symbol, _: &ArcType) {
+        if let Expr::Projection(ref expr, _, _) = context.value {
             let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
             if let Type::Record { ref fields, .. } = *typ {
-                let id = ident.name.as_ref();
+                let id = ident.as_ref();
                 for field in fields {
                     if field.name.as_ref().starts_with(id) {
                         self.result.push(Suggestion {
@@ -191,7 +192,9 @@ impl<F> FindVisitor<F>
             }
             Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
-                    (Ordering::Greater, Ordering::Less) => self.on_found.ident(current, op),
+                    (Ordering::Greater, Ordering::Less) => {
+                        self.on_found.ident(current, &op.name, &op.typ)
+                    }
                     (_, Ordering::Greater) |
                     (_, Ordering::Equal) => self.visit_expr(r),
                     _ => self.visit_expr(l),
@@ -212,11 +215,11 @@ impl<F> FindVisitor<F>
                 }
             }
             Expr::TypeBindings(_, ref expr) => self.visit_expr(expr),
-            Expr::Projection(ref expr, ref id) => {
+            Expr::Projection(ref expr, ref id, ref typ) => {
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
-                    self.on_found.ident(current, id);
+                    self.on_found.ident(current, id, typ);
                 }
             }
             Expr::Array(ref array) => self.visit_one(&array.expressions),

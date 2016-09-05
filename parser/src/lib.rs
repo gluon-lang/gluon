@@ -499,8 +499,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                      &mut self.float()
                          .map(|f| loc(Expr::Literal(Literal::Float(f)))),
                      &mut self.ident()
-                         .map(Expr::Ident)
-                         .map(&loc),
+                         .map(|id| loc(Expr::Ident(TypedIdent::new(id.clone().to_id())))),
                      &mut self.parser(ParserEnv::<I, F>::record).map(&loc),
                      &mut between(token(Token::Open(Delimiter::Paren)),
                                   token(Token::Close(Delimiter::Paren)),
@@ -526,8 +525,10 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .and(self.parser(Self::fields))
             .map(|(expr, fields): (_, Vec<_>)| {
                 debug!("Parsed expr {:?}", expr);
-                fields.into_iter().fold(expr, |expr, (id, end)| {
-                    pos::spanned2(span.start, end, Expr::Projection(Box::new(expr), id))
+                fields.into_iter().fold(expr, |expr, (id, end): (Id, _)| {
+                    pos::spanned2(span.start,
+                                  end,
+                                  Expr::Projection(Box::new(expr), id.to_id(), Type::hole()))
                 })
             })
             .parse_state(input)
@@ -603,10 +604,12 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                 token(Token::CloseBlock),
                 self.expr())
             .or(sep_by1(expression_parser(term, op, |l, op, r| {
-                            pos::spanned2(l.span.start,
-                                          r.span.end,
-                                          Expr::Infix(Box::new(l), self.intern(&op), Box::new(r)))
-                        }),
+                pos::spanned2(l.span.start,
+                              r.span.end,
+                              Expr::Infix(Box::new(l),
+                                          TypedIdent::new(self.intern(&op).to_id()),
+                                          Box::new(r)))
+            }),
                         token(Token::Semi))
                 .map(|mut exprs: Vec<SpannedExpr<Id>>| {
                     if exprs.len() == 1 {
@@ -622,12 +625,15 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     fn lambda(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         let start = input.position().start;
         (token(Token::Lambda), many(self.ident()), token(Token::RightArrow), self.expr())
-            .map(|(_, args, _, expr)| {
+            .map(|(_, args, _, expr): (_, Vec<Id>, _, SpannedExpr<_>)| {
                 pos::spanned2(start,
                               expr.span.end,
                               Expr::Lambda(Lambda {
-                                  id: self.empty_id.clone(),
-                                  arguments: args,
+                                  // TODO: Generate name of lambda here?
+                                  id: TypedIdent::new(self.empty_id.clone().to_id()),
+                                  arguments: args.iter()
+                                      .map(|arg| TypedIdent::new(arg.clone().to_id()))
+                                      .collect(),
                                   body: Box::new(expr),
                               }))
             })
@@ -666,11 +672,19 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                         if typ == IdentType::Constructor {
                             many(self.ident())
                                 .parse_state(input)
-                                .map(|(args, input)| {
-                                    (Pattern::Constructor(id.clone(), args), input)
+                                .map(|(args, input): (Vec<Id>, _)| {
+                                    (Pattern::Constructor(TypedIdent::new(id.clone().to_id()),
+                                                          args.iter()
+                                                              .map(|arg| {
+                                                                  TypedIdent::new(arg.clone()
+                                                                      .to_id())
+                                                              })
+                                                              .collect()),
+                                     input)
                                 })
                         } else {
-                            Ok((Pattern::Ident(id.clone()), Consumed::Empty(input)))
+                            Ok((Pattern::Ident(TypedIdent::new(id.clone().to_id())),
+                                Consumed::Empty(input)))
                         }
                     })
                 })
@@ -737,7 +751,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 
     fn binding(&self, input: I) -> ParseResult<ValueBinding<Id>, I> {
         let (name, input) = try!(self.pattern().parse_state(input));
-        let (arguments, input) = match name.value {
+        let (args, input) = match name.value {
             Pattern::Ident(_) => try!(input.combine(|input| many(self.ident()).parse_state(input))),
             _ => (Vec::new(), input),
         };
@@ -745,11 +759,14 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         let ((typ, _, e), input) = try!(input.combine(|input| {
             (optional(type_sig), token(Token::Equal), self.expr()).parse_state(input)
         }));
+
         Ok((ValueBinding {
             comment: None,
             name: name,
             typ: typ.unwrap_or_else(|| self.hole_typ.clone()),
-            arguments: arguments,
+            arguments: args.iter()
+                .map(|arg| TypedIdent::new(arg.clone().to_id()))
+                .collect(),
             expression: e,
         },
             input))
