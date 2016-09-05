@@ -78,11 +78,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                         let maybe_metadata = match *maybe_expr {
                             Some(ref mut expr) => {
                                 let m = self.metadata_expr(expr);
-                                if m.has_data() {
-                                    Some(m)
-                                } else {
-                                    None
-                                }
+                                if m.has_data() { Some(m) } else { None }
                             }
                             None => self.metadata(id).cloned(),
                         };

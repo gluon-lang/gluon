@@ -575,7 +575,7 @@ pub trait TypeRef: Sized {
     }
 }
 
-impl<Id, T> TypeRef for T where T: Deref<Target = Type<Id, T>> {}
+impl<Id, T> TypeRef for T where T: Deref<Target = Type<Id, T>>, {}
 
 impl<T> Type<Symbol, T>
     where T: Deref<Target = Type<Symbol, T>>,
@@ -612,7 +612,7 @@ impl<'a, T> FieldIterator<'a, T> {
 }
 
 impl<'a, Id: 'a, T> Iterator for FieldIterator<'a, T>
-    where T: Deref<Target = Type<Id, T>>
+    where T: Deref<Target = Type<Id, T>>,
 {
     type Item = &'a Field<Id, T>;
 

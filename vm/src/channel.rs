@@ -158,7 +158,8 @@ fn yield_(_vm: &Thread) -> Status {
     Status::Yield
 }
 
-fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> MaybeError<RootedThread, Error> {
+fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>)
+              -> MaybeError<RootedThread, Error> {
     match spawn_(value) {
         Ok(x) => MaybeError::Ok(x),
         Err(err) => MaybeError::Err(err),

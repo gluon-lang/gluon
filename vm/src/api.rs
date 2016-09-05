@@ -486,11 +486,7 @@ impl VmType for bool {
 }
 impl<'vm> Pushable<'vm> for bool {
     fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(Value::Tag(if self {
-            1
-        } else {
-            0
-        }));
+        context.stack.push(Value::Tag(if self { 1 } else { 0 }));
         Ok(())
     }
 }

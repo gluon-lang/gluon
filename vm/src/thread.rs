@@ -706,11 +706,7 @@ impl<'b> DerefMut for OwnedContext<'b> {
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
         let exists = StackFrame::current(&mut self.stack).exit_scope().is_ok();
-        if exists {
-            Ok(self)
-        } else {
-            Err(())
-        }
+        if exists { Ok(self) } else { Err(()) }
     }
 
     fn execute(self) -> Result<Option<OwnedContext<'b>>> {
@@ -1095,11 +1091,7 @@ impl<'b> ExecuteContext<'b> {
                                 .to_string()))
                         }
                     };
-                    self.stack.push(Value::Tag(if data_tag == tag {
-                        1
-                    } else {
-                        0
-                    }));
+                    self.stack.push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
                 }
                 Split => {
                     match self.stack.pop() {
@@ -1239,11 +1231,7 @@ impl<'b> ExecuteContext<'b> {
                 x => panic!("Expected excess arguments found {:?}", x),
             }
         } else {
-            Ok(if stack_exists {
-                Some(())
-            } else {
-                None
-            })
+            Ok(if stack_exists { Some(()) } else { None })
         }
     }
 }
@@ -1277,13 +1265,7 @@ fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> bool,
           T: Getable<'b> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| {
-        Value::Tag(if f(l, r) {
-            1
-        } else {
-            0
-        })
-    })
+    binop(vm, stack, |l, r| Value::Tag(if f(l, r) { 1 } else { 0 }))
 }
 
 

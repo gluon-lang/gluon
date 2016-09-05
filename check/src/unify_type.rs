@@ -312,9 +312,9 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
             Type::EmptyRow => {
                 let context = unifier.state.context.as_ref().map_or(l, |p| &p.0).clone();
                 let err = TypeError::MissingFields(context,
-                                                r_rest.field_iter()
-                                                    .map(|field| field.name.clone())
-                                                    .collect());
+                                                   r_rest.field_iter()
+                                                       .map(|field| field.name.clone())
+                                                       .collect());
                 unifier.report_error(UnifyError::Other(err));
             }
             _ => {
