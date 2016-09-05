@@ -5,7 +5,7 @@ use std::ops::Deref;
 
 use pos::{BytePos, Spanned};
 use symbol::Symbol;
-use types::{self, Alias, AliasData, ArcType, Kind, Type, TypeEnv, TypeVariable};
+use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
 
 /// Trait representing a type that can by used as in identifier in the AST
 /// Used to allow the AST to both have a representation which has typed expressions etc as well
@@ -107,10 +107,7 @@ pub struct TypedIdent<Id = Symbol> {
 impl<Id> TypedIdent<Id> {
     pub fn new(name: Id) -> TypedIdent<Id> {
         TypedIdent {
-            typ: Type::variable(TypeVariable {
-                id: 0,
-                kind: Kind::variable(0),
-            }),
+            typ: Type::hole(),
             name: name,
         }
     }
