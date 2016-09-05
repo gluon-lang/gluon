@@ -71,7 +71,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut ast::SpannedExpr<TypedIdent>) -> M
         fn metadata_expr(&mut self, expr: &mut ast::SpannedExpr<TypedIdent>) -> Metadata {
             match expr.value {
                 ast::Expr::Ident(ref mut id) => {
-                    self.metadata(id.id()).cloned().unwrap_or_else(Metadata::default)
+                    self.metadata(&id.name).cloned().unwrap_or_else(Metadata::default)
                 }
                 ast::Expr::Record { ref mut exprs, ref mut types, .. } => {
                     let mut module = BTreeMap::new();

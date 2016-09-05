@@ -475,7 +475,7 @@ impl<'a> Typecheck<'a> {
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
-                id.typ = try!(self.find(id.id()));
+                id.typ = try!(self.find(&id.name));
                 Ok(TailCall::Type(id.typ.clone()))
             }
             Expr::Literal(ref lit) => {
@@ -538,7 +538,7 @@ impl<'a> Typecheck<'a> {
                             self.unify(&self.bool(), lhs_type)
                         }
                         _ => {
-                            op.typ = try!(self.find(op.id()));
+                            op.typ = try!(self.find(&op.name));
                             let func_type = Type::function(vec![lhs_type, rhs_type],
                                                            self.subs.new_var());
                             let ret = try!(self.unify(&op.typ, func_type))
@@ -597,7 +597,7 @@ impl<'a> Typecheck<'a> {
                 match *record {
                     Type::Record { ref fields, .. } => {
                         let field_type = fields.iter()
-                            .find(|field| field.name.name_eq(field_access.id()))
+                            .find(|field| field.name.name_eq(&field_access.name))
                             .map(|field| field.typ.clone());
                         field_access.typ = match field_type {
                             Some(typ) => self.instantiate(&typ),
@@ -827,7 +827,7 @@ impl<'a> Typecheck<'a> {
                 match_type
             }
             Pattern::Ident(ref mut id) => {
-                self.stack_var(id.id().clone(), match_type.clone());
+                self.stack_var(id.name.clone(), match_type.clone());
                 id.typ = match_type.clone();
                 match_type
             }
@@ -840,7 +840,7 @@ impl<'a> Typecheck<'a> {
         }
         match typ.as_function() {
             Some((arg, ret)) => {
-                self.stack_var(args[0].id().clone(), arg.clone());
+                self.stack_var(args[0].name.clone(), arg.clone());
                 self.typecheck_pattern_rec(&args[1..], ret.clone())
             }
             None => Err(PatternError(typ.clone(), args.len())),

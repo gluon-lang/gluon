@@ -122,7 +122,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
                     let typ = self.env
-                        .find_type(id.id())
+                        .find_type(&id.name)
                         .expect("ICE: Expected constructor")
                         .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
@@ -223,7 +223,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 Expr::Infix(ref mut l, ref mut id, ref mut r) => {
-                    if let Some(new_id) = try!(self.rename(id.id(), &id.typ)) {
+                    if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
                         debug!("Rename {} = {}",
                                self.symbols.string(&id.name),
                                self.symbols.string(&new_id));

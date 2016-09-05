@@ -114,9 +114,6 @@ impl<Id> TypedIdent<Id> {
             name: name,
         }
     }
-    pub fn id(&self) -> &Id {
-        &self.name
-    }
 }
 
 impl<Id> AsRef<str> for TypedIdent<Id>

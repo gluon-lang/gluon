@@ -430,7 +430,7 @@ impl<'a> Compiler<'a> {
                     ast::Literal::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
-            Expr::Ident(ref id) => self.load_identifier(id.id(), function),
+            Expr::Ident(ref id) => self.load_identifier(&id.name, function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 try!(self.compile(&**pred, function, false));
                 let jump_index = function.function.instructions.len();
@@ -496,7 +496,7 @@ impl<'a> Compiler<'a> {
                         "#Float<" => FloatLT,
                         "#Float==" => FloatEQ,
                         _ => {
-                            self.load_identifier(op.id(), function);
+                            self.load_identifier(&op.name, function);
                             Call(2)
                         }
                     };
@@ -521,7 +521,7 @@ impl<'a> Compiler<'a> {
                         });
                         match bind.name.value {
                             ast::Pattern::Ident(ref name) => {
-                                function.new_stack_var(name.id().clone());
+                                function.new_stack_var(name.name.clone());
                             }
                             _ => panic!("ICE: Unexpected non identifer pattern"),
                         }
@@ -557,7 +557,7 @@ impl<'a> Compiler<'a> {
             }
             Expr::App(ref func, ref args) => {
                 if let Expr::Ident(ref id) = func.value {
-                    if let Some(Constructor(tag, num_args)) = self.find(id.id(), function) {
+                    if let Some(Constructor(tag, num_args)) = self.find(&id.name, function) {
                         for arg in args.iter() {
                             try!(self.compile(arg, function, false));
                         }
@@ -579,7 +579,7 @@ impl<'a> Compiler<'a> {
                 debug!("{:?} {:?}", expr, field);
                 let typ = expr.env_type_of(self);
                 debug!("Projection {}", types::display_type(&self.symbols, &typ));
-                let field_index = self.find_field(&typ, field.id())
+                let field_index = self.find_field(&typ, &field.name)
                     .expect("ICE: Undefined field in field access");
                 function.emit(GetField(field_index));
             }
@@ -594,11 +594,11 @@ impl<'a> Compiler<'a> {
                 for alt in alts.iter() {
                     match alt.pattern.value {
                         ast::Pattern::Constructor(ref id, _) => {
-                            let tag = self.find_tag(&typ, id.id())
+                            let tag = self.find_tag(&typ, &id.name)
                                 .unwrap_or_else(|| {
                                     panic!("Could not find tag for {}::{}",
                                            types::display_type(&self.symbols, &typ),
-                                           self.symbols.string(id.id()))
+                                           self.symbols.string(&id.name))
                                 });
                             function.emit(TestTag(tag));
                             start_jumps.push(function.function.instructions.len());
@@ -636,7 +636,7 @@ impl<'a> Compiler<'a> {
                                 CJump(function.function.instructions.len() as VmIndex);
                             function.emit(Split);
                             for arg in args.iter() {
-                                function.push_stack_var(arg.id().clone());
+                                function.push_stack_var(arg.name.clone());
                             }
                         }
                         ast::Pattern::Record { .. } => {
@@ -646,7 +646,7 @@ impl<'a> Compiler<'a> {
                         ast::Pattern::Ident(ref id) => {
                             function.function.instructions[start_index] =
                                 Jump(function.function.instructions.len() as VmIndex);
-                            function.new_stack_var(id.id().clone());
+                            function.new_stack_var(id.name.clone());
                         }
                     }
                     try!(self.compile(&alt.expression, function, tail_position));
@@ -726,7 +726,7 @@ impl<'a> Compiler<'a> {
                            function: &mut FunctionEnvs) {
         match *pattern {
             ast::Pattern::Ident(ref name) => {
-                function.new_stack_var(name.id().clone());
+                function.new_stack_var(name.name.clone());
             }
             ast::Pattern::Record { ref types, ref fields, .. } => {
                 let typ = instantiate::remove_aliases(self, pattern_type.clone());
@@ -793,10 +793,10 @@ impl<'a> Compiler<'a> {
                       -> Result<(VmIndex, VmIndex, CompiledFunction)> {
         function.start_function(self,
                                 arguments.len() as VmIndex,
-                                id.id().clone(),
+                                id.name.clone(),
                                 id.typ.clone());
         for arg in arguments {
-            function.push_stack_var(arg.id().clone());
+            function.push_stack_var(arg.name.clone());
         }
         try!(self.compile(body, function, true));
 
