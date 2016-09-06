@@ -32,14 +32,6 @@ impl<T: AsRef<str>> DisplayEnv for EmptyEnv<T> {
     }
 }
 
-impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t T {
-    type Ident = T::Ident;
-
-    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-        (**self).string(ident)
-    }
-}
-
 impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
     type Ident = T::Ident;
 
