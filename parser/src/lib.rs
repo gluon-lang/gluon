@@ -20,7 +20,7 @@ use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, BytePos, Span};
 use base::types::{Alias, ArcType, Generic, Field, Kind, Type};
-use base::symbol::Name;
+use base::symbol::{Name, Symbol};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream};
@@ -806,16 +806,24 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     }
 }
 
+// Force a specialized version of `parse_expr` to be created in the parser crate so the the
+// compiletimes of the parser does not bleed into the other crates
+pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
+                  input: &str)
+                  -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, Errors<Error>)> {
+    parse_expr_(symbols, input)
+}
+
 #[cfg(feature = "test")]
 pub fn parse_string<'env, 'input>
     (make_ident: &'env mut IdentEnv<Ident = String>,
      input: &'input str)
      -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
-    parse_expr(make_ident, input)
+    parse_expr_(make_ident, input)
 }
 
 /// Parses a gluon expression
-pub fn parse_expr<'env, 'input, Id>
+pub fn parse_expr_<'env, 'input, Id>
     (make_ident: &'env mut IdentEnv<Ident = Id>,
      input: &'input str)
      -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
