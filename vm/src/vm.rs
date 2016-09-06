@@ -5,7 +5,6 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::usize;
 
-use base::ast::Typed;
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{Alias, AliasData, ArcType, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv,
@@ -66,13 +65,6 @@ pub struct Global {
 impl Traverseable for Global {
     fn traverse(&self, gc: &mut Gc) {
         self.value.traverse(gc);
-    }
-}
-
-impl Typed for Global {
-    type Id = Symbol;
-    fn env_type_of(&self, _: &TypeEnv) -> ArcType {
-        self.typ.clone()
     }
 }
 

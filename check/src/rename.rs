@@ -252,14 +252,12 @@ pub fn rename(symbols: &mut SymbolModule,
                         if !is_recursive {
                             self.visit_expr(&mut bind.expression);
                         }
-                        let typ = bind.env_type_of(&self.env);
-                        self.new_pattern(&typ, &mut bind.name);
+                        self.new_pattern(&bind.typ, &mut bind.name);
                     }
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in types::arg_iter(&bind.env_type_of(&self.env))
-                                .zip(&mut bind.arguments) {
+                            for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.arguments) {
                                 arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                             }
                             self.visit_expr(&mut bind.expression);

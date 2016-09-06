@@ -902,8 +902,7 @@ impl<'a> Typecheck<'a> {
             for (found_typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
                 // Merge the variable we bound to the name and the type inferred
                 // in the expression
-                let bound_typ = bind.env_type_of(&self.environment);
-                self.unify_span(bind.name.span, &bound_typ, found_typ);
+                self.unify_span(bind.name.span, &bind.typ, found_typ);
             }
         }
         // Once all variables inside the let has been unified we can quantify them

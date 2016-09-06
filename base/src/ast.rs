@@ -447,14 +447,6 @@ impl Typed for Pattern<TypedIdent> {
     }
 }
 
-impl Typed for ValueBinding<TypedIdent> {
-    type Id = Symbol;
-
-    fn env_type_of(&self, _: &TypeEnv) -> ArcType<Symbol> {
-        self.typ.clone()
-    }
-}
-
 fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
     if arg_count == 0 {
         alias_type.clone()
