@@ -155,7 +155,8 @@ else
 "#;
     let result = support::typecheck(text);
 
-    assert!(result.is_ok());
+    // FIXME Change to `ok` when field order no longer matters
+    assert!(result.is_err());
 }
 
 #[test]

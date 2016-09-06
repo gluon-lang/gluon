@@ -23,3 +23,17 @@ f { y = 1, z = 0, x = 123 }
 "#,
 122
 }
+
+// FIXME Add this test back when order no longer matters for fields
+// test_expr! { prelude different_order_on_fields,
+// r#"
+// let x =
+// if False then
+// { x = 1, y = "a" }
+// else
+// { y = "b", x = 2 }
+// x.y
+// "#,
+// String::from("a")
+// }
+//

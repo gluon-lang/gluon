@@ -228,6 +228,28 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 merge(l_args, new_args, l_rest, new_rest, Type::extend_row)
+            } else if **l_rest == Type::EmptyRow && **r_rest == Type::EmptyRow {
+                // HACK For non polymorphic records we need to care about field order as the
+                // compiler assumes the order the fields occur in the type determines how
+                // to access them
+                let new_args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
+                    let opt_type = if !l.name.name_eq(&r.name) {
+
+                        let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
+                        unifier.report_error(UnifyError::Other(err));
+                        None
+                    } else {
+                        unifier.try_match(&l.typ, &r.typ)
+                    };
+                    opt_type.map(|typ| {
+                        types::Field {
+                            name: l.name.clone(),
+                            typ: typ,
+                        }
+                    })
+                });
+                let new_rest = unifier.try_match(l_rest, r_rest);
+                merge(l_args, new_args, l_rest, new_rest, Type::extend_row)
             } else {
                 unify_rows(unifier, self_, other)
             })
