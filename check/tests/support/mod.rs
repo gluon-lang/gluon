@@ -1,4 +1,4 @@
-use base::ast::{self, TypedIdent};
+use base::ast::SpannedExpr;
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{Alias, Generic, Kind, Type, KindEnv};
 use base::types::{ArcType, TypeEnv, PrimitiveEnv, RcKind};
@@ -36,13 +36,12 @@ pub fn intern(s: &str) -> Symbol {
 }
 
 pub fn parse_new(s: &str)
-                 -> Result<ast::SpannedExpr<TypedIdent>,
-                           (Option<ast::SpannedExpr<TypedIdent>>,
-                            ::base::error::Errors<::parser::Error>)> {
+                 -> Result<SpannedExpr<Symbol>,
+                           (Option<SpannedExpr<Symbol>>, ::base::error::Errors<::parser::Error>)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parser::parse_tc(&mut module, &s)
+    parser::parse_expr(&mut module, &s)
 }
 
 #[allow(dead_code)]
@@ -102,8 +101,7 @@ impl PrimitiveEnv for MockEnv {
     }
 }
 
-pub fn typecheck_expr(text: &str)
-                      -> (ast::SpannedExpr<TypedIdent>, Result<ArcType, typecheck::Error>) {
+pub fn typecheck_expr(text: &str) -> (SpannedExpr<Symbol>, Result<ArcType, typecheck::Error>) {
     let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
 
     let env = MockEnv::new();
@@ -117,9 +115,8 @@ pub fn typecheck_expr(text: &str)
 }
 
 #[allow(dead_code)]
-pub fn typecheck_partial_expr
-    (text: &str)
-     -> (ast::SpannedExpr<TypedIdent>, Result<ArcType, typecheck::Error>) {
+pub fn typecheck_partial_expr(text: &str)
+                              -> (SpannedExpr<Symbol>, Result<ArcType, typecheck::Error>) {
     let mut expr = match parse_new(text) {
         Ok(e) => e,
         Err((Some(e), _)) => e,

@@ -72,7 +72,7 @@ impl<'a> TypeEnv for Environment<'a> {
 
 pub fn rename(symbols: &mut SymbolModule,
               env: &TypeEnv,
-              expr: &mut SpannedExpr<TypedIdent>)
+              expr: &mut SpannedExpr<Symbol>)
               -> Result<(), Error> {
     use base::instantiate;
 
@@ -91,7 +91,7 @@ pub fn rename(symbols: &mut SymbolModule,
             }
         }
 
-        fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<TypedIdent>) {
+        fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
                     let field_types = self.find_fields(typ).expect("field_types");
@@ -195,7 +195,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 })
         }
 
-        fn rename_expr(&mut self, expr: &mut SpannedExpr<TypedIdent>) -> Result<(), RenameError> {
+        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<(), RenameError> {
             match expr.value {
                 Expr::Ident(ref mut id) => {
                     if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
@@ -291,9 +291,9 @@ pub fn rename(symbols: &mut SymbolModule,
     }
 
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
-        type T = TypedIdent;
+        type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::T>) {
+        fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::Ident>) {
             if let Err(err) = self.rename_expr(expr) {
                 self.errors.error(Spanned {
                     span: expr.span,

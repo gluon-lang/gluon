@@ -19,7 +19,7 @@ fn prelude(b: &mut ::test::Bencher) {
     b.iter(|| {
         let mut symbols = Symbols::new();
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
-        let expr = ::parser::parse_tc(&mut symbols, &text)
+        let expr = parser::parse_expr(&mut symbols, &text)
             .unwrap_or_else(|(_, err)| panic!("{:?}", err));
         ::test::black_box(expr)
     })

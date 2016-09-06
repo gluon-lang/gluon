@@ -2,9 +2,10 @@
 use std::sync::RwLock;
 use std::error::Error as StdError;
 
-use base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
+use base::ast::{self, Expr, MutVisitor, SpannedExpr};
 use base::error::Errors;
 use base::fnv::FnvMap;
+use base::symbol::Symbol;
 
 use thread::Thread;
 
@@ -16,8 +17,8 @@ pub type Error = Box<StdError + Send + Sync>;
 pub trait Macro: ::mopa::Any + Send + Sync {
     fn expand(&self,
               env: &Thread,
-              arguments: &mut [SpannedExpr<TypedIdent>])
-              -> Result<SpannedExpr<TypedIdent>, Error>;
+              arguments: &mut [SpannedExpr<Symbol>])
+              -> Result<SpannedExpr<Symbol>, Error>;
 
     fn clone(&self) -> Box<Macro>;
 }
@@ -25,12 +26,12 @@ pub trait Macro: ::mopa::Any + Send + Sync {
 mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
-    where F: Fn(&Thread, &mut [SpannedExpr<TypedIdent>]) -> Result<SpannedExpr<TypedIdent>, Error>,
+    where F: Fn(&Thread, &mut [SpannedExpr<Symbol>]) -> Result<SpannedExpr<Symbol>, Error>,
 {
     fn expand(&self,
               env: &Thread,
-              arguments: &mut [SpannedExpr<TypedIdent>])
-              -> Result<SpannedExpr<TypedIdent>, Error> {
+              arguments: &mut [SpannedExpr<Symbol>])
+              -> Result<SpannedExpr<Symbol>, Error> {
         self(env, arguments)
     }
 
@@ -64,10 +65,7 @@ impl MacroEnv {
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub fn run(&self,
-               env: &Thread,
-               expr: &mut SpannedExpr<TypedIdent>)
-               -> Result<(), Errors<Error>> {
+    pub fn run(&self, env: &Thread, expr: &mut SpannedExpr<Symbol>) -> Result<(), Errors<Error>> {
         let mut expander = MacroExpander {
             env: env,
             macros: self,
@@ -89,9 +87,9 @@ struct MacroExpander<'a> {
 }
 
 impl<'a> MutVisitor for MacroExpander<'a> {
-    type T = TypedIdent;
+    type Ident = Symbol;
 
-    fn visit_expr(&mut self, expr: &mut SpannedExpr<TypedIdent>) {
+    fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
         let replacement = match expr.value {
             Expr::App(ref mut id, ref mut args) => {
                 match id.value {

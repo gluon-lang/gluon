@@ -70,7 +70,7 @@ impl Importer for DefaultImporter {
 }
 
 #[derive(Clone)]
-pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, SpannedExpr<TypedIdent>>>>);
+pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, SpannedExpr<Symbol>>>>);
 impl CheckImporter {
     pub fn new() -> CheckImporter {
         CheckImporter(Arc::new(Mutex::new(FnvMap::default())))
@@ -118,8 +118,8 @@ impl<I> Macro for Import<I>
 {
     fn expand(&self,
               vm: &Thread,
-              arguments: &mut [SpannedExpr<TypedIdent>])
-              -> Result<SpannedExpr<TypedIdent>, MacroError> {
+              arguments: &mut [SpannedExpr<Symbol>])
+              -> Result<SpannedExpr<Symbol>, MacroError> {
         if arguments.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }

@@ -15,13 +15,13 @@ trait OnFound {
         let _ = ident;
     }
 
-    fn on_pattern(&mut self, pattern: &SpannedPattern<TypedIdent>) {
+    fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         let _ = pattern;
     }
 
-    fn expr(&mut self, expr: &SpannedExpr<TypedIdent>);
+    fn expr(&mut self, expr: &SpannedExpr<Symbol>);
 
-    fn ident(&mut self, context: &SpannedExpr<TypedIdent>, ident: &Symbol, typ: &ArcType);
+    fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, typ: &ArcType);
 
     /// Location points to whitespace
     fn nothing(&mut self);
@@ -33,11 +33,11 @@ struct GetType<E> {
 }
 
 impl<E: TypeEnv> OnFound for GetType<E> {
-    fn expr(&mut self, expr: &SpannedExpr<TypedIdent>) {
+    fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
         self.typ = Some(expr.env_type_of(&self.env));
     }
 
-    fn ident(&mut self, _context: &SpannedExpr<TypedIdent>, _: &Symbol, typ: &ArcType) {
+    fn ident(&mut self, _context: &SpannedExpr<Symbol>, _: &Symbol, typ: &ArcType) {
         self.typ = Some(typ.clone());
     }
 
@@ -60,7 +60,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
 
-    fn on_pattern(&mut self, pattern: &SpannedPattern<TypedIdent>) {
+    fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         match pattern.value {
             Pattern::Record { ref typ, fields: ref field_ids, .. } => {
                 let unaliased = instantiate::remove_aliases(&self.env, typ.clone());
@@ -82,7 +82,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         }
     }
 
-    fn expr(&mut self, expr: &SpannedExpr<TypedIdent>) {
+    fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
         if let Expr::Ident(ref ident) = expr.value {
             for (k, typ) in self.stack.iter() {
                 if k.declared_name().starts_with(ident.name.declared_name()) {
@@ -95,7 +95,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         }
     }
 
-    fn ident(&mut self, context: &SpannedExpr<TypedIdent>, ident: &Symbol, _: &ArcType) {
+    fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, _: &ArcType) {
         if let Expr::Projection(ref expr, _, _) = context.value {
             let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
             if let Type::Record { ref fields, .. } = *typ {
@@ -160,17 +160,17 @@ impl<F> FindVisitor<F>
     where F: OnFound,
 {
     fn visit_one<'e, I>(&mut self, iter: I)
-        where I: IntoIterator<Item = &'e SpannedExpr<TypedIdent>>,
+        where I: IntoIterator<Item = &'e SpannedExpr<Symbol>>,
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span);
         self.visit_expr(expr.unwrap());
     }
 
-    fn visit_pattern(&mut self, pattern: &SpannedPattern<TypedIdent>) {
+    fn visit_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         self.on_found.on_pattern(pattern);
     }
 
-    fn visit_expr(&mut self, current: &SpannedExpr<TypedIdent>) {
+    fn visit_expr(&mut self, current: &SpannedExpr<Symbol>) {
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
                 if current.span.containment(&self.pos) == Ordering::Equal {
@@ -241,7 +241,7 @@ impl<F> FindVisitor<F>
     }
 }
 
-pub fn find<T>(env: &T, expr: &SpannedExpr<TypedIdent>, pos: BytePos) -> Result<ArcType, ()>
+pub fn find<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<ArcType, ()>
     where T: TypeEnv,
 {
     let mut visitor = FindVisitor {
@@ -255,7 +255,7 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<TypedIdent>, pos: BytePos) -> Result<
     visitor.on_found.typ.ok_or(())
 }
 
-pub fn suggest<T>(env: &T, expr: &SpannedExpr<TypedIdent>, pos: BytePos) -> Vec<Suggestion>
+pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
     where T: TypeEnv,
 {
     let mut visitor = FindVisitor {
