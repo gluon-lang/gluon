@@ -9,7 +9,7 @@ use gc::{Gc, GcPtr, Traverseable};
 use vm::Thread;
 use thread::ThreadInternal;
 use value::Value;
-use api::{MaybeError, Generic, Userdata, VmType, WithVM};
+use api::{RuntimeResult, Generic, Userdata, VmType, WithVM};
 use api::generic::A;
 
 struct Reference<T> {
@@ -46,13 +46,13 @@ impl<T> VmType for Reference<T>
     }
 }
 
-fn set(r: &Reference<A>, a: Generic<A>) -> MaybeError<(), String> {
+fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
     match r.thread.deep_clone(a.0) {
         Ok(a) => {
             *r.value.lock().unwrap() = a;
-            MaybeError::Ok(())
+            RuntimeResult::Return(())
         }
-        Err(err) => MaybeError::Err(format!("{}", err)),
+        Err(err) => RuntimeResult::Panic(format!("{}", err)),
     }
 }
 

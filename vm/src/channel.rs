@@ -7,7 +7,7 @@ use base::types::{ArcType, Type};
 
 use {Error, Result as VmResult};
 use api::record::{Record, HList};
-use api::{Generic, VmType, primitive, WithVM, Function, Pushable, MaybeError};
+use api::{Generic, VmType, primitive, WithVM, Function, Pushable, RuntimeResult};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
 use vm::{Thread, RootedThread, Status};
@@ -159,10 +159,10 @@ fn yield_(_vm: &Thread) -> Status {
 }
 
 fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>)
-              -> MaybeError<RootedThread, Error> {
+              -> RuntimeResult<RootedThread, Error> {
     match spawn_(value) {
-        Ok(x) => MaybeError::Ok(x),
-        Err(err) => MaybeError::Err(err),
+        Ok(x) => RuntimeResult::Return(x),
+        Err(err) => RuntimeResult::Panic(err),
     }
 }
 fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<RootedThread> {
