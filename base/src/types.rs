@@ -113,17 +113,6 @@ pub enum Type<Id, T = ArcType<Id>> {
     Alias(AliasData<Id, T>),
 }
 
-impl<Id, T> Type<Id, T>
-    where T: Deref<Target = Type<Id, T>>,
-{
-    pub fn is_uninitialized(&self) -> bool {
-        match *self {
-            Type::Variable(ref id) if id.id == 0 => true,
-            _ => false,
-        }
-    }
-}
-
 /// A shared type which is atomically reference counted
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ArcType<Id = Symbol> {
