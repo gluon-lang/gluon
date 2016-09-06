@@ -26,7 +26,7 @@ fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
 }
 
 fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
-    no_loc(Expr::Infix(Box::new(l), intern(s), Box::new(r)))
+    no_loc(Expr::Infix(Box::new(l), TypedIdent::new(intern(s)), Box::new(r)))
 }
 
 fn int(i: i64) -> SpExpr {
@@ -40,16 +40,18 @@ fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
 fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
     no_loc(Expr::LetBindings(vec![ValueBinding {
                                       comment: None,
-                                      name: no_loc(Pattern::Ident(intern(s))),
+                                      name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
                                       typ: Type::hole(),
-                                      arguments: args.iter().map(|i| intern(i)).collect(),
+                                      arguments: args.iter()
+                                          .map(|i| TypedIdent::new(intern(i)))
+                                          .collect(),
                                       expression: e,
                                   }],
                              Box::new(b)))
 }
 
 fn id(s: &str) -> SpExpr {
-    no_loc(Expr::Ident(intern(s)))
+    no_loc(Expr::Ident(TypedIdent::new(intern(s))))
 }
 
 fn field(s: &str, typ: ArcType<String>) -> Field<String> {
@@ -101,8 +103,8 @@ fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
 
 fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
     no_loc(Expr::Lambda(Lambda {
-        id: intern(name),
-        arguments: args,
+        id: TypedIdent::new(intern(name)),
+        arguments: args.into_iter().map(|id| TypedIdent::new(id)).collect(),
         body: Box::new(body),
     }))
 }
@@ -139,7 +141,7 @@ fn record_a(types: Vec<(String, Option<ArcType<String>>)>,
 }
 
 fn field_access(expr: SpExpr, field: &str) -> SpExpr {
-    no_loc(Expr::Projection(Box::new(expr), intern(field)))
+    no_loc(Expr::Projection(Box::new(expr), intern(field), Type::hole()))
 }
 
 fn array(fields: Vec<SpExpr>) -> SpExpr {
@@ -314,8 +316,11 @@ match None with
     let e = parse(text);
     assert_eq!(e,
                Ok(case(id("None"),
-                       vec![(Pattern::Constructor(intern("Some"), vec![intern("x")]), id("x")),
-                            (Pattern::Constructor(intern("None"), vec![]), int(0))])));
+                       vec![(Pattern::Constructor(TypedIdent::new(intern("Some")),
+                                                  vec![TypedIdent::new(intern("x"))]),
+                             id("x")),
+                            (Pattern::Constructor(TypedIdent::new(intern("None")), vec![]),
+                             int(0))])));
 }
 #[test]
 fn array_expr() {
@@ -505,7 +510,7 @@ fn span_field_access() {
                    end: BytePos(8),
                });
     match expr.value {
-        Expr::Projection(ref e, _) => {
+        Expr::Projection(ref e, _, _) => {
             assert_eq!(e.span,
                        Span {
                            start: BytePos(0),
@@ -528,9 +533,9 @@ id
     assert_eq!(e,
                no_loc(Expr::LetBindings(vec![ValueBinding {
                                                  comment: Some("The identity function".into()),
-                                                 name: no_loc(Pattern::Ident(intern("id"))),
+                                                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                                                  typ: Type::hole(),
-                                                 arguments: vec![intern("x")],
+                                                 arguments: vec![TypedIdent::new(intern("x"))],
                                                  expression: id("x"),
                                              }],
                                         Box::new(id("id")))));
@@ -609,7 +614,7 @@ fn partial_field_access() {
                        start: BytePos(0),
                        end: BytePos(0),
                    },
-                   value: Expr::Projection(Box::new(id("test")), intern("")),
+                   value: Expr::Projection(Box::new(id("test")), intern(""), Type::hole()),
                }));
 }
 
@@ -634,7 +639,8 @@ test
                                                    end: BytePos(0),
                                                },
                                                value: Expr::Projection(Box::new(id("test")),
-                                                                       intern("")),
+                                                                       intern(""),
+                                                                       Type::hole()),
                                            },
                                            id("test")]),
                }));
@@ -651,7 +657,7 @@ x
     assert_eq!(e,
                Ok(no_loc(Expr::LetBindings(vec![ValueBinding {
                                                     comment: None,
-                                                    name: no_loc(Pattern::Ident(intern("x"))),
+                                                    name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
                                                     typ: Type::app(typ("->"),
                                                                    vec![typ("Int"), typ("Int")]),
                                                     arguments: vec![],

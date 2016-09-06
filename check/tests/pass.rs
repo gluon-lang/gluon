@@ -185,7 +185,6 @@ macro_rules! assert_match {
 fn let_binding_general_mutually_recursive() {
     let _ = env_logger::init();
 
-    let env = MockEnv::new();
     let text = r"
 let test x = (1 #Int+ 2) #Int+ test2 x
 and test2 x = 2 #Int+ test x
@@ -196,10 +195,10 @@ in test2 1";
     assert_eq!(result, expected);
     assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
-        assert_match!(*binds[0].env_type_of(&env), Type::App(_, ref args) => {
+        assert_match!(*binds[0].typ, Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
-        assert_match!(*binds[1].env_type_of(&env), Type::App(_, ref args) => {
+        assert_match!(*binds[1].typ, Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
     });
@@ -784,7 +783,7 @@ a.id
     let t = match expr.value {
         Expr::LetBindings(_, ref body) => {
             match body.value {
-                Expr::Projection(_, ref ident) => &ident.typ,
+                Expr::Projection(_, _, ref typ) => typ,
                 _ => panic!(),
             }
         }

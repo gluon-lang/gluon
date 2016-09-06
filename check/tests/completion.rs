@@ -95,7 +95,7 @@ let f x = f x
 #[test]
 fn binop() {
     let _ = env_logger::init();
-    
+
     let env = MockEnv::new();
 
     let (mut expr, result) = support::typecheck_expr(r#"

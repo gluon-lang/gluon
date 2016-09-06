@@ -72,7 +72,7 @@ impl<'a> TypeEnv for Environment<'a> {
 
 pub fn rename(symbols: &mut SymbolModule,
               env: &TypeEnv,
-              expr: &mut SpannedExpr<TypedIdent>)
+              expr: &mut SpannedExpr<Symbol>)
               -> Result<(), Error> {
     use base::instantiate;
 
@@ -91,7 +91,7 @@ pub fn rename(symbols: &mut SymbolModule,
             }
         }
 
-        fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<TypedIdent>) {
+        fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
                     let field_types = self.find_fields(typ).expect("field_types");
@@ -122,7 +122,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
                     let typ = self.env
-                        .find_type(id.id())
+                        .find_type(&id.name)
                         .expect("ICE: Expected constructor")
                         .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
@@ -195,7 +195,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 })
         }
 
-        fn rename_expr(&mut self, expr: &mut SpannedExpr<TypedIdent>) -> Result<(), RenameError> {
+        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<(), RenameError> {
             match expr.value {
                 Expr::Ident(ref mut id) => {
                     if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
@@ -223,7 +223,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 Expr::Infix(ref mut l, ref mut id, ref mut r) => {
-                    if let Some(new_id) = try!(self.rename(id.id(), &id.typ)) {
+                    if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
                         debug!("Rename {} = {}",
                                self.symbols.string(&id.name),
                                self.symbols.string(&new_id));
@@ -252,14 +252,12 @@ pub fn rename(symbols: &mut SymbolModule,
                         if !is_recursive {
                             self.visit_expr(&mut bind.expression);
                         }
-                        let typ = bind.env_type_of(&self.env);
-                        self.new_pattern(&typ, &mut bind.name);
+                        self.new_pattern(&bind.typ, &mut bind.name);
                     }
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in types::arg_iter(&bind.env_type_of(&self.env))
-                                .zip(&mut bind.arguments) {
+                            for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.arguments) {
                                 arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                             }
                             self.visit_expr(&mut bind.expression);
@@ -293,9 +291,9 @@ pub fn rename(symbols: &mut SymbolModule,
     }
 
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
-        type T = TypedIdent;
+        type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::T>) {
+        fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::Ident>) {
             if let Err(err) = self.rename_expr(expr) {
                 self.errors.error(Spanned {
                     span: expr.span,

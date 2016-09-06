@@ -340,7 +340,7 @@ impl<'a> Typecheck<'a> {
     /// `let` basically infers that the variables in `id` does not refer to anything outside the
     /// `let` scope and can thus be "generalized" into `a -> a` which is instantiated with a fresh
     /// type variable in the `id 2` call.
-    fn generalize_variables(&mut self, level: u32, expr: &mut SpannedExpr<TypedIdent>) {
+    fn generalize_variables(&mut self, level: u32, expr: &mut SpannedExpr<Symbol>) {
         self.type_variables.enter_scope();
 
         // Replaces all type variables with their inferred types
@@ -348,14 +348,9 @@ impl<'a> Typecheck<'a> {
             level: u32,
             tc: &'a mut Typecheck<'b>,
         }
-        impl<'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
-            type T = TypedIdent;
 
-            fn visit_identifier(&mut self, id: &mut TypedIdent) {
-                if let Some(finished) = self.tc.finish_type(self.level, &id.typ) {
-                    id.typ = finished;
-                }
-            }
+        impl<'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
+            type Ident = Symbol;
 
             fn visit_typ(&mut self, typ: &mut ArcType) {
                 if let Some(finished) = self.tc.finish_type(self.level, typ) {
@@ -363,6 +358,7 @@ impl<'a> Typecheck<'a> {
                 }
             }
         }
+
         ReplaceVisitor {
                 level: level,
                 tc: self,
@@ -374,15 +370,15 @@ impl<'a> Typecheck<'a> {
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
-    pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<TypedIdent>) -> Result<ArcType, Error> {
+    pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<ArcType, Error> {
         self.typecheck_expr_expected(expr, None)
     }
 
     pub fn typecheck_expr_expected(&mut self,
-                                   expr: &mut SpannedExpr<TypedIdent>,
+                                   expr: &mut SpannedExpr<Symbol>,
                                    expected_type: Option<&ArcType>)
                                    -> Result<ArcType, Error> {
-        fn tail_expr(e: &mut SpannedExpr<TypedIdent>) -> &mut SpannedExpr<TypedIdent> {
+        fn tail_expr(e: &mut SpannedExpr<Symbol>) -> &mut SpannedExpr<Symbol> {
             match e.value {
                 Expr::LetBindings(_, ref mut b) |
                 Expr::TypeBindings(_, ref mut b) => tail_expr(b),
@@ -425,7 +421,7 @@ impl<'a> Typecheck<'a> {
 
     /// Main typechecking function. Returns the type of the expression if typechecking was
     /// successful
-    fn typecheck(&mut self, mut expr: &mut SpannedExpr<TypedIdent>) -> ArcType {
+    fn typecheck(&mut self, mut expr: &mut SpannedExpr<Symbol>) -> ArcType {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -468,14 +464,14 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_(&mut self,
-                  expr: &mut SpannedExpr<TypedIdent>)
+                  expr: &mut SpannedExpr<Symbol>)
                   -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
             Expr::Ident(ref mut id) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
-                id.typ = try!(self.find(id.id()));
+                id.typ = try!(self.find(&id.name));
                 Ok(TailCall::Type(id.typ.clone()))
             }
             Expr::Literal(ref lit) => {
@@ -538,7 +534,7 @@ impl<'a> Typecheck<'a> {
                             self.unify(&self.bool(), lhs_type)
                         }
                         _ => {
-                            op.typ = try!(self.find(op.id()));
+                            op.typ = try!(self.find(&op.name));
                             let func_type = Type::function(vec![lhs_type, rhs_type],
                                                            self.subs.new_var());
                             let ret = try!(self.unify(&op.typ, func_type))
@@ -579,33 +575,31 @@ impl<'a> Typecheck<'a> {
                 try!(self.typecheck_bindings(bindings));
                 Ok(TailCall::TailCall)
             }
-            Expr::Projection(ref mut expr, ref mut field_access) => {
-                let mut typ = self.typecheck(&mut **expr);
+            Expr::Projection(ref mut expr, ref field_id, ref mut field_typ) => {
+                let mut expr_typ = self.typecheck(&mut **expr);
                 debug!("Projection {} . {:?}",
-                       types::display_type(&self.symbols, &typ),
-                       self.symbols.string(&field_access.name));
-                self.subs.make_real(&mut typ);
-                if let Type::Variable(_) = *typ {
+                       types::display_type(&self.symbols, &expr_typ),
+                       self.symbols.string(field_id));
+                self.subs.make_real(&mut expr_typ);
+                if let Type::Variable(_) = *expr_typ {
                     // Attempt to find a record with `field_access` since inferring to a record
                     // with only `field_access` as the field is probably useless
-                    let (record_type, _) = try!(self.find_record(&[field_access.name.clone()])
+                    let (record_type, _) = try!(self.find_record(&[field_id.clone()])
                         .map(|t| (t.0.clone(), t.1.clone())));
                     let record_type = self.instantiate(&record_type);
-                    typ = try!(self.unify(&record_type, typ));
+                    expr_typ = try!(self.unify(&record_type, expr_typ));
                 }
-                let record = self.remove_aliases(typ.clone());
+                let record = self.remove_aliases(expr_typ.clone());
                 match *record {
                     Type::Record { ref fields, .. } => {
                         let field_type = fields.iter()
-                            .find(|field| field.name.name_eq(field_access.id()))
+                            .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
-                        field_access.typ = match field_type {
+                        *field_typ = match field_type {
                             Some(typ) => self.instantiate(&typ),
-                            None => {
-                                return Err(UndefinedField(typ.clone(), field_access.name.clone()))
-                            }
+                            None => return Err(UndefinedField(expr_typ.clone(), field_id.clone())),
                         };
-                        Ok(TailCall::Type(field_access.typ.clone()))
+                        Ok(TailCall::Type(field_typ.clone()))
                     }
                     _ => Err(InvalidProjection(record.clone())),
                 }
@@ -690,7 +684,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_lambda(&mut self,
                         function_type: ArcType,
                         arguments: &mut [TypedIdent],
-                        body: &mut SpannedExpr<TypedIdent>)
+                        body: &mut SpannedExpr<Symbol>)
                         -> ArcType {
         self.enter_scope();
         let mut arg_types = Vec::new();
@@ -709,7 +703,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn typecheck_pattern(&mut self,
-                         pattern: &mut SpannedPattern<TypedIdent>,
+                         pattern: &mut SpannedPattern<Symbol>,
                          match_type: ArcType)
                          -> ArcType {
         let span = pattern.span;
@@ -827,7 +821,7 @@ impl<'a> Typecheck<'a> {
                 match_type
             }
             Pattern::Ident(ref mut id) => {
-                self.stack_var(id.id().clone(), match_type.clone());
+                self.stack_var(id.name.clone(), match_type.clone());
                 id.typ = match_type.clone();
                 match_type
             }
@@ -840,14 +834,14 @@ impl<'a> Typecheck<'a> {
         }
         match typ.as_function() {
             Some((arg, ret)) => {
-                self.stack_var(args[0].id().clone(), arg.clone());
+                self.stack_var(args[0].name.clone(), arg.clone());
                 self.typecheck_pattern_rec(&args[1..], ret.clone())
             }
             None => Err(PatternError(typ.clone(), args.len())),
         }
     }
 
-    fn typecheck_bindings(&mut self, bindings: &mut [ValueBinding<TypedIdent>]) -> TcResult<()> {
+    fn typecheck_bindings(&mut self, bindings: &mut [ValueBinding<Symbol>]) -> TcResult<()> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
@@ -904,8 +898,7 @@ impl<'a> Typecheck<'a> {
             for (found_typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
                 // Merge the variable we bound to the name and the type inferred
                 // in the expression
-                let bound_typ = bind.env_type_of(&self.environment);
-                self.unify_span(bind.name.span, &bound_typ, found_typ);
+                self.unify_span(bind.name.span, &bind.typ, found_typ);
             }
         }
         // Once all variables inside the let has been unified we can quantify them
@@ -924,7 +917,7 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_type_bindings(&mut self,
                                bindings: &mut [TypeBinding<Symbol>],
-                               expr: &SpannedExpr<TypedIdent>)
+                               expr: &SpannedExpr<Symbol>)
                                -> TcResult<()> {
         self.enter_scope();
         // Rename the types so they get a name which is distinct from types from other
@@ -1005,7 +998,7 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn finish_binding(&mut self, level: u32, bind: &mut ValueBinding<TypedIdent>) {
+    fn finish_binding(&mut self, level: u32, bind: &mut ValueBinding<Symbol>) {
         match bind.name.value {
             Pattern::Ident(ref mut id) => {
                 if let Some(typ) = self.finish_type(level, &id.typ) {
