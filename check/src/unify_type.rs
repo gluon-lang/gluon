@@ -2,7 +2,7 @@ use std::fmt;
 use std::mem;
 
 use base::error::Errors;
-use base::types::{self, ArcType, Type, TypeRef, TypeVariable, TypeEnv, merge};
+use base::types::{self, ArcType, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
 use base::scoped_map::ScopedMap;
@@ -77,12 +77,10 @@ impl<I> fmt::Display for TypeError<I>
             TypeError::MissingFields(ref typ, ref fields) => {
                 try!(write!(f, "The type `{}` lacks the following fields: ", typ));
                 for (i, field) in fields.iter().enumerate() {
-                    let sep = if i == 0 {
-                        ""
-                    } else if i == fields.len() - 1 {
-                        " and "
-                    } else {
-                        ", "
+                    let sep = match i {
+                        0 => "",
+                        i if i < fields.len() - 1 => ", ",
+                        _ => " and ",
                     };
                     try!(write!(f, "{}{}", sep, field));
 
@@ -617,7 +615,7 @@ mod tests {
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
-    use base::types::{self, ArcType, Type, TypeRef};
+    use base::types::{self, ArcType, Type};
     use tests::*;
 
     #[test]

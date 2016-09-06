@@ -174,27 +174,25 @@ fn show_kind() {
 
 #[test]
 fn show_polymorphic_record() {
-    let typ: ArcType<&str> = Type::poly_record(vec![],
-                                               vec![Field {
-                                                        name: "x",
-                                                        typ: Type::string(),
-                                                    }],
-                                               Type::ident("r"));
+    let fields = vec![Field {
+                          name: "x",
+                          typ: Type::string(),
+                      }];
+    let typ: ArcType<&str> = Type::poly_record(vec![], fields, Type::ident("r"));
     assert_eq!(format!("{}", typ), "{ x : String | r }");
 }
 
 #[test]
 fn show_polymorphic_record_associated_type() {
-    let typ: ArcType<&str> = Type::poly_record(vec![Field {
-                                                        name: "Test",
-                                                        typ: Alias::new("Test",
-                                                                        vec![Generic {
-                                                                                 kind: Kind::typ(),
-                                                                                 id: "a",
-                                                                             }],
-                                                                        Type::ident("a")),
+    let type_fields = vec![Field {
+                               name: "Test",
+                               typ: Alias::new("Test",
+                                               vec![Generic {
+                                                        kind: Kind::typ(),
+                                                        id: "a",
                                                     }],
-                                               vec![],
-                                               Type::ident("r"));
+                                               Type::ident("a")),
+                           }];
+    let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));
     assert_eq!(format!("{}", typ), "{ Test a = a | r }");
 }

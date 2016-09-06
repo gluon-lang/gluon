@@ -8,7 +8,7 @@ use std::usize;
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{Alias, AliasData, ArcType, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv,
-                  RcKind, TypeRef};
+                  RcKind};
 use base::fnv::FnvMap;
 
 use macros::MacroEnv;

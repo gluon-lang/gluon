@@ -5,7 +5,7 @@ use base::instantiate;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, SpannedExpr, Expr};
 use base::types;
-use base::types::{Alias, KindEnv, ArcType, Type, TypeEnv, TypeRef};
+use base::types::{Alias, KindEnv, ArcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use types::*;
 use vm::GlobalVmState;

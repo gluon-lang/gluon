@@ -11,7 +11,7 @@ use base::error::Errors;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{self, ArcType, Field, RcKind, Type, TypeRef, Generic, Kind, merge};
+use base::types::{self, ArcType, Field, RcKind, Type, Generic, Kind, merge};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;

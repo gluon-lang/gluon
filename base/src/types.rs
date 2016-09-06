@@ -155,6 +155,13 @@ impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
     }
+
+    pub fn field_iter(&self) -> FieldIterator<Self> {
+        FieldIterator {
+            typ: self,
+            current: 0,
+        }
+    }
 }
 
 impl<Id: Clone> ArcType<Id> {
@@ -565,17 +572,6 @@ impl<Id, T> Type<Id, T>
         }
     }
 }
-
-pub trait TypeRef: Sized {
-    fn field_iter(&self) -> FieldIterator<Self> {
-        FieldIterator {
-            typ: self,
-            current: 0,
-        }
-    }
-}
-
-impl<Id, T> TypeRef for T where T: Deref<Target = Type<Id, T>>, {}
 
 impl<T> Type<Symbol, T>
     where T: Deref<Target = Type<Symbol, T>>,
