@@ -282,6 +282,12 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
             })
     });
 
+    // Pack all fields from both records into a single `Type::ExtendRow` value
+    let mut fields = match new_both {
+        Some(fields) => fields,
+        None => both.iter().map(|pair| pair.0.clone()).collect(),
+    };
+
     // Unify the fields missing from the left and right record with the variable (that hopefully)
     // exists as the 'extension' in the other record
     // Example:
@@ -289,53 +295,52 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>, l: &ArcType, r: &ArcType
     // `Row (x : Int | Fresh var) <=> $1`
     // `Row (y : String | Fresh var 2) <=> $0`
 
-    let mut left = None;
-    let l_rest = Type::extend_row(missing_from_right, subs.new_var());
+    // This default `rest` value will only be used on errors, or if both fields has the same fields
+    let mut rest = r_iter.current_type().clone();
+
     // No need to do anything of no fields are missing
-    if l_rest.field_iter().next().is_some() {
+    if !missing_from_right.is_empty() {
         // If we attempt to unify with a non-polymorphic record we intercept the unification to
         // display a better error message
-        left = match **r_iter.current_type() {
+        match **r_iter.current_type() {
             Type::EmptyRow => {
                 let context = unifier.state.record_context.as_ref().map_or(r, |p| &p.1).clone();
                 let err = TypeError::MissingFields(context,
-                                                   l_rest.field_iter()
-                                                       .map(|field| field.name.clone())
-                                                       .collect());
-                unifier.report_error(UnifyError::Other(err));
-                None
-            }
-            _ => unifier.try_match(&l_rest, r_iter.current_type()),
-        };
-    }
-
-    let r_rest = Type::extend_row(missing_from_left, subs.new_var());
-    // No need to do anything of no fields are missing
-    if r_rest.field_iter().next().is_some() {
-        match **l_iter.current_type() {
-            Type::EmptyRow => {
-                let context = unifier.state.record_context.as_ref().map_or(l, |p| &p.0).clone();
-                let err = TypeError::MissingFields(context,
-                                                   r_rest.field_iter()
+                                                   missing_from_right.into_iter()
                                                        .map(|field| field.name.clone())
                                                        .collect());
                 unifier.report_error(UnifyError::Other(err));
             }
             _ => {
-                unifier.try_match(&l_iter.current_type(), &r_rest);
+                rest = subs.new_var();
+                let l_rest = Type::extend_row(missing_from_right, rest.clone());
+                unifier.try_match(&l_rest, r_iter.current_type());
+                fields.extend(l_rest.field_iter().cloned());
             }
         }
     }
 
-    // Pack all fields from both records into a single `Type::ExtendRow` value
-    let mut fields = match new_both {
-        Some(fields) => fields,
-        None => both.iter().map(|pair| pair.0.clone()).collect(),
-    };
-    let mut rest_fields = left.as_ref().unwrap_or(&l_rest).field_iter();
-    fields.extend(rest_fields.by_ref().cloned());
-    fields.extend(r_rest.field_iter().cloned());
-    Some(Type::extend_row(fields, rest_fields.current_type().clone()))
+    // No need to do anything of no fields are missing
+    if !missing_from_left.is_empty() {
+        match **l_iter.current_type() {
+            Type::EmptyRow => {
+                let context = unifier.state.record_context.as_ref().map_or(l, |p| &p.0).clone();
+                let err = TypeError::MissingFields(context,
+                                                   missing_from_left.into_iter()
+                                                       .map(|field| field.name.clone())
+                                                       .collect());
+                unifier.report_error(UnifyError::Other(err));
+            }
+            _ => {
+                rest = subs.new_var();
+                let r_rest = Type::extend_row(missing_from_left, rest.clone());
+                unifier.try_match(&l_iter.current_type(), &r_rest);
+                fields.extend(r_rest.field_iter().cloned());
+            }
+        }
+    }
+
+    Some(Type::extend_row(fields, rest))
 }
 
 /// Attempt to unify two alias types.

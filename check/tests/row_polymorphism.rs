@@ -144,6 +144,38 @@ f { x = 1 }
 }
 
 #[test]
+fn different_order_of_fields() {
+    let _ = env_logger::init();
+
+    let text = r#"
+if True then
+    { x = 1, y = "" }
+else
+    { y = "", x = 1 }
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn different_order_of_fields_does_not_cause_polymorphism() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let record =
+    if True then
+        { x = 1, y = "" }
+    else
+        { y = "", x = 1 }
+record.z
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_err());
+}
+
+#[test]
 fn record_unpack_missing_field() {
     let _ = env_logger::init();
 
