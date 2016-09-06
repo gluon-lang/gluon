@@ -776,22 +776,22 @@ impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
     }
 }
 
-pub enum MaybeError<T, E> {
-    Ok(T),
-    Err(E),
+pub enum RuntimeResult<T, E> {
+    Return(T),
+    Panic(E),
 }
 
-impl<T: VmType, E> VmType for MaybeError<T, E> {
+impl<T: VmType, E> VmType for RuntimeResult<T, E> {
     type Type = T::Type;
     fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
 }
-impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for MaybeError<T, E> {
+impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for RuntimeResult<T, E> {
     fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()> {
         match self {
-            MaybeError::Ok(value) => value.push(vm, context),
-            MaybeError::Err(err) => Err(Error::Message(format!("{}", err))),
+            RuntimeResult::Return(value) => value.push(vm, context),
+            RuntimeResult::Panic(err) => Err(Error::Message(format!("{}", err))),
         }
     }
 }

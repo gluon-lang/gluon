@@ -3,7 +3,7 @@ use std::string::String as StdString;
 
 use {Variants, Error};
 use primitives as prim;
-use api::{generic, Generic, Getable, Array, MaybeError, primitive, WithVM};
+use api::{generic, Generic, Getable, Array, RuntimeResult, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use Result;
@@ -18,16 +18,16 @@ fn array_length(array: Array<generic::A>) -> VmInt {
 
 fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
                     index: VmInt)
-                    -> MaybeError<Generic<generic::A>, String> {
+                    -> RuntimeResult<Generic<generic::A>, String> {
     match array.get(index) {
-        Some(value) => MaybeError::Ok(value),
-        None => MaybeError::Err(format!("Index {} is out of range", index)),
+        Some(value) => RuntimeResult::Return(value),
+        None => RuntimeResult::Panic(format!("Index {} is out of range", index)),
     }
 }
 
 fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
                      rhs: Array<'vm, Generic<generic::A>>)
-                     -> MaybeError<Array<'vm, Generic<generic::A>>, Error> {
+                     -> RuntimeResult<Array<'vm, Generic<generic::A>>, Error> {
     struct Append<'b> {
         lhs: &'b ValueArray,
         rhs: &'b ValueArray,
@@ -72,13 +72,14 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
         });
         match result {
             Ok(x) => x,
-            Err(err) => return MaybeError::Err(err),
+            Err(err) => return RuntimeResult::Panic(err),
         }
     };
-    MaybeError::Ok(Getable::from_value(lhs.vm(), Variants(&Value::Array(value))).expect("Array"))
+    RuntimeResult::Return(Getable::from_value(lhs.vm(), Variants(&Value::Array(value)))
+        .expect("Array"))
 }
 
-fn string_append(lhs: WithVM<&str>, rhs: &str) -> MaybeError<String, Error> {
+fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
     use array::Str;
     struct StrAppend<'b> {
         lhs: &'b str,
@@ -117,24 +118,25 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> MaybeError<String, Error> {
         });
         match result {
             Ok(x) => x,
-            Err(err) => return MaybeError::Err(err),
+            Err(err) => return RuntimeResult::Panic(err),
         }
     };
-    MaybeError::Ok(Getable::from_value(vm, Variants(&Value::String(value))).expect("Array"))
+    RuntimeResult::Return(Getable::from_value(vm, Variants(&Value::String(value))).expect("Array"))
 }
 
-fn string_slice(s: &str, start: usize, end: usize) -> MaybeError<&str, String> {
+fn string_slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {
     if s.is_char_boundary(start) && s.is_char_boundary(end) {
-        MaybeError::Ok(&s[start..end])
+        RuntimeResult::Return(&s[start..end])
     } else {
         // Limit the amount of characters to print in the error message
         let mut iter = s.chars();
         for _ in iter.by_ref().take(256) {
         }
-        MaybeError::Err(format!("index {} and/or {} in `{}` does not lie on a character boundary",
-                                start,
-                                end,
-                                &s[..(s.len() - iter.as_str().len())]))
+        RuntimeResult::Panic(format!("index {} and/or {} in `{}` does not lie on a character \
+                                      boundary",
+                                     start,
+                                     end,
+                                     &s[..(s.len() - iter.as_str().len())]))
     }
 }
 
