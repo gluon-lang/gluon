@@ -870,12 +870,10 @@ impl<'a> Compiler<'a> {
 fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut f: F)
     where F: FnMut(&Symbol, &Alias<Symbol, ArcType>),
 {
-    if let Type::Record { types: ref record_type_fields, .. } = **typ {
-        for field in types {
-            let associated_type = record_type_fields.iter()
-                .find(|type_field| type_field.name.name_eq(&field.0))
-                .expect("Associated type to exist in record");
-            f(&field.0, &associated_type.typ);
-        }
+    for field in types {
+        let associated_type = typ.type_field_iter()
+            .find(|type_field| type_field.name.name_eq(&field.0))
+            .expect("Associated type to exist in record");
+        f(&field.0, &associated_type.typ);
     }
 }

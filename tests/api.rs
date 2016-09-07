@@ -122,7 +122,8 @@ sum_bytes [100b, 42b, 3b, 15b]
         })
         .unwrap();
 
-    let result = Compiler::new().run_expr::<u8>(&vm, "<top>", expr).unwrap();
+    let result =
+        Compiler::new().run_expr::<u8>(&vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
     let expected = (160, Type::byte());
 
     assert_eq!(result, expected);

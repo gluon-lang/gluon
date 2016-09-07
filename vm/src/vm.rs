@@ -204,15 +204,10 @@ impl VmEnv {
         }
         let (_, typ) = try!(self.get_binding(name.module().as_str()));
         let maybe_type_info = map_cow_option(typ.clone(), |typ| {
-            match **typ {
-                Type::Record { ref types, .. } => {
-                    let field_name = name.name();
-                    types.iter()
-                        .find(|field| field.name.as_ref() == field_name.as_str())
-                        .map(|field| &field.typ)
-                }
-                _ => None,
-            }
+            let field_name = name.name();
+            typ.type_field_iter()
+                .find(|field| field.name.as_ref() == field_name.as_str())
+                .map(|field| &field.typ)
         });
         maybe_type_info.ok_or_else(move || {
             Error::UndefinedField(typ.into_owned(), name.name().as_str().into())
