@@ -832,3 +832,34 @@ make
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn simplified_applicative() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Applicative f = {
+    map : (a -> b) -> f a -> f b,
+    apply : f (c -> d) -> f c -> f d
+}
+
+let applicative_Function : Applicative ((->) a) = {
+    map = \f g x -> f (g x),
+    apply = \f g x -> f x (g x)
+}
+
+let id : a -> a = \x -> x
+    
+let const : a -> b -> a = \x _ -> x
+    
+let make_applicative app =
+    let { map, apply } = app
+
+    let (*>) l r = apply (map (const id) l) r
+
+    ()
+
+make_applicative applicative_Function
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

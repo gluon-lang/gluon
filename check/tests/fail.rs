@@ -86,7 +86,7 @@ match { x = 1 } with
 ";
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, Other(MissingFields(..)));
+    assert_err!(result, UndefinedField(..));
 }
 
 #[test]
@@ -141,7 +141,7 @@ let { y } = { x = 1 }
 "#;
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, Other(MissingFields(..)));
+    assert_err!(result, UndefinedField(..));
 }
 
 #[test]
