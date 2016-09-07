@@ -997,7 +997,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn kindcheck(&self, typ: &mut ArcType) -> TcResult<()> {
-        let mut check = super::kindcheck::KindCheck::new(&self.environment, &self.symbols);
+        let mut check = KindCheck::new(&self.environment, &self.symbols);
         try!(check.kindcheck_type(typ));
         Ok(())
     }
@@ -1426,11 +1426,11 @@ fn primitive_type(op_type: &str) -> ArcType {
     }
 }
 
-/// Removes layers of `Type::App`.
-///
+/// Removes layers of `Type::App` and `Type::Record` by packing them into a single `Type::App` or
+/// `Type::Record`
 /// Example:
 ///
-/// ```
+/// ```rust
 /// extern crate gluon_base;
 /// extern crate gluon_check;
 ///

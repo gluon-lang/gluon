@@ -100,17 +100,13 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, _: &ArcType) {
         if let Expr::Projection(ref expr, _, _) = context.value {
             let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
-            if let Type::Record { ref row, .. } = *typ {
-                if let Type::ExtendRow { ref fields, .. } = **row {
-                    let id = ident.as_ref();
-                    for field in fields {
-                        if field.name.as_ref().starts_with(id) {
-                            self.result.push(Suggestion {
-                                name: field.name.declared_name().into(),
-                                typ: field.typ.clone(),
-                            });
-                        }
-                    }
+            let id = ident.as_ref();
+            for field in typ.field_iter() {
+                if field.name.as_ref().starts_with(id) {
+                    self.result.push(Suggestion {
+                        name: field.name.declared_name().into(),
+                        typ: field.typ.clone(),
+                    });
                 }
             }
         }

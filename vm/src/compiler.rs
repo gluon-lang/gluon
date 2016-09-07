@@ -23,7 +23,8 @@ pub enum Variable<G> {
     UpVar(VmIndex),
 }
 
-/// Field accesses on records can either be by offset on a non-polymorphic record, or
+/// Field accesses on records can either be by name in the case of polymorphic records or by offset
+/// when the record is non-polymorphic (which is faster)
 enum FieldAccess {
     Name,
     Index(VmIndex),
