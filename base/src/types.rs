@@ -133,6 +133,7 @@ impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
 
 impl<Id> Deref for ArcType<Id> {
     type Target = Type<Id, ArcType<Id>>;
+
     fn deref(&self) -> &Type<Id, ArcType<Id>> {
         &self.typ
     }
@@ -156,10 +157,10 @@ impl<Id> ArcType<Id> {
             current: 0,
         }
     }
-}
 
-impl<Id: Clone> ArcType<Id> {
-    pub fn into_inner(self) -> Type<Id, ArcType<Id>> {
+    pub fn into_inner(self) -> Type<Id, ArcType<Id>>
+        where Id: Clone,
+    {
         (*self.typ).clone()
     }
 }
@@ -189,6 +190,7 @@ impl<Id: AsRef<str>> fmt::Display for RcType<Id> {
 
 impl<Id> Deref for RcType<Id> {
     type Target = Type<Id, RcType<Id>>;
+
     fn deref(&self) -> &Type<Id, RcType<Id>> {
         &self.typ
     }
@@ -198,10 +200,10 @@ impl<Id> RcType<Id> {
     pub fn new(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
         RcType { typ: Rc::new(typ) }
     }
-}
 
-impl<Id: Clone> RcType<Id> {
-    pub fn into_inner(self) -> Type<Id, RcType<Id>> {
+    pub fn into_inner(self) -> Type<Id, RcType<Id>>
+        where Id: Clone,
+    {
         (*self.typ).clone()
     }
 }
@@ -314,6 +316,7 @@ pub struct RcKind(Arc<Kind>);
 
 impl Deref for RcKind {
     type Target = Kind;
+
     fn deref(&self) -> &Kind {
         &self.0
     }
@@ -359,6 +362,7 @@ impl<Id, T> Deref for Alias<Id, T>
     where T: Deref<Target = Type<Id, T>>,
 {
     type Target = AliasData<Id, T>;
+
     fn deref(&self) -> &AliasData<Id, T> {
         match *self._typ {
             Type::Alias(ref alias) => alias,
