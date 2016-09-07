@@ -82,6 +82,8 @@ and g x = "asd"
 
 #[test]
 fn function_app() {
+    let _ = env_logger::init();
+
     let result = find_type(r#"
 let f x = f x
 1
@@ -122,6 +124,8 @@ let (++) l r =
 
 #[test]
 fn field_access() {
+    let _ = env_logger::init();
+
     let typ_env = MockEnv::new();
 
     let (mut expr, result) = support::typecheck_expr(r#"
@@ -145,6 +149,8 @@ r.x
 
 #[test]
 fn in_record() {
+    let _ = env_logger::init();
+
     let result = find_type(r#"
 {
     test = 123,
@@ -159,6 +165,8 @@ fn in_record() {
 
 #[test]
 fn suggest_identifier_when_prefix() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 let test = 1
 let tes = ""
@@ -173,6 +181,8 @@ te
 
 #[test]
 fn suggest_arguments() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 let f test =
     \test2 -> tes
@@ -186,6 +196,8 @@ let f test =
 
 #[test]
 fn suggest_after_unrelated_type_error() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 let record = { aa = 1, ab = 2, c = "" }
 1.0 #Int+ 2
@@ -199,6 +211,8 @@ record.a
 
 #[test]
 fn suggest_through_aliases() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 type Test a = { abc: a -> Int }
 type Test2 = Test String
@@ -213,6 +227,8 @@ record.ab
 
 #[test]
 fn suggest_after_dot() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 let record = { aa = 1, ab = 2, c = "" }
 record.
@@ -225,6 +241,8 @@ record.
 
 #[test]
 fn suggest_from_record_unpack() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 let { aa, c } = { aa = 1, ab = 2, c = "" }
 a
@@ -237,6 +255,8 @@ a
 
 #[test]
 fn suggest_on_record_in_field_access() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 let record = { aa = 1, ab = 2, c = "" }
 record.aa
@@ -249,6 +269,8 @@ record.aa
 
 #[test]
 fn suggest_end_of_identifier() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 let abc = 1
 let abb = 2
@@ -262,6 +284,8 @@ abc
 
 #[test]
 fn suggest_after_identifier() {
+    let _ = env_logger::init();
+
     let result = suggest(r#"
 let abc = 1
 let abb = 2
@@ -275,6 +299,8 @@ abc
 
 #[test]
 fn suggest_between_expressions() {
+    let _ = env_logger::init();
+
     let text = r#"
 let abc = 1
 let abb = 2

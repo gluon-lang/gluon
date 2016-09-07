@@ -797,33 +797,30 @@ impl<'a> Typecheck<'a> {
                     };
                     self.stack_var(name.clone(), field_type);
                 }
-                match *match_type {
-                    Type::Record { ref types, .. } => {
-                        for field in associated_types.iter_mut() {
-                            let name = match field.1 {
-                                Some(ref bind_name) => bind_name.clone(),
-                                None => field.0.clone(),
-                            };
-                            // The `types` in the record type should have a type matching the
-                            // `name`
-                            let field_type = types.iter()
-                                .find(|field| field.name.name_eq(&name));
-                            match field_type {
-                                Some(field_type) => {
-                                    // This forces refresh_type to remap the name a type was given
-                                    // in this module to its actual name
-                                    self.original_symbols
-                                        .insert(name.clone(), field_type.typ.name.clone());
-                                    self.stack_type(name, &field_type.typ);
-                                }
-                                None => {
-                                    self.error(span, UndefinedField(match_type.clone(), name));
-                                }
-                            }
+
+                for field in associated_types.iter_mut() {
+                    let name = match field.1 {
+                        Some(ref bind_name) => bind_name.clone(),
+                        None => field.0.clone(),
+                    };
+                    // The `types` in the record type should have a type matching the
+                    // `name`
+                    let field_type = match_type.type_field_iter()
+                        .find(|field| field.name.name_eq(&name));
+                    match field_type {
+                        Some(field_type) => {
+                            // This forces refresh_type to remap the name a type was given
+                            // in this module to its actual name
+                            self.original_symbols
+                                .insert(name.clone(), field_type.typ.name.clone());
+                            self.stack_type(name, &field_type.typ);
+                        }
+                        None => {
+                            self.error(span, UndefinedField(match_type.clone(), name));
                         }
                     }
-                    _ => panic!("Expected a record"),
                 }
+
                 match_type
             }
             Pattern::Ident(ref mut id) => {
@@ -1126,7 +1123,7 @@ impl<'a> Typecheck<'a> {
                     self.subs.insert(var.id, gen.clone());
                     Some(gen)
                 }
-                Type::ExtendRow { ref fields, ref rest } => {
+                Type::ExtendRow { ref types, ref fields, ref rest } => {
                     let new_fields = types::walk_move_types(fields, |field| {
                         // Make a new name base for any unbound variables in the record field
                         // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
@@ -1139,7 +1136,11 @@ impl<'a> Typecheck<'a> {
                         })
                     });
                     let new_rest = self.finish_type(level, rest);
-                    merge(fields, new_fields, rest, new_rest, Type::extend_row)
+                    merge(fields,
+                          new_fields,
+                          rest,
+                          new_rest,
+                          |fields, rest| Type::extend_row(types.clone(), fields, rest))
                         .or_else(|| replacement.clone())
                 }
                 _ => {
@@ -1477,12 +1478,14 @@ pub fn unroll_typ(typ: &Type<Symbol>) -> Option<ArcType> {
 }
 
 fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
-    let mut args = Vec::new();
+    let mut new_types = Vec::new();
+    let mut new_fields = Vec::new();
     let mut current = match *typ {
-        Type::ExtendRow { ref fields, ref rest } => {
+        Type::ExtendRow { ref types, ref fields, ref rest } => {
             match **rest {
                 Type::ExtendRow { .. } => {
-                    args.extend_from_slice(fields);
+                    new_types.extend_from_slice(types);
+                    new_fields.extend_from_slice(fields);
                     rest
                 }
                 _ => return None,
@@ -1490,13 +1493,14 @@ fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
         }
         _ => return None,
     };
-    while let Type::ExtendRow { ref fields, ref rest } = **current {
-        args.extend_from_slice(fields);
+    while let Type::ExtendRow { ref types, ref fields, ref rest } = **current {
+        new_types.extend_from_slice(types);
+        new_fields.extend_from_slice(fields);
         current = rest;
     }
-    if args.is_empty() {
+    if new_types.is_empty() && new_fields.is_empty() {
         None
     } else {
-        Some(Type::extend_row(args, current.clone()))
+        Some(Type::extend_row(new_types, new_fields, current.clone()))
     }
 }

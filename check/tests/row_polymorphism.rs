@@ -117,6 +117,33 @@ let f v1 v2 =
 }
 
 #[test]
+fn associated_types() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = Int
+type Test2 = Float
+let { Test } = { Test, Test2, x = 2 }
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn unused_associated_types_pattern_match() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = Int
+let { x } = { Test, x = 2 }
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
 fn if_else_different_records() {
     let _ = env_logger::init();
 
@@ -190,6 +217,20 @@ f { y = 1.0, z = 0 }
     assert!(result.is_err());
 }
 
+#[test]
+fn missing_associated_types() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = Int
+type Test2 = Float
+let { Test3 } = { Test, Test2, x = 2 }
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_err());
+}
+
 
 #[test]
 fn row_kinds() {
@@ -201,7 +242,8 @@ fn row_kinds() {
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert_eq!(result, Ok(Kind::row()));
 
-    let mut typ = Type::extend_row(vec![Field {
+    let mut typ = Type::extend_row(vec![],
+                                   vec![Field {
                                             name: intern("x"),
                                             typ: Type::int(),
                                         }],
@@ -217,7 +259,8 @@ fn row_kinds_error() {
     let ident_env = EmptyEnv::new();
     let mut kindcheck = KindCheck::new(&env, &ident_env);
 
-    let mut typ = Type::extend_row(vec![Field {
+    let mut typ = Type::extend_row(vec![],
+                                   vec![Field {
                                             name: intern("x"),
                                             typ: Type::int(),
                                         }],
@@ -225,7 +268,8 @@ fn row_kinds_error() {
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());
 
-    let mut typ = Type::extend_row(vec![Field {
+    let mut typ = Type::extend_row(vec![],
+                                   vec![Field {
                                             name: intern("x"),
                                             typ: Type::empty_row(),
                                         }],

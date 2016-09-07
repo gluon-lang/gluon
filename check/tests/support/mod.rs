@@ -184,10 +184,10 @@ pub fn close_record(typ: ArcType) -> ArcType {
     walk_move_type(typ,
                    &mut |typ| {
         match *typ {
-            Type::ExtendRow { ref fields, ref rest } => {
+            Type::ExtendRow { ref types, ref fields, ref rest } => {
                 match **rest {
                     Type::ExtendRow { .. } => None,
-                    _ => Some(Type::extend_row(fields.clone(), Type::empty_row())),
+                    _ => Some(Type::extend_row(types.clone(), fields.clone(), Type::empty_row())),
                 }
             }
             _ => None,

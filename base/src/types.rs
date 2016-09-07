@@ -99,13 +99,11 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// A builtin type
     Builtin(BuiltinType),
     /// A record type
-    Record {
-        /// The associated types of this record type
-        types: Vec<Field<Id, Alias<Id, T>>>,
-        row: T,
-    },
+    Record { row: T },
     EmptyRow,
     ExtendRow {
+        /// The associated types of this record type
+        types: Vec<Field<Id, Alias<Id, T>>>,
         /// The fields of this record type
         fields: Vec<Field<Id, T>>,
         rest: T,
@@ -154,6 +152,13 @@ impl<Id> Deref for ArcType<Id> {
 impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
+    }
+
+    pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
+        TypeFieldIterator {
+            typ: self,
+            current: 0,
+        }
     }
 
     pub fn field_iter(&self) -> FieldIterator<Self> {
@@ -463,17 +468,18 @@ impl<Id, T> Type<Id, T>
                        fields: Vec<Field<Id, T>>,
                        rest: T)
                        -> T {
-        T::from(Type::Record {
-            types: types,
-            row: Type::extend_row(fields, rest),
-        })
+        T::from(Type::Record { row: Type::extend_row(types, fields, rest) })
     }
 
-    pub fn extend_row(fields: Vec<Field<Id, T>>, rest: T) -> T {
-        if fields.is_empty() {
+    pub fn extend_row(types: Vec<Field<Id, Alias<Id, T>>>,
+                      fields: Vec<Field<Id, T>>,
+                      rest: T)
+                      -> T {
+        if types.is_empty() && fields.is_empty() {
             rest
         } else {
             T::from(Type::ExtendRow {
+                types: types,
                 fields: fields,
                 rest: rest,
             })
@@ -596,6 +602,39 @@ impl<T> Type<Symbol, T>
     }
 }
 
+#[derive(Clone)]
+pub struct TypeFieldIterator<'a, T: 'a> {
+    typ: &'a T,
+    current: usize,
+}
+
+impl<'a, Id: 'a, T> Iterator for TypeFieldIterator<'a, T>
+    where T: Deref<Target = Type<Id, T>>,
+{
+    type Item = &'a Field<Id, Alias<Id, T>>;
+
+    fn next(&mut self) -> Option<&'a Field<Id, Alias<Id, T>>> {
+        match **self.typ {
+            Type::Record { ref row } => {
+                self.typ = row;
+                self.next()
+            }
+            Type::ExtendRow { ref types, ref rest, .. } => {
+                let current = self.current;
+                self.current += 1;
+                types.get(current)
+                    .or_else(|| {
+                        self.current = 0;
+                        self.typ = rest;
+                        self.next()
+                    })
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct FieldIterator<'a, T: 'a> {
     typ: &'a T,
     current: usize,
@@ -614,11 +653,11 @@ impl<'a, Id: 'a, T> Iterator for FieldIterator<'a, T>
 
     fn next(&mut self) -> Option<&'a Field<Id, T>> {
         match **self.typ {
-            Type::Record { ref row, .. } => {
+            Type::Record { ref row } => {
                 self.typ = row;
                 self.next()
             }
-            Type::ExtendRow { ref fields, ref rest } => {
+            Type::ExtendRow { ref fields, ref rest, .. } => {
                 let current = self.current;
                 self.current += 1;
                 fields.get(current)
@@ -858,14 +897,35 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                 enclose(p, Prec::Constructor, arena, doc).group()
             }
             Type::Builtin(ref t) => arena.text(t.to_str()),
-            Type::Record { ref types, ref row } => {
+            Type::Record { ref row } => {
                 let mut doc = arena.text("{");
                 let empty_fields = match **row {
                     Type::ExtendRow { .. } => false,
                     _ => true,
                 };
 
-                if !types.is_empty() {
+                doc = match **row {
+                    Type::EmptyRow => doc,
+                    Type::ExtendRow { .. } => doc.append(top(self.env, row).pretty(arena)).nest(4),
+                    _ => {
+                        doc.append(arena.newline())
+                            .append("| ")
+                            .append(top(self.env, row).pretty(arena))
+                            .nest(4)
+                    }
+                };
+                if !empty_fields {
+                    doc = doc.append(arena.newline());
+                }
+
+                doc.append("}")
+                    .group()
+            }
+            Type::ExtendRow { ref fields, .. } => {
+                let mut doc = arena.nil();
+                let mut typ = self.typ;
+
+                while let Type::ExtendRow { ref types, ref rest, .. } = *typ {
                     for (i, field) in types.iter().enumerate() {
                         let f = chain![arena;
                             self.env.string(&field.name),
@@ -880,7 +940,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                                 }
                                 None => arena.text("= <abstract>"),
                             },
-                            if i + 1 != types.len() || !empty_fields {
+                            if i + 1 != types.len() || !fields.is_empty() {
                                 arena.text(",")
                             } else {
                                 arena.nil()
@@ -888,28 +948,14 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                             .group();
                         doc = doc.append(arena.newline()).append(f);
                     }
-                }
-                doc = match **row {
-                    Type::EmptyRow => doc,
-                    Type::ExtendRow { .. } => doc.append(top(self.env, row).pretty(arena)).nest(4),
-                    _ => {
-                        doc.append(arena.newline())
-                            .append("| ")
-                            .append(top(self.env, row).pretty(arena))
-                            .nest(4)
-                    }
-                };
-                if !types.is_empty() || !empty_fields {
-                    doc = doc.append(arena.newline());
+                    typ = rest;
                 }
 
-                doc.append("}")
-                    .group()
-            }
-            Type::ExtendRow { .. } => {
-                let mut doc = arena.nil();
-                let mut typ = self.typ;
-                while let Type::ExtendRow { ref fields, ref rest } = *typ {
+                if !fields.is_empty() {
+                    typ = self.typ;
+                }
+
+                while let Type::ExtendRow { ref fields, ref rest, .. } = *typ {
                     for (i, field) in fields.iter().enumerate() {
                         let mut rhs = top(self.env, &*field.typ).pretty(arena);
                         match *field.typ {
@@ -989,15 +1035,14 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
                 f.walk(a);
             }
         }
-        Type::Record { ref types, ref row } => {
+        Type::Record { ref row } => f.walk(row),
+        Type::ExtendRow { ref types, ref fields, ref rest } => {
             for field in types {
                 if let Some(ref typ) = field.typ.typ {
                     f.walk(typ);
                 }
             }
-            f.walk(row)
-        }
-        Type::ExtendRow { ref fields, ref rest } => {
+
             for field in fields {
                 f.walk(&field.typ);
             }
@@ -1141,15 +1186,8 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
         }
-        Type::Record { ref types, ref row } => {
-            f.visit(row).map(|row| {
-                T::from(Type::Record {
-                    types: types.clone(),
-                    row: row,
-                })
-            })
-        }
-        Type::ExtendRow { ref fields, ref rest } => {
+        Type::Record { ref row } => f.visit(row).map(|row| T::from(Type::Record { row: row })),
+        Type::ExtendRow { ref types, ref fields, ref rest } => {
             let new_fields = walk_move_types(fields, |field| {
                 f.visit(&field.typ).map(|typ| {
                     Field {
@@ -1159,7 +1197,11 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
                 })
             });
             let new_rest = f.visit(rest);
-            merge(fields, new_fields, rest, new_rest, Type::extend_row)
+            merge(fields,
+                  new_fields,
+                  rest,
+                  new_rest,
+                  |fields, rest| Type::extend_row(types.clone(), fields, rest))
         }
         Type::Variants(ref variants) => {
             walk_move_types(variants, |v| f.visit(&v.1).map(|t| (v.0.clone(), t)))

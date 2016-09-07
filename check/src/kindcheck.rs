@@ -202,17 +202,13 @@ impl<'a> KindCheck<'a> {
                     .collect());
                 Ok((self.type_kind(), Type::variants(variants)))
             }
-            Type::Record { ref types, ref row } => {
+            Type::Record { ref row } => {
                 let (kind, row) = try!(self.kindcheck(row));
                 let row_kind = self.row_kind();
                 try!(self.unify(&row_kind, kind));
-                Ok((self.type_kind(),
-                    ArcType::from(Type::Record {
-                    types: types.clone(),
-                    row: row,
-                })))
+                Ok((self.type_kind(), ArcType::from(Type::Record { row: row })))
             }
-            Type::ExtendRow { ref fields, ref rest } => {
+            Type::ExtendRow { ref types, ref fields, ref rest } => {
                 let fields = try!(fields.iter()
                     .map(|field| {
                         let (kind, typ) = try!(self.kindcheck(&field.typ));
@@ -227,7 +223,7 @@ impl<'a> KindCheck<'a> {
                 let (kind, rest) = try!(self.kindcheck(rest));
                 let row_kind = self.row_kind();
                 try!(self.unify(&row_kind, kind));
-                Ok((row_kind, Type::extend_row(fields, rest)))
+                Ok((row_kind, Type::extend_row(types.clone(), fields, rest)))
             }
             Type::EmptyRow => Ok((self.row_kind(), typ.clone())),
             Type::Ident(ref id) => self.find(id).map(|kind| (kind, typ.clone())),

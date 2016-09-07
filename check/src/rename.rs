@@ -102,13 +102,10 @@ pub fn rename(symbols: &mut SymbolModule,
                         let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
                         field.1 = Some(self.stack_var(id, pattern.span, field_type));
                     }
+
                     let record_type = instantiate::remove_aliases(&self.env, typ.clone()).clone();
-                    let imported_types = match *record_type {
-                        Type::Record { ref types, .. } => types,
-                        _ => panic!(),
-                    };
                     for &(ref name, _) in types {
-                        let field_type = imported_types.iter()
+                        let field_type = record_type.type_field_iter()
                             .find(|field| field.name.name_eq(name))
                             .expect("field_type");
                         self.stack_type(name.clone(), pattern.span, &field_type.typ);
