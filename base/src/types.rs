@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
 
-use ast::{self, DisplayEnv};
+use ast::DisplayEnv;
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains kinded values which can be refered by name
@@ -1006,7 +1006,19 @@ impl<I, T> fmt::Display for Type<I, T>
           T: Deref<Target = Type<I, T>>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", dt(&ast::EmptyEnv::new(), Prec::Top, self))
+        use std::marker::PhantomData;
+
+        pub struct EmptyEnv<T>(PhantomData<T>);
+
+        impl<T: AsRef<str>> DisplayEnv for EmptyEnv<T> {
+            type Ident = T;
+
+            fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+                ident.as_ref()
+            }
+        }
+
+        write!(f, "{}", dt(&EmptyEnv(PhantomData), Prec::Top, self))
     }
 }
 

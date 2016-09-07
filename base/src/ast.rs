@@ -16,35 +16,11 @@ pub trait IdentEnv: DisplayEnv {
     fn from_str(&mut self, s: &str) -> Self::Ident;
 }
 
-pub struct EmptyEnv<T>(::std::marker::PhantomData<T>);
-
-impl<T> EmptyEnv<T> {
-    pub fn new() -> EmptyEnv<T> {
-        EmptyEnv(::std::marker::PhantomData)
-    }
-}
-
-impl<T: AsRef<str>> DisplayEnv for EmptyEnv<T> {
-    type Ident = T;
-
-    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-        ident.as_ref()
-    }
-}
-
 impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
     type Ident = T::Ident;
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
         (**self).string(ident)
-    }
-}
-
-impl<T> IdentEnv for EmptyEnv<T>
-    where T: AsRef<str> + for<'a> From<&'a str>,
-{
-    fn from_str(&mut self, s: &str) -> Self::Ident {
-        T::from(s)
     }
 }
 

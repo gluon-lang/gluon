@@ -5,12 +5,11 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::types::{Field, Type, Kind};
-use base::ast::EmptyEnv;
-
 use check::kindcheck::KindCheck;
 
+use support::{MockEnv, MockIdentEnv, intern, typ};
+
 mod support;
-use support::{intern, typ};
 
 macro_rules! assert_pass {
     ($e: expr) => {{
@@ -234,8 +233,8 @@ let { Test3 } = { Test, Test2, x = 2 }
 
 #[test]
 fn row_kinds() {
-    let env = support::MockEnv::new();
-    let ident_env = EmptyEnv::new();
+    let env = MockEnv::new();
+    let ident_env = MockIdentEnv::new();
     let mut kindcheck = KindCheck::new(&env, &ident_env);
 
     let mut typ = Type::empty_row();
@@ -255,8 +254,8 @@ fn row_kinds() {
 
 #[test]
 fn row_kinds_error() {
-    let env = support::MockEnv::new();
-    let ident_env = EmptyEnv::new();
+    let env = MockEnv::new();
+    let ident_env = MockIdentEnv::new();
     let mut kindcheck = KindCheck::new(&env, &ident_env);
 
     let mut typ = Type::extend_row(vec![],

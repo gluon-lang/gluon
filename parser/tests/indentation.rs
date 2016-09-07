@@ -6,6 +6,8 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate combine;
 
+mod support;
+
 use combine::ParseError;
 use combine::primitives::{Error, Info};
 use base::ast::*;
@@ -13,9 +15,10 @@ use base::error::Errors;
 use base::pos::BytePos;
 use parser::parse_string;
 use parser::lexer::Token;
+use support::MockEnv;
 
 fn parse(text: &str) -> Result<SpannedExpr<String>, Errors<::parser::Error>> {
-    parse_string(&mut EmptyEnv::new(), text).map_err(|(_, err)| err)
+    parse_string(&mut MockEnv::new(), text).map_err(|(_, err)| err)
 }
 
 #[test]

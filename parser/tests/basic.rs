@@ -4,12 +4,14 @@ extern crate env_logger;
 #[macro_use]
 extern crate log;
 
-use base::ast;
+mod support;
+
 use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Alias, ArcType, Field, Generic, Kind, Type};
 use parser::{parse_string, Error};
+use support::MockEnv;
 
 pub fn intern(s: &str) -> String {
     String::from(s)
@@ -152,7 +154,7 @@ fn array(fields: Vec<SpExpr>) -> SpExpr {
 }
 
 fn parse(input: &str) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
-    parse_string(&mut ast::EmptyEnv::new(), input)
+    parse_string(&mut MockEnv::new(), input)
 }
 
 fn parse_new(input: &str) -> SpannedExpr<String> {
