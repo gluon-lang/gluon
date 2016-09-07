@@ -740,56 +740,33 @@ impl<'a> Typecheck<'a> {
                 *curr_typ = match_type.clone();
                 let mut match_type = self.remove_alias(match_type);
                 let mut types = Vec::new();
-                let new_type = match *match_type {
-                    Type::Record { ref row, .. } => {
-                        for pattern_field in fields {
-                            let found_field = row.field_iter()
-                                .find(|expected_field| {
-                                    pattern_field.0
-                                        .name_eq(&expected_field.name)
-                                });
-                            let expected_field = match found_field {
-                                Some(expected) => expected,
-                                None => {
-                                    self.error(span,
-                                               UndefinedField(match_type.clone(),
-                                                              pattern_field.0.clone()));
-                                    continue;
+
+                let pattern_fields: Vec<_> = fields.iter().map(|t| t.0.clone()).collect();
+                // actual_type is the record (not hidden behind an alias)
+                let (mut typ, mut actual_type) = match self.find_record(&pattern_fields)
+                    .map(|t| (Some(t.0.clone()), t.1.clone())) {
+                    Ok(typ) => typ,
+                    Err(_) => {
+                        let fields = pattern_fields.into_iter()
+                            .map(|field| {
+                                types::Field {
+                                    name: field,
+                                    typ: self.subs.new_var(),
                                 }
-                            };
-                            let var = self.subs.new_var();
-                            types.push(var.clone());
-                            self.unify_span(span, &var, expected_field.typ.clone());
-                        }
-                        None
-                    }
-                    _ => {
-                        let fields: Vec<_> = fields.iter().map(|t| t.0.clone()).collect();
-                        // actual_type is the record (not hidden behind an alias)
-                        let (mut typ, mut actual_type) = match self.find_record(&fields)
-                            .map(|t| (t.0.clone(), t.1.clone())) {
-                            Ok(typ) => typ,
-                            Err(_) => {
-                                let fields = fields.iter()
-                                    .map(|field| {
-                                        types::Field {
-                                            name: field.clone(),
-                                            typ: self.subs.new_var(),
-                                        }
-                                    })
-                                    .collect();
-                                let t = Type::poly_record(Vec::new(), fields, self.subs.new_var());
-                                (t.clone(), t)
-                            }
-                        };
-                        typ = self.instantiate(&typ);
-                        actual_type = self.instantiate_(&actual_type);
-                        self.unify_span(span, &match_type, typ);
-                        types.extend(actual_type.field_iter().map(|f| f.typ.clone()));
-                        Some(actual_type)
+                            })
+                            .collect();
+                        let t = Type::poly_record(Vec::new(), fields, self.subs.new_var());
+                        (None, t)
                     }
                 };
-                match_type = new_type.unwrap_or(match_type);
+                actual_type = self.instantiate_(&actual_type);
+                if let Some(ref mut typ) = typ {
+                    *typ = self.instantiate(typ);
+                }
+                actual_type = self.unify_span(span, &match_type, actual_type.clone());
+                types.extend(actual_type.field_iter().map(|f| f.typ.clone()));
+                match_type = typ.unwrap_or(actual_type);
+
                 for (field, field_type) in fields.iter().zip(types) {
                     let name = match field.1 {
                         Some(ref bind_name) => bind_name,
@@ -1039,8 +1016,10 @@ impl<'a> Typecheck<'a> {
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &ArcType) {
         let typ = {
-            let existing_types =
-                self.environment.stack.get_all(symbol).expect("Symbol is not in scope");
+            let existing_types = self.environment
+                .stack
+                .get_all(symbol)
+                .unwrap_or_else(|| panic!("Symbol `{}` is not in scope", symbol));
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
                 debug!("Intersect\n{} <> {}",
