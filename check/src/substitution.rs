@@ -9,7 +9,7 @@ use base::types;
 use base::types::{ArcType, Type, Walker};
 use base::symbol::Symbol;
 
-use typecheck::unroll_app;
+use typecheck::unroll_typ;
 
 pub struct Substitution<T> {
     /// Union-find data structure used to store the relationships of all variables in the
@@ -273,7 +273,7 @@ impl Substitution<ArcType> {
                 if let Some(ref t) = replacement {
                     typ = &**t;
                 }
-                unroll_app(typ)
+                unroll_typ(typ)
             };
             result.or(replacement)
         })
@@ -290,7 +290,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     pub fn union(&self, id: &T::Variable, typ: &T) -> Result<(), ()>
         where T::Variable: Clone,
     {
-        // Nothing needs to be done if both are the same variable already (also prevents the occurs check from failing)
+        // Nothing needs to be done if both are the same variable already (also prevents the occurs
+        // check from failing)
         if typ.get_var().map_or(false, |other| other.get_id() == id.get_id()) {
             return Ok(());
         }

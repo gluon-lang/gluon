@@ -23,6 +23,13 @@ pub enum Variable<G> {
     UpVar(VmIndex),
 }
 
+/// Field accesses on records can either be by name in the case of polymorphic records or by offset
+/// when the record is non-polymorphic (which is faster)
+enum FieldAccess {
+    Name,
+    Index(VmIndex),
+}
+
 #[derive(Debug)]
 pub struct CompiledFunction {
     pub args: VmIndex,
@@ -33,6 +40,7 @@ pub struct CompiledFunction {
     pub strings: Vec<InternedStr>,
     /// Storage for globals which are needed by the module which is currently being compiled
     pub module_globals: Vec<Symbol>,
+    pub records: Vec<Vec<Symbol>>,
 }
 
 impl CompiledFunction {
@@ -45,6 +53,7 @@ impl CompiledFunction {
             inner_functions: Vec::new(),
             strings: Vec::new(),
             module_globals: Vec::new(),
+            records: Vec::new(),
         }
     }
 }
@@ -123,14 +132,43 @@ impl FunctionEnv {
         self.emit(i);
     }
 
-    fn emit_string(&mut self, s: InternedStr) {
-        let index = match self.function.strings.iter().position(|t| *t == s) {
-            Some(i) => i,
+    fn emit_field(&mut self, compiler: &mut Compiler, typ: &ArcType, field: &Symbol) -> Result<()> {
+        let field_index = compiler.find_field(typ, field)
+            .expect("ICE: Undefined field in field access");
+        match field_index {
+            FieldAccess::Index(i) => self.emit(GetOffset(i)),
+            FieldAccess::Name => {
+                let interned = try!(compiler.intern(field.as_ref()));
+                let index = self.add_string_constant(interned);
+                self.emit(GetField(index));
+            }
+        }
+        Ok(())
+    }
+
+
+    fn add_record_map(&mut self, fields: Vec<Symbol>) -> VmIndex {
+        match self.function.records.iter().position(|t| *t == fields) {
+            Some(i) => i as VmIndex,
+            None => {
+                self.function.records.push(fields);
+                (self.function.records.len() - 1) as VmIndex
+            }
+        }
+    }
+
+    fn add_string_constant(&mut self, s: InternedStr) -> VmIndex {
+        match self.function.strings.iter().position(|t| *t == s) {
+            Some(i) => i as VmIndex,
             None => {
                 self.function.strings.push(s);
-                self.function.strings.len() - 1
+                (self.function.strings.len() - 1) as VmIndex
             }
-        };
+        }
+    }
+
+    fn emit_string(&mut self, s: InternedStr) {
+        let index = self.add_string_constant(s);
         self.emit(PushString(index as VmIndex));
     }
 
@@ -332,18 +370,21 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<VmIndex> {
-        // Walk through all type aliases
-        match **instantiate::remove_aliases_cow(self, typ) {
-            Type::Record { ref fields, .. } => {
-                fields.iter()
-                    .position(|f| f.name.name_eq(field))
-                    .map(|i| i as VmIndex)
+    fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
+        // Remove all type aliases to get the actual record type
+        let typ = instantiate::remove_aliases_cow(self, typ);
+        let mut iter = typ.field_iter();
+        match iter.by_ref().position(|f| f.name.name_eq(field)) {
+            Some(index) => {
+                for _ in iter.by_ref() {}
+                Some(if **iter.current_type() == Type::EmptyRow {
+                    // Non-polymorphic record, access by index
+                    FieldAccess::Index(index as VmIndex)
+                } else {
+                    FieldAccess::Name
+                })
             }
-            ref typ => {
-                panic!("ICE: Projection on {}",
-                       types::display_type(&self.symbols, typ))
-            }
+            None => None,
         }
     }
 
@@ -550,7 +591,7 @@ impl<'a> Compiler<'a> {
                     } else {
                         try!(self.compile(&bind.expression, function, false));
                         let typ = bind.expression.env_type_of(self);
-                        self.compile_let_pattern(&bind.name.value, &typ, function);
+                        try!(self.compile_let_pattern(&bind.name.value, &typ, function));
                     }
                 }
                 return Ok(Some(body));
@@ -579,9 +620,8 @@ impl<'a> Compiler<'a> {
                 debug!("{:?} {:?} {:?}", expr, id, typ);
                 let typ = expr.env_type_of(self);
                 debug!("Projection {}", types::display_type(&self.symbols, &typ));
-                let field_index = self.find_field(&typ, id)
-                    .expect("ICE: Undefined field in field access");
-                function.emit(GetField(field_index));
+
+                try!(function.emit_field(self, &typ, id));
             }
             Expr::Match(ref expr, ref alts) => {
                 try!(self.compile(&**expr, function, false));
@@ -641,7 +681,7 @@ impl<'a> Compiler<'a> {
                         }
                         Pattern::Record { .. } => {
                             let typ = &expr.env_type_of(self);
-                            self.compile_let_pattern(&alt.pattern.value, typ, function);
+                            try!(self.compile_let_pattern(&alt.pattern.value, typ, function));
                         }
                         Pattern::Ident(ref id) => {
                             function.function.instructions[start_index] =
@@ -694,8 +734,10 @@ impl<'a> Compiler<'a> {
                         None => self.load_identifier(&field.0, function),
                     }
                 }
-                function.emit(Construct {
-                    tag: 0,
+                let index =
+                    function.add_record_map(fields.iter().map(|field| field.0.clone()).collect());
+                function.emit(ConstructRecord {
+                    record: index,
                     args: fields.len() as u32,
                 });
             }
@@ -723,7 +765,8 @@ impl<'a> Compiler<'a> {
     fn compile_let_pattern(&mut self,
                            pattern: &Pattern<Symbol>,
                            pattern_type: &ArcType,
-                           function: &mut FunctionEnvs) {
+                           function: &mut FunctionEnvs)
+                           -> Result<()> {
         match *pattern {
             Pattern::Ident(ref name) => {
                 function.new_stack_var(name.name.clone());
@@ -742,19 +785,22 @@ impl<'a> Compiler<'a> {
                     }
                 });
                 match *typ {
-                    Type::Record { fields: ref type_fields, .. } => {
+                    Type::Record { .. } => {
+                        let mut field_iter = typ.field_iter();
+                        let number_of_fields = field_iter.by_ref().count();
+                        let is_polymorphic = **field_iter.current_type() != Type::EmptyRow;
                         if fields.len() == 0 ||
-                           (type_fields.len() > 4 && type_fields.len() / fields.len() >= 4) {
+                           (number_of_fields > 4 && number_of_fields / fields.len() >= 4) ||
+                           is_polymorphic {
                             // For pattern matches on large records where only a few of the fields
-                            // are used we instead emit a series of GetField instructions to avoid
+                            // are used we instead emit a series of GetOffset instructions to avoid
                             // pushing a lot of unnecessary fields to the stack
+                            // Polymorphic records also needs to generate field accesses as `Split`
+                            // would push the fields in a different order depending on the record
                             let record_index = function.stack_size();
                             for pattern_field in fields {
-                                let offset = type_fields.iter()
-                                    .position(|field| field.name.name_eq(&pattern_field.0))
-                                    .expect("Field to exist");
                                 function.emit(Push(record_index));
-                                function.emit(GetField(offset as VmIndex));
+                                try!(function.emit_field(self, &typ, &pattern_field.0));
                                 function.new_stack_var(pattern_field.1
                                     .as_ref()
                                     .unwrap_or(&pattern_field.0)
@@ -762,7 +808,7 @@ impl<'a> Compiler<'a> {
                             }
                         } else {
                             function.emit(Split);
-                            for field in type_fields {
+                            for field in typ.field_iter() {
                                 let name = match fields.iter()
                                     .find(|tup| tup.0.name_eq(&field.name)) {
                                     Some(&(ref name, ref bind)) => {
@@ -783,6 +829,7 @@ impl<'a> Compiler<'a> {
             }
             Pattern::Constructor(..) => panic!("constructor pattern in let"),
         }
+        Ok(())
     }
 
     fn compile_lambda(&mut self,
@@ -823,12 +870,10 @@ impl<'a> Compiler<'a> {
 fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut f: F)
     where F: FnMut(&Symbol, &Alias<Symbol, ArcType>),
 {
-    if let Type::Record { types: ref record_type_fields, .. } = **typ {
-        for field in types {
-            let associated_type = record_type_fields.iter()
-                .find(|type_field| type_field.name.name_eq(&field.0))
-                .expect("Associated type to exist in record");
-            f(&field.0, &associated_type.typ);
-        }
+    for field in types {
+        let associated_type = typ.type_field_iter()
+            .find(|type_field| type_field.name.name_eq(&field.0))
+            .expect("Associated type to exist in record");
+        f(&field.0, &associated_type.typ);
     }
 }

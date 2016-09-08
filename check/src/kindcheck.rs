@@ -29,6 +29,8 @@ pub struct KindCheck<'a> {
     function1_kind: RcKind,
     /// A cached two argument kind function, `Type -> Type -> Type`
     function2_kind: RcKind,
+    /// A cached row kind: `Row`
+    row_kind: RcKind,
 }
 
 fn walk_move_kind<F>(kind: RcKind, f: &mut F) -> RcKind
@@ -52,7 +54,8 @@ fn walk_move_kind2<F>(kind: &RcKind, f: &mut F) -> Option<RcKind>
                 merge(arg, arg_new, ret, ret_new, Kind::function)
             }
             Kind::Type |
-            Kind::Variable(_) => None,
+            Kind::Variable(_) |
+            Kind::Row => None,
         }
     };
     new2.or(new)
@@ -60,8 +63,7 @@ fn walk_move_kind2<F>(kind: &RcKind, f: &mut F) -> Option<RcKind>
 
 impl<'a> KindCheck<'a> {
     pub fn new(info: &'a (KindEnv + 'a),
-               idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
-               subs: Substitution<RcKind>)
+               idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a))
                -> KindCheck<'a> {
         let typ = Kind::typ();
         let function1_kind = Kind::function(typ.clone(), typ.clone());
@@ -70,10 +72,11 @@ impl<'a> KindCheck<'a> {
             locals: Vec::new(),
             info: info,
             idents: idents,
-            subs: subs,
+            subs: Substitution::new(),
             type_kind: typ.clone(),
             function1_kind: function1_kind.clone(),
             function2_kind: Kind::function(typ, function1_kind),
+            row_kind: Kind::row(),
         }
     }
 
@@ -96,6 +99,10 @@ impl<'a> KindCheck<'a> {
 
     pub fn function2_kind(&self) -> RcKind {
         self.function2_kind.clone()
+    }
+
+    pub fn row_kind(&self) -> RcKind {
+        self.row_kind.clone()
     }
 
     fn find(&mut self, id: &Symbol) -> Result<RcKind> {
@@ -131,10 +138,14 @@ impl<'a> KindCheck<'a> {
 
     // Kindhecks `typ`, infering it to be of kind `Type`
     pub fn kindcheck_type(&mut self, typ: &mut ArcType) -> Result<RcKind> {
+        let type_kind = self.type_kind();
+        self.kindcheck_expected(typ, &type_kind)
+    }
+
+    pub fn kindcheck_expected(&mut self, typ: &mut ArcType, expected: &RcKind) -> Result<RcKind> {
         debug!("Kindcheck {:?}", typ);
         let (kind, t) = try!(self.kindcheck(typ));
-        let type_kind = self.type_kind();
-        let kind = try!(self.unify(&type_kind, kind));
+        let kind = try!(self.unify(expected, kind));
         *typ = self.finalize_type(t);
         debug!("Done {:?}", typ);
         Ok(kind)
@@ -191,7 +202,13 @@ impl<'a> KindCheck<'a> {
                     .collect());
                 Ok((self.type_kind(), Type::variants(variants)))
             }
-            Type::Record { ref types, ref fields } => {
+            Type::Record { ref row } => {
+                let (kind, row) = try!(self.kindcheck(row));
+                let row_kind = self.row_kind();
+                try!(self.unify(&row_kind, kind));
+                Ok((self.type_kind(), ArcType::from(Type::Record { row: row })))
+            }
+            Type::ExtendRow { ref types, ref fields, ref rest } => {
                 let fields = try!(fields.iter()
                     .map(|field| {
                         let (kind, typ) = try!(self.kindcheck(&field.typ));
@@ -203,8 +220,12 @@ impl<'a> KindCheck<'a> {
                         })
                     })
                     .collect());
-                Ok((self.type_kind(), Type::record(types.clone(), fields)))
+                let (kind, rest) = try!(self.kindcheck(rest));
+                let row_kind = self.row_kind();
+                try!(self.unify(&row_kind, kind));
+                Ok((row_kind, Type::extend_row(types.clone(), fields, rest)))
             }
+            Type::EmptyRow => Ok((self.row_kind(), typ.clone())),
             Type::Ident(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
             Type::Alias(ref alias) => self.find(&alias.name).map(|kind| (kind, typ.clone())),
         }

@@ -16,6 +16,8 @@ use base::types;
 use base::fnv::FnvMap;
 
 use {Variants, Error, Result};
+use field_map::FieldMap;
+use interner::InternedStr;
 use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
 use array::Str;
@@ -236,6 +238,7 @@ impl RootedThread {
             context: Mutex::new(Context {
                 gc: Gc::new(1, usize::MAX),
                 stack: Stack::new(),
+                record_map: FieldMap::new(),
             }),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
@@ -279,6 +282,7 @@ impl Thread {
             context: Mutex::new(Context {
                 gc: self.current_context().gc.new_child_gc(),
                 stack: Stack::new(),
+                record_map: FieldMap::new(),
             }),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
@@ -314,7 +318,7 @@ impl Thread {
             try!(value.push(self, &mut context));
             context.stack.pop()
         };
-        self.global_env().set_global(Symbol::new(name),
+        self.global_env().set_global(Symbol::from(name),
                                      T::make_type(self),
                                      Metadata::default(),
                                      value)
@@ -545,7 +549,7 @@ impl ThreadInternal for Thread {
                     args: VmIndex,
                     instructions: Vec<Instruction>)
                     -> Result<()> {
-        let id = Symbol::new(name);
+        let id = Symbol::from(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
         let f = try!(self.global_env().new_function(compiled_fn));
@@ -571,7 +575,9 @@ impl ThreadInternal for Thread {
                     thread: self,
                     context: self.context.lock().unwrap(),
                 };
-                context.stack.push(Int(0));// Dummy value to fill the place of the function for TailCall
+                // Dummy value to fill the place of the function for TailCall
+                context.stack.push(Int(0));
+
                 context.stack.push(value);
                 context.stack.push(Int(0));
 
@@ -627,6 +633,7 @@ pub struct Context {
     // FIXME It is dangerous to write to gc and stack
     pub stack: Stack,
     pub gc: Gc,
+    record_map: FieldMap,
 }
 
 impl Context {
@@ -659,7 +666,7 @@ impl<'b> OwnedContext<'b> {
         where D: DataDef + Traverseable,
               D::Value: Sized + Any,
     {
-        let Context { ref mut gc, ref stack } = **self;
+        let Context { ref mut gc, ref stack, .. } = **self;
         alloc(gc, self.thread, &stack, data)
     }
 }
@@ -805,6 +812,7 @@ impl<'b> OwnedContext<'b> {
             thread: self.thread,
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
+            record_map: &mut context.record_map,
         }
     }
 }
@@ -813,9 +821,18 @@ struct ExecuteContext<'b> {
     thread: &'b Thread,
     stack: StackFrame<'b>,
     gc: &'b mut Gc,
+    record_map: &'b mut FieldMap,
 }
 
 impl<'b> ExecuteContext<'b> {
+    fn lookup_field(&self, tag: VmTag, index: InternedStr) -> Result<VmIndex> {
+        self.record_map
+            .get_offset(tag, index)
+            .ok_or_else(|| {
+                Error::Message(format!("Internal error: Undefined record field {} {}", tag, index))
+            })
+    }
+
     fn enter_scope(&mut self, args: VmIndex, state: State) {
         self.stack.enter_scope(args, state);
     }
@@ -1004,6 +1021,32 @@ impl<'b> ExecuteContext<'b> {
                     }
                     self.stack.push(d);
                 }
+                ConstructRecord { record, args } => {
+                    let d = {
+                        if args == 0 {
+                            Value::Tag(0)
+                        } else {
+                            let fields = &self.stack[self.stack.len() - args..];
+                            unsafe {
+                                let roots = Roots {
+                                    vm: GcPtr::from_raw(self.thread),
+                                    stack: &self.stack.stack,
+                                };
+                                let field_names = &function.records[record as usize];
+                                let tag = self.record_map.get_map(&field_names);
+                                Data(try!(self.gc.alloc_and_collect(roots,
+                                                                    Def {
+                                                                        tag: tag,
+                                                                        elems: fields,
+                                                                    })))
+                            }
+                        }
+                    };
+                    for _ in 0..args {
+                        self.stack.pop();
+                    }
+                    self.stack.push(d);
+                }
                 ConstructArray(args) => {
                     let d = {
                         let fields = &self.stack[self.stack.len() - args..];
@@ -1017,10 +1060,21 @@ impl<'b> ExecuteContext<'b> {
                     }
                     self.stack.push(Value::Array(d));
                 }
-                GetField(i) => {
+                GetOffset(i) => {
                     match self.stack.pop() {
                         Data(data) => {
                             let v = data.fields[i as usize];
+                            self.stack.push(v);
+                        }
+                        x => return Err(Error::Message(format!("GetOffset on {:?}", x))),
+                    }
+                }
+                GetField(i) => {
+                    let field = function.strings[i as usize];
+                    match self.stack.pop() {
+                        Data(data) => {
+                            let offset = try!(self.lookup_field(data.tag, field));
+                            let v = data.fields[offset as usize];
                             self.stack.push(v);
                         }
                         x => return Err(Error::Message(format!("GetField on {:?}", x))),

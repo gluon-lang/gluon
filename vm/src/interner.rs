@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
@@ -16,9 +17,22 @@ impl PartialEq<InternedStr> for InternedStr {
         self.as_ptr() == other.as_ptr()
     }
 }
+
 impl<'a> PartialEq<&'a str> for InternedStr {
     fn eq(&self, other: &&'a str) -> bool {
         **self == **other
+    }
+}
+
+impl PartialOrd for InternedStr {
+    fn partial_cmp(&self, other: &InternedStr) -> Option<Ordering> {
+        self.as_ptr().partial_cmp(&other.as_ptr())
+    }
+}
+
+impl Ord for InternedStr {
+    fn cmp(&self, other: &InternedStr) -> Ordering {
+        self.as_ptr().cmp(&other.as_ptr())
     }
 }
 

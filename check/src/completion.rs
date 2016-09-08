@@ -64,10 +64,12 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         match pattern.value {
             Pattern::Record { ref typ, fields: ref field_ids, .. } => {
                 let unaliased = instantiate::remove_aliases(&self.env, typ.clone());
-                if let Type::Record { ref fields, .. } = *unaliased {
-                    for (field, field_type) in field_ids.iter().zip(fields) {
-                        let f = field.1.as_ref().unwrap_or(&field.0).clone();
-                        self.stack.insert(f, field_type.typ.clone());
+                if let Type::Record { ref row, .. } = *unaliased {
+                    if let Type::ExtendRow { ref fields, .. } = **row {
+                        for (field, field_type) in field_ids.iter().zip(fields) {
+                            let f = field.1.as_ref().unwrap_or(&field.0).clone();
+                            self.stack.insert(f, field_type.typ.clone());
+                        }
                     }
                 }
             }
@@ -98,15 +100,13 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, _: &ArcType) {
         if let Expr::Projection(ref expr, _, _) = context.value {
             let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
-            if let Type::Record { ref fields, .. } = *typ {
-                let id = ident.as_ref();
-                for field in fields {
-                    if field.name.as_ref().starts_with(id) {
-                        self.result.push(Suggestion {
-                            name: field.name.declared_name().into(),
-                            typ: field.typ.clone(),
-                        });
-                    }
+            let id = ident.as_ref();
+            for field in typ.field_iter() {
+                if field.name.as_ref().starts_with(id) {
+                    self.result.push(Suggestion {
+                        name: field.name.declared_name().into(),
+                        typ: field.typ.clone(),
+                    });
                 }
             }
         }

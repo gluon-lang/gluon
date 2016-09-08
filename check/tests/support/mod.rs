@@ -1,7 +1,7 @@
 use base::ast::SpannedExpr;
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{Alias, Generic, Kind, Type, KindEnv};
-use base::types::{ArcType, TypeEnv, PrimitiveEnv, RcKind};
+use base::types::{ArcType, TypeEnv, PrimitiveEnv, RcKind, walk_move_type};
 use check::typecheck::{self, Typecheck};
 use parser;
 
@@ -175,4 +175,22 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
                     })
                     .collect(),
                 typ)
+}
+
+
+/// Replace the variable at the `rest` part of a record for easier equality checks
+#[allow(dead_code)]
+pub fn close_record(typ: ArcType) -> ArcType {
+    walk_move_type(typ,
+                   &mut |typ| {
+        match *typ {
+            Type::ExtendRow { ref types, ref fields, ref rest } => {
+                match **rest {
+                    Type::ExtendRow { .. } => None,
+                    _ => Some(Type::extend_row(types.clone(), fields.clone(), Type::empty_row())),
+                }
+            }
+            _ => None,
+        }
+    })
 }

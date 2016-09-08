@@ -305,7 +305,7 @@ pub mod compiler_pipeline {
                          _: ())
                          -> Result<(RootedValue<&'vm Thread>, ArcType)> {
             let CompileValue(_, typ, mut function) = self;
-            function.id = Symbol::new(name);
+            function.id = Symbol::from(name);
             let function = try!(vm.global_env().new_function(function));
             let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
             let value = try!(vm.call_module(&typ, closure));
@@ -427,7 +427,7 @@ impl Compiler {
             let mut compiler = Compiler::new(&*env, vm.global_env(), symbols);
             try!(compiler.compile_expr(&expr))
         };
-        function.id = Symbol::new(filename);
+        function.id = Symbol::from(filename);
         Ok(function)
     }
 
@@ -482,7 +482,7 @@ impl Compiler {
                       -> Result<(RootedValue<&'vm Thread>, ArcType)> {
         let (expr, typ) = try!(self.typecheck_str(vm, name, expr_str, expected_type));
         let mut function = try!(self.compile_script(vm, name, &expr));
-        function.id = Symbol::new(name);
+        function.id = Symbol::from(name);
         let function = try!(vm.global_env().new_function(function));
         let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
         let value = try!(vm.call_module(&typ, closure));

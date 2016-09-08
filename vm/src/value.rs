@@ -103,6 +103,7 @@ pub struct BytecodeFunction {
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
     pub strings: Vec<InternedStr>,
     pub globals: Vec<Value>,
+    pub records: Vec<Vec<InternedStr>>,
 }
 
 impl Traverseable for BytecodeFunction {

@@ -84,7 +84,7 @@ impl Importer for CheckImporter {
         self.0.lock().unwrap().insert(modulename.into(), expr);
         let metadata = Metadata::default();
         // Insert a global to ensure the globals type can be looked up
-        try!(vm.global_env().set_global(Symbol::new(modulename), typ, metadata, Value::Int(0)));
+        try!(vm.global_env().set_global(Symbol::from(modulename), typ, metadata, Value::Int(0)));
         Ok(())
     }
 }
@@ -128,7 +128,7 @@ impl<I> Macro for Import<I>
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
-                let name = Symbol::new(&*modulename);
+                let name = Symbol::from(&*modulename);
                 debug!("Import '{}' {:?}", modulename, self.visited);
                 if !vm.global_env().global_exists(&modulename) {
                     if self.visited.read().unwrap().iter().any(|m| **m == **filename) {

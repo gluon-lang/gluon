@@ -83,18 +83,16 @@ pub fn rename(symbols: &mut SymbolModule,
     }
 
     impl<'a, 'b> RenameVisitor<'a, 'b> {
-        fn find_fields(&self, typ: &ArcType) -> Option<Vec<types::Field<Symbol, ArcType>>> {
+        fn find_fields(&self, typ: &ArcType) -> Vec<types::Field<Symbol, ArcType>> {
             // Walk through all type aliases
-            match *instantiate::remove_aliases(&self.env, typ.clone()) {
-                Type::Record { ref fields, .. } => Some(fields.to_owned()),
-                _ => None,
-            }
+            let record = instantiate::remove_aliases(&self.env, typ.clone());
+            record.field_iter().cloned().collect()
         }
 
         fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
-                    let field_types = self.find_fields(typ).expect("field_types");
+                    let field_types = self.find_fields(typ);
                     for field in fields.iter_mut() {
                         let field_type = field_types.iter()
                             .find(|field_type| field_type.name.name_eq(&field.0))
@@ -104,13 +102,10 @@ pub fn rename(symbols: &mut SymbolModule,
                         let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
                         field.1 = Some(self.stack_var(id, pattern.span, field_type));
                     }
+
                     let record_type = instantiate::remove_aliases(&self.env, typ.clone()).clone();
-                    let imported_types = match *record_type {
-                        Type::Record { ref types, .. } => types,
-                        _ => panic!(),
-                    };
                     for &(ref name, _) in types {
-                        let field_type = imported_types.iter()
+                        let field_type = record_type.type_field_iter()
                             .find(|field| field.name.name_eq(name))
                             .expect("field_type");
                         self.stack_type(name.clone(), pattern.span, &field_type.typ);
@@ -204,7 +199,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 Expr::Record { ref mut typ, ref mut exprs, .. } => {
-                    let field_types = self.find_fields(typ).expect("field_types");
+                    let field_types = self.find_fields(typ);
                     for (field, &mut (ref id, ref mut maybe_expr)) in field_types.iter()
                         .zip(exprs) {
                         match *maybe_expr {
@@ -321,8 +316,11 @@ pub fn rename(symbols: &mut SymbolModule,
 }
 
 pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
+    use substitution::Substitution;
+    // FIXME This Substitution is unnecessary for equivalence unification
+    let subs = Substitution::new();
     let mut unifier = UnifierState {
-        state: State::new(env),
+        state: State::new(env, &subs),
         unifier: Equivalent {
             map: FnvMap::default(),
             equiv: true,

@@ -37,9 +37,21 @@ fn new_bytecode(gc: &mut Gc,
                            inner_functions,
                            strings,
                            module_globals,
+                           records,
                            .. } = f;
     let fs = try!(inner_functions.into_iter()
         .map(|inner| new_bytecode(gc, vm, inner))
+        .collect());
+
+    let globals = module_globals.into_iter()
+        .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
+        .collect();
+    let records = try!(records.into_iter()
+        .map(|vec| {
+            vec.into_iter()
+                .map(|field| Ok(try!(vm.interner.write().unwrap().intern(gc, field.as_ref()))))
+                .collect::<Result<_>>()
+        })
         .collect());
     gc.alloc(Move(BytecodeFunction {
         name: id,
@@ -47,9 +59,8 @@ fn new_bytecode(gc: &mut Gc,
         instructions: instructions,
         inner_functions: fs,
         strings: strings,
-        globals: module_globals.into_iter()
-            .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
-            .collect(),
+        globals: globals,
+        records: records,
     }))
 }
 
@@ -193,15 +204,10 @@ impl VmEnv {
         }
         let (_, typ) = try!(self.get_binding(name.module().as_str()));
         let maybe_type_info = map_cow_option(typ.clone(), |typ| {
-            match **typ {
-                Type::Record { ref types, .. } => {
-                    let field_name = name.name();
-                    types.iter()
-                        .find(|field| field.name.as_ref() == field_name.as_str())
-                        .map(|field| &field.typ)
-                }
-                _ => None,
-            }
+            let field_name = name.name();
+            typ.type_field_iter()
+                .find(|field| field.name.as_ref() == field_name.as_str())
+                .map(|field| &field.typ)
         });
         maybe_type_info.ok_or_else(move || {
             Error::UndefinedField(typ.into_owned(), name.name().as_str().into())
@@ -255,23 +261,18 @@ impl VmEnv {
             };
             // HACK Can't return the data directly due to the use of cow on the type
             let next_type = map_cow_option(typ.clone(), |typ| {
-                match **typ {
-                    Type::Record { ref fields, .. } => {
-                        fields.iter()
-                            .enumerate()
-                            .find(|&(_, field)| field.name.as_ref() == field_name)
-                            .map(|(index, field)| {
-                                match value {
-                                    Value::Data(data) => {
-                                        value = data.fields[index];
-                                        &field.typ
-                                    }
-                                    _ => panic!("Unexpected value {:?}", value),
-                                }
-                            })
-                    }
-                    _ => None,
-                }
+                typ.field_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name.as_ref() == field_name)
+                    .map(|(index, field)| {
+                        match value {
+                            Value::Data(data) => {
+                                value = data.fields[index];
+                                &field.typ
+                            }
+                            _ => panic!("Unexpected value {:?}", value),
+                        }
+                    })
             });
             typ = try!(next_type.ok_or_else(move || {
                 Error::UndefinedField(typ.into_owned(), field_name.into())
@@ -337,7 +338,7 @@ impl GlobalVmState {
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(name.into(),
                                              Alias::from(AliasData {
-                                                 name: Symbol::new(name),
+                                                 name: Symbol::from(name),
                                                  args: Vec::new(),
                                                  typ: None,
                                              }));
@@ -403,7 +404,7 @@ impl GlobalVmState {
             return g.clone();
         }
         let g: ArcType = Type::generic(Generic {
-            id: Symbol::new(name),
+            id: Symbol::from(name),
             kind: Kind::typ(),
         });
         generics.insert(name.into(), g.clone());
@@ -425,7 +426,7 @@ impl GlobalVmState {
                     _ => unreachable!(),
                 })
                 .collect();
-            let n = Symbol::new(name);
+            let n = Symbol::from(name);
             let typ: ArcType = Type::app(Type::ident(n.clone()), arg_types);
             self.typeids
                 .write()

@@ -42,7 +42,7 @@ macro_rules! assert_unify_err {
         #[allow(unused_imports)]
         use check::unify::Error::{TypeMismatch, Occurs, Other};
         #[allow(unused_imports)]
-        use check::unify_type::TypeError::{FieldMismatch, SelfRecursive};
+        use check::unify_type::TypeError::{FieldMismatch, SelfRecursive, MissingFields};
 
         let symbols = support::get_local_interner();
 
@@ -137,6 +137,19 @@ fn unpack_field_which_does_not_exist() {
     let _ = env_logger::init();
     let text = r#"
 let { y } = { x = 1 }
+2
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, UndefinedField(..));
+}
+
+#[test]
+fn unpack_type_field_which_does_not_exist() {
+    let _ = env_logger::init();
+    let text = r#"
+type Test = Int
+let { Test2 } = { Test }
 2
 "#;
     let result = support::typecheck(text);
