@@ -474,7 +474,7 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Literal(ref lit) => {
                 Ok(TailCall::Type(match *lit {
-                    Literal::Integer(_) => Type::int(),
+                    Literal::Int(_) => Type::int(),
                     Literal::Byte(_) => Type::byte(),
                     Literal::Float(_) => Type::float(),
                     Literal::String(_) => Type::string(),

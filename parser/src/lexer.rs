@@ -110,7 +110,7 @@ pub enum Token<Id> {
     Operator(Id),
     String(String),
     Char(char),
-    Integer(i64),
+    Int(i64),
     Byte(u8),
     Float(f64),
     DocComment(String),
@@ -147,7 +147,7 @@ impl<Id> fmt::Display for Token<Id> {
             Operator(..) => "Operator",
             String(..) => "String",
             Char(..) => "Char",
-            Integer(..) => "Integer",
+            Int(..) => "Int",
             Byte(..) => "Byte",
             Float(..) => "Float",
             DocComment(..) => "DocComment",
@@ -192,7 +192,7 @@ impl<Id> Token<Id> {
             Operator(ref id) => Operator(f(id)),
             String(ref s) => String(s.clone()),
             Char(c) => Char(c),
-            Integer(i) => Integer(i),
+            Int(i) => Int(i),
             Byte(i) => Byte(i),
             Float(f) => Float(f),
             DocComment(ref s) => DocComment(s.clone()),
@@ -565,7 +565,7 @@ impl<'input, I> Lexer<'input, I>
                 return try(int_or_byte.skip(not_followed_by(string("."))))
                     .and_then(|(i, byte)| {
                         if byte.is_none() {
-                            Ok(Token::Integer(i))
+                            Ok(Token::Int(i))
                         } else {
                             if i >= 0 && i <= 256 {
                                 Ok(Token::Byte(i as u8))

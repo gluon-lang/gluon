@@ -238,7 +238,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 
     match_parser! { float, Float -> f64 }
 
-    match_parser! { integer, Integer -> i64 }
+    match_parser! { int, Int -> i64 }
 
     match_parser! { byte, Byte -> u8 }
 
@@ -477,8 +477,8 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                  _>([&mut parser(|input| self.if_else(input)),
                      &mut self.parser(ParserEnv::<I, F>::case_of),
                      &mut self.parser(ParserEnv::<I, F>::lambda),
-                     &mut self.integer()
-                         .map(|i| loc(Expr::Literal(Literal::Integer(i)))),
+                     &mut self.int()
+                         .map(|i| loc(Expr::Literal(Literal::Int(i)))),
                      &mut self.byte()
                          .map(|i| loc(Expr::Literal(Literal::Byte(i)))),
                      &mut self.float()

@@ -8,8 +8,9 @@ use base::ast::{self, Expr, Pattern, Typed};
 use base::pos::{BytePos, Span};
 use base::types::{self, Field, Generic, Kind, Type};
 
-mod support;
 use support::{MockEnv, alias, intern, typ};
+
+mod support;
 
 macro_rules! assert_pass {
     ($e: expr) => {{
@@ -848,9 +849,9 @@ let applicative_Function : Applicative ((->) a) = {
 }
 
 let id : a -> a = \x -> x
-    
+
 let const : a -> b -> a = \x _ -> x
-    
+
 let make_applicative app =
     let { map, apply } = app
 

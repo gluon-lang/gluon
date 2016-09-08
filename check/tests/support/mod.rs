@@ -1,4 +1,4 @@
-use base::ast::SpannedExpr;
+use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{Alias, Generic, Kind, Type, KindEnv};
 use base::types::{ArcType, TypeEnv, PrimitiveEnv, RcKind, walk_move_type};
@@ -6,6 +6,7 @@ use check::typecheck::{self, Typecheck};
 use parser;
 
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
 /// Returns a reference to the interner stored in TLD
@@ -98,6 +99,31 @@ impl TypeEnv for MockEnv {
 impl PrimitiveEnv for MockEnv {
     fn get_bool(&self) -> &ArcType {
         self.bool.typ.as_ref().unwrap()
+    }
+}
+
+#[allow(dead_code)]
+pub struct MockIdentEnv<T>(PhantomData<T>);
+
+impl<T> MockIdentEnv<T> {
+    pub fn new() -> MockIdentEnv<T> {
+        MockIdentEnv(PhantomData)
+    }
+}
+
+impl<T: AsRef<str>> DisplayEnv for MockIdentEnv<T> {
+    type Ident = T;
+
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+        ident.as_ref()
+    }
+}
+
+impl<T> IdentEnv for MockIdentEnv<T>
+    where T: AsRef<str> + for<'a> From<&'a str>,
+{
+    fn from_str(&mut self, s: &str) -> Self::Ident {
+        T::from(s)
     }
 }
 

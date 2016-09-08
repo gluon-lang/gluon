@@ -3,12 +3,15 @@ extern crate env_logger;
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
-use base::ast::{SpannedExpr, EmptyEnv};
+use base::ast::SpannedExpr;
 use base::error::Errors;
 use parser::{parse_string, Error};
+use support::MockEnv;
+
+mod support;
 
 fn parse(text: &str) -> Result<SpannedExpr<String>, Errors<Error>> {
-    parse_string(&mut EmptyEnv::new(), text).map_err(|(_, err)| err)
+    parse_string(&mut MockEnv::new(), text).map_err(|(_, err)| err)
 }
 
 #[test]

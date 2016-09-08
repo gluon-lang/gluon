@@ -4,11 +4,10 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
 
-use ast::{self, DisplayEnv};
+use ast::DisplayEnv;
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains kinded values which can be refered by name
@@ -113,17 +112,6 @@ pub enum Type<Id, T = ArcType<Id>> {
     Alias(AliasData<Id, T>),
 }
 
-impl<Id, T> Type<Id, T>
-    where T: Deref<Target = Type<Id, T>>,
-{
-    pub fn is_uninitialized(&self) -> bool {
-        match *self {
-            Type::Variable(ref id) if id.id == 0 => true,
-            _ => false,
-        }
-    }
-}
-
 /// A shared type which is atomically reference counted
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ArcType<Id = Symbol> {
@@ -144,6 +132,7 @@ impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
 
 impl<Id> Deref for ArcType<Id> {
     type Target = Type<Id, ArcType<Id>>;
+
     fn deref(&self) -> &Type<Id, ArcType<Id>> {
         &self.typ
     }
@@ -167,10 +156,10 @@ impl<Id> ArcType<Id> {
             current: 0,
         }
     }
-}
 
-impl<Id: Clone> ArcType<Id> {
-    pub fn into_inner(self) -> Type<Id, ArcType<Id>> {
+    pub fn into_inner(self) -> Type<Id, ArcType<Id>>
+        where Id: Clone,
+    {
         (*self.typ).clone()
     }
 }
@@ -178,48 +167,6 @@ impl<Id: Clone> ArcType<Id> {
 impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
     fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType::new(typ)
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct RcType<Id> {
-    typ: Rc<Type<Id, RcType<Id>>>,
-}
-
-impl<Id: fmt::Debug> fmt::Debug for RcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id: AsRef<str>> fmt::Display for RcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id> Deref for RcType<Id> {
-    type Target = Type<Id, RcType<Id>>;
-    fn deref(&self) -> &Type<Id, RcType<Id>> {
-        &self.typ
-    }
-}
-
-impl<Id> RcType<Id> {
-    pub fn new(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
-        RcType { typ: Rc::new(typ) }
-    }
-}
-
-impl<Id: Clone> RcType<Id> {
-    pub fn into_inner(self) -> Type<Id, RcType<Id>> {
-        (*self.typ).clone()
-    }
-}
-
-impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
-    fn from(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
-        RcType::new(typ)
     }
 }
 
@@ -325,6 +272,7 @@ pub struct RcKind(Arc<Kind>);
 
 impl Deref for RcKind {
     type Target = Kind;
+
     fn deref(&self) -> &Kind {
         &self.0
     }
@@ -370,6 +318,7 @@ impl<Id, T> Deref for Alias<Id, T>
     where T: Deref<Target = Type<Id, T>>,
 {
     type Target = AliasData<Id, T>;
+
     fn deref(&self) -> &AliasData<Id, T> {
         match *self._typ {
             Type::Alias(ref alias) => alias,
@@ -1013,7 +962,19 @@ impl<I, T> fmt::Display for Type<I, T>
           T: Deref<Target = Type<I, T>>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", dt(&ast::EmptyEnv::new(), Prec::Top, self))
+        use std::marker::PhantomData;
+
+        pub struct EmptyEnv<T>(PhantomData<T>);
+
+        impl<T: AsRef<str>> DisplayEnv for EmptyEnv<T> {
+            type Ident = T;
+
+            fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+                ident.as_ref()
+            }
+        }
+
+        write!(f, "{}", dt(&EmptyEnv(PhantomData), Prec::Top, self))
     }
 }
 

@@ -4,10 +4,19 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
-use base::metadata::Metadata;
+use base::metadata::{Metadata, MetadataEnv};
+use base::symbol::Symbol;
 use check::metadata::metadata;
 
 mod support;
+
+struct MockEnv;
+
+impl MetadataEnv for MockEnv {
+    fn get_metadata(&self, _id: &Symbol) -> Option<&Metadata> {
+        None
+    }
+}
 
 #[test]
 fn propagate_metadata_let_in() {
@@ -22,7 +31,7 @@ id
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let metadata = metadata(&(), &mut expr);
+    let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(metadata,
                Metadata {
                    comment: Some("The identity function".into()),
@@ -43,7 +52,7 @@ let id x = x
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let metadata = metadata(&(), &mut expr);
+    let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(metadata.module.get("id"),
                Some(&Metadata {
                    comment: Some("The identity function".into()),
@@ -64,7 +73,7 @@ type Test = Int
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let metadata = metadata(&(), &mut expr);
+    let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(metadata.module.get("Test"),
                Some(&Metadata {
                    comment: Some("A test type".into()),

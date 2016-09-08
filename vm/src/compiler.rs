@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast::{self, Pattern, TypedIdent};
+use base::ast::{Literal, Pattern, TypedIdent};
 use base::instantiate;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, SpannedExpr, Expr};
@@ -464,11 +464,11 @@ impl<'a> Compiler<'a> {
         match expr.value {
             Expr::Literal(ref lit) => {
                 match *lit {
-                    ast::Literal::Integer(i) => function.emit(PushInt(i as isize)),
-                    ast::Literal::Byte(b) => function.emit(PushByte(b)),
-                    ast::Literal::Float(f) => function.emit(PushFloat(f)),
-                    ast::Literal::String(ref s) => function.emit_string(try!(self.intern(&s))),
-                    ast::Literal::Char(c) => function.emit(PushInt(c as isize)),
+                    Literal::Int(i) => function.emit(PushInt(i as isize)),
+                    Literal::Byte(b) => function.emit(PushByte(b)),
+                    Literal::Float(f) => function.emit(PushFloat(f)),
+                    Literal::String(ref s) => function.emit_string(try!(self.intern(&s))),
+                    Literal::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
             Expr::Ident(ref id) => self.load_identifier(&id.name, function),
