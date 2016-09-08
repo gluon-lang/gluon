@@ -45,8 +45,8 @@ fn show_function() {
                        "Int -> Int -> Int");
 }
 
-fn some_record() -> RcType<&'static str> {
-    let data = |s, a| RcType::from(type_con(s, a));
+fn some_record() -> ArcType<&'static str> {
+    let data = |s, a| ArcType::from(type_con(s, a));
     let f = Type::function(vec![data("a", vec![])], Type::string());
 
     let test = data("Test", vec![data("a", vec![])]);
@@ -80,7 +80,7 @@ fn show_record() {
                                 }]);
     assert_eq_display!(format!("{}", typ), "{ x : Int }");
 
-    let data = |s, a| RcType::from(type_con(s, a));
+    let data = |s, a| ArcType::from(type_con(s, a));
     let f = Type::function(vec![data("a", vec![])], Type::string());
     let typ = Type::record(vec![Field {
                                     name: "Test",
@@ -114,7 +114,7 @@ fn show_record() {
 #[test]
 fn show_record_multi_line() {
 
-    let data = |s, a| RcType::from(type_con(s, a));
+    let data = |s, a| ArcType::from(type_con(s, a));
     let f = Type::function(vec![data("a", vec![])], Type::string());
     let test = data("Test", vec![data("a", vec![])]);
     let typ = Type::record(vec![Field {

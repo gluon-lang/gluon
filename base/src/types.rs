@@ -4,7 +4,6 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
 
@@ -168,49 +167,6 @@ impl<Id> ArcType<Id> {
 impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
     fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType::new(typ)
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct RcType<Id> {
-    typ: Rc<Type<Id, RcType<Id>>>,
-}
-
-impl<Id: fmt::Debug> fmt::Debug for RcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id: AsRef<str>> fmt::Display for RcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id> Deref for RcType<Id> {
-    type Target = Type<Id, RcType<Id>>;
-
-    fn deref(&self) -> &Type<Id, RcType<Id>> {
-        &self.typ
-    }
-}
-
-impl<Id> RcType<Id> {
-    pub fn new(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
-        RcType { typ: Rc::new(typ) }
-    }
-
-    pub fn into_inner(self) -> Type<Id, RcType<Id>>
-        where Id: Clone,
-    {
-        (*self.typ).clone()
-    }
-}
-
-impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
-    fn from(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
-        RcType::new(typ)
     }
 }
 
