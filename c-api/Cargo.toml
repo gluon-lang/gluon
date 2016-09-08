@@ -13,3 +13,4 @@ gluon = { version = "0.1.3", path = ".." }
 [features]
 test = ["gluon/test"]
 nightly = ["gluon/nightly"]
+skeptic = ["gluon/skeptic"]

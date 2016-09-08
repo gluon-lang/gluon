@@ -8,7 +8,7 @@ addons:
     - libdw-dev
 rust:
 - nightly
-# - beta
+- beta
 - stable
 before_script:
 - |
@@ -16,8 +16,9 @@ before_script:
   export PATH=$HOME/.local/bin:$PATH
 script:
 - |
-  sh ./test.sh &&
+  sh ./test-no-skeptic.sh &&
   travis-cargo --only nightly test -- --features "test nightly" -p gluon compile_test &&
+  travis-cargo --only stable test -- --features "test skeptic" -p gluon --test skeptic-tests &&
   cargo build --release &&
   travis-cargo --only nightly bench &&
   travis-cargo --only stable doc
