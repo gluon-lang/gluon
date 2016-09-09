@@ -739,70 +739,55 @@ impl<'a> Typecheck<'a> {
                               ref fields } => {
                 *curr_typ = match_type.clone();
                 let mut match_type = self.remove_alias(match_type);
-                let mut types = Vec::new();
-                let new_type = match *match_type {
-                    Type::Record { ref row, .. } => {
-                        for pattern_field in fields {
-                            let found_field = row.field_iter()
-                                .find(|expected_field| {
-                                    pattern_field.0
-                                        .name_eq(&expected_field.name)
-                                });
-                            let expected_field = match found_field {
-                                Some(expected) => expected,
-                                None => {
-                                    self.error(span,
-                                               UndefinedField(match_type.clone(),
-                                                              pattern_field.0.clone()));
-                                    continue;
+
+                let pattern_fields: Vec<_> =
+                    associated_types.iter().chain(fields.iter()).map(|t| t.0.clone()).collect();
+
+                // actual_type is the record (not hidden behind an alias)
+                let (mut typ, mut actual_type) = match self.find_record(&pattern_fields)
+                    .map(|t| (t.0.clone(), t.1.clone())) {
+                    Ok(typ) => typ,
+                    Err(_) => {
+                        // HACK Since there is no way to unify just the name of the 'type field's we
+                        // need to take the types from the matched type. This leaves the `types`
+                        // list incomplete however since it may miss some fields defined in the
+                        // pattern. These are catched later in this function.
+                        let types = match_type.type_field_iter()
+                            .filter(|field| {
+                                associated_types.iter().any(|other| other.0.name_eq(&field.name))
+                            })
+                            .cloned()
+                            .collect();
+
+                        let fields = fields.iter()
+                            .map(|field| {
+                                types::Field {
+                                    name: field.0.clone(),
+                                    typ: self.subs.new_var(),
                                 }
-                            };
-                            let var = self.subs.new_var();
-                            types.push(var.clone());
-                            self.unify_span(span, &var, expected_field.typ.clone());
-                        }
-                        None
-                    }
-                    _ => {
-                        let fields: Vec<_> = fields.iter().map(|t| t.0.clone()).collect();
-                        // actual_type is the record (not hidden behind an alias)
-                        let (mut typ, mut actual_type) = match self.find_record(&fields)
-                            .map(|t| (t.0.clone(), t.1.clone())) {
-                            Ok(typ) => typ,
-                            Err(_) => {
-                                let fields = fields.iter()
-                                    .map(|field| {
-                                        types::Field {
-                                            name: field.clone(),
-                                            typ: self.subs.new_var(),
-                                        }
-                                    })
-                                    .collect();
-                                let t = Type::poly_record(Vec::new(), fields, self.subs.new_var());
-                                (t.clone(), t)
-                            }
-                        };
-                        typ = self.instantiate(&typ);
-                        actual_type = self.instantiate_(&actual_type);
-                        self.unify_span(span, &match_type, typ);
-                        types.extend(actual_type.field_iter().map(|f| f.typ.clone()));
-                        Some(actual_type)
+                            })
+                            .collect();
+                        let t = Type::poly_record(types, fields, self.subs.new_var());
+                        (t.clone(), t)
                     }
                 };
-                match_type = new_type.unwrap_or(match_type);
-                for (field, field_type) in fields.iter().zip(types) {
-                    let name = match field.1 {
-                        Some(ref bind_name) => bind_name,
-                        None => &field.0,
-                    };
-                    self.stack_var(name.clone(), field_type);
+                typ = self.instantiate(&typ);
+                actual_type = self.instantiate_(&actual_type);
+                self.unify_span(span, &match_type, typ);
+                match_type = actual_type;
+
+                for field in fields {
+                    let name = field.1.as_ref().unwrap_or(&field.0);
+                    // The field should always exist since the type was constructed from the pattern
+                    let field_type = match_type.field_iter()
+                        .find(|f| f.name.name_eq(&field.0))
+                        .expect("ICE: Expected field to exist in type");
+                    self.stack_var(name.clone(), field_type.typ.clone());
                 }
 
+                // Check that all types declared in the pattern exists
                 for field in associated_types.iter_mut() {
-                    let name = match field.1 {
-                        Some(ref bind_name) => bind_name.clone(),
-                        None => field.0.clone(),
-                    };
+                    let name = field.1.as_ref().unwrap_or(&field.0).clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
                     let field_type = match_type.type_field_iter()
