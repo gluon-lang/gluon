@@ -8,6 +8,7 @@ use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, SpannedExpr};
 use base::ast::{SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding};
 use base::error::Errors;
+use base::fnv::FnvSet;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
@@ -42,6 +43,8 @@ pub enum TypeError<I> {
     Rename(::rename::RenameError),
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
+    /// A field were defined more than once in a record constructor or pattern match
+    DuplicateField(I),
     /// Type is not a type which has any fields
     InvalidProjection(ArcType<I>),
     /// Expected to find a record with the following fields
@@ -101,6 +104,9 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 write!(f,
                        "Type '{}' has been already been defined in this module",
                        id)
+            }
+            DuplicateField(ref id) => {
+                write!(f, "The record has more than one field named '{}'", id)
             }
             InvalidProjection(ref typ) => {
                 write!(f,
@@ -464,6 +470,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_(&mut self,
                   expr: &mut SpannedExpr<Symbol>)
                   -> Result<TailCall, TypeError<Symbol>> {
+        let expr_span = expr.span;
         match expr.value {
             Expr::Ident(ref mut id) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
@@ -642,46 +649,53 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::TailCall)
             }
             Expr::Record { ref mut typ, ref mut types, exprs: ref mut fields } => {
-                let types = try!(types.iter_mut()
-                    .map(|&mut (ref mut symbol, ref mut typ)| {
-                        if let Some(ref mut typ) = *typ {
-                            *typ = self.create_unifiable_signature(typ.clone());
-                        }
-                        let alias = try!(self.find_type_info(symbol));
-                        Ok(types::Field {
+                let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
+
+                let mut duplicated_fields = FnvSet::default();
+                for &mut (ref mut symbol, ref mut typ) in types {
+                    if let Some(ref mut typ) = *typ {
+                        *typ = self.create_unifiable_signature(typ.clone());
+                    }
+                    let alias = try!(self.find_type_info(symbol)).clone();
+                    if self.error_on_duplicated_field(&mut duplicated_fields,
+                                                      expr_span,
+                                                      symbol.clone()) {
+                        new_types.push(Field {
                             name: symbol.clone(),
-                            typ: alias.clone(),
-                        })
-                    })
-                    .collect::<TcResult<Vec<_>>>());
-                let fields = try!(fields.iter_mut()
-                    .map(|field| {
-                        match field.1 {
-                                Some(ref mut expr) => Ok(self.typecheck(expr)),
-                                None => self.find(&field.0),
-                            }
-                            .map(|typ| {
-                                types::Field {
-                                    name: field.0.clone(),
-                                    typ: typ,
-                                }
-                            })
-                    })
-                    .collect::<TcResult<Vec<_>>>());
-                let result = self.find_record(&fields.iter()
+                            typ: alias,
+                        });
+                    }
+                }
+
+                let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
+                for field in fields {
+                    let typ = try!(match field.1 {
+                        Some(ref mut expr) => Ok(self.typecheck(expr)),
+                        None => self.find(&field.0),
+                    });
+                    if self.error_on_duplicated_field(&mut duplicated_fields,
+                                                      expr_span,
+                                                      field.0.clone()) {
+                        new_fields.push(Field {
+                            name: field.0.clone(),
+                            typ: typ,
+                        });
+                    }
+                }
+                let result = self.find_record(&new_fields.iter()
                         .map(|f| f.name.clone())
                         .collect::<Vec<_>>())
                     .map(|t| (t.0.clone(), t.1.clone()));
                 let (id_type, record_type) = match result {
                     Ok(x) => x,
                     Err(_) => {
-                        *typ = Type::record(types.clone(), fields);
+                        *typ = Type::record(new_types, new_fields);
                         return Ok(TailCall::Type(typ.clone()));
                     }
                 };
                 let id_type = self.instantiate(&id_type);
                 let record_type = self.instantiate_(&record_type);
-                try!(self.unify(&Type::record(types, fields), record_type));
+                try!(self.unify(&Type::record(new_types, new_fields), record_type));
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
             }
@@ -740,8 +754,14 @@ impl<'a> Typecheck<'a> {
                 *curr_typ = match_type.clone();
                 let mut match_type = self.remove_alias(match_type);
 
-                let pattern_fields: Vec<_> =
-                    associated_types.iter().chain(fields.iter()).map(|t| t.0.clone()).collect();
+                let mut pattern_fields = Vec::with_capacity(associated_types.len() + fields.len());
+
+                let mut duplicated_fields = FnvSet::default();
+                for field in associated_types.iter().chain(fields.iter()) {
+                    if self.error_on_duplicated_field(&mut duplicated_fields, span, field.0.clone()) {
+                        pattern_fields.push(field.0.clone());
+                    }
+                }
 
                 // actual_type is the record (not hidden behind an alias)
                 let (mut typ, mut actual_type) = match self.find_record(&pattern_fields)
@@ -761,7 +781,7 @@ impl<'a> Typecheck<'a> {
 
                         let fields = fields.iter()
                             .map(|field| {
-                                types::Field {
+                                Field {
                                     name: field.0.clone(),
                                     typ: self.subs.new_var(),
                                 }
@@ -1114,7 +1134,7 @@ impl<'a> Typecheck<'a> {
                         // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                         // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
                         self.finish_type(level, &field.typ).map(|typ| {
-                            types::Field {
+                            Field {
                                 name: field.name.clone(),
                                 typ: typ,
                             }
@@ -1301,6 +1321,23 @@ impl<'a> Typecheck<'a> {
     fn instantiate_(&mut self, typ: &ArcType) -> ArcType {
         let subs = &mut self.subs;
         self.inst.instantiate_(typ, |_| subs.new_var())
+    }
+
+    fn error_on_duplicated_field(&mut self,
+                                 duplicated_fields: &mut FnvSet<Symbol>,
+                                 span: Span<BytePos>,
+                                 name: Symbol)
+                                 -> bool {
+        match duplicated_fields.replace(name) {
+            Some(name) => {
+                self.errors.error(Spanned {
+                    span: span,
+                    value: DuplicateField(name),
+                });
+                false
+            }
+            None => true,
+        }
     }
 }
 

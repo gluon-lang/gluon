@@ -321,3 +321,27 @@ make
     let result = support::typecheck(text);
     assert!(result.is_err());
 }
+
+#[test]
+fn duplicate_fields() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = Int
+let x = ""
+{ Test, Test, x = 1, x }
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, DuplicateField(..), DuplicateField(..));
+}
+
+#[test]
+fn duplicate_fields_pattern() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = Int
+let { Test, Test, x = y, x } = { Test, x = 1 }
+()
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, DuplicateField(..), DuplicateField(..));
+}
