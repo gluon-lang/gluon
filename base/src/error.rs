@@ -54,9 +54,9 @@ struct SourceContext<E> {
 
 impl<E> SourceContext<E> {
     fn new(source: &Source, error: Spanned<E, BytePos>) -> SourceContext<E> {
-        let start = source.location(error.span.start).unwrap();
-        let end = source.location(error.span.end).unwrap();
-        let (_, line) = source.line_at_byte(error.span.start).unwrap();
+        let start = source.location(error.span.start).expect("SourceContext: start location");
+        let end = source.location(error.span.end).expect("SourceContext: end location");
+        let (_, line) = source.line_at_byte(error.span.start).expect("SourceContext: line");
 
         SourceContext {
             line: line.to_string(),
