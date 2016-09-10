@@ -1,14 +1,19 @@
-extern crate skeptic;
 
-use std::io::prelude::*;
-use std::fs::File;
-use std::path::Path;
 
-/// skeptic templates look for `rust` after the opening code fences so writing
-/// ```f#,rust
-/// ```
-/// gives f# syntax highlight while still running the tests through the template
-const TEMPLATE: &'static str = r##"
+
+#[cfg(feature = "skeptic")]
+mod gen_skeptic {
+    extern crate skeptic;
+
+    use std::io::prelude::*;
+    use std::fs::File;
+    use std::path::Path;
+
+    /// skeptic templates look for `rust` after the opening code fences so writing
+    /// ```f#,rust
+    /// ```
+    /// gives f# syntax highlight while still running the tests through the template
+    const TEMPLATE: &'static str = r##"
 ```rust,skeptic-template
 extern crate env_logger;
 extern crate gluon;
@@ -33,26 +38,36 @@ fn main() {{
 
 "##;
 
-fn generate_skeptic_tests(file: &str) -> String {
-    // Preprocess the readme to inject the skeptic template needed to to run the examples
-    let out_file_name = Path::new(env!("OUT_DIR")).join(file);
-    let mut contents = TEMPLATE.as_bytes().into();
-    File::open(file)
-        .and_then(|mut raw_file| raw_file.read_to_end(&mut contents))
-        .unwrap();
-    File::create(&out_file_name)
-        .and_then(|mut out_file| out_file.write(&contents))
-        .unwrap();
-    out_file_name.to_str().expect("UTF-8 string").into()
+    fn generate_skeptic_tests(file: &str) -> String {
+        // Preprocess the readme to inject the skeptic template needed to to run the examples
+        let out_file_name = Path::new(env!("OUT_DIR")).join(file);
+        let mut contents = TEMPLATE.as_bytes().into();
+        File::open(file)
+            .and_then(|mut raw_file| raw_file.read_to_end(&mut contents))
+            .unwrap();
+        File::create(&out_file_name)
+            .and_then(|mut out_file| out_file.write(&contents))
+            .unwrap();
+        out_file_name.to_str().expect("UTF-8 string").into()
+    }
+
+    pub fn generate() {
+        let test_locations: Vec<_> = ["README.md", "TUTORIAL.md"]
+            .iter()
+            .cloned()
+            .map(generate_skeptic_tests)
+            .collect();
+
+        let str_vec: Vec<_> = test_locations.iter().map(|s| &s[..]).collect();
+        skeptic::generate_doc_tests(&str_vec);
+    }
+}
+
+#[cfg(not(feature = "skeptic"))]
+mod gen_skeptic {
+    pub fn generate() {}
 }
 
 fn main() {
-    let test_locations: Vec<_> = ["README.md", "TUTORIAL.md"]
-        .iter()
-        .cloned()
-        .map(generate_skeptic_tests)
-        .collect();
-
-    let str_vec: Vec<_> = test_locations.iter().map(|s| &s[..]).collect();
-    skeptic::generate_doc_tests(&str_vec);
+    gen_skeptic::generate();
 }
