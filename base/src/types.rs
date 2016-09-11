@@ -22,213 +22,6 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
     }
 }
 
-/// Trait for values which contains typed values which can be refered by name
-pub trait TypeEnv: KindEnv {
-    /// Returns the type of the value bound at `id`
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType>;
-
-    /// Returns information about the type `id`
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>>;
-
-    /// Returns a record which contains all `fields`. The first element is the record type and the
-    /// second is the alias type.
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)>;
-}
-
-impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
-        (**self).find_type(id)
-    }
-
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        (**self).find_type_info(id)
-    }
-
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
-        (**self).find_record(fields)
-    }
-}
-
-/// Trait which is a `TypeEnv` which also provides access to the type representation of some
-/// primitive types
-pub trait PrimitiveEnv: TypeEnv {
-    fn get_bool(&self) -> &ArcType;
-}
-
-impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
-    fn get_bool(&self) -> &ArcType {
-        (**self).get_bool()
-    }
-}
-
-pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
-    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
-{
-    walk_move_type(typ,
-                   &mut |typ| {
-                       match *typ {
-                           Type::Generic(ref x) => f(x),
-                           _ => None,
-                       }
-                   })
-}
-
-/// The representation of gluon's types.
-///
-/// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
-/// `Type` is used to enable types to be shared. It is recommended to use the static functions on
-/// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
-/// the pointer wrapper directly.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Type<Id, T = ArcType<Id>> {
-    /// An unbound type `_`, awaiting ascription.
-    Hole,
-    /// An application with multiple arguments.
-    /// `Map String Int` would be represented as `App(Map, [String, Int])`
-    App(T, Vec<T>),
-    /// A variant type `| A Int Float | B`.
-    /// The second element of the tuple is the function type which the constructor has which in the
-    /// above example means that A's type is `Int -> Float -> A` and B's is `B`
-    Variants(Vec<(Id, T)>),
-    /// Representation for type variables
-    Variable(TypeVariable),
-    /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
-    /// etc and are what unbound type variables are eventually made into.
-    Generic(Generic<Id>),
-    /// A builtin type
-    Builtin(BuiltinType),
-    /// A record type
-    Record { row: T },
-    EmptyRow,
-    ExtendRow {
-        /// The associated types of this record type
-        types: Vec<Field<Id, Alias<Id, T>>>,
-        /// The fields of this record type
-        fields: Vec<Field<Id, T>>,
-        rest: T,
-    },
-    /// An identifier type. Anything that is not a builtin type.
-    Ident(Id),
-    Alias(AliasData<Id, T>),
-}
-
-/// A shared type which is atomically reference counted
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct ArcType<Id = Symbol> {
-    typ: Arc<Type<Id, ArcType<Id>>>,
-}
-
-impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id> Deref for ArcType<Id> {
-    type Target = Type<Id, ArcType<Id>>;
-
-    fn deref(&self) -> &Type<Id, ArcType<Id>> {
-        &self.typ
-    }
-}
-
-impl<Id> ArcType<Id> {
-    pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
-        ArcType { typ: Arc::new(typ) }
-    }
-
-    pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
-        TypeFieldIterator {
-            typ: self,
-            current: 0,
-        }
-    }
-
-    pub fn field_iter(&self) -> FieldIterator<Self> {
-        FieldIterator {
-            typ: self,
-            current: 0,
-        }
-    }
-
-    pub fn into_inner(self) -> Type<Id, ArcType<Id>>
-        where Id: Clone,
-    {
-        (*self.typ).clone()
-    }
-}
-
-impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
-    fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
-        ArcType::new(typ)
-    }
-}
-
-/// All the builtin types of gluon
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
-pub enum BuiltinType {
-    /// Unicode string
-    String,
-    /// Unsigned byte
-    Byte,
-    /// Character
-    Char,
-    /// Integer number
-    Int,
-    /// Floating point number
-    Float,
-    /// The unit type
-    Unit,
-    /// Type constructor for arrays, `Array a : Type -> Type`
-    Array,
-    /// Type constructor for functions, `(->) a b : Type -> Type -> Type`
-    Function,
-}
-
-impl BuiltinType {
-    pub fn symbol(self) -> &'static SymbolRef {
-        unsafe { ::std::mem::transmute::<&'static str, &'static SymbolRef>(self.to_str()) }
-    }
-}
-
-impl ::std::str::FromStr for BuiltinType {
-    type Err = ();
-    fn from_str(x: &str) -> Result<BuiltinType, ()> {
-        let t = match x {
-            "Int" => BuiltinType::Int,
-            "Byte" => BuiltinType::Byte,
-            "Float" => BuiltinType::Float,
-            "String" => BuiltinType::String,
-            "Char" => BuiltinType::Char,
-            "Array" => BuiltinType::Array,
-            "->" => BuiltinType::Function,
-            _ => return Err(()),
-        };
-        Ok(t)
-    }
-}
-
-impl BuiltinType {
-    pub fn to_str(self) -> &'static str {
-        match self {
-            BuiltinType::String => "String",
-            BuiltinType::Byte => "Byte",
-            BuiltinType::Char => "Char",
-            BuiltinType::Int => "Int",
-            BuiltinType::Float => "Float",
-            BuiltinType::Unit => "()",
-            BuiltinType::Array => "Array",
-            BuiltinType::Function => "->",
-        }
-    }
-}
-
 /// Kind representation
 ///
 /// All types in gluon has a kind. Most types encountered are of the `Type` kind which
@@ -293,6 +86,116 @@ impl fmt::Display for ArcKind {
 impl ArcKind {
     pub fn new(k: Kind) -> ArcKind {
         ArcKind(Arc::new(k))
+    }
+}
+
+/// Trait for values which contains typed values which can be refered by name
+pub trait TypeEnv: KindEnv {
+    /// Returns the type of the value bound at `id`
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType>;
+
+    /// Returns information about the type `id`
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>>;
+
+    /// Returns a record which contains all `fields`. The first element is the record type and the
+    /// second is the alias type.
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)>;
+}
+
+impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
+        (**self).find_type(id)
+    }
+
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+        (**self).find_type_info(id)
+    }
+
+    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+        (**self).find_record(fields)
+    }
+}
+
+/// Trait which is a `TypeEnv` which also provides access to the type representation of some
+/// primitive types
+pub trait PrimitiveEnv: TypeEnv {
+    fn get_bool(&self) -> &ArcType;
+}
+
+impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
+    fn get_bool(&self) -> &ArcType {
+        (**self).get_bool()
+    }
+}
+
+pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
+    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
+{
+    walk_move_type(typ,
+                   &mut |typ| {
+                       match *typ {
+                           Type::Generic(ref x) => f(x),
+                           _ => None,
+                       }
+                   })
+}
+
+/// All the builtin types of gluon
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum BuiltinType {
+    /// Unicode string
+    String,
+    /// Unsigned byte
+    Byte,
+    /// Character
+    Char,
+    /// Integer number
+    Int,
+    /// Floating point number
+    Float,
+    /// The unit type
+    Unit,
+    /// Type constructor for arrays, `Array a : Type -> Type`
+    Array,
+    /// Type constructor for functions, `(->) a b : Type -> Type -> Type`
+    Function,
+}
+
+impl BuiltinType {
+    pub fn symbol(self) -> &'static SymbolRef {
+        unsafe { ::std::mem::transmute::<&'static str, &'static SymbolRef>(self.to_str()) }
+    }
+}
+
+impl ::std::str::FromStr for BuiltinType {
+    type Err = ();
+    fn from_str(x: &str) -> Result<BuiltinType, ()> {
+        let t = match x {
+            "Int" => BuiltinType::Int,
+            "Byte" => BuiltinType::Byte,
+            "Float" => BuiltinType::Float,
+            "String" => BuiltinType::String,
+            "Char" => BuiltinType::Char,
+            "Array" => BuiltinType::Array,
+            "->" => BuiltinType::Function,
+            _ => return Err(()),
+        };
+        Ok(t)
+    }
+}
+
+impl BuiltinType {
+    pub fn to_str(self) -> &'static str {
+        match self {
+            BuiltinType::String => "String",
+            BuiltinType::Byte => "Byte",
+            BuiltinType::Char => "Char",
+            BuiltinType::Int => "Int",
+            BuiltinType::Float => "Float",
+            BuiltinType::Unit => "()",
+            BuiltinType::Array => "Array",
+            BuiltinType::Function => "->",
+        }
     }
 }
 
@@ -384,6 +287,45 @@ pub struct AliasData<Id, T> {
 pub struct Field<Id, T = ArcType<Id>> {
     pub name: Id,
     pub typ: T,
+}
+
+/// The representation of gluon's types.
+///
+/// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
+/// `Type` is used to enable types to be shared. It is recommended to use the static functions on
+/// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
+/// the pointer wrapper directly.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Type<Id, T = ArcType<Id>> {
+    /// An unbound type `_`, awaiting ascription.
+    Hole,
+    /// An application with multiple arguments.
+    /// `Map String Int` would be represented as `App(Map, [String, Int])`
+    App(T, Vec<T>),
+    /// A variant type `| A Int Float | B`.
+    /// The second element of the tuple is the function type which the constructor has which in the
+    /// above example means that A's type is `Int -> Float -> A` and B's is `B`
+    Variants(Vec<(Id, T)>),
+    /// Representation for type variables
+    Variable(TypeVariable),
+    /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
+    /// etc and are what unbound type variables are eventually made into.
+    Generic(Generic<Id>),
+    /// A builtin type
+    Builtin(BuiltinType),
+    /// A record type
+    Record { row: T },
+    EmptyRow,
+    ExtendRow {
+        /// The associated types of this record type
+        types: Vec<Field<Id, Alias<Id, T>>>,
+        /// The fields of this record type
+        fields: Vec<Field<Id, T>>,
+        rest: T,
+    },
+    /// An identifier type. Anything that is not a builtin type.
+    Ident(Id),
+    Alias(AliasData<Id, T>),
 }
 
 impl<Id, T> Type<Id, T>
@@ -548,6 +490,64 @@ impl<T> Type<Symbol, T>
                 Type::Builtin(b) => Some(b.symbol()),
                 _ => None,
             })
+    }
+}
+
+/// A shared type which is atomically reference counted
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct ArcType<Id = Symbol> {
+    typ: Arc<Type<Id, ArcType<Id>>>,
+}
+
+impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Id> Deref for ArcType<Id> {
+    type Target = Type<Id, ArcType<Id>>;
+
+    fn deref(&self) -> &Type<Id, ArcType<Id>> {
+        &self.typ
+    }
+}
+
+impl<Id> ArcType<Id> {
+    pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
+        ArcType { typ: Arc::new(typ) }
+    }
+
+    pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
+        TypeFieldIterator {
+            typ: self,
+            current: 0,
+        }
+    }
+
+    pub fn field_iter(&self) -> FieldIterator<Self> {
+        FieldIterator {
+            typ: self,
+            current: 0,
+        }
+    }
+
+    pub fn into_inner(self) -> Type<Id, ArcType<Id>>
+        where Id: Clone,
+    {
+        (*self.typ).clone()
+    }
+}
+
+impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
+    fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
+        ArcType::new(typ)
     }
 }
 
