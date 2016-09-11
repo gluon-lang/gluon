@@ -13,11 +13,11 @@ use symbol::{Symbol, SymbolRef};
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind>;
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind>;
 }
 
 impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
-    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
         (**self).find_kind(id)
     }
 }
@@ -245,32 +245,32 @@ pub enum Kind {
     /// Kinds of rows (for polymorphic records).
     Row,
     /// Constructor which takes two kinds, taking the first as argument and returning the second.
-    Function(RcKind, RcKind),
+    Function(ArcKind, ArcKind),
 }
 
 impl Kind {
-    pub fn variable(v: u32) -> RcKind {
-        RcKind::new(Kind::Variable(v))
+    pub fn variable(v: u32) -> ArcKind {
+        ArcKind::new(Kind::Variable(v))
     }
 
-    pub fn typ() -> RcKind {
-        RcKind::new(Kind::Type)
+    pub fn typ() -> ArcKind {
+        ArcKind::new(Kind::Type)
     }
 
-    pub fn row() -> RcKind {
-        RcKind::new(Kind::Row)
+    pub fn row() -> ArcKind {
+        ArcKind::new(Kind::Row)
     }
 
-    pub fn function(l: RcKind, r: RcKind) -> RcKind {
-        RcKind::new(Kind::Function(l, r))
+    pub fn function(l: ArcKind, r: ArcKind) -> ArcKind {
+        ArcKind::new(Kind::Function(l, r))
     }
 }
 
 /// Reference counted kind type.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct RcKind(Arc<Kind>);
+pub struct ArcKind(Arc<Kind>);
 
-impl Deref for RcKind {
+impl Deref for ArcKind {
     type Target = Kind;
 
     fn deref(&self) -> &Kind {
@@ -278,33 +278,33 @@ impl Deref for RcKind {
     }
 }
 
-impl fmt::Debug for RcKind {
+impl fmt::Debug for ArcKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl fmt::Display for RcKind {
+impl fmt::Display for ArcKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl RcKind {
-    pub fn new(k: Kind) -> RcKind {
-        RcKind(Arc::new(k))
+impl ArcKind {
+    pub fn new(k: Kind) -> ArcKind {
+        ArcKind(Arc::new(k))
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable {
-    pub kind: RcKind,
+    pub kind: ArcKind,
     pub id: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Generic<Id> {
-    pub kind: RcKind,
+    pub kind: ArcKind,
     pub id: Id,
 }
 
@@ -670,7 +670,7 @@ impl TypeVariable {
 
     pub fn with_kind(kind: Kind, var: u32) -> TypeVariable {
         TypeVariable {
-            kind: RcKind::new(kind),
+            kind: ArcKind::new(kind),
             id: var,
         }
     }
@@ -1043,8 +1043,8 @@ pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
     a.expect("fold_type")
 }
 
-pub fn walk_kind<F: ?Sized>(k: &RcKind, f: &mut F)
-    where F: Walker<RcKind>,
+pub fn walk_kind<F: ?Sized>(k: &ArcKind, f: &mut F)
+    where F: Walker<ArcKind>,
 {
     match **k {
         Kind::Function(ref a, ref r) => {
@@ -1107,10 +1107,10 @@ impl<I, T, F: ?Sized> Walker<T> for F
     }
 }
 
-impl<F: ?Sized> Walker<RcKind> for F
-    where F: FnMut(&RcKind),
+impl<F: ?Sized> Walker<ArcKind> for F
+    where F: FnMut(&ArcKind),
 {
-    fn walk(&mut self, typ: &RcKind) {
+    fn walk(&mut self, typ: &ArcKind) {
         self(typ);
         walk_kind(typ, self)
     }

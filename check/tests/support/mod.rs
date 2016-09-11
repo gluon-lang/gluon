@@ -1,7 +1,7 @@
 use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{Alias, Generic, Kind, Type, KindEnv};
-use base::types::{ArcType, TypeEnv, PrimitiveEnv, RcKind, walk_move_type};
+use base::types::{ArcType, TypeEnv, PrimitiveEnv, ArcKind, walk_move_type};
 use check::typecheck::{self, Typecheck};
 use parser;
 
@@ -68,7 +68,7 @@ impl MockEnv {
 }
 
 impl KindEnv for MockEnv {
-    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
         match id.as_ref() {
             "Bool" => Some(Kind::typ()),
             _ => None,

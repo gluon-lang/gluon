@@ -155,7 +155,7 @@ pub struct TypeInfos {
 }
 
 impl KindEnv for TypeInfos {
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<types::RcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<types::ArcKind> {
         let type_name = AsRef::<str>::as_ref(type_name);
         self.id_to_type
             .get(type_name)

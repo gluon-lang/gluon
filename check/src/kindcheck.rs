@@ -1,7 +1,7 @@
 use std::fmt;
 
 use base::ast;
-use base::types::{self, BuiltinType, Generic, RcKind, ArcType, Type, Kind, merge};
+use base::types::{self, BuiltinType, Generic, ArcKind, ArcType, Type, Kind, merge};
 use base::symbol::Symbol;
 use base::types::{KindEnv, Walker};
 
@@ -10,7 +10,7 @@ use unify;
 
 use unify::Error as UnifyError;
 
-pub type Error<I> = UnifyError<RcKind, KindError<I>>;
+pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
 
 pub type Result<T> = ::std::result::Result<T, Error<Symbol>>;
 
@@ -19,30 +19,30 @@ pub type Result<T> = ::std::result::Result<T, Error<Symbol>>;
 pub struct KindCheck<'a> {
     variables: Vec<Generic<Symbol>>,
     /// Type bindings local to the current kindcheck invocation
-    locals: Vec<(Symbol, RcKind)>,
+    locals: Vec<(Symbol, ArcKind)>,
     info: &'a (KindEnv + 'a),
     idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
-    pub subs: Substitution<RcKind>,
+    pub subs: Substitution<ArcKind>,
     /// A cached type kind, `Type`
-    type_kind: RcKind,
+    type_kind: ArcKind,
     /// A cached one argument kind function, `Type -> Type`
-    function1_kind: RcKind,
+    function1_kind: ArcKind,
     /// A cached two argument kind function, `Type -> Type -> Type`
-    function2_kind: RcKind,
+    function2_kind: ArcKind,
     /// A cached row kind: `Row`
-    row_kind: RcKind,
+    row_kind: ArcKind,
 }
 
-fn walk_move_kind<F>(kind: RcKind, f: &mut F) -> RcKind
-    where F: FnMut(&Kind) -> Option<RcKind>,
+fn walk_move_kind<F>(kind: ArcKind, f: &mut F) -> ArcKind
+    where F: FnMut(&Kind) -> Option<ArcKind>,
 {
     match walk_move_kind2(&kind, f) {
         Some(kind) => kind,
         None => kind,
     }
 }
-fn walk_move_kind2<F>(kind: &RcKind, f: &mut F) -> Option<RcKind>
-    where F: FnMut(&Kind) -> Option<RcKind>,
+fn walk_move_kind2<F>(kind: &ArcKind, f: &mut F) -> Option<ArcKind>
+    where F: FnMut(&Kind) -> Option<ArcKind>,
 {
     let new = f(kind);
     let new2 = {
@@ -80,7 +80,7 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    pub fn add_local(&mut self, name: Symbol, kind: RcKind) {
+    pub fn add_local(&mut self, name: Symbol, kind: ArcKind) {
         self.locals.push((name, kind));
     }
 
@@ -89,23 +89,23 @@ impl<'a> KindCheck<'a> {
         self.variables.extend(variables.iter().cloned());
     }
 
-    pub fn type_kind(&self) -> RcKind {
+    pub fn type_kind(&self) -> ArcKind {
         self.type_kind.clone()
     }
 
-    pub fn function1_kind(&self) -> RcKind {
+    pub fn function1_kind(&self) -> ArcKind {
         self.function1_kind.clone()
     }
 
-    pub fn function2_kind(&self) -> RcKind {
+    pub fn function2_kind(&self) -> ArcKind {
         self.function2_kind.clone()
     }
 
-    pub fn row_kind(&self) -> RcKind {
+    pub fn row_kind(&self) -> ArcKind {
         self.row_kind.clone()
     }
 
-    fn find(&mut self, id: &Symbol) -> Result<RcKind> {
+    fn find(&mut self, id: &Symbol) -> Result<ArcKind> {
         let kind = self.variables
             .iter()
             .find(|var| var.id == *id)
@@ -137,12 +137,12 @@ impl<'a> KindCheck<'a> {
     }
 
     // Kindhecks `typ`, infering it to be of kind `Type`
-    pub fn kindcheck_type(&mut self, typ: &mut ArcType) -> Result<RcKind> {
+    pub fn kindcheck_type(&mut self, typ: &mut ArcType) -> Result<ArcKind> {
         let type_kind = self.type_kind();
         self.kindcheck_expected(typ, &type_kind)
     }
 
-    pub fn kindcheck_expected(&mut self, typ: &mut ArcType, expected: &RcKind) -> Result<RcKind> {
+    pub fn kindcheck_expected(&mut self, typ: &mut ArcType, expected: &ArcKind) -> Result<ArcKind> {
         debug!("Kindcheck {:?}", typ);
         let (kind, t) = try!(self.kindcheck(typ));
         let kind = try!(self.unify(expected, kind));
@@ -151,7 +151,7 @@ impl<'a> KindCheck<'a> {
         Ok(kind)
     }
 
-    fn builtin_kind(&self, typ: BuiltinType) -> RcKind {
+    fn builtin_kind(&self, typ: BuiltinType) -> ArcKind {
         match typ {
             BuiltinType::String | BuiltinType::Byte | BuiltinType::Char | BuiltinType::Int |
             BuiltinType::Float | BuiltinType::Unit => self.type_kind(),
@@ -160,7 +160,7 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    fn kindcheck(&mut self, typ: &ArcType) -> Result<(RcKind, ArcType)> {
+    fn kindcheck(&mut self, typ: &ArcType) -> Result<(ArcKind, ArcType)> {
         match **typ {
             Type::Hole => Ok((self.subs.new_var(), typ.clone())),
             Type::Generic(ref gen) => {
@@ -231,7 +231,7 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    fn unify(&mut self, expected: &RcKind, mut actual: RcKind) -> Result<RcKind> {
+    fn unify(&mut self, expected: &ArcKind, mut actual: ArcKind) -> Result<ArcKind> {
         debug!("Unify {:?} <=> {:?}", expected, actual);
         let result = unify::unify(&self.subs, &mut (), expected, &actual);
         match result {
@@ -273,7 +273,7 @@ impl<'a> KindCheck<'a> {
     }
 }
 
-fn update_kind(subs: &Substitution<RcKind>, kind: RcKind, default: Option<&RcKind>) -> RcKind {
+fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
     walk_move_kind(kind,
                    &mut |kind| {
         match *kind {
@@ -306,14 +306,14 @@ pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Resul
     }
 }
 
-impl Substitutable for RcKind {
+impl Substitutable for ArcKind {
     type Variable = u32;
 
-    fn new(x: u32) -> RcKind {
+    fn new(x: u32) -> ArcKind {
         Kind::variable(x)
     }
 
-    fn from_variable(x: u32) -> RcKind {
+    fn from_variable(x: u32) -> ArcKind {
         Kind::variable(x)
     }
 
@@ -325,13 +325,13 @@ impl Substitutable for RcKind {
     }
 
     fn traverse<F>(&self, f: &mut F)
-        where F: Walker<RcKind>,
+        where F: Walker<ArcKind>,
     {
         types::walk_kind(self, f);
     }
 }
 
-impl<S> unify::Unifiable<S> for RcKind {
+impl<S> unify::Unifiable<S> for ArcKind {
     type Error = KindError<Symbol>;
 
     fn zip_match<U>(&self,

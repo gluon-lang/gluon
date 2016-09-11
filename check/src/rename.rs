@@ -6,7 +6,7 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::types::{self, Alias, ArcType, Type, RcKind, KindEnv, TypeEnv};
+use base::types::{self, Alias, ArcType, Type, ArcKind, KindEnv, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
@@ -49,7 +49,7 @@ struct Environment<'b> {
 }
 
 impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
         None
     }
 }

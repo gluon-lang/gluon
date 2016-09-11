@@ -266,7 +266,7 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> KindEnv for Compiler<'a> {
-    fn find_kind(&self, _type_name: &SymbolRef) -> Option<types::RcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<types::ArcKind> {
         None
     }
 }

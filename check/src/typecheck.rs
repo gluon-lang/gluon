@@ -12,7 +12,7 @@ use base::fnv::FnvSet;
 use base::instantiate::{self, Instantiator};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{self, ArcType, Field, RcKind, Type, Generic, Kind, merge};
+use base::types::{self, ArcType, Field, ArcKind, Type, Generic, Kind, merge};
 use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
@@ -140,7 +140,7 @@ struct Environment<'a> {
 }
 
 impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
         self.stack_types
             .get(type_name)
             .map(|&(_, ref alias)| {
