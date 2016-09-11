@@ -66,6 +66,10 @@ fn some_record() -> ArcType<&'static str> {
                       Field {
                           name: "test",
                           typ: test.clone(),
+                      },
+                      Field {
+                          name: "+",
+                          typ: Type::function(vec![Type::int(), Type::int()], Type::int()),
                       }])
 }
 
@@ -97,7 +101,7 @@ fn show_record() {
                                 }]);
     assert_eq_display!(format!("{}", typ), "{ Test a = a -> String, x : Int }");
     assert_eq_display!(format!("{}", some_record()),
-                       "{ Test a = a -> String, x : Int, test : Test a }");
+                       "{ Test a = a -> String, x : Int, test : Test a, (+) : Int -> Int -> Int }");
     let typ = Type::record(vec![Field {
                                     name: "Test",
                                     typ: Alias::new("Test",
@@ -159,7 +163,8 @@ fn show_record_multi_line() {
     record_looooooooooooooooooooooooooooooooooong : {
         Test a = a -> String,
         x : Int,
-        test : Test a
+        test : Test a,
+        (+) : Int -> Int -> Int
     },
     looooooooooooooooooooooooooooooooooong_field : Test a
 }"#;

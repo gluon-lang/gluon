@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
 
-use ast::DisplayEnv;
+use ast::{self, DisplayEnv};
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains kinded values which can be refered by name
@@ -800,6 +800,14 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
     fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
         where I: AsRef<str>,
     {
+        fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b>> {
+            if name.starts_with(ast::is_operator_char) {
+                chain![arena; "(", name, ")"]
+            } else {
+                arena.text(name)
+            }
+        }
+
         let p = self.prec;
         match *self.typ {
             Type::Hole => arena.text("_"),
@@ -913,7 +921,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                             _ => rhs = rhs.nest(4),
                         }
                         let f = chain![arena;
-                            self.env.string(&field.name),
+                            ident(arena, self.env.string(&field.name)),
                             " : ",
                             rhs.group(),
                             if i + 1 != fields.len() {

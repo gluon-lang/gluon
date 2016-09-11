@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt;
 
+use base::ast::is_operator_char;
 use base::pos::{BytePos, CharPos, Location, Span, Spanned};
 
 use combine::primitives::{Consumed, Error as CombineError, RangeStream};
@@ -301,10 +302,6 @@ impl Contexts {
         }
         Ok(())
     }
-}
-
-fn is_operator_char(c: char) -> bool {
-    "+-*/&|=<>".chars().any(|x| x == c)
 }
 
 pub struct Lexer<'input, I>
