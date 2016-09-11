@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
 
-use ast::{DisplayEnv, is_operator_char};
+use ast::{self, DisplayEnv};
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains kinded values which can be refered by name
@@ -801,7 +801,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
         where I: AsRef<str>,
     {
         fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b>> {
-            if name.starts_with(is_operator_char) {
+            if name.starts_with(ast::is_operator_char) {
                 chain![arena; "(", name, ")"]
             } else {
                 arena.text(name)

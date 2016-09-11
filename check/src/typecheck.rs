@@ -43,7 +43,7 @@ pub enum TypeError<I> {
     Rename(::rename::RenameError),
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
-    /// A field were defined more than once in a record constructor or pattern match
+    /// A field was defined more than once in a record constructor or pattern match
     DuplicateField(I),
     /// Type is not a type which has any fields
     InvalidProjection(ArcType<I>),
@@ -669,10 +669,10 @@ impl<'a> Typecheck<'a> {
 
                 let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
                 for field in fields {
-                    let typ = try!(match field.1 {
-                        Some(ref mut expr) => Ok(self.typecheck(expr)),
-                        None => self.find(&field.0),
-                    });
+                    let typ = match field.1 {
+                        Some(ref mut expr) => self.typecheck(expr),
+                        None => try!(self.find(&field.0)),
+                    };
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
                                                       field.0.clone()) {
