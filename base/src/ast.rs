@@ -79,13 +79,13 @@ pub enum Pattern<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Alternative<Id> {
     pub pattern: SpannedPattern<Id>,
-    pub expression: SpannedExpr<Id>,
+    pub expr: SpannedExpr<Id>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Array<Id> {
     pub typ: ArcType<Id>,
-    pub expressions: Vec<SpannedExpr<Id>>,
+    pub exprs: Vec<SpannedExpr<Id>>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -148,7 +148,7 @@ pub struct ValueBinding<Id> {
     pub name: SpannedPattern<Id>,
     pub typ: ArcType<Id>,
     pub args: Vec<TypedIdent<Id>>,
-    pub expression: SpannedExpr<Id>,
+    pub expr: SpannedExpr<Id>,
 }
 
 /// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By
@@ -183,7 +183,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
-                v.visit_expr(&mut bind.expression);
+                v.visit_expr(&mut bind.expr);
             }
             v.visit_expr(&mut **body);
         }
@@ -201,12 +201,12 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             v.visit_expr(&mut **expr);
             for alt in alts.iter_mut() {
                 v.visit_pattern(&mut alt.pattern);
-                v.visit_expr(&mut alt.expression);
+                v.visit_expr(&mut alt.expr);
             }
         }
         Expr::Array(ref mut a) => {
             v.visit_typ(&mut a.typ);
-            for expr in &mut a.expressions {
+            for expr in &mut a.exprs {
                 v.visit_expr(expr);
             }
         }
@@ -304,7 +304,7 @@ impl Typed for Expr<Symbol> {
             Expr::App(ref func, ref args) => {
                 get_return_type(env, &func.env_type_of(env), args.len())
             }
-            Expr::Match(_, ref alts) => alts[0].expression.env_type_of(env),
+            Expr::Match(_, ref alts) => alts[0].expr.env_type_of(env),
             Expr::Array(ref array) => array.typ.clone(),
             Expr::Lambda(ref lambda) => lambda.id.typ.clone(),
             Expr::Record { ref typ, .. } => typ.clone(),

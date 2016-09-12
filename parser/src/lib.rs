@@ -504,7 +504,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                          .map(|exprs| {
                              loc(Expr::Array(Array {
                                  typ: self.hole_typ.clone(),
-                                 expressions: exprs,
+                                 exprs: exprs,
                              }))
                          })])
             .and(self.parser(Self::fields))
@@ -627,18 +627,18 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 
     fn case_of(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         let alt = (token(Token::Pipe), self.pattern(), token(Token::RightArrow), self.expr())
-            .map(|(_, p, _, e)| {
+            .map(|(_, pattern, _, expr)| {
                 Alternative {
-                    pattern: p,
-                    expression: e,
+                    pattern: pattern,
+                    expr: expr,
                 }
             });
         let start = input.position().start;
         (token(Token::Match), self.expr(), token(Token::With), many1::<Vec<_>, _>(alt))
-            .map(|(_, e, _, alts)| {
+            .map(|(_, expr, _, alts)| {
                 pos::spanned2(start,
-                              alts.last().expect("No alternatives").expression.span.end,
-                              Expr::Match(Box::new(e), alts))
+                              alts.last().expect("No alternatives").expr.span.end,
+                              Expr::Match(Box::new(expr), alts))
             })
             .parse_state(input)
     }
@@ -751,7 +751,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             args: args.iter()
                 .map(|arg| TypedIdent::new(arg.clone()))
                 .collect(),
-            expression: e,
+            expr: e,
         },
             input))
     }

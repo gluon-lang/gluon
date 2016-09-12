@@ -47,7 +47,7 @@ fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
                                       args: args.iter()
                                           .map(|i| TypedIdent::new(intern(i)))
                                           .collect(),
-                                      expression: e,
+                                      expr: e,
                                   }],
                              Box::new(b)))
 }
@@ -97,7 +97,7 @@ fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
                            .map(|(p, e)| {
                                Alternative {
                                    pattern: no_loc(p),
-                                   expression: e,
+                                   expr: e,
                                }
                            })
                            .collect()))
@@ -149,7 +149,7 @@ fn field_access(expr: SpExpr, field: &str) -> SpExpr {
 fn array(fields: Vec<SpExpr>) -> SpExpr {
     no_loc(Expr::Array(Array {
         typ: Type::hole(),
-        expressions: fields,
+        exprs: fields,
     }))
 }
 
@@ -381,7 +381,7 @@ fn let_pattern() {
                                                  }),
                                                  typ: Type::hole(),
                                                  args: vec![],
-                                                 expression: id("test"),
+                                                 expr: id("test"),
                                              }],
                                         Box::new(id("x")))));
 }
@@ -538,7 +538,7 @@ id
                                                  name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                                                  typ: Type::hole(),
                                                  args: vec![TypedIdent::new(intern("x"))],
-                                                 expression: id("x"),
+                                                 expr: id("x"),
                                              }],
                                         Box::new(id("id")))));
 }
@@ -663,7 +663,7 @@ x
                                                     typ: Type::app(typ("->"),
                                                                    vec![typ("Int"), typ("Int")]),
                                                     args: vec![],
-                                                    expression: id("x"),
+                                                    expr: id("x"),
                                                 }],
                                            Box::new(id("x"))))));
 }

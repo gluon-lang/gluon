@@ -234,7 +234,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         self.env.stack.enter_scope();
                         let typ = expr.env_type_of(&self.env);
                         self.new_pattern(&typ, &mut alt.pattern);
-                        self.visit_expr(&mut alt.expression);
+                        self.visit_expr(&mut alt.expr);
                         self.env.stack.exit_scope();
                         self.env.stack_types.exit_scope();
                     }
@@ -245,7 +245,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
                     for bind in bindings.iter_mut() {
                         if !is_recursive {
-                            self.visit_expr(&mut bind.expression);
+                            self.visit_expr(&mut bind.expr);
                         }
                         self.new_pattern(&bind.typ, &mut bind.name);
                     }
@@ -255,7 +255,7 @@ pub fn rename(symbols: &mut SymbolModule,
                             for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.args) {
                                 arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                             }
-                            self.visit_expr(&mut bind.expression);
+                            self.visit_expr(&mut bind.expr);
                             self.env.stack.exit_scope();
                         }
                     }

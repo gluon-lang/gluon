@@ -565,7 +565,7 @@ impl<'a> Typecheck<'a> {
                 for alt in alts.iter_mut() {
                     self.enter_scope();
                     self.typecheck_pattern(&mut alt.pattern, typ.clone());
-                    let mut alt_type = self.typecheck(&mut alt.expression);
+                    let mut alt_type = self.typecheck(&mut alt.expr);
                     self.exit_scope();
                     // All alternatives must unify to the same type
                     if let Some(ref expected) = expected_alt_type {
@@ -628,7 +628,7 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Array(ref mut array) => {
                 let mut expected_type = self.subs.new_var();
-                for expr in &mut array.expressions {
+                for expr in &mut array.exprs {
                     let typ = self.typecheck(expr);
                     expected_type = self.unify_span(expr.span, &expected_type, typ);
                 }
@@ -862,7 +862,7 @@ impl<'a> Typecheck<'a> {
                     self.instantiate_signature(&bind.typ)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
-                if let Expr::Lambda(ref mut lambda) = bind.expression.value {
+                if let Expr::Lambda(ref mut lambda) = bind.expr.value {
                     if let Pattern::Ident(ref name) = bind.name.value {
                         lambda.id.name = name.name.clone();
                     }
@@ -879,10 +879,10 @@ impl<'a> Typecheck<'a> {
                 self.instantiate_signature(&bind.typ);
                 bind.typ = self.create_unifiable_signature(bind.typ.clone());
                 try!(self.kindcheck(&mut bind.typ));
-                self.typecheck(&mut bind.expression)
+                self.typecheck(&mut bind.expr)
             } else {
                 let function_typ = self.instantiate(&bind.typ);
-                self.typecheck_lambda(function_typ, &mut bind.args, &mut bind.expression)
+                self.typecheck_lambda(function_typ, &mut bind.args, &mut bind.expr)
             };
 
             debug!("let {:?} : {}",
@@ -893,7 +893,7 @@ impl<'a> Typecheck<'a> {
 
             if !is_recursive {
                 // Merge the type declaration and the actual type
-                self.generalize_variables(level, &mut bind.expression);
+                self.generalize_variables(level, &mut bind.expr);
                 self.typecheck_pattern(&mut bind.name, typ);
             } else {
                 types.push(typ);
@@ -911,7 +911,7 @@ impl<'a> Typecheck<'a> {
         // Once all variables inside the let has been unified we can quantify them
         debug!("Generalize {}", level);
         for bind in bindings {
-            self.generalize_variables(level, &mut bind.expression);
+            self.generalize_variables(level, &mut bind.expr);
             if let Some(typ) = self.finish_type(level, &bind.typ) {
                 bind.typ = typ;
             }
@@ -1017,8 +1017,7 @@ impl<'a> Typecheck<'a> {
             Pattern::Record { ref mut typ, ref mut fields, .. } => {
                 debug!("{{ .. }}: {}",
                        types::display_type(&self.symbols,
-                                           &bind.expression
-                                               .env_type_of(&self.environment)));
+                                           &bind.expr.env_type_of(&self.environment)));
                 if let Some(finished) = self.finish_type(level, typ) {
                     *typ = finished;
                 }
@@ -1032,8 +1031,7 @@ impl<'a> Typecheck<'a> {
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
                        types::display_type(&self.symbols,
-                                           &bind.expression
-                                               .env_type_of(&self.environment)));
+                                           &bind.expr.env_type_of(&self.environment)));
                 for arg in args {
                     self.intersect_type(level, &arg.name, &arg.typ);
                 }

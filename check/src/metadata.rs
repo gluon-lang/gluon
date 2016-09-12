@@ -107,12 +107,12 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                         }
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            self.metadata_expr(&mut bind.expression);
+                            self.metadata_expr(&mut bind.expr);
                             self.env.stack.exit_scope();
                         }
                     } else {
                         for bind in bindings {
-                            let metadata = self.metadata_expr(&mut bind.expression);
+                            let metadata = self.metadata_expr(&mut bind.expr);
                             self.new_binding(metadata, bind);
                         }
                     }

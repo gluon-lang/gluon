@@ -577,7 +577,7 @@ impl<'a> Compiler<'a> {
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
                         let (function_index, vars, cf) =
-                            try!(self.compile_lambda(name, &bind.args, &bind.expression, function));
+                            try!(self.compile_lambda(name, &bind.args, &bind.expr, function));
                         let offset = first_index + i;
                         function.function.instructions[offset] = NewClosure {
                             function_index: function_index,
@@ -587,8 +587,8 @@ impl<'a> Compiler<'a> {
                         function.stack_size -= vars;
                         function.function.inner_functions.push(cf);
                     } else {
-                        try!(self.compile(&bind.expression, function, false));
-                        let typ = bind.expression.env_type_of(self);
+                        try!(self.compile(&bind.expr, function, false));
+                        let typ = bind.expr.env_type_of(self);
                         try!(self.compile_let_pattern(&bind.name.value, &typ, function));
                     }
                 }
@@ -687,7 +687,7 @@ impl<'a> Compiler<'a> {
                             function.new_stack_var(id.name.clone());
                         }
                     }
-                    try!(self.compile(&alt.expression, function, tail_position));
+                    try!(self.compile(&alt.expr, function, tail_position));
                     let count = function.pop_pattern(&alt.pattern.value);
                     self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
@@ -700,10 +700,10 @@ impl<'a> Compiler<'a> {
                 }
             }
             Expr::Array(ref a) => {
-                for expr in a.expressions.iter() {
+                for expr in a.exprs.iter() {
                     try!(self.compile(expr, function, false));
                 }
-                function.emit(ConstructArray(a.expressions.len() as VmIndex));
+                function.emit(ConstructArray(a.exprs.len() as VmIndex));
             }
             Expr::Lambda(ref lambda) => {
                 let (function_index, vars, cf) =
