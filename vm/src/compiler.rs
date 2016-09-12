@@ -551,7 +551,7 @@ impl<'a> Compiler<'a> {
                 let stack_start = function.stack_size;
                 // Index where the instruction to create the first closure should be at
                 let first_index = function.function.instructions.len();
-                let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
+                let is_recursive = bindings.iter().all(|bind| bind.args.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter() {
                         // Add the NewClosure instruction before hand
@@ -576,10 +576,8 @@ impl<'a> Compiler<'a> {
                             Pattern::Ident(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
-                        let (function_index, vars, cf) = try!(self.compile_lambda(name,
-                                                                             &bind.arguments,
-                                                                             &bind.expression,
-                                                                             function));
+                        let (function_index, vars, cf) =
+                            try!(self.compile_lambda(name, &bind.args, &bind.expression, function));
                         let offset = first_index + i;
                         function.function.instructions[offset] = NewClosure {
                             function_index: function_index,
@@ -708,10 +706,8 @@ impl<'a> Compiler<'a> {
                 function.emit(ConstructArray(a.expressions.len() as VmIndex));
             }
             Expr::Lambda(ref lambda) => {
-                let (function_index, vars, cf) = try!(self.compile_lambda(&lambda.id,
-                                                                          &lambda.arguments,
-                                                                          &lambda.body,
-                                                                          function));
+                let (function_index, vars, cf) =
+                    try!(self.compile_lambda(&lambda.id, &lambda.args, &lambda.body, function));
                 function.emit(MakeClosure {
                     function_index: function_index,
                     upvars: vars,
@@ -834,20 +830,17 @@ impl<'a> Compiler<'a> {
 
     fn compile_lambda(&mut self,
                       id: &TypedIdent,
-                      arguments: &[TypedIdent],
+                      args: &[TypedIdent],
                       body: &SpannedExpr<Symbol>,
                       function: &mut FunctionEnvs)
                       -> Result<(VmIndex, VmIndex, CompiledFunction)> {
-        function.start_function(self,
-                                arguments.len() as VmIndex,
-                                id.name.clone(),
-                                id.typ.clone());
-        for arg in arguments {
+        function.start_function(self, args.len() as VmIndex, id.name.clone(), id.typ.clone());
+        for arg in args {
             function.push_stack_var(arg.name.clone());
         }
         try!(self.compile(body, function, true));
 
-        for _ in 0..arguments.len() {
+        for _ in 0..args.len() {
             function.pop_var();
         }
         // Insert all free variables into the above globals free variables

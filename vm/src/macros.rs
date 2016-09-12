@@ -17,7 +17,7 @@ pub type Error = Box<StdError + Send + Sync>;
 pub trait Macro: ::mopa::Any + Send + Sync {
     fn expand(&self,
               env: &Thread,
-              arguments: &mut [SpannedExpr<Symbol>])
+              args: &mut [SpannedExpr<Symbol>])
               -> Result<SpannedExpr<Symbol>, Error>;
 
     fn clone(&self) -> Box<Macro>;
@@ -30,9 +30,9 @@ impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
 {
     fn expand(&self,
               env: &Thread,
-              arguments: &mut [SpannedExpr<Symbol>])
+              args: &mut [SpannedExpr<Symbol>])
               -> Result<SpannedExpr<Symbol>, Error> {
-        self(env, arguments)
+        self(env, args)
     }
 
     fn clone(&self) -> Box<Macro> {

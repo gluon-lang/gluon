@@ -75,9 +75,9 @@ pub unsafe extern "C" fn glu_load_script(vm: &Thread,
     }
 }
 
-pub extern "C" fn glu_call_function(thread: &Thread, arguments: VmIndex) -> Error {
+pub extern "C" fn glu_call_function(thread: &Thread, args: VmIndex) -> Error {
     let context = thread.context();
-    match thread.call_function(context, arguments) {
+    match thread.call_function(context, args) {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,
     }
@@ -116,13 +116,13 @@ pub unsafe extern "C" fn glu_push_function(vm: &Thread,
                                            name: &u8,
                                            len: usize,
                                            function: Function,
-                                           arguments: VmIndex)
+                                           args: VmIndex)
                                            -> Error {
     let s = match str::from_utf8(slice::from_raw_parts(name, len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    match Thread::push(vm, CPrimitive::new(function, arguments, s)) {
+    match Thread::push(vm, CPrimitive::new(function, args, s)) {
         Ok(()) => Error::Ok,
         Err(_) => Error::Unknown,
     }

@@ -91,7 +91,7 @@ pub struct Array<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Lambda<Id> {
     pub id: TypedIdent<Id>,
-    pub arguments: Vec<TypedIdent<Id>>,
+    pub args: Vec<TypedIdent<Id>>,
     pub body: Box<SpannedExpr<Id>>,
 }
 
@@ -147,7 +147,7 @@ pub struct ValueBinding<Id> {
     pub comment: Option<String>,
     pub name: SpannedPattern<Id>,
     pub typ: ArcType<Id>,
-    pub arguments: Vec<TypedIdent<Id>>,
+    pub args: Vec<TypedIdent<Id>>,
     pub expression: SpannedExpr<Id>,
 }
 

@@ -206,7 +206,7 @@ impl<F> FindVisitor<F>
                 }
                 match self.select_spanned(bindings, |b| b.expression.span) {
                     (false, Some(bind)) => {
-                        for arg in &bind.arguments {
+                        for arg in &bind.args {
                             self.on_found.on_ident(arg);
                         }
                         self.visit_expr(&bind.expression)
@@ -230,7 +230,7 @@ impl<F> FindVisitor<F>
                 }
             }
             Expr::Lambda(ref lambda) => {
-                for arg in &lambda.arguments {
+                for arg in &lambda.args {
                     self.on_found.on_ident(arg);
                 }
                 self.visit_expr(&lambda.body)

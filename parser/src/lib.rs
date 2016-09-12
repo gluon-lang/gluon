@@ -616,7 +616,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                               Expr::Lambda(Lambda {
                                   // TODO: Generate name of lambda here?
                                   id: TypedIdent::new(self.empty_id.clone()),
-                                  arguments: args.iter()
+                                  args: args.iter()
                                       .map(|arg| TypedIdent::new(arg.clone()))
                                       .collect(),
                                   body: Box::new(expr),
@@ -748,7 +748,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             comment: None,
             name: name,
             typ: typ.unwrap_or_else(|| self.hole_typ.clone()),
-            arguments: args.iter()
+            args: args.iter()
                 .map(|arg| TypedIdent::new(arg.clone()))
                 .collect(),
             expression: e,

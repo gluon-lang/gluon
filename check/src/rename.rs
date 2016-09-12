@@ -242,7 +242,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 Expr::LetBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
                     self.env.stack.enter_scope();
-                    let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
+                    let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
                     for bind in bindings.iter_mut() {
                         if !is_recursive {
                             self.visit_expr(&mut bind.expression);
@@ -252,7 +252,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.arguments) {
+                            for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.args) {
                                 arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                             }
                             self.visit_expr(&mut bind.expression);
@@ -265,7 +265,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
-                    for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.arguments) {
+                    for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.args) {
                         arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                     }
                     self.visit_expr(&mut lambda.body);

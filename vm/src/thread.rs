@@ -929,9 +929,9 @@ impl<'b> ExecuteContext<'b> {
                 self.call_function_with_upvars(args, closure.function.args, callable)
             }
             PartialApplication(app) => {
-                let total_args = app.arguments.len() as VmIndex + args;
+                let total_args = app.args.len() as VmIndex + args;
                 let offset = self.stack.len() - args;
-                self.stack.insert_slice(offset, &app.arguments);
+                self.stack.insert_slice(offset, &app.args);
                 self.call_function_with_upvars(total_args, app.function.args(), app.function)
             }
             x => return Err(Error::Message(format!("Cannot call {:?}", x))),

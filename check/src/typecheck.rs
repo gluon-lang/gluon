@@ -639,8 +639,7 @@ impl<'a> Typecheck<'a> {
                 let loc = format!("lambda:{}", expr.span.start);
                 lambda.id.name = self.symbols.symbol(loc);
                 let function_type = self.subs.new_var();
-                let typ =
-                    self.typecheck_lambda(function_type, &mut lambda.arguments, &mut lambda.body);
+                let typ = self.typecheck_lambda(function_type, &mut lambda.args, &mut lambda.body);
                 lambda.id.typ = typ.clone();
                 Ok(TailCall::Type(typ))
             }
@@ -711,14 +710,14 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_lambda(&mut self,
                         function_type: ArcType,
-                        arguments: &mut [TypedIdent],
+                        args: &mut [TypedIdent],
                         body: &mut SpannedExpr<Symbol>)
                         -> ArcType {
         self.enter_scope();
         let mut arg_types = Vec::new();
         {
             let mut iter1 = function_arg_iter(self, function_type);
-            let mut iter2 = arguments.iter_mut();
+            let mut iter2 = args.iter_mut();
             while let (Some(arg_type), Some(arg)) = (iter1.next(), iter2.next()) {
                 arg.typ = arg_type;
                 arg_types.push(arg.typ.clone());
@@ -853,7 +852,7 @@ impl<'a> Typecheck<'a> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
-        let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
+        let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
@@ -876,14 +875,14 @@ impl<'a> Typecheck<'a> {
 
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
-            let mut typ = if bind.arguments.is_empty() {
+            let mut typ = if bind.args.is_empty() {
                 self.instantiate_signature(&bind.typ);
                 bind.typ = self.create_unifiable_signature(bind.typ.clone());
                 try!(self.kindcheck(&mut bind.typ));
                 self.typecheck(&mut bind.expression)
             } else {
                 let function_typ = self.instantiate(&bind.typ);
-                self.typecheck_lambda(function_typ, &mut bind.arguments, &mut bind.expression)
+                self.typecheck_lambda(function_typ, &mut bind.args, &mut bind.expression)
             };
 
             debug!("let {:?} : {}",
@@ -1029,13 +1028,13 @@ impl<'a> Typecheck<'a> {
                     self.intersect_type(level, field_name, field_type);
                 });
             }
-            Pattern::Constructor(ref id, ref arguments) => {
+            Pattern::Constructor(ref id, ref args) => {
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
                        types::display_type(&self.symbols,
                                            &bind.expression
                                                .env_type_of(&self.environment)));
-                for arg in arguments {
+                for arg in args {
                     self.intersect_type(level, &arg.name, &arg.typ);
                 }
             }
@@ -1308,9 +1307,9 @@ impl<'a> Typecheck<'a> {
 
     fn type_of_alias(&self,
                      id: &AliasData<Symbol, ArcType>,
-                     arguments: &[ArcType])
+                     args: &[ArcType])
                      -> Result<Option<ArcType>, unify_type::Error<Symbol>> {
-        Ok(instantiate::type_of_alias(id, arguments))
+        Ok(instantiate::type_of_alias(id, args))
     }
 
     fn instantiate(&mut self, typ: &ArcType) -> ArcType {
