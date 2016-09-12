@@ -64,7 +64,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         match pattern.value {
             Pattern::Record { ref typ, fields: ref field_ids, .. } => {
                 let unaliased = instantiate::remove_aliases(&self.env, typ.clone());
-                if let Type::Record { ref row, .. } = *unaliased {
+                if let Type::Record(ref row) = *unaliased {
                     if let Type::ExtendRow { ref fields, .. } = **row {
                         for (field, field_type) in field_ids.iter().zip(fields) {
                             let f = field.1.as_ref().unwrap_or(&field.0).clone();

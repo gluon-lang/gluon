@@ -785,7 +785,7 @@ impl<'a> Compiler<'a> {
                     }
                 });
                 match *typ {
-                    Type::Record { .. } => {
+                    Type::Record(_) => {
                         let mut field_iter = typ.field_iter();
                         let number_of_fields = field_iter.by_ref().count();
                         let is_polymorphic = **field_iter.current_type() != Type::EmptyRow;

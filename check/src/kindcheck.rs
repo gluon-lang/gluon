@@ -202,11 +202,11 @@ impl<'a> KindCheck<'a> {
                     .collect());
                 Ok((self.type_kind(), Type::variants(variants)))
             }
-            Type::Record { ref row } => {
+            Type::Record(ref row) => {
                 let (kind, row) = try!(self.kindcheck(row));
                 let row_kind = self.row_kind();
                 try!(self.unify(&row_kind, kind));
-                Ok((self.type_kind(), ArcType::from(Type::Record { row: row })))
+                Ok((self.type_kind(), ArcType::from(Type::Record(row))))
             }
             Type::ExtendRow { ref types, ref fields, ref rest } => {
                 let fields = try!(fields.iter()

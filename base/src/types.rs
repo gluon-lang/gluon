@@ -314,7 +314,7 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// A builtin type
     Builtin(BuiltinType),
     /// A record type
-    Record { row: T },
+    Record(T),
     EmptyRow,
     ExtendRow {
         /// The associated types of this record type
@@ -359,7 +359,7 @@ impl<Id, T> Type<Id, T>
                        fields: Vec<Field<Id, T>>,
                        rest: T)
                        -> T {
-        T::from(Type::Record { row: Type::extend_row(types, fields, rest) })
+        T::from(Type::Record(Type::extend_row(types, fields, rest)))
     }
 
     pub fn extend_row(types: Vec<Field<Id, Alias<Id, T>>>,
@@ -564,7 +564,7 @@ impl<'a, Id: 'a, T> Iterator for TypeFieldIterator<'a, T>
 
     fn next(&mut self) -> Option<&'a Field<Id, Alias<Id, T>>> {
         match **self.typ {
-            Type::Record { ref row } => {
+            Type::Record(ref row) => {
                 self.typ = row;
                 self.next()
             }
@@ -602,7 +602,7 @@ impl<'a, Id: 'a, T> Iterator for FieldIterator<'a, T>
 
     fn next(&mut self) -> Option<&'a Field<Id, T>> {
         match **self.typ {
-            Type::Record { ref row } => {
+            Type::Record(ref row) => {
                 self.typ = row;
                 self.next()
             }
@@ -854,7 +854,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                 enclose(p, Prec::Constructor, arena, doc).group()
             }
             Type::Builtin(ref t) => arena.text(t.to_str()),
-            Type::Record { ref row } => {
+            Type::Record(ref row) => {
                 let mut doc = arena.text("{");
                 let empty_fields = match **row {
                     Type::ExtendRow { .. } => false,
@@ -917,7 +917,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                         let mut rhs = top(self.env, &*field.typ).pretty(arena);
                         match *field.typ {
                             // Records handle nesting on their own
-                            Type::Record { .. } => (),
+                            Type::Record(_) => (),
                             _ => rhs = rhs.nest(4),
                         }
                         let f = chain![arena;
@@ -1004,7 +1004,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
                 f.walk(a);
             }
         }
-        Type::Record { ref row } => f.walk(row),
+        Type::Record(ref row) => f.walk(row),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             for field in types {
                 if let Some(ref typ) = field.typ.typ {
@@ -1155,7 +1155,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
         }
-        Type::Record { ref row } => f.visit(row).map(|row| T::from(Type::Record { row: row })),
+        Type::Record(ref row) => f.visit(row).map(|row| T::from(Type::Record(row))),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             let new_fields = walk_move_types(fields, |field| {
                 f.visit(&field.typ).map(|typ| {

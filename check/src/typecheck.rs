@@ -173,7 +173,7 @@ impl<'a> TypeEnv for Environment<'a> {
                 match alias.typ {
                     Some(ref typ) => {
                         match **typ {
-                            Type::Record { .. } => {
+                            Type::Record(_) => {
                                 fields.iter()
                                     .all(|name| typ.field_iter().any(|f| f.name.name_eq(name)))
                             }
@@ -598,8 +598,8 @@ impl<'a> Typecheck<'a> {
                 }
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
-                    Type::Variable(..) |
-                    Type::Record { .. } => {
+                    Type::Variable(_) |
+                    Type::Record(_) => {
                         let field_type = record.field_iter()
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
@@ -1451,6 +1451,7 @@ fn primitive_type(op_type: &str) -> ArcType {
 
 /// Removes layers of `Type::App` and `Type::Record` by packing them into a single `Type::App` or
 /// `Type::Record`
+///
 /// Example:
 ///
 /// ```rust
