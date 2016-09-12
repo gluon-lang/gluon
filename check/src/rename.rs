@@ -6,7 +6,7 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::types::{self, Alias, ArcType, Type, RcKind, KindEnv, TypeEnv};
+use base::types::{self, Alias, ArcType, Type, ArcKind, KindEnv, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
@@ -49,7 +49,7 @@ struct Environment<'b> {
 }
 
 impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, _type_name: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
         None
     }
 }
@@ -234,7 +234,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         self.env.stack.enter_scope();
                         let typ = expr.env_type_of(&self.env);
                         self.new_pattern(&typ, &mut alt.pattern);
-                        self.visit_expr(&mut alt.expression);
+                        self.visit_expr(&mut alt.expr);
                         self.env.stack.exit_scope();
                         self.env.stack_types.exit_scope();
                     }
@@ -242,20 +242,20 @@ pub fn rename(symbols: &mut SymbolModule,
                 Expr::LetBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack_types.enter_scope();
                     self.env.stack.enter_scope();
-                    let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
+                    let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
                     for bind in bindings.iter_mut() {
                         if !is_recursive {
-                            self.visit_expr(&mut bind.expression);
+                            self.visit_expr(&mut bind.expr);
                         }
                         self.new_pattern(&bind.typ, &mut bind.name);
                     }
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.arguments) {
+                            for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.args) {
                                 arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                             }
-                            self.visit_expr(&mut bind.expression);
+                            self.visit_expr(&mut bind.expr);
                             self.env.stack.exit_scope();
                         }
                     }
@@ -265,7 +265,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
-                    for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.arguments) {
+                    for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.args) {
                         arg.name = self.stack_var(arg.name.clone(), expr.span, typ.clone());
                     }
                     self.visit_expr(&mut lambda.body);

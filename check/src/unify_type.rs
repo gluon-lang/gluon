@@ -196,14 +196,14 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                 }
             }
         }
-        (&Type::Record { row: ref l_row }, &Type::Record { row: ref r_row }) => {
+        (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
             let previous = mem::replace(&mut unifier.state.record_context,
                                         Some((self_.clone(), other.clone())));
-            let result = Ok(unifier.try_match(l_row, r_row)
-                .map(|row| ArcType::from(Type::Record { row: row })));
+            let result = unifier.try_match(l_row, r_row)
+                .map(|row| ArcType::from(Type::Record(row)));
             unifier.state.record_context = previous;
-            result
+            Ok(result)
         }
         (&Type::ExtendRow { types: ref l_types, fields: ref l_args, rest: ref l_rest },
          &Type::ExtendRow { types: ref r_types, fields: ref r_args, rest: ref r_rest }) => {

@@ -64,7 +64,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         match pattern.value {
             Pattern::Record { ref typ, fields: ref field_ids, .. } => {
                 let unaliased = instantiate::remove_aliases(&self.env, typ.clone());
-                if let Type::Record { ref row, .. } = *unaliased {
+                if let Type::Record(ref row) = *unaliased {
                     if let Type::ExtendRow { ref fields, .. } = **row {
                         for (field, field_type) in field_ids.iter().zip(fields) {
                             let f = field.1.as_ref().unwrap_or(&field.0).clone();
@@ -188,7 +188,7 @@ impl<F> FindVisitor<F>
                     .map(|x| &***x))
             }
             Expr::Match(ref expr, ref alts) => {
-                self.visit_one(once(&**expr).chain(alts.iter().map(|alt| &alt.expression)))
+                self.visit_one(once(&**expr).chain(alts.iter().map(|alt| &alt.expr)))
             }
             Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
@@ -204,12 +204,12 @@ impl<F> FindVisitor<F>
                 for bind in bindings {
                     self.visit_pattern(&bind.name);
                 }
-                match self.select_spanned(bindings, |b| b.expression.span) {
+                match self.select_spanned(bindings, |b| b.expr.span) {
                     (false, Some(bind)) => {
-                        for arg in &bind.arguments {
+                        for arg in &bind.args {
                             self.on_found.on_ident(arg);
                         }
-                        self.visit_expr(&bind.expression)
+                        self.visit_expr(&bind.expr)
                     }
                     _ => self.visit_expr(expr),
                 }
@@ -222,7 +222,7 @@ impl<F> FindVisitor<F>
                     self.on_found.ident(current, id, typ);
                 }
             }
-            Expr::Array(ref array) => self.visit_one(&array.expressions),
+            Expr::Array(ref array) => self.visit_one(&array.exprs),
             Expr::Record { ref exprs, .. } => {
                 let exprs = exprs.iter().filter_map(|tup| tup.1.as_ref());
                 if let (_, Some(expr)) = self.select_spanned(exprs, |e| e.span) {
@@ -230,7 +230,7 @@ impl<F> FindVisitor<F>
                 }
             }
             Expr::Lambda(ref lambda) => {
-                for arg in &lambda.arguments {
+                for arg in &lambda.args {
                     self.on_found.on_ident(arg);
                 }
                 self.visit_expr(&lambda.body)

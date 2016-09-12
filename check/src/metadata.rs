@@ -100,19 +100,19 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                 }
                 Expr::LetBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
-                    let is_recursive = bindings.iter().all(|bind| !bind.arguments.is_empty());
+                    let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
                     if is_recursive {
                         for bind in bindings.iter_mut() {
                             self.new_binding(Metadata::default(), bind);
                         }
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            self.metadata_expr(&mut bind.expression);
+                            self.metadata_expr(&mut bind.expr);
                             self.env.stack.exit_scope();
                         }
                     } else {
                         for bind in bindings {
-                            let metadata = self.metadata_expr(&mut bind.expression);
+                            let metadata = self.metadata_expr(&mut bind.expr);
                             self.new_binding(metadata, bind);
                         }
                     }

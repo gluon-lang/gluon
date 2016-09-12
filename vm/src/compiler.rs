@@ -266,7 +266,7 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> KindEnv for Compiler<'a> {
-    fn find_kind(&self, _type_name: &SymbolRef) -> Option<types::RcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<types::ArcKind> {
         None
     }
 }
@@ -551,7 +551,7 @@ impl<'a> Compiler<'a> {
                 let stack_start = function.stack_size;
                 // Index where the instruction to create the first closure should be at
                 let first_index = function.function.instructions.len();
-                let is_recursive = bindings.iter().all(|bind| bind.arguments.len() > 0);
+                let is_recursive = bindings.iter().all(|bind| bind.args.len() > 0);
                 if is_recursive {
                     for bind in bindings.iter() {
                         // Add the NewClosure instruction before hand
@@ -576,10 +576,8 @@ impl<'a> Compiler<'a> {
                             Pattern::Ident(ref name) => name,
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
-                        let (function_index, vars, cf) = try!(self.compile_lambda(name,
-                                                                             &bind.arguments,
-                                                                             &bind.expression,
-                                                                             function));
+                        let (function_index, vars, cf) =
+                            try!(self.compile_lambda(name, &bind.args, &bind.expr, function));
                         let offset = first_index + i;
                         function.function.instructions[offset] = NewClosure {
                             function_index: function_index,
@@ -589,8 +587,8 @@ impl<'a> Compiler<'a> {
                         function.stack_size -= vars;
                         function.function.inner_functions.push(cf);
                     } else {
-                        try!(self.compile(&bind.expression, function, false));
-                        let typ = bind.expression.env_type_of(self);
+                        try!(self.compile(&bind.expr, function, false));
+                        let typ = bind.expr.env_type_of(self);
                         try!(self.compile_let_pattern(&bind.name.value, &typ, function));
                     }
                 }
@@ -689,7 +687,7 @@ impl<'a> Compiler<'a> {
                             function.new_stack_var(id.name.clone());
                         }
                     }
-                    try!(self.compile(&alt.expression, function, tail_position));
+                    try!(self.compile(&alt.expr, function, tail_position));
                     let count = function.pop_pattern(&alt.pattern.value);
                     self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
@@ -702,16 +700,14 @@ impl<'a> Compiler<'a> {
                 }
             }
             Expr::Array(ref a) => {
-                for expr in a.expressions.iter() {
+                for expr in a.exprs.iter() {
                     try!(self.compile(expr, function, false));
                 }
-                function.emit(ConstructArray(a.expressions.len() as VmIndex));
+                function.emit(ConstructArray(a.exprs.len() as VmIndex));
             }
             Expr::Lambda(ref lambda) => {
-                let (function_index, vars, cf) = try!(self.compile_lambda(&lambda.id,
-                                                                          &lambda.arguments,
-                                                                          &lambda.body,
-                                                                          function));
+                let (function_index, vars, cf) =
+                    try!(self.compile_lambda(&lambda.id, &lambda.args, &lambda.body, function));
                 function.emit(MakeClosure {
                     function_index: function_index,
                     upvars: vars,
@@ -785,7 +781,7 @@ impl<'a> Compiler<'a> {
                     }
                 });
                 match *typ {
-                    Type::Record { .. } => {
+                    Type::Record(_) => {
                         let mut field_iter = typ.field_iter();
                         let number_of_fields = field_iter.by_ref().count();
                         let is_polymorphic = **field_iter.current_type() != Type::EmptyRow;
@@ -834,20 +830,17 @@ impl<'a> Compiler<'a> {
 
     fn compile_lambda(&mut self,
                       id: &TypedIdent,
-                      arguments: &[TypedIdent],
+                      args: &[TypedIdent],
                       body: &SpannedExpr<Symbol>,
                       function: &mut FunctionEnvs)
                       -> Result<(VmIndex, VmIndex, CompiledFunction)> {
-        function.start_function(self,
-                                arguments.len() as VmIndex,
-                                id.name.clone(),
-                                id.typ.clone());
-        for arg in arguments {
+        function.start_function(self, args.len() as VmIndex, id.name.clone(), id.typ.clone());
+        for arg in args {
             function.push_stack_var(arg.name.clone());
         }
         try!(self.compile(body, function, true));
 
-        for _ in 0..arguments.len() {
+        for _ in 0..args.len() {
             function.pop_var();
         }
         // Insert all free variables into the above globals free variables

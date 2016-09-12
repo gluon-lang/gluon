@@ -13,12 +13,79 @@ use symbol::{Symbol, SymbolRef};
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<RcKind>;
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind>;
 }
 
 impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
-    fn find_kind(&self, id: &SymbolRef) -> Option<RcKind> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
         (**self).find_kind(id)
+    }
+}
+
+/// Kind representation
+///
+/// All types in gluon has a kind. Most types encountered are of the `Type` kind which
+/// includes things like `Int`, `String` and `Option Int`. There are however other types which
+/// are said to be "higher kinded" and these use the `Function` (a -> b) variant.
+/// These types include `Option` and `(->)` which both have the kind `Type -> Type` as well as
+/// `Functor` which has the kind `(Type -> Type) -> Type`.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Kind {
+    /// Representation for a kind which is yet to be inferred.
+    Variable(u32),
+    /// The simplest possible kind. All values in a program have this kind.
+    Type,
+    /// Kinds of rows (for polymorphic records).
+    Row,
+    /// Constructor which takes two kinds, taking the first as argument and returning the second.
+    Function(ArcKind, ArcKind),
+}
+
+impl Kind {
+    pub fn variable(v: u32) -> ArcKind {
+        ArcKind::new(Kind::Variable(v))
+    }
+
+    pub fn typ() -> ArcKind {
+        ArcKind::new(Kind::Type)
+    }
+
+    pub fn row() -> ArcKind {
+        ArcKind::new(Kind::Row)
+    }
+
+    pub fn function(l: ArcKind, r: ArcKind) -> ArcKind {
+        ArcKind::new(Kind::Function(l, r))
+    }
+}
+
+/// Reference counted kind type.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct ArcKind(Arc<Kind>);
+
+impl Deref for ArcKind {
+    type Target = Kind;
+
+    fn deref(&self) -> &Kind {
+        &self.0
+    }
+}
+
+impl fmt::Debug for ArcKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::Display for ArcKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl ArcKind {
+    pub fn new(k: Kind) -> ArcKind {
+        ArcKind(Arc::new(k))
     }
 }
 
@@ -71,103 +138,6 @@ pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
                            _ => None,
                        }
                    })
-}
-
-/// The representation of gluon's types.
-///
-/// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
-/// `Type` is used to enable types to be shared. It is recommended to use the static functions on
-/// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
-/// the pointer wrapper directly.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Type<Id, T = ArcType<Id>> {
-    /// An unbound type `_`, awaiting ascription.
-    Hole,
-    /// An application with multiple arguments.
-    /// `Map String Int` would be represented as `App(Map, [String, Int])`
-    App(T, Vec<T>),
-    /// A variant type `| A Int Float | B`.
-    /// The second element of the tuple is the function type which the constructor has which in the
-    /// above example means that A's type is `Int -> Float -> A` and B's is `B`
-    Variants(Vec<(Id, T)>),
-    /// Representation for type variables
-    Variable(TypeVariable),
-    /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
-    /// etc and are what unbound type variables are eventually made into.
-    Generic(Generic<Id>),
-    /// A builtin type
-    Builtin(BuiltinType),
-    /// A record type
-    Record { row: T },
-    EmptyRow,
-    ExtendRow {
-        /// The associated types of this record type
-        types: Vec<Field<Id, Alias<Id, T>>>,
-        /// The fields of this record type
-        fields: Vec<Field<Id, T>>,
-        rest: T,
-    },
-    /// An identifier type. Anything that is not a builtin type.
-    Ident(Id),
-    Alias(AliasData<Id, T>),
-}
-
-/// A shared type which is atomically reference counted
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct ArcType<Id = Symbol> {
-    typ: Arc<Type<Id, ArcType<Id>>>,
-}
-
-impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id> Deref for ArcType<Id> {
-    type Target = Type<Id, ArcType<Id>>;
-
-    fn deref(&self) -> &Type<Id, ArcType<Id>> {
-        &self.typ
-    }
-}
-
-impl<Id> ArcType<Id> {
-    pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
-        ArcType { typ: Arc::new(typ) }
-    }
-
-    pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
-        TypeFieldIterator {
-            typ: self,
-            current: 0,
-        }
-    }
-
-    pub fn field_iter(&self) -> FieldIterator<Self> {
-        FieldIterator {
-            typ: self,
-            current: 0,
-        }
-    }
-
-    pub fn into_inner(self) -> Type<Id, ArcType<Id>>
-        where Id: Clone,
-    {
-        (*self.typ).clone()
-    }
-}
-
-impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
-    fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
-        ArcType::new(typ)
-    }
 }
 
 /// All the builtin types of gluon
@@ -229,82 +199,15 @@ impl BuiltinType {
     }
 }
 
-/// Kind representation
-///
-/// All types in gluon has a kind. Most types encountered are of the `Type` kind which
-/// includes things like `Int`, `String` and `Option Int`. There are however other types which
-/// are said to be "higher kinded" and these use the `Function` (a -> b) variant.
-/// These types include `Option` and `(->)` which both have the kind `Type -> Type` as well as
-/// `Functor` which has the kind `(Type -> Type) -> Type`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Kind {
-    /// Representation for a kind which is yet to be inferred.
-    Variable(u32),
-    /// The simplest possible kind. All values in a program have this kind.
-    Type,
-    /// Kinds of rows (for polymorphic records).
-    Row,
-    /// Constructor which takes two kinds, taking the first as argument and returning the second.
-    Function(RcKind, RcKind),
-}
-
-impl Kind {
-    pub fn variable(v: u32) -> RcKind {
-        RcKind::new(Kind::Variable(v))
-    }
-
-    pub fn typ() -> RcKind {
-        RcKind::new(Kind::Type)
-    }
-
-    pub fn row() -> RcKind {
-        RcKind::new(Kind::Row)
-    }
-
-    pub fn function(l: RcKind, r: RcKind) -> RcKind {
-        RcKind::new(Kind::Function(l, r))
-    }
-}
-
-/// Reference counted kind type.
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct RcKind(Arc<Kind>);
-
-impl Deref for RcKind {
-    type Target = Kind;
-
-    fn deref(&self) -> &Kind {
-        &self.0
-    }
-}
-
-impl fmt::Debug for RcKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl fmt::Display for RcKind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl RcKind {
-    pub fn new(k: Kind) -> RcKind {
-        RcKind(Arc::new(k))
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable {
-    pub kind: RcKind,
+    pub kind: ArcKind,
     pub id: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Generic<Id> {
-    pub kind: RcKind,
+    pub kind: ArcKind,
     pub id: Id,
 }
 
@@ -386,6 +289,45 @@ pub struct Field<Id, T = ArcType<Id>> {
     pub typ: T,
 }
 
+/// The representation of gluon's types.
+///
+/// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
+/// `Type` is used to enable types to be shared. It is recommended to use the static functions on
+/// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
+/// the pointer wrapper directly.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Type<Id, T = ArcType<Id>> {
+    /// An unbound type `_`, awaiting ascription.
+    Hole,
+    /// An application with multiple arguments.
+    /// `Map String Int` would be represented as `App(Map, [String, Int])`
+    App(T, Vec<T>),
+    /// A variant type `| A Int Float | B`.
+    /// The second element of the tuple is the function type which the constructor has which in the
+    /// above example means that A's type is `Int -> Float -> A` and B's is `B`
+    Variants(Vec<(Id, T)>),
+    /// Representation for type variables
+    Variable(TypeVariable),
+    /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
+    /// etc and are what unbound type variables are eventually made into.
+    Generic(Generic<Id>),
+    /// A builtin type
+    Builtin(BuiltinType),
+    /// A record type
+    Record(T),
+    EmptyRow,
+    ExtendRow {
+        /// The associated types of this record type
+        types: Vec<Field<Id, Alias<Id, T>>>,
+        /// The fields of this record type
+        fields: Vec<Field<Id, T>>,
+        rest: T,
+    },
+    /// An identifier type. Anything that is not a builtin type.
+    Ident(Id),
+    Alias(AliasData<Id, T>),
+}
+
 impl<Id, T> Type<Id, T>
     where T: From<Type<Id, T>>,
 {
@@ -417,7 +359,7 @@ impl<Id, T> Type<Id, T>
                        fields: Vec<Field<Id, T>>,
                        rest: T)
                        -> T {
-        T::from(Type::Record { row: Type::extend_row(types, fields, rest) })
+        T::from(Type::Record(Type::extend_row(types, fields, rest)))
     }
 
     pub fn extend_row(types: Vec<Field<Id, Alias<Id, T>>>,
@@ -551,6 +493,64 @@ impl<T> Type<Symbol, T>
     }
 }
 
+/// A shared type which is atomically reference counted
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct ArcType<Id = Symbol> {
+    typ: Arc<Type<Id, ArcType<Id>>>,
+}
+
+impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Id> Deref for ArcType<Id> {
+    type Target = Type<Id, ArcType<Id>>;
+
+    fn deref(&self) -> &Type<Id, ArcType<Id>> {
+        &self.typ
+    }
+}
+
+impl<Id> ArcType<Id> {
+    pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
+        ArcType { typ: Arc::new(typ) }
+    }
+
+    pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
+        TypeFieldIterator {
+            typ: self,
+            current: 0,
+        }
+    }
+
+    pub fn field_iter(&self) -> FieldIterator<Self> {
+        FieldIterator {
+            typ: self,
+            current: 0,
+        }
+    }
+
+    pub fn into_inner(self) -> Type<Id, ArcType<Id>>
+        where Id: Clone,
+    {
+        (*self.typ).clone()
+    }
+}
+
+impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
+    fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
+        ArcType::new(typ)
+    }
+}
+
 #[derive(Clone)]
 pub struct TypeFieldIterator<'a, T: 'a> {
     typ: &'a T,
@@ -564,7 +564,7 @@ impl<'a, Id: 'a, T> Iterator for TypeFieldIterator<'a, T>
 
     fn next(&mut self) -> Option<&'a Field<Id, Alias<Id, T>>> {
         match **self.typ {
-            Type::Record { ref row } => {
+            Type::Record(ref row) => {
                 self.typ = row;
                 self.next()
             }
@@ -602,7 +602,7 @@ impl<'a, Id: 'a, T> Iterator for FieldIterator<'a, T>
 
     fn next(&mut self) -> Option<&'a Field<Id, T>> {
         match **self.typ {
-            Type::Record { ref row } => {
+            Type::Record(ref row) => {
                 self.typ = row;
                 self.next()
             }
@@ -670,7 +670,7 @@ impl TypeVariable {
 
     pub fn with_kind(kind: Kind, var: u32) -> TypeVariable {
         TypeVariable {
-            kind: RcKind::new(kind),
+            kind: ArcKind::new(kind),
             id: var,
         }
     }
@@ -854,7 +854,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                 enclose(p, Prec::Constructor, arena, doc).group()
             }
             Type::Builtin(ref t) => arena.text(t.to_str()),
-            Type::Record { ref row } => {
+            Type::Record(ref row) => {
                 let mut doc = arena.text("{");
                 let empty_fields = match **row {
                     Type::ExtendRow { .. } => false,
@@ -917,7 +917,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                         let mut rhs = top(self.env, &*field.typ).pretty(arena);
                         match *field.typ {
                             // Records handle nesting on their own
-                            Type::Record { .. } => (),
+                            Type::Record(_) => (),
                             _ => rhs = rhs.nest(4),
                         }
                         let f = chain![arena;
@@ -1004,7 +1004,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
                 f.walk(a);
             }
         }
-        Type::Record { ref row } => f.walk(row),
+        Type::Record(ref row) => f.walk(row),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             for field in types {
                 if let Some(ref typ) = field.typ.typ {
@@ -1043,8 +1043,8 @@ pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
     a.expect("fold_type")
 }
 
-pub fn walk_kind<F: ?Sized>(k: &RcKind, f: &mut F)
-    where F: Walker<RcKind>,
+pub fn walk_kind<F: ?Sized>(k: &ArcKind, f: &mut F)
+    where F: Walker<ArcKind>,
 {
     match **k {
         Kind::Function(ref a, ref r) => {
@@ -1107,10 +1107,10 @@ impl<I, T, F: ?Sized> Walker<T> for F
     }
 }
 
-impl<F: ?Sized> Walker<RcKind> for F
-    where F: FnMut(&RcKind),
+impl<F: ?Sized> Walker<ArcKind> for F
+    where F: FnMut(&ArcKind),
 {
-    fn walk(&mut self, typ: &RcKind) {
+    fn walk(&mut self, typ: &ArcKind) {
         self(typ);
         walk_kind(typ, self)
     }
@@ -1155,7 +1155,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
         }
-        Type::Record { ref row } => f.visit(row).map(|row| T::from(Type::Record { row: row })),
+        Type::Record(ref row) => f.visit(row).map(|row| T::from(Type::Record(row))),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             let new_fields = walk_move_types(fields, |field| {
                 f.visit(&field.typ).map(|typ| {

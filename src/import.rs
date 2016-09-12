@@ -118,12 +118,12 @@ impl<I> Macro for Import<I>
 {
     fn expand(&self,
               vm: &Thread,
-              arguments: &mut [SpannedExpr<Symbol>])
+              args: &mut [SpannedExpr<Symbol>])
               -> Result<SpannedExpr<Symbol>, MacroError> {
-        if arguments.len() != 1 {
+        if args.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
-        match arguments[0].value {
+        match args[0].value {
             Expr::Literal(Literal::String(ref filename)) => {
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
@@ -164,7 +164,7 @@ impl<I> Macro for Import<I>
                     try!(self.importer.import(vm, &modulename, file_contents));
                 }
                 // FIXME Does not handle shadowing
-                Ok(pos::spanned(arguments[0].span, Expr::Ident(TypedIdent::new(name))))
+                Ok(pos::spanned(args[0].span, Expr::Ident(TypedIdent::new(name))))
             }
             _ => return Err(Error::String("Expected a string literal to import".into()).into()),
         }

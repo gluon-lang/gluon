@@ -13,7 +13,7 @@ fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
         Ok(b) => Type::Builtin(b),
         Err(()) if s.starts_with(char::is_lowercase) => {
             Type::Generic(Generic {
-                kind: RcKind::new(Kind::Type),
+                kind: ArcKind::new(Kind::Type),
                 id: s,
             })
         }
