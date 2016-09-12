@@ -44,7 +44,7 @@ quick_error! {
     #[derive(Debug)]
     pub enum Error {
         /// Error found when parsing gluon code
-        Parse(err: Errors<parser::Error>) {
+        Parse(err: parser::Error) {
             description(err.description())
             display("{}", err)
             from()
@@ -350,7 +350,7 @@ impl Compiler {
     pub fn parse_expr(&mut self,
                       file: &str,
                       input: &str)
-                      -> StdResult<SpannedExpr<Symbol>, Errors<parser::Error>> {
+                      -> StdResult<SpannedExpr<Symbol>, parser::Error> {
         Ok(try!(parser::parse_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
                                    input)
             .map_err(|t| t.1)))
@@ -361,7 +361,7 @@ impl Compiler {
         (&mut self,
          file: &str,
          input: &str)
-         -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, Errors<parser::Error>)> {
+         -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, parser::Error)> {
         parser::parse_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
                            input)
     }

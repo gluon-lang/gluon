@@ -37,8 +37,7 @@ pub fn intern(s: &str) -> Symbol {
 }
 
 pub fn parse_new(s: &str)
-                 -> Result<SpannedExpr<Symbol>,
-                           (Option<SpannedExpr<Symbol>>, ::base::error::Errors<::parser::Error>)> {
+                 -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, ::parser::Error)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);

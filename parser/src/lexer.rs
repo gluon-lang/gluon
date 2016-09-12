@@ -5,7 +5,8 @@ use base::ast::is_operator_char;
 use base::pos::{BytePos, CharPos, Location, Span, Spanned};
 
 use combine::primitives::{Consumed, Error as CombineError, RangeStream};
-use combine::combinator::{take, take_while, EnvParser};
+use combine::combinator::EnvParser;
+use combine::range::{take, take_while};
 use combine::*;
 use combine::char::{alpha_num, char, letter, spaces, string};
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
@@ -377,9 +378,9 @@ impl<'input, I> Lexer<'input, I>
         let initial = input.clone();
         let ((builtin, op), _) = try!((optional((char('#'), take_while(char::is_alphabetic))),
                                        try(self.env.op_()))
-            .parse_state(input));
+            .parse_stream(input));
         let len = builtin.map_or(0, |(c, typ)| c.len_utf8() + typ.len()) + op.len();
-        take(len).parse_state(initial)
+        take(len).parse_stream(initial)
     }
 
     fn ident<'a>(&'a self) -> LanguageParser<'input, 'a, I, Token<&'input str>> {
@@ -391,7 +392,7 @@ impl<'input, I> Lexer<'input, I>
                    -> ParseResult<Token<&'input str>, LocatedStream<I>> {
         self.parser(Lexer::parse_ident2)
             .map(|x| Token::Ident(x.0, x.1))
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     /// Identifier parser which returns the identifier as well as the type of the identifier
@@ -409,7 +410,7 @@ impl<'input, I> Lexer<'input, I>
         let op = self.env.parens(self.env.range_op_()).map(|id| (id, IdentType::Operator));
         try(id)
             .or(try(op))
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn layout_independent_token(&mut self,
@@ -469,7 +470,7 @@ impl<'input, I> Lexer<'input, I>
             Ok((token, input)) => {
                 let input = input.into_inner();
                 let end = input.position();
-                let input = match self.env.white_space().parse_state(input.clone()) {
+                let input = match self.env.white_space().parse_stream(input.clone()) {
                     Ok(((), input)) => input.into_inner(),
                     Err(_) => input,
                 };
@@ -504,15 +505,15 @@ impl<'input, I> Lexer<'input, I>
                    -> ParseResult<Token<&'input str>, LocatedStream<I>> {
         loop {
             // Skip all whitespace before the token
-            let (_, new_input) = try!(spaces().parse_lazy(input));
+            let (_, new_input) = try!(spaces().parse_lazy(input).into());
             input = new_input.into_inner();
             *location = input.position();
-            let (first, one_char_consumed) = try!(any().parse_state(input.clone()));
+            let (first, one_char_consumed) = try!(any().parse_stream(input.clone()));
 
             // Decide how to tokenize depending on what the first char is
             // ie if its an operator then more operators will follow
             if is_operator_char(first) || first == '#' {
-                let (op, new_input) = try!(self.op().parse_state(input));
+                let (op, new_input) = try!(self.op().parse_stream(input));
                 input = new_input.into_inner();
                 let tok = match op {
                     "=" => Token::Equal,
@@ -521,7 +522,7 @@ impl<'input, I> Lexer<'input, I>
                     _ => {
                         if op.starts_with("///") {
                             let mut comment = String::new();
-                            let ((), new_input) = try!(spaces().parse_state(input));
+                            let ((), new_input) = try!(spaces().parse_stream(input));
                             input = new_input.into_inner();
                             // Merge consecutive line comments
                             loop {
@@ -531,7 +532,7 @@ impl<'input, I> Lexer<'input, I>
                                 let ((), new_input) = try!(line.into_result(()));
                                 input = new_input.into_inner();
                                 let mut p = spaces().with(try(string("///"))).skip(spaces());
-                                match p.parse_state(input.clone()) {
+                                match p.parse_stream(input.clone()) {
                                     Ok((_, new_input)) => input = new_input.into_inner(),
                                     Err(_) => break,
                                 }
@@ -543,7 +544,8 @@ impl<'input, I> Lexer<'input, I>
                         } else if op.starts_with("//") {
                             let ((), new_input) =
                                 try!(skip_many(satisfy(|c| c != '\n' && c != '\r'))
-                                    .parse_lazy(input));
+                                    .parse_lazy(input)
+                                    .into());
                             input = new_input.into_inner();
                             continue;
                         } else if op.starts_with("/*") {
@@ -572,14 +574,14 @@ impl<'input, I> Lexer<'input, I>
                         }
                     })
                     .or(self.env.float_().map(Token::Float))
-                    .parse_state(input);
+                    .parse_stream(input);
             } else if first.is_alphabetic() || first == '_' {
-                return self.ident().map(|t| self.id_to_keyword(t)).parse_state(input);
+                return self.ident().map(|t| self.id_to_keyword(t)).parse_stream(input);
             }
 
             let tok = match first {
                 '(' => {
-                    match self.ident().map(|t| self.id_to_keyword(t)).parse_state(input) {
+                    match self.ident().map(|t| self.id_to_keyword(t)).parse_stream(input) {
                         Ok(x) => return Ok(x),
                         Err(_) => Token::Open(Delimiter::Paren),
                     }
@@ -593,8 +595,8 @@ impl<'input, I> Lexer<'input, I>
                 ',' => Token::Comma,
                 '.' => Token::Dot,
                 '\\' => Token::Lambda,
-                '"' => return self.env.string_literal_().map(Token::String).parse_state(input),
-                '\'' => return self.env.char_literal_().map(Token::Char).parse_state(input),
+                '"' => return self.env.string_literal_().map(Token::String).parse_stream(input),
+                '\'' => return self.env.char_literal_().map(Token::Char).parse_stream(input),
                 _ => Token::EOF,
             };
             return Ok((tok, one_char_consumed));
@@ -606,10 +608,10 @@ impl<'input, I> Lexer<'input, I>
             let mut input = Consumed::Empty(input);
             loop {
                 match input.clone()
-                    .combine(|input| try(string("*/")).parse_lazy(input)) {
+                    .combine(|input| try(string("*/")).parse_lazy(input).into()) {
                     Ok((_, input)) => return Ok(((), input)),
                     Err(_) => {
-                        match input.combine(|input| any().parse_state(input)) {
+                        match input.combine(|input| any().parse_stream(input)) {
                             Ok((_, rest)) => {
                                 input = rest;
                             }
@@ -619,21 +621,21 @@ impl<'input, I> Lexer<'input, I>
                 }
             }
         });
-        block_doc_comment.parse_state(input)
+        block_doc_comment.parse_stream(input)
     }
 
     fn block_doc_comment(&self,
                          input: LocatedStream<I>)
                          -> ParseResult<Token<&'input str>, LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
-            let ((), mut input) = try!(spaces().parse_state(input));
+            let ((), mut input) = try!(spaces().parse_stream(input));
             let mut out = String::new();
             loop {
                 match input.clone()
-                    .combine(|input| try(string("*/")).parse_lazy(input)) {
+                    .combine(|input| try(string("*/")).parse_lazy(input).into()) {
                     Ok((_, input)) => return Ok((Token::DocComment(out), input)),
                     Err(_) => {
-                        match input.combine(|input| any().parse_state(input)) {
+                        match input.combine(|input| any().parse_stream(input)) {
                             Ok((c, rest)) => {
                                 out.push(c);
                                 input = rest
@@ -644,7 +646,7 @@ impl<'input, I> Lexer<'input, I>
                 }
             }
         });
-        block_doc_comment.parse_state(input)
+        block_doc_comment.parse_stream(input)
     }
 
     fn layout_token(&mut self,
