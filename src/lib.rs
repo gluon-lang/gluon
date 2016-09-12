@@ -29,6 +29,7 @@ use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::symbol::{Name, NameBuf, Symbol, Symbols, SymbolModule};
 use base::types::ArcType;
+use parser::ParseError;
 use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::generic::A;
@@ -44,7 +45,7 @@ quick_error! {
     #[derive(Debug)]
     pub enum Error {
         /// Error found when parsing gluon code
-        Parse(err: parser::Error) {
+        Parse(err: InFile<ParseError>) {
             description(err.description())
             display("{}", err)
             from()
@@ -346,24 +347,24 @@ impl Compiler {
         self
     }
 
-    /// Parse `input`, returning an expression if successful
+    /// Parse `expr_str`, returning an expression if successful
     pub fn parse_expr(&mut self,
                       file: &str,
-                      input: &str)
-                      -> StdResult<SpannedExpr<Symbol>, parser::Error> {
-        Ok(try!(parser::parse_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
-                                   input)
-            .map_err(|t| t.1)))
+                      expr_str: &str)
+                      -> StdResult<SpannedExpr<Symbol>, InFile<ParseError>> {
+        self.parse_partial_expr(file, expr_str)
+            .map_err(|(_, err)| err)
     }
 
     /// Parse `input`, returning an expression if successful
     pub fn parse_partial_expr
         (&mut self,
          file: &str,
-         input: &str)
-         -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, parser::Error)> {
-        parser::parse_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
-                           input)
+         expr_str: &str)
+         -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<ParseError>)> {
+        Ok(try!(parser::parse_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
+                                   expr_str)
+            .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))))
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
