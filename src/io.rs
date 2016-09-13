@@ -4,7 +4,7 @@ use std::fmt;
 use std::fs::File;
 use std::sync::Mutex;
 
-use vm::{Result, Variants};
+use vm::{self, Result, Variants};
 use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::ThreadInternal;
@@ -155,8 +155,13 @@ fn catch_io(vm: &Thread) -> Status {
 }
 
 fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<String> {
-    let trace = stack.stacktrace(frame_level);
-    let fmt = format!("{}\n{}", err, trace);
+    let fmt = match err {
+        Error::VM(vm::Error::Panic(_)) => {
+            let trace = stack.stacktrace(frame_level);
+            format!("{}\n{}", err, trace)
+        }
+        _ => format!("{}", err),
+    };
     while stack.stack.get_frames().len() > frame_level {
         if let Err(_) = stack.exit_scope() {
             return IO::Exception(fmt);
