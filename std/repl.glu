@@ -67,11 +67,14 @@ let commands : Map String Cmd =
     load commands
 
 let do_command line : String -> IO Bool =
-    let cmd = string.slice line 1 2
-    let arg = if string.length line >= 3 then string.trim (string.slice line 3 (string.length line)) else ""
-    match find cmd commands with
-        | Some command -> command.action arg
-        | None -> io.println ("Unknown command '"  ++ cmd ++ "'") *> pure True
+    if string.length line >= 2 then
+        let cmd = string.slice line 1 2
+        let arg = if string.length line >= 3 then string.trim (string.slice line 3 (string.length line)) else ""
+        match find cmd commands with
+            | Some command -> command.action arg
+            | None -> io.println ("Unknown command '"  ++ cmd ++ "'") *> pure True
+    else
+        io.println "Expected a command such as `:h`" *> pure True
 
 let store line : String -> IO Bool =
     let line = string.trim line
