@@ -18,20 +18,32 @@ use std::rc::Rc;
 
 use base::ast::*;
 use base::error::Errors;
-use base::pos::{self, BytePos, Span};
+use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Alias, ArcType, Generic, Field, Kind, Type};
 use base::symbol::{Name, Symbol};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream};
+use combine::primitives::FastResult::*;
 use combine::combinator::EnvParser;
 use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy, sep_by1,
-              sep_end_by, token, try, value, ParseError, ParseResult, Parser, ParserExt};
+              sep_end_by, token, try, value, ParseError as CombineParseError, ParseResult, Parser};
 use combine_language::{Assoc, Fixity, expression_parser};
 
 use lexer::{Lexer, Delimiter, Token, IdentType};
 
-pub type Error = ParseError<StreamType>;
+#[derive(Debug, PartialEq)]
+pub struct ParseError {
+    pub errors: Vec<CombineError<Token<String>, Token<String>>>,
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        CombineError::fmt_errors(&self.errors, f)
+    }
+}
+
+pub type Error = Errors<Spanned<ParseError, BytePos>>;
 
 // Dummy type for ParseError which has the correct associated types
 #[derive(Clone)]
@@ -64,7 +76,7 @@ struct ParserEnv<I, F>
     empty_id: F::Ident,
     hole_typ: ArcType<F::Ident>,
     make_ident: Rc<RefCell<F>>,
-    errors: RefCell<Errors<Error>>,
+    errors: RefCell<Error>,
     env: PhantomData<I>,
 }
 
@@ -119,7 +131,7 @@ macro_rules! match_parser {
                             _ => unreachable!(),
                         }
                     })
-                    .parse_state(input)
+                    .parse_stream(input)
             }
 
             self.parser(inner)
@@ -188,7 +200,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     fn parse_ident(&self, input: I) -> ParseResult<Id, I> {
         self.parser(ParserEnv::<I, F>::parse_ident2)
             .map(|x| x.0)
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     /// Identifier parser which returns the identifier as well as the type of the identifier
@@ -205,7 +217,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                     _ => unreachable!(),
                 }
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn ident_type<'a>(&'a self) -> LanguageParser<'a, I, F, ArcType<Id>> {
@@ -229,7 +241,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                     }
                 }
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     match_parser! { string_literal, String -> String }
@@ -255,7 +267,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .map(|(_, id, args): (_, _, Vec<_>)| (id, Type::function(args, return_type.clone())));
         many1(variant)
             .map(Type::variants)
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn parse_type(&self, input: I) -> ParseResult<ArcType<Id>, I> {
@@ -274,7 +286,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                     None => arg,
                 }
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn record_type(&self, input: I) -> ParseResult<ArcType<Id>, I> {
@@ -282,12 +294,12 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .then(|(id, typ)| {
                 parser(move |input| {
                     if typ == IdentType::Constructor {
-                        value((id.clone(), None)).parse_state(input)
+                        value((id.clone(), None)).parse_stream(input)
                     } else {
                         token(Token::Colon)
                             .with(self.typ())
                             .map(|typ| (id.clone(), Some(typ)))
-                            .parse_state(input)
+                            .parse_stream(input)
                     }
                 })
             });
@@ -321,7 +333,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                 }
                 Type::record(associated, types)
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn type_arg(&self, input: I) -> ParseResult<ArcType<Id>, I> {
@@ -337,7 +349,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                              }
                          }),
                      &mut self.ident_type()])
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn type_decl(&self, input: I) -> ParseResult<Bindings<Id>, I> {
@@ -357,7 +369,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                 bindings.insert(0, first);
                 Bindings::TypeBindings(bindings)
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn type_binding(&self, input: I) -> ParseResult<TypeBinding<Id>, I> {
@@ -396,7 +408,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                         }
                     })
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn expr<'a>(&'a self) -> LanguageParser<'a, I, F, SpannedExpr<Id>> {
@@ -414,7 +426,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                     f
                 }
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     /// Parses an expression which could be an argument to a function
@@ -433,12 +445,13 @@ impl<'input, I, Id, F> ParserEnv<I, F>
             .map(loc);
         loop {
             match declaration_parser.parse_lazy(input.clone()) {
-                Ok((bindings, new_input)) => {
+                ConsumedOk((bindings, new_input)) |
+                EmptyOk((bindings, new_input)) => {
                     let_bindings.push(bindings);
-                    input = new_input.into_inner();
+                    input = new_input;
                 }
-                Err(err @ Consumed::Consumed(_)) => return Err(err),
-                Err(Consumed::Empty(err)) => {
+                ConsumedErr(err) => return Err(Consumed::Consumed(err)),
+                EmptyErr(err) => {
                     // If a let or type binding has been parsed then any kind of expression can
                     // follow
                     let mut expr_parser = if let_bindings.is_empty() {
@@ -446,7 +459,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                     } else {
                         self.expr()
                     };
-                    let (expr, new_input) = try!(expr_parser.parse_state(input)
+                    let (expr, new_input) = try!(expr_parser.parse_stream(input)
                         .map_err(|err2| err2.map(|err2| err.merge(err2))));
                     resulting_expr = expr;
                     input = new_input.into_inner();
@@ -516,7 +529,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                   Expr::Projection(Box::new(expr), id, Type::hole()))
                 })
             })
-            .parse_state(input)
+            .parse_stream(input)
 
     }
 
@@ -525,12 +538,14 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         let mut fields = Vec::new();
         let mut input = Consumed::Empty(input);
         loop {
-            input = match input.clone().combine(|input| token(Token::Dot).parse_lazy(input)) {
+            input = match input.clone()
+                .combine(|input| token(Token::Dot).parse_lazy(input).into()) {
                 Ok((_, input)) => input,
                 Err(_) => return Ok((fields, input)),
             };
             let end = input.clone().into_inner().position().end;
-            input = match input.clone().combine(|input| self.ident().parse_lazy(input)) {
+            input = match input.clone()
+                .combine(|input| self.ident().parse_lazy(input).into()) {
                 Ok((field, input)) => {
                     fields.push((field, end));
                     input
@@ -569,7 +584,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                         _ => unreachable!(),
                     }
                 })
-                .parse_state(input)
+                .parse_stream(input)
         }
         self.parser(inner)
     }
@@ -604,7 +619,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                      Expr::Block(exprs))
                     }
                 }))
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn lambda(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
@@ -622,7 +637,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                                   body: Box::new(expr),
                               }))
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn case_of(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
@@ -640,7 +655,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                               alts.last().expect("No alternatives").expr.span.end,
                               Expr::Match(Box::new(expr), alts))
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn pattern<'a>(&'a self) -> LanguageParser<'a, I, F, SpannedPattern<Id>> {
@@ -656,7 +671,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                     parser(move |input| {
                         if typ == IdentType::Constructor {
                             many(self.ident())
-                                .parse_state(input)
+                                .parse_stream(input)
                                 .map(|(args, input): (Vec<Id>, _)| {
                                     (Pattern::Constructor(TypedIdent::new(id.clone()),
                                                           args.iter()
@@ -691,7 +706,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                 .or(between(token(Token::Open(Delimiter::Paren)),
                             token(Token::Close(Delimiter::Paren)),
                             self.pattern()))
-                .parse_state(input)
+                .parse_stream(input)
         })
     }
 
@@ -710,7 +725,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                              },
                              Expr::IfElse(Box::new(b), Box::new(t), Box::new(f)))
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn let_in(&self, input: I) -> ParseResult<Bindings<Id>, I> {
@@ -730,18 +745,20 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                 bindings.insert(0, b);
                 Bindings::LetBindings(bindings)
             })
-            .parse_state(input)
+            .parse_stream(input)
     }
 
     fn binding(&self, input: I) -> ParseResult<ValueBinding<Id>, I> {
-        let (name, input) = try!(self.pattern().parse_state(input));
+        let (name, input) = try!(self.pattern().parse_stream(input));
         let (args, input) = match name.value {
-            Pattern::Ident(_) => try!(input.combine(|input| many(self.ident()).parse_state(input))),
+            Pattern::Ident(_) => {
+                try!(input.combine(|input| many(self.ident()).parse_stream(input)))
+            }
             _ => (Vec::new(), input),
         };
         let type_sig = token(Token::Colon).with(self.typ());
         let ((typ, _, e), input) = try!(input.combine(|input| {
-            (optional(type_sig), token(Token::Equal), self.expr()).parse_state(input)
+            (optional(type_sig), token(Token::Equal), self.expr()).parse_stream(input)
         }));
 
         Ok((ValueBinding {
@@ -773,7 +790,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                         exprs: exprs,
                     }
                 })
-                .parse_state(input)
+                .parse_stream(input)
         })
     }
 
@@ -789,12 +806,12 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                     let result = if typ == IdentType::Constructor {
                         optional(token(Token::Equal).with(p1.clone()))
                             .map(Ok)
-                            .parse_state(input)
+                            .parse_stream(input)
 
                     } else {
                         optional(token(Token::Equal).with(p2.clone()))
                             .map(Err)
-                            .parse_state(input)
+                            .parse_stream(input)
                     };
                     result.map(|(x, input)| ((id.clone(), x), input))
                 })
@@ -810,7 +827,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 // compiletimes of the parser does not bleed into the other crates
 pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
                   input: &str)
-                  -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, Errors<Error>)> {
+                  -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, Error)> {
     parse_expr_(symbols, input)
 }
 
@@ -818,15 +835,14 @@ pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
 pub fn parse_string<'env, 'input>
     (make_ident: &'env mut IdentEnv<Ident = String>,
      input: &'input str)
-     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
+     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Error)> {
     parse_expr_(make_ident, input)
 }
 
 /// Parses a gluon expression
-pub fn parse_expr_<'env, 'input, Id>
-    (make_ident: &'env mut IdentEnv<Ident = Id>,
-     input: &'input str)
-     -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
+pub fn parse_expr_<'env, 'input, Id>(make_ident: &'env mut IdentEnv<Ident = Id>,
+                                     input: &'input str)
+                                     -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Error)>
     where Id: Clone + PartialEq + fmt::Debug,
 {
     let make_ident = Rc::new(RefCell::new(make_ident));
@@ -861,17 +877,14 @@ pub fn parse_expr_<'env, 'input, Id>
     }
 }
 
-fn static_error<'input, I>(error: ParseError<I>) -> Error
+fn static_error<'input, I>(error: CombineParseError<I>) -> Spanned<ParseError, BytePos>
     where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
 {
     let errors = error.errors
         .into_iter()
         .map(static_error_)
         .collect();
-    ParseError {
-        position: error.position.start,
-        errors: errors,
-    }
+    pos::spanned(error.position, ParseError { errors: errors })
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
