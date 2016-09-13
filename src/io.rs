@@ -8,7 +8,7 @@ use vm::{self, Result, Variants};
 use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::ThreadInternal;
-use vm::thread::{Thread, Status, RootStr};
+use vm::thread::{Thread, Status};
 use vm::api::{Array, Generic, VmType, Getable, Pushable, IO, WithVM, Userdata, primitive};
 use vm::api::generic::{A, B};
 use vm::stack::StackFrame;
@@ -17,13 +17,13 @@ use vm::internal::Value;
 
 use super::{Compiler, Error};
 
-fn print_int(i: VmInt) -> IO<()> {
-    print!("{}", i);
+fn print(s: &str) -> IO<()> {
+    print!("{}", s);
     IO::Value(())
 }
 
-fn print(s: RootStr) -> IO<()> {
-    println!("{}", &*s);
+fn println(s: &str) -> IO<()> {
+    println!("{}", s);
     IO::Value(())
 }
 
@@ -170,10 +170,9 @@ fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<Str
     IO::Exception(fmt)
 }
 
-fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
-    let WithVM { vm, value: expr } = expr;
+fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> IO<String> {
     let frame_level = vm.context().stack.get_frames().len();
-    let run_result = Compiler::new().run_expr::<Generic<A>>(vm, "<top>", &expr);
+    let run_result = Compiler::new().run_expr::<Generic<A>>(vm, "<top>", expr);
     let mut context = vm.context();
     let stack = StackFrame::current(&mut context.stack);
     match run_result {
@@ -182,14 +181,13 @@ fn run_expr(expr: WithVM<RootStr>) -> IO<String> {
     }
 }
 
-fn load_script(name: WithVM<RootStr>, expr: RootStr) -> IO<String> {
-    let WithVM { vm, value: name } = name;
+fn load_script(WithVM { vm, value: name }: WithVM<&str>, expr: &str) -> IO<String> {
     let frame_level = vm.context().stack.get_frames().len();
-    let run_result = Compiler::new().load_script(vm, &name[..], &expr);
+    let run_result = Compiler::new().load_script(vm, name, expr);
     let mut context = vm.context();
     let stack = StackFrame::current(&mut context.stack);
     match run_result {
-        Ok(()) => IO::Value(format!("Loaded {}", &name[..])),
+        Ok(()) => IO::Value(format!("Loaded {}", name)),
         Err(err) => clear_frames(err, frame_level, stack),
     }
 }
@@ -217,13 +215,13 @@ pub fn load(vm: &Thread) -> Result<()> {
     // IO functions
     try!(vm.define_global("io",
                           record!(
-        print_int => primitive!(1 print_int),
         open_file => primitive!(1 open_file),
         read_file => primitive!(2 read_file),
         read_file_to_string => primitive!(1 read_file_to_string),
         read_char => primitive!(0 read_char),
         read_line => primitive!(0 read_line),
         print => primitive!(1 print),
+        println => primitive!(1 println),
         catch =>
             primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", catch_io),
         run_expr => primitive!(1 run_expr),
