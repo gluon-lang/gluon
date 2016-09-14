@@ -7,16 +7,6 @@ let monoid = {
     empty = ""
 }
 
-let starts_with haystack needle =
-    match string_prim.find haystack needle with
-        | Some i -> i == 0
-        | None -> False
-
-let ends_with haystack needle =
-    match string_prim.rfind haystack needle with
-        | Some i -> i == string_prim.length haystack - string_prim.length needle
-        | None -> False
-
 let eq : Eq String = {
     (==) = string_prim.eq
 }
@@ -43,7 +33,7 @@ let show : Show String = {
     ord,
     show,
     slice = string_prim.slice,
-    starts_with,
-    ends_with,
+    starts_with = string_prim.starts_with,
+    ends_with = string_prim.ends_with,
     monoid
 }

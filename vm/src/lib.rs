@@ -88,6 +88,9 @@ quick_error! {
         Message(err: String) {
             display("{}", err)
         }
+        Panic(err: String) {
+            display("{}", err)
+        }
     }
 }
 

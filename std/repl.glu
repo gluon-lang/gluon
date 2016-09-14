@@ -30,8 +30,8 @@ type Cmd = {
 let commands : Map String Cmd =
     let print_result result =
         match result with
-            | Ok x -> io.print x
-            | Err x -> io.print x
+            | Ok x -> io.println x
+            | Err x -> io.println x
 
     let commands = ref empty
     let cmds =
@@ -50,16 +50,16 @@ let commands : Map String Cmd =
             }
             <> singleton "l" {
                 info = "Loads the file at 'folder/module.ext' and stores it at 'module'",
-                action = \arg -> load_file arg >>= io.print *> pure True
+                action = \arg -> load_file arg >>= io.println *> pure True
             }
             <> singleton "h" {
                 info = "Print this help",
                 action = \_ ->
-                    io.print "Available commands\n" *>
+                    io.println "Available commands\n" *>
                         forM_ (to_list (load commands)) (\cmd ->
                             //FIXME This type declaration should not be needed
                             let cmd : { key : String, value : Cmd } = cmd
-                            io.print ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
+                            io.println ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
                         ) *>
                         pure True
             }
@@ -67,11 +67,14 @@ let commands : Map String Cmd =
     load commands
 
 let do_command line : String -> IO Bool =
-    let cmd = string.slice line 1 2
-    let arg = if string.length line >= 3 then string.trim (string.slice line 3 (string.length line)) else ""
-    match find cmd commands with
-        | Some command -> command.action arg
-        | None -> io.print ("Unknown command '"  ++ cmd ++ "'") *> pure True
+    if string.length line >= 2 then
+        let cmd = string.slice line 1 2
+        let arg = if string.length line >= 3 then string.trim (string.slice line 3 (string.length line)) else ""
+        match find cmd commands with
+            | Some command -> command.action arg
+            | None -> io.println ("Unknown command '"  ++ cmd ++ "'") *> pure True
+    else
+        io.println "Expected a command such as `:h`" *> pure True
 
 let store line : String -> IO Bool =
     let line = string.trim line
@@ -80,7 +83,7 @@ let store line : String -> IO Bool =
             let binding = string.slice line 0 bind_end
             let expr = string.slice line bind_end (string.length line)
             io.load_script binding expr *> pure True
-        | None -> io.print "Expected binding in definition" *> pure True
+        | None -> io.println "Expected binding in definition" *> pure True
 
 let loop editor : Editor -> IO () =
     let run_line line =
@@ -102,7 +105,7 @@ let loop editor : Editor -> IO () =
                 if continue then loop editor else pure ()
 
 let run x : () -> IO () =
-    io.print "gluon (:h for help, :q to quit)"
+    io.println "gluon (:h for help, :q to quit)"
         *> loop (rustyline.new_editor ())
 
 run

@@ -259,6 +259,8 @@ pub fn load(vm: &Thread) -> Result<()> {
         split_at => primitive!(2 str::split_at),
         find => primitive!(2 str::find::<&str>),
         rfind => primitive!(2 str::rfind::<&str>),
+        starts_with => primitive!(2 str::starts_with::<&str>),
+        ends_with => primitive!(2 str::ends_with::<&str>),
         trim => primitive!(1 str::trim),
         trim_left => primitive!(1 str::trim_left),
         trim_right => primitive!(1 str::trim_right),

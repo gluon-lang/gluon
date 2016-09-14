@@ -796,7 +796,7 @@ impl<'b> OwnedContext<'b> {
             Status::Yield => Err(Error::Yield),
             Status::Error => {
                 match self.stack.pop() {
-                    String(s) => Err(Error::Message(s.to_string())),
+                    String(s) => Err(Error::Panic(s.to_string())),
                     _ => {
                         Err(Error::Message(format!("Unexpected error calling function `{}`",
                                                    function.id)))
