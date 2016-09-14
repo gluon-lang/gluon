@@ -69,7 +69,9 @@ impl<'a> Source<'a> {
         let line_number = self.line_number_at_byte(byte);
 
         self.line(line_number).and_then(|(line_byte, line)| {
+            let mut end_col = -1isize;
             for (col, (next_byte, _)) in line.char_indices().enumerate() {
+                end_col = col as isize;
                 let curr_byte = line_byte + BytePos::from(next_byte);
 
                 if curr_byte == byte {
@@ -80,7 +82,16 @@ impl<'a> Source<'a> {
                     });
                 }
             }
-            None
+            // Handle the case where `byte` is equal to the source's length
+            if byte == line_byte + BytePos::from(line.len()) {
+                Some(Location {
+                    line: line_number as u32,
+                    column: CharPos((end_col + 2) as usize),
+                    absolute: byte,
+                })
+            } else {
+                None
+            }
         })
     }
 }
@@ -154,5 +165,16 @@ mod tests {
                    }));
 
         assert_eq!(source.location(BytePos(400)), None);
+    }
+
+    #[test]
+    fn source_location_end_of_source() {
+        let source = test_source();
+        assert_eq!(source.location(BytePos::from(source.src.len())),
+                   Some(Location {
+                       line: 6,
+                       column: CharPos(1),
+                       absolute: BytePos::from(source.src.len()),
+                   }));
     }
 }

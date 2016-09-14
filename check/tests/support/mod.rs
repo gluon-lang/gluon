@@ -104,6 +104,7 @@ impl PrimitiveEnv for MockEnv {
 #[allow(dead_code)]
 pub struct MockIdentEnv<T>(PhantomData<T>);
 
+#[allow(dead_code)]
 impl<T> MockIdentEnv<T> {
     pub fn new() -> MockIdentEnv<T> {
         MockIdentEnv(PhantomData)
