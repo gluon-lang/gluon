@@ -66,11 +66,22 @@ impl fmt::Display for BytePos {
 }
 
 pos_struct! {
-    /// A character position - usually used for column offsets
-    pub struct CharPos(usize);
+    /// A column number, indexed from `1`
+    pub struct Column(usize);
 }
 
-impl fmt::Display for CharPos {
+impl fmt::Display for Column {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+pos_struct! {
+    /// A line number, indexed from `1`
+    pub struct Line(usize);
+}
+
+impl fmt::Display for Line {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -79,23 +90,23 @@ impl fmt::Display for CharPos {
 /// A location in a source file
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
 pub struct Location {
-    pub line: u32,
-    pub column: CharPos,
+    pub line: Line,
+    pub column: Column,
     pub absolute: BytePos,
 }
 
 impl Location {
     pub fn bump(&mut self, ch: char) {
         if ch == '\n' {
-            self.line += 1;
-            self.column = CharPos::from(1);
+            self.line += Line::from(1);
+            self.column = Column::from(1);
         } else {
-            self.column += CharPos::from(1);
+            self.column += Column::from(1);
         }
         self.absolute += BytePos::from(ch.len_utf8());
     }
 
-    pub fn line_offset(mut self, offset: CharPos) -> Location {
+    pub fn line_offset(mut self, offset: Column) -> Location {
         self.column += offset;
         self
     }

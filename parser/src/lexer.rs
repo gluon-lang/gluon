@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use base::ast::is_operator_char;
-use base::pos::{BytePos, CharPos, Location, Span, Spanned};
+use base::pos::{BytePos, Column, Line, Location, Span, Spanned};
 
 use combine::primitives::{Consumed, Error as CombineError, RangeStream};
 use combine::combinator::EnvParser;
@@ -347,8 +347,8 @@ impl<'input, I> Lexer<'input, I>
             env: env,
             input: Some(LocatedStream {
                 location: Location {
-                    line: 1,
-                    column: CharPos::from(1),
+                    line: Line::from(1),
+                    column: Column::from(1),
                     absolute: BytePos::from(0),
                 },
                 input: input,
@@ -451,8 +451,8 @@ impl<'input, I> Lexer<'input, I>
             Some(input) => input,
             None => {
                 let loc = Location {
-                    line: 0,
-                    column: CharPos::from(1),
+                    line: Line::from(0),
+                    column: Column::from(1),
                     absolute: BytePos::from(0),
                 };
                 return SpannedToken {
@@ -690,7 +690,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
           I::Range: fmt::Debug,
 {
     if token.value == Token::EOF {
-        token.span.start.column = CharPos::from(0);
+        token.span.start.column = Column::from(0);
     }
     loop {
         // Retrieve the current indentation level if one exists

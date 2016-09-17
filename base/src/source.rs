@@ -1,4 +1,4 @@
-use pos::{BytePos, CharPos, Location};
+use pos::{BytePos, Column, Line, Location};
 
 #[derive(Clone, Debug)]
 pub struct Source<'a> {
@@ -33,8 +33,8 @@ impl<'a> Source<'a> {
         &self.src
     }
 
-    pub fn line(&self, line_number: u32) -> Option<(BytePos, &str)> {
-        let line_number = line_number as usize;
+    pub fn line(&self, line_number: Line) -> Option<(BytePos, &str)> {
+        let line_number = line_number.to_usize();
 
         if line_number == 0 {
             return None;
@@ -55,27 +55,27 @@ impl<'a> Source<'a> {
         self.line(line_number)
     }
 
-    pub fn line_number_at_byte(&self, byte: BytePos) -> u32 {
+    pub fn line_number_at_byte(&self, byte: BytePos) -> Line {
         let num_lines = self.lines.len();
 
-        ((0..num_lines)
+        Line::from((0..num_lines)
             .filter(|&i| self.lines[i] > byte)
             .map(|i| i - 1)
             .next()
-            .unwrap_or(num_lines - 1) + 1) as u32
+            .unwrap_or(num_lines - 1) + 1)
     }
 
     pub fn location(&self, byte: BytePos) -> Option<Location> {
-        let line_number = self.line_number_at_byte(byte);
+        let line_index = self.line_number_at_byte(byte);
 
-        self.line(line_number).and_then(|(line_byte, line)| {
+        self.line(line_index).and_then(|(line_byte, line)| {
             for (col, (next_byte, _)) in line.char_indices().enumerate() {
                 let curr_byte = line_byte + BytePos::from(next_byte);
 
                 if curr_byte == byte {
                     return Some(Location {
-                        line: line_number as u32,
-                        column: CharPos::from(col + 1),
+                        line: Line::from(line_index),
+                        column: Column::from(col + 1),
                         absolute: byte,
                     });
                 }
@@ -87,7 +87,7 @@ impl<'a> Source<'a> {
 
 #[cfg(test)]
 mod tests {
-    use pos::{BytePos, CharPos, Location};
+    use pos::{BytePos, Column, Line, Location};
 
     use super::Source;
 
@@ -99,33 +99,33 @@ mod tests {
     fn source_line() {
         let source = test_source();
 
-        assert_eq!(source.line(0), None);
-        assert_eq!(source.line(1), Some((BytePos::from(0), "hello!")));
-        assert_eq!(source.line(2), Some((BytePos::from(7), "howdy")));
-        assert_eq!(source.line(3), Some((BytePos::from(13), "")));
-        assert_eq!(source.line(4), Some((BytePos::from(14), "hi萤")));
-        assert_eq!(source.line(5), Some((BytePos::from(20), "bloop")));
-        assert_eq!(source.line(6), Some((BytePos::from(26), "")));
-        assert_eq!(source.line(7), None);
+        assert_eq!(source.line(Line::from(0)), None);
+        assert_eq!(source.line(Line::from(1)), Some((BytePos::from(0), "hello!")));
+        assert_eq!(source.line(Line::from(2)), Some((BytePos::from(7), "howdy")));
+        assert_eq!(source.line(Line::from(3)), Some((BytePos::from(13), "")));
+        assert_eq!(source.line(Line::from(4)), Some((BytePos::from(14), "hi萤")));
+        assert_eq!(source.line(Line::from(5)), Some((BytePos::from(20), "bloop")));
+        assert_eq!(source.line(Line::from(6)), Some((BytePos::from(26), "")));
+        assert_eq!(source.line(Line::from(7)), None);
     }
 
     #[test]
     fn source_line_number_at_byte() {
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(0)), 1);
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(6)), 1);
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(7)), 2);
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(8)), 2);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(0)), Line::from(1));
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(6)), Line::from(1));
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(7)), Line::from(2));
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(8)), Line::from(2));
 
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(12)), 2);
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(13)), 3);
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(14)), 4);
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(15)), 4);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(12)), Line::from(2));
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(13)), Line::from(3));
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(14)), Line::from(4));
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(15)), Line::from(4));
 
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(18)), 4);
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(19)), 4);
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(20)), 5);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(18)), Line::from(4));
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(19)), Line::from(4));
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(20)), Line::from(5));
 
-        assert_eq!(test_source().line_number_at_byte(BytePos::from(400)), 6);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(400)), Line::from(6));
     }
 
     #[test]
@@ -134,22 +134,22 @@ mod tests {
 
         assert_eq!(source.location(BytePos::from(0)),
                    Some(Location {
-                       line: 1,
-                       column: CharPos::from(1),
+                       line: Line::from(1),
+                       column: Column::from(1),
                        absolute: BytePos::from(0),
                    }));
 
         assert_eq!(source.location(BytePos::from(3)),
                    Some(Location {
-                       line: 1,
-                       column: CharPos::from(4),
+                       line: Line::from(1),
+                       column: Column::from(4),
                        absolute: BytePos::from(3),
                    }));
 
         assert_eq!(source.location(BytePos::from(16)),
                    Some(Location {
-                       line: 4,
-                       column: CharPos::from(3),
+                       line: Line::from(4),
+                       column: Column::from(3),
                        absolute: BytePos::from(16),
                    }));
 
