@@ -184,6 +184,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 v.visit_expr(&mut bind.expr);
+                v.visit_typ(&mut bind.typ);
             }
             v.visit_expr(&mut **body);
         }

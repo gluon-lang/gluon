@@ -1045,9 +1045,10 @@ impl<'a> Typecheck<'a> {
                 self.environment.stack.get_all(symbol).expect("Symbol is not in scope");
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
-                debug!("Intersect\n{} <> {}",
-                       types::display_type(&self.symbols, existing_type),
-                       types::display_type(&self.symbols, symbol_type));
+                debug!("Intersect `{}`\n{} <> {}",
+                       symbol,
+                       types::display_type(&self.symbols, self.subs.real(existing_type)),
+                       types::display_type(&self.symbols, self.subs.real(symbol_type)));
                 let state = unify_type::State::new(&self.environment, &self.subs);
                 let result = unify::intersection(&self.subs, state, existing_type, symbol_type);
                 debug!("Intersect result {}", result);

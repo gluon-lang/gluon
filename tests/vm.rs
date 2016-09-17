@@ -521,6 +521,17 @@ match array.index arr 0 with
 0i32
 }
 
+test_expr!{ overload_resolution_with_record_pattern,
+r#"
+let f =
+    \x g ->
+        let { x } = g x
+        x
+f 0 (\r -> { x = r #Int+ 1 })
+"#,
+1i32
+}
+
 #[test]
 fn overloaded_bindings() {
     let _ = ::env_logger::init();
