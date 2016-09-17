@@ -11,7 +11,7 @@ use base::ast::{Expr, Literal, SpannedExpr, TypedIdent};
 use base::metadata::Metadata;
 use base::pos;
 use base::symbol::Symbol;
-use vm::macros::{Macro, Error as MacroError};
+use vm::macros::{Macro, MacroExpander, Error as MacroError};
 use vm::thread::{Thread, ThreadInternal};
 use vm::internal::Value;
 use super::{filename_to_module, Compiler};
@@ -92,7 +92,6 @@ impl Importer for CheckImporter {
 /// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
 /// already loaded and then a global access to the loaded module
 pub struct Import<I = DefaultImporter> {
-    visited: RwLock<Vec<String>>,
     pub paths: RwLock<Vec<PathBuf>>,
     pub importer: I,
 }
@@ -101,7 +100,6 @@ impl<I> Import<I> {
     /// Creates a new import macro
     pub fn new(importer: I) -> Import<I> {
         Import {
-            visited: RwLock::new(Vec::new()),
             paths: RwLock::new(vec![PathBuf::from(".")]),
             importer: importer,
         }
@@ -113,11 +111,15 @@ impl<I> Import<I> {
     }
 }
 
+struct State {
+    visited: Vec<String>,
+}
+
 impl<I> Macro for Import<I>
     where I: Importer,
 {
     fn expand(&self,
-              vm: &Thread,
+              macros: &mut MacroExpander,
               args: &mut [SpannedExpr<Symbol>])
               -> Result<SpannedExpr<Symbol>, MacroError> {
         if args.len() != 1 {
@@ -125,16 +127,23 @@ impl<I> Macro for Import<I>
         }
         match args[0].value {
             Expr::Literal(Literal::String(ref filename)) => {
+                let state = macros.state
+                    .entry(String::from("import"))
+                    .or_insert_with(|| Box::new(State { visited: Vec::new() }))
+                    .downcast_mut::<State>()
+                    .unwrap();
+                let vm = macros.vm;
+
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
                 let name = Symbol::from(&*modulename);
-                debug!("Import '{}' {:?}", modulename, self.visited);
+                debug!("Import '{}' {:?}", modulename, state.visited);
                 if !vm.global_env().global_exists(&modulename) {
-                    if self.visited.read().unwrap().iter().any(|m| **m == **filename) {
+                    if state.visited.iter().any(|m| **m == **filename) {
                         return Err(Error::CyclicDependency(filename.clone()).into());
                     }
-                    self.visited.write().unwrap().push(filename.clone());
+                    state.visited.push(filename.clone());
                     let mut buffer = String::new();
                     let file_contents = match STD_LIBS.iter().find(|tup| tup.0 == filename) {
                         Some(tup) => tup.1,
@@ -159,8 +168,7 @@ impl<I> Macro for Import<I>
                             &*buffer
                         }
                     };
-                    // FIXME Remove this hack
-                    self.visited.write().unwrap().pop();
+                    state.visited.pop();
                     try!(self.importer.import(vm, &modulename, file_contents));
                 }
                 // FIXME Does not handle shadowing
@@ -168,13 +176,5 @@ impl<I> Macro for Import<I>
             }
             _ => return Err(Error::String("Expected a string literal to import".into()).into()),
         }
-    }
-
-    fn clone(&self) -> Box<Macro> {
-        Box::new(Import {
-            visited: RwLock::new(Vec::new()),
-            paths: RwLock::new(self.paths.read().unwrap().clone()),
-            importer: self.importer.clone(),
-        })
     }
 }

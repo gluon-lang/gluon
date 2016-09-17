@@ -1,5 +1,6 @@
 //! Module providing the building blocks to create macros and expand them.
-use std::sync::RwLock;
+use std::any::Any;
+use std::sync::{Arc, RwLock};
 use std::error::Error as StdError;
 
 use base::ast::{self, Expr, MutVisitor, SpannedExpr};
@@ -16,34 +17,28 @@ pub type Error = Box<StdError + Send + Sync>;
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
 pub trait Macro: ::mopa::Any + Send + Sync {
     fn expand(&self,
-              env: &Thread,
+              env: &mut MacroExpander,
               args: &mut [SpannedExpr<Symbol>])
               -> Result<SpannedExpr<Symbol>, Error>;
-
-    fn clone(&self) -> Box<Macro>;
 }
 
 mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
-    where F: Fn(&Thread, &mut [SpannedExpr<Symbol>]) -> Result<SpannedExpr<Symbol>, Error>,
+    where F: Fn(&mut MacroExpander, &mut [SpannedExpr<Symbol>]) -> Result<SpannedExpr<Symbol>, Error>,
 {
     fn expand(&self,
-              env: &Thread,
+              env: &mut MacroExpander,
               args: &mut [SpannedExpr<Symbol>])
               -> Result<SpannedExpr<Symbol>, Error> {
         self(env, args)
-    }
-
-    fn clone(&self) -> Box<Macro> {
-        Box::new(Clone::clone(self))
     }
 }
 
 /// Type containing macros bound to symbols which can be applied on an AST expression to transform
 /// it.
 pub struct MacroEnv {
-    macros: RwLock<FnvMap<String, Box<Macro>>>,
+    macros: RwLock<FnvMap<String, Arc<Macro>>>,
 }
 
 impl MacroEnv {
@@ -56,18 +51,19 @@ impl MacroEnv {
     pub fn insert<M>(&self, name: String, mac: M)
         where M: Macro + 'static,
     {
-        self.macros.write().unwrap().insert(name, Box::new(mac));
+        self.macros.write().unwrap().insert(name, Arc::new(mac));
     }
 
     /// Retrieves the macro bound to `symbol`
-    pub fn get(&self, name: &str) -> Option<Box<Macro>> {
-        self.macros.read().unwrap().get(name).map(|x| (**x).clone())
+    pub fn get(&self, name: &str) -> Option<Arc<Macro>> {
+        self.macros.read().unwrap().get(name).cloned()
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub fn run(&self, env: &Thread, expr: &mut SpannedExpr<Symbol>) -> Result<(), Errors<Error>> {
+    pub fn run(&self, vm: &Thread, expr: &mut SpannedExpr<Symbol>) -> Result<(), Errors<Error>> {
         let mut expander = MacroExpander {
-            env: env,
+            vm: vm,
+            state: FnvMap::default(),
             macros: self,
             errors: Errors::new(),
         };
@@ -80,8 +76,9 @@ impl MacroEnv {
     }
 }
 
-struct MacroExpander<'a> {
-    env: &'a Thread,
+pub struct MacroExpander<'a> {
+    pub state: FnvMap<String, Box<Any>>,
+    pub vm: &'a Thread,
     macros: &'a MacroEnv,
     errors: Errors<Error>,
 }
@@ -96,7 +93,7 @@ impl<'a> MutVisitor for MacroExpander<'a> {
                     Expr::Ident(ref id) => {
                         match self.macros.get(id.name.as_ref()) {
                             Some(m) => {
-                                match m.expand(self.env, args) {
+                                match m.expand(self, args) {
                                     Ok(e) => Some(e),
                                     Err(err) => {
                                         self.errors.error(err);
