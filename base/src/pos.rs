@@ -6,48 +6,57 @@ use std::cmp::{self, Ordering};
 use std::fmt;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-/// A byte offset in a source string
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
-pub struct BytePos(pub u32);
+macro_rules! pos_struct {
+    (#[$doc:meta] pub struct $Pos:ident($T:ty);) => {
+        #[$doc]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+        pub struct $Pos($T);
 
-impl BytePos {
-    pub fn to_usize(&self) -> usize {
-        self.0 as usize
-    }
+        impl $Pos {
+            pub fn to_usize(&self) -> usize {
+                self.0 as usize
+            }
+        }
+
+        impl From<usize> for $Pos {
+            fn from(src: usize) -> $Pos {
+                $Pos(src as $T)
+            }
+        }
+
+        impl Add for $Pos {
+            type Output = $Pos;
+
+            fn add(self, rhs: $Pos) -> $Pos {
+                $Pos::from(self.to_usize() + rhs.to_usize())
+            }
+        }
+
+        impl AddAssign for $Pos {
+            fn add_assign(&mut self, rhs: $Pos) {
+                self.0 += rhs.0;
+            }
+        }
+
+        impl Sub for $Pos {
+            type Output = $Pos;
+
+            fn sub(self, rhs: $Pos) -> $Pos {
+                $Pos::from(self.to_usize() - rhs.to_usize())
+            }
+        }
+
+        impl SubAssign for $Pos {
+            fn sub_assign(&mut self, rhs: $Pos) {
+                self.0 -= rhs.0;
+            }
+        }
+    };
 }
 
-impl From<usize> for BytePos {
-    fn from(src: usize) -> BytePos {
-        BytePos(src as u32)
-    }
-}
-
-impl Add for BytePos {
-    type Output = BytePos;
-
-    fn add(self, rhs: BytePos) -> BytePos {
-        BytePos((self.to_usize() + rhs.to_usize()) as u32)
-    }
-}
-
-impl AddAssign for BytePos {
-    fn add_assign(&mut self, rhs: BytePos) {
-        self.0 += rhs.0;
-    }
-}
-
-impl Sub for BytePos {
-    type Output = BytePos;
-
-    fn sub(self, rhs: BytePos) -> BytePos {
-        BytePos((self.to_usize() - rhs.to_usize()) as u32)
-    }
-}
-
-impl SubAssign for BytePos {
-    fn sub_assign(&mut self, rhs: BytePos) {
-        self.0 -= rhs.0;
-    }
+pos_struct! {
+    /// A byte offset in a source string
+    pub struct BytePos(u32);
 }
 
 impl fmt::Display for BytePos {
@@ -56,48 +65,9 @@ impl fmt::Display for BytePos {
     }
 }
 
-/// A character position - usually used for column offsets
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
-pub struct CharPos(pub usize);
-
-impl CharPos {
-    pub fn to_usize(&self) -> usize {
-        self.0
-    }
-}
-
-impl From<usize> for CharPos {
-    fn from(src: usize) -> CharPos {
-        CharPos(src)
-    }
-}
-
-impl Add for CharPos {
-    type Output = CharPos;
-
-    fn add(self, rhs: CharPos) -> CharPos {
-        CharPos(self.to_usize() + rhs.to_usize())
-    }
-}
-
-impl AddAssign for CharPos {
-    fn add_assign(&mut self, rhs: CharPos) {
-        self.0 += rhs.0;
-    }
-}
-
-impl Sub for CharPos {
-    type Output = CharPos;
-
-    fn sub(self, rhs: CharPos) -> CharPos {
-        CharPos(self.to_usize() - rhs.to_usize())
-    }
-}
-
-impl SubAssign for CharPos {
-    fn sub_assign(&mut self, rhs: CharPos) {
-        self.0 -= rhs.0;
-    }
+pos_struct! {
+    /// A character position - usually used for column offsets
+    pub struct CharPos(usize);
 }
 
 impl fmt::Display for CharPos {
@@ -118,9 +88,9 @@ impl Location {
     pub fn bump(&mut self, ch: char) {
         if ch == '\n' {
             self.line += 1;
-            self.column = CharPos(1);
+            self.column = CharPos::from(1);
         } else {
-            self.column += CharPos(1);
+            self.column += CharPos::from(1);
         }
         self.absolute += BytePos::from(ch.len_utf8());
     }

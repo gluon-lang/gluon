@@ -721,8 +721,8 @@ in f "123"
     assert_eq!(err.errors.len(), 1);
     assert_eq!(err.errors[0].span,
                Span {
-                   start: BytePos(26),
-                   end: BytePos(31),
+                   start: BytePos::from(26),
+                   end: BytePos::from(31),
                });
 }
 

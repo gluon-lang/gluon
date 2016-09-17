@@ -348,8 +348,8 @@ impl<'input, I> Lexer<'input, I>
             input: Some(LocatedStream {
                 location: Location {
                     line: 1,
-                    column: CharPos(1),
-                    absolute: BytePos(0),
+                    column: CharPos::from(1),
+                    absolute: BytePos::from(0),
                 },
                 input: input,
             }),
@@ -451,9 +451,9 @@ impl<'input, I> Lexer<'input, I>
             Some(input) => input,
             None => {
                 let loc = Location {
-                    line: ::std::u32::MAX,
-                    column: CharPos(1),
-                    absolute: BytePos(::std::u32::MAX),
+                    line: 0,
+                    column: CharPos::from(1),
+                    absolute: BytePos::from(0),
                 };
                 return SpannedToken {
                     span: Span {
@@ -690,7 +690,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
           I::Range: fmt::Debug,
 {
     if token.value == Token::EOF {
-        token.span.start.column = CharPos(0);
+        token.span.start.column = CharPos::from(0);
     }
     loop {
         // Retrieve the current indentation level if one exists

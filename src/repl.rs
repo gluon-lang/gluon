@@ -104,7 +104,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);
-    let suggestions = completion::suggest(&*thread.get_env(), &expr, BytePos(pos as u32));
+    let suggestions = completion::suggest(&*thread.get_env(), &expr, BytePos::from(pos));
     Ok(suggestions.into_iter()
         .map(|ident| {
             let s: &str = ident.name.as_ref();

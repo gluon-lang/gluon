@@ -18,7 +18,7 @@ impl<'a> Source<'a> {
                 .filter(|&(_, &b)| b == b'\n')
                 .map(|(i, _)| BytePos::from(i + 1)); // index of first char in the line
 
-            iter::once(BytePos(0))
+            iter::once(BytePos::from(0))
                 .chain(input_indices)
                 .collect()
         };
@@ -75,7 +75,7 @@ impl<'a> Source<'a> {
                 if curr_byte == byte {
                     return Some(Location {
                         line: line_number as u32,
-                        column: CharPos(col + 1),
+                        column: CharPos::from(col + 1),
                         absolute: byte,
                     });
                 }
@@ -100,59 +100,59 @@ mod tests {
         let source = test_source();
 
         assert_eq!(source.line(0), None);
-        assert_eq!(source.line(1), Some((BytePos(0), "hello!")));
-        assert_eq!(source.line(2), Some((BytePos(7), "howdy")));
-        assert_eq!(source.line(3), Some((BytePos(13), "")));
-        assert_eq!(source.line(4), Some((BytePos(14), "hi萤")));
-        assert_eq!(source.line(5), Some((BytePos(20), "bloop")));
-        assert_eq!(source.line(6), Some((BytePos(26), "")));
+        assert_eq!(source.line(1), Some((BytePos::from(0), "hello!")));
+        assert_eq!(source.line(2), Some((BytePos::from(7), "howdy")));
+        assert_eq!(source.line(3), Some((BytePos::from(13), "")));
+        assert_eq!(source.line(4), Some((BytePos::from(14), "hi萤")));
+        assert_eq!(source.line(5), Some((BytePos::from(20), "bloop")));
+        assert_eq!(source.line(6), Some((BytePos::from(26), "")));
         assert_eq!(source.line(7), None);
     }
 
     #[test]
     fn source_line_number_at_byte() {
-        assert_eq!(test_source().line_number_at_byte(BytePos(0)), 1);
-        assert_eq!(test_source().line_number_at_byte(BytePos(6)), 1);
-        assert_eq!(test_source().line_number_at_byte(BytePos(7)), 2);
-        assert_eq!(test_source().line_number_at_byte(BytePos(8)), 2);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(0)), 1);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(6)), 1);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(7)), 2);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(8)), 2);
 
-        assert_eq!(test_source().line_number_at_byte(BytePos(12)), 2);
-        assert_eq!(test_source().line_number_at_byte(BytePos(13)), 3);
-        assert_eq!(test_source().line_number_at_byte(BytePos(14)), 4);
-        assert_eq!(test_source().line_number_at_byte(BytePos(15)), 4);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(12)), 2);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(13)), 3);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(14)), 4);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(15)), 4);
 
-        assert_eq!(test_source().line_number_at_byte(BytePos(18)), 4);
-        assert_eq!(test_source().line_number_at_byte(BytePos(19)), 4);
-        assert_eq!(test_source().line_number_at_byte(BytePos(20)), 5);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(18)), 4);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(19)), 4);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(20)), 5);
 
-        assert_eq!(test_source().line_number_at_byte(BytePos(400)), 6);
+        assert_eq!(test_source().line_number_at_byte(BytePos::from(400)), 6);
     }
 
     #[test]
     fn source_location() {
         let source = test_source();
 
-        assert_eq!(source.location(BytePos(0)),
+        assert_eq!(source.location(BytePos::from(0)),
                    Some(Location {
                        line: 1,
-                       column: CharPos(1),
-                       absolute: BytePos(0),
+                       column: CharPos::from(1),
+                       absolute: BytePos::from(0),
                    }));
 
-        assert_eq!(source.location(BytePos(3)),
+        assert_eq!(source.location(BytePos::from(3)),
                    Some(Location {
                        line: 1,
-                       column: CharPos(4),
-                       absolute: BytePos(3),
+                       column: CharPos::from(4),
+                       absolute: BytePos::from(3),
                    }));
 
-        assert_eq!(source.location(BytePos(16)),
+        assert_eq!(source.location(BytePos::from(16)),
                    Some(Location {
                        line: 4,
-                       column: CharPos(3),
-                       absolute: BytePos(16),
+                       column: CharPos::from(3),
+                       absolute: BytePos::from(16),
                    }));
 
-        assert_eq!(source.location(BytePos(400)), None);
+        assert_eq!(source.location(BytePos::from(400)), None);
     }
 }

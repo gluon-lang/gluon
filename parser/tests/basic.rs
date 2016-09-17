@@ -20,8 +20,8 @@ type SpExpr = SpannedExpr<String>;
 
 fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
     pos::spanned(Span {
-                     start: BytePos(u32::max_value()),
-                     end: BytePos(u32::max_value()),
+                     start: BytePos::from(0),
+                     end: BytePos::from(0),
                  },
                  value)
 }
@@ -412,8 +412,8 @@ fn span_identifier() {
     let e = parse_new("test");
     assert_eq!(e.span,
                Span {
-                   start: BytePos(0),
-                   end: BytePos(4),
+                   start: BytePos::from(0),
+                   end: BytePos::from(4),
                });
 }
 
@@ -425,8 +425,8 @@ fn span_integer() {
     let e = parse_new("1234");
     assert_eq!(e.span,
                Span {
-                   start: BytePos(0),
-                   end: BytePos(4),
+                   start: BytePos::from(0),
+                   end: BytePos::from(4),
                });
 }
 
@@ -439,8 +439,8 @@ fn span_string_literal() {
     let e = parse_new(r#" "test" "#);
     assert_eq!(e.span,
                Span {
-                   start: BytePos(1),
-                   end: BytePos(7),
+                   start: BytePos::from(1),
+                   end: BytePos::from(7),
                });
 }
 
@@ -451,8 +451,8 @@ fn span_app() {
     let e = parse_new(r#" f 123 "asd""#);
     assert_eq!(e.span,
                Span {
-                   start: BytePos(1),
-                   end: BytePos(12),
+                   start: BytePos::from(1),
+                   end: BytePos::from(12),
                });
 }
 
@@ -467,8 +467,8 @@ match False with
 "#);
     assert_eq!(e.span,
                Span {
-                   start: BytePos(1),
-                   end: BytePos(55),
+                   start: BytePos::from(1),
+                   end: BytePos::from(55),
                });
 }
 
@@ -484,8 +484,8 @@ else
 "#);
     assert_eq!(e.span,
                Span {
-                   start: BytePos(1),
-                   end: BytePos(35),
+                   start: BytePos::from(1),
+                   end: BytePos::from(35),
                });
 }
 
@@ -496,8 +496,8 @@ fn span_byte() {
     let e = parse_new(r#"124b"#);
     assert_eq!(e.span,
                Span {
-                   start: BytePos(0),
-                   end: BytePos(4),
+                   start: BytePos::from(0),
+                   end: BytePos::from(4),
                });
 }
 
@@ -507,15 +507,15 @@ fn span_field_access() {
     let expr = parse_new("record.x");
     assert_eq!(expr.span,
                Span {
-                   start: BytePos(0),
-                   end: BytePos(8),
+                   start: BytePos::from(0),
+                   end: BytePos::from(8),
                });
     match expr.value {
         Expr::Projection(ref e, _, _) => {
             assert_eq!(e.span,
                        Span {
-                           start: BytePos(0),
-                           end: BytePos(6),
+                           start: BytePos::from(0),
+                           end: BytePos::from(6),
                        });
         }
         _ => panic!(),
@@ -612,8 +612,8 @@ fn partial_field_access() {
     assert_eq!(e.unwrap_err().0,
                Some(Spanned {
                    span: Span {
-                       start: BytePos(0),
-                       end: BytePos(0),
+                       start: BytePos::from(0),
+                       end: BytePos::from(0),
                    },
                    value: Expr::Projection(Box::new(id("test")), intern(""), Type::hole()),
                }));
@@ -631,13 +631,13 @@ test
     assert_eq!(e.unwrap_err().0,
                Some(Spanned {
                    span: Span {
-                       start: BytePos(0),
-                       end: BytePos(0),
+                       start: BytePos::from(0),
+                       end: BytePos::from(0),
                    },
                    value: Expr::Block(vec![Spanned {
                                                span: Span {
-                                                   start: BytePos(0),
-                                                   end: BytePos(0),
+                                                   start: BytePos::from(0),
+                                                   end: BytePos::from(0),
                                                },
                                                value: Expr::Projection(Box::new(id("test")),
                                                                        intern(""),
