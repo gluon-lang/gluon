@@ -29,6 +29,9 @@ impl<I> StreamOnce for LocatedStream<I>
             .uncons()
             .map(|ch| {
                 self.location.bump(ch);
+                // HACK: The layout algorithm expects `1` indexing for columns -
+                // this could be altered in the future though
+                self.location.column += Column::from(1);
                 ch
             })
     }
@@ -347,7 +350,7 @@ impl<'input, I> Lexer<'input, I>
             env: env,
             input: Some(LocatedStream {
                 location: Location {
-                    line: Line::from(1),
+                    line: Line::from(0),
                     column: Column::from(1),
                     absolute: BytePos::from(0),
                 },

@@ -66,24 +66,24 @@ impl fmt::Display for BytePos {
 }
 
 pos_struct! {
-    /// A column number, indexed from `1`
-    pub struct Column(usize);
+    /// A `0`-indexed column number, displayed externally as if it were offset from `1`.
+    pub struct Column(u32);
 }
 
 impl fmt::Display for Column {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
+        (self.0 + 1).fmt(f)
     }
 }
 
 pos_struct! {
-    /// A line number, indexed from `1`
-    pub struct Line(usize);
+    /// A `0`-indexed line number, displayed externally as if it were offset from `1`.
+    pub struct Line(u32);
 }
 
 impl fmt::Display for Line {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
+        (self.0 + 1).fmt(f)
     }
 }
 
@@ -99,7 +99,7 @@ impl Location {
     pub fn bump(&mut self, ch: char) {
         if ch == '\n' {
             self.line += Line::from(1);
-            self.column = Column::from(1);
+            self.column = Column::from(0);
         } else {
             self.column += Column::from(1);
         }
