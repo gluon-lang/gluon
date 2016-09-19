@@ -13,6 +13,7 @@ pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<
         .load_script(vm, filename, input)
 }
 
+#[allow(dead_code)]
 pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
     where T: Getable<'vm> + VmType,
 {
@@ -23,6 +24,7 @@ pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
         .0
 }
 
+#[allow(dead_code)]
 pub fn run_expr<'vm, T>(vm: &'vm Thread, s: &str) -> T
     where T: Getable<'vm> + VmType,
 {
