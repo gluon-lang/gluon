@@ -65,18 +65,32 @@ impl<'a> Source<'a> {
         let line_index = self.line_number_at_byte(byte);
 
         self.line(line_index).and_then(|(line_byte, line)| {
-            for (col, (next_byte, _)) in line.char_indices().enumerate() {
+            let mut column_index = Column::from(0);
+
+            for (i, (next_byte, _)) in line.char_indices().enumerate() {
+                column_index = Column::from(i);
+
                 let curr_byte = line_byte + BytePos::from(next_byte);
 
                 if curr_byte == byte {
                     return Some(Location {
-                        line: Line::from(line_index),
-                        column: Column::from(col),
+                        line: line_index,
+                        column: column_index,
                         absolute: byte,
                     });
                 }
             }
-            None
+
+            // Handle the case where `byte` is equal to the source's length
+            if byte == line_byte + BytePos::from(line.len()) {
+                Some(Location {
+                    line: line_index,
+                    column: column_index,
+                    absolute: byte,
+                })
+            } else {
+                None
+            }
         })
     }
 }
@@ -156,5 +170,16 @@ mod tests {
                    }));
 
         assert_eq!(source.location(BytePos::from(400)), None);
+    }
+
+    #[test]
+    fn source_location_end_of_source() {
+        let source = test_source();
+        assert_eq!(source.location(BytePos::from(source.src.len())),
+                   Some(Location {
+                       line: Line::from(5),
+                       column: Column::from(0),
+                       absolute: BytePos::from(source.src.len()),
+                   }));
     }
 }
