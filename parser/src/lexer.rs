@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use base::ast::is_operator_char;
-use base::pos::{BytePos, CharPos, Location, Span, Spanned};
+use base::pos::{BytePos, Column, Line, Location, Span, Spanned};
 
 use combine::primitives::{Consumed, Error as CombineError, RangeStream};
 use combine::combinator::EnvParser;
@@ -29,6 +29,9 @@ impl<I> StreamOnce for LocatedStream<I>
             .uncons()
             .map(|ch| {
                 self.location.bump(ch);
+                // HACK: The layout algorithm expects `1` indexing for columns -
+                // this could be altered in the future though
+                self.location.column += Column::from(1);
                 ch
             })
     }
@@ -347,9 +350,9 @@ impl<'input, I> Lexer<'input, I>
             env: env,
             input: Some(LocatedStream {
                 location: Location {
-                    line: 1,
-                    column: CharPos(1),
-                    absolute: BytePos(0),
+                    line: Line::from(0),
+                    column: Column::from(1),
+                    absolute: BytePos::from(0),
                 },
                 input: input,
             }),
@@ -451,9 +454,9 @@ impl<'input, I> Lexer<'input, I>
             Some(input) => input,
             None => {
                 let loc = Location {
-                    line: ::std::u32::MAX,
-                    column: CharPos(1),
-                    absolute: BytePos(::std::u32::MAX),
+                    line: Line::from(0),
+                    column: Column::from(1),
+                    absolute: BytePos::from(0),
                 };
                 return SpannedToken {
                     span: Span {
@@ -690,7 +693,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
           I::Range: fmt::Debug,
 {
     if token.value == Token::EOF {
-        token.span.start.column = CharPos(0);
+        token.span.start.column = Column::from(0);
     }
     loop {
         // Retrieve the current indentation level if one exists

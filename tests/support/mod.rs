@@ -13,17 +13,20 @@ pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<
         .load_script(vm, filename, input)
 }
 
+#[allow(dead_code)]
 pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
-    where T: Getable<'vm> + VmType
+    where T: Getable<'vm> + VmType,
 {
     Compiler::new()
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s)
-        .unwrap_or_else(|err| panic!("{}", err)).0
+        .unwrap_or_else(|err| panic!("{}", err))
+        .0
 }
 
+#[allow(dead_code)]
 pub fn run_expr<'vm, T>(vm: &'vm Thread, s: &str) -> T
-    where T: Getable<'vm> + VmType
+    where T: Getable<'vm> + VmType,
 {
     run_expr_(vm, s, false)
 }
@@ -33,9 +36,9 @@ pub fn make_vm() -> RootedThread {
     let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
     import.as_ref()
-          .and_then(|import| import.downcast_ref::<Import>())
-          .expect("Import macro")
-          .add_path("..");
+        .and_then(|import| import.downcast_ref::<Import>())
+        .expect("Import macro")
+        .add_path("..");
     vm
 }
 

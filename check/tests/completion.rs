@@ -42,26 +42,26 @@ fn identifier() {
     let (mut expr, result) = support::typecheck_expr("let abc = 1 in abc");
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, &mut expr, BytePos(15));
+    let result = completion::find(&env, &mut expr, BytePos::from(15));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos(16));
+    let result = completion::find(&env, &mut expr, BytePos::from(16));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos(17));
+    let result = completion::find(&env, &mut expr, BytePos::from(17));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos(18));
+    let result = completion::find(&env, &mut expr, BytePos::from(18));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 }
 
 #[test]
 fn literal_string() {
-    let result = find_type(r#" "asd" "#, BytePos(1));
+    let result = find_type(r#" "asd" "#, BytePos::from(1));
     let expected = Ok(typ("String"));
 
     assert_eq!(result, expected);
@@ -74,7 +74,7 @@ let f x = 1
 and g x = "asd"
 1
 "#,
-                           BytePos(25));
+                           BytePos::from(25));
     let expected = Ok(typ("String"));
 
     assert_eq!(result, expected);
@@ -88,7 +88,7 @@ fn function_app() {
 let f x = f x
 1
 "#,
-                           BytePos(11));
+                           BytePos::from(11));
     let expected = Ok(Type::function(vec![typ("a0")], typ("a1")));
 
     assert_eq!(result, expected);
@@ -109,15 +109,15 @@ let (++) l r =
 "#);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, &mut expr, BytePos(57));
+    let result = completion::find(&env, &mut expr, BytePos::from(57));
     let expected = Ok(Type::function(vec![typ("Int"), typ("Float")], typ("Int")));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos(54));
+    let result = completion::find(&env, &mut expr, BytePos::from(54));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos(59));
+    let result = completion::find(&env, &mut expr, BytePos::from(59));
     let expected = Ok(typ("Float"));
     assert_eq!(result, expected);
 }
@@ -134,7 +134,7 @@ r.x
 "#);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&typ_env, &mut expr, BytePos(19));
+    let result = completion::find(&typ_env, &mut expr, BytePos::from(19));
     let expected = Ok(Type::record(vec![],
                                    vec![Field {
                                             name: intern("x"),
@@ -142,7 +142,7 @@ r.x
                                         }]));
     assert_eq!(result.map(support::close_record), expected);
 
-    let result = completion::find(&typ_env, &mut expr, BytePos(22));
+    let result = completion::find(&typ_env, &mut expr, BytePos::from(22));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 }
@@ -157,7 +157,7 @@ fn in_record() {
     s = "asd"
 }
 "#,
-                           BytePos(15));
+                           BytePos::from(15));
     let expected = Ok(typ("Int"));
 
     assert_eq!(result, expected);
@@ -173,7 +173,7 @@ let tes = ""
 let aaa = test
 te
 "#,
-                         BytePos(43));
+                         BytePos::from(43));
     let expected = Ok(vec!["tes".into(), "test".into()]);
 
     assert_eq!(result, expected);
@@ -188,7 +188,7 @@ let f test =
     \test2 -> tes
 123
 "#,
-                         BytePos(31));
+                         BytePos::from(31));
     let expected = Ok(vec!["test".into(), "test2".into()]);
 
     assert_eq!(result, expected);
@@ -203,7 +203,7 @@ let record = { aa = 1, ab = 2, c = "" }
 1.0 #Int+ 2
 record.a
 "#,
-                         BytePos(104));
+                         BytePos::from(104));
     let expected = Ok(vec!["aa".into(), "ab".into()]);
 
     assert_eq!(result, expected);
@@ -219,7 +219,7 @@ type Test2 = Test String
 let record: Test2 = { abc = \x -> 0 }
 record.ab
 "#,
-                         BytePos(108));
+                         BytePos::from(108));
     let expected = Ok(vec!["abc".into()]);
 
     assert_eq!(result, expected);
@@ -233,7 +233,7 @@ fn suggest_after_dot() {
 let record = { aa = 1, ab = 2, c = "" }
 record.
 "#,
-                         BytePos(48));
+                         BytePos::from(48));
     let expected = Ok(vec!["aa".into(), "ab".into(), "c".into()]);
 
     assert_eq!(result, expected);
@@ -247,7 +247,7 @@ fn suggest_from_record_unpack() {
 let { aa, c } = { aa = 1, ab = 2, c = "" }
 a
 "#,
-                         BytePos(45));
+                         BytePos::from(45));
     let expected = Ok(vec!["aa".into()]);
 
     assert_eq!(result, expected);
@@ -261,7 +261,7 @@ fn suggest_on_record_in_field_access() {
 let record = { aa = 1, ab = 2, c = "" }
 record.aa
 "#,
-                         BytePos(45));
+                         BytePos::from(45));
     let expected = Ok(vec!["record".into()]);
 
     assert_eq!(result, expected);
@@ -276,7 +276,7 @@ let abc = 1
 let abb = 2
 abc
 "#,
-                         BytePos(28));
+                         BytePos::from(28));
     let expected = Ok(vec!["abc".into()]);
 
     assert_eq!(result, expected);
@@ -291,7 +291,7 @@ let abc = 1
 let abb = 2
 abc
 "#,
-                         BytePos(32));
+                         BytePos::from(32));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
@@ -307,12 +307,12 @@ let abb = 2
 test  test1
 ""  123
 "#;
-    let result = suggest(text, BytePos(30));
+    let result = suggest(text, BytePos::from(30));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
 
-    let result = suggest(text, BytePos(40));
+    let result = suggest(text, BytePos::from(40));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);

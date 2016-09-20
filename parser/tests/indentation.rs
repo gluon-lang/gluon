@@ -66,7 +66,7 @@ y
     let result = parse(text);
     assert_eq!(result,
                Err(Errors {
-                   errors: vec![pos::spanned2(BytePos(32), BytePos(32),
+                   errors: vec![pos::spanned2(BytePos::from(32), BytePos::from(32),
                     ParseError {
                                     errors: vec![Error::Unexpected(Info::Token(Token::Int(2))),
                                                  Error::Expected("`in` or an expression in the \

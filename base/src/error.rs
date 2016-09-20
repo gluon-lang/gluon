@@ -103,13 +103,12 @@ impl<E: fmt::Display> fmt::Display for InFile<E> {
 
             try!(write!(f, "{}:{}\n{}\n", self.source_name, error.error, error.line));
 
-            for _ in 1..start.column.to_usize() {
+            for _ in 0..start.column.to_usize() {
                 try!(write!(f, " "));
             }
 
             try!(write!(f, "^"));
-
-            for _ in start.column.to_usize()..(end.column.to_usize() - 1) {
+            for _ in (start.column.to_usize() + 1)..end.column.to_usize() {
                 try!(write!(f, "~"));
             }
 
