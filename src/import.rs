@@ -56,15 +56,27 @@ static STD_LIBS: [(&'static str, &'static str); 8] = std_libs!("prelude",
                                                                "writer");
 
 pub trait Importer: Any + Clone + Sync + Send {
-    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError>;
+    fn import(&self,
+              compiler: &mut Compiler,
+              vm: &Thread,
+              modulename: &str,
+              input: &str,
+              expr: SpannedExpr<Symbol>)
+              -> Result<(), MacroError>;
 }
 
 #[derive(Clone)]
 pub struct DefaultImporter;
 impl Importer for DefaultImporter {
-    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError> {
-        let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
-        try!(compiler.load_script(vm, &modulename, input));
+    fn import(&self,
+              compiler: &mut Compiler,
+              vm: &Thread,
+              modulename: &str,
+              input: &str,
+              expr: SpannedExpr<Symbol>)
+              -> Result<(), MacroError> {
+        use compiler_pipeline::*;
+        try!(MacroValue(expr).load_script(compiler, vm, &modulename, (input, None)));
         Ok(())
     }
 }
@@ -77,10 +89,16 @@ impl CheckImporter {
     }
 }
 impl Importer for CheckImporter {
-    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError> {
+    fn import(&self,
+              compiler: &mut Compiler,
+              vm: &Thread,
+              modulename: &str,
+              input: &str,
+              expr: SpannedExpr<Symbol>)
+              -> Result<(), MacroError> {
         use compiler_pipeline::*;
-        let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
-        let TypecheckValue(expr, typ) = try!(input.typecheck(&mut compiler, vm, modulename, input));
+        let TypecheckValue(expr, typ) = try!(MacroValue(expr)
+            .typecheck(compiler, vm, modulename, input));
         self.0.lock().unwrap().insert(modulename.into(), expr);
         let metadata = Metadata::default();
         // Insert a global to ensure the globals type can be looked up
@@ -111,6 +129,16 @@ impl<I> Import<I> {
     }
 }
 
+
+fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
+    macros.state
+        .entry(String::from("import"))
+        .or_insert_with(|| Box::new(State { visited: Vec::new() }))
+        .downcast_mut::<State>()
+        .unwrap()
+}
+
+
 struct State {
     visited: Vec<String>,
 }
@@ -122,28 +150,28 @@ impl<I> Macro for Import<I>
               macros: &mut MacroExpander,
               args: &mut [SpannedExpr<Symbol>])
               -> Result<SpannedExpr<Symbol>, MacroError> {
+        use compiler_pipeline::*;
+
         if args.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
         match args[0].value {
             Expr::Literal(Literal::String(ref filename)) => {
-                let state = macros.state
-                    .entry(String::from("import"))
-                    .or_insert_with(|| Box::new(State { visited: Vec::new() }))
-                    .downcast_mut::<State>()
-                    .unwrap();
                 let vm = macros.vm;
 
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
                 let name = Symbol::from(&*modulename);
-                debug!("Import '{}' {:?}", modulename, state.visited);
+                debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
                 if !vm.global_env().global_exists(&modulename) {
-                    if state.visited.iter().any(|m| **m == **filename) {
-                        return Err(Error::CyclicDependency(filename.clone()).into());
+                    {
+                        let state = get_state(macros);
+                        if state.visited.iter().any(|m| **m == **filename) {
+                            return Err(Error::CyclicDependency(filename.clone()).into());
+                        }
+                        state.visited.push(filename.clone());
                     }
-                    state.visited.push(filename.clone());
                     let mut buffer = String::new();
                     let file_contents = match STD_LIBS.iter().find(|tup| tup.0 == filename) {
                         Some(tup) => tup.1,
@@ -168,8 +196,12 @@ impl<I> Macro for Import<I>
                             &*buffer
                         }
                     };
-                    state.visited.pop();
-                    try!(self.importer.import(vm, &modulename, file_contents));
+                    let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
+                    let expr =
+                        try!(file_contents.expand_macro_with(&mut compiler, macros, &modulename));
+                    get_state(macros).visited.pop();
+                    try!(self.importer
+                        .import(&mut compiler, vm, &modulename, &file_contents, expr.0));
                 }
                 // FIXME Does not handle shadowing
                 Ok(pos::spanned(args[0].span, Expr::Ident(TypedIdent::new(name))))

@@ -61,18 +61,9 @@ impl MacroEnv {
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
     pub fn run(&self, vm: &Thread, expr: &mut SpannedExpr<Symbol>) -> Result<(), Errors<Error>> {
-        let mut expander = MacroExpander {
-            vm: vm,
-            state: FnvMap::default(),
-            macros: self,
-            errors: Errors::new(),
-        };
+        let mut expander = MacroExpander::new(vm);
         expander.visit_expr(expr);
-        if expander.errors.has_errors() {
-            Err(expander.errors)
-        } else {
-            Ok(())
-        }
+        expander.finish()
     }
 }
 
@@ -82,6 +73,30 @@ pub struct MacroExpander<'a> {
     macros: &'a MacroEnv,
     errors: Errors<Error>,
 }
+
+impl<'a> MacroExpander<'a> {
+    pub fn new(vm: &Thread) -> MacroExpander {
+        MacroExpander {
+            vm: vm,
+            state: FnvMap::default(),
+            macros: vm.get_macros(),
+            errors: Errors::new(),
+        }
+    }
+
+    pub fn finish(self) -> Result<(), Errors<Error>> {
+        if self.errors.has_errors() {
+            Err(self.errors)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn run(&mut self, expr: &mut SpannedExpr<Symbol>) {
+        self.visit_expr(expr);
+    }
+}
+
 
 impl<'a> MutVisitor for MacroExpander<'a> {
     type Ident = Symbol;
