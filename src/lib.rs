@@ -131,9 +131,11 @@ pub mod compiler_pipeline {
     use base::ast::SpannedExpr;
     use base::types::ArcType;
     use base::symbol::Symbol;
+
     use vm::compiler::CompiledFunction;
-    use vm::thread::{RootedValue, ThreadInternal};
     use vm::internal::ClosureDataDef;
+    use vm::macros::MacroExpander;
+    use vm::thread::{RootedValue, ThreadInternal};
 
     pub trait ExprMut {
         fn mut_expr(&mut self) -> &mut SpannedExpr<Symbol>;
@@ -149,7 +151,7 @@ pub mod compiler_pipeline {
         }
     }
 
-    pub struct MacroValue(pub SpannedExpr<Symbol>);
+    pub struct MacroValue<E>(pub E);
 
     pub trait MacroExpandable {
         type Expr: ExprMut;
@@ -157,22 +159,35 @@ pub mod compiler_pipeline {
                         compiler: &mut Compiler,
                         thread: &Thread,
                         file: &str)
-                        -> Result<Self::Expr>;
+                        -> Result<MacroValue<Self::Expr>>
+            where Self: Sized,
+        {
+            let mut macros = MacroExpander::new(thread);
+            let expr = try!(self.expand_macro_with(compiler, &mut macros, file));
+            try!(macros.finish());
+            Ok(expr)
+        }
+
+        fn expand_macro_with(self,
+                             compiler: &mut Compiler,
+                             macros: &mut MacroExpander,
+                             file: &str)
+                             -> Result<MacroValue<Self::Expr>>;
     }
 
     impl<'s> MacroExpandable for &'s str {
         type Expr = SpannedExpr<Symbol>;
 
-        fn expand_macro(self,
-                        compiler: &mut Compiler,
-                        thread: &Thread,
-                        file: &str)
-                        -> Result<Self::Expr> {
+        fn expand_macro_with(self,
+                             compiler: &mut Compiler,
+                             macros: &mut MacroExpander,
+                             file: &str)
+                             -> Result<MacroValue<Self::Expr>> {
             compiler.parse_expr(file, self)
                 .map_err(From::from)
                 .and_then(|mut expr| {
-                    try!(expr.expand_macro(compiler, thread, file));
-                    Ok(expr)
+                    try!(expr.expand_macro_with(compiler, macros, file));
+                    Ok(MacroValue(expr))
                 })
         }
     }
@@ -180,16 +195,16 @@ pub mod compiler_pipeline {
     impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         type Expr = &'s mut SpannedExpr<Symbol>;
 
-        fn expand_macro(self,
-                        compiler: &mut Compiler,
-                        thread: &Thread,
-                        file: &str)
-                        -> Result<Self::Expr> {
+        fn expand_macro_with(self,
+                             compiler: &mut Compiler,
+                             macros: &mut MacroExpander,
+                             file: &str)
+                             -> Result<MacroValue<Self::Expr>> {
             if compiler.implicit_prelude {
                 compiler.include_implicit_prelude(file, self);
             }
-            try!(thread.get_macros().run(thread, self));
-            Ok(self)
+            macros.run(self);
+            Ok(MacroValue(self))
         }
     }
 
@@ -227,14 +242,30 @@ pub mod compiler_pipeline {
                               expected_type: Option<&ArcType>)
                               -> Result<TypecheckValue<Self::Expr>> {
             self.expand_macro(compiler, thread, file)
-                .and_then(|mut expr| {
-                    let typ = {
-                        let value = try!(expr.mut_expr()
-                            .typecheck_expected(compiler, thread, file, expr_str, expected_type));
-                        value.1
-                    };
-                    Ok(TypecheckValue(expr, typ))
+                .and_then(|expr| {
+                    expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
                 })
+        }
+    }
+
+    impl<E> Typecheckable for MacroValue<E>
+        where E: ExprMut,
+    {
+        type Expr = E;
+
+        fn typecheck_expected(mut self,
+                              compiler: &mut Compiler,
+                              thread: &Thread,
+                              file: &str,
+                              expr_str: &str,
+                              expected_type: Option<&ArcType>)
+                              -> Result<TypecheckValue<Self::Expr>> {
+            let typ = try!(compiler.typecheck_expr_expected(thread,
+                                                          file,
+                                                          expr_str,
+                                                          self.0.mut_expr(),
+                                                          expected_type));
+            Ok(TypecheckValue(self.0, typ))
         }
     }
 
