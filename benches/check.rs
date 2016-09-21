@@ -17,13 +17,13 @@ use gluon::compiler_pipeline::*;
 fn typecheck_prelude(b: &mut ::test::Bencher) {
     let vm = new_vm();
     let mut compiler = Compiler::new();
-    let MacroValue(expr) = {
+    let MacroValue { expr } = {
         let mut text = String::new();
         File::open("std/prelude.glu").unwrap().read_to_string(&mut text).unwrap();
         text.expand_macro(&mut compiler, &vm, "std.prelude").unwrap_or_else(|err| panic!("{}", err))
     };
     b.iter(|| {
-        let result = MacroValue(expr.clone()).typecheck(&mut compiler, &vm, "<top>", "");
+        let result = MacroValue { expr: expr.clone() }.typecheck(&mut compiler, &vm, "<top>", "");
         if let Err(ref err) = result {
             println!("{}", err);
             assert!(false);
@@ -36,7 +36,7 @@ fn typecheck_prelude(b: &mut ::test::Bencher) {
 fn clone_prelude(b: &mut ::test::Bencher) {
     let vm = new_vm();
     let mut compiler = Compiler::new();
-    let TypecheckValue(expr, _) = {
+    let TypecheckValue { expr, .. } = {
         let mut text = String::new();
         File::open("std/prelude.glu").unwrap().read_to_string(&mut text).unwrap();
         text.typecheck(&mut compiler, &vm, "std.prelude", &text)
