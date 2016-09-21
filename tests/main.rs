@@ -79,7 +79,7 @@ fn main_() -> Result<(), Box<Error>> {
                                                x))
                     .into())
             }
-            Err(_) => (),
+            Err(er) => println!("{}", er),
         }
     }
     Ok(())

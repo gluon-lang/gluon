@@ -70,8 +70,8 @@ impl MacroEnv {
 pub struct MacroExpander<'a> {
     pub state: FnvMap<String, Box<Any>>,
     pub vm: &'a Thread,
+    pub errors: Errors<Error>,
     macros: &'a MacroEnv,
-    errors: Errors<Error>,
 }
 
 impl<'a> MacroExpander<'a> {

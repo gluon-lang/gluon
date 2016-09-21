@@ -76,7 +76,7 @@ impl Importer for DefaultImporter {
               expr: SpannedExpr<Symbol>)
               -> Result<(), MacroError> {
         use compiler_pipeline::*;
-        try!(MacroValue(expr).load_script(compiler, vm, &modulename, (input, None)));
+        try!(MacroValue { expr: expr }.load_script(compiler, vm, &modulename, (input, None)));
         Ok(())
     }
 }
@@ -97,7 +97,7 @@ impl Importer for CheckImporter {
               expr: SpannedExpr<Symbol>)
               -> Result<(), MacroError> {
         use compiler_pipeline::*;
-        let TypecheckValue(expr, typ) = try!(MacroValue(expr)
+        let TypecheckValue { expr, typ } = try!(MacroValue { expr: expr }
             .typecheck(compiler, vm, modulename, input));
         self.0.lock().unwrap().insert(modulename.into(), expr);
         let metadata = Metadata::default();
@@ -197,11 +197,21 @@ impl<I> Macro for Import<I>
                         }
                     };
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
-                    let expr =
+                    let errors = macros.errors.errors.len();
+                    let macro_result =
                         try!(file_contents.expand_macro_with(&mut compiler, macros, &modulename));
+                    if errors != macros.errors.errors.len() {
+                        if let Some(err) = macros.errors.errors.pop() {
+                            return Err(err);
+                        }
+                    }
                     get_state(macros).visited.pop();
                     try!(self.importer
-                        .import(&mut compiler, vm, &modulename, &file_contents, expr.0));
+                        .import(&mut compiler,
+                                vm,
+                                &modulename,
+                                &file_contents,
+                                macro_result.expr));
                 }
                 // FIXME Does not handle shadowing
                 Ok(pos::spanned(args[0].span, Expr::Ident(TypedIdent::new(name))))
