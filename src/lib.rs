@@ -128,6 +128,8 @@ pub struct Compiler {
 pub mod compiler_pipeline {
     use super::*;
 
+    use std::borrow::{Borrow, BorrowMut};
+
     use base::ast::SpannedExpr;
     use base::error::InFile;
     use base::types::ArcType;
@@ -138,48 +140,14 @@ pub mod compiler_pipeline {
     use vm::macros::MacroExpander;
     use vm::thread::{RootedValue, ThreadInternal};
 
-    pub trait ExprRef {
-        fn ref_expr(&self) -> &SpannedExpr<Symbol>;
-    }
-    impl ExprRef for SpannedExpr<Symbol> {
-        fn ref_expr(&self) -> &SpannedExpr<Symbol> {
-            self
-        }
-    }
-    impl<'s> ExprRef for &'s SpannedExpr<Symbol> {
-        fn ref_expr(&self) -> &SpannedExpr<Symbol> {
-            self
-        }
-    }
-    impl<'s> ExprRef for &'s mut SpannedExpr<Symbol> {
-        fn ref_expr(&self) -> &SpannedExpr<Symbol> {
-            self
-        }
-    }
-    /// Trait allowing overloading of the compiler pipeline on `SpannedExpr<Symbol>` and
-    /// `&mut SpannedExpr<Symbol>`
-    pub trait ExprMut: ExprRef {
-        fn mut_expr(&mut self) -> &mut SpannedExpr<Symbol>;
-    }
-    impl ExprMut for SpannedExpr<Symbol> {
-        fn mut_expr(&mut self) -> &mut SpannedExpr<Symbol> {
-            self
-        }
-    }
-    impl<'s> ExprMut for &'s mut SpannedExpr<Symbol> {
-        fn mut_expr(&mut self) -> &mut SpannedExpr<Symbol> {
-            self
-        }
-    }
-
-
     /// Result type of successful macro expansion
     pub struct MacroValue<E> {
         pub expr: E,
     }
 
     pub trait MacroExpandable {
-        type Expr: ExprMut;
+        type Expr: BorrowMut<SpannedExpr<Symbol>>;
+
         fn expand_macro(self,
                         compiler: &mut Compiler,
                         thread: &Thread,
@@ -240,7 +208,8 @@ pub mod compiler_pipeline {
     }
 
     pub trait Typecheckable: Sized {
-        type Expr: ExprMut;
+        type Expr: BorrowMut<SpannedExpr<Symbol>>;
+
         fn typecheck(self,
                      compiler: &mut Compiler,
                      thread: &Thread,
@@ -278,7 +247,7 @@ pub mod compiler_pipeline {
     }
 
     impl<E> Typecheckable for MacroValue<E>
-        where E: ExprMut,
+        where E: BorrowMut<SpannedExpr<Symbol>>,
     {
         type Expr = E;
 
@@ -294,7 +263,7 @@ pub mod compiler_pipeline {
             let env = thread.get_env();
             let mut tc = Typecheck::new(file.into(), &mut compiler.symbols, &*env);
 
-            let typ = try!(tc.typecheck_expr_expected(self.expr.mut_expr(), expected_type)
+            let typ = try!(tc.typecheck_expr_expected(self.expr.borrow_mut(), expected_type)
                 .map_err(|err| InFile::new(file, expr_str, err)));
 
             Ok(TypecheckValue {
@@ -335,10 +304,10 @@ pub mod compiler_pipeline {
                 .and_then(|tc_value| tc_value.compile(compiler, thread, file, ()))
         }
     }
-    impl<O, Extra> Compileable<Extra> for TypecheckValue<O>
-        where O: ExprRef,
+    impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
+        where E: Borrow<SpannedExpr<Symbol>>,
     {
-        type Expr = O;
+        type Expr = E;
 
         fn compile(self,
                    compiler: &mut Compiler,
@@ -355,7 +324,7 @@ pub mod compiler_pipeline {
                 let symbols = SymbolModule::new(String::from(AsRef::<str>::as_ref(&name)),
                                                 &mut compiler.symbols);
                 let mut compiler = Compiler::new(&*env, thread.global_env(), symbols);
-                try!(compiler.compile_expr(self.expr.ref_expr()))
+                try!(compiler.compile_expr(self.expr.borrow()))
             };
             function.id = Symbol::from(filename);
             Ok(CompileValue {
@@ -391,7 +360,7 @@ pub mod compiler_pipeline {
     }
     impl<C, Extra> Executable<Extra> for C
         where C: Compileable<Extra>,
-              C::Expr: ExprMut,
+              C::Expr: BorrowMut<SpannedExpr<Symbol>>,
     {
         type Expr = C::Expr;
 
@@ -415,10 +384,10 @@ pub mod compiler_pipeline {
                 .and_then(|v| v.load_script(compiler, vm, filename, ()))
         }
     }
-    impl<O> Executable<()> for CompileValue<O>
-        where O: ExprMut,
+    impl<E> Executable<()> for CompileValue<E>
+        where E: BorrowMut<SpannedExpr<Symbol>>,
     {
-        type Expr = O;
+        type Expr = E;
 
         fn run_expr<'vm>(self,
                          _compiler: &mut Compiler,
@@ -447,7 +416,7 @@ pub mod compiler_pipeline {
             use check::metadata;
 
             let CompileValue { mut expr, typ, function } = self;
-            let metadata = metadata::metadata(&*vm.get_env(), expr.mut_expr());
+            let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
             let function = try!(vm.global_env().new_function(function));
             let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
             let value = try!(vm.call_thunk(closure));
