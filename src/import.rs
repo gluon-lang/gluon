@@ -129,7 +129,6 @@ impl<I> Import<I> {
     }
 }
 
-
 fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
     macros.state
         .entry(String::from("import"))
@@ -173,6 +172,9 @@ impl<I> Macro for Import<I>
                         state.visited.push(filename.clone());
                     }
                     let mut buffer = String::new();
+
+                    // Retrieve the source, first looking in the standard library included in the
+                    // binary
                     let file_contents = match STD_LIBS.iter().find(|tup| tup.0 == filename) {
                         Some(tup) => tup.1,
                         None => {
@@ -196,11 +198,16 @@ impl<I> Macro for Import<I>
                             &*buffer
                         }
                     };
+
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
                     let errors = macros.errors.errors.len();
                     let macro_result =
                         try!(file_contents.expand_macro_with(&mut compiler, macros, &modulename));
                     if errors != macros.errors.errors.len() {
+                        // If macro expansion of the imported module fails we need to stop
+                        // compilation of that module. To return an error we return one of the
+                        // already emitted errors (which will be pushed back after this function
+                        // returns)
                         if let Some(err) = macros.errors.errors.pop() {
                             return Err(err);
                         }

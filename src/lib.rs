@@ -124,7 +124,13 @@ pub struct Compiler {
 }
 
 /// Advanced compiler pipeline which ensures that the compilation phases are run in order even if
-/// not the entire compilation procedure is needed
+/// not the entire compilation procedure is needed.
+///
+/// Each trait in this module represents a stage in a full compilation so to only run compilation
+/// up until and including typechecking the `Typecheckable` trait can be used. Furthermore, if
+/// compilation should continue at some point after typechecking has succeeded, the result of
+/// typechecking (`TypecheckValue`) can be used as input to the next stage, ensuring that it is
+/// difficult to forget a stage.
 pub mod compiler_pipeline {
     use super::*;
 
