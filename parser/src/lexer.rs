@@ -237,7 +237,7 @@ pub struct Offside {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Context {
-    /// Contaxt which contains several expressions/declarations separated by semicolons
+    /// Context which contains several expressions/declarations separated by semicolons
     Block { emit_semi: bool, needs_close: bool },
     /// A simple expression
     Expr,
