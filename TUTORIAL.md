@@ -405,7 +405,7 @@ Often it is either inconvenient or inefficient to compile and run code directly 
 let vm = new_vm();
 // Ensure that the prelude module is loaded before trying to access something from it
 Compiler::new()
-    .run_expr::<Generic<A>>(&vm, "example", " import \"std/prelude.glu\" ")
+    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", " import \"std/prelude.glu\" ")
     .unwrap();
 let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
     .unwrap();

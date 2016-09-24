@@ -2,9 +2,8 @@ extern crate env_logger;
 extern crate gluon;
 
 use gluon::base::types::Type;
-use gluon::vm::api::generic::A;
-use gluon::vm::api::{FunctionRef, Generic};
-use gluon::RootedThread;
+use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
+use gluon::{RootedThread, Thread};
 use gluon::import::Import;
 use gluon::Compiler;
 
@@ -23,7 +22,7 @@ fn access_field_through_alias() {
     let _ = ::env_logger::init();
     let vm = new_vm();
     Compiler::new()
-        .run_expr::<Generic<A>>(&vm, "example", " import \"std/prelude.glu\" ")
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", " import \"std/prelude.glu\" ")
         .unwrap();
     let mut add: FunctionRef<fn(i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
         .unwrap();

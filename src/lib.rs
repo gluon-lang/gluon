@@ -32,8 +32,7 @@ use base::types::ArcType;
 use parser::ParseError;
 use check::typecheck::TypeError;
 use vm::Variants;
-use vm::api::generic::A;
-use vm::api::{Getable, VmType, Generic, IO};
+use vm::api::{Getable, Hole, VmType, OpaqueValue};
 use vm::Error as VmError;
 use vm::compiler::CompiledFunction;
 use vm::thread::{RootedValue, ThreadInternal};
@@ -509,6 +508,8 @@ impl Compiler {
         }
     }
 
+    /// Compiles and runs `expr_str`. If the expression is of type `IO a` the action is evaluated
+    /// and a value of type `a` is returned
     pub fn run_io_expr<'vm, T>(&mut self,
                                vm: &'vm Thread,
                                name: &str,
@@ -517,7 +518,7 @@ impl Compiler {
         where T: Getable<'vm> + VmType,
               T::Type: Sized,
     {
-        let expected = IO::<T>::make_type(vm);
+        let expected = T::make_type(vm);
         let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
         unsafe {
             match T::from_value(vm, Variants::new(&value)) {
@@ -591,7 +592,7 @@ pub fn new_vm() -> RootedThread {
 
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr::<Generic<A>>(&vm, "", r#" import "std/types.glu" "#)
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import "std/types.glu" "#)
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::vm::channel::load(&vm).expect("Loaded channel library");

@@ -113,6 +113,7 @@ impl Traverseable for BytecodeFunction {
     }
 }
 
+#[derive(Debug)]
 pub struct DataStruct {
     pub tag: VmTag,
     pub fields: Array<Value>,

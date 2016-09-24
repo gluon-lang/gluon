@@ -6,8 +6,7 @@ mod support;
 
 use support::*;
 
-use gluon::vm::api::generic::A;
-use gluon::vm::api::{FunctionRef, Generic, OpaqueValue};
+use gluon::vm::api::{FunctionRef, Hole, IO, OpaqueValue, ValueRef};
 use gluon::vm::thread::{Thread, ThreadInternal};
 use gluon::vm::internal::Value;
 use gluon::vm::internal::Value::{Float, Int};
@@ -59,9 +58,9 @@ fn record() {
     let text = r"
 { x = 0, y = 1.0, z = {} }
 ";
-    let mut vm = make_vm();
-    let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0,
+    let vm = make_vm();
+    let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
+    assert_eq!(value.get_ref(),
                vm.context().new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)]).unwrap());
 }
 
@@ -73,9 +72,9 @@ type T = { x: Int, y: Int } in
 let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
-    let mut vm = make_vm();
-    let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0,
+    let vm = make_vm();
+    let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
+    assert_eq!(value.get_ref(),
                vm.context().new_data(&vm, 0, &mut [Int(1), Int(2)]).unwrap());
 }
 #[test]
@@ -94,9 +93,12 @@ let sub = \l r -> { x = l.x #Int- r.x, y = l.y #Int- r.y } in
 let { T, add, sub } = Vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
-    let value = run_expr::<Generic<A>>(&mut vm, script);
-    match value.0 {
-        Value::Data(data) => assert_eq!(&data.fields[..], &[Int(11), Int(7)]),
+    let value = run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, script);
+    match value.get_ref() {
+        ValueRef::Data(data) => {
+            assert_eq!(data.get(0), Some(ValueRef::Int(11)));
+            assert_eq!(data.get(1), Some(ValueRef::Int(7)));
+        }
         _ => panic!(),
     }
 
@@ -108,9 +110,9 @@ fn adt() {
 type Option a = | None | Some a
 in Some 1
 ";
-    let mut vm = make_vm();
-    let value = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(value.0,
+    let vm = make_vm();
+    let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
+    assert_eq!(value.get_ref(),
                vm.context().new_data(&vm, 1, &mut [Int(1)]).unwrap());
 }
 
@@ -260,12 +262,12 @@ r#"
 'a'
 }
 
-test_expr!{ zero_argument_variant_is_int,
+test_expr!{ any zero_argument_variant_is_int,
 r#"
 type Test = | A Int | B
 B
 "#,
-Generic::<A>::from(Value::Tag(1))
+Value::Tag(1)
 }
 
 test_expr!{ match_on_zero_argument_variant,
@@ -278,18 +280,18 @@ match B with
 0i32
 }
 
-test_expr!{ marshalled_option_none_is_int,
+test_expr!{ any marshalled_option_none_is_int,
 r#"
 string_prim.find "a" "b"
 "#,
-Generic::<A>::from(Value::Tag(0))
+Value::Tag(0)
 }
 
-test_expr!{ marshalled_ordering_is_int,
+test_expr!{ any marshalled_ordering_is_int,
 r#"
 string_prim.compare "a" "b"
 "#,
-Generic::<A>::from(Value::Tag(0))
+Value::Tag(0)
 }
 
 test_expr!{ prelude match_on_bool,
@@ -529,9 +531,9 @@ let (+) x y = x #Float+ y
 in
 { x = 1 + 2, y = 1.0 + 2.0 }
 "#;
-    let mut vm = make_vm();
-    let result = run_expr::<Generic<A>>(&mut vm, text);
-    assert_eq!(result.0,
+    let vm = make_vm();
+    let result = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
+    assert_eq!(result.get_ref(),
                vm.context().new_data(&vm, 0, &mut [Int(3), Float(3.0)]).unwrap());
 }
 
@@ -557,10 +559,14 @@ fn run_expr_int() {
 
     let text = r#"io.run_expr "123" "#;
     let mut vm = make_vm();
-    let (result, _) = Compiler::new().run_io_expr::<String>(&mut vm, "<top>", text).unwrap();
-    let expected = "123 : Int";
-
-    assert_eq!(result, expected);
+    let (result, _) = Compiler::new().run_io_expr::<IO<String>>(&mut vm, "<top>", text).unwrap();
+    match result {
+        IO::Value(result) => {
+            let expected = "123 : Int";
+            assert_eq!(result, expected);
+        }
+        IO::Exception(err) => panic!("{}", err),
+    }
 }
 
 test_expr!{ io run_expr_io,
@@ -594,7 +600,7 @@ fn test_implicit_prelude() {
     let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
     let mut vm = make_vm();
     Compiler::new()
-        .run_expr::<Generic<A>>(&mut vm, "<top>", text)
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
         .unwrap_or_else(|err| panic!("{}", err));
 }
 
@@ -615,7 +621,7 @@ fn access_operator_without_parentheses() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     Compiler::new()
-        .run_expr::<Generic<A>>(&vm, "example", r#" import "std/prelude.glu" "#)
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import "std/prelude.glu" "#)
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
         vm.get_global("std.prelude.num_Int.+");
@@ -626,7 +632,7 @@ fn access_operator_without_parentheses() {
 fn test_prelude() {
     let _ = ::env_logger::init();
     let vm = make_vm();
-    run_expr::<Generic<A>>(&vm, r#" import "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import "std/prelude.glu" "#);
 }
 
 #[test]
@@ -634,7 +640,7 @@ fn access_types_by_path() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<Generic<A>>(&vm, r#" import "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import "std/prelude.glu" "#);
 
     assert!(vm.find_type_info("std.prelude.Option").is_ok());
     assert!(vm.find_type_info("std.prelude.Result").is_ok());
@@ -686,7 +692,8 @@ fn out_of_memory() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     vm.set_memory_limit(10);
-    let result = Compiler::new().run_expr::<Generic<A>>(&vm, "example", r#" [1, 2, 3, 4] "#);
+    let result = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" [1, 2, 3, 4] "#);
     match result {
         // FIXME This should just need to match on the explicit out of memory error
         Err(Error::VM(VMError::OutOfMemory { limit: 10, .. })) => (),

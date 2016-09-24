@@ -3,9 +3,8 @@ extern crate env_logger;
 
 extern crate gluon;
 
-use gluon::vm::api::generic::A;
-use gluon::vm::api::Generic;
-use gluon::{new_vm, Compiler};
+use gluon::vm::api::{Hole, OpaqueValue};
+use gluon::{new_vm, Compiler, Thread};
 
 use std::io::Read;
 use std::fmt;
@@ -62,7 +61,7 @@ fn main_() -> Result<(), Box<Error>> {
         try!(file.read_to_string(&mut text));
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        try!(compiler.run_expr::<Generic<A>>(&vm, name, &text));
+        try!(compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text));
     }
     for filename in try!(test_files("tests/fail")) {
         let mut file = try!(File::open(&filename));
@@ -70,7 +69,7 @@ fn main_() -> Result<(), Box<Error>> {
         try!(file.read_to_string(&mut text));
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        match compiler.run_expr::<Generic<A>>(&vm, name, &text) {
+        match compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text) {
             Ok(x) => {
                 return Err(StringError(format!("Expected test '{}' to fail got {:?}",
                                                filename.to_str().unwrap(),

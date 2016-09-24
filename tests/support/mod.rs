@@ -65,11 +65,25 @@ macro_rules! test_expr {
                 .implicit_prelude(false)
                 .run_io_expr(&mut vm, "<top>", $expr)
                 .unwrap_or_else(|err| panic!("{}", err));
-            assert_eq!(value, $value);
+            match value {
+                IO::Value(value) => {
+                    assert_eq!(value, $value);
 
-            // Help out the type inference by forcing that left and right are the same types
-            fn equiv<T>(_: &T, _: &T) { }
-            equiv(&value, &$value);
+                    // Help out the type inference by forcing that left and right are the same types
+                    fn equiv<T>(_: &T, _: &T) { }
+                    equiv(&value, &$value);
+                }
+                IO::Exception(err) => panic!("{}", err),
+            }
+        }
+    };
+    (any $name: ident, $expr: expr, $value: expr) => {
+        #[test]
+        fn $name() {
+            let _ = ::env_logger::init();
+            let mut vm = make_vm();
+            let value = run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
+            assert_eq!(value.get_ref(), $value);
         }
     };
     ($name: ident, $expr: expr, $value: expr) => {
@@ -90,7 +104,7 @@ macro_rules! test_expr {
         fn $name() {
             let _ = ::env_logger::init();
             let mut vm = make_vm();
-            run_expr::<Generic<A>>(&mut vm, $expr);
+            run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
         }
     }
 }

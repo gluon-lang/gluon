@@ -2,6 +2,7 @@ extern crate gluon;
 extern crate env_logger;
 
 use gluon::{Compiler, new_vm};
+use gluon::vm::api::IO;
 
 #[test]
 fn read_file() {
@@ -21,10 +22,11 @@ fn read_file() {
             assert (array.index bytes 1 #Byte== 112b) // p
             pure (array.index bytes 8)
         "#;
-    let result = Compiler::new().run_io_expr::<u8>(&thread, "<top>", text);
+    let result = Compiler::new().run_io_expr::<IO<u8>>(&thread, "<top>", text);
 
     match result {
-        Ok((value, _)) => assert_eq!(value, b']'),
+        Ok((IO::Value(value), _)) => assert_eq!(value, b']'),
+        Ok((IO::Exception(err), _)) => assert!(false, "{}", err),
         Err(err) => assert!(false, "{}", err),
     }
 }

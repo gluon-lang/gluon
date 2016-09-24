@@ -26,7 +26,7 @@ macro_rules! count {
     ($_e: ident, $($rest: ident),*) => { 1 + count!($($rest),*) }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 pub enum ValueRef<'a> {
     Byte(u8),
     Int(VmInt),
@@ -36,6 +36,29 @@ pub enum ValueRef<'a> {
     Tag(VmTag),
     Userdata(&'a vm::Userdata),
     Internal,
+}
+
+// Need to manually implement PartialEq so that `ValueRef`'s with different lifetimes can be compared
+impl<'a, 'b> PartialEq<ValueRef<'b>> for ValueRef<'a> {
+    fn eq(&self, other: &ValueRef) -> bool {
+        use self::ValueRef::*;
+
+        match (self, other) {
+            (&Byte(l), &Byte(r)) => l == r,
+            (&Int(l), &Int(r)) => l == r,
+            (&Float(l), &Float(r)) => l == r,
+            (&String(l), &String(r)) => l == r,
+            (&Data(l), &Data(r)) => l == r,
+            (&Tag(l), &Tag(r)) => l == r,
+            _ => false,
+        }
+    }
+}
+
+impl<'a> PartialEq<Value> for ValueRef<'a> {
+    fn eq(&self, other: &Value) -> bool {
+        self == &ValueRef::new(other)
+    }
 }
 
 impl<'a> ValueRef<'a> {
@@ -57,7 +80,7 @@ impl<'a> ValueRef<'a> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Data<'a>(&'a DataStruct);
 
 impl<'a> Data<'a> {
@@ -71,6 +94,17 @@ impl<'a> Data<'a> {
 
     pub fn get(&self, index: usize) -> Option<ValueRef<'a>> {
         self.0.fields.get(index).map(ValueRef::new)
+    }
+}
+
+/// Marker type representing a hole
+pub struct Hole(());
+
+impl VmType for Hole {
+    type Type = Hole;
+
+    fn make_type(_: &Thread) -> ArcType {
+        Type::hole()
     }
 }
 
@@ -832,12 +866,25 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
 /// two different threads.
 pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>) where T: Deref<Target = Thread>;
 
+impl<T, V> fmt::Debug for OpaqueValue<T, V>
+    where T: Deref<Target = Thread>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+
 impl<T, V> OpaqueValue<T, V>
     where T: Deref<Target = Thread>,
 {
     /// Unsafe as `Value` are not rooted
     pub unsafe fn get_value(&self) -> Value {
         *self.0
+    }
+
+    pub fn get_ref(&self) -> ValueRef {
+        ValueRef::new(&self.0)
     }
 }
 
