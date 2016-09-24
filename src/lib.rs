@@ -288,6 +288,7 @@ pub mod compiler_pipeline {
 
     pub trait Compileable<Extra> {
         type Expr;
+
         fn compile(self,
                    compiler: &mut Compiler,
                    thread: &Thread,

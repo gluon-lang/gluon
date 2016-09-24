@@ -76,6 +76,7 @@ impl Importer for DefaultImporter {
               expr: SpannedExpr<Symbol>)
               -> Result<(), MacroError> {
         use compiler_pipeline::*;
+
         try!(MacroValue { expr: expr }.load_script(compiler, vm, &modulename, (input, None)));
         Ok(())
     }
@@ -92,17 +93,19 @@ impl Importer for CheckImporter {
     fn import(&self,
               compiler: &mut Compiler,
               vm: &Thread,
-              modulename: &str,
+              module_name: &str,
               input: &str,
               expr: SpannedExpr<Symbol>)
               -> Result<(), MacroError> {
         use compiler_pipeline::*;
-        let TypecheckValue { expr, typ } = try!(MacroValue { expr: expr }
-            .typecheck(compiler, vm, modulename, input));
-        self.0.lock().unwrap().insert(modulename.into(), expr);
+
+        let macro_value = MacroValue { expr: expr };
+        let TypecheckValue { expr, typ } =
+            try!(macro_value.typecheck(compiler, vm, module_name, input));
+        self.0.lock().unwrap().insert(module_name.into(), expr);
         let metadata = Metadata::default();
         // Insert a global to ensure the globals type can be looked up
-        try!(vm.global_env().set_global(Symbol::from(modulename), typ, metadata, Value::Int(0)));
+        try!(vm.global_env().set_global(Symbol::from(module_name), typ, metadata, Value::Int(0)));
         Ok(())
     }
 }
