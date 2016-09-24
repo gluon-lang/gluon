@@ -703,6 +703,24 @@ fn out_of_memory() {
 }
 
 #[test]
+fn dont_execute_io_in_run_expr() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+    let expr = r#"
+let prelude = import "std/prelude.glu"
+let { pure } = prelude.applicative_IO
+pure 123
+"#;
+    let value = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert!(value.0.get_ref() != Value::Int(123),
+            "Unexpected {:?}",
+            value.0);
+}
+
+
+#[test]
 fn value_size() {
     assert!(::std::mem::size_of::<Value>() <= 16);
 }

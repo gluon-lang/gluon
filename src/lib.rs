@@ -308,7 +308,7 @@ pub mod compiler_pipeline {
             function.id = Symbol::from(name);
             let function = try!(vm.global_env().new_function(function));
             let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
-            let value = try!(vm.call_module(&typ, closure));
+            let value = try!(vm.call_module(&typ, closure, false));
             Ok((vm.root_value_ref(value), typ))
         }
         fn load_script(self,
@@ -323,7 +323,7 @@ pub mod compiler_pipeline {
             let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
             let function = try!(vm.global_env().new_function(function));
             let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
-            let value = try!(vm.call_module(&typ, closure));
+            let value = try!(vm.call_module(&typ, closure, false));
             try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
             Ok(())
         }
@@ -455,7 +455,7 @@ impl Compiler {
         let function = try!(self.compile_script(vm, filename, &expr));
         let function = try!(vm.global_env().new_function(function));
         let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
-        let value = try!(vm.call_module(&typ, closure));
+        let value = try!(vm.call_module(&typ, closure, false));
         try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
         info!("Loaded module `{}` filename", filename);
         Ok(())
@@ -478,14 +478,15 @@ impl Compiler {
                       vm: &'vm Thread,
                       name: &str,
                       expr_str: &str,
-                      expected_type: Option<&ArcType>)
+                      expected_type: Option<&ArcType>,
+                      run_io: bool)
                       -> Result<(RootedValue<&'vm Thread>, ArcType)> {
         let (expr, typ) = try!(self.typecheck_str(vm, name, expr_str, expected_type));
         let mut function = try!(self.compile_script(vm, name, &expr));
         function.id = Symbol::from(name);
         let function = try!(vm.global_env().new_function(function));
         let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
-        let value = try!(vm.call_module(&typ, closure));
+        let value = try!(vm.call_module(&typ, closure, run_io));
         Ok((vm.root_value_ref(value), typ))
     }
 
@@ -499,7 +500,7 @@ impl Compiler {
         where T: Getable<'vm> + VmType,
     {
         let expected = T::make_type(vm);
-        let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
+        let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected), false));
         unsafe {
             match T::from_value(vm, Variants::new(&value)) {
                 Some(value) => Ok((value, actual)),
@@ -519,7 +520,7 @@ impl Compiler {
               T::Type: Sized,
     {
         let expected = T::make_type(vm);
-        let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected)));
+        let (value, actual) = try!(self.run_expr_(vm, name, expr_str, Some(&expected), true));
         unsafe {
             match T::from_value(vm, Variants::new(&value)) {
                 Some(value) => Ok((value, actual)),

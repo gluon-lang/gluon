@@ -479,7 +479,11 @@ pub trait ThreadInternal {
                     -> Result<()>;
 
     /// Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &ArcType, closure: GcPtr<ClosureData>) -> Result<Value>;
+    fn call_module(&self,
+                   typ: &ArcType,
+                   closure: GcPtr<ClosureData>,
+                   run_io: bool)
+                   -> Result<Value>;
 
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
@@ -560,7 +564,11 @@ impl ThreadInternal for Thread {
 
 
     /// Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &ArcType, closure: GcPtr<ClosureData>) -> Result<Value> {
+    fn call_module(&self,
+                   typ: &ArcType,
+                   closure: GcPtr<ClosureData>,
+                   run_io: bool)
+                   -> Result<Value> {
         let value = try!(self.call_bytecode(closure));
         if let Some((id, _)) = typ.as_alias() {
             let is_io = {
@@ -569,7 +577,7 @@ impl ThreadInternal for Thread {
                     .map(|alias| *id == alias.name)
                     .unwrap_or(false)
             };
-            if is_io {
+            if run_io && is_io {
                 debug!("Run IO {:?}", value);
                 let mut context = OwnedContext {
                     thread: self,
