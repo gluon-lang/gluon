@@ -11,7 +11,7 @@ use base::ast::{Expr, Literal, SpannedExpr, TypedIdent};
 use base::metadata::Metadata;
 use base::pos;
 use base::symbol::Symbol;
-use vm::macros::{Macro, Error as MacroError};
+use vm::macros::{Macro, MacroExpander, Error as MacroError};
 use vm::thread::{Thread, ThreadInternal};
 use vm::internal::Value;
 use super::{filename_to_module, Compiler};
@@ -56,15 +56,28 @@ static STD_LIBS: [(&'static str, &'static str); 8] = std_libs!("prelude",
                                                                "writer");
 
 pub trait Importer: Any + Clone + Sync + Send {
-    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError>;
+    fn import(&self,
+              compiler: &mut Compiler,
+              vm: &Thread,
+              modulename: &str,
+              input: &str,
+              expr: SpannedExpr<Symbol>)
+              -> Result<(), MacroError>;
 }
 
 #[derive(Clone)]
 pub struct DefaultImporter;
 impl Importer for DefaultImporter {
-    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError> {
-        let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
-        try!(compiler.load_script(vm, &modulename, input));
+    fn import(&self,
+              compiler: &mut Compiler,
+              vm: &Thread,
+              modulename: &str,
+              input: &str,
+              expr: SpannedExpr<Symbol>)
+              -> Result<(), MacroError> {
+        use compiler_pipeline::*;
+
+        try!(MacroValue { expr: expr }.load_script(compiler, vm, &modulename, (input, None)));
         Ok(())
     }
 }
@@ -77,14 +90,22 @@ impl CheckImporter {
     }
 }
 impl Importer for CheckImporter {
-    fn import(&self, vm: &Thread, modulename: &str, input: &str) -> Result<(), MacroError> {
+    fn import(&self,
+              compiler: &mut Compiler,
+              vm: &Thread,
+              module_name: &str,
+              input: &str,
+              expr: SpannedExpr<Symbol>)
+              -> Result<(), MacroError> {
         use compiler_pipeline::*;
-        let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
-        let TypecheckValue(expr, typ) = try!(input.typecheck(&mut compiler, vm, modulename, input));
-        self.0.lock().unwrap().insert(modulename.into(), expr);
+
+        let macro_value = MacroValue { expr: expr };
+        let TypecheckValue { expr, typ } =
+            try!(macro_value.typecheck(compiler, vm, module_name, input));
+        self.0.lock().unwrap().insert(module_name.into(), expr);
         let metadata = Metadata::default();
         // Insert a global to ensure the globals type can be looked up
-        try!(vm.global_env().set_global(Symbol::from(modulename), typ, metadata, Value::Int(0)));
+        try!(vm.global_env().set_global(Symbol::from(module_name), typ, metadata, Value::Int(0)));
         Ok(())
     }
 }
@@ -92,7 +113,6 @@ impl Importer for CheckImporter {
 /// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
 /// already loaded and then a global access to the loaded module
 pub struct Import<I = DefaultImporter> {
-    visited: RwLock<Vec<String>>,
     pub paths: RwLock<Vec<PathBuf>>,
     pub importer: I,
 }
@@ -101,7 +121,6 @@ impl<I> Import<I> {
     /// Creates a new import macro
     pub fn new(importer: I) -> Import<I> {
         Import {
-            visited: RwLock::new(Vec::new()),
             paths: RwLock::new(vec![PathBuf::from(".")]),
             importer: importer,
         }
@@ -113,29 +132,52 @@ impl<I> Import<I> {
     }
 }
 
+fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
+    macros.state
+        .entry(String::from("import"))
+        .or_insert_with(|| Box::new(State { visited: Vec::new() }))
+        .downcast_mut::<State>()
+        .unwrap()
+}
+
+
+struct State {
+    visited: Vec<String>,
+}
+
 impl<I> Macro for Import<I>
     where I: Importer,
 {
     fn expand(&self,
-              vm: &Thread,
+              macros: &mut MacroExpander,
               args: &mut [SpannedExpr<Symbol>])
               -> Result<SpannedExpr<Symbol>, MacroError> {
+        use compiler_pipeline::*;
+
         if args.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
         match args[0].value {
             Expr::Literal(Literal::String(ref filename)) => {
+                let vm = macros.vm;
+
                 let modulename = filename_to_module(filename);
                 let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
                 let name = Symbol::from(&*modulename);
-                debug!("Import '{}' {:?}", modulename, self.visited);
+                debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
                 if !vm.global_env().global_exists(&modulename) {
-                    if self.visited.read().unwrap().iter().any(|m| **m == **filename) {
-                        return Err(Error::CyclicDependency(filename.clone()).into());
+                    {
+                        let state = get_state(macros);
+                        if state.visited.iter().any(|m| **m == **filename) {
+                            return Err(Error::CyclicDependency(filename.clone()).into());
+                        }
+                        state.visited.push(filename.clone());
                     }
-                    self.visited.write().unwrap().push(filename.clone());
                     let mut buffer = String::new();
+
+                    // Retrieve the source, first looking in the standard library included in the
+                    // binary
                     let file_contents = match STD_LIBS.iter().find(|tup| tup.0 == filename) {
                         Some(tup) => tup.1,
                         None => {
@@ -159,22 +201,32 @@ impl<I> Macro for Import<I>
                             &*buffer
                         }
                     };
-                    // FIXME Remove this hack
-                    self.visited.write().unwrap().pop();
-                    try!(self.importer.import(vm, &modulename, file_contents));
+
+                    let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
+                    let errors = macros.errors.errors.len();
+                    let macro_result =
+                        try!(file_contents.expand_macro_with(&mut compiler, macros, &modulename));
+                    if errors != macros.errors.errors.len() {
+                        // If macro expansion of the imported module fails we need to stop
+                        // compilation of that module. To return an error we return one of the
+                        // already emitted errors (which will be pushed back after this function
+                        // returns)
+                        if let Some(err) = macros.errors.errors.pop() {
+                            return Err(err);
+                        }
+                    }
+                    get_state(macros).visited.pop();
+                    try!(self.importer
+                        .import(&mut compiler,
+                                vm,
+                                &modulename,
+                                &file_contents,
+                                macro_result.expr));
                 }
                 // FIXME Does not handle shadowing
                 Ok(pos::spanned(args[0].span, Expr::Ident(TypedIdent::new(name))))
             }
             _ => return Err(Error::String("Expected a string literal to import".into()).into()),
         }
-    }
-
-    fn clone(&self) -> Box<Macro> {
-        Box::new(Import {
-            visited: RwLock::new(Vec::new()),
-            paths: RwLock::new(self.paths.read().unwrap().clone()),
-            importer: self.importer.clone(),
-        })
     }
 }

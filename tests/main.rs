@@ -34,19 +34,22 @@ fn main() {
     }
 }
 
-fn test_files(path: &str) -> Result<Box<Iterator<Item = PathBuf>>, Box<Error>> {
+fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
     let dir = try!(read_dir(path));
-    Ok(Box::new(dir.filter_map(|f| {
-        f.ok()
-            .and_then(|f| {
-                let path = f.path();
-                if path.extension().and_then(|e| e.to_str()) == Some("hs") {
-                    Some(path)
-                } else {
-                    None
-                }
-            })
-    })))
+    let paths: Vec<_> = dir.filter_map(|f| {
+            f.ok()
+                .and_then(|f| {
+                    let path = f.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("glu") {
+                        Some(path)
+                    } else {
+                        None
+                    }
+                })
+        })
+        .collect();
+    assert!(!paths.is_empty(), "Expected test files");
+    Ok(paths)
 }
 
 fn main_() -> Result<(), Box<Error>> {
@@ -76,7 +79,7 @@ fn main_() -> Result<(), Box<Error>> {
                                                x))
                     .into())
             }
-            Err(_) => (),
+            Err(er) => println!("{}", er),
         }
     }
     Ok(())

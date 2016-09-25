@@ -1,2 +1,2 @@
-let c = import "tests/cyclic_dependency.hs"
+let c = import "tests/fail/deps/cyclic_dependency2.glu"
 in 1
