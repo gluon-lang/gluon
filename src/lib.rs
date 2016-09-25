@@ -356,6 +356,7 @@ pub fn new_vm() -> RootedThread {
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::vm::channel::load(&vm).expect("Loaded channel library");
+    ::vm::debug::load(&vm).expect("Loaded debug library");
     ::io::load(&vm).expect("Loaded IO library");
     vm
 }
