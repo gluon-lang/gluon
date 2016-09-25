@@ -6,8 +6,7 @@ extern crate gluon;
 use std::str;
 use std::slice;
 
-use gluon::vm::api::generic::A;
-use gluon::vm::api::{Getable, Pushable, Generic, CPrimitive};
+use gluon::vm::api::{Getable, Pushable, CPrimitive, Hole, OpaqueValue};
 use gluon::vm::types::{VmIndex, VmInt};
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal, Status};
 
@@ -47,7 +46,7 @@ pub unsafe extern "C" fn glu_run_expr(vm: &Thread,
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new().run_expr::<Generic<A>>(&vm, module, expr);
+    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,

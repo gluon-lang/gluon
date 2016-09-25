@@ -394,8 +394,8 @@ impl<'a> Typecheck<'a> {
 
         let mut typ = self.typecheck(expr);
         if let Some(expected) = expected_type {
-            let expected = self.instantiate(expected);
-            typ = self.unify_span(expr.span, &expected, typ)
+            let expected = self.create_unifiable_signature(expected.clone());
+            typ = self.merge_signature(expr.span, 0, &expected, typ);
         }
         typ = self.finish_type(0, &typ).unwrap_or(typ);
         typ = types::walk_move_type(typ, &mut unroll_typ);
@@ -1186,9 +1186,11 @@ impl<'a> Typecheck<'a> {
                         })
                         .cloned()
                         .map(|new_id| {
-                            Type::alias(new_id,
-                                        alias.args.clone(),
-                                        alias.typ.clone().expect("Type"))
+                            ArcType::from(Type::Alias(AliasData {
+                                name: new_id,
+                                args: alias.args.clone(),
+                                typ: alias.typ.clone(),
+                            }))
                         })
                 }
                 Type::Ident(ref id) => {

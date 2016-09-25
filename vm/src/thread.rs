@@ -436,14 +436,6 @@ impl Thread {
         f(&mut context.gc, roots)
     }
 
-    fn call_bytecode(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
-        let mut context = self.current_context();
-        context.stack.push(Closure(closure));
-        context.borrow_mut().enter_scope(0, State::Closure(closure));
-        try!(context.execute());
-        Ok(self.current_context().stack.pop())
-    }
-
     fn call_context<'b>(&'b self,
                         mut context: OwnedContext<'b>,
                         args: VmIndex)
@@ -454,7 +446,7 @@ impl Thread {
 }
 
 /// Internal functions for interacting with threads. These functions should be considered both
-/// unsafe and unstable
+/// unsafe and unstable.
 pub trait ThreadInternal {
     /// Locks and retrives this threads stack
     fn context(&self) -> OwnedContext;
@@ -478,8 +470,11 @@ pub trait ThreadInternal {
                     instructions: Vec<Instruction>)
                     -> Result<()>;
 
-    /// Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &ArcType, closure: GcPtr<ClosureData>) -> Result<Value>;
+    /// Evaluates a zero argument function (a thunk)
+    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Result<Value>;
+
+    /// Executes an `IO` action
+    fn execute_io(&self, value: Value) -> Result<Value>;
 
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
@@ -558,44 +553,39 @@ impl ThreadInternal for Thread {
         Ok(())
     }
 
+    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Result<Value> {
+        let mut context = self.current_context();
+        context.stack.push(Closure(closure));
+        context.borrow_mut().enter_scope(0, State::Closure(closure));
+        try!(context.execute());
+        Ok(self.current_context().stack.pop())
+    }
 
     /// Calls a module, allowed to to run IO expressions
-    fn call_module(&self, typ: &ArcType, closure: GcPtr<ClosureData>) -> Result<Value> {
-        let value = try!(self.call_bytecode(closure));
-        if let Some((id, _)) = typ.as_alias() {
-            let is_io = {
-                let env = self.get_env();
-                env.find_type_info("IO")
-                    .map(|alias| *id == alias.name)
-                    .unwrap_or(false)
-            };
-            if is_io {
-                debug!("Run IO {:?}", value);
-                let mut context = OwnedContext {
-                    thread: self,
-                    context: self.context.lock().unwrap(),
-                };
-                // Dummy value to fill the place of the function for TailCall
-                context.stack.push(Int(0));
+    fn execute_io(&self, value: Value) -> Result<Value> {
+        debug!("Run IO {:?}", value);
+        let mut context = OwnedContext {
+            thread: self,
+            context: self.context.lock().unwrap(),
+        };
+        // Dummy value to fill the place of the function for TailCall
+        context.stack.push(Int(0));
 
-                context.stack.push(value);
-                context.stack.push(Int(0));
+        context.stack.push(value);
+        context.stack.push(Int(0));
 
-                context.borrow_mut().enter_scope(2, State::Unknown);
-                context = try!(self.call_context(context, 1))
-                    .expect("call_module to have the stack remaining");
-                let result = context.stack.pop();
-                {
-                    let mut context = context.borrow_mut();
-                    while context.stack.len() > 0 {
-                        context.stack.pop();
-                    }
-                }
-                let _ = context.exit_scope();
-                return Ok(result);
+        context.borrow_mut().enter_scope(2, State::Unknown);
+        context = try!(self.call_context(context, 1))
+            .expect("call_module to have the stack remaining");
+        let result = context.stack.pop();
+        {
+            let mut context = context.borrow_mut();
+            while context.stack.len() > 0 {
+                context.stack.pop();
             }
         }
-        Ok(value)
+        let _ = context.exit_scope();
+        Ok(result)
     }
 
     /// Calls a function on the stack.
