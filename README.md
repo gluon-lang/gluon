@@ -1,6 +1,6 @@
 # gluon
 
-[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon) [![Gitter](https://badges.gitter.im/Marwes/gluon.svg)](https://gitter.im/Marwes/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
+[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon) [![Gitter](https://badges.gitter.im/Marwes/gluon.svg)](https://gitter.im/Marwes/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
 
