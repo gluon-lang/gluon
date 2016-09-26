@@ -140,10 +140,6 @@ fn string_slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String
     }
 }
 
-fn trace(a: Generic<A>) {
-    println!("{:?}", a.0);
-}
-
 fn show_int(i: VmInt) -> String {
     format!("{}", i)
 }
@@ -294,7 +290,6 @@ pub fn load(vm: &Thread) -> Result<()> {
                           primitive::<fn(StdString) -> A>("#error", prim::error)));
     try!(vm.define_global("error",
                           primitive::<fn(StdString) -> A>("error", prim::error)));
-    try!(vm.define_global("trace", primitive!(1 prim::trace)));
 
     try!(::lazy::load(vm));
     try!(::reference::load(vm));
