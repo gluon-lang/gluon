@@ -25,6 +25,10 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 ## Usage
 
+### Try online (WIP)
+
+You can try gluon in your browser at the [try_gluon](http://ec2-52-29-1-213.eu-central-1.compute.amazonaws.com/) server.
+
 ### Installation
 
 #### Rust
