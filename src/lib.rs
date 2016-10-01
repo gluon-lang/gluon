@@ -186,13 +186,14 @@ impl Compiler {
     pub fn compile_script(&mut self,
                           vm: &Thread,
                           filename: &str,
+                          expr_str: &str,
                           expr: &SpannedExpr<Symbol>)
                           -> Result<CompiledFunction> {
         TypecheckValue {
                 expr: expr,
                 typ: Type::hole(),
             }
-            .compile(self, vm, filename, ())
+            .compile(self, vm, filename, expr_str, ())
             .map(|result| result.function)
     }
 
@@ -216,7 +217,7 @@ impl Compiler {
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
     pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
-        input.load_script(self, vm, filename, (input, None))
+        input.load_script(self, vm, filename, input, None)
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
@@ -243,7 +244,7 @@ impl Compiler {
     {
         let expected = T::make_type(vm);
         let ExecuteValue { typ: actual, value, .. } =
-            try!(expr_str.run_expr(self, vm, name, (expr_str, Some(&expected))));
+            try!(expr_str.run_expr(self, vm, name, expr_str, Some(&expected)));
         unsafe {
             match T::from_value(vm, Variants::new(&value)) {
                 Some(value) => Ok((value, actual)),
@@ -264,7 +265,7 @@ impl Compiler {
     {
         let expected = T::make_type(vm);
         let ExecuteValue { typ: actual, value, .. } =
-            try!(expr_str.run_expr(self, vm, name, (expr_str, Some(&expected))));
+            try!(expr_str.run_expr(self, vm, name, expr_str, Some(&expected)));
         let is_io = {
             expected.as_alias()
                 .and_then(|(expected_alias_id, _)| {

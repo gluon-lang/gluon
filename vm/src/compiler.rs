@@ -6,7 +6,9 @@ use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::ast::{Typed, DisplayEnv, SpannedExpr, Expr};
 use base::types;
 use base::types::{Alias, KindEnv, ArcType, Type, TypeEnv};
+use base::pos::Line;
 use base::scoped_map::ScopedMap;
+use base::source::Source;
 use types::*;
 use vm::GlobalVmState;
 use self::Variable::*;
@@ -44,7 +46,7 @@ pub struct CompiledFunction {
     pub module_globals: Vec<Symbol>,
     pub records: Vec<Vec<Symbol>>,
     /// Maps instruction indexes to the line that spawned them
-    pub source_map: Vec<(usize, i32)>,
+    pub source_map: Vec<(usize, Line)>,
 }
 
 impl CompiledFunction {
@@ -68,7 +70,7 @@ struct FunctionEnv {
     stack: Vec<(VmIndex, Symbol)>,
     stack_size: VmIndex,
     free_vars: Vec<Symbol>,
-    current_line: i32,
+    current_line: Line,
     function: CompiledFunction,
 }
 
@@ -118,7 +120,7 @@ impl FunctionEnv {
             stack: Vec::new(),
             stack_size: 0,
             function: CompiledFunction::new(args, id, typ),
-            current_line: 0,
+            current_line: Line::from(0),
         }
     }
 
@@ -136,7 +138,7 @@ impl FunctionEnv {
         }
 
         self.function.instructions.push(instruction);
-        let last_emitted_line = self.function.source_map.last().map_or(0, |&(_, x)| x);
+        let last_emitted_line = self.function.source_map.last().map_or(Line::from(0), |&(_, x)| x);
         if last_emitted_line != self.current_line {
             self.function
                 .source_map
@@ -291,6 +293,7 @@ pub struct Compiler<'a> {
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, ArcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
+    source_map: &'a Source<'a>,
 }
 
 impl<'a> KindEnv for Compiler<'a> {
@@ -323,7 +326,8 @@ impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
 impl<'a> Compiler<'a> {
     pub fn new(globals: &'a (CompilerEnv + 'a),
                vm: &'a GlobalVmState,
-               symbols: SymbolModule<'a>)
+               symbols: SymbolModule<'a>,
+               source_map: &'a Source<'a>)
                -> Compiler<'a> {
         Compiler {
             globals: globals,
@@ -331,6 +335,7 @@ impl<'a> Compiler<'a> {
             symbols: symbols,
             stack_constructors: ScopedMap::new(),
             stack_types: ScopedMap::new(),
+            source_map: source_map,
         }
     }
 
@@ -468,11 +473,13 @@ impl<'a> Compiler<'a> {
         let mut exprs = Vec::new();
         exprs.push(expr);
         let saved_line = function.current_line;
-        function.current_line = expr.location.row;
+        function.current_line = self.source_map
+            .line_number_at_byte(expr.span.start);
         while let Some(next) = try!(self.compile_(expr, function, tail_position)) {
             exprs.push(next);
             expr = next;
-            function.current_line = expr.location.row;
+            function.current_line = self.source_map
+                .line_number_at_byte(expr.span.start);
         }
         for expr in exprs.iter().rev() {
             let mut count = 0;
