@@ -33,6 +33,7 @@ mod vm;
 
 use api::ValueRef;
 use value::Value;
+use types::VmIndex;
 use base::types::ArcType;
 use base::symbol::Symbol;
 
@@ -85,6 +86,9 @@ quick_error! {
         }
         OutOfMemory { limit: usize, needed: usize } {
             display("Thread is out of memory: Limit {}, needed {}", limit, needed)
+        }
+        StackOverflow(limit: VmIndex) {
+            display("The stack has overflowed: Limit `{}`", limit)
         }
         Message(err: String) {
             display("{}", err)
