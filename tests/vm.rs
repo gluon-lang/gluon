@@ -732,17 +732,18 @@ f 5
     let result = Compiler::new().run_expr::<i32>(&mut vm, "<top>", text);
     match result {
         Err(Error::VM(..)) => {
-            let stacktrace = vm.get_stack().stacktrace(1);
+            let stacktrace = vm.context().stack.stacktrace(1);
             let f = stacktrace.frames[0].as_ref().unwrap().name.clone();
-            assert_eq!(stacktrace.frames, vec![
+            assert_eq!(stacktrace.frames,
+                       vec![
                     // Removed due to being a tail call
                     // Some(StacktraceFrame { name: f.clone(), line: 9 }),
-                    Some(StacktraceFrame { name: f.clone(), line: 8 }),
-                    Some(StacktraceFrame { name: f.clone(), line: 8 }),
-                    Some(StacktraceFrame { name: f.clone(), line: 8 }),
-                    Some(StacktraceFrame { name: f.clone(), line: 8 }),
-                    Some(StacktraceFrame { name: f.clone(), line: 6 }),
-                    Some(StacktraceFrame { name: f.clone(), line: 4 }),
+                    Some(StacktraceFrame { name: f.clone(), line: 7.into() }),
+                    Some(StacktraceFrame { name: f.clone(), line: 7.into() }),
+                    Some(StacktraceFrame { name: f.clone(), line: 7.into() }),
+                    Some(StacktraceFrame { name: f.clone(), line: 7.into() }),
+                    Some(StacktraceFrame { name: f.clone(), line: 5.into() }),
+                    Some(StacktraceFrame { name: f.clone(), line: 3.into() }),
                 ]);
         }
         Err(err) => panic!("Unexpected error `{}`", err),

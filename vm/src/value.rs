@@ -5,6 +5,7 @@ use std::result::Result as StdResult;
 use base::symbol::Symbol;
 use types::*;
 use base::fnv::FnvMap;
+use base::pos::Line;
 
 use interner::InternedStr;
 use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
@@ -114,7 +115,7 @@ pub struct BytecodeFunction {
     pub strings: Vec<InternedStr>,
     pub globals: Vec<Value>,
     pub records: Vec<Vec<InternedStr>>,
-    pub source_map: Vec<(usize, i32)>,
+    pub source_map: Vec<(usize, Line)>,
 }
 
 impl Traverseable for BytecodeFunction {

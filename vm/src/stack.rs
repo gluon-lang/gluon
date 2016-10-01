@@ -2,6 +2,7 @@ use std::fmt;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
 use base::symbol::Symbol;
+use base::pos::Line;
 
 use Variants;
 use gc::GcPtr;
@@ -114,12 +115,12 @@ impl Stack {
                             .position(|&(index, _)| index > frame.instruction_index)
                             .unwrap_or(closure.function.source_map.len());
                         let line = if p == 0 {
-                            0
+                            Line::from(0)
                         } else {
                             closure.function
                                 .source_map
                                 .get(p - 1)
-                                .map_or(0, |&(_, line)| line)
+                                .map_or(Line::from(0), |&(_, line)| line)
                         };
                         Some(Some(StacktraceFrame {
                             name: closure.function.name.clone(),
@@ -129,7 +130,7 @@ impl Stack {
                     State::Extern(ref ext) => {
                         Some(Some(StacktraceFrame {
                             name: ext.id.clone(),
-                            line: 0,
+                            line: Line::from(0),
                         }))
                     }
                     State::Unknown => Some(None),
@@ -139,7 +140,6 @@ impl Stack {
             .collect();
         Stacktrace { frames: frames }
     }
-
 }
 
 impl Index<VmIndex> for Stack {
@@ -408,7 +408,7 @@ impl<'b> IndexMut<RangeFrom<VmIndex>> for StackFrame<'b> {
 #[derive(Debug, PartialEq)]
 pub struct StacktraceFrame {
     pub name: Symbol,
-    pub line: i32,
+    pub line: Line,
 }
 
 #[derive(Debug, PartialEq)]
@@ -420,13 +420,16 @@ impl fmt::Display for Stacktrace {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(writeln!(f, "Stacktrace:\n"));
         for (i, frame) in self.frames.iter().enumerate() {
-            let (name, line) = frame.as_ref()
-                .map_or(("<unknown>", 0), |frame| (frame.name.declared_name(), frame.line));
-            try!(if line == 0 {
-                writeln!(f, "{}: {}", i, name)
-            } else {
-                writeln!(f, "{}: {}:Line {}", i, name, line)
-            });
+            try!(match *frame {
+                Some(ref frame) => {
+                    writeln!(f,
+                             "{}: {}:Line {}",
+                             i,
+                             frame.name.declared_name(),
+                             frame.line)
+                }
+                None => writeln!(f, "{}: <unknown>", i),
+            })
         }
         Ok(())
     }

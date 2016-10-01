@@ -19,6 +19,8 @@ extern crate gluon_vm as vm;
 #[cfg(not(test))]
 use gluon::{new_vm, Compiler, Thread, Error, Result};
 #[cfg(not(test))]
+use gluon::vm::thread::ThreadInternal;
+#[cfg(not(test))]
 use gluon::vm::Error as VMError;
 #[cfg(not(test))]
 use clap::{Arg, App};
@@ -74,7 +76,7 @@ fn main() {
                 match run_files(&vm, args) {
                     Ok(()) => (),
                     Err(err @ Error::VM(VMError::Message(_))) => {
-                        println!("{}\n{}", err, vm.get_stack().stacktrace(0));
+                        println!("{}\n{}", err, vm.context().stack.stacktrace(0));
                     }
                     Err(msg) => println!("{}", msg),
                 }
