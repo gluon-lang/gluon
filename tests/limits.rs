@@ -13,10 +13,13 @@ use support::make_vm;
 #[test]
 fn out_of_memory() {
     let _ = ::env_logger::init();
+
     let vm = make_vm();
     vm.set_memory_limit(10);
-    let result = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" [1, 2, 3, 4] "#);
+
+    let expr = " [1, 2, 3, 4] ";
+    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
+
     match result {
         // FIXME This should just need to match on the explicit out of memory error
         Err(Error::VM(VMError::OutOfMemory { limit: 10, .. })) => (),
@@ -28,12 +31,12 @@ fn out_of_memory() {
 #[test]
 fn stack_overflow() {
     let _ = ::env_logger::init();
+
     let vm = make_vm();
+    vm.context().set_max_stack_size(3);
 
-    vm.context().set_stack_size_limit(3);
-
-    let result = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" [1, 2, 3, 4] "#);
+    let expr = " [1, 2, 3, 4] ";
+    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
 
     match result {
         Err(Error::VM(VMError::StackOverflow(3))) => (),
