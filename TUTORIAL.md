@@ -459,7 +459,7 @@ TODO
 
 ### Prelude
 
-When compiling a an expression the compiler automatically inserts a small prelude before the expression itself which gives automatic access to basic operators such as `+`, `-`, etc as well as types such as `Option` and `Result`.
+When compiling an expression, the compiler automatically inserts a small prelude before the expression itself which gives automatic access to basic operators such as `+`, `-`, etc as well as types such as `Option` and `Result`.
 
 ### Threads and channels
 
