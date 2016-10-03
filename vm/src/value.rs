@@ -99,6 +99,7 @@ unsafe impl DataDef for ClosureInitDef {
 pub struct BytecodeFunction {
     pub name: Symbol,
     pub args: VmIndex,
+    pub max_stack_size: VmIndex,
     pub instructions: Vec<Instruction>,
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
     pub strings: Vec<InternedStr>,

@@ -241,6 +241,7 @@ impl RootedThread {
                 stack: Stack::new(),
                 record_map: FieldMap::new(),
                 hook: None,
+                max_stack_size: VmIndex::max_value(),
             }),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
@@ -286,6 +287,7 @@ impl Thread {
                 stack: Stack::new(),
                 record_map: FieldMap::new(),
                 hook: None,
+                max_stack_size: VmIndex::max_value(),
             }),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
@@ -630,6 +632,7 @@ pub struct Context {
     pub gc: Gc,
     record_map: FieldMap,
     hook: Option<HookFn>,
+    max_stack_size: VmIndex,
 }
 
 impl Context {
@@ -658,6 +661,10 @@ impl Context {
 
     pub fn set_hook(&mut self, hook: Option<HookFn>) -> Option<HookFn> {
         mem::replace(&mut self.hook, hook)
+    }
+
+    pub fn set_max_stack_size(&mut self, limit: VmIndex) {
+        self.max_stack_size = limit;
     }
 }
 
@@ -743,6 +750,7 @@ impl<'b> OwnedContext<'b> {
                     }
                 }
                 State::Closure(closure) => {
+                    let max_stack_size = context.max_stack_size;
                     // Tail calls into extern functions at the top level will drop the last
                     // stackframe so just return immedietly
                     enum State {
@@ -753,10 +761,19 @@ impl<'b> OwnedContext<'b> {
                     let state = {
                         let mut context = context.borrow_mut();
 
+                        let instruction_index = context.stack.frame.instruction_index;
+                        let function_size = closure.function.max_stack_size;
+
+                        // Before entering a function check that the stack cannot exceed `max_stack_size`
+                        if instruction_index == 0 {
+                            if context.stack.stack.len() + function_size > max_stack_size {
+                                return Err(Error::StackOverflow(max_stack_size));
+                            }
+                        }
+
                         if context.stack.stack.get_frames().len() == 0 {
                             State::ReturnContext
                         } else {
-                            let instruction_index = context.stack.frame.instruction_index;
                             debug!("Continue with {}\nAt: {}/{}",
                                    closure.function.name,
                                    instruction_index,

@@ -12,7 +12,6 @@ use gluon::vm::internal::Value;
 use gluon::vm::internal::Value::{Float, Int};
 use gluon::vm::stack::{State, StackFrame};
 use gluon::vm::channel::Sender;
-use gluon::vm::Error as VMError;
 use gluon::{Compiler, Error};
 
 
@@ -694,21 +693,6 @@ string.slice s 1 (string.length s)
     match result {
         Err(Error::VM(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
-        Ok(_) => panic!("Expected an error"),
-    }
-}
-
-#[test]
-fn out_of_memory() {
-    let _ = ::env_logger::init();
-    let vm = make_vm();
-    vm.set_memory_limit(10);
-    let result = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" [1, 2, 3, 4] "#);
-    match result {
-        // FIXME This should just need to match on the explicit out of memory error
-        Err(Error::VM(VMError::OutOfMemory { limit: 10, .. })) => (),
-        Err(err) => panic!("Unexpected error `{:?}`", err),
         Ok(_) => panic!("Expected an error"),
     }
 }
