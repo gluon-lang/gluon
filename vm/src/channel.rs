@@ -81,7 +81,7 @@ impl<T: VmType> VmType for Sender<T>
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.global_env().get_env().find_type_info("Sender").unwrap().name.clone();
-        Type::app(Type::ident(symbol), vec![T::make_type(vm)])
+        Type::app(Type::ident(symbol), collect![T::make_type(vm)])
     }
 }
 
@@ -91,7 +91,7 @@ impl<T: VmType> VmType for Receiver<T>
     type Type = Receiver<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.global_env().get_env().find_type_info("Receiver").unwrap().name.clone();
-        Type::app(Type::ident(symbol), vec![T::make_type(vm)])
+        Type::app(Type::ident(symbol), collect![T::make_type(vm)])
     }
 }
 

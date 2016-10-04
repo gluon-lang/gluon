@@ -9,7 +9,7 @@ use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, ArcType, Generic, PrimitiveEnv, Type, TypeEnv};
+use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeEnv};
 
 use macros::MacroEnv;
 use {Error, Result};
@@ -422,7 +422,7 @@ impl GlobalVmState {
             Err(Error::TypeAlreadyExists(name.into()))
         } else {
             let id = TypeId::of::<T>();
-            let arg_types: Vec<_> = args.iter().map(|g| self.get_generic(g)).collect();
+            let arg_types: AppVec<_> = args.iter().map(|g| self.get_generic(g)).collect();
             let args = arg_types.iter()
                 .map(|g| match **g {
                     Type::Generic(ref g) => g.clone(),

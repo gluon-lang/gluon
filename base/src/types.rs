@@ -282,13 +282,10 @@ impl<Id, T> Type<Id, T>
     }
 
     pub fn array(typ: T) -> T {
-        Type::app(Type::builtin(BuiltinType::Array), vec![typ])
+        Type::app(Type::builtin(BuiltinType::Array), collect![typ])
     }
 
-    pub fn app<I>(id: T, args: I) -> T
-        where I: IntoIterator<Item = T>,
-    {
-        let args: AppVec<T> = args.into_iter().collect();
+    pub fn app(id: T, args: AppVec<T>) -> T {
         if args.is_empty() {
             id
         } else {
@@ -341,7 +338,7 @@ impl<Id, T> Type<Id, T>
         args.into_iter()
             .rev()
             .fold(ret,
-                  |body, arg| Type::app(function.clone(), vec![arg, body]))
+                  |body, arg| Type::app(function.clone(), collect![arg, body]))
     }
 
     pub fn generic(typ: Generic<Id>) -> T {
@@ -1056,13 +1053,13 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
 {
     match *typ {
         Type::App(ref id, ref args) => {
-            let new_args = walk_move_types(AppVec::new(), args, |t| f.visit(t));
+            let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
         }
         Type::Record(ref row) => f.visit(row).map(|row| T::from(Type::Record(row))),
         Type::Variant(ref row) => f.visit(row).map(|row| T::from(Type::Variant(row))),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
-            let new_fields = walk_move_types(Vec::new(), fields, |field| {
+            let new_fields = walk_move_types(fields, |field| {
                 f.visit(&field.typ).map(|typ| {
                     Field {
                         name: field.name.clone(),
@@ -1089,12 +1086,13 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
 }
 
 // FIXME Add R: Default and remove the `out` parameter
-pub fn walk_move_types<'a, I, F, T, R>(mut out: R, types: I, mut f: F) -> Option<R>
+pub fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
     where I: IntoIterator<Item = &'a T>,
           F: FnMut(&'a T) -> Option<T>,
           T: Clone + 'a,
-          R: VecLike<T> + DerefMut<Target = [T]>,
+          R: Default + VecLike<T> + DerefMut<Target = [T]>,
 {
+    let mut out = R::default();
     walk_move_types2(types.into_iter(), false, &mut out, &mut f);
     if out.is_empty() {
         None

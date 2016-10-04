@@ -3,6 +3,8 @@ extern crate gluon_parser as parser;
 extern crate env_logger;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate collect_mac;
 
 mod support;
 
@@ -296,7 +298,7 @@ fn op_identifier() {
 fn variant_type() {
     let _ = ::env_logger::init();
     let e = parse_new!("type Option a = | None | Some a in Some 1");
-    let option = Type::app(typ("Option"), vec![typ("a")]);
+    let option = Type::app(typ("Option"), collect![typ("a")]);
     let none = Type::function(vec![], option.clone());
     let some = Type::function(vec![typ("a")], option.clone());
     assert_eq!(e,
@@ -612,7 +614,7 @@ x
                                                     comment: None,
                                                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
                                                     typ: Type::app(typ("->"),
-                                                                   vec![typ("Int"), typ("Int")]),
+                                                                   collect![typ("Int"), typ("Int")]),
                                                     args: vec![],
                                                     expr: id("x"),
                                                 }],

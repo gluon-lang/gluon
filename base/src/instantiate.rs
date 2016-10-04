@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 
 use types;
-use types::{AliasData, Type, Generic, ArcType, TypeEnv};
+use types::{AliasData, AppVec, Type, Generic, ArcType, TypeEnv};
 use symbol::Symbol;
 use fnv::FnvMap;
 
@@ -134,7 +134,7 @@ pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Op
                 .count();
             if alias_args.len() - args.len() <= allowed_missing_args {
                 // Remove the args at the end of the aliased type
-                let arg_types: Vec<_> = arg_types.iter()
+                let arg_types: AppVec<_> = arg_types.iter()
                     .take(arg_types.len() - (alias_args.len() - args.len()))
                     .cloned()
                     .collect();

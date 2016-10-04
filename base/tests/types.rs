@@ -1,4 +1,6 @@
 extern crate gluon_base as base;
+#[macro_use]
+extern crate collect_mac;
 
 use std::ops::Deref;
 

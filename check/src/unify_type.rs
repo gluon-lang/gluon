@@ -4,7 +4,7 @@ use std::mem;
 use smallvec::VecLike;
 
 use base::error::Errors;
-use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv, merge};
+use base::types::{self, ArcType, Field, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
 use base::scoped_map::ScopedMap;
@@ -176,26 +176,29 @@ fn do_zip_match<'a, U>(self_: &ArcType,
             match l_args.len().cmp(&r_args.len()) {
                 Equal => {
                     let new_type = unifier.try_match(l, r);
-                    let new_args = walk_move_types(AppVec::new(),
-                                                   l_args.iter().zip(r_args),
+                    let new_args = walk_move_types(l_args.iter().zip(r_args),
                                                    |l, r| unifier.try_match(l, r));
                     Ok(merge(l, new_type, l_args, new_args, Type::app))
                 }
                 Less => {
                     let offset = r_args.len() - l_args.len();
-                    let new_type =
-                        unifier.try_match(l, &Type::app(r.clone(), r_args[..offset].iter().cloned()));
-                    let new_args = walk_move_types(AppVec::new(),
-                                                   l_args.iter().zip(&r_args[offset..]),
+
+                    let reduced_r = Type::app(r.clone(),
+                                              r_args[..offset].iter().cloned().collect());
+                    let new_type = unifier.try_match(l, &reduced_r);
+
+                    let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
                                                    |l, r| unifier.try_match(l, r));
                     Ok(merge(l, new_type, l_args, new_args, Type::app))
                 }
                 Greater => {
                     let offset = l_args.len() - r_args.len();
-                    let new_type =
-                        unifier.try_match(&Type::app(l.clone(), l_args[..offset].iter().cloned()), r);
-                    let new_args = walk_move_types(AppVec::new(),
-                                                   l_args[offset..].iter().zip(r_args),
+
+                    let reduced_l = Type::app(l.clone(),
+                                              l_args[..offset].iter().cloned().collect());
+                    let new_type = unifier.try_match(&reduced_l, r);
+
+                    let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
                                                    |l, r| unifier.try_match(l, r));
                     Ok(merge(r, new_type, r_args, new_args, Type::app))
                 }
@@ -217,7 +220,7 @@ fn do_zip_match<'a, U>(self_: &ArcType,
             if l_args.len() == r_args.len() &&
                l_args.iter().zip(r_args).all(|(l, r)| l.name.name_eq(&r.name)) &&
                l_types == r_types {
-                let new_args = walk_move_types(Vec::new(), l_args.iter().zip(r_args), |l, r| {
+                let new_args = walk_move_types(l_args.iter().zip(r_args), |l, r| {
                     unifier.try_match(&l.typ, &r.typ)
                         .map(|typ| {
                             types::Field {
@@ -242,22 +245,21 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                 // HACK For non polymorphic records we need to care about field order as the
                 // compiler assumes the order the fields occur in the type determines how
                 // to access them
-                let new_args =
-                    walk_move_types(Vec::new(), l_args.iter().zip(r_args.iter()), |l, r| {
-                        let opt_type = if !l.name.name_eq(&r.name) {
-                            let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
-                            unifier.report_error(UnifyError::Other(err));
-                            None
-                        } else {
-                            unifier.try_match(&l.typ, &r.typ)
-                        };
-                        opt_type.map(|typ| {
-                            types::Field {
-                                name: l.name.clone(),
-                                typ: typ,
-                            }
-                        })
-                    });
+                let new_args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
+                    let opt_type = if !l.name.name_eq(&r.name) {
+                        let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
+                        unifier.report_error(UnifyError::Other(err));
+                        None
+                    } else {
+                        unifier.try_match(&l.typ, &r.typ)
+                    };
+                    opt_type.map(|typ| {
+                        types::Field {
+                            name: l.name.clone(),
+                            typ: typ,
+                        }
+                    })
+                });
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(merge(l_args,
                          new_args,
@@ -333,7 +335,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
     let mut types: Vec<_> = types_both.iter().map(|pair| pair.0.clone()).collect();
 
     // Unify the fields that exists in both records
-    let new_both = walk_move_types(Vec::new(), both.iter().cloned(), |l, r| {
+    let new_both = walk_move_types(both.iter().cloned(), |l, r| {
         unifier.try_match(&l.typ, &r.typ)
             .map(|typ| {
                 types::Field {
@@ -344,7 +346,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
     });
 
     // Pack all fields from both records into a single `Type::ExtendRow` value
-    let mut fields = match new_both {
+    let mut fields: Vec<_> = match new_both {
         Some(fields) => fields,
         None => both.iter().map(|pair| pair.0.clone()).collect(),
     };
@@ -547,12 +549,13 @@ fn try_with_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
     }
 }
 
-fn walk_move_types<'a, I, F, T, R>(mut out: R, types: I, mut f: F) -> Option<R>
+fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
     where I: Iterator<Item = (&'a T, &'a T)>,
           F: FnMut(&'a T, &'a T) -> Option<T>,
           T: Clone + 'a,
-          R: VecLike<T>,
+          R: Default + VecLike<T>,
 {
+    let mut out = R::default();
     walk_move_types2(types, false, &mut out, &mut f);
     if out[..].is_empty() {
         None

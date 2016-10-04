@@ -7,6 +7,8 @@ extern crate log;
 extern crate quick_error;
 extern crate pretty;
 extern crate smallvec;
+#[macro_use]
+extern crate collect_mac;
 
 pub mod ast;
 pub mod error;

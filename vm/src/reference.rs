@@ -60,7 +60,7 @@ impl<T> VmType for Reference<T>
         let env = vm.global_env().get_env();
         let symbol = env.find_type_info("Ref").unwrap().name.clone();
         let ctor = Type::ident(symbol);
-        Type::app(ctor, vec![T::make_type(vm)])
+        Type::app(ctor, collect![T::make_type(vm)])
     }
 }
 

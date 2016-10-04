@@ -13,7 +13,7 @@ use base::instantiate::{self, Instantiator};
 use base::kind::{Kind, KindEnv, ArcKind};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{self, Alias, AliasData, ArcType, Field, Generic};
+use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
 use base::types::{PrimitiveEnv, Type, TypeEnv, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
@@ -299,7 +299,7 @@ impl<'a> Typecheck<'a> {
                 self.stack_var(field.name, field.typ);
             }
         }
-        let generic_args = alias.args.iter().cloned().map(Type::generic);
+        let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
         let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
             // FIXME: Workaround so that both the types name in this module and its global
@@ -1112,7 +1112,7 @@ impl<'a> Typecheck<'a> {
                     Some(gen)
                 }
                 Type::ExtendRow { ref types, ref fields, ref rest } => {
-                    let new_fields = types::walk_move_types(Vec::new(), fields, |field| {
+                    let new_fields = types::walk_move_types(fields, |field| {
                         // Make a new name base for any unbound variables in the record field
                         // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                         // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
@@ -1445,6 +1445,8 @@ fn primitive_type(op_type: &str) -> ArcType {
 /// Example:
 ///
 /// ```rust
+/// #[macro_use]
+/// extern crate collect_mac;
 /// extern crate gluon_base;
 /// extern crate gluon_check;
 ///
@@ -1454,17 +1456,17 @@ fn primitive_type(op_type: &str) -> ArcType {
 /// # fn main() {
 /// let i: ArcType = Type::int();
 /// let s: ArcType = Type::string();
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), vec![s.clone()]), vec![i.clone()])),
-///            Some(Type::app(i.clone(), vec![s.clone(), i.clone()])));
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), vec![i.clone()]), vec![s.clone()])),
-///            Some(Type::app(i.clone(), vec![i.clone(), s.clone()])));
+/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), collect![s.clone()]), collect![i.clone()])),
+///            Some(Type::app(i.clone(), collect![s.clone(), i.clone()])));
+/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), collect![i.clone()]), collect![s.clone()])),
+///            Some(Type::app(i.clone(), collect![i.clone(), s.clone()])));
 /// let f: ArcType = Type::builtin(BuiltinType::Function);
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(f.clone(), vec![i.clone()]), vec![s.clone()])),
-///            Some(Type::function(vec![i.clone()], s.clone())));
+/// assert_eq!(unroll_typ(&*Type::app(Type::app(f.clone(), collect![i.clone()]), collect![s.clone()])),
+///            Some(Type::function(collect![i.clone()], s.clone())));
 /// # }
 /// ```
 pub fn unroll_typ(typ: &Type<Symbol>) -> Option<ArcType> {
-    let mut args = Vec::new();
+    let mut args = AppVec::new();
     let mut current = match *typ {
         Type::App(ref l, ref rest) => {
             // No need to unroll if `l` is not an application as that will just result in returning

@@ -3,7 +3,7 @@ use std::fmt;
 use base::ast;
 use base::kind::{self, ArcKind, Kind, KindEnv};
 use base::symbol::Symbol;
-use base::types::{self, ArcType, BuiltinType, Field, Generic, Type, Walker};
+use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
 
 use substitution::{Substitution, Substitutable};
 use unify;
@@ -172,7 +172,7 @@ impl<'a> KindCheck<'a> {
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
             Type::App(ref ctor, ref args) => {
                 let (mut kind, ctor) = try!(self.kindcheck(ctor));
-                let mut new_args = Vec::new();
+                let mut new_args = AppVec::new();
                 for arg in args {
                     let f = Kind::function(self.subs.new_var(), self.subs.new_var());
                     kind = try!(self.unify(&f, kind));

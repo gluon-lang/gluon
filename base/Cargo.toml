@@ -15,4 +15,5 @@ log = "0.3.6"
 quick-error = "1.0.0"
 fnv = "1.0.3"
 pretty = "0.1.0"
-smallvec = "0.2.0"
+smallvec = { git = "https://github.com/servo/rust-smallvec", rev = "cc04c67174dfcd1aa9e893cd55b13b583180f8a9" }
+collect-mac = "0.1.0"
