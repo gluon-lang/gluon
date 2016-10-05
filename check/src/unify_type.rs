@@ -4,7 +4,7 @@ use std::mem;
 use smallvec::VecLike;
 
 use base::error::Errors;
-use base::types::{self, ArcType, Field, Type, TypeVariable, TypeEnv, merge};
+use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
 use base::scoped_map::ScopedMap;
@@ -172,37 +172,7 @@ fn do_zip_match<'a, U>(self_: &ArcType,
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
     match (&**self_, &**other) {
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
-            use std::cmp::Ordering::*;
-            match l_args.len().cmp(&r_args.len()) {
-                Equal => {
-                    let new_type = unifier.try_match(l, r);
-                    let new_args = walk_move_types(l_args.iter().zip(r_args),
-                                                   |l, r| unifier.try_match(l, r));
-                    Ok(merge(l, new_type, l_args, new_args, Type::app))
-                }
-                Less => {
-                    let offset = r_args.len() - l_args.len();
-
-                    let reduced_r = Type::app(r.clone(),
-                                              r_args[..offset].iter().cloned().collect());
-                    let new_type = unifier.try_match(l, &reduced_r);
-
-                    let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
-                                                   |l, r| unifier.try_match(l, r));
-                    Ok(merge(l, new_type, l_args, new_args, Type::app))
-                }
-                Greater => {
-                    let offset = l_args.len() - r_args.len();
-
-                    let reduced_l = Type::app(l.clone(),
-                                              l_args[..offset].iter().cloned().collect());
-                    let new_type = unifier.try_match(&reduced_l, r);
-
-                    let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
-                                                   |l, r| unifier.try_match(l, r));
-                    Ok(merge(r, new_type, r_args, new_args, Type::app))
-                }
-            }
+            unify_app(unifier, l, l_args, r, r_args)
         }
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
@@ -281,6 +251,53 @@ fn do_zip_match<'a, U>(self_: &ArcType,
             } else {
                 Ok(try!(try_with_alias(unifier, self_, other)))
             }
+        }
+    }
+}
+
+fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
+                    l: &ArcType,
+                    l_args: &AppVec<ArcType>,
+                    r: &ArcType,
+                    r_args: &AppVec<ArcType>)
+                    -> Result<Option<ArcType>, Error<Symbol>>
+    where U: Unifier<State<'a>, ArcType>,
+{
+    use std::cmp::Ordering::*;
+    // Applications are curried `a b c d` == `((a b) c) d` we need to unify the last
+    // argument which eachother followed by the second last etc.
+    // If the number of arguments are not equal, the application with fewer arguments are
+    // unified with the other type applied on its remaining arguments
+    // a b c <> d e
+    // Unifies:
+    // c <> e
+    // a b <> d
+    match l_args.len().cmp(&r_args.len()) {
+        Equal => {
+            let new_type = unifier.try_match(l, r);
+            let new_args = walk_move_types(l_args.iter().zip(r_args),
+                                           |l, r| unifier.try_match(l, r));
+            Ok(merge(l, new_type, l_args, new_args, Type::app))
+        }
+        Less => {
+            let offset = r_args.len() - l_args.len();
+
+            let reduced_r = Type::app(r.clone(), r_args[..offset].iter().cloned().collect());
+            let new_type = unifier.try_match(l, &reduced_r);
+
+            let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
+                                           |l, r| unifier.try_match(l, r));
+            Ok(merge(l, new_type, l_args, new_args, Type::app))
+        }
+        Greater => {
+            let offset = l_args.len() - r_args.len();
+
+            let reduced_l = Type::app(l.clone(), l_args[..offset].iter().cloned().collect());
+            let new_type = unifier.try_match(&reduced_l, r);
+
+            let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
+                                           |l, r| unifier.try_match(l, r));
+            Ok(merge(r, new_type, r_args, new_args, Type::app))
         }
     }
 }

@@ -322,6 +322,7 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
                                                                                   vec![typ("a")])),
                                       }]);
     let option = alias("Option", &["a"], variants);
+
     let expected = Ok(Type::app(option, collect![typ("Int")]));
 
     assert_eq!(result, expected);
