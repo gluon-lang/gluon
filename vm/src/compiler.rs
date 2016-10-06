@@ -11,6 +11,7 @@ use base::scoped_map::ScopedMap;
 use base::source::Source;
 use types::*;
 use vm::GlobalVmState;
+use source_map::SourceMap;
 use self::Variable::*;
 
 use Result;
@@ -46,7 +47,7 @@ pub struct CompiledFunction {
     pub module_globals: Vec<Symbol>,
     pub records: Vec<Vec<Symbol>>,
     /// Maps instruction indexes to the line that spawned them
-    pub source_map: Vec<(usize, Line)>,
+    pub source_map: SourceMap,
 }
 
 impl CompiledFunction {
@@ -61,7 +62,7 @@ impl CompiledFunction {
             strings: Vec::new(),
             module_globals: Vec::new(),
             records: Vec::new(),
-            source_map: Vec::new(),
+            source_map: SourceMap::new(),
         }
     }
 }
@@ -138,12 +139,7 @@ impl FunctionEnv {
         }
 
         self.function.instructions.push(instruction);
-        let last_emitted_line = self.function.source_map.last().map_or(Line::from(0), |&(_, x)| x);
-        if last_emitted_line != self.current_line {
-            self.function
-                .source_map
-                .push((self.function.instructions.len() - 1, self.current_line));
-        }
+        self.function.source_map.emit(self.function.instructions.len() - 1, self.current_line);
     }
 
     fn increase_stack(&mut self, adjustment: VmIndex) {

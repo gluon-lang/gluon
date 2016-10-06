@@ -109,19 +109,7 @@ impl Stack {
             .filter_map(|frame| {
                 match frame.state {
                     State::Closure(ref closure) => {
-                        let p = closure.function
-                            .source_map
-                            .iter()
-                            .position(|&(index, _)| index > frame.instruction_index)
-                            .unwrap_or(closure.function.source_map.len());
-                        let line = if p == 0 {
-                            Line::from(0)
-                        } else {
-                            closure.function
-                                .source_map
-                                .get(p - 1)
-                                .map_or(Line::from(0), |&(_, line)| line)
-                        };
+                        let line = closure.function.source_map.line(frame.instruction_index);
                         Some(Some(StacktraceFrame {
                             name: closure.function.name.clone(),
                             line: line,
