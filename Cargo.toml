@@ -9,8 +9,8 @@ license = "MIT"
 
 description = "A static, type inferred programming langauge for application embedding"
 
-repository = "https://github.com/Marwes/gluon"
-documentation = "https://marwes.github.io/gluon/gluon/index.html"
+repository = "https://github.com/gluon-lang/gluon"
+documentation = "https://gluon-lang.github.io/gluon/gluon/index.html"
 readme = "README.md"
 
 [workspace]
