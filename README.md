@@ -1,6 +1,6 @@
 # gluon
 
-[![Build Status](https://travis-ci.org/Marwes/gluon.svg?branch=master)](https://travis-ci.org/Marwes/gluon) [![Gitter](https://badges.gitter.im/Marwes/gluon.svg)](https://gitter.im/Marwes/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon)
+[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
 
@@ -18,8 +18,8 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 * **Thread safe** - Gluon is written in Rust which guarantees thread safety and gluon keeps the same guarantees allowing multiple gluon programs to run in parallel ([example][parallel])\*
 
-[easy_embed]:https://github.com/Marwes/gluon/blob/master/TUTORIAL.md#embedding-api
-[parallel]:https://github.com/Marwes/gluon/blob/master/tests/parallel.rs
+[easy_embed]:https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md#embedding-api
+[parallel]:https://github.com/gluon-lang/gluon/blob/master/tests/parallel.rs
 
 \* Parallel execution of gluon programs is a recent addition and may still have issues such as deadlocks.
 
@@ -43,7 +43,7 @@ gluon = "0.2.0"
 #### Other languages
 Currently the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust api.
 
-[C api]: https://github.com/Marwes/gluon/blob/master/c-api/src/lib.rs
+[C api]: https://github.com/gluon-lang/gluon/blob/master/c-api/src/lib.rs
 
 ## Tools
 
@@ -77,9 +77,9 @@ REPL features:
 
 ## Documentation
 
-[Tutorial (WIP)](https://github.com/Marwes/gluon/blob/master/TUTORIAL.md)
+[Tutorial (WIP)](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md)
 
-[Rustdoc](https://marwes.github.io/gluon/gluon/index.html)
+[Rustdoc](https://gluon-lang.github.io/gluon/gluon/index.html)
 
 ## Examples
 
@@ -160,8 +160,8 @@ else
 
 There are many ways to contribute to gluon. The two simplest ways of starting out is opening issues or working on an issue marked as [beginner][]. For more extensive information about contributing you can look at [CONTRIBUTING.md][].
 
-[beginner]:https://github.com/Marwes/gluon/labels/Beginner
-[CONTRIBUTING.md]:https://github.com/Marwes/gluon/blob/master/CONTRIBUTING.md
+[beginner]:https://github.com/gluon-lang/gluon/labels/Beginner
+[CONTRIBUTING.md]:https://github.com/gluon-lang/gluon/blob/master/CONTRIBUTING.md
 
 ## Goals
 These goals may change or be refined over time as I experiment with what is possible to with the language.
@@ -176,7 +176,7 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Modular** - The library is split into parser, typechecker and virtual machine + compiler. Each of these components can be use independently of each other allowing applications to pick and choose exactly what they need.
 
-[prelude]:https://github.com/Marwes/gluon/blob/master/std/prelude.hs
+[prelude]:https://github.com/gluon-lang/gluon/blob/master/std/prelude.glu
 
 ## Inspiration
 

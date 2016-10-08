@@ -7,8 +7,8 @@ license = "MIT"
 
 description = "The parser for the gluon programming language"
 
-repository = "https://github.com/Marwes/gluon"
-documentation = "https://marwes.github.io/gluon/gluon/index.html"
+repository = "https://github.com/gluon-lang/gluon"
+documentation = "https://gluon-lang.github.io/gluon/gluon/index.html"
 
 [dependencies]
 combine-language = "=2.0.0-beta4"

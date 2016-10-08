@@ -7,8 +7,8 @@ license = "MIT"
 
 description = "The virtual machine for executing the gluon programming language"
 
-repository = "https://github.com/Marwes/gluon"
-documentation = "https://marwes.github.io/gluon/gluon/index.html"
+repository = "https://github.com/gluon-lang/gluon"
+documentation = "https://gluon-lang.github.io/gluon/gluon/index.html"
 
 [dependencies]
 env_logger = { version = "0.3.4", optional = true }
