@@ -77,7 +77,7 @@ impl Importer for DefaultImporter {
               -> Result<(), MacroError> {
         use compiler_pipeline::*;
 
-        try!(MacroValue { expr: expr }.load_script(compiler, vm, &modulename, (input, None)));
+        try!(MacroValue { expr: expr }.load_script(compiler, vm, &modulename, input, None));
         Ok(())
     }
 }
