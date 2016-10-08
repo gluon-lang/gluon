@@ -4,7 +4,7 @@ use std::fmt;
 use base::ast::is_operator_char;
 use base::pos::{BytePos, Column, Line, Location, Span, Spanned, NO_EXPANSION};
 
-use combine::primitives::{Consumed, Error as CombineError, RangeStream};
+use combine::primitives::{Consumed, Error as CombineError, Info, RangeStream};
 use combine::combinator::EnvParser;
 use combine::range::{take, take_while};
 use combine::*;
@@ -56,6 +56,7 @@ impl<'input, I> RangeStream for LocatedStream<I>
                 range
             })
     }
+
     fn uncons_while<F>(&mut self,
                        mut predicate: F)
                        -> Result<Self::Range, CombineError<Self::Item, Self::Range>>
@@ -97,22 +98,12 @@ impl fmt::Display for Delimiter {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum IdentType {
-    /// Constructors are identifiers starting with an uppercase letter
-    Constructor,
-    /// An operator in identifier position (Example: (+), (-), (>>=))
-    Operator,
-    /// A normal variable
-    Variable,
-}
-
-pub type Error<Id> = CombineError<Token<Id>, Token<Id>>;
+pub type Error<'input> = CombineError<Token<'input>, Token<'input>>;
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum Token<Id> {
-    Ident(Id, IdentType),
-    Operator(Id),
+pub enum Token<'input> {
+    Identifier(&'input str),
+    Operator(&'input str),
     String(String),
     Char(char),
     Int(i64),
@@ -136,26 +127,27 @@ pub enum Token<Id> {
     Dot,
     Comma,
     Pipe,
-    Equal,
+    Equals,
     OpenBlock,
     CloseBlock,
     Semi,
     EOF,
 }
 
-impl<Id> fmt::Display for Token<Id> {
+impl<'input> fmt::Display for Token<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Token::*;
         use self::Delimiter::*;
+
         let s = match *self {
-            Ident(..) => "Ident",
-            Operator(..) => "Operator",
-            String(..) => "String",
-            Char(..) => "Char",
-            Int(..) => "Int",
-            Byte(..) => "Byte",
-            Float(..) => "Float",
-            DocComment(..) => "DocComment",
+            Identifier(_) => "Identifier",
+            Operator(_) => "Operator",
+            String(_) => "String",
+            Char(_) => "Char",
+            Int(_) => "Int",
+            Byte(_) => "Byte",
+            Float(_) => "Float",
+            DocComment(_) => "DocComment",
             Let => "Let",
             And => "And",
             In => "In",
@@ -177,7 +169,7 @@ impl<Id> fmt::Display for Token<Id> {
             Dot => "Dot",
             Comma => "Comma",
             Pipe => "Pipe",
-            Equal => "Equal",
+            Equals => "Equal",
             OpenBlock => "OpenBlock",
             CloseBlock => "CloseBlock",
             Semi => "Semi",
@@ -187,56 +179,16 @@ impl<Id> fmt::Display for Token<Id> {
     }
 }
 
-impl<Id> Token<Id> {
-    pub fn map<Id2, F>(&self, f: F) -> Token<Id2>
-        where F: FnOnce(&Id) -> Id2,
-    {
-        use self::Token::*;
-        match *self {
-            Ident(ref id, b) => Ident(f(id), b),
-            Operator(ref id) => Operator(f(id)),
-            String(ref s) => String(s.clone()),
-            Char(c) => Char(c),
-            Int(i) => Int(i),
-            Byte(i) => Byte(i),
-            Float(f) => Float(f),
-            DocComment(ref s) => DocComment(s.clone()),
-            Let => Let,
-            And => And,
-            In => In,
-            Type => Type,
-            Match => Match,
-            With => With,
-            If => If,
-            Then => Then,
-            Else => Else,
-            Open(d) => Open(d),
-            Close(d) => Close(d),
-            Lambda => Lambda,
-            RightArrow => RightArrow,
-            Colon => Colon,
-            Dot => Dot,
-            Comma => Comma,
-            Pipe => Pipe,
-            Equal => Equal,
-            OpenBlock => OpenBlock,
-            CloseBlock => CloseBlock,
-            Semi => Semi,
-            EOF => EOF,
-        }
-    }
-}
-
-pub type SpannedToken<Id> = Spanned<Token<Id>, Location>;
+pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
 
 #[derive(Clone, Debug)]
-pub struct Offside {
-    pub location: Location,
-    pub context: Context,
+struct Offside {
+    location: Location,
+    context: Context,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Context {
+enum Context {
     /// Context which contains several expressions/declarations separated by semicolons
     Block { emit_semi: bool, needs_close: bool },
     /// A simple expression
@@ -244,7 +196,6 @@ pub enum Context {
     Let,
     Type,
     If,
-    Then,
     Delimiter(Delimiter),
     MatchClause,
     Lambda,
@@ -255,35 +206,30 @@ type LanguageParser<'input: 'lexer, 'lexer, I: 'lexer, T> = EnvParser<&'lexer Le
                                                                       LocatedStream<I>,
                                                                       T>;
 
-pub struct Contexts {
+struct Contexts {
     stack: Vec<Offside>,
 }
 
 impl Contexts {
-    pub fn last(&self) -> Option<&Offside> {
+    fn last(&self) -> Option<&Offside> {
         self.stack.last()
     }
 
-    pub fn last_mut(&mut self) -> Option<&mut Offside> {
+    fn last_mut(&mut self) -> Option<&mut Offside> {
         self.stack.last_mut()
     }
 
-    pub fn pop(&mut self) -> Option<Offside> {
+    fn pop(&mut self) -> Option<Offside> {
         self.stack.pop()
     }
 
-    pub fn push<Id>(&mut self, offside: Offside) -> Result<(), Error<Id>> {
+    fn push(&mut self, offside: Offside) -> Result<(), Error<'static>> {
         self.check_unindentation_limit(&offside)?;
         self.stack.push(offside);
         Ok(())
     }
 
-    pub fn replace<Id>(&mut self, offside: Offside) -> Result<(), Error<Id>> {
-        self.pop();
-        self.push(offside)
-    }
-
-    fn check_unindentation_limit<Id>(&mut self, offside: &Offside) -> Result<(), Error<Id>> {
+    fn check_unindentation_limit(&mut self, offside: &Offside) -> Result<(), Error<'static>> {
         let mut skip_block = false;
         for other_offside in self.stack.iter().rev() {
             match other_offside.context {
@@ -311,13 +257,13 @@ impl Contexts {
 pub struct Lexer<'input, I>
     where I: RangeStream<Item = char, Range = &'input str>,
 {
-    pub env: LanguageEnv<'input, LocatedStream<I>>,
-    pub input: Option<LocatedStream<I>>,
-    pub unprocessed_tokens: Vec<SpannedToken<&'input str>>,
-    pub indent_levels: Contexts,
+    env: LanguageEnv<'input, LocatedStream<I>>,
+    input: Option<LocatedStream<I>>,
+    unprocessed_tokens: Vec<SpannedToken<'input>>,
+    indent_levels: Contexts,
     /// Since the parser will call `position` before retrieving the token we need to cache one
     /// token so the span can be returned for it
-    next_token: Option<SpannedToken<&'input str>>,
+    next_token: Option<SpannedToken<'input>>,
     end_span: Option<Span<Location>>,
 }
 
@@ -387,67 +333,39 @@ impl<'input, I> Lexer<'input, I>
         take(len).parse_stream(initial)
     }
 
-    fn ident<'a>(&'a self) -> LanguageParser<'input, 'a, I, Token<&'input str>> {
+    fn ident<'a>(&'a self) -> LanguageParser<'input, 'a, I, Token<'input>> {
         self.parser(Lexer::parse_ident)
     }
 
-    fn parse_ident(&self,
-                   input: LocatedStream<I>)
-                   -> ParseResult<Token<&'input str>, LocatedStream<I>> {
-        self.parser(Lexer::parse_ident2)
-            .map(|x| Token::Ident(x.0, x.1))
-            .parse_stream(input)
-    }
-
-    /// Identifier parser which returns the identifier as well as the type of the identifier
-    fn parse_ident2(&self,
-                    input: LocatedStream<I>)
-                    -> ParseResult<(&'input str, IdentType), LocatedStream<I>> {
-        let id = self.env.range_identifier_().map(|id| {
-            let typ = if id.starts_with(char::is_uppercase) {
-                IdentType::Constructor
-            } else {
-                IdentType::Variable
-            };
-            (id, typ)
-        });
-        let op = self.env.parens(self.env.range_op_()).map(|id| (id, IdentType::Operator));
-        try(id)
-            .or(try(op))
+    fn parse_ident(&self, input: LocatedStream<I>) -> ParseResult<Token<'input>, LocatedStream<I>> {
+        self.env
+            .range_identifier_()
+            .map(Token::Identifier)
             .parse_stream(input)
     }
 
     fn layout_independent_token(&mut self,
-                                token: SpannedToken<&'input str>)
-                                -> Result<SpannedToken<&'input str>, Error<&'input str>> {
+                                token: SpannedToken<'input>)
+                                -> Result<SpannedToken<'input>, Error<'input>> {
         layout(self, token)
     }
 
-    fn id_to_keyword(&self, id: Token<&'input str>) -> Token<&'input str> {
-        let t = match id {
-            Token::Ident(id, _) => {
-                match id {
-                    "let" => Some(Token::Let),
-                    "type" => Some(Token::Type),
-                    "and" => Some(Token::And),
-                    "in" => Some(Token::In),
-                    "match" => Some(Token::Match),
-                    "with" => Some(Token::With),
-                    "if" => Some(Token::If),
-                    "then" => Some(Token::Then),
-                    "else" => Some(Token::Else),
-                    _ => None,
-                }
-            }
-            _ => None,
-        };
-        match t {
-            Some(t) => t,
-            _ => id,
+    fn id_to_keyword(&self, id: Token<'input>) -> Token<'input> {
+        match id {
+            Token::Identifier("let") => Token::Let,
+            Token::Identifier("type") => Token::Type,
+            Token::Identifier("and") => Token::And,
+            Token::Identifier("in") => Token::In,
+            Token::Identifier("match") => Token::Match,
+            Token::Identifier("with") => Token::With,
+            Token::Identifier("if") => Token::If,
+            Token::Identifier("then") => Token::Then,
+            Token::Identifier("else") => Token::Else,
+            id => id,
         }
     }
 
-    pub fn next_token(&mut self) -> SpannedToken<&'input str> {
+    fn next_token(&mut self) -> SpannedToken<'input> {
         if let Some(token) = self.unprocessed_tokens.pop() {
             return token;
         }
@@ -509,7 +427,7 @@ impl<'input, I> Lexer<'input, I>
     fn next_token_(&mut self,
                    location: &mut Location,
                    mut input: LocatedStream<I>)
-                   -> ParseResult<Token<&'input str>, LocatedStream<I>> {
+                   -> ParseResult<Token<'input>, LocatedStream<I>> {
         loop {
             // Skip all whitespace before the token
             let parsed_spaces: Result<_, _> = spaces().parse_lazy(input).into();
@@ -524,7 +442,7 @@ impl<'input, I> Lexer<'input, I>
                 let (op, new_input) = self.op().parse_stream(input)?;
                 input = new_input.into_inner();
                 let tok = match op {
-                    "=" => Token::Equal,
+                    "=" => Token::Equals,
                     "->" => Token::RightArrow,
                     "|" => Token::Pipe,
                     _ => {
@@ -634,7 +552,7 @@ impl<'input, I> Lexer<'input, I>
 
     fn block_doc_comment(&self,
                          input: LocatedStream<I>)
-                         -> ParseResult<Token<&'input str>, LocatedStream<I>> {
+                         -> ParseResult<Token<'input>, LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
             let ((), mut input) = try!(spaces().parse_stream(input));
             let mut out = String::new();
@@ -658,9 +576,9 @@ impl<'input, I> Lexer<'input, I>
     }
 
     fn layout_token(&mut self,
-                    token: SpannedToken<&'input str>,
-                    layout_token: Token<&'input str>)
-                    -> SpannedToken<&'input str> {
+                    token: SpannedToken<'input>,
+                    layout_token: Token<'input>)
+                    -> SpannedToken<'input> {
         let span = token.span;
         self.unprocessed_tokens.push(token);
         SpannedToken {
@@ -669,7 +587,7 @@ impl<'input, I> Lexer<'input, I>
         }
     }
 
-    fn uncons_next(&mut self) -> Result<SpannedToken<&'input str>, Error<&'input str>> {
+    fn uncons_next(&mut self) -> Result<SpannedToken<'input>, Error<'input>> {
         let token = self.next_token();
         match self.layout_independent_token(token) {
             Ok(SpannedToken { value: Token::EOF, .. }) => Err(Error::end_of_input()),
@@ -693,14 +611,15 @@ impl<'input, I> Lexer<'input, I>
 }
 
 fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
-                     mut token: SpannedToken<&'input str>)
-                     -> Result<SpannedToken<&'input str>, Error<&'input str>>
+                     mut token: SpannedToken<'input>)
+                     -> Result<SpannedToken<'input>, Error<'input>>
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
           I::Range: fmt::Debug,
 {
     if token.value == Token::EOF {
         token.span.start.column = Column::from(0);
     }
+
     loop {
         // Retrieve the current indentation level if one exists
         let offside = match lexer.indent_levels.last().cloned() {
@@ -721,6 +640,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                 return Ok(lexer.layout_token(token, Token::OpenBlock));
             }
         };
+
         debug!("--------\n{:?}\n{:?}", token, offside);
         let ordering = token.span.start.column.cmp(&offside.location.column);
 
@@ -768,6 +688,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                 }
             }
         }
+
         // Next we check offside rules for each of the contexts
         match offside.context {
             Context::Block { emit_semi, needs_close } => {
@@ -843,6 +764,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
             }
             _ => (),
         }
+
         // Some tokens directly inserts a new context when emitted
         let push_context = match token.value {
             Token::Let => Some(Context::Let),
@@ -860,6 +782,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
             };
             return lexer.indent_levels.push(offside).map(move |()| token);
         }
+
         // For other tokens we need to scan for the next token to get its position
         match token.value {
             Token::In => {
@@ -868,7 +791,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                     return Ok(lexer.layout_token(token, Token::CloseBlock));
                 }
             }
-            Token::Equal => {
+            Token::Equals => {
                 if offside.context == Context::Let {
                     scan_for_next_block(lexer,
                                         Context::Block {
@@ -934,7 +857,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
 
 fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
                                       context: Context)
-                                      -> Result<(), Error<&'input str>>
+                                      -> Result<(), Error<'input>>
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
           I::Range: fmt::Debug + 'input,
 {
@@ -957,11 +880,11 @@ impl<'input, I> StreamOnce for Lexer<'input, I>
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
           I::Range: fmt::Debug,
 {
-    type Item = Token<&'input str>;
-    type Range = Token<&'input str>;
+    type Item = Token<'input>;
+    type Range = Token<'input>;
     type Position = Span<Location>;
 
-    fn uncons(&mut self) -> Result<Token<&'input str>, Error<&'input str>> {
+    fn uncons(&mut self) -> Result<Token<'input>, Error<'input>> {
         match self.next_token.take() {
             Some(token) => {
                 self.next_token = self.uncons_next().ok();
@@ -980,5 +903,44 @@ impl<'input, I> StreamOnce for Lexer<'input, I>
             .or_else(|| self.unprocessed_tokens.last())
             .map(|token| token.span)
             .unwrap_or_else(|| self.end_span.unwrap())
+    }
+}
+
+// Converts an error into a static error by transforming any range arguments into strings
+fn static_error<'input>(e: CombineError<Token<'input>, Token<'input>>)
+                        -> CombineError<String, String> {
+    let static_info = |i: Info<Token<'input>, Token<'input>>| {
+        match i {
+            Info::Token(t) => Info::Token(t.to_string()),
+            Info::Range(t) => Info::Range(t.to_string()),
+            Info::Borrowed(t) => Info::Borrowed(t),
+            Info::Owned(t) => Info::Owned(t),
+        }
+    };
+
+    match e {
+        CombineError::Unexpected(t) => CombineError::Unexpected(static_info(t)),
+        CombineError::Expected(t) => CombineError::Expected(static_info(t)),
+        CombineError::Message(t) => CombineError::Message(static_info(t)),
+        CombineError::Other(t) => CombineError::Other(t),
+    }
+}
+
+// Adapt lexer for use with LALRPOP
+impl<'input, I> Iterator for Lexer<'input, I>
+    where I: RangeStream<Item = char, Range = &'input str> + 'input,
+          I::Range: fmt::Debug,
+{
+    type Item = Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>;
+
+    fn next(&mut self)
+            -> Option<Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>> {
+        let Span { start, end, .. } = StreamOnce::position(self);
+        match self.uncons() {
+            Ok(Token::EOF) => None,
+            Err(ref err) if *err == Error::end_of_input() => None,
+            Ok(token) => Some(Ok((start.absolute, token, end.absolute))),
+            Err(error) => Some(Err(static_error(error))),
+        }
     }
 }

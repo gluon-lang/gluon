@@ -224,6 +224,17 @@ pub struct Spanned<T, Pos> {
     pub value: T,
 }
 
+impl<T, Pos> Spanned<T, Pos> {
+    pub fn map<U, F>(self, mut f: F) -> Spanned<U, Pos>
+        where F: FnMut(T) -> U,
+    {
+        Spanned {
+            span: self.span,
+            value: f(self.value),
+        }
+    }
+}
+
 impl<T: PartialEq, Pos> PartialEq for Spanned<T, Pos> {
     fn eq(&self, other: &Spanned<T, Pos>) -> bool {
         self.value == other.value
@@ -236,6 +247,14 @@ impl<T: fmt::Display, Pos: fmt::Display> fmt::Display for Spanned<T, Pos> {
     }
 }
 
+pub fn span<Pos>(start: Pos, end: Pos) -> Span<Pos> {
+    Span {
+        start: start,
+        end: end,
+        expansion_id: NO_EXPANSION,
+    }
+}
+
 pub fn spanned<T, Pos>(span: Span<Pos>, value: T) -> Spanned<T, Pos> {
     Spanned {
         span: span,
@@ -245,11 +264,7 @@ pub fn spanned<T, Pos>(span: Span<Pos>, value: T) -> Spanned<T, Pos> {
 
 pub fn spanned2<T, Pos>(start: Pos, end: Pos, value: T) -> Spanned<T, Pos> {
     Spanned {
-        span: Span {
-            start: start,
-            end: end,
-            expansion_id: NO_EXPANSION,
-        },
+        span: span(start, end),
         value: value,
     }
 }

@@ -421,9 +421,7 @@ fn span_integer() {
     assert_eq!(e.span, Span::new(BytePos::from(0), BytePos::from(4)));
 }
 
-// FIXME The span of string literals includes the spaces after them
 #[test]
-#[ignore]
 fn span_string_literal() {
     let _ = ::env_logger::init();
 
