@@ -2,7 +2,7 @@ use base::pos::Line;
 
 #[derive(Debug)]
 pub struct SourceMap {
-    /// `map` stores the index of the first instruction for each line.
+    /// The index of the first instruction for each line
     map: Vec<(usize, Line)>,
 }
 
