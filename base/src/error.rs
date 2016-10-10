@@ -74,7 +74,7 @@ impl<E> SourceContext<E> {
 /// Error type which contains information of which file and where in the file the error occured
 #[derive(Debug)]
 pub struct InFile<E> {
-    source_name: String,
+    pub source_name: String,
     error: Errors<SourceContext<E>>,
 }
 
@@ -93,6 +93,10 @@ impl<E: fmt::Display> InFile<E> {
                     .collect(),
             },
         }
+    }
+
+    pub fn errors(self) -> Errors<Spanned<E, Location>> {
+        Errors { errors: self.error.errors.into_iter().map(|err| err.error).collect() }
     }
 }
 

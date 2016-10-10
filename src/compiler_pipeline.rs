@@ -59,6 +59,7 @@ impl<'s> MacroExpandable for &'s str {
                          macros: &mut MacroExpander,
                          file: &str)
                          -> Result<MacroValue<Self::Expr>> {
+
         compiler.parse_expr(file, self)
             .map_err(From::from)
             .and_then(|mut expr| {
@@ -122,6 +123,7 @@ impl<T> Typecheckable for T
                           expr_str: &str,
                           expected_type: Option<&ArcType>)
                           -> Result<TypecheckValue<Self::Expr>> {
+
         self.expand_macro(compiler, thread, file)
             .and_then(|expr| {
                 expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
@@ -186,6 +188,7 @@ impl<'a, 'b, T> Compileable<Option<&'b ArcType>> for T
                expr_str: &str,
                expected_type: Option<&'b ArcType>)
                -> Result<CompileValue<Self::Expr>> {
+
         self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
             .and_then(|tc_value| tc_value.compile(compiler, thread, file, expr_str, ()))
     }
@@ -272,6 +275,7 @@ impl<C, Extra> Executable<Extra> for C
                    expr_str: &str,
                    arg: Extra)
                    -> Result<()> {
+
         self.compile(compiler, vm, filename, expr_str, arg)
             .and_then(|v| v.load_script(compiler, vm, filename, expr_str, ()))
     }

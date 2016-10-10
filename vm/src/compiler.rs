@@ -289,7 +289,7 @@ pub struct Compiler<'a> {
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, ArcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
-    source_map: &'a Source<'a>,
+    source: &'a Source<'a>,
 }
 
 impl<'a> KindEnv for Compiler<'a> {
@@ -323,7 +323,7 @@ impl<'a> Compiler<'a> {
     pub fn new(globals: &'a (CompilerEnv + 'a),
                vm: &'a GlobalVmState,
                symbols: SymbolModule<'a>,
-               source_map: &'a Source<'a>)
+               source: &'a Source<'a>)
                -> Compiler<'a> {
         Compiler {
             globals: globals,
@@ -331,7 +331,7 @@ impl<'a> Compiler<'a> {
             symbols: symbols,
             stack_constructors: ScopedMap::new(),
             stack_types: ScopedMap::new(),
-            source_map: source_map,
+            source: source,
         }
     }
 
@@ -469,12 +469,12 @@ impl<'a> Compiler<'a> {
         let mut exprs = Vec::new();
         exprs.push(expr);
         let saved_line = function.current_line;
-        function.current_line = self.source_map
+        function.current_line = self.source
             .line_number_at_byte(expr.span.start);
         while let Some(next) = try!(self.compile_(expr, function, tail_position)) {
             exprs.push(next);
             expr = next;
-            function.current_line = self.source_map
+            function.current_line = self.source
                 .line_number_at_byte(expr.span.start);
         }
         for expr in exprs.iter().rev() {
