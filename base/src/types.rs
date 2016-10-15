@@ -279,8 +279,8 @@ pub struct AliasData<Id, T> {
     pub name: Id,
     /// Arguments to the alias
     pub args: Vec<Generic<Id>>,
-    /// The type which is being aliased or `None` if the type is abstract
-    pub typ: Option<T>,
+    /// The type that is being aliased
+    pub typ: T,
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
@@ -299,6 +299,8 @@ pub struct Field<Id, T = ArcType<Id>> {
 pub enum Type<Id, T = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
+    /// An opaque type
+    Opaque,
     /// An application with multiple arguments.
     /// `Map String Int` would be represented as `App(Map, [String, Int])`
     App(T, Vec<T>),
@@ -315,12 +317,15 @@ pub enum Type<Id, T = ArcType<Id>> {
     Builtin(BuiltinType),
     /// A record type
     Record(T),
+    /// The empty row
     EmptyRow,
+    /// Row extension
     ExtendRow {
         /// The associated types of this record type
         types: Vec<Field<Id, Alias<Id, T>>>,
         /// The fields of this record type
         fields: Vec<Field<Id, T>>,
+        /// The rest of the row
         rest: T,
     },
     /// An identifier type. Anything that is not a builtin type.
@@ -333,6 +338,10 @@ impl<Id, T> Type<Id, T>
 {
     pub fn hole() -> T {
         T::from(Type::Hole)
+    }
+
+    pub fn opaque() -> T {
+        T::from(Type::Opaque)
     }
 
     pub fn array(typ: T) -> T {
@@ -407,7 +416,7 @@ impl<Id, T> Type<Id, T>
         T::from(Type::Alias(AliasData {
             name: name,
             args: args,
-            typ: Some(typ),
+            typ: typ,
         }))
     }
 
@@ -811,6 +820,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
         let p = self.prec;
         match *self.typ {
             Type::Hole => arena.text("_"),
+            Type::Opaque => arena.text("<opaque>"),
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::App(ref t, ref args) => {
@@ -890,13 +900,8 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                             arena.concat(field.typ.args.iter().map(|arg| {
                                 arena.text(self.env.string(&arg.id)).append(" ").into()
                             })),
-                            match field.typ.typ {
-                                Some(ref typ) => {
-                                    arena.text("= ")
-                                        .append(top(self.env, typ).pretty(arena))
-                                }
-                                None => arena.text("= <abstract>"),
-                            },
+                            arena.text("= ")
+                                 .append(top(self.env, &field.typ.typ).pretty(arena)),
                             if i + 1 != types.len() || !fields.is_empty() {
                                 arena.text(",")
                             } else {
@@ -1007,11 +1012,8 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
         Type::Record(ref row) => f.walk(row),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             for field in types {
-                if let Some(ref typ) = field.typ.typ {
-                    f.walk(typ);
-                }
+                f.walk(&field.typ.typ);
             }
-
             for field in fields {
                 f.walk(&field.typ);
             }
@@ -1023,6 +1025,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
             }
         }
         Type::Hole |
+        Type::Opaque |
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |
@@ -1177,6 +1180,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
                 .map(Type::variants)
         }
         Type::Hole |
+        Type::Opaque |
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |

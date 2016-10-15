@@ -142,13 +142,12 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
             // Insert variant constructors into the local scope
-            if let Some(ref real_type) = alias.typ {
-                if let Type::Variants(ref variants) = **real_type {
-                    for &(ref name, ref typ) in variants {
-                        self.env.stack.insert(name.clone(), (name.clone(), span, typ.clone()));
-                    }
+            if let Type::Variants(ref variants) = *alias.typ {
+                for &(ref name, ref typ) in variants {
+                    self.env.stack.insert(name.clone(), (name.clone(), span, typ.clone()));
                 }
             }
+
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
             self.env.stack_types.insert(alias.name.clone(), alias.clone());

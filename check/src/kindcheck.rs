@@ -162,7 +162,7 @@ impl<'a> KindCheck<'a> {
 
     fn kindcheck(&mut self, typ: &ArcType) -> Result<(ArcKind, ArcType)> {
         match **typ {
-            Type::Hole => Ok((self.subs.new_var(), typ.clone())),
+            Type::Hole | Type::Opaque => Ok((self.subs.new_var(), typ.clone())),
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
                 gen.kind = try!(self.find(&gen.id));

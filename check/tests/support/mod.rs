@@ -78,7 +78,7 @@ impl KindEnv for MockEnv {
 impl TypeEnv for MockEnv {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         match id.as_ref() {
-            "False" | "True" => Some(&self.bool.typ.as_ref().unwrap()),
+            "False" | "True" => Some(&self.bool.typ),
             _ => None,
         }
     }
@@ -97,7 +97,7 @@ impl TypeEnv for MockEnv {
 
 impl PrimitiveEnv for MockEnv {
     fn get_bool(&self) -> &ArcType {
-        self.bool.typ.as_ref().unwrap()
+        &self.bool.typ
     }
 }
 

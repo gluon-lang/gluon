@@ -674,9 +674,9 @@ fn quote_in_identifier() {
     let _ = ::env_logger::init();
     let e = parse_new!("let f' = \\x y -> x + y in f' 1 2");
     let a = let_("f'",
-                lambda("",
-                    vec![intern("x"), intern("y")],
-                    binop(id("x"), "+", id("y"))),
-                app(id("f'"), vec![int(1), int(2)]));
+                 lambda("",
+                        vec![intern("x"), intern("y")],
+                        binop(id("x"), "+", id("y"))),
+                 app(id("f'"), vec![int(1), int(2)]));
     assert_eq!(e, a);
 }

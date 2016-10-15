@@ -139,16 +139,12 @@ impl TypeEnv for VmEnv {
                     .id_to_type
                     .values()
                     .filter_map(|alias| {
-                        alias.typ
-                            .as_ref()
-                            .and_then(|typ| {
-                                match **typ {
-                                    Type::Variants(ref ctors) => {
-                                        ctors.iter().find(|ctor| *ctor.0 == *id).map(|t| &t.1)
-                                    }
-                                    _ => None,
-                                }
-                            })
+                        match *alias.typ {
+                            Type::Variants(ref ctors) => {
+                                ctors.iter().find(|ctor| *ctor.0 == *id).map(|t| &t.1)
+                            }
+                            _ => None,
+                        }
                     })
                     .next()
                     .map(|ctor| ctor)
@@ -166,9 +162,8 @@ impl TypeEnv for VmEnv {
 impl PrimitiveEnv for VmEnv {
     fn get_bool(&self) -> &ArcType {
         self.find_type_info("std.types.Bool")
-            .ok()
-            .and_then(|alias| match alias {
-                Cow::Borrowed(alias) => alias.typ.as_ref(),
+            .map(|alias| match alias {
+                Cow::Borrowed(alias) => &alias.typ,
                 Cow::Owned(_) => panic!("Expected to be able to retrieve a borrowed bool type"),
             })
             .expect("std.types.Bool")
@@ -342,7 +337,7 @@ impl GlobalVmState {
                                              Alias::from(AliasData {
                                                  name: Symbol::from(name),
                                                  args: Vec::new(),
-                                                 typ: None,
+                                                 typ: Type::opaque(),
                                              }));
         }
 
@@ -439,7 +434,7 @@ impl GlobalVmState {
                                          Alias::from(AliasData {
                                              name: n,
                                              args: args,
-                                             typ: None,
+                                             typ: Type::opaque(),
                                          }));
             Ok(t)
         }
