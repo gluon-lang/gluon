@@ -1179,7 +1179,9 @@ pub mod record {
         fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self> {
             let head = unsafe { H::from_value(vm, Variants::new(&values[0])) };
             head.and_then(|head| {
-                T::from_value(vm, &values[1..]).map(move |tail| HList((F::default(), head), tail))
+                T::from_value(vm, &values[1..]).map(move |tail| {
+                    HList((F::default(), head), tail)
+                })
             })
         }
     }
@@ -1347,7 +1349,9 @@ impl<'vm> Pushable<'vm> for CPrimitive {
             // The VM guarantess that it only ever calls this function with itself which should
             // make sure that ignoring the lifetime is safe
             transmute::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
-                        Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(move |vm| function(vm)))
+                        Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(move |vm| {
+                function(vm)
+            }))
         };
         let value = try!(context.alloc_with(thread,
                                             Move(ExternFunction {

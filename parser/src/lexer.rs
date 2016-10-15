@@ -330,8 +330,8 @@ impl<'input, I> Lexer<'input, I>
             ident: Identifier {
                 start: letter().or(char('_')),
                 rest: alpha_num()
-                        .or(char('_'))
-                        .or(char('\'')),
+                    .or(char('_'))
+                    .or(char('\'')),
                 // ["if", "then", "else", "let", "and", "in", "type", "case", "of"]
                 // .iter()
                 // .map(|x| (*x).into())
