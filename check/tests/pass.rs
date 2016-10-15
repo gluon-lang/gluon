@@ -5,8 +5,9 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::ast::{self, Expr, Pattern, Typed};
+use base::kind::Kind;
 use base::pos::{BytePos, Span};
-use base::types::{self, Field, Generic, Kind, Type};
+use base::types::{self, Field, Generic, Type};
 
 use support::{MockEnv, alias, intern, typ};
 

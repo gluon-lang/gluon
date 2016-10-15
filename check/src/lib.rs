@@ -26,8 +26,9 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use base::types::{Alias, KindEnv, ArcKind, ArcType, TypeEnv};
+    use base::kind::{ArcKind, KindEnv};
     use base::symbol::{Symbol, Symbols, SymbolModule, SymbolRef};
+    use base::types::{Alias, ArcType, TypeEnv};
 
     pub struct MockEnv;
 

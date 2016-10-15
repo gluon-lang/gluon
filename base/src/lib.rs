@@ -12,6 +12,7 @@ pub mod error;
 pub mod fixed;
 pub mod fnv;
 pub mod instantiate;
+pub mod kind;
 pub mod metadata;
 pub mod pos;
 pub mod scoped_map;

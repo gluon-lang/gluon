@@ -7,8 +7,9 @@ extern crate log;
 mod support;
 
 use base::ast::*;
+use base::kind::Kind;
 use base::pos::{self, BytePos, Span, Spanned};
-use base::types::{Alias, ArcType, Field, Generic, Kind, Type};
+use base::types::{Alias, ArcType, Field, Generic, Type};
 use parser::{parse_string, Error};
 use support::MockEnv;
 

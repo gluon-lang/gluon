@@ -17,10 +17,11 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use base::ast::*;
+use base::kind::Kind;
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
-use base::types::{Alias, ArcType, Generic, Field, Kind, Type};
 use base::symbol::{Name, Symbol};
+use base::types::{Alias, ArcType, Generic, Field, Type};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream};

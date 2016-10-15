@@ -1,9 +1,9 @@
 use std::fmt;
 
 use base::ast;
-use base::types::{self, BuiltinType, Generic, ArcKind, ArcType, Type, Kind, merge};
+use base::kind::{self, ArcKind, Kind, KindEnv};
 use base::symbol::Symbol;
-use base::types::{KindEnv, Walker};
+use base::types::{self, ArcType, BuiltinType, Generic, Type, Walker};
 
 use substitution::{Substitution, Substitutable};
 use unify;
@@ -51,7 +51,7 @@ fn walk_move_kind2<F>(kind: &ArcKind, f: &mut F) -> Option<ArcKind>
             Kind::Function(ref arg, ref ret) => {
                 let arg_new = walk_move_kind2(arg, f);
                 let ret_new = walk_move_kind2(ret, f);
-                merge(arg, arg_new, ret, ret_new, Kind::function)
+                types::merge(arg, arg_new, ret, ret_new, Kind::function)
             }
             Kind::Type |
             Kind::Variable(_) |
@@ -327,7 +327,7 @@ impl Substitutable for ArcKind {
     fn traverse<F>(&self, f: &mut F)
         where F: Walker<ArcKind>,
     {
-        types::walk_kind(self, f);
+        kind::walk_kind(self, f);
     }
 }
 
@@ -344,7 +344,7 @@ impl<S> unify::Unifiable<S> for ArcKind {
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
                 let a = unifier.try_match(l1, r1);
                 let r = unifier.try_match(l2, r2);
-                Ok(merge(l1, a, l2, r, Kind::function))
+                Ok(types::merge(l1, a, l2, r, Kind::function))
             }
             (l, r) => {
                 if l == r {

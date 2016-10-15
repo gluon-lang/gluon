@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use self::rustyline::error::ReadlineError;
 
 use base::ast::Typed;
-use base::types::Kind;
+use base::kind::Kind;
 use vm::api::{IO, Function, WithVM, VmType, Userdata};
 use vm::gc::{Gc, Traverseable};
 use vm::thread::{Thread, RootStr};

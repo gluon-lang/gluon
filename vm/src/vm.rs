@@ -5,11 +5,11 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::usize;
 
+use base::fnv::FnvMap;
+use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, ArcType, Generic, Type, Kind, KindEnv, TypeEnv, PrimitiveEnv,
-                  ArcKind};
-use base::fnv::FnvMap;
+use base::types::{Alias, AliasData, ArcType, Generic, PrimitiveEnv, Type, TypeEnv};
 
 use macros::MacroEnv;
 use {Error, Result};

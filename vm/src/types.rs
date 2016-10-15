@@ -1,7 +1,7 @@
-use base::symbol::{Symbol, SymbolRef};
-use base::types;
-use base::types::{Alias, KindEnv, TypeEnv, ArcType, Type};
 use base::fnv::FnvMap;
+use base::kind::{ArcKind, Kind, KindEnv};
+use base::symbol::{Symbol, SymbolRef};
+use base::types::{Alias, ArcType, TypeEnv, Type};
 
 pub use self::Instruction::*;
 
@@ -155,14 +155,13 @@ pub struct TypeInfos {
 }
 
 impl KindEnv for TypeInfos {
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<types::ArcKind> {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
         let type_name = AsRef::<str>::as_ref(type_name);
         self.id_to_type
             .get(type_name)
             .map(|alias| {
-                alias.args.iter().rev().fold(types::Kind::typ(), |acc, arg| {
-                    types::Kind::function(arg.kind.clone(), acc)
-                })
+                alias.args.iter().rev().fold(Kind::typ(),
+                                             |acc, arg| Kind::function(arg.kind.clone(), acc))
             })
     }
 }
