@@ -173,14 +173,10 @@ impl TypeEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| {
-                alias.typ.as_ref().and_then(|typ| {
-                    match **typ {
-                        Type::Variants(ref variants) => {
-                            variants.iter().find(|v| v.0.as_ref() == id)
-                        }
-                        _ => None,
-                    }
-                })
+                match *alias.typ {
+                    Type::Variants(ref variants) => variants.iter().find(|v| v.0.as_ref() == id),
+                    _ => None,
+                }
             })
             .next()
             .map(|x| &x.1)
@@ -196,22 +192,17 @@ impl TypeEnv for TypeInfos {
         self.id_to_type
             .iter()
             .find(|&(_, alias)| {
-                alias.typ
-                    .as_ref()
-                    .map(|typ| {
-                        match **typ {
-                            Type::Record(_) => {
-                                fields.iter().all(|name| {
-                                    typ.field_iter().any(|f| f.name.as_ref() == name.as_ref())
-                                })
-                            }
-                            _ => false,
-                        }
-                    })
-                    .unwrap_or(false)
+                match *alias.typ {
+                    Type::Record(_) => {
+                        fields.iter().all(|name| {
+                            alias.typ.field_iter().any(|f| f.name.as_ref() == name.as_ref())
+                        })
+                    }
+                    _ => false,
+                }
             })
             .and_then(|t| {
-                let typ = t.1.typ.as_ref().unwrap();
+                let typ = &t.1.typ;
                 self.type_to_id.get(typ).map(|id_type| (id_type, typ))
             })
     }

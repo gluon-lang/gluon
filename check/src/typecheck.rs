@@ -170,21 +170,15 @@ impl<'a> TypeEnv for Environment<'a> {
         self.stack_types
             .iter()
             .find(|&(_, &(_, ref alias))| {
-                match alias.typ {
-                    Some(ref typ) => {
-                        match **typ {
-                            Type::Record(_) => {
-                                fields.iter()
-                                    .all(|name| typ.field_iter().any(|f| f.name.name_eq(name)))
-                            }
-                            _ => false,
-
-                        }
+                match *alias.typ {
+                    Type::Record(_) => {
+                        fields.iter()
+                            .all(|name| alias.typ.field_iter().any(|f| f.name.name_eq(name)))
                     }
-                    None => false,
+                    _ => false,
                 }
             })
-            .map(|t| (&(t.1).0, (t.1).1.typ.as_ref().unwrap()))
+            .map(|t| (&(t.1).0, &(t.1).1.typ))
             .or_else(|| self.environment.find_record(fields))
     }
 }
@@ -297,15 +291,14 @@ impl<'a> Typecheck<'a> {
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
-        if let Some(ref real_type) = alias.typ {
-            if let Type::Variants(ref variants) = **real_type {
-                for (name, typ) in variants.iter().cloned() {
-                    let symbol = self.symbols.symbol(name.as_ref());
-                    self.original_symbols.insert(symbol, name.clone());
-                    self.stack_var(name, typ);
-                }
+        if let Type::Variants(ref variants) = *alias.typ {
+            for (name, typ) in variants.iter().cloned() {
+                let symbol = self.symbols.symbol(name.as_ref());
+                self.original_symbols.insert(symbol, name.clone());
+                self.stack_var(name, typ);
             }
         }
+
         let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
         let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
@@ -937,10 +930,7 @@ impl<'a> Typecheck<'a> {
             Alias::make_mut(&mut bind.alias).name = new;
         }
         for bind in bindings.iter_mut() {
-            let typ = Alias::make_mut(&mut bind.alias)
-                .typ
-                .as_mut()
-                .expect("Expected binding to have an aliased type");
+            let typ = &mut Alias::make_mut(&mut bind.alias).typ;
             *typ = self.create_unifiable_signature(typ.clone());
         }
         {
@@ -964,19 +954,14 @@ impl<'a> Typecheck<'a> {
             // Kindcheck all the types in the environment
             for bind in bindings.iter_mut() {
                 check.set_variables(&bind.alias.args);
-                let typ = Alias::make_mut(&mut bind.alias)
-                    .typ
-                    .as_mut()
-                    .expect("Expected binding to have an aliased type");
+                let typ = &mut Alias::make_mut(&mut bind.alias).typ;
                 try!(check.kindcheck_type(typ));
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
             for bind in bindings.iter_mut() {
                 let alias = Alias::make_mut(&mut bind.alias);
-                if let Some(ref mut typ) = alias.typ {
-                    *typ = check.finalize_type(typ.clone());
-                }
+                alias.typ = check.finalize_type(alias.typ.clone());
                 for arg in &mut alias.args {
                     *arg = check.finalize_generic(&arg);
                 }

@@ -110,10 +110,8 @@ pub fn maybe_remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType
 ///     result = | Err Error | Ok (Option a)
 pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Option<ArcType> {
     let alias_args = &alias.args;
-    let mut typ = match alias.typ {
-        Some(ref typ) => typ.clone(),
-        None => return None,
-    };
+    let mut typ = alias.typ.clone();
+
     // It is ok to take the aliased type only if the alias is fully applied or if it
     // the missing argument only appear in order at the end of the alias
     // i.e
@@ -122,8 +120,7 @@ pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Op
     // Test a b == Type (a Int) b
     // Test a == Type (a Int)
     // Test == ??? (Impossible to do a sane substitution)
-
-    let ok_substitution = match *typ.clone() {
+    match *typ.clone() {
         Type::App(ref d, ref arg_types) => {
             let allowed_missing_args = arg_types.iter()
                 .rev()
@@ -142,25 +139,25 @@ pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Op
                     .cloned()
                     .collect();
                 typ = Type::app(d.clone(), arg_types);
-                true
             } else {
-                false
+                return None;
             }
         }
-        _ => args.len() == alias_args.len(),
-    };
-    if !ok_substitution {
-        return None;
+        _ => {
+            if args.len() != alias_args.len() {
+                return None;
+            }
+        }
     }
-    let typ = instantiate(typ, |gen| {
+
+    Some(instantiate(typ, |gen| {
         // Replace the generic variable with the type from the list
         // or if it is not found the make a fresh variable
         alias_args.iter()
             .zip(args)
             .find(|&(arg, _)| arg.id == gen.id)
             .map(|(_, typ)| typ.clone())
-    });
-    Some(typ)
+    }))
 }
 
 #[derive(Debug, Default)]

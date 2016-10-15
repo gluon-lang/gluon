@@ -54,12 +54,7 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
                 for g in &alias.args {
                     try!(write!(&mut buffer, " {}", g.id))
                 }
-                try!(write!(&mut buffer, " = "));
-                match alias.typ {
-                    Some(ref typ) => try!(write!(&mut buffer, "{}", typ)),
-                    None => try!(write!(&mut buffer, "<abstract>")),
-                }
-                Ok(())
+                write!(&mut buffer, " = {}", alias.typ)
             };
             fmt().unwrap();
         }
