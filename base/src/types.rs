@@ -315,12 +315,15 @@ pub enum Type<Id, T = ArcType<Id>> {
     Builtin(BuiltinType),
     /// A record type
     Record(T),
+    /// The empty row
     EmptyRow,
+    /// Row extension
     ExtendRow {
         /// The associated types of this record type
         types: Vec<Field<Id, Alias<Id, T>>>,
         /// The fields of this record type
         fields: Vec<Field<Id, T>>,
+        /// The rest of the row
         rest: T,
     },
     /// An identifier type. Anything that is not a builtin type.
