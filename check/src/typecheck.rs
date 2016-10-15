@@ -10,10 +10,11 @@ use base::ast::{SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::FnvSet;
 use base::instantiate::{self, Instantiator};
+use base::kind::{Kind, KindEnv, ArcKind};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
-use base::types::{self, ArcType, Field, ArcKind, Type, Generic, Kind, merge};
-use base::types::{KindEnv, TypeEnv, PrimitiveEnv, Alias, AliasData, TypeVariable};
+use base::types::{self, Alias, AliasData, ArcType, Field, Generic};
+use base::types::{PrimitiveEnv, Type, TypeEnv, TypeVariable};
 use kindcheck::{self, KindCheck};
 use substitution::Substitution;
 use unify::Error as UnifyError;
@@ -1124,11 +1125,11 @@ impl<'a> Typecheck<'a> {
                         })
                     });
                     let new_rest = self.finish_type(level, rest);
-                    merge(fields,
-                          new_fields,
-                          rest,
-                          new_rest,
-                          |fields, rest| Type::extend_row(types.clone(), fields, rest))
+                    types::merge(fields,
+                                 new_fields,
+                                 rest,
+                                 new_rest,
+                                 |fields, rest| Type::extend_row(types.clone(), fields, rest))
                         .or_else(|| replacement.clone())
                 }
                 _ => {

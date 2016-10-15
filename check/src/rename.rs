@@ -1,12 +1,13 @@
 use std::fmt;
 
 use base::ast::{self, DisplayEnv, Expr, SpannedExpr, MutVisitor, Typed, TypedIdent};
-use base::pos::{self, BytePos, Span, Spanned};
 use base::error::Errors;
 use base::fnv::FnvMap;
+use base::kind::{ArcKind, KindEnv};
+use base::pos::{self, BytePos, Span, Spanned};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::types::{self, Alias, ArcType, Type, ArcKind, KindEnv, TypeEnv};
+use base::types::{self, Alias, ArcType, Type, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 

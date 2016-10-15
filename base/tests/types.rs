@@ -2,6 +2,7 @@ extern crate gluon_base as base;
 
 use std::ops::Deref;
 
+use base::kind::{ArcKind, Kind};
 use base::types::*;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>

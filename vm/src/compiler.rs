@@ -1,12 +1,11 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast::{Literal, Pattern, TypedIdent};
+use base::ast::{Literal, Pattern, TypedIdent, Typed, DisplayEnv, SpannedExpr, Expr};
 use base::instantiate;
-use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::ast::{Typed, DisplayEnv, SpannedExpr, Expr};
-use base::types;
-use base::types::{Alias, KindEnv, ArcType, Type, TypeEnv};
+use base::kind::{ArcKind, KindEnv};
+use base::types::{self, Alias, ArcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
+use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use types::*;
 use vm::GlobalVmState;
 use self::Variable::*;
@@ -281,7 +280,7 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> KindEnv for Compiler<'a> {
-    fn find_kind(&self, _type_name: &SymbolRef) -> Option<types::ArcKind> {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
         None
     }
 }
