@@ -276,14 +276,13 @@ impl<Id, T> Type<Id, T>
     }
 
     pub fn variant(fields: Vec<Field<Id, T>>) -> T {
-        Type::poly_variant(Vec::new(), fields, Type::empty_row())
+        Type::poly_variant(fields, Type::empty_row())
     }
 
-    pub fn poly_variant(types: Vec<Field<Id, Alias<Id, T>>>,
-                        fields: Vec<Field<Id, T>>,
+    pub fn poly_variant(fields: Vec<Field<Id, T>>,
                         rest: T)
                         -> T {
-        T::from(Type::Variant(Type::extend_row(types, fields, rest)))
+        T::from(Type::Variant(Type::extend_row(Vec::new(), fields, rest)))
     }
 
     pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
@@ -777,7 +776,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                             }
                         }
                     }
-                    _ => panic!("Polymorphic variant syntax not yet decided"),
+                    ref typ => panic!("Unexpected type `{}` in variant", typ),
                 };
 
                 enclose(p, Prec::Constructor, arena, doc).group()
@@ -915,8 +914,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
                 f.walk(a);
             }
         }
-        Type::Record(ref row) => f.walk(row),
-        Type::Variant(ref row) => f.walk(row),
+        Type::Record(ref row) | Type::Variant(ref row) => f.walk(row),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             for field in types {
                 f.walk(&field.typ.typ);
