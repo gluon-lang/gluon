@@ -242,12 +242,18 @@ pub enum Type<Id, T = ArcType<Id>> {
         /// The rest of the row
         rest: T,
     },
-    /// An identifier type. Anything that is not a builtin type.
+    /// An identifier type. These are created during parsing, but should all be
+    ///resolved into `Type::Alias`es during type checking.
+    ///
+    /// Identifiers are also sometimes used inside aliased types to avoid cycles
+    /// in reference counted pointers. This is a bit of a wart at the moment and
+    /// _may_ cause spurious unification failures.
     Ident(Id),
-    /// Representation for type variables
+    /// An unbound type variable that may be unified with other types. These
+    /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(TypeVariable),
-    /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
-    /// etc and are what unbound type variables are eventually made into.
+    /// A variable that needs to be instantiated with a fresh type variable
+    /// when the binding is refered to.
     Generic(Generic<Id>),
     Alias(AliasData<Id, T>),
 }
