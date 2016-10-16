@@ -143,9 +143,9 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
             // Insert variant constructors into the local scope
-            if let Type::Variants(ref variants) = *alias.typ {
-                for &(ref name, ref typ) in variants {
-                    self.env.stack.insert(name.clone(), (name.clone(), span, typ.clone()));
+            if let Type::Variant(ref row) = *alias.typ {
+                for field in row.field_iter().cloned() {
+                    self.env.stack.insert(field.name.clone(), (field.name, span, field.typ));
                 }
             }
 

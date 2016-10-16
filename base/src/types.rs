@@ -222,13 +222,9 @@ pub enum Type<Id, T = ArcType<Id>> {
     Hole,
     /// An opaque type
     Opaque,
-    /// An application with multiple arguments.
-    /// `Map String Int` would be represented as `App(Map, [String, Int])`
+    /// A type application with multiple arguments. For example,
+    /// `Map String Int` would be represented as `App(Map, [String, Int])`.
     App(T, Vec<T>),
-    /// A variant type `| A Int Float | B`.
-    /// The second element of the tuple is the function type which the constructor has which in the
-    /// above example means that A's type is `Int -> Float -> A` and B's is `B`
-    Variants(Vec<(Id, T)>),
     /// Representation for type variables
     Variable(TypeVariable),
     /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
@@ -236,11 +232,13 @@ pub enum Type<Id, T = ArcType<Id>> {
     Generic(Generic<Id>),
     /// A builtin type
     Builtin(BuiltinType),
-    /// A record type
+    /// Record constructor, of kind `Row -> Type`
     Record(T),
-    /// The empty row
+    /// Variant constructor, of kind `Row -> Type`
+    Variant(T),
+    /// The empty row, of kind `Row`
     EmptyRow,
-    /// Row extension
+    /// Row extension, of kind `... -> Row -> Row`
     ExtendRow {
         /// The associated types of this record type
         types: Vec<Field<Id, Alias<Id, T>>>,
@@ -277,8 +275,15 @@ impl<Id, T> Type<Id, T>
         }
     }
 
-    pub fn variants(vs: Vec<(Id, T)>) -> T {
-        T::from(Type::Variants(vs))
+    pub fn variant(fields: Vec<Field<Id, T>>) -> T {
+        Type::poly_variant(Vec::new(), fields, Type::empty_row())
+    }
+
+    pub fn poly_variant(types: Vec<Field<Id, Alias<Id, T>>>,
+                        fields: Vec<Field<Id, T>>,
+                        rest: T)
+                        -> T {
+        T::from(Type::Variant(Type::extend_row(types, fields, rest)))
     }
 
     pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
@@ -750,23 +755,31 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                     }
                 }
             }
-            Type::Variants(ref variants) => {
+            Type::Variant(ref row) => {
                 let mut first = true;
                 let mut doc = arena.nil();
-                for variant in variants {
-                    if !first {
-                        doc = doc.append(arena.newline());
+
+                match **row {
+                    Type::EmptyRow => (),
+                    Type::ExtendRow { ref fields, .. } => {
+                        for field in fields.iter() {
+                            if !first {
+                                doc = doc.append(arena.newline());
+                            }
+                            first = false;
+                            doc = doc.append("| ")
+                                .append(field.name.as_ref());
+                            for arg in arg_iter(&field.typ) {
+                                doc = chain![arena;
+                                            doc,
+                                            " ",
+                                            dt(self.env, Prec::Constructor, &arg).pretty(arena)];
+                            }
+                        }
                     }
-                    first = false;
-                    doc = doc.append("| ")
-                        .append(variant.0.as_ref());
-                    for arg in arg_iter(&variant.1) {
-                        doc = chain![arena;
-                                     doc,
-                                     " ",
-                                     dt(self.env, Prec::Constructor, &arg).pretty(arena)];
-                    }
-                }
+                    _ => panic!("Polymorphic variant syntax not yet decided"),
+                };
+
                 enclose(p, Prec::Constructor, arena, doc).group()
             }
             Type::Builtin(ref t) => arena.text(t.to_str()),
@@ -903,6 +916,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
             }
         }
         Type::Record(ref row) => f.walk(row),
+        Type::Variant(ref row) => f.walk(row),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             for field in types {
                 f.walk(&field.typ.typ);
@@ -911,11 +925,6 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
                 f.walk(&field.typ);
             }
             f.walk(rest);
-        }
-        Type::Variants(ref variants) => {
-            for variant in variants {
-                f.walk(&variant.1);
-            }
         }
         Type::Hole |
         Type::Opaque |
@@ -1029,6 +1038,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
             merge(id, f.visit(id), args, new_args, Type::app)
         }
         Type::Record(ref row) => f.visit(row).map(|row| T::from(Type::Record(row))),
+        Type::Variant(ref row) => f.visit(row).map(|row| T::from(Type::Variant(row))),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             let new_fields = walk_move_types(fields, |field| {
                 f.visit(&field.typ).map(|typ| {
@@ -1044,10 +1054,6 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
                   rest,
                   new_rest,
                   |fields, rest| Type::extend_row(types.clone(), fields, rest))
-        }
-        Type::Variants(ref variants) => {
-            walk_move_types(variants, |v| f.visit(&v.1).map(|t| (v.0.clone(), t)))
-                .map(Type::variants)
         }
         Type::Hole |
         Type::Opaque |

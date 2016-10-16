@@ -140,8 +140,10 @@ impl TypeEnv for VmEnv {
                     .values()
                     .filter_map(|alias| {
                         match *alias.typ {
-                            Type::Variants(ref ctors) => {
-                                ctors.iter().find(|ctor| *ctor.0 == *id).map(|t| &t.1)
+                            Type::Variant(ref row) => {
+                                row.field_iter()
+                                    .find(|field| *field.name == *id)
+                                    .map(|field| &field.typ)
                             }
                             _ => None,
                         }

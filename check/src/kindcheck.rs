@@ -3,7 +3,7 @@ use std::fmt;
 use base::ast;
 use base::kind::{self, ArcKind, Kind, KindEnv};
 use base::symbol::Symbol;
-use base::types::{self, ArcType, BuiltinType, Generic, Type, Walker};
+use base::types::{self, ArcType, BuiltinType, Field, Generic, Type, Walker};
 
 use substitution::{Substitution, Substitutable};
 use unify;
@@ -191,16 +191,19 @@ impl<'a> KindCheck<'a> {
                 }
                 Ok((kind, Type::app(ctor, new_args)))
             }
-            Type::Variants(ref variants) => {
-                let variants = try!(variants.iter()
-                    .map(|variant| {
-                        let (kind, typ) = try!(self.kindcheck(&variant.1));
+            Type::Variant(ref row) => {
+                let row = try!(row.field_iter()
+                    .map(|field| {
+                        let (kind, typ) = try!(self.kindcheck(&field.typ));
                         let type_kind = self.type_kind();
                         try!(self.unify(&type_kind, kind));
-                        Ok((variant.0.clone(), typ))
+                        Ok(Field {
+                            name: field.name.clone(),
+                            typ: typ,
+                        })
                     })
                     .collect());
-                Ok((self.type_kind(), Type::variants(variants)))
+                Ok((self.type_kind(), Type::variant(row)))
             }
             Type::Record(ref row) => {
                 let (kind, row) = try!(self.kindcheck(row));

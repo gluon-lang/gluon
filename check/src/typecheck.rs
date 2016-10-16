@@ -292,11 +292,11 @@ impl<'a> Typecheck<'a> {
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
-        if let Type::Variants(ref variants) = *alias.typ {
-            for (name, typ) in variants.iter().cloned() {
-                let symbol = self.symbols.symbol(name.as_ref());
-                self.original_symbols.insert(symbol, name.clone());
-                self.stack_var(name, typ);
+        if let Type::Variant(ref row) = *alias.typ {
+            for field in row.field_iter().cloned() {
+                let symbol = self.symbols.symbol(field.name.as_ref());
+                self.original_symbols.insert(symbol, field.name.clone());
+                self.stack_var(field.name, field.typ);
             }
         }
 
@@ -1194,19 +1194,24 @@ impl<'a> Typecheck<'a> {
                             Some(Type::ident(new_id.clone()))
                         })
                 }
-                Type::Variants(ref variants) => {
+                Type::Variant(ref row) => {
                     let iter = || {
-                        variants.iter()
-                            .map(|var| self.original_symbols.get(&var.0))
+                        row.field_iter()
+                            .map(|var| self.original_symbols.get(&var.name))
                     };
                     if iter().any(|opt| opt.is_some()) {
                         // If any of the variants requires a symbol replacement
                         // we create a new type
-                        Some(Type::variants(iter()
-                            .zip(variants.iter())
+                        Some(Type::variant(iter()
+                            .zip(row.field_iter())
                             .map(|(new, old)| {
                                 match new {
-                                    Some(new) => (new.clone(), old.1.clone()),
+                                    Some(new) => {
+                                        Field {
+                                            name: new.clone(),
+                                            typ: old.typ.clone(),
+                                        }
+                                    }
                                     None => old.clone(),
                                 }
                             })

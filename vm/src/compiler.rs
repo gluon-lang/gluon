@@ -256,17 +256,17 @@ impl CompilerEnv for TypeInfos {
             .iter()
             .filter_map(|(_, ref alias)| {
                 match *alias.typ {
-                    Type::Variants(ref variants) => {
-                        variants.iter()
+                    Type::Variant(ref row) => {
+                        row.field_iter()
                             .enumerate()
-                            .find(|&(_, v)| v.0 == *id)
+                            .find(|&(_, field)| field.name == *id)
                     }
                     _ => None,
                 }
             })
             .next()
-            .map(|(tag, &(_, ref typ))| {
-                Variable::Constructor(tag as VmTag, count_function_args(&typ))
+            .map(|(tag, field)| {
+                Variable::Constructor(tag as VmTag, count_function_args(&field.typ))
             })
     }
 }
@@ -329,17 +329,18 @@ impl<'a> Compiler<'a> {
             .iter()
             .filter_map(|(_, typ)| {
                 match **typ {
-                    Type::Variants(ref variants) => {
-                        variants.iter()
+                    Type::Variant(ref row) => {
+                        row.field_iter()
                             .enumerate()
-                            .find(|&(_, v)| v.0 == *id)
+                            .find(|&(_, field)| field.name == *id)
                     }
                     _ => None,
                 }
             })
             .next()
-            .map(|(tag, &(_, ref typ))| {
-                Constructor(tag as VmIndex, types::arg_iter(typ).count() as VmIndex)
+            .map(|(tag, field)| {
+                Constructor(tag as VmIndex,
+                            types::arg_iter(&field.typ).count() as VmIndex)
             })
             .or_else(|| {
                 current.stack
@@ -404,10 +405,10 @@ impl<'a> Compiler<'a> {
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
         match **instantiate::remove_aliases_cow(self, typ) {
-            Type::Variants(ref variants) => {
-                variants.iter()
+            Type::Variant(ref row) => {
+                row.field_iter()
                     .enumerate()
-                    .find(|&(_, v)| v.0 == *constructor)
+                    .find(|&(_, field)| field.name == *constructor)
                     .map(|(tag, _)| tag as VmTag)
             }
             _ => None,
