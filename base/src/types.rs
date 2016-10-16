@@ -222,16 +222,11 @@ pub enum Type<Id, T = ArcType<Id>> {
     Hole,
     /// An opaque type
     Opaque,
+    /// A builtin type
+    Builtin(BuiltinType),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
     App(T, Vec<T>),
-    /// Representation for type variables
-    Variable(TypeVariable),
-    /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
-    /// etc and are what unbound type variables are eventually made into.
-    Generic(Generic<Id>),
-    /// A builtin type
-    Builtin(BuiltinType),
     /// Record constructor, of kind `Row -> Type`
     Record(T),
     /// Variant constructor, of kind `Row -> Type`
@@ -249,6 +244,11 @@ pub enum Type<Id, T = ArcType<Id>> {
     },
     /// An identifier type. Anything that is not a builtin type.
     Ident(Id),
+    /// Representation for type variables
+    Variable(TypeVariable),
+    /// Variant for "generic" variables. These occur in signatures as lowercase identifers `a`, `b`
+    /// etc and are what unbound type variables are eventually made into.
+    Generic(Generic<Id>),
     Alias(AliasData<Id, T>),
 }
 
