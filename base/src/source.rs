@@ -1,43 +1,96 @@
+//! Module containing types and functions for mapping between byte indexes and line and column
+//! locations
+
 use pos::{BytePos, Column, Line, Location};
 
+/// Type which provides a bidirectional mapping between byte offsets and line and column locations
+/// for some source file
+#[derive(Clone, Debug)]
+pub struct Lines {
+    starting_bytes: Vec<BytePos>,
+    end: usize,
+}
+
+impl Lines {
+    /// Creates a mapping for `src`
+    pub fn new(src: &str) -> Lines {
+        use std::iter;
+
+        let input_indices = src.as_bytes()
+            .iter()
+            .enumerate()
+            .filter(|&(_, &b)| b == b'\n')
+            .map(|(i, _)| BytePos::from(i + 1)); // index of first char in the line
+
+        let starting_bytes = iter::once(BytePos::from(0))
+            .chain(input_indices)
+            .collect();
+        Lines {
+            starting_bytes: starting_bytes,
+            end: src.len(),
+        }
+    }
+
+    /// Returns the byte offset of the start of `line_number`
+    pub fn line(&self, line_number: Line) -> Option<BytePos> {
+        let line_number = line_number.to_usize();
+        self.starting_bytes.get(line_number).cloned()
+    }
+
+    /// Returns the line and column location of `byte`
+    pub fn location(&self, byte: BytePos) -> Option<Location> {
+        if byte.to_usize() <= self.end {
+            let line_index = self.line_number_at_byte(byte);
+
+            self.line(line_index).map(|line_byte| {
+                Location {
+                    line: line_index,
+                    column: Column::from((byte - line_byte).to_usize()),
+                    absolute: byte,
+                }
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Returns which line `byte` points to
+    pub fn line_number_at_byte(&self, byte: BytePos) -> Line {
+        let num_lines = self.starting_bytes.len();
+
+        Line::from((0..num_lines)
+            .filter(|&i| self.starting_bytes[i] > byte)
+            .map(|i| i - 1)
+            .next()
+            .unwrap_or(num_lines - 1))
+    }
+}
+
+/// Type which provides a bidirectional mapping between byte offsets and line and column locations
 #[derive(Clone, Debug)]
 pub struct Source<'a> {
     src: &'a str,
     /// The starting byte position of each line in `src`
-    lines: Vec<BytePos>,
+    lines: Lines,
 }
 
 impl<'a> Source<'a> {
     pub fn new(src: &str) -> Source {
-        use std::iter;
-
-        let lines = {
-            let input_indices = src.as_bytes()
-                .iter()
-                .enumerate()
-                .filter(|&(_, &b)| b == b'\n')
-                .map(|(i, _)| BytePos::from(i + 1)); // index of first char in the line
-
-            iter::once(BytePos::from(0))
-                .chain(input_indices)
-                .collect()
-        };
-
         Source {
             src: src,
-            lines: lines,
+            lines: Lines::new(src),
         }
     }
 
+    /// Returns the string which defines the source
     pub fn src(&self) -> &str {
         &self.src
     }
 
+    /// Returns the byte offset and source of `line_number`
     pub fn line(&self, line_number: Line) -> Option<(BytePos, &str)> {
-        let line_number = line_number.to_usize();
-
-        self.lines.get(line_number).map(|&start| {
-            let line = match self.lines.get(line_number + 1) {
+        self.lines.line(line_number).map(|start| {
+            let line = match self.lines.starting_bytes.get(line_number.to_usize() + 1) {
                 Some(end) => &self.src[start.to_usize()..end.to_usize() - 1], // Skip '\n'
                 None => &self.src[start.to_usize()..],
             };
@@ -46,52 +99,20 @@ impl<'a> Source<'a> {
         })
     }
 
+    /// Returns the line number and the source at `byte`
     pub fn line_at_byte(&self, byte: BytePos) -> Option<(BytePos, &str)> {
         let line_number = self.line_number_at_byte(byte);
         self.line(line_number)
     }
 
+    /// Returns which line `byte` points to
     pub fn line_number_at_byte(&self, byte: BytePos) -> Line {
-        let num_lines = self.lines.len();
-
-        Line::from((0..num_lines)
-            .filter(|&i| self.lines[i] > byte)
-            .map(|i| i - 1)
-            .next()
-            .unwrap_or(num_lines - 1))
+        self.lines.line_number_at_byte(byte)
     }
 
+    /// Returns the line and column location of `byte`
     pub fn location(&self, byte: BytePos) -> Option<Location> {
-        let line_index = self.line_number_at_byte(byte);
-
-        self.line(line_index).and_then(|(line_byte, line)| {
-            let mut column_index = Column::from(0);
-
-            for (i, (next_byte, _)) in line.char_indices().enumerate() {
-                column_index = Column::from(i);
-
-                let curr_byte = line_byte + BytePos::from(next_byte);
-
-                if curr_byte == byte {
-                    return Some(Location {
-                        line: line_index,
-                        column: column_index,
-                        absolute: byte,
-                    });
-                }
-            }
-
-            // Handle the case where `byte` is equal to the source's length
-            if byte == line_byte + BytePos::from(line.len()) {
-                Some(Location {
-                    line: line_index,
-                    column: column_index,
-                    absolute: byte,
-                })
-            } else {
-                None
-            }
-        })
+        self.lines.location(byte)
     }
 }
 
