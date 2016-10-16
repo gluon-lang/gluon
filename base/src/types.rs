@@ -243,7 +243,7 @@ pub enum Type<Id, T = ArcType<Id>> {
         rest: T,
     },
     /// An identifier type. These are created during parsing, but should all be
-    ///resolved into `Type::Alias`es during type checking.
+    /// resolved into `Type::Alias`es during type checking.
     ///
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
@@ -285,9 +285,7 @@ impl<Id, T> Type<Id, T>
         Type::poly_variant(fields, Type::empty_row())
     }
 
-    pub fn poly_variant(fields: Vec<Field<Id, T>>,
-                        rest: T)
-                        -> T {
+    pub fn poly_variant(fields: Vec<Field<Id, T>>, rest: T) -> T {
         T::from(Type::Variant(Type::extend_row(Vec::new(), fields, rest)))
     }
 
@@ -471,8 +469,8 @@ impl<Id> ArcType<Id> {
         }
     }
 
-    pub fn field_iter(&self) -> FieldIterator<Self> {
-        FieldIterator {
+    pub fn row_iter(&self) -> RowIterator<Self> {
+        RowIterator {
             typ: self,
             current: 0,
         }
@@ -524,18 +522,18 @@ impl<'a, Id: 'a, T> Iterator for TypeFieldIterator<'a, T>
 }
 
 #[derive(Clone)]
-pub struct FieldIterator<'a, T: 'a> {
+pub struct RowIterator<'a, T: 'a> {
     typ: &'a T,
     current: usize,
 }
 
-impl<'a, T> FieldIterator<'a, T> {
+impl<'a, T> RowIterator<'a, T> {
     pub fn current_type(&self) -> &'a T {
         self.typ
     }
 }
 
-impl<'a, Id: 'a, T> Iterator for FieldIterator<'a, T>
+impl<'a, Id: 'a, T> Iterator for RowIterator<'a, T>
     where T: Deref<Target = Type<Id, T>>,
 {
     type Item = &'a Field<Id, T>;
@@ -920,7 +918,8 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
                 f.walk(a);
             }
         }
-        Type::Record(ref row) | Type::Variant(ref row) => f.walk(row),
+        Type::Record(ref row) |
+        Type::Variant(ref row) => f.walk(row),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             for field in types {
                 f.walk(&field.typ.typ);

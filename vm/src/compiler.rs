@@ -257,7 +257,7 @@ impl CompilerEnv for TypeInfos {
             .filter_map(|(_, ref alias)| {
                 match *alias.typ {
                     Type::Variant(ref row) => {
-                        row.field_iter()
+                        row.row_iter()
                             .enumerate()
                             .find(|&(_, field)| field.name == *id)
                     }
@@ -330,7 +330,7 @@ impl<'a> Compiler<'a> {
             .filter_map(|(_, typ)| {
                 match **typ {
                     Type::Variant(ref row) => {
-                        row.field_iter()
+                        row.row_iter()
                             .enumerate()
                             .find(|&(_, field)| field.name == *id)
                     }
@@ -388,7 +388,7 @@ impl<'a> Compiler<'a> {
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
         // Remove all type aliases to get the actual record type
         let typ = instantiate::remove_aliases_cow(self, typ);
-        let mut iter = typ.field_iter();
+        let mut iter = typ.row_iter();
         match iter.by_ref().position(|f| f.name.name_eq(field)) {
             Some(index) => {
                 for _ in iter.by_ref() {}
@@ -406,7 +406,7 @@ impl<'a> Compiler<'a> {
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
         match **instantiate::remove_aliases_cow(self, typ) {
             Type::Variant(ref row) => {
-                row.field_iter()
+                row.row_iter()
                     .enumerate()
                     .find(|&(_, field)| field.name == *constructor)
                     .map(|(tag, _)| tag as VmTag)
@@ -794,7 +794,7 @@ impl<'a> Compiler<'a> {
                 });
                 match *typ {
                     Type::Record(_) => {
-                        let mut field_iter = typ.field_iter();
+                        let mut field_iter = typ.row_iter();
                         let number_of_fields = field_iter.by_ref().count();
                         let is_polymorphic = **field_iter.current_type() != Type::EmptyRow;
                         if fields.len() == 0 ||
@@ -816,7 +816,7 @@ impl<'a> Compiler<'a> {
                             }
                         } else {
                             function.emit(Split);
-                            for field in typ.field_iter() {
+                            for field in typ.row_iter() {
                                 let name = match fields.iter()
                                     .find(|tup| tup.0.name_eq(&field.name)) {
                                     Some(&(ref name, ref bind)) => {

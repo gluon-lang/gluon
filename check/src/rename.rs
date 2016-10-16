@@ -87,7 +87,7 @@ pub fn rename(symbols: &mut SymbolModule,
         fn find_fields(&self, typ: &ArcType) -> Vec<types::Field<Symbol, ArcType>> {
             // Walk through all type aliases
             let record = instantiate::remove_aliases(&self.env, typ.clone());
-            record.field_iter().cloned().collect()
+            record.row_iter().cloned().collect()
         }
 
         fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<Symbol>) {
@@ -144,7 +144,7 @@ pub fn rename(symbols: &mut SymbolModule,
         fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
             // Insert variant constructors into the local scope
             if let Type::Variant(ref row) = *alias.typ {
-                for field in row.field_iter().cloned() {
+                for field in row.row_iter().cloned() {
                     self.env.stack.insert(field.name.clone(), (field.name, span, field.typ));
                 }
             }

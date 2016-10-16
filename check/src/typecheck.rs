@@ -174,7 +174,7 @@ impl<'a> TypeEnv for Environment<'a> {
                 match *alias.typ {
                     Type::Record(_) => {
                         fields.iter()
-                            .all(|name| alias.typ.field_iter().any(|f| f.name.name_eq(name)))
+                            .all(|name| alias.typ.row_iter().any(|f| f.name.name_eq(name)))
                     }
                     _ => false,
                 }
@@ -293,7 +293,7 @@ impl<'a> Typecheck<'a> {
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
         if let Type::Variant(ref row) = *alias.typ {
-            for field in row.field_iter().cloned() {
+            for field in row.row_iter().cloned() {
                 let symbol = self.symbols.symbol(field.name.as_ref());
                 self.original_symbols.insert(symbol, field.name.clone());
                 self.stack_var(field.name, field.typ);
@@ -594,7 +594,7 @@ impl<'a> Typecheck<'a> {
                 match *record {
                     Type::Variable(_) |
                     Type::Record(_) => {
-                        let field_type = record.field_iter()
+                        let field_type = record.row_iter()
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
                         *ast_field_typ = match field_type {
@@ -792,7 +792,7 @@ impl<'a> Typecheck<'a> {
                 for field in fields {
                     let name = field.1.as_ref().unwrap_or(&field.0);
                     // The field should always exist since the type was constructed from the pattern
-                    let field_type = match_type.field_iter()
+                    let field_type = match_type.row_iter()
                         .find(|f| f.name.name_eq(&field.0))
                         .expect("ICE: Expected field to exist in type");
                     self.stack_var(name.clone(), field_type.typ.clone());
@@ -1196,14 +1196,14 @@ impl<'a> Typecheck<'a> {
                 }
                 Type::Variant(ref row) => {
                     let iter = || {
-                        row.field_iter()
+                        row.row_iter()
                             .map(|var| self.original_symbols.get(&var.name))
                     };
                     if iter().any(|opt| opt.is_some()) {
                         // If any of the variants requires a symbol replacement
                         // we create a new type
                         Some(Type::variant(iter()
-                            .zip(row.field_iter())
+                            .zip(row.row_iter())
                             .map(|(new, old)| {
                                 match new {
                                     Some(new) => {
@@ -1338,7 +1338,7 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut
     for field in fields {
         // If the field in the pattern does not exist (undefined field error) then skip it as
         // the error itself will already have been reported
-        if let Some(associated_type) = typ.field_iter()
+        if let Some(associated_type) = typ.row_iter()
             .find(|type_field| type_field.name.name_eq(&field.0)) {
             f(&field.0, &field.1, &associated_type.typ);
         }

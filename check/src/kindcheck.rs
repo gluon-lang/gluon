@@ -192,7 +192,7 @@ impl<'a> KindCheck<'a> {
                 Ok((kind, Type::app(ctor, new_args)))
             }
             Type::Variant(ref row) => {
-                let row = try!(row.field_iter()
+                let row = try!(row.row_iter()
                     .map(|field| {
                         let (kind, typ) = try!(self.kindcheck(&field.typ));
                         let type_kind = self.type_kind();

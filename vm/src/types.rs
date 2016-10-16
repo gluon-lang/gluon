@@ -174,7 +174,7 @@ impl TypeEnv for TypeInfos {
             .filter_map(|(_, ref alias)| {
                 match *alias.typ {
                     Type::Variant(ref row) => {
-                        row.field_iter().find(|field| field.name.as_ref() == id)
+                        row.row_iter().find(|field| field.name.as_ref() == id)
                     }
                     _ => None,
                 }
@@ -196,7 +196,7 @@ impl TypeEnv for TypeInfos {
                 match *alias.typ {
                     Type::Record(_) => {
                         fields.iter().all(|name| {
-                            alias.typ.field_iter().any(|f| f.name.as_ref() == name.as_ref())
+                            alias.typ.row_iter().any(|f| f.name.as_ref() == name.as_ref())
                         })
                     }
                     _ => false,
