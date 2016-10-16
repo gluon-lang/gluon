@@ -101,7 +101,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         if let Expr::Projection(ref expr, _, _) = context.value {
             let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
             let id = ident.as_ref();
-            for field in typ.field_iter() {
+            for field in typ.row_iter() {
                 if field.name.as_ref().starts_with(id) {
                     self.result.push(Suggestion {
                         name: field.name.declared_name().into(),

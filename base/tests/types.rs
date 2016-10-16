@@ -174,10 +174,16 @@ fn show_record_multi_line() {
 }
 
 #[test]
-fn variants() {
-    let typ: ArcType<&str> =
-        Type::variants(vec![("A", Type::function(vec![Type::int()], Type::ident("A"))),
-                            ("B", Type::ident("A"))]);
+fn show_variant() {
+    let typ: ArcType<&str> = Type::variant(vec![Field {
+                                                    name: "A",
+                                                    typ: Type::function(vec![Type::int()],
+                                                                        Type::ident("A")),
+                                                },
+                                                Field {
+                                                    name: "B",
+                                                    typ: Type::ident("A"),
+                                                }]);
     assert_eq_display!(format!("{}", typ), "| A Int | B");
 }
 

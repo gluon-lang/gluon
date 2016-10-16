@@ -322,8 +322,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
         return Err(UnifyError::TypeMismatch(l.clone(), r.clone()));
     }
 
-    let (missing_from_left, both, missing_from_right) = gather_fields(l.field_iter(),
-                                                                      r.field_iter());
+    let (missing_from_left, both, missing_from_right) = gather_fields(l.row_iter(), r.row_iter());
 
     let mut types: Vec<_> = types_both.iter().map(|pair| pair.0.clone()).collect();
 
@@ -352,7 +351,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
     // `Row (y : String | Fresh var 2) <=> $0`
 
     // This default `rest` value will only be used on errors, or if both fields has the same fields
-    let mut r_iter = r.field_iter();
+    let mut r_iter = r.row_iter();
     for _ in r_iter.by_ref() {
     }
     let mut rest = r_iter.current_type().clone();
@@ -376,14 +375,14 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
                     Type::extend_row(types_missing_from_right, missing_from_right, rest.clone());
                 unifier.try_match(&l_rest, r_iter.current_type());
                 types.extend(l_rest.type_field_iter().cloned());
-                fields.extend(l_rest.field_iter().cloned());
+                fields.extend(l_rest.row_iter().cloned());
             }
         }
     }
 
     // No need to do anything of no fields are missing
     if !missing_from_left.is_empty() {
-        let mut l_iter = l.field_iter();
+        let mut l_iter = l.row_iter();
         for _ in l_iter.by_ref() {
         }
 
@@ -402,7 +401,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
                     Type::extend_row(types_missing_from_left, missing_from_left, rest.clone());
                 unifier.try_match(&l_iter.current_type(), &r_rest);
                 types.extend(r_rest.type_field_iter().cloned());
-                fields.extend(r_rest.field_iter().cloned());
+                fields.extend(r_rest.row_iter().cloned());
             }
         }
     }
@@ -744,7 +743,7 @@ mod tests {
         match result {
             Ok(result) => {
                 // Get the row variable at the end of the resulting type so we can compare the types
-                let mut iter = result.field_iter();
+                let mut iter = result.row_iter();
                 for _ in iter.by_ref() {
                 }
                 let row_variable = iter.current_type().clone();

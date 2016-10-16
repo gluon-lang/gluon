@@ -140,8 +140,10 @@ impl TypeEnv for VmEnv {
                     .values()
                     .filter_map(|alias| {
                         match *alias.typ {
-                            Type::Variants(ref ctors) => {
-                                ctors.iter().find(|ctor| *ctor.0 == *id).map(|t| &t.1)
+                            Type::Variant(ref row) => {
+                                row.row_iter()
+                                    .find(|field| *field.name == *id)
+                                    .map(|field| &field.typ)
                             }
                             _ => None,
                         }
@@ -258,7 +260,7 @@ impl VmEnv {
             };
             // HACK Can't return the data directly due to the use of cow on the type
             let next_type = map_cow_option(typ.clone(), |typ| {
-                typ.field_iter()
+                typ.row_iter()
                     .enumerate()
                     .find(|&(_, field)| field.name.as_ref() == field_name)
                     .map(|(index, field)| {

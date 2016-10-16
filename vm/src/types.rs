@@ -173,12 +173,14 @@ impl TypeEnv for TypeInfos {
             .iter()
             .filter_map(|(_, ref alias)| {
                 match *alias.typ {
-                    Type::Variants(ref variants) => variants.iter().find(|v| v.0.as_ref() == id),
+                    Type::Variant(ref row) => {
+                        row.row_iter().find(|field| field.name.as_ref() == id)
+                    }
                     _ => None,
                 }
             })
             .next()
-            .map(|x| &x.1)
+            .map(|field| &field.typ)
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
@@ -194,7 +196,7 @@ impl TypeEnv for TypeInfos {
                 match *alias.typ {
                     Type::Record(_) => {
                         fields.iter().all(|name| {
-                            alias.typ.field_iter().any(|f| f.name.as_ref() == name.as_ref())
+                            alias.typ.row_iter().any(|f| f.name.as_ref() == name.as_ref())
                         })
                     }
                     _ => false,

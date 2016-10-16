@@ -245,8 +245,7 @@ fn type_decl_record() {
 fn type_mutually_recursive() {
     let _ = ::env_logger::init();
     let e = parse_new!("type Test = | Test Int and Test2 = { x: Int, y: {} } in 1");
-    let test = Type::variants(vec![(intern("Test"),
-                                    Type::function(vec![typ("Int")], typ("Test")))]);
+    let test = Type::variant(vec![field("Test", Type::function(vec![typ("Int")], typ("Test")))]);
     let test2 = Type::record(Vec::new(),
                              vec![Field {
                                       name: intern("x"),
@@ -307,7 +306,7 @@ fn variant_type() {
     assert_eq!(e,
                type_decl(intern("Option"),
                          vec![generic("a")],
-                         Type::variants(vec![(intern("None"), none), (intern("Some"), some)]),
+                         Type::variant(vec![field("None", none), field("Some", some)]),
                          app(id("Some"), vec![int(1)])));
 }
 #[test]

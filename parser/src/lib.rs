@@ -262,12 +262,17 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     }
 
     fn parse_adt(&self, return_type: &ArcType<Id>, input: I) -> ParseResult<ArcType<Id>, I> {
-        let variant = (token(Token::Pipe),
-                       self.ident(),
-                       many(self.parser(ParserEnv::<I, F>::type_arg)))
-            .map(|(_, id, args): (_, _, Vec<_>)| (id, Type::function(args, return_type.clone())));
+        let variant =
+            (token(Token::Pipe), self.ident(), many(self.parser(ParserEnv::<I, F>::type_arg)))
+                .map(|(_, id, args): (_, _, Vec<_>)| {
+                    Field {
+                        name: id,
+                        typ: Type::function(args, return_type.clone()),
+                    }
+                });
+
         many1(variant)
-            .map(Type::variants)
+            .map(Type::variant)
             .parse_stream(input)
     }
 
