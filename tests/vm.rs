@@ -753,6 +753,21 @@ let from f : (Int -> Option a) -> Stream a =
 }
 
 #[test]
+fn completion_with_prelude_at_0() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+
+    let expr = "1";
+
+    let (expr, _) = Compiler::new()
+        .typecheck_str(&vm, "example", expr, None)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(0));
+    assert_eq!(result, Ok(Type::int()));
+}
+
+#[test]
 fn value_size() {
     assert!(::std::mem::size_of::<Value>() <= 16);
 }

@@ -59,13 +59,10 @@ fn main_() -> Result<(), Box<Error>> {
     let mut text = String::new();
     let _ = ::env_logger::init();
     for filename in try!(test_files("tests/pass")) {
-        let name = filename.to_str().unwrap_or("<unknown>");
-        if name != "tests/pass\\writer.glu" {
-            continue;
-        }
         let mut file = try!(File::open(&filename));
         text.clear();
         try!(file.read_to_string(&mut text));
+        let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
         try!(compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text));
     }

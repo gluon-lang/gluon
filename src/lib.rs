@@ -314,8 +314,8 @@ impl Compiler {
         let prelude_expr = self.parse_expr("", prelude_import).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
 
-        // Set all spans in the prelude expression to 0 so that completion requests do not end up
-        // looking in the wrong place
+        // Set all spans in the prelude expression to -1 so that completion requests always
+        // skips searching the implicit prelude
         use base::ast::{MutVisitor, SpannedPattern, walk_mut_expr, walk_mut_pattern};
         use base::pos::{BytePos, Span};
         struct NullSpans;
@@ -325,16 +325,16 @@ impl Compiler {
 
             fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
                 e.span = Span {
-                    start: BytePos::from(0),
-                    end: BytePos::from(0),
+                    start: BytePos::from(-1),
+                    end: BytePos::from(-1),
                 };
                 walk_mut_expr(self, e);
             }
 
             fn visit_pattern(&mut self, p: &mut SpannedPattern<Self::Ident>) {
                 p.span = Span {
-                    start: BytePos::from(0),
-                    end: BytePos::from(0),
+                    start: BytePos::from(-1),
+                    end: BytePos::from(-1),
                 };
                 walk_mut_pattern(self, &mut p.value);
             }
