@@ -72,7 +72,13 @@ impl Hash for Symbol {
 
 impl<'a> From<&'a str> for Symbol {
     fn from(name: &'a str) -> Symbol {
-        Symbol(Arc::new(NameBuf(String::from(name))))
+        Symbol::from(String::from(name))
+    }
+}
+
+impl From<String> for Symbol {
+    fn from(name: String) -> Symbol {
+        Symbol(Arc::new(NameBuf(name)))
     }
 }
 

@@ -131,7 +131,9 @@ pub fn rename(symbols: &mut SymbolModule,
         fn stack_var(&mut self, id: Symbol, span: Span<BytePos>, typ: ArcType) -> Symbol {
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
-            let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
+            // The location may not be unique so to ensure a unique symbol for this variable we
+            // need to avoid the symbol table (which interns by the name of the symbol)
+            let new_id = Symbol::from(format!("{}:{}", name, span.start));
             debug!("Rename binding `{}` = `{}` `{}`",
                    self.symbols.string(&old_id),
                    self.symbols.string(&new_id),

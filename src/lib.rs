@@ -313,6 +313,35 @@ impl Compiler {
     "#;
         let prelude_expr = self.parse_expr("", prelude_import).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
+
+        // Set all spans in the prelude expression to 0 so that completion requests do not end up
+        // looking in the wrong place
+        use base::ast::{MutVisitor, SpannedPattern, walk_mut_expr, walk_mut_pattern};
+        use base::pos::{BytePos, Span};
+        struct NullSpans;
+
+        impl MutVisitor for NullSpans {
+            type Ident = Symbol;
+
+            fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
+                e.span = Span {
+                    start: BytePos::from(0),
+                    end: BytePos::from(0),
+                };
+                walk_mut_expr(self, e);
+            }
+
+            fn visit_pattern(&mut self, p: &mut SpannedPattern<Self::Ident>) {
+                p.span = Span {
+                    start: BytePos::from(0),
+                    end: BytePos::from(0),
+                };
+                walk_mut_pattern(self, &mut p.value);
+            }
+        }
+        NullSpans.visit_expr(expr);
+
+        // Replace the 0 in the prelude with the actual expression
         fn assign_last_body(l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
             match l.value {
                 ast::Expr::LetBindings(_, ref mut e) => {
