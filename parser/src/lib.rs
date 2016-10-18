@@ -438,8 +438,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     /// Parses an expression which could be an argument to a function
     fn parse_arg(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
         debug!("Expr start: {:?}", input.clone().uncons());
-        let span = input.position();
-        let loc = |expr| pos::spanned(span, expr);
+        let start = input.position().start;
 
         // To prevent stack overflows we push all binding groups (which are commonly deeply nested)
         // to a stack and construct the expressions afterwards
@@ -448,7 +447,14 @@ impl<'input, I, Id, F> ParserEnv<I, F>
         let mut input = input;
         let mut declaration_parser = self.parser(ParserEnv::<I, F>::type_decl)
             .or(self.parser(ParserEnv::<I, F>::let_in))
-            .map(loc);
+            .and(parser(move |input: I| {
+                let span = Span {
+                    start: start,
+                    end: input.position().end,
+                };
+                Ok((span, Consumed::Empty(input)))
+            }))
+            .map(|(decl, span)| pos::spanned(span, decl));
         loop {
             match declaration_parser.parse_lazy(input.clone()) {
                 ConsumedOk((bindings, new_input)) |
