@@ -1346,7 +1346,7 @@ fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
             // pushing numbers should never return an error so unwrap
             stack.stack.push(result);
         }
-        (l, r) => panic!("{:?} `op` {:?}", l, r),
+        _ => panic!("{:?} `op` {:?}", l, r),
     }
 }
 

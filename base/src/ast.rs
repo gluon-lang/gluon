@@ -171,14 +171,14 @@ pub trait MutVisitor {
 pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::Ident>) {
     match e.value {
         Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
-            v.visit_expr(&mut **pred);
-            v.visit_expr(&mut **if_true);
-            v.visit_expr(&mut **if_false);
+            v.visit_expr(pred);
+            v.visit_expr(if_true);
+            v.visit_expr(if_false);
         }
         Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
-            v.visit_expr(&mut **lhs);
+            v.visit_expr(lhs);
             v.visit_typ(&mut id.typ);
-            v.visit_expr(&mut **rhs);
+            v.visit_expr(rhs);
         }
         Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
@@ -186,21 +186,21 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 v.visit_expr(&mut bind.expr);
                 v.visit_typ(&mut bind.typ);
             }
-            v.visit_expr(&mut **body);
+            v.visit_expr(body);
         }
         Expr::App(ref mut func, ref mut args) => {
-            v.visit_expr(&mut **func);
+            v.visit_expr(func);
             for arg in args {
                 v.visit_expr(arg);
             }
         }
         Expr::Projection(ref mut expr, _, ref mut typ) => {
-            v.visit_expr(&mut **expr);
+            v.visit_expr(expr);
             v.visit_typ(typ);
         }
         Expr::Match(ref mut expr, ref mut alts) => {
-            v.visit_expr(&mut **expr);
-            for alt in alts.iter_mut() {
+            v.visit_expr(expr);
+            for alt in alts {
                 v.visit_pattern(&mut alt.pattern);
                 v.visit_expr(&mut alt.expr);
             }
@@ -226,9 +226,9 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         }
         Expr::Lambda(ref mut lambda) => {
             v.visit_typ(&mut lambda.id.typ);
-            v.visit_expr(&mut *lambda.body);
+            v.visit_expr(&mut lambda.body);
         }
-        Expr::TypeBindings(_, ref mut expr) => v.visit_expr(&mut *expr),
+        Expr::TypeBindings(_, ref mut expr) => v.visit_expr(expr),
         Expr::Ident(ref mut id) => v.visit_typ(&mut id.typ),
         Expr::Literal(..) => (),
         Expr::Block(ref mut exprs) => {
@@ -252,6 +252,107 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
             v.visit_typ(typ);
         }
         Pattern::Ident(ref mut id) => v.visit_typ(&mut id.typ),
+    }
+}
+
+pub trait Visitor {
+    type Ident;
+
+    fn visit_expr(&mut self, e: &SpannedExpr<Self::Ident>) {
+        walk_expr(self, e);
+    }
+
+    fn visit_pattern(&mut self, e: &SpannedPattern<Self::Ident>) {
+        walk_pattern(self, &e.value);
+    }
+
+    fn visit_typ(&mut self, _: &ArcType<Self::Ident>) {}
+}
+
+pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
+    match e.value {
+        Expr::IfElse(ref pred, ref if_true, ref if_false) => {
+            v.visit_expr(pred);
+            v.visit_expr(if_true);
+            v.visit_expr(if_false);
+        }
+        Expr::Infix(ref lhs, ref id, ref rhs) => {
+            v.visit_expr(lhs);
+            v.visit_typ(&id.typ);
+            v.visit_expr(rhs);
+        }
+        Expr::LetBindings(ref bindings, ref body) => {
+            for bind in bindings {
+                v.visit_pattern(&bind.name);
+                v.visit_expr(&bind.expr);
+                v.visit_typ(&bind.typ);
+            }
+            v.visit_expr(&body);
+        }
+        Expr::App(ref func, ref args) => {
+            v.visit_expr(func);
+            for arg in args {
+                v.visit_expr(arg);
+            }
+        }
+        Expr::Projection(ref expr, _, ref typ) => {
+            v.visit_expr(expr);
+            v.visit_typ(typ);
+        }
+        Expr::Match(ref expr, ref alts) => {
+            v.visit_expr(expr);
+            for alt in alts {
+                v.visit_pattern(&alt.pattern);
+                v.visit_expr(&alt.expr);
+            }
+        }
+        Expr::Array(ref a) => {
+            v.visit_typ(&a.typ);
+            for expr in &a.exprs {
+                v.visit_expr(expr);
+            }
+        }
+        Expr::Record { ref typ, ref exprs, .. } => {
+            v.visit_typ(typ);
+            for field in exprs {
+                if let Some(ref expr) = field.1 {
+                    v.visit_expr(expr);
+                }
+            }
+        }
+        Expr::Tuple(ref exprs) => {
+            for expr in exprs {
+                v.visit_expr(expr);
+            }
+        }
+        Expr::Lambda(ref lambda) => {
+            v.visit_typ(&lambda.id.typ);
+            v.visit_expr(&lambda.body);
+        }
+        Expr::TypeBindings(_, ref expr) => v.visit_expr(expr),
+        Expr::Ident(ref id) => v.visit_typ(&id.typ),
+        Expr::Literal(..) => (),
+        Expr::Block(ref exprs) => {
+            for expr in exprs {
+                v.visit_expr(expr);
+            }
+        }
+    }
+}
+
+/// Walks a pattern, calling `visit_*` on all relevant elements
+pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
+    match *p {
+        Pattern::Constructor(ref id, ref args) => {
+            v.visit_typ(&id.typ);
+            for arg in args {
+                v.visit_typ(&arg.typ);
+            }
+        }
+        Pattern::Record { ref typ, .. } => {
+            v.visit_typ(typ);
+        }
+        Pattern::Ident(ref id) => v.visit_typ(&id.typ),
     }
 }
 

@@ -730,10 +730,7 @@ in f "123"
     let err = result.unwrap_err();
     assert_eq!(err.errors.len(), 1);
     assert_eq!(err.errors[0].span,
-               Span {
-                   start: BytePos::from(26),
-                   end: BytePos::from(31),
-               });
+               Span::new(BytePos::from(26), BytePos::from(31)));
 }
 
 /// Test that overload resolution selects the closest implementation that matches even if another

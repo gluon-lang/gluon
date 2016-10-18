@@ -5,7 +5,7 @@ use std::any::Any;
 use std::error::Error as StdError;
 use std::fmt;
 
-use pos::{BytePos, Location, Span, Spanned};
+use pos::{BytePos, Location, Span, Spanned, spanned2};
 use source::Source;
 
 /// An error type which can represent multiple errors.
@@ -60,13 +60,7 @@ impl<E> SourceContext<E> {
 
         SourceContext {
             line: line.to_string(),
-            error: Spanned {
-                span: Span {
-                    start: start,
-                    end: end,
-                },
-                value: error.value,
-            },
+            error: spanned2(start, end, error.value),
         }
     }
 }
@@ -103,7 +97,7 @@ impl<E: fmt::Display> InFile<E> {
 impl<E: fmt::Display> fmt::Display for InFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for error in &self.error.errors {
-            let Span { start, end } = error.error.span;
+            let Span { start, end, .. } = error.error.span;
 
             try!(write!(f, "{}:{}\n{}\n", self.source_name, error.error, error.line));
 

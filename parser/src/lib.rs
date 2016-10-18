@@ -102,6 +102,7 @@ impl<'input, 'lexer> StreamOnce for Wrapper<'input, 'lexer> {
         Span {
             start: span.start.absolute,
             end: span.end.absolute,
+            expansion_id: pos::NO_EXPANSION,
         }
     }
 }
@@ -451,6 +452,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                 let span = Span {
                     start: start,
                     end: input.position().end,
+                    expansion_id: pos::NO_EXPANSION,
                 };
                 Ok((span, Consumed::Empty(input)))
             }))
@@ -731,11 +733,9 @@ impl<'input, I, Id, F> ParserEnv<I, F>
          token(Token::Else),
          self.expr())
             .map(|(_, b, _, t, _, f)| {
-                pos::spanned(Span {
-                                 start: start,
-                                 end: f.span.end,
-                             },
-                             Expr::IfElse(Box::new(b), Box::new(t), Box::new(f)))
+                pos::spanned2(start,
+                              f.span.end,
+                              Expr::IfElse(Box::new(b), Box::new(t), Box::new(f)))
             })
             .parse_stream(input)
     }
