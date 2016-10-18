@@ -9,6 +9,7 @@ extern crate combine;
 extern crate combine_language;
 
 use std::fmt;
+use std::marker::PhantomData;
 
 use base::ast::{IdentEnv, SpannedExpr};
 use base::error::Errors;
@@ -18,7 +19,7 @@ use base::types::ArcType;
 
 use combine::primitives::{StreamOnce, Error as CombineError};
 
-use infix::OpTable;
+use infix::{OpTable, Reparser};
 use lexer::Lexer;
 
 mod grammar;
@@ -69,20 +70,31 @@ pub enum FieldExpr<Id> {
 // Hack around LALRPOP's limited type syntax
 type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
 
-pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
-                  input: &str)
-                  -> Result<SpannedExpr<Symbol>, Error> {
+fn parse_expr_<Id>(symbols: &mut IdentEnv<Ident = Id>,
+                   input: &str)
+                   -> Result<SpannedExpr<Id>, Error>
+    where Id: Clone,
+{
     let lexer = Lexer::new(input);
-    let operators = OpTable::default();
 
     match grammar::parse_TopExpr(input, symbols, lexer) {
         // TODO: handle errors
-        Ok(expr) => Ok(infix::reparse(expr, symbols, &operators).unwrap()),
+        Ok(mut expr) => {
+            Reparser::new(OpTable::default(), symbols).reparse(&mut expr).unwrap();
+            Ok(expr)
+        }
         Err(err) => {
-            let err = ParseError { errors: vec![CombineError::Message(format!("{:?}", err).into())] };
+            let err =
+                ParseError { errors: vec![CombineError::Message(format!("{:?}", err).into())] };
             Err(Errors { errors: vec![pos::spanned2(BytePos::from(0), BytePos::from(0), err)] })
         }
     }
+}
+
+pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
+                  input: &str)
+                  -> Result<SpannedExpr<Symbol>, Error> {
+    parse_expr_(symbols, input)
 }
 
 #[cfg(feature = "test")]
@@ -90,15 +102,5 @@ pub fn parse_string<'env, 'input>
     (symbols: &'env mut IdentEnv<Ident = String>,
      input: &'input str)
      -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Error)> {
-    let lexer = Lexer::new(input);
-    let operators = OpTable::default();
-
-    match grammar::parse_TopExpr(input, symbols, lexer) {
-        // TODO: handle errors
-        Ok(expr) => Ok(infix::reparse(expr, symbols, &operators).unwrap()),
-        Err(err) => {
-            let err = ParseError { errors: vec![CombineError::Message(format!("{:?}", err).into())] };
-            Err((None, Errors { errors: vec![pos::spanned2(BytePos::from(0), BytePos::from(0), err)] }))
-        }
-    }
+    parse_expr_(symbols, input).map_err(|err| (None, err))
 }

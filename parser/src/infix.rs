@@ -2,11 +2,15 @@
 //! associative with the same precedence. Therefore we need to rebalance them
 //! after the fact.
 
-use base::ast::{Expr, IdentEnv, SpannedExpr, TypedIdent};
+use base::ast::{Expr, IdentEnv, Literal, MutVisitor, SpannedExpr, TypedIdent, walk_mut_expr};
+use base::error::Errors;
 use base::fnv::FnvMap;
+use base::pos::{BytePos, spanned2};
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
+use std::marker::PhantomData;
+use std::mem;
 use std::ops::Index;
 
 /// The fixity (associativity) of an infix operator
@@ -122,6 +126,53 @@ impl<'a> Index<&'a str> for OpTable {
     }
 }
 
+pub struct Reparser<'s, Id: 's> {
+    operators: OpTable,
+    symbols: &'s IdentEnv<Ident = Id>,
+    errors: Errors<ReparseError>,
+    _marker: PhantomData<Id>,
+}
+
+impl<'s, Id> Reparser<'s, Id> {
+    pub fn new(operators: OpTable, symbols: &'s IdentEnv<Ident = Id>) -> Reparser<'s, Id> {
+        Reparser {
+            operators: operators,
+            symbols: symbols,
+            errors: Errors::new(),
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn reparse(&mut self, expr: &mut SpannedExpr<Id>) -> Result<(), Errors<ReparseError>> {
+        self.visit_expr(expr);
+        if self.errors.has_errors() {
+            Err(mem::replace(&mut self.errors, Errors::new()))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl<'s, Id> MutVisitor for Reparser<'s, Id> {
+    type Ident = Id;
+
+    fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
+        if let Expr::Infix(..) = e.value {
+            let dummy = spanned2(BytePos::from(0),
+                                 BytePos::from(0),
+                                 Expr::Literal(Literal::Int(0)));
+            let expr = mem::replace(e, dummy);
+            match reparse(expr, self.symbols, &self.operators) {
+                Ok(expr) => {
+                    *e = expr;
+                }
+                Err(err) => self.errors.error(err),
+            }
+        }
+        walk_mut_expr(self, e);
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum ReparseError {
     ConflictingFixities((String, OpMeta), (String, OpMeta)),
@@ -134,7 +185,12 @@ impl fmt::Display for ReparseError {
         match *self {
             ConflictingFixities((ref lhs_name, lhs_meta), (ref rhs_name, rhs_meta)) => {
                 try!(write!(f, "Conflicting fixities at the same precedence level. "));
-                write!(f, "left: `{} {}`, right: `{} {}`", lhs_meta, lhs_name, rhs_meta, rhs_name)
+                write!(f,
+                       "left: `{} {}`, right: `{} {}`",
+                       lhs_meta,
+                       lhs_name,
+                       rhs_meta,
+                       rhs_name)
             }
         }
     }
