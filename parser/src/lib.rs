@@ -4,10 +4,13 @@
 
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate quick_error;
 extern crate gluon_base as base;
 extern crate combine;
 extern crate combine_language;
 
+use std::error::Error as StdError;
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -37,7 +40,27 @@ impl fmt::Display for ParseError {
     }
 }
 
-pub type Error = Errors<Spanned<ParseError, BytePos>>;
+impl StdError for ParseError {
+    fn description(&self) -> &str {
+        "Parse error"
+    }
+}
+
+quick_error! {
+    #[derive(Debug, PartialEq)]
+    pub enum Error {
+        Parser(err: Spanned<ParseError, BytePos>) {
+            description(err.value.description())
+            display("{}", err)
+            from()
+        }
+        Infix(err: infix::ReparseError) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+    }
+}
 
 // Dummy type for ParseError which has the correct associated types
 #[derive(Clone)]
@@ -72,7 +95,7 @@ type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
 
 fn parse_expr_<Id>(symbols: &mut IdentEnv<Ident = Id>,
                    input: &str)
-                   -> Result<SpannedExpr<Id>, Error>
+                   -> Result<SpannedExpr<Id>, Errors<Error>>
     where Id: Clone,
 {
     let lexer = Lexer::new(input);
@@ -80,20 +103,27 @@ fn parse_expr_<Id>(symbols: &mut IdentEnv<Ident = Id>,
     match grammar::parse_TopExpr(input, symbols, lexer) {
         // TODO: handle errors
         Ok(mut expr) => {
-            Reparser::new(OpTable::default(), symbols).reparse(&mut expr).unwrap();
+            let mut reparser = Reparser::new(OpTable::default(), symbols);
+            if let Err(errors) = reparser.reparse(&mut expr) {
+                return Err(Errors {
+                    errors: errors.errors.into_iter().map(Error::Infix).collect(),
+                });
+            }
             Ok(expr)
         }
         Err(err) => {
             let err =
                 ParseError { errors: vec![CombineError::Message(format!("{:?}", err).into())] };
-            Err(Errors { errors: vec![pos::spanned2(BytePos::from(0), BytePos::from(0), err)] })
+            Err(Errors {
+                errors: vec![Error::Parser(pos::spanned2(BytePos::from(0), BytePos::from(0), err))],
+            })
         }
     }
 }
 
 pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
                   input: &str)
-                  -> Result<SpannedExpr<Symbol>, Error> {
+                  -> Result<SpannedExpr<Symbol>, Errors<Error>> {
     parse_expr_(symbols, input)
 }
 
@@ -101,6 +131,6 @@ pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
 pub fn parse_string<'env, 'input>
     (symbols: &'env mut IdentEnv<Ident = String>,
      input: &'input str)
-     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Error)> {
+     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
     parse_expr_(symbols, input).map_err(|err| (None, err))
 }

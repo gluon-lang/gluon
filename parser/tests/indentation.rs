@@ -8,14 +8,14 @@ extern crate combine;
 
 mod support;
 
-use combine::primitives::Error;
+use combine::primitives::Error as CombineError;
 use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, BytePos};
-use parser::{parse_string, ParseError};
+use parser::{Error, parse_string, ParseError};
 use support::MockEnv;
 
-fn parse(text: &str) -> Result<SpannedExpr<String>, ::parser::Error> {
+fn parse(text: &str) -> Result<SpannedExpr<String>, Errors<::parser::Error>> {
     parse_string(&mut MockEnv::new(), text).map_err(|(_, err)| err)
 }
 
@@ -66,12 +66,13 @@ y
 "#);
 
     let parse_error = ParseError {
-        errors: vec![Error::Unexpected("Int".into()),
-                     Error::Expected("`in` or an expression in the same column as the `let`"
+        errors: vec![CombineError::Unexpected("Int".into()),
+                     CombineError::Expected("`in` or an expression in the same column as the \
+                                             `let`"
                          .into())],
     };
     let span = pos::span(BytePos::from(32), BytePos::from(32));
-    let errors = Errors { errors: vec![pos::spanned(span, parse_error)] };
+    let errors = Errors { errors: vec![Error::Parser(pos::spanned(span, parse_error))] };
 
     assert_eq!(result, Err(errors));
 }

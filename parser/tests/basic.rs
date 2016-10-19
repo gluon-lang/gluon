@@ -9,6 +9,7 @@ extern crate collect_mac;
 mod support;
 
 use base::ast::*;
+use base::error::Errors;
 use base::kind::Kind;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Alias, ArcType, Field, Generic, Type};
@@ -151,7 +152,7 @@ fn array(fields: Vec<SpExpr>) -> SpExpr {
     }))
 }
 
-fn parse(input: &str) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Error)> {
+fn parse(input: &str) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
     parse_string(&mut MockEnv::new(), input)
 }
 

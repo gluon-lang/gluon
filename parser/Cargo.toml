@@ -16,6 +16,7 @@ build = "build.rs"
 combine-language = "=2.0.0-beta4"
 combine = "=2.0.0-beta3"
 env_logger = { version = "0.3.4", optional = true }
+quick-error = "1.0.0"
 lalrpop = "0.12.0"
 lalrpop-util = "0.12.0"
 log = "0.3.6"
