@@ -261,9 +261,6 @@ pub struct Lexer<'input, I>
     input: Option<LocatedStream<I>>,
     unprocessed_tokens: Vec<SpannedToken<'input>>,
     indent_levels: Contexts,
-    /// Since the parser will call `position` before retrieving the token we need to cache one
-    /// token so the span can be returned for it
-    next_token: Option<SpannedToken<'input>>,
     end_span: Option<Span<Location>>,
 }
 
@@ -294,7 +291,7 @@ impl<'input, I> Lexer<'input, I>
             comment_line: satisfy(|_| false).map(|_| ()),
         });
 
-        let mut lexer = Lexer {
+        Lexer {
             env: env,
             input: Some(LocatedStream {
                 location: Location {
@@ -306,11 +303,8 @@ impl<'input, I> Lexer<'input, I>
             }),
             unprocessed_tokens: Vec::new(),
             indent_levels: Contexts { stack: Vec::new() },
-            next_token: None,
             end_span: None,
-        };
-        lexer.next_token = lexer.uncons_next().ok();
-        lexer
+        }
     }
 
     fn parser<'a, T>(&'a self,
@@ -876,36 +870,6 @@ fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
     })
 }
 
-impl<'input, I> StreamOnce for Lexer<'input, I>
-    where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug,
-{
-    type Item = Token<'input>;
-    type Range = Token<'input>;
-    type Position = Span<Location>;
-
-    fn uncons(&mut self) -> Result<Token<'input>, Error<'input>> {
-        match self.next_token.take() {
-            Some(token) => {
-                self.next_token = self.uncons_next().ok();
-                Ok(token.value)
-            }
-            None => {
-                self.next_token = Some(self.uncons_next()?);
-                self.uncons()
-            }
-        }
-    }
-
-    fn position(&self) -> Self::Position {
-        self.next_token
-            .as_ref()
-            .or_else(|| self.unprocessed_tokens.last())
-            .map(|token| token.span)
-            .unwrap_or_else(|| self.end_span.unwrap())
-    }
-}
-
 // Converts an error into a static error by transforming any range arguments into strings
 fn static_error<'input>(e: CombineError<Token<'input>, Token<'input>>)
                         -> CombineError<String, String> {
@@ -935,11 +899,13 @@ impl<'input, I> Iterator for Lexer<'input, I>
 
     fn next(&mut self)
             -> Option<Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>> {
-        let Span { start, end, .. } = StreamOnce::position(self);
-        match self.uncons() {
-            Ok(Token::EOF) => None,
+        match self.uncons_next() {
+            Ok(Spanned { value: Token::EOF, .. }) => None,
             Err(ref err) if *err == Error::end_of_input() => None,
-            Ok(token) => Some(Ok((start.absolute, token, end.absolute))),
+            Ok(Spanned { span: Span { start, end, .. }, value }) => {
+                println!("{} {:?} {}", start.absolute, value, end.absolute);
+                Some(Ok((start.absolute, value, end.absolute)))
+            }
             Err(error) => Some(Err(static_error(error))),
         }
     }
