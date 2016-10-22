@@ -184,7 +184,11 @@ FieldPattern : FieldPattern<Id> = {
 
 AtomicPattern: Pattern<Id> = {
     <id: Ident> =>
-        Pattern::Ident(TypedIdent::new(id)),
+        if env.string(&id).starts_with(char::is_uppercase) {
+            Pattern::Constructor(TypedIdent::new(id), Vec::new())
+        } else {
+            Pattern::Ident(TypedIdent::new(id))
+        },
 
     "(" <elems: Comma<Pattern>> ")" =>
         match elems.len() {
