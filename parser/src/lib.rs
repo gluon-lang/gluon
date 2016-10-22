@@ -33,31 +33,18 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
         Expr::IfElse(_, _, ref last) |
         Expr::LetBindings(_, ref last) |
-        Expr::TypeBindings(_, ref last) => {
-            let end = last.span.end;
-            drop(last);
-            expr.span.end = end;
-        }
-        Expr::Lambda(ref lambda) => {
-            let end = lambda.body.span.end;
-            drop(lambda);
-            expr.span.end = end;
-        }
+        Expr::TypeBindings(_, ref last) => expr.span.end = last.span.end,
+        Expr::Lambda(ref lambda) => expr.span.end = lambda.body.span.end,
         Expr::Block(ref mut exprs) => {
             match exprs.len() {
                 0 => (),
                 1 => return exprs.pop().unwrap(),
-                _ => {
-                    let end = exprs.last().unwrap().span.end;
-                    drop(exprs);
-                    expr.span.end = end;
-                }
+                _ => expr.span.end = exprs.last().unwrap().span.end,
             }
         }
         Expr::Match(_, ref alts) => {
             if let Some(last_alt) = alts.last() {
                 let end = last_alt.expr.span.end;
-                drop(last_alt);
                 expr.span.end = end;
             }
         }
