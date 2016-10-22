@@ -387,26 +387,6 @@ fn let_pattern() {
 }
 
 #[test]
-fn associated_record() {
-    let _ = ::env_logger::init();
-    let e = parse_new!("type Test a = { Fn, x: a } in { Fn = Int -> Array Int, Test, x = 1 }");
-
-    let test_type = Type::record(vec![Field {
-                                          name: String::from("Fn"),
-                                          typ: Alias::new(String::from("Fn"), vec![], typ("Fn")),
-                                      }],
-                                 vec![Field {
-                                          name: intern("x"),
-                                          typ: typ("a"),
-                                      }]);
-    let fn_type = Type::function(vec![typ("Int")], Type::array(typ("Int")));
-    let record = record_a(vec![(intern("Fn"), Some(fn_type)), (intern("Test"), None)],
-                          vec![(intern("x"), Some(int(1)))]);
-    assert_eq!(e,
-               type_decl(intern("Test"), vec![generic("a")], test_type, record));
-}
-
-#[test]
 fn span_identifier() {
     let _ = ::env_logger::init();
 
