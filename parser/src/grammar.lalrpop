@@ -81,23 +81,22 @@ pub Ident: Id = {
 // Types
 
 RecordField: Field<Id> =
-    <id: Ident> ":" <typ: Type> =>
-        Field {
-            name: id,
-            typ: typ,
-        };
+    <Ident> ":" <Type> => Field::new(<>);
 
-VariantField: Field<Id> =
-    "|" <id: Ident> <ty: AtomicType> =>
-        Field {
-            name: id,
-            typ: ty,
-        };
+VariantField: (Id, Vec<ArcType<Id>>) =
+    "|" <Ident> <AtomicType*> => (<>);
 
 TypeBinding: TypeBinding<Id> = {
     <id: Ident> <params: Ident*> "=" <row: VariantField+> => {
-        let params = params.into_iter()
+        let params: Vec<_> = params.into_iter()
             .map(|id| Generic { kind: Kind::variable(0), id: id })
+            .collect();
+
+        let typ_args = params.iter().cloned().map(Type::generic).collect();
+        let typ: ArcType<Id> = Type::app(Type::ident(id.clone()), typ_args);
+
+        let row = row.into_iter()
+            .map(|(id, params)| Field::new(id, Type::function(params, typ.clone())))
             .collect();
 
         TypeBinding {
