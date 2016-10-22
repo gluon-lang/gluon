@@ -243,7 +243,7 @@ Alternative: Alternative<Id> =
     "|" <pat: Sp<Pattern>> "->" <expr: Sp<AtomicExpr>> => {
         Alternative {
             pattern: pat,
-            expr: expr,
+            expr: super::shrink_hidden_spans(expr),
         }
     };
 
