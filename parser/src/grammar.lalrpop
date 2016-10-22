@@ -65,7 +65,7 @@ Comma<Rule>: Vec<Rule> =
         rules
     };
 
-S<Rule>: Spanned<Rule, BytePos> =
+Sp<Rule>: Spanned<Rule, BytePos> =
     <l: @L> <rule: Rule> <r: @R> =>
         pos::spanned2(l, r, rule);
 
@@ -240,7 +240,7 @@ pub Literal: Literal = {
 };
 
 Alternative: Alternative<Id> =
-    "|" <pat: S<Pattern>> "->" <expr: S<AtomicExpr>> => {
+    "|" <pat: Sp<Pattern>> "->" <expr: Sp<AtomicExpr>> => {
         Alternative {
             pattern: pat,
             expr: expr,
@@ -254,7 +254,7 @@ FieldExpr: FieldExpr<Id> = {
     "type" <id: Ident> =>
         FieldExpr::Type(id, None),
 
-    <id: Ident> "=" <body: Expr> =>
+    <id: Ident> "=" <body: SpExpr> =>
         FieldExpr::Value(id, Some(body)),
 
     <id: Ident> =>
@@ -262,7 +262,7 @@ FieldExpr: FieldExpr<Id> = {
 };
 
 ValueBinding: ValueBinding<Id> = {
-    <comment: "DocComment"?> <name: S<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: Expr> =>
+    <comment: "DocComment"?> <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
             comment: comment,
             name: name,
@@ -271,7 +271,7 @@ ValueBinding: ValueBinding<Id> = {
             expr: body,
         },
 
-    <comment: "DocComment"?> <name: S<Ident>> <args: Ident+> <typ: (":" <Type>)?> "=" <body: Expr> =>
+    <comment: "DocComment"?> <name: Sp<Ident>> <args: Ident+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
             comment: comment,
             name: name.map(TypedIdent::new).map(Pattern::Ident),
@@ -292,10 +292,10 @@ AtomicExpr: Expr<Id> = {
     // "(" "." <id: Ident> ")" =>
     //     Expr::Getter(id),
 
-    <expr: S<AtomicExpr>> "." <id: Ident> =>
+    <expr: Sp<AtomicExpr>> "." <id: Ident> =>
         Expr::Projection(Box::new(expr), id, Type::hole()),
 
-    "(" <elems: Comma<Expr>> ")" =>
+    "(" <elems: Comma<SpExpr>> ")" =>
         match elems.len() {
             // Unit expression
             0 => Expr::Tuple(vec![]),
@@ -306,7 +306,7 @@ AtomicExpr: Expr<Id> = {
             _ => unimplemented!(),
         },
 
-    "[" <elems: Comma<Expr>> "]" => Expr::Array(Array {
+    "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
             typ: Type::hole(),
             exprs: elems,
         }),
@@ -329,7 +329,7 @@ AtomicExpr: Expr<Id> = {
         }
     },
 
-    "OpenBlock" <exprs: (<Expr> "Semi")*> <last: Expr> "CloseBlock" => {
+    "OpenBlock" <exprs: (<SpExpr> "Semi")*> <last: SpExpr> "CloseBlock" => {
         let mut exprs = exprs;
         exprs.push(last);
         Expr::Block(exprs)
@@ -339,14 +339,14 @@ AtomicExpr: Expr<Id> = {
 AppExpr = {
     AtomicExpr,
 
-    <expr: S<AtomicExpr>> <args: S<AtomicExpr>+> =>
+    <expr: Sp<AtomicExpr>> <args: Sp<AtomicExpr>+> =>
         Expr::App(Box::new(expr), args),
 };
 
 InfixExpr = {
     AppExpr,
 
-    <lhs: S<AppExpr>> <op: "Operator"> <rhs: S<InfixExpr>> =>
+    <lhs: Sp<AppExpr>> <op: "Operator"> <rhs: Sp<InfixExpr>> =>
         Expr::Infix(Box::new(lhs), TypedIdent::new(env.from_str(op)), Box::new(rhs)),
 };
 
@@ -364,23 +364,23 @@ AndTypeBinding: TypeBinding<Id> =
         binding
     };
 
-Expr_: Expr<Id> = {
+Expr: Expr<Id> = {
     InfixExpr,
 
-    "\"" <args: Ident+> "->" <body: Expr> =>
+    "\"" <args: Ident+> "->" <body: SpExpr> =>
         Expr::Lambda(Lambda {
             id: TypedIdent::new(env.from_str("")),
             args: args.into_iter().map(TypedIdent::new).collect(),
             body: Box::new(body),
         }),
 
-    "if" <pred: Expr> "then" <if_true: Expr> "else" <if_false: Expr> =>
+    "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
         Expr::IfElse(Box::new(pred), Box::new(if_true), Box::new(if_false)),
 
-    "match" <input: Expr> "with" <arms: Alternative+> =>
+    "match" <input: SpExpr> "with" <arms: Alternative+> =>
         Expr::Match(Box::new(input), arms),
 
-    <comment: "DocComment"?> "let" <first: ValueBinding> <bindings: AndValueBinding*> "in" <body: Expr> => {
+    <comment: "DocComment"?> "let" <first: ValueBinding> <bindings: AndValueBinding*> "in" <body: SpExpr> => {
         let mut first = first;
         let mut bindings = bindings;
         first.comment = comment;
@@ -389,7 +389,7 @@ Expr_: Expr<Id> = {
         Expr::LetBindings(bindings, Box::new(body))
     },
 
-    <comment: "DocComment"?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> "in" <body: Expr> => {
+    <comment: "DocComment"?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> "in" <body: SpExpr> => {
         let mut first = first;
         let mut bindings = bindings;
         first.comment = comment;
@@ -399,18 +399,10 @@ Expr_: Expr<Id> = {
     },
 };
 
-// FIXME: Come up with a less hacky way to do this!
-Expr: SpannedExpr<Id> =
-    <S<Expr_>> => {
-        let mut expr = <>;
-        if let Expr::Block(ref mut exprs) = expr.value {
-            if exprs.len() == 1 {
-                return exprs.pop().unwrap();
-            }
-        }
-        expr
-    };
+SpExpr: SpannedExpr<Id> = {
+    <expr: Sp<Expr>> => super::shrink_hidden_spans(expr),
+};
 
 pub TopExpr: SpannedExpr<Id> = {
-    <expr: Expr> => expr,
+    <expr: SpExpr> => expr,
 };

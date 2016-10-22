@@ -12,9 +12,8 @@ extern crate combine_language;
 
 use std::error::Error as StdError;
 use std::fmt;
-use std::marker::PhantomData;
 
-use base::ast::{IdentEnv, SpannedExpr};
+use base::ast::{Expr, IdentEnv, SpannedExpr};
 use base::error::Errors;
 use base::pos::{self, BytePos, Spanned};
 use base::symbol::Symbol;
@@ -28,6 +27,51 @@ use lexer::Lexer;
 mod grammar;
 mod infix;
 mod lexer;
+
+/// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
+fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
+    match expr.value {
+        Expr::IfElse(_, _, ref last) |
+        Expr::LetBindings(_, ref last) |
+        Expr::TypeBindings(_, ref last) => {
+            let end = last.span.end;
+            drop(last);
+            expr.span.end = end;
+        }
+        Expr::Lambda(ref lambda) => {
+            let end = lambda.body.span.end;
+            drop(lambda);
+            expr.span.end = end;
+        }
+        Expr::Block(ref mut exprs) => {
+            match exprs.len() {
+                0 => (),
+                1 => return exprs.pop().unwrap(),
+                _ => {
+                    let end = exprs.last().unwrap().span.end;
+                    drop(exprs);
+                    expr.span.end = end;
+                }
+            }
+        }
+        Expr::Match(_, ref alts) => {
+            if let Some(last_alt) = alts.last() {
+                let end = last_alt.expr.span.end;
+                drop(last_alt);
+                expr.span.end = end;
+            }
+        }
+        Expr::App(_, _) |
+        Expr::Ident(_) |
+        Expr::Literal(_) |
+        Expr::Projection(_, _, _) |
+        Expr::Infix(_, _, _) |
+        Expr::Array(_) |
+        Expr::Record { .. } |
+        Expr::Tuple(_) => (),
+    }
+    expr
+}
 
 #[derive(Debug, PartialEq)]
 pub struct ParseError {
