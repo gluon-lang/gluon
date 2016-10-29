@@ -53,7 +53,7 @@ fn factorial_tail_call(b: &mut ::test::Bencher) {
 fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
     let vm = new_vm();
 
-    fn test_fn(_: &Thread) -> Status {
+    extern "C" fn test_fn(_: &Thread) -> Status {
         Status::Ok
     }
 
