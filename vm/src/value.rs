@@ -7,7 +7,7 @@ use types::*;
 use base::fnv::FnvMap;
 
 use interner::InternedStr;
-use gc::{Gc, GcPtr, Traverseable, DataDef, WriteOnly};
+use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use array::{Array, Str};
 use thread::{Thread, Status};
 use {Error, Result};
@@ -360,6 +360,16 @@ pub struct ExternFunction {
     pub id: Symbol,
     pub args: VmIndex,
     pub function: extern "C" fn(&Thread) -> Status,
+}
+
+impl Clone for ExternFunction {
+    fn clone(&self) -> ExternFunction {
+        ExternFunction {
+            id: self.id.clone(),
+            args: self.args,
+            function: self.function,
+        }
+    }
 }
 
 impl PartialEq for ExternFunction {
@@ -861,12 +871,10 @@ pub fn deep_clone(value: Value,
         PartialApplication(data) => {
             deep_clone_app(data, visited, gc).map(Value::PartialApplication)
         }
-        Function(_) |
+        Function(ref f) => gc.alloc(Move(ExternFunction::clone(f))).map(Value::Function),
         Value::Userdata(_) |
         Value::Thread(_) => {
-            return Err(Error::Message("Threads, Userdata and Extern functions cannot be deep \
-                                       cloned yet"
-                .into()))
+            return Err(Error::Message("Threads and Userdata cannot be deep cloned yet".into()))
         }
         Value::Tag(i) => Ok(Value::Tag(i)),
         Value::Byte(i) => Ok(Value::Byte(i)),
