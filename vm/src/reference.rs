@@ -68,17 +68,10 @@ fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
     }
 }
 
-fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
-    f
-}
-fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
-    f
-}
-
 pub fn load(vm: &Thread) -> Result<()> {
     let _ = vm.register_type::<Reference<A>>("Ref", &["a"]);
-    try!(vm.define_global("<-", f2(set)));
-    try!(vm.define_global("load", f1(get)));
-    try!(vm.define_global("ref", f1(make_ref)));
+    try!(vm.define_global("<-", primitive!(2 set)));
+    try!(vm.define_global("load", primitive!(1 get)));
+    try!(vm.define_global("ref", primitive!(1 make_ref)));
     Ok(())
 }

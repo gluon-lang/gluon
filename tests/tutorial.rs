@@ -1,4 +1,6 @@
 extern crate env_logger;
+#[macro_use]
+extern crate gluon_vm;
 extern crate gluon;
 
 use gluon::base::types::Type;
@@ -38,7 +40,7 @@ fn call_rust_from_gluon() {
         if x <= 1 { 1 } else { x * factorial(x - 1) }
     }
     let vm = new_vm();
-    vm.define_global("factorial", factorial as fn(_) -> _).unwrap();
+    vm.define_global("factorial", primitive!(1 factorial)).unwrap();
 
     let result = Compiler::new().run_expr::<i32>(&vm, "example", "factorial 5").unwrap();
     let expected = (120, Type::int());

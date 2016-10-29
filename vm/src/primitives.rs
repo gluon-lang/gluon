@@ -152,7 +152,7 @@ fn show_char(c: char) -> String {
     format!("{}", c)
 }
 
-fn error(_: &Thread) -> Status {
+extern "C" fn error(_: &Thread) -> Status {
     // We expect a string as an argument to this function but we only return Status::Error
     // and let the caller take care of printing the message
     Status::Error
@@ -287,9 +287,9 @@ pub fn load(vm: &Thread) -> Result<()> {
     )));
 
     try!(vm.define_global("#error",
-                          primitive::<fn(StdString) -> A>("#error", prim::error)));
+                          primitive::<fn(StdString) -> Generic<A>>("#error", prim::error)));
     try!(vm.define_global("error",
-                          primitive::<fn(StdString) -> A>("error", prim::error)));
+                          primitive::<fn(StdString) -> Generic<A>>("error", prim::error)));
 
     try!(::lazy::load(vm));
     try!(::reference::load(vm));

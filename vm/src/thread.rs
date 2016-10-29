@@ -159,6 +159,18 @@ pub struct Thread {
     context: Mutex<Context>,
 }
 
+impl fmt::Debug for Thread {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Thread({:p})", self)
+    }
+}
+
+impl Userdata for Thread {}
+
+impl VmType for Thread {
+    type Type = Self;
+}
+
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
@@ -174,7 +186,7 @@ impl PartialEq for Thread {
 }
 
 impl VmType for RootedThread {
-    type Type = Self;
+    type Type = Thread;
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
@@ -186,6 +198,7 @@ impl<'vm> Pushable<'vm> for RootedThread {
 
 /// An instance of `Thread` which is rooted. See the `Thread` type for documentation on interacting
 /// with the type.
+#[derive(Debug)]
 pub struct RootedThread(GcPtr<Thread>);
 
 impl Drop for RootedThread {

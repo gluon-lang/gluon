@@ -359,7 +359,7 @@ impl fmt::Debug for Value {
 pub struct ExternFunction {
     pub id: Symbol,
     pub args: VmIndex,
-    pub function: Box<Fn(&Thread) -> Status + Send + Sync>,
+    pub function: extern "C" fn(&Thread) -> Status,
 }
 
 impl PartialEq for ExternFunction {
@@ -371,7 +371,7 @@ impl PartialEq for ExternFunction {
 impl fmt::Debug for ExternFunction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // read the v-table pointer of the Fn(..) type and print that
-        let p: *const () = unsafe { ::std::mem::transmute_copy(&&*self.function) };
+        let p: *const () = unsafe { ::std::mem::transmute(self.function) };
         write!(f, "{:?}", p)
     }
 }
@@ -659,8 +659,9 @@ unsafe impl<'a> DataDef for &'a ValueArray {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.repr = self.repr;
-            on_array!(self,
-                      |array: &Array<_>| result.unsafe_array_mut().initialize(array.iter().cloned()));
+            on_array!(self, |array: &Array<_>| {
+                result.unsafe_array_mut().initialize(array.iter().cloned())
+            });
             result
         }
     }

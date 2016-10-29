@@ -355,7 +355,7 @@ impl GlobalVmState {
         }
         self.register_type::<IO<Generic<A>>>("IO", &["a"]).unwrap();
         self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"]).unwrap();
-        self.register_type::<RootedThread>("Thread", &[]).unwrap();
+        self.register_type::<Thread>("Thread", &[]).unwrap();
         Ok(())
     }
 

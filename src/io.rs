@@ -118,7 +118,7 @@ fn read_line() -> IO<String> {
 }
 
 /// IO a -> (String -> IO a) -> IO a
-fn catch_io(vm: &Thread) -> Status {
+extern "C" fn catch_io(vm: &Thread) -> Status {
     let mut context = vm.context();
     let frame_level = context.stack.get_frames().len();
     let action = StackFrame::current(&mut context.stack)[0];

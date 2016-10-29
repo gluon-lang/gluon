@@ -7,6 +7,7 @@ use base::types;
 use base::types::{Type, ArcType};
 use gc::{Gc, Traverseable};
 use api::{OpaqueValue, Userdata, VmType};
+use api::Generic;
 use api::generic::A;
 use vm::{Status, Thread};
 use Result;
@@ -58,7 +59,7 @@ impl<T> VmType for Lazy<T>
     }
 }
 
-fn force(vm: &Thread) -> Status {
+extern "C" fn force(vm: &Thread) -> Status {
     let mut context = vm.context();
     let value = StackFrame::current(&mut context.stack)[0];
     match value {
@@ -116,10 +117,10 @@ fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
     }
 }
 
-pub fn load(vm: &Thread) -> Result<()> {
+pub fn load<'vm>(vm: &'vm Thread) -> Result<()> {
     use api::primitive;
     try!(vm.define_global("lazy", primitive!(1 lazy)));
     try!(vm.define_global("force",
-                          primitive::<fn(Lazy<A>) -> A>("force", ::lazy::force)));
+                          primitive::<fn(&'vm Lazy<A>) -> Generic<A>>("force", ::lazy::force)));
     Ok(())
 }
