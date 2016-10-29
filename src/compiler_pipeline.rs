@@ -300,7 +300,7 @@ impl<E> Executable<()> for CompileValue<E>
         let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
         let closure = try!(vm.global_env().new_global_thunk(function));
         let value = try!(vm.call_thunk(closure));
-        try!(vm.global_env().set_global(closure.function.name.clone(), typ, metadata, value));
+        try!(vm.set_global(closure.function.name.clone(), typ, metadata, value));
         info!("Loaded module `{}` filename", filename);
         Ok(())
     }

@@ -4,11 +4,12 @@ use std::sync::Mutex;
 use std::marker::PhantomData;
 
 use base::types::{Type, ArcType};
+use base::fnv::FnvMap;
 use Result;
-use gc::{Gc, GcPtr, Traverseable};
+use gc::{Gc, GcPtr, Move, Traverseable};
 use vm::Thread;
 use thread::ThreadInternal;
-use value::Value;
+use value::{Value, deep_clone};
 use api::{RuntimeResult, Generic, Userdata, VmType, WithVM};
 use api::generic::A;
 
@@ -18,11 +19,28 @@ struct Reference<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Userdata for Reference<T> where T: Any + Send + Sync, {}
+impl<T> Userdata for Reference<T>
+    where T: Any + Send + Sync,
+{
+    fn deep_clone(&self,
+                  visited: &mut FnvMap<*const (), Value>,
+                  gc: &mut Gc,
+                  thread: &Thread)
+                  -> Result<GcPtr<Box<Userdata>>> {
+        let value = self.value.lock().unwrap();
+        let cloned_value = try!(deep_clone(*value, visited, gc, thread));
+        let data: Box<Userdata> = Box::new(Reference {
+            value: Mutex::new(cloned_value),
+            thread: unsafe { GcPtr::from_raw(thread) },
+            _marker: PhantomData::<A>,
+        });
+        gc.alloc(Move(data))
+    }
+}
 
 impl<T> fmt::Debug for Reference<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", *self.value.lock().unwrap())
+        write!(f, "Ref({:?})", *self.value.lock().unwrap())
     }
 }
 
@@ -47,7 +65,7 @@ impl<T> VmType for Reference<T>
 }
 
 fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
-    match r.thread.deep_clone(a.0) {
+    match r.thread.deep_clone_value(a.0) {
         Ok(a) => {
             *r.value.lock().unwrap() = a;
             RuntimeResult::Return(())

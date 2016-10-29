@@ -336,10 +336,10 @@ impl Thread {
             try!(value.push(self, &mut context));
             context.stack.pop()
         };
-        self.global_env().set_global(Symbol::from(name),
-                                     T::make_type(self),
-                                     Metadata::default(),
-                                     value)
+        self.set_global(Symbol::from(name),
+                        T::make_type(self),
+                        Metadata::default(),
+                        value)
     }
 
     /// Retrieves the global called `name`.
@@ -506,7 +506,14 @@ pub trait ThreadInternal {
 
     fn global_env(&self) -> &Arc<GlobalVmState>;
 
-    fn deep_clone(&self, value: Value) -> Result<Value>;
+    fn set_global(&self,
+                  name: Symbol,
+                  typ: ArcType,
+                  metadata: Metadata,
+                  value: Value)
+                  -> Result<()>;
+
+    fn deep_clone_value(&self, value: Value) -> Result<Value>;
 }
 
 
@@ -566,7 +573,7 @@ impl ThreadInternal for Thread {
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
         let closure = try!(self.global_env().new_global_thunk(compiled_fn));
-        self.global_env().set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
+        self.set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
         Ok(())
     }
 
@@ -629,10 +636,24 @@ impl ThreadInternal for Thread {
         &self.global_state
     }
 
-    fn deep_clone(&self, value: Value) -> Result<Value> {
+    fn set_global(&self,
+                  name: Symbol,
+                  typ: ArcType,
+                  metadata: Metadata,
+                  value: Value)
+                  -> Result<()> {
+        let mut visited = FnvMap::default();
+        let value = try!(::value::deep_clone(value,
+                                             &mut visited,
+                                             &mut self.global_env().gc.lock().unwrap(),
+                                             self));
+        self.global_env().set_global(name, typ, metadata, value)
+    }
+
+    fn deep_clone_value(&self, value: Value) -> Result<Value> {
         let mut visited = FnvMap::default();
         let mut context = self.current_context();
-        ::value::deep_clone(value, &mut visited, &mut context.gc)
+        ::value::deep_clone(value, &mut visited, &mut context.gc, self)
     }
 }
 

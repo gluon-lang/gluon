@@ -118,7 +118,7 @@ fn recv(receiver: &Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
 }
 
 fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
-    let value = try!(sender.thread.deep_clone(value.0).map_err(|_| ()));
+    let value = try!(sender.thread.deep_clone_value(value.0).map_err(|_| ()));
     Ok(sender.send(Generic::from(value)))
 }
 
