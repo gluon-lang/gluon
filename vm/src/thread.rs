@@ -552,8 +552,7 @@ impl ThreadInternal for Thread {
         let id = Symbol::from(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
-        let f = try!(self.global_env().new_function(compiled_fn));
-        let closure = try!(self.current_context().alloc(ClosureDataDef(f, &[])));
+        let closure = try!(self.global_env().new_global_thunk(compiled_fn));
         self.global_env().set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
         Ok(())
     }
