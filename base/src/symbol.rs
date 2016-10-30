@@ -10,6 +10,7 @@ use ast::{DisplayEnv, IdentEnv};
 use fnv::FnvMap;
 
 // FIXME Don't have a double indirection (Arc + String)
+/// A symbol uniquely identifies something regardless of its name and which module it originated from
 #[derive(Clone, Eq)]
 pub struct Symbol(Arc<NameBuf>);
 
@@ -260,6 +261,8 @@ impl<'a> From<&'a Name> for NameBuf {
     }
 }
 
+/// `Symbols` is a bidirectional mapping between `Symbol`s and their name as represented in a source file
+/// Used to make identifiers within a single module point to the same symbol
 #[derive(Debug, Default)]
 pub struct Symbols {
     strings: FnvMap<Symbol, NameBuf>,
@@ -281,6 +284,7 @@ impl Symbols {
         s
     }
 
+    /// Looks up the symbol for `name` or creates a new symbol if it does not exist
     pub fn symbol<N>(&mut self, name: N) -> Symbol
         where N: Into<NameBuf> + AsRef<Name>,
     {
@@ -291,6 +295,9 @@ impl Symbols {
     }
 }
 
+/// `SymbolModule` wraps a `Symbols` struct and adds a prefix to all symbols created by the `symbol` method.
+/// While this prefix does not affect the uniques of a `Symbol` in any way, it does make the origin of a
+/// symbol clearer when pretty printing it
 #[derive(Debug)]
 pub struct SymbolModule<'a> {
     symbols: &'a mut Symbols,
@@ -305,12 +312,22 @@ impl<'a> SymbolModule<'a> {
         }
     }
 
+    /// Creates an unprefixed symbol, same as `Symbols::symbol`
     pub fn symbol<N>(&mut self, name: N) -> Symbol
         where N: Into<NameBuf> + AsRef<Name>,
     {
         self.symbols.symbol(name)
     }
 
+    /// Creates a symbol which is prefixed by the `module` argument passed in `new`
+    ///
+    /// ```
+    /// # use gluon_base::symbol::{Symbols, SymbolModule};
+    /// let mut symbols = Symbols::new();
+    /// let mut symbols = SymbolModule::new(String::from("test"), &mut symbols);
+    /// assert_eq!(symbols.symbol("a").as_ref(), "a");
+    /// assert_eq!(symbols.scoped_symbol("a").as_ref(), "test.a");
+    /// ```
     pub fn scoped_symbol(&mut self, name: &str) -> Symbol {
         let len = self.module.0.len();
         self.module.0.push('.');
