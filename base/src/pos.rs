@@ -56,7 +56,13 @@ macro_rules! pos_struct {
 
 pos_struct! {
     /// A byte offset in a source string
-    pub struct BytePos(u32);
+    pub struct BytePos(i32);
+}
+
+impl From<i32> for BytePos {
+    fn from(src: i32) -> BytePos {
+        BytePos(src)
+    }
 }
 
 impl fmt::Display for BytePos {

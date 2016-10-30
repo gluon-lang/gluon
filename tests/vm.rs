@@ -6,6 +6,9 @@ mod support;
 
 use support::*;
 
+use gluon::base::pos::BytePos;
+use gluon::base::types::Type;
+use gluon::check::completion;
 use gluon::vm::api::{FunctionRef, Hole, IO, OpaqueValue, ValueRef};
 use gluon::vm::thread::{Thread, ThreadInternal};
 use gluon::vm::internal::Value;
@@ -714,6 +717,55 @@ pure 123
             value.0);
 }
 
+#[test]
+fn completion_with_prelude() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+
+    let expr = r#"
+let prelude = import "std/prelude.glu"
+and { Option, Num } = prelude
+and { (+) } = prelude.num_Int
+
+type Stream_ a =
+    | Value a (Stream a)
+    | Empty
+and Stream a = Lazy (Stream_ a)
+
+let from f : (Int -> Option a) -> Stream a =
+        let from_ i =
+                lazy (\_ ->
+                    match f i with
+                        | Some x -> Value x (from_ (i + 1))
+                        | None -> Empty
+                )
+        in from_ 0
+
+{ from }
+"#;
+
+    let (expr, _) = Compiler::new()
+        .typecheck_str(&vm, "example", expr, None)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(311));
+    assert_eq!(result, Ok(Type::int()));
+}
+
+#[test]
+fn completion_with_prelude_at_0() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+
+    let expr = "1";
+
+    let (expr, _) = Compiler::new()
+        .typecheck_str(&vm, "example", expr, None)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(0));
+    assert_eq!(result, Ok(Type::int()));
+}
 
 #[test]
 fn value_size() {

@@ -81,6 +81,21 @@ and g x = "asd"
 }
 
 #[test]
+fn let_in_let() {
+    let result = find_type(r#"
+let f =
+    let g y =
+        123
+    g
+f
+"#,
+                           BytePos::from(33));
+    let expected = Ok(typ("Int"));
+
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn function_app() {
     let _ = env_logger::init();
 
