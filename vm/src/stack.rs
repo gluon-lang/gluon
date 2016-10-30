@@ -2,6 +2,7 @@ use std::fmt;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
 
 use base::symbol::Symbol;
+use base::pos::Line;
 
 use Variants;
 use gc::GcPtr;
@@ -99,6 +100,33 @@ impl Stack {
     /// Panics if the lock is not the top-most lock
     pub fn release_lock(&mut self, lock: Lock) {
         assert!(self.frames.pop().map(|frame| frame.offset) == Some(lock.0));
+    }
+
+    /// Creates a stackrace starting from `frame_level`
+    pub fn stacktrace(&self, frame_level: usize) -> Stacktrace {
+        let frames = self.get_frames()[frame_level..]
+            .iter()
+            .filter_map(|frame| {
+                match frame.state {
+                    State::Closure(ref closure) => {
+                        let line = closure.function.source_map.line(frame.instruction_index);
+                        Some(Some(StacktraceFrame {
+                            name: closure.function.name.clone(),
+                            line: line,
+                        }))
+                    }
+                    State::Extern(ref ext) => {
+                        Some(Some(StacktraceFrame {
+                            name: ext.id.clone(),
+                            line: Line::from(0),
+                        }))
+                    }
+                    State::Unknown => Some(None),
+                    State::Lock | State::Excess => None,
+                }
+            })
+            .collect();
+        Stacktrace { frames: frames }
     }
 }
 
@@ -271,22 +299,6 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         Lock(offset)
     }
 
-    /// Creates a stackrace starting from `frame_level`
-    pub fn stacktrace(&self, frame_level: usize) -> Stacktrace {
-        let frames = self.stack.get_frames()[frame_level..]
-            .iter()
-            .filter_map(|frame| {
-                match frame.state {
-                    State::Closure(ref closure) => Some(Some(closure.function.name.clone())),
-                    State::Extern(ref ext) => Some(Some(ext.id.clone())),
-                    State::Unknown => Some(None),
-                    State::Lock | State::Excess => None,
-                }
-            })
-            .collect();
-        Stacktrace { frames: frames }
-    }
-
     fn add_new_frame(stack: &mut Stack, args: VmIndex, state: State) -> Frame {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
@@ -381,17 +393,31 @@ impl<'b> IndexMut<RangeFrom<VmIndex>> for StackFrame<'b> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
+pub struct StacktraceFrame {
+    pub name: Symbol,
+    pub line: Line,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Stacktrace {
-    frames: Vec<Option<Symbol>>,
+    pub frames: Vec<Option<StacktraceFrame>>,
 }
 
 impl fmt::Display for Stacktrace {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         try!(writeln!(f, "Stacktrace:\n"));
         for (i, frame) in self.frames.iter().enumerate() {
-            let name = frame.as_ref().map_or("<unknown>", |frame| frame.as_ref());
-            try!(writeln!(f, "{}: {}", i, name));
+            try!(match *frame {
+                Some(ref frame) => {
+                    writeln!(f,
+                             "{}: {}:Line {}",
+                             i,
+                             frame.name.declared_name(),
+                             frame.line)
+                }
+                None => writeln!(f, "{}: <unknown>", i),
+            })
         }
         Ok(())
     }

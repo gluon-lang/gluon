@@ -17,9 +17,11 @@ extern crate gluon_vm as vm;
 
 
 #[cfg(not(test))]
-use std::error::Error as StdError;
+use gluon::{new_vm, Compiler, Thread, Error, Result};
 #[cfg(not(test))]
-use gluon::{new_vm, Compiler};
+use gluon::vm::thread::ThreadInternal;
+#[cfg(not(test))]
+use gluon::vm::Error as VMError;
 #[cfg(not(test))]
 use clap::{Arg, App};
 
@@ -27,10 +29,9 @@ mod repl;
 
 
 #[cfg(not(test))]
-fn run_files<'s, I>(files: I) -> Result<(), Box<StdError + Send + Sync>>
+fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
     where I: Iterator<Item = &'s str>,
 {
-    let vm = new_vm();
     let mut compiler = Compiler::new();
     for file in files {
         try!(compiler.load_file(&vm, file));
@@ -71,8 +72,12 @@ fn main() {
                     println!("{}", err);
                 }
             } else if let Some(args) = matches.values_of("INPUT") {
-                match run_files(args) {
+                let vm = new_vm();
+                match run_files(&vm, args) {
                     Ok(()) => (),
+                    Err(err @ Error::VM(VMError::Message(_))) => {
+                        println!("{}\n{}", err, vm.context().stack.stacktrace(0));
+                    }
                     Err(msg) => println!("{}", msg),
                 }
             } else {

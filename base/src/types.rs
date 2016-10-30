@@ -132,6 +132,8 @@ pub struct Generic<Id> {
     pub id: Id,
 }
 
+/// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and dereferenced
+/// to `AliasData`
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Alias<Id, T> {
     _typ: T,
@@ -194,6 +196,8 @@ impl<Id> Alias<Id, ArcType<Id>>
     }
 }
 
+/// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows for
+/// cheap conversion back into a type as well.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AliasData<Id, T> {
     /// Name of the Alias
@@ -462,6 +466,8 @@ impl<Id> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
     }
 
+    /// Returns an iterator over all type fields in a record.
+    /// `{ Test, Test2, x, y } => [Test, Test2]`
     pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
         TypeFieldIterator {
             typ: self,
@@ -469,6 +475,8 @@ impl<Id> ArcType<Id> {
         }
     }
 
+    /// Returns an iterator over all fields in a record.
+    /// `{ Test, Test2, x, y } => [x, y]`
     pub fn row_iter(&self) -> RowIterator<Self> {
         RowIterator {
             typ: self,

@@ -9,6 +9,7 @@ use base::fnv::FnvMap;
 use interner::InternedStr;
 use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
 use array::{Array, Str};
+use source_map::SourceMap;
 use thread::{Thread, Status};
 use {Error, Result};
 
@@ -114,6 +115,7 @@ pub struct BytecodeFunction {
     pub strings: Vec<InternedStr>,
     pub globals: Vec<Value>,
     pub records: Vec<Vec<InternedStr>>,
+    pub source_map: SourceMap,
 }
 
 impl Traverseable for BytecodeFunction {

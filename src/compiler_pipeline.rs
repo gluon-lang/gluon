@@ -13,6 +13,7 @@ use std::borrow::{Borrow, BorrowMut};
 use base::ast::SpannedExpr;
 use base::error::InFile;
 use base::types::ArcType;
+use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
 
 use vm::compiler::CompiledFunction;
@@ -57,6 +58,7 @@ impl<'s> MacroExpandable for &'s str {
                          macros: &mut MacroExpander,
                          file: &str)
                          -> Result<MacroValue<Self::Expr>> {
+
         compiler.parse_expr(file, self)
             .map_err(From::from)
             .and_then(|mut expr| {
@@ -120,6 +122,7 @@ impl<T> Typecheckable for T
                           expr_str: &str,
                           expected_type: Option<&ArcType>)
                           -> Result<TypecheckValue<Self::Expr>> {
+
         self.expand_macro(compiler, thread, file)
             .and_then(|expr| {
                 expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
@@ -168,10 +171,11 @@ pub trait Compileable<Extra> {
                compiler: &mut Compiler,
                thread: &Thread,
                file: &str,
+               expr_str: &str,
                arg: Extra)
                -> Result<CompileValue<Self::Expr>>;
 }
-impl<'a, 'b, T> Compileable<(&'a str, Option<&'b ArcType>)> for T
+impl<'a, 'b, T> Compileable<Option<&'b ArcType>> for T
     where T: Typecheckable,
 {
     type Expr = T::Expr;
@@ -180,10 +184,12 @@ impl<'a, 'b, T> Compileable<(&'a str, Option<&'b ArcType>)> for T
                compiler: &mut Compiler,
                thread: &Thread,
                file: &str,
-               (expr_str, expected_type): (&'a str, Option<&'b ArcType>))
+               expr_str: &str,
+               expected_type: Option<&'b ArcType>)
                -> Result<CompileValue<Self::Expr>> {
+
         self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
-            .and_then(|tc_value| tc_value.compile(compiler, thread, file, ()))
+            .and_then(|tc_value| tc_value.compile(compiler, thread, file, expr_str, ()))
     }
 }
 impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
@@ -195,6 +201,7 @@ impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
                compiler: &mut Compiler,
                thread: &Thread,
                filename: &str,
+               expr_str: &str,
                _: Extra)
                -> Result<CompileValue<Self::Expr>> {
         use vm::compiler::Compiler;
@@ -205,7 +212,8 @@ impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
             let name = NameBuf::from(name.module());
             let symbols = SymbolModule::new(String::from(AsRef::<str>::as_ref(&name)),
                                             &mut compiler.symbols);
-            let mut compiler = Compiler::new(&*env, thread.global_env(), symbols);
+            let source = Source::new(expr_str);
+            let mut compiler = Compiler::new(&*env, thread.global_env(), symbols, &source);
             try!(compiler.compile_expr(self.expr.borrow()))
         };
         function.id = Symbol::from(filename);
@@ -231,12 +239,14 @@ pub trait Executable<Extra> {
                      compiler: &mut Compiler,
                      vm: &'vm Thread,
                      name: &str,
+                     expr_str: &str,
                      arg: Extra)
                      -> Result<ExecuteValue<'vm, Self::Expr>>;
     fn load_script(self,
                    compiler: &mut Compiler,
                    vm: &Thread,
                    filename: &str,
+                   expr_str: &str,
                    arg: Extra)
                    -> Result<()>;
 }
@@ -250,20 +260,23 @@ impl<C, Extra> Executable<Extra> for C
                      compiler: &mut Compiler,
                      vm: &'vm Thread,
                      name: &str,
+                     expr_str: &str,
                      arg: Extra)
                      -> Result<ExecuteValue<'vm, Self::Expr>> {
 
-        self.compile(compiler, vm, name, arg)
-            .and_then(|v| v.run_expr(compiler, vm, name, ()))
+        self.compile(compiler, vm, name, expr_str, arg)
+            .and_then(|v| v.run_expr(compiler, vm, name, expr_str, ()))
     }
     fn load_script(self,
                    compiler: &mut Compiler,
                    vm: &Thread,
                    filename: &str,
+                   expr_str: &str,
                    arg: Extra)
                    -> Result<()> {
-        self.compile(compiler, vm, filename, arg)
-            .and_then(|v| v.load_script(compiler, vm, filename, ()))
+
+        self.compile(compiler, vm, filename, expr_str, arg)
+            .and_then(|v| v.load_script(compiler, vm, filename, expr_str, ()))
     }
 }
 impl<E> Executable<()> for CompileValue<E>
@@ -275,6 +288,7 @@ impl<E> Executable<()> for CompileValue<E>
                      _compiler: &mut Compiler,
                      vm: &'vm Thread,
                      name: &str,
+                     _expr_str: &str,
                      _: ())
                      -> Result<ExecuteValue<'vm, Self::Expr>> {
 
@@ -292,6 +306,7 @@ impl<E> Executable<()> for CompileValue<E>
                    _compiler: &mut Compiler,
                    vm: &Thread,
                    filename: &str,
+                   _expr_str: &str,
                    _: ())
                    -> Result<()> {
         use check::metadata;
