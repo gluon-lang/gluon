@@ -5,12 +5,14 @@ use std::sync::Mutex;
 
 use base::types;
 use base::types::{Type, ArcType};
-use gc::{Gc, Traverseable};
+use base::fnv::FnvMap;
+use gc::{Gc, GcPtr, Move, Traverseable};
 use api::{OpaqueValue, Userdata, VmType};
+use api::Generic;
 use api::generic::A;
 use vm::{Status, Thread};
-use Result;
-use value::Value;
+use {Error, Result};
+use value::{Value, deep_clone};
 use stack::StackFrame;
 use thread::ThreadInternal;
 
@@ -19,11 +21,31 @@ pub struct Lazy<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Userdata for Lazy<T> where T: Any + Send + Sync, {}
+impl<T> Userdata for Lazy<T>
+    where T: Any + Send + Sync,
+{
+    fn deep_clone(&self,
+                  visited: &mut FnvMap<*const (), Value>,
+                  gc: &mut Gc,
+                  thread: &Thread)
+                  -> Result<GcPtr<Box<Userdata>>> {
+        let value = self.value.lock().unwrap();
+        let cloned_value = match *value {
+            Lazy_::Blackhole => return Err(Error::Message("<<loop>>".into())),
+            Lazy_::Thunk(value) => Lazy_::Thunk(try!(deep_clone(value, visited, gc, thread))),
+            Lazy_::Value(value) => Lazy_::Value(try!(deep_clone(value, visited, gc, thread))),
+        };
+        let data: Box<Userdata> = Box::new(Lazy {
+            value: Mutex::new(cloned_value),
+            _marker: PhantomData::<A>,
+        });
+        gc.alloc(Move(data))
+    }
+}
 
 impl<T> fmt::Debug for Lazy<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", *self.value.lock().unwrap())
+        write!(f, "Lazy({:?})", *self.value.lock().unwrap())
     }
 }
 
@@ -58,7 +80,7 @@ impl<T> VmType for Lazy<T>
     }
 }
 
-fn force(vm: &Thread) -> Status {
+extern "C" fn force(vm: &Thread) -> Status {
     let mut context = vm.context();
     let value = StackFrame::current(&mut context.stack)[0];
     match value {
@@ -116,10 +138,10 @@ fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
     }
 }
 
-pub fn load(vm: &Thread) -> Result<()> {
+pub fn load<'vm>(vm: &'vm Thread) -> Result<()> {
     use api::primitive;
     try!(vm.define_global("lazy", primitive!(1 lazy)));
     try!(vm.define_global("force",
-                          primitive::<fn(Lazy<A>) -> A>("force", ::lazy::force)));
+                          primitive::<fn(&'vm Lazy<A>) -> Generic<A>>("force", ::lazy::force)));
     Ok(())
 }

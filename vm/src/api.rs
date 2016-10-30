@@ -115,14 +115,24 @@ pub enum IO<T> {
     Exception(String),
 }
 
+pub type GluonFunction = extern "C" fn(&Thread) -> Status;
+
 pub struct Primitive<F> {
     name: &'static str,
-    function: fn(&Thread) -> Status,
+    function: GluonFunction,
+    _typ: PhantomData<F>,
+}
+
+pub struct RefPrimitive<'vm, F> {
+    name: &'static str,
+    function: extern "C" fn(&'vm Thread) -> Status,
     _typ: PhantomData<F>,
 }
 
 #[inline]
-pub fn primitive<F>(name: &'static str, function: fn(&Thread) -> Status) -> Primitive<F> {
+pub fn primitive<F>(name: &'static str,
+                    function: extern "C" fn(&Thread) -> Status)
+                    -> Primitive<F> {
     Primitive {
         name: name,
         function: function,
@@ -131,55 +141,64 @@ pub fn primitive<F>(name: &'static str, function: fn(&Thread) -> Status) -> Prim
 }
 
 #[inline]
-pub fn primitive_f<F>(name: &'static str, function: fn(&Thread) -> Status, _: F) -> Primitive<F> {
-    primitive::<F>(name, function)
+pub unsafe fn primitive_f<'vm, F>(name: &'static str,
+                                  function: extern "C" fn(&'vm Thread) -> Status,
+                                  _: F)
+                                  -> RefPrimitive<'vm, F>
+    where F: VmFunction<'vm>,
+{
+    RefPrimitive {
+        name: name,
+        function: function,
+        _typ: PhantomData,
+    }
 }
 
 #[macro_export]
 macro_rules! primitive {
     (0 $name: expr) => {
-        {
-            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+        unsafe {
+            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
                  $crate::api::VmFunction::unpack_and_call(
                      &($name as fn () -> _), thread)
             }
-            $crate::api::primitive_f::<fn () -> _>(stringify!($name), wrapper, $name)
+            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn () -> _)
         }
     };
     (1 $name: expr) => {
-        {
-            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+        unsafe {
+            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
                  $crate::api::VmFunction::unpack_and_call(
                      &($name as fn (_) -> _), thread)
             }
-            $crate::api::primitive_f::<fn (_) -> _>(stringify!($name), wrapper, $name)
+            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn (_) -> _)
         }
     };
     (2 $name: expr) => {
-        {
-            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+        unsafe {
+            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
                  $crate::api::VmFunction::unpack_and_call(
                      &($name as fn (_, _) -> _), thread)
             }
-            $crate::api::primitive_f::<fn (_, _) -> _>(stringify!($name), wrapper, $name)
+            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn (_, _) -> _)
         }
     };
     (3 $name: expr) => {
-        {
-            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+        unsafe {
+            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
                  $crate::api::VmFunction::unpack_and_call(
                      &($name as fn (_, _, _) -> _), thread)
             }
-            $crate::api::primitive_f::<fn (_, _, _) -> _>(stringify!($name), wrapper, $name)
+            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn (_, _, _) -> _)
         }
     };
     (4 $name: expr) => {
-        {
-            fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+        unsafe {
+            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
                  $crate::api::VmFunction::unpack_and_call(
                      &($name as fn (_, _, _, _) -> _), thread)
             }
-            $crate::api::primitive_f::<fn (_, _, _, _) -> _>(stringify!($name), wrapper, $name)
+            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn (_, _, _, _) -> _)
         }
     };
 }
@@ -1179,9 +1198,7 @@ pub mod record {
         fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self> {
             let head = unsafe { H::from_value(vm, Variants::new(&values[0])) };
             head.and_then(|head| {
-                T::from_value(vm, &values[1..]).map(move |tail| {
-                    HList((F::default(), head), tail)
-                })
+                T::from_value(vm, &values[1..]).map(move |tail| HList((F::default(), head), tail))
             })
         }
     }
@@ -1298,7 +1315,7 @@ macro_rules! record {
     }
 }
 
-impl<F: VmType> VmType for Primitive<F> {
+impl<'vm, F: VmType> VmType for Primitive<F> {
     type Type = F::Type;
     fn make_type(vm: &Thread) -> ArcType {
         F::make_type(vm)
@@ -1306,33 +1323,58 @@ impl<F: VmType> VmType for Primitive<F> {
 }
 
 impl<'vm, F> Pushable<'vm> for Primitive<F>
-    where F: FunctionType + VmType + Send + Sync,
+    where F: FunctionType + VmType,
 {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let extern_function = Box::new(self.function);
         let id = Symbol::from(self.name);
         let value = Value::Function(try!(context.alloc_with(thread,
                                                             Move(ExternFunction {
                                                                 id: id,
                                                                 args: F::arguments(),
-                                                                function: extern_function,
+                                                                function: self.function,
                                                             }))));
         context.stack.push(value);
         Ok(())
     }
 }
 
+impl<'vm, F: VmType> VmType for RefPrimitive<'vm, F> {
+    type Type = F::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        F::make_type(vm)
+    }
+}
+
+
+impl<'vm, F> Pushable<'vm> for RefPrimitive<'vm, F>
+    where F: VmFunction<'vm> + FunctionType + VmType + 'vm,
+{
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        use std::mem::transmute;
+        let extern_function = unsafe {
+            // The VM guarantess that it only ever calls this function with itself which should
+            // make sure that ignoring the lifetime is safe
+            transmute::<extern "C" fn(&'vm Thread)
+                                      -> Status,
+                        extern "C" fn(&Thread) -> Status>(self.function)
+        };
+        Primitive {
+                function: extern_function,
+                name: self.name,
+                _typ: self._typ,
+            }
+            .push(thread, context)
+    }
+}
+
 pub struct CPrimitive {
-    function: extern "C" fn(&Thread) -> Status,
+    function: GluonFunction,
     args: VmIndex,
     id: Symbol,
 }
 
 impl CPrimitive {
-    pub unsafe fn new(function: extern "C" fn(&Thread) -> Status,
-                      args: VmIndex,
-                      id: &str)
-                      -> CPrimitive {
+    pub unsafe fn new(function: GluonFunction, args: VmIndex, id: &str) -> CPrimitive {
         CPrimitive {
             id: Symbol::from(id),
             function: function,
@@ -1348,10 +1390,9 @@ impl<'vm> Pushable<'vm> for CPrimitive {
         let extern_function = unsafe {
             // The VM guarantess that it only ever calls this function with itself which should
             // make sure that ignoring the lifetime is safe
-            transmute::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
-                        Box<Fn(&Thread) -> Status + Send + Sync>>(Box::new(move |vm| {
-                function(vm)
-            }))
+            transmute::<extern "C" fn(&'vm Thread)
+                                      -> Status,
+                        extern "C" fn(&Thread) -> Status>(function)
         };
         let value = try!(context.alloc_with(thread,
                                             Move(ExternFunction {
@@ -1467,29 +1508,6 @@ impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
     fn make_type(vm: &Thread) -> ArcType {
         let args = vec![$(make_type::<$args>(vm)),*];
         Type::function(args, make_type::<R>(vm))
-    }
-}
-
-impl <'vm, $($args,)* R> Pushable<'vm> for fn ($($args),*) -> R
-where $($args: Getable<'vm> + VmType + 'vm,)* R: Pushable<'vm> +  VmType + 'vm {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let f = Box::new(move |vm| self.unpack_and_call(vm));
-        let extern_function = unsafe {
-            //The VM guarantess that it only ever calls this function with itself which should
-            //make sure that ignoring the lifetime is safe
-            ::std::mem::transmute
-                    ::<Box<Fn(&'vm Thread) -> Status + Send + Sync>,
-                       Box<Fn(&Thread) -> Status + Send + Sync>>(f)
-        };
-        let id = Symbol::from("<extern>");
-        let value = Value::Function(try!(context.alloc_with(thread, Move(
-            ExternFunction {
-                id: id,
-                args: count!($($args),*) + R::extra_args(),
-                function: extern_function
-            }))));
-        context.stack.push(value);
-        Ok(())
     }
 }
 

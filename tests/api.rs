@@ -1,4 +1,6 @@
 extern crate env_logger;
+#[macro_use]
+extern crate gluon_vm;
 extern crate gluon;
 
 use gluon::base::types::Type;
@@ -66,11 +68,7 @@ fn root_data() {
     }
     vm.register_type::<Test>("Test", &[])
         .unwrap_or_else(|_| panic!("Could not add type"));
-    vm.define_global("test", {
-            let test: fn(_, _) -> _ = test;
-            test
-        })
-        .unwrap();
+    vm.define_global("test", primitive!(2 test)).unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
     let mut script_fn: FunctionRef<fn(Test) -> VmInt> = vm.get_global("script_fn").unwrap();
     let result = script_fn.call(Test(123))
@@ -92,11 +90,7 @@ test "hello"
     }
 
     let vm = make_vm();
-    vm.define_global("test", {
-            let test: fn(_) -> _ = test;
-            test
-        })
-        .unwrap();
+    vm.define_global("test", primitive!(1 test)).unwrap();
 
     let result = Compiler::new().run_expr::<String>(&vm, "<top>", expr).unwrap();
     let expected = ("hello world".to_string(), Type::string());
@@ -116,11 +110,7 @@ sum_bytes [100b, 42b, 3b, 15b]
     }
 
     let vm = make_vm();
-    vm.define_global("sum_bytes", {
-            let sum_bytes: fn(_) -> _ = sum_bytes;
-            sum_bytes
-        })
-        .unwrap();
+    vm.define_global("sum_bytes", primitive!(1 sum_bytes)).unwrap();
 
     let result =
         Compiler::new().run_expr::<u8>(&vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));

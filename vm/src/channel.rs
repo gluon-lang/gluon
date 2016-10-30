@@ -118,11 +118,11 @@ fn recv(receiver: &Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
 }
 
 fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
-    let value = try!(sender.thread.deep_clone(value.0).map_err(|_| ()));
+    let value = try!(sender.thread.deep_clone_value(value.0).map_err(|_| ()));
     Ok(sender.send(Generic::from(value)))
 }
 
-fn resume(vm: &Thread) -> Status {
+extern "C" fn resume(vm: &Thread) -> Status {
     let mut context = vm.context();
     let value = StackFrame::current(&mut context.stack)[0];
     match value {
@@ -154,7 +154,7 @@ fn resume(vm: &Thread) -> Status {
     }
 }
 
-fn yield_(_vm: &Thread) -> Status {
+extern "C" fn yield_(_vm: &Thread) -> Status {
     Status::Yield
 }
 
@@ -181,22 +181,15 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
     Ok(thread)
 }
 
-fn f1<A, R>(f: fn(A) -> R) -> fn(A) -> R {
-    f
-}
-fn f2<A, B, R>(f: fn(A, B) -> R) -> fn(A, B) -> R {
-    f
-}
-
-pub fn load(vm: &Thread) -> VmResult<()> {
+pub fn load<'vm>(vm: &'vm Thread) -> VmResult<()> {
     let _ = vm.register_type::<Sender<A>>("Sender", &["a"]);
     let _ = vm.register_type::<Receiver<A>>("Receiver", &["a"]);
-    try!(vm.define_global("channel", f1(channel)));
-    try!(vm.define_global("recv", f1(recv)));
-    try!(vm.define_global("send", f2(send)));
+    try!(vm.define_global("channel", primitive!(1 channel)));
+    try!(vm.define_global("recv", primitive!(1 recv)));
+    try!(vm.define_global("send", primitive!(2 send)));
     try!(vm.define_global("resume",
-                          primitive::<fn(RootedThread) -> Result<(), String>>("resume", resume)));
+                          primitive::<fn(&'vm Thread) -> Result<(), String>>("resume", resume)));
     try!(vm.define_global("yield", primitive::<fn(())>("yield", yield_)));
-    try!(vm.define_global("spawn", f1(spawn)));
+    try!(vm.define_global("spawn", primitive!(1 spawn)));
     Ok(())
 }

@@ -16,7 +16,6 @@ use base::types::ArcType;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
 
 use vm::compiler::CompiledFunction;
-use vm::internal::ClosureDataDef;
 use vm::macros::MacroExpander;
 use vm::thread::{RootedValue, Thread, ThreadInternal};
 
@@ -281,8 +280,7 @@ impl<E> Executable<()> for CompileValue<E>
 
         let CompileValue { expr, typ, mut function } = self;
         function.id = Symbol::from(name);
-        let function = try!(vm.global_env().new_function(function));
-        let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
+        let closure = try!(vm.global_env().new_global_thunk(function));
         let value = try!(vm.call_thunk(closure));
         Ok(ExecuteValue {
             expr: expr,
@@ -300,10 +298,9 @@ impl<E> Executable<()> for CompileValue<E>
 
         let CompileValue { mut expr, typ, function } = self;
         let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
-        let function = try!(vm.global_env().new_function(function));
-        let closure = try!(vm.context().alloc(ClosureDataDef(function, &[])));
+        let closure = try!(vm.global_env().new_global_thunk(function));
         let value = try!(vm.call_thunk(closure));
-        try!(vm.global_env().set_global(function.name.clone(), typ, metadata, value));
+        try!(vm.set_global(closure.function.name.clone(), typ, metadata, value));
         info!("Loaded module `{}` filename", filename);
         Ok(())
     }

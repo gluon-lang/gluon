@@ -159,6 +159,18 @@ pub struct Thread {
     context: Mutex<Context>,
 }
 
+impl fmt::Debug for Thread {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Thread({:p})", self)
+    }
+}
+
+impl Userdata for Thread {}
+
+impl VmType for Thread {
+    type Type = Self;
+}
+
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
@@ -174,7 +186,7 @@ impl PartialEq for Thread {
 }
 
 impl VmType for RootedThread {
-    type Type = Self;
+    type Type = Thread;
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
@@ -186,6 +198,7 @@ impl<'vm> Pushable<'vm> for RootedThread {
 
 /// An instance of `Thread` which is rooted. See the `Thread` type for documentation on interacting
 /// with the type.
+#[derive(Debug)]
 pub struct RootedThread(GcPtr<Thread>);
 
 impl Drop for RootedThread {
@@ -323,10 +336,10 @@ impl Thread {
             try!(value.push(self, &mut context));
             context.stack.pop()
         };
-        self.global_env().set_global(Symbol::from(name),
-                                     T::make_type(self),
-                                     Metadata::default(),
-                                     value)
+        self.set_global(Symbol::from(name),
+                        T::make_type(self),
+                        Metadata::default(),
+                        value)
     }
 
     /// Retrieves the global called `name`.
@@ -493,7 +506,14 @@ pub trait ThreadInternal {
 
     fn global_env(&self) -> &Arc<GlobalVmState>;
 
-    fn deep_clone(&self, value: Value) -> Result<Value>;
+    fn set_global(&self,
+                  name: Symbol,
+                  typ: ArcType,
+                  metadata: Metadata,
+                  value: Value)
+                  -> Result<()>;
+
+    fn deep_clone_value(&self, value: Value) -> Result<Value>;
 }
 
 
@@ -552,9 +572,8 @@ impl ThreadInternal for Thread {
         let id = Symbol::from(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
-        let f = try!(self.global_env().new_function(compiled_fn));
-        let closure = try!(self.current_context().alloc(ClosureDataDef(f, &[])));
-        self.global_env().set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
+        let closure = try!(self.global_env().new_global_thunk(compiled_fn));
+        self.set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
         Ok(())
     }
 
@@ -617,10 +636,24 @@ impl ThreadInternal for Thread {
         &self.global_state
     }
 
-    fn deep_clone(&self, value: Value) -> Result<Value> {
+    fn set_global(&self,
+                  name: Symbol,
+                  typ: ArcType,
+                  metadata: Metadata,
+                  value: Value)
+                  -> Result<()> {
+        let mut visited = FnvMap::default();
+        let value = try!(::value::deep_clone(value,
+                                             &mut visited,
+                                             &mut self.global_env().gc.lock().unwrap(),
+                                             self));
+        self.global_env().set_global(name, typ, metadata, value)
+    }
+
+    fn deep_clone_value(&self, value: Value) -> Result<Value> {
         let mut visited = FnvMap::default();
         let mut context = self.current_context();
-        ::value::deep_clone(value, &mut visited, &mut context.gc)
+        ::value::deep_clone(value, &mut visited, &mut context.gc, self)
     }
 }
 

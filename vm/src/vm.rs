@@ -20,7 +20,7 @@ use compiler::{CompiledFunction, Variable, CompilerEnv};
 use api::IO;
 use lazy::Lazy;
 
-use value::BytecodeFunction;
+use value::{BytecodeFunction, ClosureData};
 
 pub use value::{ClosureDataDef, Userdata};
 pub use value::Value;//FIXME Value should not be exposed
@@ -355,12 +355,14 @@ impl GlobalVmState {
         }
         self.register_type::<IO<Generic<A>>>("IO", &["a"]).unwrap();
         self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"]).unwrap();
-        self.register_type::<RootedThread>("Thread", &[]).unwrap();
+        self.register_type::<Thread>("Thread", &[]).unwrap();
         Ok(())
     }
 
-    pub fn new_function(&self, f: CompiledFunction) -> Result<GcPtr<BytecodeFunction>> {
-        new_bytecode(&mut self.gc.lock().unwrap(), self, f)
+    pub fn new_global_thunk(&self, f: CompiledFunction) -> Result<GcPtr<ClosureData>> {
+        let mut gc = self.gc.lock().unwrap();
+        let function = try!(new_bytecode(&mut gc, self, f));
+        gc.alloc(ClosureDataDef(function, &[]))
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
