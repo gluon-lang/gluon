@@ -331,12 +331,6 @@ AtomicExpr: Expr<Id> = {
             exprs: values,
         }
     },
-
-    "OpenBlock" <exprs: (<SpExpr> "Semi")*> <last: SpExpr> "CloseBlock" => {
-        let mut exprs = exprs;
-        exprs.push(last);
-        Expr::Block(exprs)
-    },
 };
 
 AppExpr = {
@@ -399,6 +393,12 @@ Expr: Expr<Id> = {
         bindings.insert(0, first);
 
         Expr::TypeBindings(bindings, Box::new(body))
+    },
+
+    "OpenBlock" <exprs: (<SpExpr> "Semi")*> <last: SpExpr> "CloseBlock" => {
+        let mut exprs = exprs;
+        exprs.push(last);
+        Expr::Block(exprs)
     },
 };
 
