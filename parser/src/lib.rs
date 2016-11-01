@@ -9,6 +9,7 @@ extern crate quick_error;
 extern crate gluon_base as base;
 extern crate combine;
 extern crate combine_language;
+extern crate lalrpop_util;
 
 use std::error::Error as StdError;
 use std::fmt;
@@ -19,10 +20,10 @@ use base::pos::{self, BytePos, Spanned};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
-use combine::primitives::{StreamOnce, Error as CombineError};
+use combine::primitives::{StreamOnce, Error as CombineError, Info};
 
 use infix::{OpTable, Reparser};
-use lexer::Lexer;
+use lexer::{Lexer, Token};
 
 mod grammar;
 mod infix;
@@ -74,6 +75,41 @@ impl fmt::Display for ParseError {
 impl StdError for ParseError {
     fn description(&self) -> &str {
         "Parse error"
+    }
+}
+
+fn transform_lalrpop_error(err: lalrpop_util::ParseError<BytePos,
+                                                         Token<&str>,
+                                                         CombineError<String, String>>)
+                           -> Spanned<CombineError<String, String>, BytePos> {
+    use lalrpop_util::ParseError::*;
+    match err {
+        InvalidToken { location } => {
+            pos::spanned2(location,
+                          location,
+                          CombineError::Message("Invalid token".into()))
+        }
+        UnrecognizedToken { token, .. } => {
+            match token {
+                Some(token) => {
+                    pos::spanned2(token.0,
+                                  token.2,
+                                  CombineError::Unexpected(format!("{}", token.1).into()))
+                }
+                None => {
+                    pos::spanned2(0.into(),
+                                  0.into(),
+                                  CombineError::Unexpected("Unrecognized token".into()))
+                }
+            }
+        }
+        ExtraToken { token } => {
+            pos::spanned2(token.0,
+                          token.2,
+                          CombineError::Message(format!("Found an extra token `{}`", token.1)
+                              .into()))
+        }
+        User { error } => pos::spanned2(0.into(), 0.into(), error),
     }
 }
 
@@ -143,11 +179,9 @@ fn parse_expr_<Id>(symbols: &mut IdentEnv<Ident = Id>,
             Ok(expr)
         }
         Err(err) => {
-            let err =
-                ParseError { errors: vec![CombineError::Message(format!("{:?}", err).into())] };
-            Err(Errors {
-                errors: vec![Error::Parser(pos::spanned2(BytePos::from(0), BytePos::from(0), err))],
-            })
+            let Spanned { span, value: err } = transform_lalrpop_error(err);
+            let err = ParseError { errors: vec![err] };
+            Err(Errors { errors: vec![Error::Parser(pos::spanned(span, err))] })
         }
     }
 }

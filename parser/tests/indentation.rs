@@ -65,12 +65,7 @@ let y =
 y
 "#);
 
-    let parse_error = ParseError {
-        errors: vec![CombineError::Unexpected("Int".into()),
-                     CombineError::Expected("`in` or an expression in the same column as the \
-                                             `let`"
-                         .into())],
-    };
+    let parse_error = ParseError { errors: vec![CombineError::Unexpected("Int".into())] };
     let span = pos::span(BytePos::from(32), BytePos::from(32));
     let errors = Errors { errors: vec![Error::Parser(pos::spanned(span, parse_error))] };
 

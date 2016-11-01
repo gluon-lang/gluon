@@ -31,7 +31,9 @@ impl<I> StreamOnce for LocatedStream<I>
                 self.location.bump(ch);
                 // HACK: The layout algorithm expects `1` indexing for columns -
                 // this could be altered in the future though
-                self.location.column += Column::from(1);
+                if self.location.column == Column::from(0) {
+                    self.location.column = Column::from(1);
+                }
                 ch
             })
     }
@@ -98,12 +100,14 @@ impl fmt::Display for Delimiter {
     }
 }
 
-pub type Error<'input> = CombineError<Token<'input>, Token<'input>>;
+pub type Error<'input> = CombineError<Token<&'input str>, Token<&'input str>>;
+
+pub type StrToken<'input> = Token<&'input str>;
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum Token<'input> {
-    Identifier(&'input str),
-    Operator(&'input str),
+pub enum Token<I> {
+    Identifier(I),
+    Operator(I),
     String(String),
     Char(char),
     Int(i64),
@@ -134,7 +138,7 @@ pub enum Token<'input> {
     EOF,
 }
 
-impl<'input> fmt::Display for Token<'input> {
+impl<I> fmt::Display for Token<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Token::*;
         use self::Delimiter::*;
@@ -179,7 +183,7 @@ impl<'input> fmt::Display for Token<'input> {
     }
 }
 
-pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
+pub type SpannedToken<'input> = Spanned<Token<&'input str>, Location>;
 
 #[derive(Clone, Debug)]
 struct Offside {
@@ -327,11 +331,13 @@ impl<'input, I> Lexer<'input, I>
         take(len).parse_stream(initial)
     }
 
-    fn ident<'a>(&'a self) -> LanguageParser<'input, 'a, I, Token<'input>> {
+    fn ident<'a>(&'a self) -> LanguageParser<'input, 'a, I, Token<&'input str>> {
         self.parser(Lexer::parse_ident)
     }
 
-    fn parse_ident(&self, input: LocatedStream<I>) -> ParseResult<Token<'input>, LocatedStream<I>> {
+    fn parse_ident(&self,
+                   input: LocatedStream<I>)
+                   -> ParseResult<Token<&'input str>, LocatedStream<I>> {
         self.env
             .range_identifier_()
             .map(Token::Identifier)
@@ -344,7 +350,7 @@ impl<'input, I> Lexer<'input, I>
         layout(self, token)
     }
 
-    fn id_to_keyword(&self, id: Token<'input>) -> Token<'input> {
+    fn id_to_keyword(&self, id: Token<&'input str>) -> Token<&'input str> {
         match id {
             Token::Identifier("let") => Token::Let,
             Token::Identifier("type") => Token::Type,
@@ -421,7 +427,7 @@ impl<'input, I> Lexer<'input, I>
     fn next_token_(&mut self,
                    location: &mut Location,
                    mut input: LocatedStream<I>)
-                   -> ParseResult<Token<'input>, LocatedStream<I>> {
+                   -> ParseResult<Token<&'input str>, LocatedStream<I>> {
         loop {
             // Skip all whitespace before the token
             let parsed_spaces: Result<_, _> = spaces().parse_lazy(input).into();
@@ -546,7 +552,7 @@ impl<'input, I> Lexer<'input, I>
 
     fn block_doc_comment(&self,
                          input: LocatedStream<I>)
-                         -> ParseResult<Token<'input>, LocatedStream<I>> {
+                         -> ParseResult<Token<&'input str>, LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
             let ((), mut input) = try!(spaces().parse_stream(input));
             let mut out = String::new();
@@ -571,7 +577,7 @@ impl<'input, I> Lexer<'input, I>
 
     fn layout_token(&mut self,
                     token: SpannedToken<'input>,
-                    layout_token: Token<'input>)
+                    layout_token: Token<&'input str>)
                     -> SpannedToken<'input> {
         let span = token.span;
         self.unprocessed_tokens.push(token);
@@ -871,9 +877,9 @@ fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
-fn static_error<'input>(e: CombineError<Token<'input>, Token<'input>>)
+fn static_error<'input>(e: CombineError<Token<&'input str>, Token<&'input str>>)
                         -> CombineError<String, String> {
-    let static_info = |i: Info<Token<'input>, Token<'input>>| {
+    let static_info = |i: Info<Token<&'input str>, Token<&'input str>>| {
         match i {
             Info::Token(t) => Info::Token(t.to_string()),
             Info::Range(t) => Info::Range(t.to_string()),
@@ -895,10 +901,11 @@ impl<'input, I> Iterator for Lexer<'input, I>
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
           I::Range: fmt::Debug,
 {
-    type Item = Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>;
+    type Item = Result<(BytePos, Token<&'input str>, BytePos), CombineError<String, String>>;
 
-    fn next(&mut self)
-            -> Option<Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>> {
+    fn next
+        (&mut self)
+         -> Option<Result<(BytePos, Token<&'input str>, BytePos), CombineError<String, String>>> {
         match self.uncons_next() {
             Ok(Spanned { value: Token::EOF, .. }) => None,
             Err(ref err) if *err == Error::end_of_input() => None,
