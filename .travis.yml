@@ -10,10 +10,19 @@ rust:
 - nightly
 - beta
 - stable
+os:
+- linux
+- osx
+matrix:
+  exclude:
+  - os: osx
+    rust: nightly
+  - os: osx
+    rust: beta
 before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
-  export PATH=$HOME/.local/bin:$PATH
+  export PATH=$HOME/Library/Python/2.7/bin:$HOME/.local/bin:$PATH
 script:
 - |
   sh ./test-no-skeptic.sh &&
