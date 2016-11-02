@@ -295,25 +295,31 @@ impl Compiler {
             return;
         }
 
-        let prelude_import = r#"
-    let __implicit_prelude = import "std/prelude.glu"
-    and { Num, Eq, Ord, Show, Functor, Monad, Bool, Option, Result, not } = __implicit_prelude
-
-    let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
-    and { (==) } = __implicit_prelude.eq_Int
-    and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Int
-
-    let { (+), (-), (*), (/) } = __implicit_prelude.num_Float
-    and { (==) } = __implicit_prelude.eq_Float
-    and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
-
-    let { (==) } = __implicit_prelude.eq_Char
-    and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Char
-
-    in 0
-    "#;
-        let prelude_expr = self.parse_expr("", prelude_import).unwrap();
+        let prelude_expr = self.parse_expr("", PRELUDE).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
+
+        // Set all spans in the prelude expression to -1 so that completion requests always
+        // skips searching the implicit prelude
+        use base::ast::{MutVisitor, SpannedPattern, walk_mut_expr, walk_mut_pattern};
+        use base::pos::{ExpansionId, UNKNOWN_EXPANSION};
+        struct ExpandedSpans;
+
+        impl MutVisitor for ExpandedSpans {
+            type Ident = Symbol;
+
+            fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
+                e.span.expansion_id = UNKNOWN_EXPANSION;
+                walk_mut_expr(self, e);
+            }
+
+            fn visit_pattern(&mut self, p: &mut SpannedPattern<Self::Ident>) {
+                p.span.expansion_id = UNKNOWN_EXPANSION;
+                walk_mut_pattern(self, &mut p.value);
+            }
+        }
+        ExpandedSpans.visit_expr(expr);
+
+        // Replace the 0 in the prelude with the actual expression
         fn assign_last_body(l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
             match l.value {
                 ast::Expr::LetBindings(_, ref mut e) => {
@@ -325,6 +331,24 @@ impl Compiler {
         assign_last_body(expr, original_expr);
     }
 }
+
+pub const PRELUDE: &'static str = r#"
+let __implicit_prelude = import "std/prelude.glu"
+and { Num, Eq, Ord, Show, Functor, Monad, Bool, Option, Result, not } = __implicit_prelude
+
+let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
+and { (==) } = __implicit_prelude.eq_Int
+and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Int
+
+let { (+), (-), (*), (/) } = __implicit_prelude.num_Float
+and { (==) } = __implicit_prelude.eq_Float
+and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
+
+let { (==) } = __implicit_prelude.eq_Char
+and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Char
+
+in 0
+"#;
 
 pub fn filename_to_module(filename: &str) -> StdString {
     use std::path::Path;

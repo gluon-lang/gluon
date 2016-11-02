@@ -9,7 +9,7 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 macro_rules! pos_struct {
     (#[$doc:meta] pub struct $Pos:ident($T:ty);) => {
         #[$doc]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+        #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
         pub struct $Pos($T);
 
         impl $Pos {
@@ -118,14 +118,69 @@ impl fmt::Display for Location {
     }
 }
 
+/// An expansion identifier tracks wheter a span originated from a macro expansion or not
+#[derive(Copy, Clone, Default, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct ExpansionId(pub u32);
+
+pub const NO_EXPANSION: ExpansionId = ExpansionId(0);
+
+pub const UNKNOWN_EXPANSION: ExpansionId = ExpansionId(1);
+
 /// A span between two locations in a source file
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Default, Eq, Debug)]
 pub struct Span<Pos> {
     pub start: Pos,
     pub end: Pos,
+    pub expansion_id: ExpansionId,
 }
 
+impl<Pos> PartialEq for Span<Pos>
+    where Pos: PartialEq,
+{
+    fn eq(&self, other: &Span<Pos>) -> bool {
+        self.start == other.start && self.end == other.end
+    }
+}
+
+impl<Pos> PartialOrd for Span<Pos>
+    where Pos: PartialOrd,
+{
+    fn partial_cmp(&self, other: &Span<Pos>) -> Option<Ordering> {
+        self.start
+            .partial_cmp(&other.start)
+            .and_then(|ord| {
+                if ord == Ordering::Equal {
+                    self.end.partial_cmp(&self.end)
+                } else {
+                    Some(ord)
+                }
+            })
+    }
+}
+
+impl<Pos> Ord for Span<Pos>
+    where Pos: Ord,
+{
+    fn cmp(&self, other: &Span<Pos>) -> Ordering {
+        let ord = self.start.cmp(&other.start);
+        if ord == Ordering::Equal {
+            self.end.cmp(&self.end)
+        } else {
+            ord
+        }
+    }
+}
+
+
 impl<Pos: Ord> Span<Pos> {
+    pub fn new(start: Pos, end: Pos) -> Span<Pos> {
+        Span {
+            start: start,
+            end: end,
+            expansion_id: NO_EXPANSION,
+        }
+    }
+
     pub fn contains(self, other: Span<Pos>) -> bool {
         self.start <= other.start && other.end <= self.end
     }
@@ -149,11 +204,13 @@ impl<Pos: Ord> Span<Pos> {
     }
 
     pub fn merge(self, other: Span<Pos>) -> Option<Span<Pos>> {
+        assert!(self.expansion_id == other.expansion_id);
         if (self.start <= other.start && self.end > other.start) ||
            (self.start >= other.start && self.start < other.end) {
             Some(Span {
                 start: cmp::min(self.start, other.start),
                 end: cmp::max(self.end, other.end),
+                expansion_id: self.expansion_id,
             })
         } else {
             None
@@ -191,6 +248,7 @@ pub fn spanned2<T, Pos>(start: Pos, end: Pos, value: T) -> Spanned<T, Pos> {
         span: Span {
             start: start,
             end: end,
+            expansion_id: NO_EXPANSION,
         },
         value: value,
     }

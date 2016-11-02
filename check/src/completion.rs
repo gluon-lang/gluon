@@ -3,9 +3,10 @@
 use std::iter::once;
 use std::cmp::Ordering;
 
-use base::ast::{Expr, SpannedExpr, SpannedPattern, Pattern, TypedIdent, Typed};
+use base::ast::{Expr, SpannedExpr, SpannedPattern, Pattern, TypedIdent, Typed, Visitor, walk_expr,
+                walk_pattern};
 use base::instantiate;
-use base::pos::{BytePos, Span};
+use base::pos::{BytePos, Span, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{ArcType, Type, TypeEnv};
@@ -25,6 +26,8 @@ trait OnFound {
 
     /// Location points to whitespace
     fn nothing(&mut self);
+
+    fn found(&self) -> bool;
 }
 
 struct GetType<E> {
@@ -42,6 +45,10 @@ impl<E: TypeEnv> OnFound for GetType<E> {
     }
 
     fn nothing(&mut self) {}
+
+    fn found(&self) -> bool {
+        self.typ.is_some()
+    }
 }
 
 pub struct Suggestion {
@@ -120,6 +127,10 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             }
         }));
     }
+
+    fn found(&self) -> bool {
+        !self.result.is_empty()
+    }
 }
 
 struct FindVisitor<F> {
@@ -156,6 +167,32 @@ impl<F> FindVisitor<F> {
     }
 }
 
+struct VisitUnExpanded<'e, F: 'e>(&'e mut FindVisitor<F>);
+
+impl<'e, F> Visitor for VisitUnExpanded<'e, F>
+    where F: OnFound,
+{
+    type Ident = Symbol;
+
+    fn visit_expr(&mut self, e: &SpannedExpr<Self::Ident>) {
+        if !self.0.on_found.found() {
+            if e.span.expansion_id == NO_EXPANSION {
+                self.0.visit_expr(e);
+            } else {
+                walk_expr(self, e);
+            }
+        }
+    }
+
+    fn visit_pattern(&mut self, e: &SpannedPattern<Self::Ident>) {
+        if e.span.expansion_id == NO_EXPANSION {
+            self.0.visit_pattern(e);
+        } else {
+            walk_pattern(self, &e.value);
+        }
+    }
+}
+
 impl<F> FindVisitor<F>
     where F: OnFound,
 {
@@ -171,6 +208,11 @@ impl<F> FindVisitor<F>
     }
 
     fn visit_expr(&mut self, current: &SpannedExpr<Symbol>) {
+        // When inside a macro expanded expression we do a exhaustive search for an unexpanded expression
+        if current.span.expansion_id != NO_EXPANSION {
+            VisitUnExpanded(self).visit_expr(current);
+            return;
+        }
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
                 if current.span.containment(&self.pos) == Ordering::Equal {
