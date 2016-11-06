@@ -1,6 +1,6 @@
 [package]
 name = "gluon_parser"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -15,7 +15,7 @@ combine-language = "=2.0.0-beta4"
 combine = "=2.0.0-beta3"
 env_logger = { version = "0.3.4", optional = true }
 log = "0.3.6"
-gluon_base = { path = "../base", version = "0.2.0" }
+gluon_base = { path = "../base", version = "0.2.1" }
 
 [features]
 test = ["env_logger"]

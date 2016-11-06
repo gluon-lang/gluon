@@ -1,13 +1,13 @@
 [package]
 
 name = "gluon"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Markus <marwes91@gmail.com>"]
 build = "build.rs"
 
 license = "MIT"
 
-description = "A static, type inferred programming langauge for application embedding"
+description = "A static, type inferred programming language for application embedding"
 
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://gluon-lang.github.io/gluon/gluon/index.html"
@@ -27,10 +27,10 @@ name = "repl"
 path = "src/main.rs"
 
 [dependencies]
-gluon_base = { path = "base", version = "0.2.0" }
-gluon_check = { path = "check", version = "0.2.0" }
-gluon_parser = { path = "parser", version = "0.2.0" }
-gluon_vm = { path = "vm", version = "0.2.0" }
+gluon_base = { path = "base", version = "0.2.1" }
+gluon_check = { path = "check", version = "0.2.1" }
+gluon_parser = { path = "parser", version = "0.2.1" }
+gluon_vm = { path = "vm", version = "0.2.1" }
 
 clap = "2.2.5"
 log = "0.3.6"
