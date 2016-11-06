@@ -188,6 +188,8 @@ impl<'e, F> Visitor for VisitUnExpanded<'e, F>
         if e.span.expansion_id == NO_EXPANSION {
             self.0.visit_pattern(e);
         } else {
+            // Add variables into scope
+            self.0.on_found.on_pattern(e);
             walk_pattern(self, &e.value);
         }
     }

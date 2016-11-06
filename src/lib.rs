@@ -301,7 +301,7 @@ impl Compiler {
         // Set all spans in the prelude expression to -1 so that completion requests always
         // skips searching the implicit prelude
         use base::ast::{MutVisitor, SpannedPattern, walk_mut_expr, walk_mut_pattern};
-        use base::pos::{ExpansionId, UNKNOWN_EXPANSION};
+        use base::pos::UNKNOWN_EXPANSION;
         struct ExpandedSpans;
 
         impl MutVisitor for ExpandedSpans {

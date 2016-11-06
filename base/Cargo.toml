@@ -1,6 +1,6 @@
 [package]
 name = "gluon_base"
-version = "0.2.0"
+version = "0.2.2"
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -8,7 +8,7 @@ license = "MIT"
 description = "Basic type definitions and functions for the gluon programming language"
 
 repository = "https://github.com/gluon-lang/gluon"
-documentation = "https://gluon-lang.github.io/gluon/gluon/index.html"
+documentation = "https://docs.rs/gluon"
 
 [dependencies]
 log = "0.3.6"
