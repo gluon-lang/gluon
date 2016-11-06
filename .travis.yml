@@ -43,10 +43,3 @@ notifications:
     on_success: change
     on_failure: always
     on_start: never
-deploy:
-  provider: releases
-  api_key:
-    secure: F86FGNVU2PbDun/ek45DX7EB0g6pyoZkaolVKa+K8ZE/x5FJZ/fBv7YtnhMSk5JcZs2vUtI0NDuHlSZwkkXj5ozu0vpp2ohDedALWKsxA68nf3iOkeT4SFUD5EMko9+G9z7fThWJPmE1LShtDEmlhLVXZ9dWZC0II9ojCAfxJmpaU0OruwF6FBvF26VYMgmCzJagyNdWt0GmG9HjyUgxC0exPajWzrg67/sUf7hVxuB/QC9csHwXMR+E31yMeiZNOUUh01z6D+ZQX4XmmuaB8yXeK3MirSoRR2AT3hSwfgEVsprSjVkRqCdouK13wjVmPYV9zS8gX+pwAvfjUR2hw/6MR1E3a16h4v5bpLil/qo65m2bhVXzGirx20uSIUuBRekuOpvEr1/0HjhdGLFq1RwDdLtOJVAryN4OLbJMtKmoJDAtvPg3eQqklsHHtxVIxkqRx/r7KhhcECjwSQhPvtIclc2Lk+yJaCk7Gw+DH27H0EYcHAnCf2py9JreTqy5DQy6UYeSEt+xo9cI1BDPQo6uhbQ5GkKV2nu98OFuI21F9u2IM3WnwrOgLIqFDpOhQeIXYbEx6AjahwBMGOseG/6X7FFytl2HeXTeFV8ey3paSM/dCadbYT9DaO5NiPtdUBEYnkH6f8IQug+71TAyknap7G3p+fleH+87WUHxSYI=
-  file: $TRAVIS_BUILD_DIR/target/release/repl
-  on:
-    repo: gluon-lang/gluon
