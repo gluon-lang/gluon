@@ -14,7 +14,7 @@ documentation = "https://docs.rs/gluon"
 env_logger = { version = "0.3.4", optional = true }
 log = "0.3.6"
 union-find = "0.3.1"
-smallvec = { git = "https://github.com/servo/rust-smallvec", rev = "cc04c67174dfcd1aa9e893cd55b13b583180f8a9" }
+smallvec = "0.2.1"
 gluon_base = { path = "../base", version = "0.2.2" }
 gluon_parser = { path = "../parser", version = "0.2.2", optional = true }
 
