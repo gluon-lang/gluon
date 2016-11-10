@@ -12,13 +12,6 @@ rust:
 - stable
 os:
 - linux
-- osx
-matrix:
-  exclude:
-  - os: osx
-    rust: nightly
-  - os: osx
-    rust: beta
 before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
