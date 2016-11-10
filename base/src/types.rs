@@ -1085,7 +1085,6 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
     }
 }
 
-// FIXME Add R: Default and remove the `out` parameter
 pub fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
     where I: IntoIterator<Item = &'a T>,
           F: FnMut(&'a T) -> Option<T>,
