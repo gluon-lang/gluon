@@ -1,4 +1,5 @@
 use std::fmt;
+use std::result::Result as StdResult;
 
 use base::ast;
 use base::kind::{self, ArcKind, Kind, KindEnv};
@@ -12,7 +13,7 @@ use unify::Error as UnifyError;
 
 pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
 
-pub type Result<T> = ::std::result::Result<T, Error<Symbol>>;
+pub type Result<T> = StdResult<T, Error<Symbol>>;
 
 
 /// Struct containing methods for kindchecking types
@@ -144,8 +145,8 @@ impl<'a> KindCheck<'a> {
 
     pub fn kindcheck_expected(&mut self, typ: &mut ArcType, expected: &ArcKind) -> Result<ArcKind> {
         debug!("Kindcheck {:?}", typ);
-        let (kind, t) = try!(self.kindcheck(typ));
-        let kind = try!(self.unify(expected, kind));
+        let (kind, t) = self.kindcheck(typ)?;
+        let kind = self.unify(expected, kind)?;
         *typ = self.finalize_type(t);
         debug!("Done {:?}", typ);
         Ok(kind)
@@ -165,22 +166,22 @@ impl<'a> KindCheck<'a> {
             Type::Hole | Type::Opaque => Ok((self.subs.new_var(), typ.clone())),
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
-                gen.kind = try!(self.find(&gen.id));
+                gen.kind = self.find(&gen.id)?;
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
             Type::App(ref ctor, ref args) => {
-                let (mut kind, ctor) = try!(self.kindcheck(ctor));
+                let (mut kind, ctor) = self.kindcheck(ctor)?;
                 let mut new_args = AppVec::new();
                 for arg in args {
                     let f = Kind::function(self.subs.new_var(), self.subs.new_var());
-                    kind = try!(self.unify(&f, kind));
+                    kind = self.unify(&f, kind)?;
                     kind = match *kind {
                         Kind::Function(ref arg_kind, ref ret) => {
-                            let (actual, new_arg) = try!(self.kindcheck(arg));
+                            let (actual, new_arg) = self.kindcheck(arg)?;
                             new_args.push(new_arg);
-                            try!(self.unify(arg_kind, actual));
+                            self.unify(arg_kind, actual)?;
                             ret.clone()
                         }
                         _ => {
@@ -192,41 +193,44 @@ impl<'a> KindCheck<'a> {
                 Ok((kind, Type::app(ctor, new_args)))
             }
             Type::Variant(ref row) => {
-                let row = try!(row.row_iter()
+                let row: StdResult<_, _> = row.row_iter()
                     .map(|field| {
-                        let (kind, typ) = try!(self.kindcheck(&field.typ));
+                        let (kind, typ) = self.kindcheck(&field.typ)?;
                         let type_kind = self.type_kind();
-                        try!(self.unify(&type_kind, kind));
+                        self.unify(&type_kind, kind)?;
                         Ok(Field {
                             name: field.name.clone(),
                             typ: typ,
                         })
                     })
-                    .collect());
-                Ok((self.type_kind(), Type::variant(row)))
+                    .collect();
+
+                Ok((self.type_kind(), Type::variant(row?)))
             }
             Type::Record(ref row) => {
-                let (kind, row) = try!(self.kindcheck(row));
+                let (kind, row) = self.kindcheck(row)?;
                 let row_kind = self.row_kind();
-                try!(self.unify(&row_kind, kind));
+                self.unify(&row_kind, kind)?;
                 Ok((self.type_kind(), ArcType::from(Type::Record(row))))
             }
             Type::ExtendRow { ref types, ref fields, ref rest } => {
-                let fields = try!(fields.iter()
+                let fields: StdResult<_, _> = fields.iter()
                     .map(|field| {
-                        let (kind, typ) = try!(self.kindcheck(&field.typ));
+                        let (kind, typ) = self.kindcheck(&field.typ)?;
                         let type_kind = self.type_kind();
-                        try!(self.unify(&type_kind, kind));
+                        self.unify(&type_kind, kind)?;
                         Ok(types::Field {
                             name: field.name.clone(),
                             typ: typ,
                         })
                     })
-                    .collect());
-                let (kind, rest) = try!(self.kindcheck(rest));
+                    .collect();
+
+                let (kind, rest) = self.kindcheck(rest)?;
                 let row_kind = self.row_kind();
-                try!(self.unify(&row_kind, kind));
-                Ok((row_kind, Type::extend_row(types.clone(), fields, rest)))
+                self.unify(&row_kind, kind)?;
+
+                Ok((row_kind, Type::extend_row(types.clone(), fields?, rest)))
             }
             Type::EmptyRow => Ok((self.row_kind(), typ.clone())),
             Type::Ident(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
@@ -340,7 +344,7 @@ impl<S> unify::Unifiable<S> for ArcKind {
     fn zip_match<U>(&self,
                     other: &Self,
                     unifier: &mut unify::UnifierState<S, U>)
-                    -> ::std::result::Result<Option<Self>, Error<Symbol>>
+                    -> StdResult<Option<Self>, Error<Symbol>>
         where U: unify::Unifier<S, Self>,
     {
         match (&**self, &**other) {

@@ -118,7 +118,7 @@ fn recv(receiver: &Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
 }
 
 fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
-    let value = try!(sender.thread.deep_clone_value(value.0).map_err(|_| ()));
+    let value = sender.thread.deep_clone_value(value.0).map_err(|_| ())?;
     Ok(sender.send(Generic::from(value)))
 }
 
@@ -166,7 +166,7 @@ fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>)
     }
 }
 fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<RootedThread> {
-    let thread = try!(value.vm.new_thread());
+    let thread = value.vm.new_thread()?;
     {
         let mut context = thread.context();
         let callable = match value.value.value() {
@@ -174,7 +174,7 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
             Value::Function(c) => State::Extern(c),
             _ => State::Unknown,
         };
-        try!(value.value.push(value.vm, &mut context));
+        value.value.push(value.vm, &mut context)?;
         context.stack.push(Value::Int(0));
         StackFrame::current(&mut context.stack).enter_scope(1, callable);
     }
@@ -184,12 +184,12 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
 pub fn load<'vm>(vm: &'vm Thread) -> VmResult<()> {
     let _ = vm.register_type::<Sender<A>>("Sender", &["a"]);
     let _ = vm.register_type::<Receiver<A>>("Receiver", &["a"]);
-    try!(vm.define_global("channel", primitive!(1 channel)));
-    try!(vm.define_global("recv", primitive!(1 recv)));
-    try!(vm.define_global("send", primitive!(2 send)));
-    try!(vm.define_global("resume",
-                          primitive::<fn(&'vm Thread) -> Result<(), String>>("resume", resume)));
-    try!(vm.define_global("yield", primitive::<fn(())>("yield", yield_)));
-    try!(vm.define_global("spawn", primitive!(1 spawn)));
+    vm.define_global("channel", primitive!(1 channel))?;
+    vm.define_global("recv", primitive!(1 recv))?;
+    vm.define_global("send", primitive!(2 send))?;
+    vm.define_global("resume",
+                       primitive::<fn(&'vm Thread) -> Result<(), String>>("resume", resume))?;
+    vm.define_global("yield", primitive::<fn(())>("yield", yield_))?;
+    vm.define_global("spawn", primitive!(1 spawn))?;
     Ok(())
 }

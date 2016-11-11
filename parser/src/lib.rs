@@ -473,8 +473,8 @@ impl<'input, I, Id, F> ParserEnv<I, F>
                     } else {
                         self.expr()
                     };
-                    let (expr, new_input) = try!(expr_parser.parse_stream(input)
-                        .map_err(|err2| err2.map(|err2| err.merge(err2))));
+                    let (expr, new_input) = expr_parser.parse_stream(input)
+                        .map_err(|err2| err2.map(|err2| err.merge(err2)))?;
                     resulting_expr = expr;
                     input = new_input.into_inner();
                     break;
@@ -761,17 +761,15 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     }
 
     fn binding(&self, input: I) -> ParseResult<ValueBinding<Id>, I> {
-        let (name, input) = try!(self.pattern().parse_stream(input));
+        let (name, input) = self.pattern().parse_stream(input)?;
         let (args, input) = match name.value {
-            Pattern::Ident(_) => {
-                try!(input.combine(|input| many(self.ident()).parse_stream(input)))
-            }
+            Pattern::Ident(_) => input.combine(|input| many(self.ident()).parse_stream(input))?,
             _ => (Vec::new(), input),
         };
         let type_sig = token(Token::Colon).with(self.typ());
-        let ((typ, _, e), input) = try!(input.combine(|input| {
-            (optional(type_sig), token(Token::Equal), self.expr()).parse_stream(input)
-        }));
+        let ((typ, _, e), input) = input.combine(|input| {
+                (optional(type_sig), token(Token::Equal), self.expr()).parse_stream(input)
+            })?;
 
         Ok((ValueBinding {
             comment: None,

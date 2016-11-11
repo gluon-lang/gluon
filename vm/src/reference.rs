@@ -28,7 +28,7 @@ impl<T> Userdata for Reference<T>
                   thread: &Thread)
                   -> Result<GcPtr<Box<Userdata>>> {
         let value = self.value.lock().unwrap();
-        let cloned_value = try!(deep_clone(*value, visited, gc, thread));
+        let cloned_value = deep_clone(*value, visited, gc, thread)?;
         let data: Box<Userdata> = Box::new(Reference {
             value: Mutex::new(cloned_value),
             thread: unsafe { GcPtr::from_raw(thread) },
@@ -88,8 +88,8 @@ fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
 
 pub fn load(vm: &Thread) -> Result<()> {
     let _ = vm.register_type::<Reference<A>>("Ref", &["a"]);
-    try!(vm.define_global("<-", primitive!(2 set)));
-    try!(vm.define_global("load", primitive!(1 get)));
-    try!(vm.define_global("ref", primitive!(1 make_ref)));
+    vm.define_global("<-", primitive!(2 set))?;
+    vm.define_global("load", primitive!(1 get))?;
+    vm.define_global("ref", primitive!(1 make_ref))?;
     Ok(())
 }

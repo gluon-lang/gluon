@@ -41,29 +41,32 @@ fn new_bytecode(gc: &mut Gc,
                            records,
                            source_map,
                            .. } = f;
-    let fs = try!(inner_functions.into_iter()
+
+    let fs: StdResult<_, _> = inner_functions.into_iter()
         .map(|inner| new_bytecode(gc, vm, inner))
-        .collect());
+        .collect();
 
     let globals = module_globals.into_iter()
         .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
         .collect();
-    let records = try!(records.into_iter()
+
+    let records: StdResult<_, _> = records.into_iter()
         .map(|vec| {
             vec.into_iter()
-                .map(|field| Ok(try!(vm.interner.write().unwrap().intern(gc, field.as_ref()))))
+                .map(|field| Ok(vm.interner.write().unwrap().intern(gc, field.as_ref())?))
                 .collect::<Result<_>>()
         })
-        .collect());
+        .collect();
+
     gc.alloc(Move(BytecodeFunction {
         name: id,
         args: args,
         max_stack_size: max_stack_size,
         instructions: instructions,
-        inner_functions: fs,
+        inner_functions: fs?,
         strings: strings,
         globals: globals,
-        records: records,
+        records: records?,
         source_map: source_map,
     }))
 }
@@ -203,7 +206,7 @@ impl VmEnv {
                 None => Err(Error::UndefinedBinding(name.as_str().into())),
             };
         }
-        let (_, typ) = try!(self.get_binding(name.module().as_str()));
+        let (_, typ) = self.get_binding(name.module().as_str())?;
         let maybe_type_info = map_cow_option(typ.clone(), |typ| {
             let field_name = name.name();
             typ.type_field_iter()
@@ -275,9 +278,10 @@ impl VmEnv {
                         }
                     })
             });
-            typ = try!(next_type.ok_or_else(move || {
-                Error::UndefinedField(typ.into_owned(), field_name.into())
-            }));
+            typ =
+                next_type.ok_or_else(move || {
+                        Error::UndefinedField(typ.into_owned(), field_name.into())
+                    })?;
         }
         Ok((value, typ))
     }
@@ -288,21 +292,21 @@ impl VmEnv {
         let mut components = name.components();
         let global = match components.next() {
             Some(comp) => {
-                try!(globals.get(comp)
+                globals.get(comp)
                     .or_else(|| {
                         components = name.name().components();
                         globals.get(name.module().as_str())
                     })
-                    .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into())))
+                    .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?
             }
             None => return Err(Error::MetadataDoesNotExist(name_str.into())),
         };
 
         let mut metadata = &global.metadata;
         for field_name in components {
-            metadata = try!(metadata.module
+            metadata = metadata.module
                 .get(field_name)
-                .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into())));
+                .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?;
         }
         Ok(metadata)
     }
@@ -363,7 +367,7 @@ impl GlobalVmState {
 
     pub fn new_global_thunk(&self, f: CompiledFunction) -> Result<GcPtr<ClosureData>> {
         let mut gc = self.gc.lock().unwrap();
-        let function = try!(new_bytecode(&mut gc, self, f));
+        let function = new_bytecode(&mut gc, self, f)?;
         gc.alloc(ClosureDataDef(function, &[]))
     }
 

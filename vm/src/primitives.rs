@@ -161,8 +161,8 @@ extern "C" fn error(_: &Thread) -> Status {
 pub fn load(vm: &Thread) -> Result<()> {
     use std::f64;
     use std::char;
-    try!(vm.define_global("float",
-                          record!(
+    vm.define_global("float",
+                       record!(
         digits => f64::DIGITS,
         epsilon => f64::EPSILON,
         infinity => f64::INFINITY,
@@ -222,9 +222,9 @@ pub fn load(vm: &Thread) -> Result<()> {
         tanh => primitive!(1 f64::tanh),
         acosh => primitive!(1 f64::acosh),
         atanh => primitive!(1 f64::atanh)
-    )));
-    try!(vm.define_global("int",
-                          record!(
+    ))?;
+    vm.define_global("int",
+                       record!(
         min_value => VmInt::min_value(),
         max_value => VmInt::max_value(),
         count_ones => primitive!(1 VmInt::count_ones),
@@ -240,16 +240,16 @@ pub fn load(vm: &Thread) -> Result<()> {
         signum => primitive!(1 VmInt::signum),
         is_positive => primitive!(1 VmInt::is_positive),
         is_negative => primitive!(1 VmInt::is_negative)
-    )));
-    try!(vm.define_global("array",
-                          record!(
+    ))?;
+    vm.define_global("array",
+                       record!(
         length => primitive!(1 prim::array_length),
         index => primitive!(2 prim::array_index),
         append => primitive!(2 prim::array_append)
-    )));
+    ))?;
 
-    try!(vm.define_global("string_prim",
-                          record!(
+    vm.define_global("string_prim",
+                       record!(
         length => primitive!(1 str::len),
         is_empty => primitive!(1 str::is_empty),
         split_at => primitive!(2 str::split_at),
@@ -264,9 +264,9 @@ pub fn load(vm: &Thread) -> Result<()> {
         append => primitive!(2 prim::string_append),
         eq => primitive!(2 <str as PartialEq>::eq),
         slice => primitive!(3 prim::string_slice)
-    )));
-    try!(vm.define_global("char",
-                          record!(
+    ))?;
+    vm.define_global("char",
+                       record!(
         is_digit => primitive!(2 char::is_digit),
         to_digit => primitive!(2 char::to_digit),
         len_utf8 => primitive!(1 char::len_utf8),
@@ -278,20 +278,20 @@ pub fn load(vm: &Thread) -> Result<()> {
         is_alphanumeric => primitive!(1 char::is_alphanumeric),
         is_control => primitive!(1 char::is_control),
         is_numeric => primitive!(1 char::is_numeric)
-    )));
-    try!(vm.define_global("prim",
-                          record!(
+    ))?;
+    vm.define_global("prim",
+                       record!(
         show_Int => primitive!(1 prim::show_int),
         show_Float => primitive!(1 prim::show_float),
         show_Char => primitive!(1 prim::show_char)
-    )));
+    ))?;
 
-    try!(vm.define_global("#error",
-                          primitive::<fn(StdString) -> Generic<A>>("#error", prim::error)));
-    try!(vm.define_global("error",
-                          primitive::<fn(StdString) -> Generic<A>>("error", prim::error)));
+    vm.define_global("#error",
+                       primitive::<fn(StdString) -> Generic<A>>("#error", prim::error))?;
+    vm.define_global("error",
+                       primitive::<fn(StdString) -> Generic<A>>("error", prim::error))?;
 
-    try!(::lazy::load(vm));
-    try!(::reference::load(vm));
+    ::lazy::load(vm)?;
+    ::reference::load(vm)?;
     Ok(())
 }

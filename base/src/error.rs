@@ -34,7 +34,7 @@ impl<T> Errors<T> {
 impl<T: fmt::Display> fmt::Display for Errors<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for error in &self.errors {
-            try!(write!(f, "{}\n", error));
+            write!(f, "{}\n", error)?;
         }
         Ok(())
     }
@@ -99,18 +99,18 @@ impl<E: fmt::Display> fmt::Display for InFile<E> {
         for error in &self.error.errors {
             let Span { start, end, .. } = error.error.span;
 
-            try!(write!(f, "{}:{}\n{}\n", self.source_name, error.error, error.line));
+            write!(f, "{}:{}\n{}\n", self.source_name, error.error, error.line)?;
 
             for _ in 0..start.column.to_usize() {
-                try!(write!(f, " "));
+                write!(f, " ")?;
             }
 
-            try!(write!(f, "^"));
+            write!(f, "^")?;
             for _ in (start.column.to_usize() + 1)..end.column.to_usize() {
-                try!(write!(f, "~"));
+                write!(f, "~")?;
             }
 
-            try!(writeln!(f, ""));
+            writeln!(f, "")?;
         }
         Ok(())
     }

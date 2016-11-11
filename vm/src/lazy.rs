@@ -32,8 +32,8 @@ impl<T> Userdata for Lazy<T>
         let value = self.value.lock().unwrap();
         let cloned_value = match *value {
             Lazy_::Blackhole => return Err(Error::Message("<<loop>>".into())),
-            Lazy_::Thunk(value) => Lazy_::Thunk(try!(deep_clone(value, visited, gc, thread))),
-            Lazy_::Value(value) => Lazy_::Value(try!(deep_clone(value, visited, gc, thread))),
+            Lazy_::Thunk(value) => Lazy_::Thunk(deep_clone(value, visited, gc, thread)?),
+            Lazy_::Value(value) => Lazy_::Value(deep_clone(value, visited, gc, thread)?),
         };
         let data: Box<Userdata> = Box::new(Lazy {
             value: Mutex::new(cloned_value),
@@ -140,8 +140,8 @@ fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
 
 pub fn load<'vm>(vm: &'vm Thread) -> Result<()> {
     use api::primitive;
-    try!(vm.define_global("lazy", primitive!(1 lazy)));
-    try!(vm.define_global("force",
-                          primitive::<fn(&'vm Lazy<A>) -> Generic<A>>("force", ::lazy::force)));
+    vm.define_global("lazy", primitive!(1 lazy))?;
+    vm.define_global("force",
+                       primitive::<fn(&'vm Lazy<A>) -> Generic<A>>("force", ::lazy::force))?;
     Ok(())
 }

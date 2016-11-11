@@ -8,9 +8,9 @@ fn trace(a: Generic<A>) {
 }
 
 pub fn load(vm: &Thread) -> Result<()> {
-    try!(vm.define_global("debug",
-                          record!{
+    vm.define_global("debug",
+                       record!{
         trace => primitive!(1 trace)
-    }));
+    })?;
     Ok(())
 }

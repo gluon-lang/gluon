@@ -694,11 +694,11 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
 
         let arena = Arena::new();
         let mut s = Vec::new();
-        try!(self.pretty(&arena)
+        self.pretty(&arena)
             .group()
             .1
             .render(WIDTH, &mut s)
-            .map_err(|_| fmt::Error));
+            .map_err(|_| fmt::Error)?;
         s.pop();// Remove the ending newline
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }

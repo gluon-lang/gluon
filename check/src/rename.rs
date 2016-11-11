@@ -26,15 +26,15 @@ impl fmt::Display for RenameError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             RenameError::NoMatchingType { ref symbol, ref expected, ref possible_types } => {
-                try!(writeln!(f,
-                              "Could not resolve a binding for `{}` with type `{}`",
-                              symbol,
-                              expected));
-                try!(writeln!(f, "Possibilities:"));
+                writeln!(f,
+                         "Could not resolve a binding for `{}` with type `{}`",
+                         symbol,
+                         expected)?;
+                writeln!(f, "Possibilities:")?;
                 for &(ref span, ref typ) in possible_types {
                     match *span {
-                        Some(ref span) => try!(writeln!(f, "{} at {}", typ, span.start)),
-                        None => try!(writeln!(f, "{} at 'global'", typ)),
+                        Some(ref span) => writeln!(f, "{} at {}", typ, span.start)?,
+                        None => writeln!(f, "{} at 'global'", typ)?,
                     }
                 }
                 Ok(())
@@ -193,7 +193,7 @@ pub fn rename(symbols: &mut SymbolModule,
         fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<(), RenameError> {
             match expr.value {
                 Expr::Ident(ref mut id) => {
-                    if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
+                    if let Some(new_id) = self.rename(&id.name, &id.typ)? {
                         debug!("Rename identifier {} = {}", id.name, new_id);
                         id.name = new_id;
                     }
@@ -205,7 +205,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         match *maybe_expr {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
-                                if let Some(new_id) = try!(self.rename(id, &field.typ)) {
+                                if let Some(new_id) = self.rename(id, &field.typ)? {
                                     debug!("Rename record field {} = {}", id, new_id);
                                     *maybe_expr = Some(pos::spanned(expr.span,
                                                                     Expr::Ident(TypedIdent {
@@ -218,7 +218,7 @@ pub fn rename(symbols: &mut SymbolModule,
                     }
                 }
                 Expr::Infix(ref mut l, ref mut id, ref mut r) => {
-                    if let Some(new_id) = try!(self.rename(&id.name, &id.typ)) {
+                    if let Some(new_id) = self.rename(&id.name, &id.typ)? {
                         debug!("Rename {} = {}",
                                self.symbols.string(&id.name),
                                self.symbols.string(&new_id));

@@ -194,7 +194,7 @@ fn load_script(WithVM { vm, value: name }: WithVM<&str>, expr: &str) -> IO<Strin
 
 pub fn load(vm: &Thread) -> Result<()> {
 
-    try!(vm.register_type::<GluonFile>("File", &[]));
+    vm.register_type::<GluonFile>("File", &[])?;
 
     // io_flat_map f m : (a -> IO b) -> IO a -> IO b
     //     = f (m ())
@@ -205,16 +205,16 @@ pub fn load(vm: &Thread) -> Result<()> {
         TailCall(2),    // [f_ret]          Call f m_ret ()
     ];
     let io_flat_map_type = <fn (fn (A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
-    try!(vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map));
+    vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map)?;
 
 
-    try!(vm.add_bytecode("io_pure",
-                         <fn(A) -> IO<A> as VmType>::make_type(vm),
-                         2,
-                         vec![Pop(1)]));
+    vm.add_bytecode("io_pure",
+                      <fn(A) -> IO<A> as VmType>::make_type(vm),
+                      2,
+                      vec![Pop(1)])?;
     // IO functions
-    try!(vm.define_global("io",
-                          record!(
+    vm.define_global("io",
+                       record!(
         open_file => primitive!(1 open_file),
         read_file => primitive!(2 read_file),
         read_file_to_string => primitive!(1 read_file_to_string),
@@ -226,6 +226,6 @@ pub fn load(vm: &Thread) -> Result<()> {
             primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", catch_io),
         run_expr => primitive!(1 run_expr),
         load_script => primitive!(2 load_script)
-    )));
+    ))?;
     Ok(())
 }

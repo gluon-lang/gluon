@@ -155,9 +155,9 @@ impl Compiler {
          file: &str,
          expr_str: &str)
          -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<ParseError>)> {
-        Ok(try!(parser::parse_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
+        Ok(parser::parse_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
                                    expr_str)
-            .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))))
+            .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -178,7 +178,7 @@ impl Compiler {
                          expected_type: Option<&ArcType>)
                          -> Result<(SpannedExpr<Symbol>, ArcType)> {
         let TypecheckValue { expr, typ } =
-            try!(expr_str.typecheck_expected(self, vm, file, expr_str, expected_type));
+            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
         Ok((expr, typ))
     }
 
@@ -205,7 +205,7 @@ impl Compiler {
                             expr_str: &str)
                             -> Result<(SpannedExpr<Symbol>, ArcType, Metadata)> {
         use check::metadata;
-        let (mut expr, typ) = try!(self.typecheck_str(vm, file, expr_str, None));
+        let (mut expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
 
         let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
         Ok((expr, typ, metadata))
@@ -226,8 +226,8 @@ impl Compiler {
         use std::io::Read;
         let mut buffer = StdString::new();
         {
-            let mut file = try!(File::open(filename));
-            try!(file.read_to_string(&mut buffer));
+            let mut file = File::open(filename)?;
+            file.read_to_string(&mut buffer)?;
         }
         let name = filename_to_module(filename);
         self.load_script(vm, &name, &buffer)
@@ -244,7 +244,7 @@ impl Compiler {
     {
         let expected = T::make_type(vm);
         let ExecuteValue { typ: actual, value, .. } =
-            try!(expr_str.run_expr(self, vm, name, expr_str, Some(&expected)));
+            expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?;
         unsafe {
             match T::from_value(vm, Variants::new(&value)) {
                 Some(value) => Ok((value, actual)),
@@ -265,7 +265,7 @@ impl Compiler {
     {
         let expected = T::make_type(vm);
         let ExecuteValue { typ: actual, value, .. } =
-            try!(expr_str.run_expr(self, vm, name, expr_str, Some(&expected)));
+            expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?;
         let is_io = {
             expected.as_alias()
                 .and_then(|(expected_alias_id, _)| {
@@ -277,7 +277,7 @@ impl Compiler {
                 .unwrap_or(false)
         };
         let value = if is_io {
-            try!(vm.execute_io(*value))
+            vm.execute_io(*value)?
         } else {
             *value
         };

@@ -18,12 +18,12 @@ fn parallel() {
 fn parallel_() -> Result<(), Error> {
     let vm = new_vm();
     let mut compiler = Compiler::new();
-    let (value, _) = try!(compiler.run_expr(&vm, "<top>", " channel 0 "));
+    let (value, _) = compiler.run_expr(&vm, "<top>", " channel 0 ")?;
     let value: ChannelRecord<OpaqueValue<RootedThread, Sender<i32>>,
                              OpaqueValue<RootedThread, Receiver<i32>>> = value;
     let (sender, receiver) = value.split();
 
-    let child = try!(vm.new_thread());
+    let child = vm.new_thread()?;
     let handle1 = spawn(move || -> Result<(), Error> {
         let expr = r#"
         let f sender =
@@ -34,11 +34,11 @@ fn parallel_() -> Result<(), Error> {
         "#;
         let mut compiler = Compiler::new();
         let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Sender<i32>>)> =
-            try!(compiler.run_expr(&child, "<top>", expr)).0;
-        Ok(try!(f.call(sender)))
+            compiler.run_expr(&child, "<top>", expr)?.0;
+        Ok(f.call(sender)?)
     });
 
-    let child2 = try!(vm.new_thread());
+    let child2 = vm.new_thread()?;
     let handle2 = spawn(move || -> Result<(), Error> {
         let expr = r#"
         let { assert } = import "std/test.glu"
@@ -53,11 +53,11 @@ fn parallel_() -> Result<(), Error> {
         "#;
         let mut compiler = Compiler::new();
         let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Receiver<i32>>)> =
-            try!(compiler.run_expr(&child2, "<top>", expr)).0;
-        Ok(try!(f.call(receiver)))
+            compiler.run_expr(&child2, "<top>", expr)?.0;
+        Ok(f.call(receiver)?)
     });
 
     // Ensure that both threads stop without any panics (just dropping ignores panics)
-    try!(handle1.join().unwrap());
+    handle1.join().unwrap()?;
     handle2.join().unwrap()
 }

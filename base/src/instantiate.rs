@@ -50,7 +50,7 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
         }
         reduced_aliases.push(alias_id.clone());
     }
-    let mut typ = match try!(maybe_remove_alias(env, typ)) {
+    let mut typ = match maybe_remove_alias(env, typ)? {
         Some(new) => new,
         None => return Ok(None),
     };
@@ -61,7 +61,7 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
             }
             reduced_aliases.push(alias_id.clone());
         }
-        match try!(maybe_remove_alias(env, &typ)) {
+        match maybe_remove_alias(env, &typ)? {
             Some(new) => typ = new,
             None => break,
         }
@@ -93,9 +93,9 @@ pub fn maybe_remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType
     let alias = match maybe_alias {
         Some(alias) => alias,
         None => {
-            try!(env.find_type_info(&id)
+            env.find_type_info(&id)
                 .map(|a| &**a)
-                .ok_or_else(|| Error::UndefinedType(id.clone())))
+                .ok_or_else(|| Error::UndefinedType(id.clone()))?
         }
     };
     Ok(type_of_alias(alias, args))

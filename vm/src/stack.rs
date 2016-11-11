@@ -406,9 +406,9 @@ pub struct Stacktrace {
 
 impl fmt::Display for Stacktrace {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(writeln!(f, "Stacktrace:\n"));
+        writeln!(f, "Stacktrace:\n")?;
         for (i, frame) in self.frames.iter().enumerate() {
-            try!(match *frame {
+            match *frame {
                 Some(ref frame) => {
                     writeln!(f,
                              "{}: {}:Line {}",
@@ -417,7 +417,7 @@ impl fmt::Display for Stacktrace {
                              frame.line)
                 }
                 None => writeln!(f, "{}: <unknown>", i),
-            })
+            }?
         }
         Ok(())
     }

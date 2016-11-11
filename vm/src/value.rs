@@ -309,9 +309,9 @@ impl fmt::Debug for Value {
                 if level <= 0 || self.1.is_empty() {
                     return Ok(());
                 }
-                try!(write!(f, "{:?}", Level(level - 1, &self.1[0])));
+                write!(f, "{:?}", Level(level - 1, &self.1[0]))?;
                 for v in &self.1[1..] {
-                    try!(write!(f, ", {:?}", Level(level - 1, v)));
+                    write!(f, ", {:?}", Level(level - 1, v))?;
                 }
                 Ok(())
             }
@@ -336,13 +336,13 @@ impl fmt::Debug for Value {
                     }
                     Value::Array(ref array) => {
                         let mut first = true;
-                        try!(write!(f, "["));
+                        write!(f, "[")?;
                         for value in array.iter() {
                             if !first {
-                                try!(write!(f, ", "));
+                                write!(f, ", ")?;
                             }
                             first = false;
-                            try!(write!(f, "{:?}", Level(level - 1, &value)));
+                            write!(f, "{:?}", Level(level - 1, &value))?;
                         }
                         write!(f, "]")
                     }
@@ -680,9 +680,8 @@ unsafe impl<'a> DataDef for &'a ValueArray {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.repr = self.repr;
-            on_array!(self, |array: &Array<_>| {
-                result.unsafe_array_mut().initialize(array.iter().cloned())
-            });
+            on_array!(self,
+                      |array: &Array<_>| result.unsafe_array_mut().initialize(array.iter().cloned()));
             result
         }
     }
@@ -734,7 +733,7 @@ fn deep_clone_ptr<T, A>(value: GcPtr<T>,
         Entry::Occupied(entry) => return Ok(Ok(*entry.get())),
         Entry::Vacant(entry) => {
             // FIXME Should allocate the real `Value` and possibly fill it later
-            let (value, new_ptr) = try!(alloc(&value));
+            let (value, new_ptr) = alloc(&value)?;
             entry.insert(value);
             new_ptr
         }
@@ -746,10 +745,11 @@ fn deep_clone_str(data: GcPtr<Str>,
                   visited: &mut FnvMap<*const (), Value>,
                   gc: &mut Gc)
                   -> Result<Value> {
-    Ok(try!(deep_clone_ptr(data, visited, |data| {
-            let ptr = try!(gc.alloc(&data[..]));
+    Ok(deep_clone_ptr(data, visited, |data| {
+            let ptr = gc.alloc(&data[..])?;
             Ok((String(ptr), ptr))
-        }))
+        })
+        ?
         .unwrap_or_else(String))
 }
 fn deep_clone_data(data: GcPtr<DataStruct>,
@@ -757,13 +757,13 @@ fn deep_clone_data(data: GcPtr<DataStruct>,
                    gc: &mut Gc,
                    thread: &Thread)
                    -> Result<GcPtr<DataStruct>> {
-    let result = try!(deep_clone_ptr(data, visited, |data| {
-        let ptr = try!(gc.alloc(Def {
-            tag: data.tag,
-            elems: &data.fields,
-        }));
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(Def {
+                tag: data.tag,
+                elems: &data.fields,
+            })?;
         Ok((Value::Data(ptr), ptr))
-    }));
+    })?;
     match result {
         Ok(Value::Data(ptr)) => Ok(ptr),
         Ok(_) => unreachable!(),
@@ -771,7 +771,7 @@ fn deep_clone_data(data: GcPtr<DataStruct>,
             {
                 let new_fields = unsafe { &mut new_data.as_mut().fields };
                 for (new, old) in new_fields.iter_mut().zip(&data.fields) {
-                    *new = try!(deep_clone(*old, visited, gc, thread));
+                    *new = deep_clone(*old, visited, gc, thread)?;
                 }
             }
             Ok(new_data)
@@ -801,21 +801,21 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
                                         -> Result<()> {
         let new_array = new_array.as_mut().unsafe_array_mut::<T>();
         for field in new_array.iter_mut() {
-            *field = try!(deep_clone(*field, visited, gc, thread));
+            *field = deep_clone(*field, visited, gc, thread)?;
         }
         Ok(())
     }
 
-    let result = try!(deep_clone_ptr(array, visited, |array| {
-        let ptr = try!(gc.alloc(array));
+    let result = deep_clone_ptr(array, visited, |array| {
+        let ptr = gc.alloc(array)?;
         Ok((Value::Array(ptr), ptr))
-    }));
+    })?;
     match result {
         Ok(Value::Array(ptr)) => Ok(ptr),
         Ok(_) => unreachable!(),
         Err(new_array) => {
             unsafe {
-                try!(match new_array.repr() {
+                match new_array.repr() {
                     Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
                     Repr::Array => {
                         deep_clone_elems(deep_clone_array, new_array, visited, gc, thread)
@@ -827,7 +827,7 @@ fn deep_clone_array(array: GcPtr<ValueArray>,
                     Repr::Thread => {
                         return Err(Error::Message("Threads cannot be deep cloned yet".into()))
                     }
-                });
+                }?;
             }
             Ok(new_array)
         }
@@ -839,10 +839,10 @@ fn deep_clone_closure(data: GcPtr<ClosureData>,
                       gc: &mut Gc,
                       thread: &Thread)
                       -> Result<GcPtr<ClosureData>> {
-    let result = try!(deep_clone_ptr(data, visited, |data| {
-        let ptr = try!(gc.alloc(ClosureDataDef(data.function, &data.upvars)));
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars))?;
         Ok((Closure(ptr), ptr))
-    }));
+    })?;
     match result {
         Ok(Value::Closure(ptr)) => Ok(ptr),
         Ok(_) => unreachable!(),
@@ -850,7 +850,7 @@ fn deep_clone_closure(data: GcPtr<ClosureData>,
             {
                 let new_upvars = unsafe { &mut new_data.as_mut().upvars };
                 for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
-                    *new = try!(deep_clone(*old, visited, gc, thread));
+                    *new = deep_clone(*old, visited, gc, thread)?;
                 }
             }
             Ok(new_data)
@@ -862,10 +862,10 @@ fn deep_clone_app(data: GcPtr<PartialApplicationData>,
                   gc: &mut Gc,
                   thread: &Thread)
                   -> Result<GcPtr<PartialApplicationData>> {
-    let result = try!(deep_clone_ptr(data, visited, |data| {
-        let ptr = try!(gc.alloc(PartialApplicationDataDef(data.function, &data.args)));
+    let result = deep_clone_ptr(data, visited, |data| {
+        let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.args))?;
         Ok((PartialApplication(ptr), ptr))
-    }));
+    })?;
     match result {
         Ok(Value::PartialApplication(ptr)) => Ok(ptr),
         Ok(_) => unreachable!(),
@@ -874,7 +874,7 @@ fn deep_clone_app(data: GcPtr<PartialApplicationData>,
                 let new_args = unsafe { &mut new_data.as_mut().args };
                 for (new, old) in new_args.iter_mut()
                     .zip(&data.args) {
-                    *new = try!(deep_clone(*old, visited, gc, thread));
+                    *new = deep_clone(*old, visited, gc, thread)?;
                 }
             }
             Ok(new_data)

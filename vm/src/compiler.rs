@@ -163,7 +163,7 @@ impl FunctionEnv {
         match field_index {
             FieldAccess::Index(i) => self.emit(GetOffset(i)),
             FieldAccess::Name => {
-                let interned = try!(compiler.intern(field.as_ref()));
+                let interned = compiler.intern(field.as_ref())?;
                 let index = self.add_string_constant(interned);
                 self.emit(GetField(index));
             }
@@ -435,7 +435,7 @@ impl<'a> Compiler<'a> {
         let typ = Type::function(vec![],
                                  ArcType::from(expr.env_type_of(&self.globals).clone()));
         env.start_function(self, 0, id, typ);
-        try!(self.compile(expr, &mut env, true));
+        self.compile(expr, &mut env, true)?;
         let FunctionEnv { function, .. } = env.end_function(self);
         Ok(function)
     }
@@ -469,7 +469,7 @@ impl<'a> Compiler<'a> {
         let saved_line = function.current_line;
         function.current_line = self.source
             .line_number_at_byte(expr.span.start);
-        while let Some(next) = try!(self.compile_(expr, function, tail_position)) {
+        while let Some(next) = self.compile_(expr, function, tail_position)? {
             exprs.push(next);
             expr = next;
             function.current_line = self.source
@@ -500,17 +500,17 @@ impl<'a> Compiler<'a> {
                     Literal::Int(i) => function.emit(PushInt(i as isize)),
                     Literal::Byte(b) => function.emit(PushByte(b)),
                     Literal::Float(f) => function.emit(PushFloat(f)),
-                    Literal::String(ref s) => function.emit_string(try!(self.intern(&s))),
+                    Literal::String(ref s) => function.emit_string(self.intern(&s)?),
                     Literal::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
             Expr::Ident(ref id) => self.load_identifier(&id.name, function),
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                try!(self.compile(&**pred, function, false));
+                self.compile(&**pred, function, false)?;
                 let jump_index = function.function.instructions.len();
                 function.emit(CJump(0));
 
-                try!(self.compile(&**if_false, function, tail_position));
+                self.compile(&**if_false, function, tail_position)?;
                 // The stack size of the true branch should not be increased by the false branch
                 function.stack_size -= 1;
                 let false_jump_index = function.function.instructions.len();
@@ -518,13 +518,13 @@ impl<'a> Compiler<'a> {
 
                 function.function.instructions[jump_index] =
                     CJump(function.function.instructions.len() as VmIndex);
-                try!(self.compile(&**if_true, function, tail_position));
+                self.compile(&**if_true, function, tail_position)?;
                 function.function.instructions[false_jump_index] =
                     Jump(function.function.instructions.len() as VmIndex);
             }
             Expr::Infix(ref lhs, ref op, ref rhs) => {
                 if op.name.as_ref() == "&&" {
-                    try!(self.compile(&**lhs, function, false));
+                    self.compile(&**lhs, function, false)?;
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(lhs_end as VmIndex + 3));//Jump to rhs evaluation
                     function.emit(Construct { tag: 0, args: 0 });
@@ -532,15 +532,15 @@ impl<'a> Compiler<'a> {
                     // Dont count the integer added added above as the next part of the code never
                     // pushed it
                     function.stack_size -= 1;
-                    try!(self.compile(&**rhs, function, tail_position));
+                    self.compile(&**rhs, function, tail_position)?;
                     // replace jump instruction
                     function.function.instructions[lhs_end + 2] =
                         Jump(function.function.instructions.len() as VmIndex);
                 } else if op.name.as_ref() == "||" {
-                    try!(self.compile(&**lhs, function, false));
+                    self.compile(&**lhs, function, false)?;
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(0));
-                    try!(self.compile(&**rhs, function, tail_position));
+                    self.compile(&**rhs, function, tail_position)?;
                     function.emit(Jump(0));
                     function.function.instructions[lhs_end] =
                         CJump(function.function.instructions.len() as VmIndex);
@@ -574,8 +574,8 @@ impl<'a> Compiler<'a> {
                             Call(2)
                         }
                     };
-                    try!(self.compile(&**lhs, function, false));
-                    try!(self.compile(&**rhs, function, false));
+                    self.compile(&**lhs, function, false)?;
+                    self.compile(&**rhs, function, false)?;
                     function.emit(instr);
                 }
             }
@@ -610,7 +610,7 @@ impl<'a> Compiler<'a> {
                             _ => panic!("Lambda binds to non identifer pattern"),
                         };
                         let (function_index, vars, cf) =
-                            try!(self.compile_lambda(name, &bind.args, &bind.expr, function));
+                            self.compile_lambda(name, &bind.args, &bind.expr, function)?;
                         let offset = first_index + i;
                         function.function.instructions[offset] = NewClosure {
                             function_index: function_index,
@@ -620,9 +620,9 @@ impl<'a> Compiler<'a> {
                         function.stack_size -= vars;
                         function.function.inner_functions.push(cf);
                     } else {
-                        try!(self.compile(&bind.expr, function, false));
+                        self.compile(&bind.expr, function, false)?;
                         let typ = bind.expr.env_type_of(self);
-                        try!(self.compile_let_pattern(&bind.name.value, &typ, function));
+                        self.compile_let_pattern(&bind.name.value, &typ, function)?;
                     }
                 }
                 return Ok(Some(body));
@@ -631,7 +631,7 @@ impl<'a> Compiler<'a> {
                 if let Expr::Ident(ref id) = func.value {
                     if let Some(Constructor(tag, num_args)) = self.find(&id.name, function) {
                         for arg in args.iter() {
-                            try!(self.compile(arg, function, false));
+                            self.compile(arg, function, false)?;
                         }
                         function.emit(Construct {
                             tag: tag,
@@ -640,22 +640,22 @@ impl<'a> Compiler<'a> {
                         return Ok(None);
                     }
                 }
-                try!(self.compile(&**func, function, false));
+                self.compile(&**func, function, false)?;
                 for arg in args.iter() {
-                    try!(self.compile(arg, function, false));
+                    self.compile(arg, function, false)?;
                 }
                 function.emit_call(args.len() as VmIndex, tail_position);
             }
             Expr::Projection(ref expr, ref id, ref typ) => {
-                try!(self.compile(&**expr, function, false));
+                self.compile(&**expr, function, false)?;
                 debug!("{:?} {:?} {:?}", expr, id, typ);
                 let typ = expr.env_type_of(self);
                 debug!("Projection {}", types::display_type(&self.symbols, &typ));
 
-                try!(function.emit_field(self, &typ, id));
+                function.emit_field(self, &typ, id)?;
             }
             Expr::Match(ref expr, ref alts) => {
-                try!(self.compile(&**expr, function, false));
+                self.compile(&**expr, function, false)?;
                 // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
@@ -690,7 +690,7 @@ impl<'a> Compiler<'a> {
                 if !catch_all {
                     let error_fn = self.symbols.symbol("#error");
                     self.load_identifier(&error_fn, function);
-                    function.emit_string(try!(self.intern("Non-exhaustive pattern")));
+                    function.emit_string(self.intern("Non-exhaustive pattern")?);
                     function.emit(Call(1));
                     // The stack has been increased by 1 here but it should not affect compiling the
                     // alternatives
@@ -712,7 +712,7 @@ impl<'a> Compiler<'a> {
                         }
                         Pattern::Record { .. } => {
                             let typ = &expr.env_type_of(self);
-                            try!(self.compile_let_pattern(&alt.pattern.value, typ, function));
+                            self.compile_let_pattern(&alt.pattern.value, typ, function)?;
                         }
                         Pattern::Ident(ref id) => {
                             function.function.instructions[start_index] =
@@ -720,7 +720,7 @@ impl<'a> Compiler<'a> {
                             function.new_stack_var(id.name.clone());
                         }
                     }
-                    try!(self.compile(&alt.expr, function, tail_position));
+                    self.compile(&alt.expr, function, tail_position)?;
                     let count = function.pop_pattern(&alt.pattern.value);
                     self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
@@ -734,13 +734,13 @@ impl<'a> Compiler<'a> {
             }
             Expr::Array(ref a) => {
                 for expr in a.exprs.iter() {
-                    try!(self.compile(expr, function, false));
+                    self.compile(expr, function, false)?;
                 }
                 function.emit(ConstructArray(a.exprs.len() as VmIndex));
             }
             Expr::Lambda(ref lambda) => {
                 let (function_index, vars, cf) =
-                    try!(self.compile_lambda(&lambda.id, &lambda.args, &lambda.body, function));
+                    self.compile_lambda(&lambda.id, &lambda.args, &lambda.body, function)?;
                 function.emit(MakeClosure {
                     function_index: function_index,
                     upvars: vars,
@@ -758,7 +758,7 @@ impl<'a> Compiler<'a> {
             Expr::Record { exprs: ref fields, .. } => {
                 for field in fields {
                     match field.1 {
-                        Some(ref field_expr) => try!(self.compile(field_expr, function, false)),
+                        Some(ref field_expr) => self.compile(field_expr, function, false)?,
                         None => self.load_identifier(&field.0, function),
                     }
                 }
@@ -771,7 +771,7 @@ impl<'a> Compiler<'a> {
             }
             Expr::Tuple(ref exprs) => {
                 for expr in exprs {
-                    try!(self.compile(expr, function, false));
+                    self.compile(expr, function, false)?;
                 }
                 function.emit(Construct {
                     tag: 0,
@@ -781,9 +781,9 @@ impl<'a> Compiler<'a> {
             Expr::Block(ref exprs) => {
                 let (last, exprs) = exprs.split_last().expect("Expr in block");
                 for expr in exprs {
-                    try!(self.compile(expr, function, false));
+                    self.compile(expr, function, false)?;
                 }
-                try!(self.compile(last, function, tail_position));
+                self.compile(last, function, tail_position)?;
                 function.emit(Slide(exprs.len() as u32 - 1));
             }
         }
@@ -826,7 +826,7 @@ impl<'a> Compiler<'a> {
                             let record_index = function.stack_size();
                             for pattern_field in fields {
                                 function.emit(Push(record_index));
-                                try!(function.emit_field(self, &typ, &pattern_field.0));
+                                function.emit_field(self, &typ, &pattern_field.0)?;
                                 function.new_stack_var(pattern_field.1
                                     .as_ref()
                                     .unwrap_or(&pattern_field.0)
@@ -868,7 +868,7 @@ impl<'a> Compiler<'a> {
         for arg in args {
             function.push_stack_var(arg.name.clone());
         }
-        try!(self.compile(body, function, true));
+        self.compile(body, function, true)?;
 
         for _ in 0..args.len() {
             function.pop_var();
