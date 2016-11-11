@@ -557,7 +557,7 @@ impl VmType for Ordering {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.find_type_info("std.types.Ordering").unwrap().name.clone();
-        Type::app(Type::ident(symbol), vec![])
+        Type::app(Type::ident(symbol), collect![])
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
@@ -744,7 +744,7 @@ impl<T: VmType> VmType for Option<T>
     type Type = Option<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.find_type_info("std.types.Option").unwrap().name.clone();
-        Type::app(Type::ident(symbol), vec![T::make_type(vm)])
+        Type::app(Type::ident(symbol), collect![T::make_type(vm)])
     }
 }
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
@@ -787,7 +787,7 @@ impl<T: VmType, E: VmType> VmType for StdResult<T, E>
     fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm.find_type_info("std.types.Result").unwrap().name.clone();
         Type::app(Type::ident(symbol),
-                  vec![E::make_type(vm), T::make_type(vm)])
+                  collect![E::make_type(vm), T::make_type(vm)])
     }
 }
 
@@ -857,7 +857,7 @@ impl<T> VmType for IO<T>
     fn make_type(vm: &Thread) -> ArcType {
         let env = vm.global_env().get_env();
         let alias = env.find_type_info("IO").unwrap().into_owned();
-        Type::app(alias.into_type(), vec![T::make_type(vm)])
+        Type::app(alias.into_type(), collect![T::make_type(vm)])
     }
     fn extra_args() -> VmIndex {
         1
@@ -1506,7 +1506,7 @@ impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
     type Type = fn ($($args::Type),*) -> R::Type;
     #[allow(non_snake_case)]
     fn make_type(vm: &Thread) -> ArcType {
-        let args = vec![$(make_type::<$args>(vm)),*];
+        let args = collect![$(make_type::<$args>(vm)),*];
         Type::function(args, make_type::<R>(vm))
     }
 }

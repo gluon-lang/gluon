@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate collect_mac;
 extern crate env_logger;
 
 extern crate gluon_base as base;

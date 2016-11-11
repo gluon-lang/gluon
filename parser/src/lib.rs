@@ -21,7 +21,7 @@ use base::kind::Kind;
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Name, Symbol};
-use base::types::{Alias, ArcType, Generic, Field, Type};
+use base::types::{Alias, AppVec, ArcType, Generic, Field, Type};
 
 use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
                           BufferedStream};
@@ -280,7 +280,7 @@ impl<'input, I, Id, F> ParserEnv<I, F>
     fn parse_type(&self, input: I) -> ParseResult<ArcType<Id>, I> {
         (many1(self.parser(ParserEnv::<I, F>::type_arg)),
          optional(token(Token::RightArrow).with(self.typ())))
-            .map(|(mut arg, ret): (Vec<_>, _)| {
+            .map(|(mut arg, ret): (AppVec<_>, _)| {
                 let arg = if arg.len() == 1 {
                     arg.pop().unwrap()
                 } else {
@@ -381,18 +381,18 @@ impl<'input, I, Id, F> ParserEnv<I, F>
 
     fn type_binding(&self, input: I) -> ParseResult<TypeBinding<Id>, I> {
         (self.ident(), many(self.ident()))
-            .then(|(name, args): (Id, Vec<Id>)| {
-                let arg_types = args.iter()
-                    .map(|id| {
-                        Type::generic(Generic {
-                            kind: Kind::variable(0),
-                            id: id.clone(),
-                        })
-                    })
-                    .collect();
+            .then(|(name, args): (Id, AppVec<Id>)| {
                 let return_type = if args.is_empty() {
                     Type::ident(name.clone())
                 } else {
+                    let arg_types = args.iter()
+                        .map(|id| {
+                            Type::generic(Generic {
+                                kind: Kind::variable(0),
+                                id: id.clone(),
+                            })
+                        })
+                        .collect();
                     Type::app(Type::ident(name.clone()), arg_types)
                 };
                 token(Token::Equal)

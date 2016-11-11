@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate collect_mac;
 extern crate env_logger;
 
 extern crate gluon_base as base;
@@ -287,7 +289,7 @@ in eq_Int
                                         name: support::intern_unscoped("=="),
                                         typ: Type::function(vec![typ("a"), typ("a")], bool),
                                     }]));
-    let expected = Ok(Type::app(eq, vec![typ("Int")]));
+    let expected = Ok(Type::app(eq, collect![typ("Int")]));
 
     assert_eq!(result, expected);
 }
@@ -320,7 +322,8 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
                                                                                   vec![typ("a")])),
                                       }]);
     let option = alias("Option", &["a"], variants);
-    let expected = Ok(Type::app(option, vec![typ("Int")]));
+
+    let expected = Ok(Type::app(option, collect![typ("Int")]));
 
     assert_eq!(result, expected);
 }
@@ -359,7 +362,7 @@ test
                                                                    support::typ_a("Test",
                                                                                   vec![typ("a")])),
                                       }]);
-    let expected = Ok(Type::app(alias("Test", &["a"], variants), vec![Type::unit()]));
+    let expected = Ok(Type::app(alias("Test", &["a"], variants), collect![Type::unit()]));
 
     assert_eq!(result, expected);
 }
@@ -409,7 +412,7 @@ in f
 ";
     let result = support::typecheck(text);
     let function = alias("Fn", &["a", "b"], Type::function(vec![typ("a")], typ("b")));
-    let args = vec![typ("String"), typ("Int")];
+    let args = collect![typ("String"), typ("Int")];
     let expected = Ok(Type::app(function, args));
 
     assert_eq!(result, expected);
@@ -539,7 +542,7 @@ return 1
         Type::variant(vec![Field {
                                name: intern(name),
                                typ: Type::function(vec![typ("a")],
-                                                        Type::app(typ(name), vec![typ("a")])),
+                                                        Type::app(typ(name), collect![typ("a")])),
                            }])
     };
     let test = alias("Test", &["a"], variant("Test"));
@@ -557,8 +560,9 @@ return 1
                                    id: intern("a"),
                                },
                             ],
-                           Type::app(Type::generic(m), vec![Type::app(id, vec![typ("a")])]));
-    let expected = Ok(Type::app(id_t, vec![test, typ("Int")]));
+                           Type::app(Type::generic(m),
+                                     collect![Type::app(id, collect![typ("a")])]));
+    let expected = Ok(Type::app(id_t, collect![test, typ("Int")]));
 
     assert_eq!(result, expected);
 }

@@ -76,7 +76,7 @@ impl<T> VmType for Lazy<T>
         let env = vm.global_env().get_env();
         let symbol = env.find_type_info("Lazy").unwrap().name.clone();
         let ctor = Type::ident(symbol);
-        types::Type::app(ctor, vec![T::make_type(vm)])
+        types::Type::app(ctor, collect![T::make_type(vm)])
     }
 }
 

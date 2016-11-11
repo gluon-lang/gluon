@@ -1,8 +1,10 @@
 use std::fmt;
 use std::mem;
 
+use smallvec::VecLike;
+
 use base::error::Errors;
-use base::types::{self, ArcType, Field, Type, TypeVariable, TypeEnv, merge};
+use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
 use base::instantiate;
 use base::scoped_map::ScopedMap;
@@ -170,31 +172,7 @@ fn do_zip_match<'a, U>(self_: &ArcType,
     debug!("Unifying:\n{:?} <=> {:?}", self_, other);
     match (&**self_, &**other) {
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
-            use std::cmp::Ordering::*;
-            match l_args.len().cmp(&r_args.len()) {
-                Equal => {
-                    let new_type = unifier.try_match(l, r);
-                    let new_args = walk_move_types(l_args.iter().zip(r_args),
-                                                   |l, r| unifier.try_match(l, r));
-                    Ok(merge(l, new_type, l_args, new_args, Type::app))
-                }
-                Less => {
-                    let offset = r_args.len() - l_args.len();
-                    let new_type =
-                        unifier.try_match(l, &Type::app(r.clone(), r_args[..offset].into()));
-                    let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
-                                                   |l, r| unifier.try_match(l, r));
-                    Ok(merge(l, new_type, l_args, new_args, Type::app))
-                }
-                Greater => {
-                    let offset = l_args.len() - r_args.len();
-                    let new_type =
-                        unifier.try_match(&Type::app(l.clone(), l_args[..offset].into()), r);
-                    let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
-                                                   |l, r| unifier.try_match(l, r));
-                    Ok(merge(r, new_type, r_args, new_args, Type::app))
-                }
-            }
+            unify_app(unifier, l, l_args, r, r_args)
         }
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
@@ -277,6 +255,53 @@ fn do_zip_match<'a, U>(self_: &ArcType,
     }
 }
 
+fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
+                    l: &ArcType,
+                    l_args: &AppVec<ArcType>,
+                    r: &ArcType,
+                    r_args: &AppVec<ArcType>)
+                    -> Result<Option<ArcType>, Error<Symbol>>
+    where U: Unifier<State<'a>, ArcType>,
+{
+    use std::cmp::Ordering::*;
+    // Applications are curried `a b c d` == `((a b) c) d` we need to unify the last
+    // argument which eachother followed by the second last etc.
+    // If the number of arguments are not equal, the application with fewer arguments are
+    // unified with the other type applied on its remaining arguments
+    // a b c <> d e
+    // Unifies:
+    // c <> e
+    // a b <> d
+    match l_args.len().cmp(&r_args.len()) {
+        Equal => {
+            let new_type = unifier.try_match(l, r);
+            let new_args = walk_move_types(l_args.iter().zip(r_args),
+                                           |l, r| unifier.try_match(l, r));
+            Ok(merge(l, new_type, l_args, new_args, Type::app))
+        }
+        Less => {
+            let offset = r_args.len() - l_args.len();
+
+            let reduced_r = Type::app(r.clone(), r_args[..offset].iter().cloned().collect());
+            let new_type = unifier.try_match(l, &reduced_r);
+
+            let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
+                                           |l, r| unifier.try_match(l, r));
+            Ok(merge(l, new_type, l_args, new_args, Type::app))
+        }
+        Greater => {
+            let offset = l_args.len() - r_args.len();
+
+            let reduced_l = Type::app(l.clone(), l_args[..offset].iter().cloned().collect());
+            let new_type = unifier.try_match(&reduced_l, r);
+
+            let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
+                                           |l, r| unifier.try_match(l, r));
+            Ok(merge(r, new_type, r_args, new_args, Type::app))
+        }
+    }
+}
+
 fn gather_fields<'a, I, J, T>
     (l: I,
      r: J)
@@ -338,7 +363,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
     });
 
     // Pack all fields from both records into a single `Type::ExtendRow` value
-    let mut fields = match new_both {
+    let mut fields: Vec<_> = match new_both {
         Some(fields) => fields,
         None => both.iter().map(|pair| pair.0.clone()).collect(),
     };
@@ -541,24 +566,26 @@ fn try_with_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
     }
 }
 
-fn walk_move_types<'a, I, F, T>(types: I, mut f: F) -> Option<Vec<T>>
+fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
     where I: Iterator<Item = (&'a T, &'a T)>,
           F: FnMut(&'a T, &'a T) -> Option<T>,
           T: Clone + 'a,
+          R: Default + VecLike<T>,
 {
-    let mut out = Vec::new();
+    let mut out = R::default();
     walk_move_types2(types, false, &mut out, &mut f);
-    if out.is_empty() {
+    if out[..].is_empty() {
         None
     } else {
-        out.reverse();
+        out[..].reverse();
         Some(out)
     }
 }
-fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<T>, f: &mut F)
+fn walk_move_types2<'a, I, F, T, R>(mut types: I, replaced: bool, output: &mut R, f: &mut F)
     where I: Iterator<Item = (&'a T, &'a T)>,
           F: FnMut(&'a T, &'a T) -> Option<T>,
           T: Clone + 'a,
+          R: VecLike<T>,
 {
     if let Some((l, r)) = types.next() {
         let new = f(l, r);
@@ -567,7 +594,7 @@ fn walk_move_types2<'a, I, F, T>(mut types: I, replaced: bool, output: &mut Vec<
             Some(typ) => {
                 output.push(typ);
             }
-            None if replaced || !output.is_empty() => {
+            None if replaced || !output[..].is_empty() => {
                 output.push(l.clone());
             }
             None => (),

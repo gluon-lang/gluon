@@ -60,7 +60,7 @@ impl MockEnv {
         let mut interner = interner.borrow_mut();
 
         let bool_sym = interner.symbol("Bool");
-        let bool_ty = Type::app(Type::ident(bool_sym.clone()), vec![]);
+        let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
 
         MockEnv { bool: Alias::new(bool_sym, vec![], bool_ty) }
     }
@@ -182,7 +182,7 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
             if args.len() == 0 {
                 Type::ident(intern(s))
             } else {
-                Type::app(Type::ident(intern(s)), args)
+                Type::app(Type::ident(intern(s)), args.into_iter().collect())
             }
         }
     }

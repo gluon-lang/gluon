@@ -8,6 +8,8 @@ extern crate env_logger;
 extern crate quick_error;
 #[macro_use]
 extern crate mopa;
+#[macro_use]
+extern crate collect_mac;
 
 extern crate gluon_base as base;
 
