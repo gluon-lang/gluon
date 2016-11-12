@@ -461,3 +461,35 @@ fn quote_in_identifier() {
                  app(id("f'"), vec![int(1), int(2)]));
     assert_eq!(e, a);
 }
+
+// Test that this is `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+#[test]
+fn block_open_after_let_in() {
+    let _ = ::env_logger::init();
+    let text = r#"
+        let x = 1
+        a
+        b
+        "#;
+    let e = parse_new!(text);
+    match e.value {
+        Expr::LetBindings(..) => (),
+        _ => panic!("{:?}", e),
+    }
+}
+
+#[test]
+fn block_open_after_explicit_let_in() {
+    let _ = ::env_logger::init();
+    let text = r#"
+        let x = 1
+        in
+        a
+        b
+        "#;
+    let e = parse_new!(text);
+    match e.value {
+        Expr::LetBindings(..) => (),
+        _ => panic!("{:?}", e),
+    }
+}

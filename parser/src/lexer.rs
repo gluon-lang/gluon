@@ -194,7 +194,7 @@ struct Offside {
 #[derive(Clone, Debug, PartialEq)]
 enum Context {
     /// Context which contains several expressions/declarations separated by semicolons
-    Block { emit_semi: bool, needs_close: bool },
+    Block { emit_semi: bool },
     /// A simple expression
     Expr,
     Let,
@@ -448,14 +448,14 @@ impl<'input, I> Lexer<'input, I>
                     _ => {
                         if op.starts_with("///") {
                             let mut comment = String::new();
-                            let ((), new_input) = try!(spaces().parse_stream(input));
+                            let ((), new_input) = spaces().parse_stream(input)?;
                             input = new_input.into_inner();
                             // Merge consecutive line comments
                             loop {
                                 let mut line = satisfy(|c| c != '\n' && c != '\r').iter(input);
                                 comment.extend(line.by_ref());
                                 comment.push('\n');
-                                let ((), new_input) = try!(line.into_result(()));
+                                let ((), new_input) = line.into_result(())?;
                                 input = new_input.into_inner();
                                 let mut p = spaces().with(try(string("///"))).skip(spaces());
                                 match p.parse_stream(input.clone()) {
@@ -468,10 +468,11 @@ impl<'input, I> Lexer<'input, I>
                         } else if op.starts_with("/**") {
                             return self.block_doc_comment(input);
                         } else if op.starts_with("//") {
-                            let ((), new_input) =
-                                try!(skip_many(satisfy(|c| c != '\n' && c != '\r'))
+                            let result: Result<_, _> =
+                                skip_many(satisfy(|c| c != '\n' && c != '\r'))
                                     .parse_lazy(input)
-                                    .into());
+                                    .into();
+                            let ((), new_input) = result?;
                             input = new_input.into_inner();
                             continue;
                         } else if op.starts_with("/*") {
@@ -554,7 +555,7 @@ impl<'input, I> Lexer<'input, I>
                          input: LocatedStream<I>)
                          -> ParseResult<Token<&'input str>, LocatedStream<I>> {
         let mut block_doc_comment = parser(|input| {
-            let ((), mut input) = try!(spaces().parse_stream(input));
+            let ((), mut input) = spaces().parse_stream(input)?;
             let mut out = String::new();
             loop {
                 match input.clone()
@@ -630,10 +631,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                 }
                 lexer.indent_levels
                     .push(Offside {
-                        context: Context::Block {
-                            emit_semi: false,
-                            needs_close: true,
-                        },
+                        context: Context::Block { emit_semi: false },
                         location: token.span.start,
                     })?;
                 debug!("Default block {:?}", token);
@@ -665,8 +663,6 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                 (&Token::Else, &Context::If) => (),
                 (&Token::Close(close_delim), &Context::Delimiter(context_delim))
                     if close_delim == context_delim => return Ok(token),
-                (&Token::In, &Context::Let) |
-                (&Token::In, &Context::Type) |
                 (&Token::CloseBlock, &Context::Block { .. }) => {
                     if let Some(offside) = lexer.indent_levels.last_mut() {
                         // The enclosing block should not emit a block separator for the next
@@ -677,9 +673,38 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                     }
                     return Ok(token);
                 }
+                (&Token::In, &Context::Let) |
+                (&Token::In, &Context::Type) => {
+                    let location = {
+                        let offside =
+                            lexer.indent_levels.last_mut().expect("No top level block found");
+                        // The enclosing block should not emit a block separator for the next
+                        // expression
+                        if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                            *emit_semi = false;
+                        }
+                        offside.location
+                    };
+                    // Inject a block to ensure that a sequence of expressions end up in the `let` body
+                    // ```
+                    // let x = 1
+                    // a
+                    // b
+                    // ```
+                    // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+                    lexer.indent_levels.push(Offside {
+                        location: location,
+                        context: Context::Block { emit_semi: false },
+                    });
+                    lexer.unprocessed_tokens.push(SpannedToken {
+                        span: token.span,
+                        value: Token::OpenBlock,
+                    });
+                    return Ok(token);
+                }
                 _ => {
                     match offside.context {
-                        Context::Block { needs_close: true, .. } => {
+                        Context::Block { .. } => {
                             return Ok(lexer.layout_token(token, Token::CloseBlock));
                         }
                         _ => (),
@@ -691,15 +716,11 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
 
         // Next we check offside rules for each of the contexts
         match offside.context {
-            Context::Block { emit_semi, needs_close } => {
+            Context::Block { emit_semi } => {
                 match ordering {
                     Ordering::Less => {
-                        if needs_close {
-                            lexer.unprocessed_tokens.push(token.clone());
-                            token.value = Token::CloseBlock;
-                        } else {
-                            lexer.indent_levels.pop();
-                        }
+                        lexer.unprocessed_tokens.push(token.clone());
+                        token.value = Token::CloseBlock;
                         continue;
                     }
                     Ordering::Equal => {
@@ -752,14 +773,35 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                    token.value != Token::Close(Delimiter::Brace) {
                     // Insert an `in` token
                     lexer.indent_levels.pop();
-                    if let Some(offside) = lexer.indent_levels.last_mut() {
+                    let location = {
+                        let offside =
+                            lexer.indent_levels.last_mut().expect("No top level block found");
                         // The enclosing block should not emit a block separator for the next
                         // expression
                         if let Context::Block { ref mut emit_semi, .. } = offside.context {
                             *emit_semi = false;
                         }
-                    }
-                    return Ok(lexer.layout_token(token, Token::In));
+                        offside.location
+                    };
+                    let span = token.span;
+                    let result = Ok(lexer.layout_token(token, Token::In));
+                    // Inject a block to ensure that a sequence of expressions end up in the `let` body
+                    // ```
+                    // let x = 1
+                    // a
+                    // b
+                    // ```
+                    // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+                    lexer.indent_levels
+                        .push(Offside {
+                            location: location,
+                            context: Context::Block { emit_semi: false },
+                        })?;
+                    lexer.unprocessed_tokens.push(SpannedToken {
+                        span: span,
+                        value: Token::OpenBlock,
+                    });
+                    return result;
                 }
             }
             _ => (),
@@ -787,26 +829,18 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
         match token.value {
             Token::In => {
                 lexer.indent_levels.pop();
-                if let Context::Block { needs_close: true, .. } = offside.context {
+                if let Context::Block { .. } = offside.context {
                     return Ok(lexer.layout_token(token, Token::CloseBlock));
                 }
             }
             Token::Equals => {
                 if offside.context == Context::Let {
-                    scan_for_next_block(lexer,
-                                        Context::Block {
-                                            emit_semi: false,
-                                            needs_close: true,
-                                        })?;
+                    scan_for_next_block(lexer, Context::Block { emit_semi: false })?;
                 }
             }
             Token::RightArrow => {
                 if offside.context == Context::MatchClause || offside.context == Context::Lambda {
-                    scan_for_next_block(lexer,
-                                        Context::Block {
-                                            emit_semi: false,
-                                            needs_close: true,
-                                        })?;
+                    scan_for_next_block(lexer, Context::Block { emit_semi: false })?;
                 }
             }
             Token::Else => {
@@ -824,19 +858,11 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                                 next.span.start.line != token.span.start.line;
                 lexer.unprocessed_tokens.push(next);
                 if add_block {
-                    scan_for_next_block(lexer,
-                                        Context::Block {
-                                            emit_semi: false,
-                                            needs_close: true,
-                                        })?;
+                    scan_for_next_block(lexer, Context::Block { emit_semi: false })?;
                 }
             }
             Token::Then => {
-                scan_for_next_block(lexer,
-                                    Context::Block {
-                                        emit_semi: false,
-                                        needs_close: true,
-                                    })?;
+                scan_for_next_block(lexer, Context::Block { emit_semi: false })?;
             }
             Token::Comma => {
                 // Prevent a semi to be emitted before the next token
@@ -864,7 +890,7 @@ fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
     let next = lexer.next_token();
     let span = next.span;
     lexer.unprocessed_tokens.push(next);
-    if let Context::Block { needs_close: true, .. } = context {
+    if let Context::Block { .. } = context {
         lexer.unprocessed_tokens.push(SpannedToken {
             span: span,
             value: Token::OpenBlock,
