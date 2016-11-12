@@ -243,7 +243,7 @@ pub Literal: Literal = {
 };
 
 Alternative: Alternative<Id> =
-    "|" <pat: Sp<Pattern>> "->" <expr: Sp<AtomicExpr>> => {
+    "|" <pat: Sp<Pattern>> "->" <expr: Sp<BlockExpr>> => {
         Alternative {
             pattern: pat,
             expr: super::shrink_hidden_spans(expr),
@@ -395,6 +395,10 @@ Expr: Expr<Id> = {
         Expr::TypeBindings(bindings, Box::new(body))
     },
 
+    BlockExpr,
+};
+
+BlockExpr: Expr<Id> = {
     "OpenBlock" <exprs: (<SpExpr> "Semi")*> <last: SpExpr> "CloseBlock" => {
         let mut exprs = exprs;
         exprs.push(last);
