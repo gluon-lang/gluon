@@ -6,9 +6,9 @@ use combine::primitives::Error;
 use lexer::{Delimiter, StrToken, Token};
 use std::str::FromStr;
 
-use {FieldExpr, FieldPattern, MutIdentEnv};
+use {FieldExpr, FieldPattern, MutIdentEnv, ErrorEnv};
 
-grammar<'input, 'env, Id>(src: &'input str, env: MutIdentEnv<'env, Id>)
+grammar<'input, 'env, Id>(src: &'input str, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
     where Id: Clone;
 
 extern {
@@ -297,6 +297,11 @@ AtomicExpr: Expr<Id> = {
 
     <expr: Sp<AtomicExpr>> "." <id: Ident> =>
         Expr::Projection(Box::new(expr), id, Type::hole()),
+
+    <expr: Sp<AtomicExpr>> "." <err: error> => {
+        errors.error(err);
+        Expr::Projection(Box::new(expr), env.from_str(""), Type::hole())
+    },
 
     "(" <elems: Comma<SpExpr>> ")" =>
         match elems.len() {

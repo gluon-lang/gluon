@@ -29,6 +29,10 @@ mod grammar;
 mod infix;
 mod lexer;
 
+type LalrpopError<'input> = lalrpop_util::ParseError<BytePos,
+                                                     Token<&'input str>,
+                                                     CombineError<String, String>>;
+
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
@@ -78,10 +82,7 @@ impl StdError for ParseError {
     }
 }
 
-fn transform_lalrpop_error(err: lalrpop_util::ParseError<BytePos,
-                                                         Token<&str>,
-                                                         CombineError<String, String>>)
-                           -> Spanned<CombineError<String, String>, BytePos> {
+fn transform_lalrpop_error(err: LalrpopError) -> Spanned<CombineError<String, String>, BytePos> {
     use lalrpop_util::ParseError::*;
     match err {
         InvalidToken { location } => {
@@ -111,6 +112,16 @@ fn transform_lalrpop_error(err: lalrpop_util::ParseError<BytePos,
         }
         User { error } => pos::spanned2(0.into(), 0.into(), error),
     }
+}
+
+fn transform_errors(errors: Vec<LalrpopError>) -> Vec<Error> {
+    errors.into_iter()
+        .map(|err| {
+            let Spanned { span, value: err } = transform_lalrpop_error(err);
+            let err = ParseError { errors: vec![err] };
+            Error::Parser(pos::spanned(span, err))
+        })
+        .collect()
 }
 
 quick_error! {
@@ -159,29 +170,36 @@ pub enum FieldExpr<Id> {
 
 // Hack around LALRPOP's limited type syntax
 type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
+type ErrorEnv<'err, 'input> = &'err mut Errors<lalrpop_util::ParseError<BytePos,
+                                                                        Token<&'input str>,
+                                                                        CombineError<String,
+                                                                                     String>>>;
 
 fn parse_expr_<Id>(symbols: &mut IdentEnv<Ident = Id>,
                    input: &str)
-                   -> Result<SpannedExpr<Id>, Errors<Error>>
+                   -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
     where Id: Clone,
 {
     let lexer = Lexer::new(input);
+    let mut parse_errors = Errors::new();
 
-    match grammar::parse_TopExpr(input, symbols, lexer) {
+    match grammar::parse_TopExpr(input, symbols, &mut parse_errors, lexer) {
         // TODO: handle errors
         Ok(mut expr) => {
+            let mut errors = Errors { errors: transform_errors(parse_errors.errors) };
             let mut reparser = Reparser::new(OpTable::default(), symbols);
-            if let Err(errors) = reparser.reparse(&mut expr) {
-                return Err(Errors {
-                    errors: errors.errors.into_iter().map(Error::Infix).collect(),
-                });
+            if let Err(reparse_errors) = reparser.reparse(&mut expr) {
+                errors.errors.extend(reparse_errors.errors.into_iter().map(Error::Infix));
             }
-            Ok(expr)
+            if errors.has_errors() {
+                Err((Some(expr), errors))
+            } else {
+                Ok(expr)
+            }
         }
         Err(err) => {
-            let Spanned { span, value: err } = transform_lalrpop_error(err);
-            let err = ParseError { errors: vec![err] };
-            Err(Errors { errors: vec![Error::Parser(pos::spanned(span, err))] })
+            parse_errors.error(err);
+            Err((None, Errors { errors: transform_errors(parse_errors.errors) }))
         }
     }
 }
@@ -189,7 +207,7 @@ fn parse_expr_<Id>(symbols: &mut IdentEnv<Ident = Id>,
 pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
                   input: &str)
                   -> Result<SpannedExpr<Symbol>, Errors<Error>> {
-    parse_expr_(symbols, input)
+    parse_expr_(symbols, input).map_err(|t| t.1)
 }
 
 #[cfg(feature = "test")]
@@ -197,5 +215,5 @@ pub fn parse_string<'env, 'input>
     (symbols: &'env mut IdentEnv<Ident = String>,
      input: &'input str)
      -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
-    parse_expr_(symbols, input).map_err(|err| (None, err))
+    parse_expr_(symbols, input)
 }

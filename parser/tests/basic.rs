@@ -546,7 +546,7 @@ id
 }
 
 #[test]
-fn partial_field_access() {
+fn partial_field_access_simple() {
     let _ = ::env_logger::init();
     let text = r#"test."#;
     let e = parse(text);
