@@ -223,12 +223,12 @@ pub struct Field<Id, T = ArcType<Id>> {
 pub type AppVec<T> = SmallVec<[T; 2]>;
 
 impl<Id, T> Field<Id, T> {
-     pub fn new(name: Id, typ: T) -> Field<Id, T> {
-         Field {
-             name: name,
-             typ: typ,
-         }
-     }
+    pub fn new(name: Id, typ: T) -> Field<Id, T> {
+        Field {
+            name: name,
+            typ: typ,
+        }
+    }
 }
 
 /// The representation of gluon's types.

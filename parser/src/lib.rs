@@ -20,7 +20,7 @@ use base::pos::{self, BytePos, Spanned};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
-use combine::primitives::{StreamOnce, Error as CombineError, Info};
+use combine::primitives::{StreamOnce, Error as CombineError};
 
 use infix::{OpTable, Reparser};
 use lexer::{Lexer, Token};

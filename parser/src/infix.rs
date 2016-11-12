@@ -184,7 +184,7 @@ impl fmt::Display for ReparseError {
 
         match *self {
             ConflictingFixities((ref lhs_name, lhs_meta), (ref rhs_name, rhs_meta)) => {
-                try!(write!(f, "Conflicting fixities at the same precedence level. "));
+                write!(f, "Conflicting fixities at the same precedence level. ")?;
                 write!(f,
                        "left: `{} {}`, right: `{} {}`",
                        lhs_meta,
