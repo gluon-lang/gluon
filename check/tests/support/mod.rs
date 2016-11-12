@@ -1,4 +1,5 @@
 use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
+use base::error::Errors;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeEnv};
@@ -36,12 +37,13 @@ pub fn intern(s: &str) -> Symbol {
     }
 }
 
-pub fn parse_new(s: &str)
-                 -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, ::parser::Error)> {
+pub fn parse_new
+    (s: &str)
+     -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, Errors<::parser::Error>)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parser::parse_expr(&mut module, &s)
+    parser::parse_partial_expr(&mut module, &s)
 }
 
 #[allow(dead_code)]

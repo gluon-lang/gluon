@@ -161,9 +161,8 @@ AppType = {
 pub Type = {
     AppType,
 
-    // TODO: Operator types
-    // <lhs: Type> <op: "Operator"> <rhs: AppType> =>
-    //     Type::Infix(Box::new(lhs), env.from_str(op), Box::new(rhs)),
+    <lhs: AppType> "->" <rhs: Type> =>
+        Type::function(vec![lhs], rhs),
 };
 
 // Patterns

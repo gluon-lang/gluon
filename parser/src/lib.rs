@@ -175,9 +175,10 @@ type ErrorEnv<'err, 'input> = &'err mut Errors<lalrpop_util::ParseError<BytePos,
                                                                         CombineError<String,
                                                                                      String>>>;
 
-fn parse_expr_<Id>(symbols: &mut IdentEnv<Ident = Id>,
-                   input: &str)
-                   -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
+pub fn parse_partial_expr<Id>
+    (symbols: &mut IdentEnv<Ident = Id>,
+     input: &str)
+     -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
     where Id: Clone,
 {
     let lexer = Lexer::new(input);
@@ -207,7 +208,7 @@ fn parse_expr_<Id>(symbols: &mut IdentEnv<Ident = Id>,
 pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
                   input: &str)
                   -> Result<SpannedExpr<Symbol>, Errors<Error>> {
-    parse_expr_(symbols, input).map_err(|t| t.1)
+    parse_partial_expr(symbols, input).map_err(|t| t.1)
 }
 
 #[cfg(feature = "test")]
@@ -215,5 +216,5 @@ pub fn parse_string<'env, 'input>
     (symbols: &'env mut IdentEnv<Ident = String>,
      input: &'input str)
      -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
-    parse_expr_(symbols, input)
+    parse_partial_expr(symbols, input)
 }
