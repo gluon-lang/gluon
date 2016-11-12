@@ -77,14 +77,14 @@ impl<I> fmt::Display for TypeError<I>
                        id)
             }
             TypeError::MissingFields(ref typ, ref fields) => {
-                try!(write!(f, "The type `{}` lacks the following fields: ", typ));
+                write!(f, "The type `{}` lacks the following fields: ", typ)?;
                 for (i, field) in fields.iter().enumerate() {
                     let sep = match i {
                         0 => "",
                         i if i < fields.len() - 1 => ", ",
                         _ => " and ",
                     };
-                    try!(write!(f, "{}{}", sep, field));
+                    write!(f, "{}{}", sep, field)?;
 
                 }
                 Ok(())
@@ -249,7 +249,7 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                 // Successful unification
                 return Ok(None);
             } else {
-                Ok(try!(try_with_alias(unifier, self_, other)))
+                Ok(try_with_alias(unifier, self_, other)?)
             }
         }
     }
@@ -517,7 +517,7 @@ fn find_common_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
 {
     let mut l = expected.clone();
     if let Some(r_id) = actual.name() {
-        l = match try!(find_alias(unifier, l.clone(), r_id)) {
+        l = match find_alias(unifier, l.clone(), r_id)? {
             None => l,
             Some(typ) => {
                 *through_alias = true;
@@ -527,7 +527,7 @@ fn find_common_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
     }
     let mut r = actual.clone();
     if let Some(l_id) = expected.name() {
-        r = match try!(find_alias(unifier, r.clone(), l_id)) {
+        r = match find_alias(unifier, r.clone(), l_id)? {
             None => r,
             Some(typ) => {
                 *through_alias = true;
@@ -546,12 +546,12 @@ fn try_with_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
                          -> Result<Option<ArcType>, Error<Symbol>>
     where U: Unifier<State<'a>, ArcType>,
 {
-    let l = try!(instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                     unifier.state.env,
-                                                     expected));
-    let r = try!(instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                     unifier.state.env,
-                                                     actual));
+    let l = instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
+                                                unifier.state.env,
+                                                expected)?;
+    let r = instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
+                                                unifier.state.env,
+                                                actual)?;
     match (&l, &r) {
         (&None, &None) => {
             debug!("Unify error: {} <=> {}", expected, actual);

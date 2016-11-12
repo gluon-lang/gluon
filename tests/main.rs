@@ -35,7 +35,7 @@ fn main() {
 }
 
 fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
-    let dir = try!(read_dir(path));
+    let dir = read_dir(path)?;
     let paths: Vec<_> = dir.filter_map(|f| {
             f.ok()
                 .and_then(|f| {
@@ -55,21 +55,21 @@ fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
 fn main_() -> Result<(), Box<Error>> {
     let vm = new_vm();
     let mut compiler = Compiler::new();
-    try!(compiler.load_file(&vm, "std/prelude.glu"));
+    compiler.load_file(&vm, "std/prelude.glu")?;
     let mut text = String::new();
     let _ = ::env_logger::init();
-    for filename in try!(test_files("tests/pass")) {
-        let mut file = try!(File::open(&filename));
+    for filename in test_files("tests/pass")? {
+        let mut file = File::open(&filename)?;
         text.clear();
-        try!(file.read_to_string(&mut text));
+        file.read_to_string(&mut text)?;
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        try!(compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text));
+        compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text)?;
     }
-    for filename in try!(test_files("tests/fail")) {
-        let mut file = try!(File::open(&filename));
+    for filename in test_files("tests/fail")? {
+        let mut file = File::open(&filename)?;
         text.clear();
-        try!(file.read_to_string(&mut text));
+        file.read_to_string(&mut text)?;
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
         match compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text) {

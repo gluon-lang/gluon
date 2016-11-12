@@ -82,17 +82,17 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 write!(f, "Type `{}` does not have the field `{}`", typ, field)
             }
             Unification(ref expected, ref actual, ref errors) => {
-                try!(writeln!(f,
-                              "Expected the following types to be equal\nExpected: {}\nFound: \
-                               {}\n{} errors were found during unification:",
-                              expected,
-                              actual,
-                              errors.len()));
+                writeln!(f,
+                         "Expected the following types to be equal\nExpected: {}\nFound: {}\n{} \
+                          errors were found during unification:",
+                         expected,
+                         actual,
+                         errors.len())?;
                 if errors.is_empty() {
                     return Ok(());
                 }
                 for error in &errors[..errors.len() - 1] {
-                    try!(writeln!(f, "{}", error));
+                    writeln!(f, "{}", error)?;
                 }
                 write!(f, "{}", errors.last().unwrap())
             }
@@ -115,10 +115,10 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                        typ)
             }
             UndefinedRecord { ref fields } => {
-                try!(write!(f, "No type found with the following fields: "));
-                try!(write!(f, "{}", fields[0]));
+                write!(f, "No type found with the following fields: ")?;
+                write!(f, "{}", fields[0])?;
                 for field in &fields[1..] {
-                    try!(write!(f, ", {}", field));
+                    write!(f, ", {}", field)?;
                 }
                 Ok(())
             }
@@ -469,7 +469,7 @@ impl<'a> Typecheck<'a> {
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
-                id.typ = try!(self.find(&id.name));
+                id.typ = self.find(&id.name)?;
                 Ok(TailCall::Type(id.typ.clone()))
             }
             Expr::Literal(ref lit) => {
@@ -485,7 +485,7 @@ impl<'a> Typecheck<'a> {
                 let mut func_type = self.typecheck(&mut **func);
                 for arg in args.iter_mut() {
                     let f = Type::function(vec![self.subs.new_var()], self.subs.new_var());
-                    func_type = try!(self.unify(&f, func_type));
+                    func_type = self.unify(&f, func_type)?;
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
                             let actual = self.typecheck(arg);
@@ -513,12 +513,12 @@ impl<'a> Typecheck<'a> {
                 let op_name = String::from(self.symbols.string(&op.name));
                 let result = if op_name.starts_with('#') {
                     // Handle primitives
-                    let arg_type = try!(self.unify(&lhs_type, rhs_type));
+                    let arg_type = self.unify(&lhs_type, rhs_type)?;
                     let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
                     let prim_type = primitive_type(op_type);
                     op.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
                                             prim_type.clone());
-                    let typ = try!(self.unify(&prim_type, arg_type));
+                    let typ = self.unify(&prim_type, arg_type)?;
                     match &op_name[1 + op_type.len()..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
                         "==" | "<" => Ok(self.bool()),
@@ -527,15 +527,15 @@ impl<'a> Typecheck<'a> {
                 } else {
                     match &*op_name {
                         "&&" | "||" => {
-                            try!(self.unify(&lhs_type, rhs_type.clone()));
+                            self.unify(&lhs_type, rhs_type.clone())?;
                             op.typ = Type::function(vec![self.bool(), self.bool()], self.bool());
                             self.unify(&self.bool(), lhs_type)
                         }
                         _ => {
-                            op.typ = try!(self.find(&op.name));
+                            op.typ = self.find(&op.name)?;
                             let func_type = Type::function(vec![lhs_type, rhs_type],
                                                            self.subs.new_var());
-                            let ret = try!(self.unify(&op.typ, func_type))
+                            let ret = self.unify(&op.typ, func_type)?
                                 .as_function()
                                 .and_then(|(_, ret)| ret.as_function())
                                 .map(|(_, ret)| ret.clone())
@@ -562,7 +562,7 @@ impl<'a> Typecheck<'a> {
                     self.exit_scope();
                     // All alternatives must unify to the same type
                     if let Some(ref expected) = expected_alt_type {
-                        alt_type = try!(self.unify(expected, alt_type));
+                        alt_type = self.unify(expected, alt_type)?;
                     }
                     expected_alt_type = Some(alt_type);
                 }
@@ -570,7 +570,7 @@ impl<'a> Typecheck<'a> {
                     .map(TailCall::Type)
             }
             Expr::LetBindings(ref mut bindings, _) => {
-                try!(self.typecheck_bindings(bindings));
+                self.typecheck_bindings(bindings)?;
                 Ok(TailCall::TailCall)
             }
             Expr::Projection(ref mut expr, ref field_id, ref mut ast_field_typ) => {
@@ -586,7 +586,7 @@ impl<'a> Typecheck<'a> {
                     if let Ok(record_type) = self.find_record(&[field_id.clone()])
                         .map(|t| t.0.clone()) {
                         let record_type = self.instantiate(&record_type);
-                        expr_typ = try!(self.unify(&record_type, expr_typ));
+                        expr_typ = self.unify(&record_type, expr_typ)?;
                     }
                 }
                 let record = self.remove_aliases(expr_typ.clone());
@@ -610,7 +610,7 @@ impl<'a> Typecheck<'a> {
                                 };
                                 let record_type =
                                     Type::poly_record(vec![], vec![field], self.subs.new_var());
-                                try!(self.unify(&record_type, record));
+                                self.unify(&record_type, record)?;
                                 field_var
                             }
                         };
@@ -637,7 +637,7 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(typ))
             }
             Expr::TypeBindings(ref mut bindings, ref expr) => {
-                try!(self.typecheck_type_bindings(bindings, expr));
+                self.typecheck_type_bindings(bindings, expr)?;
                 Ok(TailCall::TailCall)
             }
             Expr::Record { ref mut typ, ref mut types, exprs: ref mut fields } => {
@@ -648,7 +648,7 @@ impl<'a> Typecheck<'a> {
                     if let Some(ref mut typ) = *typ {
                         *typ = self.create_unifiable_signature(typ.clone());
                     }
-                    let alias = try!(self.find_type_info(symbol)).clone();
+                    let alias = self.find_type_info(symbol)?.clone();
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
                                                       symbol.clone()) {
@@ -663,7 +663,7 @@ impl<'a> Typecheck<'a> {
                 for field in fields {
                     let typ = match field.1 {
                         Some(ref mut expr) => self.typecheck(expr),
-                        None => try!(self.find(&field.0)),
+                        None => self.find(&field.0)?,
                     };
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
@@ -687,7 +687,7 @@ impl<'a> Typecheck<'a> {
                 };
                 let id_type = self.instantiate(&id_type);
                 let record_type = self.instantiate_(&record_type);
-                try!(self.unify(&Type::record(new_types, new_fields), record_type));
+                self.unify(&Type::record(new_types, new_fields), record_type)?;
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
             }
@@ -851,7 +851,7 @@ impl<'a> Typecheck<'a> {
             for bind in bindings.iter_mut() {
                 let typ = {
                     bind.typ = self.create_unifiable_signature(bind.typ.clone());
-                    try!(self.kindcheck(&mut bind.typ));
+                    self.kindcheck(&mut bind.typ)?;
                     self.instantiate_signature(&bind.typ)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
@@ -871,7 +871,7 @@ impl<'a> Typecheck<'a> {
             let mut typ = if bind.args.is_empty() {
                 self.instantiate_signature(&bind.typ);
                 bind.typ = self.create_unifiable_signature(bind.typ.clone());
-                try!(self.kindcheck(&mut bind.typ));
+                self.kindcheck(&mut bind.typ)?;
                 self.typecheck(&mut bind.expr)
             } else {
                 let function_typ = self.instantiate(&bind.typ);
@@ -955,7 +955,7 @@ impl<'a> Typecheck<'a> {
             for bind in bindings.iter_mut() {
                 check.set_variables(&bind.alias.args);
                 let typ = &mut Alias::make_mut(&mut bind.alias).typ;
-                try!(check.kindcheck_type(typ));
+                check.kindcheck_type(typ)?;
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
@@ -984,7 +984,7 @@ impl<'a> Typecheck<'a> {
 
     fn kindcheck(&self, typ: &mut ArcType) -> TcResult<()> {
         let mut check = KindCheck::new(&self.environment, &self.symbols);
-        try!(check.kindcheck_type(typ));
+        check.kindcheck_type(typ)?;
         Ok(())
     }
 

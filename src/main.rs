@@ -34,7 +34,7 @@ fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
 {
     let mut compiler = Compiler::new();
     for file in files {
-        try!(compiler.load_file(&vm, file));
+        compiler.load_file(&vm, file)?;
     }
     Ok(())
 }

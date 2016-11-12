@@ -327,7 +327,7 @@ pub trait Getable<'vm>: Sized {
 impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
         let data: Box<vm::Userdata> = Box::new(self);
-        let userdata = try!(context.alloc_with(thread, Move(data)));
+        let userdata = context.alloc_with(thread, Move(data))?;
         context.stack.push(Value::Userdata(userdata));
         Ok(())
     }
@@ -600,7 +600,7 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 }
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let s = try!(context.alloc_with(thread, self));
+        let s = context.alloc_with(thread, self)?;
         context.stack.push(Value::String(s));
         Ok(())
     }
@@ -668,7 +668,7 @@ impl<'vm, 's, T> Pushable<'vm> for &'s [T]
           &'s [T]: DataDef<Value = ValueArray>,
 {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let result = try!(context.alloc_with(thread, self));
+        let result = context.alloc_with(thread, self)?;
         context.stack.push(Value::Array(result));
         Ok(())
     }
@@ -706,13 +706,13 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
         let result = {
             let Context { ref mut gc, ref stack, .. } = *context;
             let values = &stack[stack.len() - len..];
-            try!(thread::alloc(gc,
-                               thread,
-                               stack,
-                               Def {
-                                   tag: 0,
-                                   elems: values,
-                               }))
+            thread::alloc(gc,
+                          thread,
+                          stack,
+                          Def {
+                              tag: 0,
+                              elems: values,
+                          })?
         };
         for _ in 0..len {
             context.stack.pop();
@@ -752,9 +752,9 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
         match self {
             Some(value) => {
                 let len = context.stack.len();
-                try!(value.push(thread, context));
+                value.push(thread, context)?;
                 let arg = [context.stack.pop()];
-                let value = try!(context.new_data(thread, 1, &arg));
+                let value = context.new_data(thread, 1, &arg)?;
                 assert!(context.stack.len() == len);
                 context.stack.push(value);
             }
@@ -795,20 +795,20 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
         let tag = match self {
             Ok(ok) => {
-                try!(ok.push(thread, context));
+                ok.push(thread, context)?;
                 1
             }
             Err(err) => {
-                try!(err.push(thread, context));
+                err.push(thread, context)?;
                 0
             }
         };
         let value = context.stack.pop();
-        let data = try!(context.alloc_with(thread,
-                                           Def {
-                                               tag: tag,
-                                               elems: &[value],
-                                           }));
+        let data = context.alloc_with(thread,
+                        Def {
+                            tag: tag,
+                            elems: &[value],
+                        })?;
         context.stack.push(Value::Data(data));
         Ok(())
     }
@@ -1063,14 +1063,17 @@ macro_rules! define_tuple {
             fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
                 let ( $($id),+ ) = self;
                 $(
-                    try!($id.push(thread, context));
+                    $id.push(thread, context)?;
                 )+
                 let len = count!($($id),+);
                 let offset = context.stack.len() - len;
-                let value = try!(thread::alloc(&mut context.gc, thread, &context.stack, Def {
-                    tag: 0,
-                    elems: &context.stack[offset..],
-                }));
+                let value = thread::alloc(&mut context.gc,
+                                          thread,
+                                          &context.stack,
+                                          Def {
+                                              tag: 0,
+                                              elems: &context.stack[offset..],
+                                          })?;
                 for _ in 0..len {
                     context.stack.pop();
                 }
@@ -1175,7 +1178,7 @@ pub mod record {
     {
         fn push(self, vm: &'vm Thread, fields: &mut Context) -> Result<()> {
             let HList((_, head), tail) = self;
-            try!(head.push(vm, fields));
+            head.push(vm, fields)?;
             tail.push(vm, fields)
         }
     }
@@ -1198,7 +1201,9 @@ pub mod record {
         fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self> {
             let head = unsafe { H::from_value(vm, Variants::new(&values[0])) };
             head.and_then(|head| {
-                T::from_value(vm, &values[1..]).map(move |tail| HList((F::default(), head), tail))
+                T::from_value(vm, &values[1..]).map(move |tail| {
+                    HList((F::default(), head), tail)
+                })
             })
         }
     }
@@ -1220,16 +1225,16 @@ pub mod record {
               T: PushableFieldList<'vm>,
     {
         fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-            try!(self.fields.push(thread, context));
+            self.fields.push(thread, context)?;
             let len = HList::<(F, A), T>::len();
             let offset = context.stack.len() - len;
-            let value = try!(thread::alloc(&mut context.gc,
-                                           thread,
-                                           &context.stack,
-                                           Def {
-                                               tag: 0,
-                                               elems: &context.stack[offset..],
-                                           }));
+            let value = thread::alloc(&mut context.gc,
+                                      thread,
+                                      &context.stack,
+                                      Def {
+                                          tag: 0,
+                                          elems: &context.stack[offset..],
+                                      })?;
             for _ in 0..len {
                 context.stack.pop();
             }
@@ -1327,12 +1332,12 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
 {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
         let id = Symbol::from(self.name);
-        let value = Value::Function(try!(context.alloc_with(thread,
-                                                            Move(ExternFunction {
-                                                                id: id,
-                                                                args: F::arguments(),
-                                                                function: self.function,
-                                                            }))));
+        let value = Value::Function(context.alloc_with(thread,
+                        Move(ExternFunction {
+                            id: id,
+                            args: F::arguments(),
+                            function: self.function,
+                        }))?);
         context.stack.push(value);
         Ok(())
     }
@@ -1394,12 +1399,12 @@ impl<'vm> Pushable<'vm> for CPrimitive {
                                       -> Status,
                         extern "C" fn(&Thread) -> Status>(function)
         };
-        let value = try!(context.alloc_with(thread,
-                                            Move(ExternFunction {
-                                                id: self.id,
-                                                args: self.args,
-                                                function: extern_function,
-                                            })));
+        let value = context.alloc_with(thread,
+                        Move(ExternFunction {
+                            id: self.id,
+                            args: self.args,
+                            function: extern_function,
+                        }))?;
         context.stack.push(Value::Function(value));
         Ok(())
     }
@@ -1609,13 +1614,13 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
         StackFrame::current(&mut context.stack).enter_scope(0, State::Unknown);
         context.stack.push(*self.value);
         $(
-            try!($args.push(vm, &mut context));
+            $args.push(vm, &mut context)?;
         )*
         for _ in 0..R::extra_args() {
             0.push(vm, &mut context).unwrap();
         }
         let args = count!($($args),*) + R::extra_args();
-        let mut context = try!(vm.call_function(context, args)).unwrap();
+        let mut context = vm.call_function(context, args)?.unwrap();
         let result = context.stack.pop();
         R::from_value(vm, Variants(&result))
             .ok_or_else(|| {

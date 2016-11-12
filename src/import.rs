@@ -77,7 +77,7 @@ impl Importer for DefaultImporter {
               -> Result<(), MacroError> {
         use compiler_pipeline::*;
 
-        try!(MacroValue { expr: expr }.load_script(compiler, vm, &modulename, input, None));
+        MacroValue { expr: expr }.load_script(compiler, vm, &modulename, input, None)?;
         Ok(())
     }
 }
@@ -100,12 +100,11 @@ impl Importer for CheckImporter {
         use compiler_pipeline::*;
 
         let macro_value = MacroValue { expr: expr };
-        let TypecheckValue { expr, typ } =
-            try!(macro_value.typecheck(compiler, vm, module_name, input));
+        let TypecheckValue { expr, typ } = macro_value.typecheck(compiler, vm, module_name, input)?;
         self.0.lock().unwrap().insert(module_name.into(), expr);
         let metadata = Metadata::default();
         // Insert a global to ensure the globals type can be looked up
-        try!(vm.global_env().set_global(Symbol::from(module_name), typ, metadata, Value::Int(0)));
+        vm.global_env().set_global(Symbol::from(module_name), typ, metadata, Value::Int(0))?;
         Ok(())
     }
 }
@@ -194,10 +193,10 @@ impl<I> Macro for Import<I>
                                     }
                                 })
                                 .next();
-                            let mut file = try!(file.ok_or_else(|| {
-                                Error::String(format!("Could not find file '{}'", filename))
-                            }));
-                            try!(file.read_to_string(&mut buffer));
+                            let mut file = file.ok_or_else(|| {
+                                    Error::String(format!("Could not find file '{}'", filename))
+                                })?;
+                            file.read_to_string(&mut buffer)?;
                             &*buffer
                         }
                     };
@@ -205,7 +204,7 @@ impl<I> Macro for Import<I>
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
                     let errors = macros.errors.errors.len();
                     let macro_result =
-                        try!(file_contents.expand_macro_with(&mut compiler, macros, &modulename));
+                        file_contents.expand_macro_with(&mut compiler, macros, &modulename)?;
                     if errors != macros.errors.errors.len() {
                         // If macro expansion of the imported module fails we need to stop
                         // compilation of that module. To return an error we return one of the
@@ -216,12 +215,12 @@ impl<I> Macro for Import<I>
                         }
                     }
                     get_state(macros).visited.pop();
-                    try!(self.importer
+                    self.importer
                         .import(&mut compiler,
                                 vm,
                                 &modulename,
                                 &file_contents,
-                                macro_result.expr));
+                                macro_result.expr)?;
                 }
                 // FIXME Does not handle shadowing
                 Ok(pos::spanned(args[0].span, Expr::Ident(TypedIdent::new(name))))

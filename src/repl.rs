@@ -50,9 +50,9 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
         Ok(alias) => {
             // Found a type alias
             let mut fmt = || -> Result<(), ::std::fmt::Error> {
-                try!(write!(&mut buffer, "type {}", args));
+                write!(&mut buffer, "type {}", args)?;
                 for g in &alias.args {
-                    try!(write!(&mut buffer, " {}", g.id))
+                    write!(&mut buffer, " {}", g.id)?;
                 }
                 write!(&mut buffer, " = {}", alias.typ)
             };
@@ -95,7 +95,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
             Err((Some(expr), err)) => (expr, Err(err.into())),
         };
 
-    try!(expr.expand_macro(&mut compiler, thread, &name));
+    expr.expand_macro(&mut compiler, thread, &name)?;
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);
@@ -162,31 +162,31 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Option<String>> {
 
 fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
 
-    try!(vm.register_type::<Editor>("Editor", &[]));
+    vm.register_type::<Editor>("Editor", &[])?;
 
-    try!(vm.define_global("rustyline",
-                          record!(
+    vm.define_global("rustyline",
+                       record!(
         new_editor => primitive!(1 new_editor),
         readline => primitive!(2 readline)
-    )));
-    try!(vm.define_global("repl_prim",
-                          record!(
+    ))?;
+    vm.define_global("repl_prim",
+                       record!(
         type_of_expr => primitive!(1 type_of_expr),
         find_info => primitive!(1 find_info),
         find_kind => primitive!(1 find_kind)
-    )));
+    ))?;
     let mut compiler = Compiler::new();
-    try!(compiler.load_file(vm, "std/prelude.glu"));
-    try!(compiler.load_file(vm, "std/repl.glu"));
+    compiler.load_file(vm, "std/prelude.glu")?;
+    compiler.load_file(vm, "std/repl.glu")?;
     Ok(())
 }
 
 #[allow(dead_code)]
 pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
     let vm = new_vm();
-    try!(compile_repl(&vm));
-    let mut repl: Function<&Thread, fn(()) -> IO<()>> = try!(vm.get_global("std.repl"));
-    try!(repl.call(()));
+    compile_repl(&vm)?;
+    let mut repl: Function<&Thread, fn(()) -> IO<()>> = vm.get_global("std.repl")?;
+    repl.call(())?;
     Ok(())
 }
 

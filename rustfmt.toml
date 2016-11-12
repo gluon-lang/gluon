@@ -1,2 +1,3 @@
 newline_style = "Native"
 where_trailing_comma = true
+use_try_shorthand = true

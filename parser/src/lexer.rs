@@ -273,7 +273,7 @@ impl Contexts {
     }
 
     pub fn push<Id>(&mut self, offside: Offside) -> Result<(), Error<Id>> {
-        try!(self.check_unindentation_limit(&offside));
+        self.check_unindentation_limit(&offside)?;
         self.stack.push(offside);
         Ok(())
     }
@@ -381,9 +381,8 @@ impl<'input, I> Lexer<'input, I>
 
     fn parse_op(&self, input: LocatedStream<I>) -> ParseResult<&'input str, LocatedStream<I>> {
         let initial = input.clone();
-        let ((builtin, op), _) = try!((optional((char('#'), take_while(char::is_alphabetic))),
-                                       try(self.env.op_()))
-            .parse_stream(input));
+        let ((builtin, op), _) = (optional((char('#'), take_while(char::is_alphabetic))),
+                                  try(self.env.op_())).parse_stream(input)?;
         let len = builtin.map_or(0, |(c, typ)| c.len_utf8() + typ.len()) + op.len();
         take(len).parse_stream(initial)
     }
@@ -513,15 +512,16 @@ impl<'input, I> Lexer<'input, I>
                    -> ParseResult<Token<&'input str>, LocatedStream<I>> {
         loop {
             // Skip all whitespace before the token
-            let (_, new_input) = try!(spaces().parse_lazy(input).into());
+            let parsed_spaces: Result<_, _> = spaces().parse_lazy(input).into();
+            let (_, new_input) = parsed_spaces?;
             input = new_input.into_inner();
             *location = input.position();
-            let (first, one_char_consumed) = try!(any().parse_stream(input.clone()));
+            let (first, one_char_consumed) = any().parse_stream(input.clone())?;
 
             // Decide how to tokenize depending on what the first char is
             // ie if its an operator then more operators will follow
             if is_operator_char(first) || first == '#' {
-                let (op, new_input) = try!(self.op().parse_stream(input));
+                let (op, new_input) = self.op().parse_stream(input)?;
                 input = new_input.into_inner();
                 let tok = match op {
                     "=" => Token::Equal,
@@ -558,7 +558,7 @@ impl<'input, I> Lexer<'input, I>
                             continue;
                         } else if op.starts_with("/*") {
                             // Skip over normal comments and try to parse a new token
-                            let ((), new_input) = try!(self.skip_block_comment(input));
+                            let ((), new_input) = self.skip_block_comment(input)?;
                             input = new_input.into_inner();
                             continue;
                         } else {
@@ -709,13 +709,14 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                 if token.value == Token::EOF {
                     return Ok(token);
                 }
-                try!(lexer.indent_levels.push(Offside {
-                    context: Context::Block {
-                        emit_semi: false,
-                        needs_close: true,
-                    },
-                    location: token.span.start,
-                }));
+                lexer.indent_levels
+                    .push(Offside {
+                        context: Context::Block {
+                            emit_semi: false,
+                            needs_close: true,
+                        },
+                        location: token.span.start,
+                    })?;
                 debug!("Default block {:?}", token);
                 return Ok(lexer.layout_token(token, Token::OpenBlock));
             }
@@ -869,20 +870,20 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
             }
             Token::Equal => {
                 if offside.context == Context::Let {
-                    try!(scan_for_next_block(lexer,
-                                             Context::Block {
-                                                 emit_semi: false,
-                                                 needs_close: true,
-                                             }));
+                    scan_for_next_block(lexer,
+                                        Context::Block {
+                                            emit_semi: false,
+                                            needs_close: true,
+                                        })?;
                 }
             }
             Token::RightArrow => {
                 if offside.context == Context::MatchClause || offside.context == Context::Lambda {
-                    try!(scan_for_next_block(lexer,
-                                             Context::Block {
-                                                 emit_semi: false,
-                                                 needs_close: true,
-                                             }));
+                    scan_for_next_block(lexer,
+                                        Context::Block {
+                                            emit_semi: false,
+                                            needs_close: true,
+                                        })?;
                 }
             }
             Token::Else => {
@@ -900,19 +901,19 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                                 next.span.start.line != token.span.start.line;
                 lexer.unprocessed_tokens.push(next);
                 if add_block {
-                    try!(scan_for_next_block(lexer,
-                                             Context::Block {
-                                                 emit_semi: false,
-                                                 needs_close: true,
-                                             }));
+                    scan_for_next_block(lexer,
+                                        Context::Block {
+                                            emit_semi: false,
+                                            needs_close: true,
+                                        })?;
                 }
             }
             Token::Then => {
-                try!(scan_for_next_block(lexer,
-                                         Context::Block {
-                                             emit_semi: false,
-                                             needs_close: true,
-                                         }));
+                scan_for_next_block(lexer,
+                                    Context::Block {
+                                        emit_semi: false,
+                                        needs_close: true,
+                                    })?;
             }
             Token::Comma => {
                 // Prevent a semi to be emitted before the next token
@@ -924,7 +925,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                     }
                 }
             }
-            Token::With => try!(scan_for_next_block(lexer, Context::MatchClause)),
+            Token::With => scan_for_next_block(lexer, Context::MatchClause)?,
             _ => (),
         }
         return Ok(token);
@@ -967,7 +968,7 @@ impl<'input, I> StreamOnce for Lexer<'input, I>
                 Ok(token.value)
             }
             None => {
-                self.next_token = Some(try!(self.uncons_next()));
+                self.next_token = Some(self.uncons_next()?);
                 self.uncons()
             }
         }

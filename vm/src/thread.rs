@@ -311,7 +311,7 @@ impl Thread {
             let mut context = vm.current_context();
             StackFrame::frame(&mut context.stack, 0, State::Unknown);
         }
-        let ptr = try!(self.context().alloc(Move(vm)));
+        let ptr = self.context().alloc(Move(vm))?;
 
         Ok(ptr.root_thread())
     }
@@ -333,7 +333,7 @@ impl Thread {
     {
         let value = {
             let mut context = self.context();
-            try!(value.push(self, &mut context));
+            value.push(self, &mut context)?;
             context.stack.pop()
         };
         self.set_global(Symbol::from(name),
@@ -348,7 +348,7 @@ impl Thread {
         where T: Getable<'vm> + VmType,
     {
         let env = self.get_env();
-        let (value, actual) = try!(env.get_binding(name));
+        let (value, actual) = env.get_binding(name)?;
         // Finally check that type of the returned value is correct
         let expected = T::make_type(self);
         if expected == *actual {
@@ -458,7 +458,7 @@ impl Thread {
                         mut context: OwnedContext<'b>,
                         args: VmIndex)
                         -> Result<Option<OwnedContext<'b>>> {
-        try!(context.borrow_mut().do_call(args));
+        context.borrow_mut().do_call(args)?;
         context.execute()
     }
 }
@@ -572,7 +572,7 @@ impl ThreadInternal for Thread {
         let id = Symbol::from(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
         compiled_fn.instructions = instructions;
-        let closure = try!(self.global_env().new_global_thunk(compiled_fn));
+        let closure = self.global_env().new_global_thunk(compiled_fn)?;
         self.set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
         Ok(())
     }
@@ -581,7 +581,7 @@ impl ThreadInternal for Thread {
         let mut context = self.current_context();
         context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
-        try!(context.execute());
+        context.execute()?;
         Ok(self.current_context().stack.pop())
     }
 
@@ -599,7 +599,7 @@ impl ThreadInternal for Thread {
         context.stack.push(Int(0));
 
         context.borrow_mut().enter_scope(2, State::Unknown);
-        context = try!(self.call_context(context, 1))
+        context = self.call_context(context, 1)?
             .expect("call_module to have the stack remaining");
         let result = context.stack.pop();
         {
@@ -643,10 +643,10 @@ impl ThreadInternal for Thread {
                   value: Value)
                   -> Result<()> {
         let mut visited = FnvMap::default();
-        let value = try!(::value::deep_clone(value,
-                                             &mut visited,
-                                             &mut self.global_env().gc.lock().unwrap(),
-                                             self));
+        let value = ::value::deep_clone(value,
+                                        &mut visited,
+                                        &mut self.global_env().gc.lock().unwrap(),
+                                        self)?;
         self.global_env().set_global(name, typ, metadata, value)
     }
 
@@ -763,7 +763,7 @@ impl<'b> OwnedContext<'b> {
                 State::Extern(_) |
                 State::Closure(_) => {
                     if let Some(ref mut hook) = context.hook {
-                        try!(hook(context.thread))
+                        hook(context.thread)?
                     }
                 }
                 _ => (),
@@ -779,7 +779,7 @@ impl<'b> OwnedContext<'b> {
                         return Ok(Some(context));
                     } else {
                         context.borrow_mut().stack.frame.instruction_index = 1;
-                        Some(try!(context.execute_function(&ext)))
+                        Some(context.execute_function(&ext)?)
                     }
                 }
                 State::Closure(closure) => {
@@ -812,10 +812,10 @@ impl<'b> OwnedContext<'b> {
                                    instruction_index,
                                    closure.function.instructions.len());
 
-                            let new_context = try!(context.execute_(instruction_index,
-                                                                    &closure.function
-                                                                        .instructions,
-                                                                    &closure.function));
+                            let new_context = context.execute_(instruction_index,
+                                          &closure.function
+                                              .instructions,
+                                          &closure.function)?;
                             if new_context.is_some() {
                                 State::Exists
                             } else {
@@ -850,10 +850,11 @@ impl<'b> OwnedContext<'b> {
                 stack.pop();
             }
         }
-        self = try!(self.exit_scope()
-            .map_err(|_| {
-                Error::Message(StdString::from("Poped the last frame in execute_function"))
-            }));
+        self =
+            self.exit_scope()
+                .map_err(|_| {
+                    Error::Message(StdString::from("Poped the last frame in execute_function"))
+                })?;
         self.stack.pop();// Pop function
         self.stack.push(result);
 
@@ -942,10 +943,7 @@ impl<'b> ExecuteContext<'b> {
                 let app = {
                     let fields = &self.stack[self.stack.len() - args..];
                     let def = PartialApplicationDataDef(callable, fields);
-                    PartialApplication(try!(alloc(&mut self.gc,
-                                                  self.thread,
-                                                  &self.stack.stack,
-                                                  def)))
+                    PartialApplication(alloc(&mut self.gc, self.thread, &self.stack.stack, def)?)
                 };
                 for _ in 0..(args + 1) {
                     self.stack.pop();
@@ -957,13 +955,13 @@ impl<'b> ExecuteContext<'b> {
                 let excess_args = args - required_args;
                 let d = {
                     let fields = &self.stack[self.stack.len() - excess_args..];
-                    try!(alloc(&mut self.gc,
-                               self.thread,
-                               &self.stack.stack,
-                               Def {
-                                   tag: 0,
-                                   elems: fields,
-                               }))
+                    alloc(&mut self.gc,
+                          self.thread,
+                          &self.stack.stack,
+                          Def {
+                              tag: 0,
+                              elems: fields,
+                          })?
                 };
                 for _ in 0..excess_args {
                     self.stack.pop();
@@ -1073,13 +1071,13 @@ impl<'b> ExecuteContext<'b> {
                             Value::Tag(tag)
                         } else {
                             let fields = &self.stack[self.stack.len() - args..];
-                            Data(try!(alloc(&mut self.gc,
-                                            self.thread,
-                                            &self.stack.stack,
-                                            Def {
-                                                tag: tag,
-                                                elems: fields,
-                                            })))
+                            Data(alloc(&mut self.gc,
+                                       self.thread,
+                                       &self.stack.stack,
+                                       Def {
+                                           tag: tag,
+                                           elems: fields,
+                                       })?)
                         }
                     };
                     for _ in 0..args {
@@ -1100,11 +1098,12 @@ impl<'b> ExecuteContext<'b> {
                                 };
                                 let field_names = &function.records[record as usize];
                                 let tag = self.record_map.get_map(&field_names);
-                                Data(try!(self.gc.alloc_and_collect(roots,
-                                                                    Def {
-                                                                        tag: tag,
-                                                                        elems: fields,
-                                                                    })))
+                                Data(self.gc
+                                    .alloc_and_collect(roots,
+                                                       Def {
+                                                           tag: tag,
+                                                           elems: fields,
+                                                       })?)
                             }
                         }
                     };
@@ -1116,10 +1115,10 @@ impl<'b> ExecuteContext<'b> {
                 ConstructArray(args) => {
                     let d = {
                         let fields = &self.stack[self.stack.len() - args..];
-                        try!(alloc(&mut self.gc,
-                                   self.thread,
-                                   &self.stack.stack,
-                                   ::value::ArrayDef(fields)))
+                        alloc(&mut self.gc,
+                              self.thread,
+                              &self.stack.stack,
+                              ::value::ArrayDef(fields))?
                     };
                     for _ in 0..args {
                         self.stack.pop();
@@ -1139,7 +1138,7 @@ impl<'b> ExecuteContext<'b> {
                     let field = function.strings[i as usize];
                     match self.stack.pop() {
                         Data(data) => {
-                            let offset = try!(self.lookup_field(data.tag, field));
+                            let offset = self.lookup_field(data.tag, field)?;
                             let v = data.fields[offset as usize];
                             self.stack.push(v);
                         }
@@ -1202,10 +1201,10 @@ impl<'b> ExecuteContext<'b> {
                     let closure = {
                         let args = &self.stack[self.stack.len() - upvars..];
                         let func = function.inner_functions[function_index as usize];
-                        Closure(try!(alloc(&mut self.gc,
-                                           self.thread,
-                                           &self.stack.stack,
-                                           ClosureDataDef(func, args))))
+                        Closure(alloc(&mut self.gc,
+                                      self.thread,
+                                      &self.stack.stack,
+                                      ClosureDataDef(func, args))?)
                     };
                     for _ in 0..upvars {
                         self.stack.pop();
@@ -1216,10 +1215,10 @@ impl<'b> ExecuteContext<'b> {
                     let closure = {
                         // Use dummy variables until it is filled
                         let func = function.inner_functions[function_index as usize];
-                        Closure(try!(alloc(&mut self.gc,
-                                           self.thread,
-                                           &self.stack.stack,
-                                           ClosureInitDef(func, upvars as usize))))
+                        Closure(alloc(&mut self.gc,
+                                      self.thread,
+                                      &self.stack.stack,
+                                      ClosureInitDef(func, upvars as usize))?)
                     };
                     self.stack.push(closure);
                 }

@@ -38,8 +38,8 @@ pub trait MacroExpandable {
         where Self: Sized,
     {
         let mut macros = MacroExpander::new(thread);
-        let expr = try!(self.expand_macro_with(compiler, &mut macros, file));
-        try!(macros.finish());
+        let expr = self.expand_macro_with(compiler, &mut macros, file)?;
+        macros.finish()?;
         Ok(expr)
     }
 
@@ -62,7 +62,7 @@ impl<'s> MacroExpandable for &'s str {
         compiler.parse_expr(file, self)
             .map_err(From::from)
             .and_then(|mut expr| {
-                try!(expr.expand_macro_with(compiler, macros, file));
+                expr.expand_macro_with(compiler, macros, file)?;
                 Ok(MacroValue { expr: expr })
             })
     }
@@ -147,8 +147,8 @@ impl<E> Typecheckable for MacroValue<E>
         let env = thread.get_env();
         let mut tc = Typecheck::new(file.into(), &mut compiler.symbols, &*env);
 
-        let typ = try!(tc.typecheck_expr_expected(self.expr.borrow_mut(), expected_type)
-            .map_err(|err| InFile::new(file, expr_str, err)));
+        let typ = tc.typecheck_expr_expected(self.expr.borrow_mut(), expected_type)
+            .map_err(|err| InFile::new(file, expr_str, err))?;
 
         Ok(TypecheckValue {
             expr: self.expr,
@@ -214,7 +214,7 @@ impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
                                             &mut compiler.symbols);
             let source = Source::new(expr_str);
             let mut compiler = Compiler::new(&*env, thread.global_env(), symbols, &source);
-            try!(compiler.compile_expr(self.expr.borrow()))
+            compiler.compile_expr(self.expr.borrow())?
         };
         function.id = Symbol::from(filename);
         Ok(CompileValue {
@@ -294,8 +294,8 @@ impl<E> Executable<()> for CompileValue<E>
 
         let CompileValue { expr, typ, mut function } = self;
         function.id = Symbol::from(name);
-        let closure = try!(vm.global_env().new_global_thunk(function));
-        let value = try!(vm.call_thunk(closure));
+        let closure = vm.global_env().new_global_thunk(function)?;
+        let value = vm.call_thunk(closure)?;
         Ok(ExecuteValue {
             expr: expr,
             typ: typ,
@@ -313,9 +313,9 @@ impl<E> Executable<()> for CompileValue<E>
 
         let CompileValue { mut expr, typ, function } = self;
         let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
-        let closure = try!(vm.global_env().new_global_thunk(function));
-        let value = try!(vm.call_thunk(closure));
-        try!(vm.set_global(closure.function.name.clone(), typ, metadata, value));
+        let closure = vm.global_env().new_global_thunk(function)?;
+        let value = vm.call_thunk(closure)?;
+        vm.set_global(closure.function.name.clone(), typ, metadata, value)?;
         info!("Loaded module `{}` filename", filename);
         Ok(())
     }
