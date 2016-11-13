@@ -937,7 +937,6 @@ impl<'input, I> Iterator for Lexer<'input, I>
             Ok(Spanned { value: Token::EOF, .. }) => None,
             Err(ref err) if *err == Error::end_of_input() => None,
             Ok(Spanned { span: Span { start, end, .. }, value }) => {
-                println!("{} {:?} {}", start.absolute, value, end.absolute);
                 Some(Ok((start.absolute, value, end.absolute)))
             }
             Err(error) => Some(Err(static_error(error))),
