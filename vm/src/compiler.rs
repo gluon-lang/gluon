@@ -782,12 +782,12 @@ impl<'a> Compiler<'a> {
                 });
             }
             Expr::Block(ref exprs) => {
-                let (last, exprs) = exprs.split_last().expect("Expr in block");
-                for expr in exprs {
+                let (last, inits) = exprs.split_last().expect("Expr in block");
+                for expr in inits {
                     self.compile(expr, function, false)?;
                 }
                 self.compile(last, function, tail_position)?;
-                function.emit(Slide(exprs.len() as u32 - 1));
+                function.emit(Slide(inits.len() as u32));
             }
         }
         Ok(None)

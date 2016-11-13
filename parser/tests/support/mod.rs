@@ -6,7 +6,7 @@ use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
 use base::types::{Alias, ArcType, Field, Generic, Type};
-use parser::{Error, parse_string};
+use parser::{Error, ParseErrors, parse_string};
 use std::marker::PhantomData;
 
 pub struct MockEnv<T>(PhantomData<T>);
@@ -34,7 +34,7 @@ impl<T> IdentEnv for MockEnv<T>
 }
 
 pub fn parse(input: &str)
-             -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
+             -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_string(&mut MockEnv::new(), input)
 }
 

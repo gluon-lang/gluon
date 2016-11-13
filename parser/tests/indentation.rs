@@ -12,10 +12,10 @@ use combine::primitives::Error as CombineError;
 use base::ast::*;
 use base::error::Errors;
 use base::pos::{self, BytePos};
-use parser::{Error, parse_string, ParseError};
+use parser::{Error, parse_string, ParseError, ParseErrors};
 use support::MockEnv;
 
-fn parse(text: &str) -> Result<SpannedExpr<String>, Errors<::parser::Error>> {
+fn parse(text: &str) -> Result<SpannedExpr<String>, ParseErrors> {
     parse_string(&mut MockEnv::new(), text).map_err(|(_, err)| err)
 }
 
@@ -67,7 +67,7 @@ y
 
     let parse_error = ParseError { errors: vec![CombineError::Unexpected("Int".into())] };
     let span = pos::span(BytePos::from(32), BytePos::from(32));
-    let errors = Errors { errors: vec![Error::Parser(pos::spanned(span, parse_error))] };
+    let errors = Errors { errors: vec![pos::spanned(span, Error::Parser(parse_error))] };
 
     assert_eq!(result, Err(errors));
 }

@@ -114,12 +114,12 @@ fn transform_lalrpop_error(err: LalrpopError) -> Spanned<CombineError<String, St
     }
 }
 
-fn transform_errors(errors: Vec<LalrpopError>) -> Vec<Error> {
+fn transform_errors(errors: Vec<LalrpopError>) -> Vec<Spanned<Error, BytePos>> {
     errors.into_iter()
         .map(|err| {
             let Spanned { span, value: err } = transform_lalrpop_error(err);
             let err = ParseError { errors: vec![err] };
-            Error::Parser(pos::spanned(span, err))
+            pos::spanned(span, Error::Parser(err))
         })
         .collect()
 }
@@ -127,8 +127,8 @@ fn transform_errors(errors: Vec<LalrpopError>) -> Vec<Error> {
 quick_error! {
     #[derive(Debug, PartialEq)]
     pub enum Error {
-        Parser(err: Spanned<ParseError, BytePos>) {
-            description(err.value.description())
+        Parser(err: ParseError) {
+            description(err.description())
             display("{}", err)
             from()
         }
@@ -174,23 +174,26 @@ type ErrorEnv<'err, 'input> = &'err mut Errors<lalrpop_util::ParseError<BytePos,
                                                                         Token<&'input str>,
                                                                         CombineError<String,
                                                                                      String>>>;
+pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 
-pub fn parse_partial_expr<Id>
-    (symbols: &mut IdentEnv<Ident = Id>,
-     input: &str)
-     -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Errors<Error>)>
+pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
+                              input: &str)
+                              -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
     where Id: Clone,
 {
     let lexer = Lexer::new(input);
     let mut parse_errors = Errors::new();
 
     match grammar::parse_TopExpr(input, symbols, &mut parse_errors, lexer) {
-        // TODO: handle errors
         Ok(mut expr) => {
             let mut errors = Errors { errors: transform_errors(parse_errors.errors) };
             let mut reparser = Reparser::new(OpTable::default(), symbols);
             if let Err(reparse_errors) = reparser.reparse(&mut expr) {
-                errors.errors.extend(reparse_errors.errors.into_iter().map(Error::Infix));
+                errors.errors.extend(reparse_errors.errors
+                    .into_iter()
+                    .map(|err| {
+                        pos::spanned2(BytePos::from(0), BytePos::from(0), Error::Infix(err))
+                    }));
             }
             if errors.has_errors() {
                 Err((Some(expr), errors))
@@ -207,7 +210,7 @@ pub fn parse_partial_expr<Id>
 
 pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
                   input: &str)
-                  -> Result<SpannedExpr<Symbol>, Errors<Error>> {
+                  -> Result<SpannedExpr<Symbol>, ParseErrors> {
     parse_partial_expr(symbols, input).map_err(|t| t.1)
 }
 
@@ -215,6 +218,6 @@ pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
 pub fn parse_string<'env, 'input>
     (symbols: &'env mut IdentEnv<Ident = String>,
      input: &'input str)
-     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Errors<Error>)> {
+     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_partial_expr(symbols, input)
 }

@@ -30,7 +30,6 @@ use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::symbol::{Symbol, Symbols, SymbolModule};
 use base::types::{ArcType, Type};
-use parser::ParseError;
 use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::{Getable, Hole, VmType, OpaqueValue};
@@ -45,7 +44,7 @@ quick_error! {
     #[derive(Debug)]
     pub enum Error {
         /// Error found when parsing gluon code
-        Parse(err: InFile<ParseError>) {
+        Parse(err: InFile<parser::Error>) {
             description(err.description())
             display("{}", err)
             from()
@@ -144,7 +143,7 @@ impl Compiler {
     pub fn parse_expr(&mut self,
                       file: &str,
                       expr_str: &str)
-                      -> StdResult<SpannedExpr<Symbol>, InFile<ParseError>> {
+                      -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
         self.parse_partial_expr(file, expr_str)
             .map_err(|(_, err)| err)
     }
@@ -154,8 +153,8 @@ impl Compiler {
         (&mut self,
          file: &str,
          expr_str: &str)
-         -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<ParseError>)> {
-        Ok(parser::parse_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
+         -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
+        Ok(parser::parse_partial_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
                                    expr_str)
             .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
