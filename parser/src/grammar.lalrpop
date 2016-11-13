@@ -250,17 +250,19 @@ Alternative: Alternative<Id> =
     };
 
 FieldExpr: FieldExpr<Id> = {
-    "type" <id: Ident> "=" <body : Type> =>
-        FieldExpr::Type(id, Some(body)),
 
-    "type" <id: Ident> =>
-        FieldExpr::Type(id, None),
+    <id: Ident> "=" <body: SpExpr> => {
+        FieldExpr::Value(id, Some(body))
+    },
 
-    <id: Ident> "=" <body: SpExpr> =>
-        FieldExpr::Value(id, Some(body)),
-
-    <id: Ident> =>
-        FieldExpr::Value(id, None),
+    <IdentStr> => {
+        let id = env.from_str(<>);
+        if <>.starts_with(char::is_uppercase) {
+            FieldExpr::Type(id, None)
+        } else {
+            FieldExpr::Value(id, None)
+        }
+    },
 };
 
 ValueBinding: ValueBinding<Id> = {

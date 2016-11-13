@@ -493,3 +493,12 @@ fn block_open_after_explicit_let_in() {
         _ => panic!("{:?}", e),
     }
 }
+
+#[test]
+fn record_type_field() {
+    let _ = ::env_logger::init();
+    let text = r"{ Test, x }";
+    let e = parse_new!(text);
+    assert_eq!(e,
+               record_a(vec![("Test".into(), None)], vec![("x".into(), None)]))
+}
