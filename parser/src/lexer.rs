@@ -692,10 +692,11 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                     // b
                     // ```
                     // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-                    lexer.indent_levels.push(Offside {
-                        location: location,
-                        context: Context::Block { emit_semi: false },
-                    });
+                    lexer.indent_levels
+                        .push(Offside {
+                            location: location,
+                            context: Context::Block { emit_semi: false },
+                        })?;
                     lexer.unprocessed_tokens.push(SpannedToken {
                         span: token.span,
                         value: Token::OpenBlock,

@@ -39,7 +39,7 @@ extern {
         "," => Token::Comma,
         "." => Token::Dot,
         "=" => Token::Equals,
-        "\"" => Token::Lambda,
+        "\\" => Token::Lambda,
         "|" => Token::Pipe,
         "->" => Token::RightArrow,
 
@@ -168,17 +168,17 @@ pub Type = {
 // Patterns
 
 FieldPattern : FieldPattern<Id> = {
-    "type" <id: Ident> "=" <body : Ident> =>
-        FieldPattern::Type(id, Some(body)),
-
-    "type" <id: Ident> =>
-        FieldPattern::Type(id, None),
-
     <id: Ident> "=" <body: Ident> =>
         FieldPattern::Value(id, Some(body)),
 
-    <id: Ident> =>
-        FieldPattern::Value(id, None),
+    <IdentStr> => {
+        let id = env.from_str(<>);
+        if <>.starts_with(char::is_uppercase) {
+            FieldPattern::Type(id, None)
+        } else {
+            FieldPattern::Value(id, None)
+        }
+    },
 };
 
 AtomicPattern: Pattern<Id> = {
@@ -349,6 +349,13 @@ AppExpr = {
 InfixExpr = {
     AppExpr,
 
+    "\\" <args: Ident+> "->" <body: SpExpr> =>
+        Expr::Lambda(Lambda {
+            id: TypedIdent::new(env.from_str("")),
+            args: args.into_iter().map(TypedIdent::new).collect(),
+            body: Box::new(body),
+        }),
+
     <lhs: Sp<AppExpr>> <op: "Operator"> <rhs: Sp<InfixExpr>> =>
         Expr::Infix(Box::new(lhs), TypedIdent::new(env.from_str(op)), Box::new(rhs)),
 };
@@ -369,13 +376,6 @@ AndTypeBinding: TypeBinding<Id> =
 
 Expr: Expr<Id> = {
     InfixExpr,
-
-    "\"" <args: Ident+> "->" <body: SpExpr> =>
-        Expr::Lambda(Lambda {
-            id: TypedIdent::new(env.from_str("")),
-            args: args.into_iter().map(TypedIdent::new).collect(),
-            body: Box::new(body),
-        }),
 
     "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
         Expr::IfElse(Box::new(pred), Box::new(if_true), Box::new(if_false)),
