@@ -114,7 +114,9 @@ fn transform_lalrpop_error(err: LalrpopError) -> Spanned<CombineError<String, St
     }
 }
 
-fn transform_errors(errors: Vec<LalrpopError>) -> Vec<Spanned<Error, BytePos>> {
+fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
+    where Iter: IntoIterator<Item = LalrpopError<'a>>,
+{
     errors.into_iter()
         .map(|err| {
             let Spanned { span, value: err } = transform_lalrpop_error(err);
@@ -186,12 +188,10 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
 
     match grammar::parse_TopExpr(input, symbols, &mut parse_errors, lexer) {
         Ok(mut expr) => {
-            let mut errors = Errors { errors: transform_errors(parse_errors.errors) };
+            let mut errors = transform_errors(parse_errors);
             let mut reparser = Reparser::new(OpTable::default(), symbols);
             if let Err(reparse_errors) = reparser.reparse(&mut expr) {
-                errors.errors
-                    .extend(reparse_errors.errors
-                        .into_iter()
+                errors.extend(reparse_errors.into_iter()
                         .map(|err| {
                             pos::spanned2(BytePos::from(0), BytePos::from(0), Error::Infix(err))
                         }));
@@ -203,8 +203,8 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
             }
         }
         Err(err) => {
-            parse_errors.error(err);
-            Err((None, Errors { errors: transform_errors(parse_errors.errors) }))
+            parse_errors.push(err);
+            Err((None, transform_errors(parse_errors)))
         }
     }
 }

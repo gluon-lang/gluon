@@ -83,22 +83,19 @@ quick_error! {
 
 impl From<Errors<macros::Error>> for Error {
     fn from(mut errors: Errors<macros::Error>) -> Error {
-        if errors.errors.len() == 1 {
-            let err = errors.errors.pop().unwrap();
+        if errors.len() == 1 {
+            let err = errors.pop().unwrap();
             match err.downcast::<Error>() {
                 Ok(err) => *err,
                 Err(err) => Error::Macro(err),
             }
         } else {
-            Error::Multiple(Errors {
-                errors: errors.errors
-                    .into_iter()
-                    .map(|err| match err.downcast::<Error>() {
-                        Ok(err) => *err,
-                        Err(err) => Error::Macro(err),
-                    })
-                    .collect(),
-            })
+            Error::Multiple(errors.into_iter()
+                .map(|err| match err.downcast::<Error>() {
+                    Ok(err) => *err,
+                    Err(err) => Error::Macro(err),
+                })
+                .collect())
         }
     }
 }
@@ -106,10 +103,10 @@ impl From<Errors<macros::Error>> for Error {
 
 impl From<Errors<Error>> for Error {
     fn from(mut errors: Errors<Error>) -> Error {
-        if errors.errors.len() == 1 {
-            errors.errors.pop().unwrap()
+        if errors.len() == 1 {
+            errors.pop().unwrap()
         } else {
-            Error::Multiple(errors)
+            Error::Multiple(errors.into())
         }
     }
 }

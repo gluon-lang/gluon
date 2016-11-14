@@ -290,7 +290,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::Ident>) {
             if let Err(err) = self.rename_expr(expr) {
-                self.errors.error(Spanned {
+                self.errors.push(Spanned {
                     span: expr.span,
                     value: err,
                 });

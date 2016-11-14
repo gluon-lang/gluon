@@ -301,7 +301,7 @@ AtomicExpr: Expr<Id> = {
         Expr::Projection(Box::new(expr), id, Type::hole()),
 
     <expr: Sp<AtomicExpr>> "." <err: error> => {
-        errors.error(err);
+        errors.push(err);
         Expr::Projection(Box::new(expr), env.from_str(""), Type::hole())
     },
 

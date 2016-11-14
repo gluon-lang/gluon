@@ -111,7 +111,7 @@ impl<'a> MutVisitor for MacroExpander<'a> {
                                 match m.expand(self, args) {
                                     Ok(e) => Some(e),
                                     Err(err) => {
-                                        self.errors.error(err);
+                                        self.errors.push(err);
                                         None
                                     }
                                 }

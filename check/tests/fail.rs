@@ -23,16 +23,16 @@ macro_rules! assert_err {
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}",
                              types::display_type(&*symbols.borrow(), &x)),
-            Err(err) => {
-                let mut iter = err.errors.iter();
+            Err(errors) => {
+                let mut iter = (&errors).into_iter();
                 $(
                 match iter.next() {
                     Some(&Spanned { value: $id, .. }) => (),
                     _ => assert!(false, "Found errors:\n{}\nbut expected {}",
-                                        err, stringify!($id)),
+                                        errors, stringify!($id)),
                 }
                 )+
-                assert!(iter.count() == 0, "Found more errors than expected\n{}", err);
+                assert!(iter.count() == 0, "Found more errors than expected\n{}", errors);
             }
         }
     }}
@@ -51,27 +51,31 @@ macro_rules! assert_unify_err {
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}",
                              types::display_type(&*symbols.borrow(), &x)),
-            Err(err) => {
-                for err in err.errors.iter() {
-                    match *err {
+            Err(errors) => {
+                for error in errors {
+                    match error {
                         Spanned { value: Unification(_, _, ref errors), .. } => {
                             let mut iter = errors.iter();
                             $(
                             match iter.next() {
                                 Some(&$id) => (),
-                                Some(err2) => assert!(false, "Found errors:\n{}\nExpected:\n{}\nFound\n:{:?}",
-                                                    err, stringify!($id), err2),
-                                None => assert!(false, "Found errors:\n{}\nbut expected {}",
-                                                    err, stringify!($id))
+                                Some(error2) => {
+                                    assert!(false, "Found errors:\n{}\nExpected:\n{}\nFound\n:{:?}",
+                                            error, stringify!($id), error2);
+                                }
+                                None => {
+                                    assert!(false, "Found errors:\n{}\nbut expected {}",
+                                            error, stringify!($id));
+                                }
                             }
                             )+
                             assert!(iter.count() == 0,
                                     "Found more errors than expected\n{}",
-                                    err);
+                                    error);
                         }
                         _ => assert!(false,
                                      "Found errors:\n{}\nbut expected an unification error",
-                                     err)
+                                     error)
                     }
                 }
             }

@@ -121,7 +121,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
           T::Variable: Clone,
 {
     fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<T, T::Error>) {
-        unifier.unifier.errors.error(error);
+        unifier.unifier.errors.push(error);
     }
 
     fn try_match(unifier: &mut UnifierState<S, Self>, l: &T, r: &T) -> Option<T> {
@@ -154,7 +154,7 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
         match result {
             Ok(typ) => typ,
             Err(error) => {
-                unifier.unifier.errors.error(error);
+                unifier.unifier.errors.push(error);
                 Some(subs.new_var())
             }
         }
@@ -340,7 +340,7 @@ mod test {
         // Check that var1 does not unify with int as it should already be a string
         let result = unify(&subs, &var1, &int);
         assert_eq!(result,
-                   Err(Errors { errors: vec![Error::TypeMismatch(string.clone(), int.clone())] }));
+                   Err(Errors::from(vec![Error::TypeMismatch(string.clone(), int.clone())])));
     }
 
     #[test]
@@ -352,9 +352,7 @@ mod test {
         let fun = TType(Box::new(Type::Arrow(string.clone(), var1.clone())));
         let result = unify(&subs, &fun, &var1);
         assert_eq!(result,
-                   Err(Errors {
-                       errors: vec![Error::Occurs(*var1.get_var().unwrap(), fun.clone())],
-                   }));
+                   Err(Errors::from(vec![Error::Occurs(*var1.get_var().unwrap(), fun.clone())])));
     }
 
     #[test]

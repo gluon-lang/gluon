@@ -239,7 +239,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn error(&mut self, span: Span<BytePos>, error: TypeError<Symbol>) -> ArcType {
-        self.errors.error(Spanned {
+        self.errors.push(Spanned {
             span: span,
             value: error,
         });
@@ -404,8 +404,8 @@ impl<'a> Typecheck<'a> {
                     Ok(typ)
                 }
                 Err(errors) => {
-                    for Spanned { span, value } in errors.errors {
-                        self.errors.error(Spanned {
+                    for Spanned { span, value } in errors {
+                        self.errors.push(Spanned {
                             span: span,
                             value: value.into(),
                         });
@@ -446,7 +446,7 @@ impl<'a> Typecheck<'a> {
                 }
                 Err(err) => {
                     returned_type = self.subs.new_var();
-                    self.errors.error(Spanned {
+                    self.errors.push(Spanned {
                         span: expr.span,
                         value: err,
                     });
@@ -517,7 +517,7 @@ impl<'a> Typecheck<'a> {
                     let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
                     let prim_type = primitive_type(op_type);
                     op.value.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
-                                            prim_type.clone());
+                                                  prim_type.clone());
                     let typ = self.unify(&prim_type, arg_type)?;
                     match &op_name[1 + op_type.len()..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
@@ -528,7 +528,8 @@ impl<'a> Typecheck<'a> {
                     match &*op_name {
                         "&&" | "||" => {
                             self.unify(&lhs_type, rhs_type.clone())?;
-                            op.value.typ = Type::function(vec![self.bool(), self.bool()], self.bool());
+                            op.value.typ = Type::function(vec![self.bool(), self.bool()],
+                                                          self.bool());
                             self.unify(&self.bool(), lhs_type)
                         }
                         _ => {
@@ -971,7 +972,7 @@ impl<'a> Typecheck<'a> {
         // Finally insert the declared types into the global scope
         for bind in bindings {
             if self.environment.stack_types.get(&bind.name).is_some() {
-                self.errors.error(Spanned {
+                self.errors.push(Spanned {
                     span: expr.span,
                     value: DuplicateTypeDefinition(bind.name.clone()),
                 });
@@ -1244,9 +1245,8 @@ impl<'a> Typecheck<'a> {
                 let mut expected = expected.clone();
                 expected = self.subs.set_type(expected);
                 actual = self.subs.set_type(actual);
-                let err =
-                    TypeError::Unification(expected, actual, apply_subs(&self.subs, errors.errors));
-                self.errors.error(Spanned {
+                let err = TypeError::Unification(expected, actual, apply_subs(&self.subs, errors));
+                self.errors.push(Spanned {
                     span: span,
                     value: err,
                 });
@@ -1259,7 +1259,7 @@ impl<'a> Typecheck<'a> {
         match self.unify(expected, actual) {
             Ok(typ) => typ,
             Err(err) => {
-                self.errors.error(Spanned {
+                self.errors.push(Spanned {
                     span: span,
                     value: err,
                 });
@@ -1283,7 +1283,7 @@ impl<'a> Typecheck<'a> {
                        errors,
                        types::display_type(&self.symbols, &expected),
                        types::display_type(&self.symbols, &actual));
-                Err(TypeError::Unification(expected, actual, apply_subs(&self.subs, errors.errors)))
+                Err(TypeError::Unification(expected, actual, apply_subs(&self.subs, errors)))
             }
         }
     }
@@ -1320,7 +1320,7 @@ impl<'a> Typecheck<'a> {
                                  -> bool {
         match duplicated_fields.replace(name) {
             Some(name) => {
-                self.errors.error(Spanned {
+                self.errors.push(Spanned {
                     span: span,
                     value: DuplicateField(name),
                 });
@@ -1345,10 +1345,10 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut
 }
 
 fn apply_subs(subs: &Substitution<ArcType>,
-              error: Vec<unify_type::Error<Symbol>>)
+              errors: Errors<unify_type::Error<Symbol>>)
               -> Vec<unify_type::Error<Symbol>> {
     use unify::Error::*;
-    error.into_iter()
+    errors.into_iter()
         .map(|error| {
             match error {
                 TypeMismatch(expected, actual) => {

@@ -166,7 +166,7 @@ impl<'s, Id> MutVisitor for Reparser<'s, Id> {
                 Ok(expr) => {
                     *e = expr;
                 }
-                Err(err) => self.errors.error(err),
+                Err(err) => self.errors.push(err),
             }
         }
         walk_mut_expr(self, e);

@@ -67,7 +67,7 @@ y
 
     let parse_error = ParseError { errors: vec![CombineError::Unexpected("Int".into())] };
     let span = pos::span(BytePos::from(32), BytePos::from(32));
-    let errors = Errors { errors: vec![pos::spanned(span, Error::Parser(parse_error))] };
+    let errors = Errors::from(vec![pos::spanned(span, Error::Parser(parse_error))]);
 
     assert_eq!(result, Err(errors));
 }
