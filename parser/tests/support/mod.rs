@@ -57,7 +57,7 @@ pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
 }
 
 pub fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
-    no_loc(Expr::Infix(Box::new(l), TypedIdent::new(intern(s)), Box::new(r)))
+    no_loc(Expr::Infix(Box::new(l), no_loc(TypedIdent::new(intern(s))), Box::new(r)))
 }
 
 pub fn int(i: i64) -> SpExpr {

@@ -237,7 +237,7 @@ impl<F> FindVisitor<F>
             Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => {
-                        self.on_found.ident(current, &op.name, &op.typ)
+                        self.on_found.ident(current, &op.value.name, &op.value.typ)
                     }
                     (_, Ordering::Greater) |
                     (_, Ordering::Equal) => self.visit_expr(r),

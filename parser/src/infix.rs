@@ -2,7 +2,7 @@
 //! associative with the same precedence. Therefore we need to rebalance them
 //! after the fact.
 
-use base::ast::{Expr, IdentEnv, Literal, MutVisitor, SpannedExpr, TypedIdent, walk_mut_expr};
+use base::ast::{Expr, IdentEnv, Literal, MutVisitor, SpannedExpr, SpannedIdent, walk_mut_expr};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::pos::{BytePos, spanned2};
@@ -236,8 +236,8 @@ pub fn reparse<Id>(expr: SpannedExpr<Id>,
                     }
                 };
 
-                let next_op_meta = operators[symbols.string(&next_op.name)];
-                let stack_op_meta = operators[symbols.string(&stack_op.name)];
+                let next_op_meta = operators[symbols.string(&next_op.value.name)];
+                let stack_op_meta = operators[symbols.string(&stack_op.value.name)];
 
                 match i32::cmp(&next_op_meta.precedence, &stack_op_meta.precedence) {
                     // Reduce
@@ -271,8 +271,9 @@ pub fn reparse<Id>(expr: SpannedExpr<Id>,
                             // Conflicting fixities at the same precedence level!
                             (Fixity::Left, Fixity::Right) |
                             (Fixity::Right, Fixity::Left) => {
-                                let next_op_name = symbols.string(&next_op.name).to_string();
-                                let stack_op_name = symbols.string(&stack_op.name).to_string();
+                                let next_op_name = symbols.string(&next_op.value.name).to_string();
+                                let stack_op_name = symbols.string(&stack_op.value.name)
+                                    .to_string();
 
                                 // TODO: Return a spanned error
                                 return Err(ConflictingFixities((stack_op_name, stack_op_meta),
@@ -300,7 +301,7 @@ pub fn reparse<Id>(expr: SpannedExpr<Id>,
 enum InfixToken<Id> {
     Arg(Box<SpannedExpr<Id>>),
     // TODO: Make this spanned to allow for accurate error reporting
-    Op(TypedIdent<Id>),
+    Op(SpannedIdent<Id>),
 }
 
 /// An iterator that takes an expression that has had its operators grouped
@@ -331,7 +332,7 @@ struct Infixes<Id> {
     /// The next part of the expression that we need to flatten
     remaining_expr: Option<Box<SpannedExpr<Id>>>,
     /// Cached operator from a previous iteration
-    next_op: Option<TypedIdent<Id>>,
+    next_op: Option<SpannedIdent<Id>>,
 }
 
 impl<Id> Infixes<Id> {
@@ -411,7 +412,7 @@ mod tests {
           op_str: &str,
           rhs: Box<SpannedExpr<String>>)
           -> Box<SpannedExpr<String>> {
-        Box::new(no_loc(Expr::Infix(lhs, ident(op_str), rhs)))
+        Box::new(no_loc(Expr::Infix(lhs, no_loc(ident(op_str)), rhs)))
     }
 
     fn int(value: i64) -> Box<SpannedExpr<String>> {
@@ -426,13 +427,13 @@ mod tests {
 
         let result: Vec<_> = Infixes::new(*expr).collect();
         let expected = vec![InfixToken::Arg(int(1)),
-                            InfixToken::Op(ident("+")),
+                            InfixToken::Op(no_loc(ident("+"))),
                             InfixToken::Arg(int(2)),
-                            InfixToken::Op(ident("^")),
+                            InfixToken::Op(no_loc(ident("^"))),
                             InfixToken::Arg(int(4)),
-                            InfixToken::Op(ident("*")),
+                            InfixToken::Op(no_loc(ident("*"))),
                             InfixToken::Arg(int(6)),
-                            InfixToken::Op(ident("-")),
+                            InfixToken::Op(no_loc(ident("-"))),
                             InfixToken::Arg(int(8))];
 
         assert_eq!(result, expected);

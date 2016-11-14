@@ -623,12 +623,10 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
 
     loop {
         // Retrieve the current indentation level if one exists
-        let offside = match lexer.indent_levels.last().cloned() {
-            Some(offside) => offside,
-            None => {
-                if token.value == Token::EOF {
-                    return Ok(token);
-                }
+        let offside = match (&token.value, lexer.indent_levels.last().cloned()) {
+            (_, Some(offside)) => offside,
+            (&Token::EOF, None) => return Ok(token),
+            (_, None) => {
                 lexer.indent_levels
                     .push(Offside {
                         context: Context::Block { emit_semi: false },
@@ -658,7 +656,9 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                 offside.context == Context::Delimiter(Delimiter::Bracket)) {
                 return Ok(token);
             }
+
             lexer.indent_levels.pop();
+
             match (&token.value, &offside.context) {
                 (&Token::Else, &Context::If) => (),
                 (&Token::Close(close_delim), &Context::Delimiter(context_delim))
@@ -703,15 +703,10 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                     });
                     return Ok(token);
                 }
-                _ => {
-                    match offside.context {
-                        Context::Block { .. } => {
-                            return Ok(lexer.layout_token(token, Token::CloseBlock));
-                        }
-                        _ => (),
-                    }
-                    continue;
+                (_, &Context::Block { .. }) => {
+                    return Ok(lexer.layout_token(token, Token::CloseBlock));
                 }
+                (_, _) => continue,
             }
         }
 

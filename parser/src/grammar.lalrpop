@@ -74,9 +74,11 @@ IdentStr: &'input str = {
     "(" <"Operator"> ")" => <>,
 };
 
-pub Ident: Id = {
-    IdentStr => env.from_str(<>),
-};
+Ident: Id =
+    IdentStr => env.from_str(<>);
+
+Operator: TypedIdent<Id> =
+    "Operator" => TypedIdent::new(env.from_str(<>));
 
 // Types
 
@@ -158,7 +160,7 @@ AppType = {
         Type::app(ty, args.into_iter().collect()),
 };
 
-pub Type = {
+Type = {
     AppType,
 
     <lhs: AppType> "->" <rhs: Type> =>
@@ -233,7 +235,7 @@ Pattern = {
 
 // Expressions
 
-pub Literal: Literal = {
+Literal: Literal = {
     "StringLiteral" => Literal::String(<>),
     "CharLiteral" => Literal::Char(<>),
     "IntLiteral" => Literal::Int(<>),
@@ -250,7 +252,6 @@ Alternative: Alternative<Id> =
     };
 
 FieldExpr: FieldExpr<Id> = {
-
     <id: Ident> "=" <body: SpExpr> => {
         FieldExpr::Value(id, Some(body))
     },
@@ -356,8 +357,8 @@ InfixExpr = {
             body: Box::new(body),
         }),
 
-    <lhs: Sp<AppExpr>> <op: "Operator"> <rhs: Sp<InfixExpr>> =>
-        Expr::Infix(Box::new(lhs), TypedIdent::new(env.from_str(op)), Box::new(rhs)),
+    <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
+        Expr::Infix(Box::new(lhs), op, Box::new(rhs)),
 };
 
 AndValueBinding: ValueBinding<Id> =

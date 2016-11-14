@@ -95,8 +95,9 @@ pub struct Lambda<Id> {
     pub body: Box<SpannedExpr<Id>>,
 }
 
-/// Expression which contains a location
 pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
+
+pub type SpannedIdent<Id> = Spanned<TypedIdent<Id>, BytePos>;
 
 /// The representation of gluon's expression syntax
 #[derive(Clone, PartialEq, Debug)]
@@ -114,7 +115,7 @@ pub enum Expr<Id> {
     /// Pattern match expression
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     /// Infix operator expression eg. `f >> g`
-    Infix(Box<SpannedExpr<Id>>, TypedIdent<Id>, Box<SpannedExpr<Id>>),
+    Infix(Box<SpannedExpr<Id>>, SpannedIdent<Id>, Box<SpannedExpr<Id>>),
     /// Record field projection, eg. `value.field`
     Projection(Box<SpannedExpr<Id>>, Id, ArcType<Id>),
     /// Array construction
@@ -177,7 +178,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         }
         Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
             v.visit_expr(lhs);
-            v.visit_typ(&mut id.typ);
+            v.visit_typ(&mut id.value.typ);
             v.visit_expr(rhs);
         }
         Expr::LetBindings(ref mut bindings, ref mut body) => {
@@ -278,7 +279,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
         }
         Expr::Infix(ref lhs, ref id, ref rhs) => {
             v.visit_expr(lhs);
-            v.visit_typ(&id.typ);
+            v.visit_typ(&id.value.typ);
             v.visit_expr(rhs);
         }
         Expr::LetBindings(ref bindings, ref body) => {
@@ -394,7 +395,7 @@ impl Typed for Expr<Symbol> {
                 Type::unit()
             }
             Expr::Infix(_, ref op, _) => {
-                if let Type::App(_, ref args) = *op.typ.clone() {
+                if let Type::App(_, ref args) = *op.value.typ.clone() {
                     if let Type::App(_, ref args) = *args[1] {
                         return args[1].clone();
                     }

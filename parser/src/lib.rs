@@ -189,11 +189,12 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
             let mut errors = Errors { errors: transform_errors(parse_errors.errors) };
             let mut reparser = Reparser::new(OpTable::default(), symbols);
             if let Err(reparse_errors) = reparser.reparse(&mut expr) {
-                errors.errors.extend(reparse_errors.errors
-                    .into_iter()
-                    .map(|err| {
-                        pos::spanned2(BytePos::from(0), BytePos::from(0), Error::Infix(err))
-                    }));
+                errors.errors
+                    .extend(reparse_errors.errors
+                        .into_iter()
+                        .map(|err| {
+                            pos::spanned2(BytePos::from(0), BytePos::from(0), Error::Infix(err))
+                        }));
             }
             if errors.has_errors() {
                 Err((Some(expr), errors))

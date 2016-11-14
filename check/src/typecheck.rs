@@ -510,32 +510,32 @@ impl<'a> Typecheck<'a> {
             Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
                 let lhs_type = self.typecheck(&mut **lhs);
                 let rhs_type = self.typecheck(&mut **rhs);
-                let op_name = String::from(self.symbols.string(&op.name));
+                let op_name = String::from(self.symbols.string(&op.value.name));
                 let result = if op_name.starts_with('#') {
                     // Handle primitives
                     let arg_type = self.unify(&lhs_type, rhs_type)?;
                     let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
                     let prim_type = primitive_type(op_type);
-                    op.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
+                    op.value.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
                                             prim_type.clone());
                     let typ = self.unify(&prim_type, arg_type)?;
                     match &op_name[1 + op_type.len()..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
                         "==" | "<" => Ok(self.bool()),
-                        _ => Err(UndefinedVariable(op.name.clone())),
+                        _ => Err(UndefinedVariable(op.value.name.clone())),
                     }
                 } else {
                     match &*op_name {
                         "&&" | "||" => {
                             self.unify(&lhs_type, rhs_type.clone())?;
-                            op.typ = Type::function(vec![self.bool(), self.bool()], self.bool());
+                            op.value.typ = Type::function(vec![self.bool(), self.bool()], self.bool());
                             self.unify(&self.bool(), lhs_type)
                         }
                         _ => {
-                            op.typ = self.find(&op.name)?;
+                            op.value.typ = self.find(&op.value.name)?;
                             let func_type = Type::function(vec![lhs_type, rhs_type],
                                                            self.subs.new_var());
-                            let ret = self.unify(&op.typ, func_type)?
+                            let ret = self.unify(&op.value.typ, func_type)?
                                 .as_function()
                                 .and_then(|(_, ret)| ret.as_function())
                                 .map(|(_, ret)| ret.clone())
