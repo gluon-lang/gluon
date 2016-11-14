@@ -20,7 +20,7 @@ use base::pos::{self, BytePos, Spanned};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
-use combine::primitives::{StreamOnce, Error as CombineError};
+use combine::primitives::Error as CombineError;
 
 use infix::{OpTable, Reparser};
 use lexer::{Lexer, Token};
@@ -139,24 +139,6 @@ quick_error! {
             display("{}", err)
             from()
         }
-    }
-}
-
-// Dummy type for ParseError which has the correct associated types
-#[derive(Clone)]
-pub struct StreamType(());
-
-impl StreamOnce for StreamType {
-    type Item = String;
-    type Range = String;
-    type Position = BytePos;
-
-    fn uncons(&mut self) -> Result<String, CombineError<String, String>> {
-        unimplemented!()
-    }
-
-    fn position(&self) -> Self::Position {
-        unimplemented!()
     }
 }
 
