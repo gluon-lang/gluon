@@ -84,31 +84,27 @@ impl StdError for ParseError {
 
 fn transform_lalrpop_error(err: LalrpopError) -> Spanned<CombineError<String, String>, BytePos> {
     use lalrpop_util::ParseError::*;
+
     match err {
         InvalidToken { location } => {
             pos::spanned2(location,
                           location,
                           CombineError::Message("Invalid token".into()))
         }
-        UnrecognizedToken { token, .. } => {
-            match token {
-                Some(token) => {
-                    pos::spanned2(token.0,
-                                  token.2,
-                                  CombineError::Unexpected(format!("{}", token.1).into()))
-                }
-                None => {
-                    pos::spanned2(0.into(),
-                                  0.into(),
-                                  CombineError::Unexpected("Unrecognized token".into()))
-                }
-            }
+        UnrecognizedToken { token: Some((lpos, token, rpos)), .. } => {
+            pos::spanned2(lpos,
+                          rpos,
+                          CombineError::Unexpected(format!("{}", token).into()))
         }
-        ExtraToken { token } => {
-            pos::spanned2(token.0,
-                          token.2,
-                          CombineError::Message(format!("Found an extra token `{}`", token.1)
-                              .into()))
+        UnrecognizedToken { token: None, .. } => {
+            pos::spanned2(0.into(),
+                          0.into(),
+                          CombineError::Unexpected("Unrecognized token".into()))
+        }
+        ExtraToken { token: (lpos, token, rpos) } => {
+            pos::spanned2(lpos,
+                          rpos,
+                          CombineError::Message(format!("Found an extra token `{}`", token).into()))
         }
         User { error } => pos::spanned2(0.into(), 0.into(), error),
     }
