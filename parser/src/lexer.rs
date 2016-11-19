@@ -265,7 +265,6 @@ pub struct Lexer<'input, I>
     input: Option<LocatedStream<I>>,
     unprocessed_tokens: Vec<SpannedToken<'input>>,
     indent_levels: Contexts,
-    end_span: Option<Span<Location>>,
 }
 
 impl<'input, I> Lexer<'input, I>
@@ -307,7 +306,6 @@ impl<'input, I> Lexer<'input, I>
             }),
             unprocessed_tokens: Vec::new(),
             indent_levels: Contexts { stack: Vec::new() },
-            end_span: None,
         }
     }
 
@@ -415,7 +413,6 @@ impl<'input, I> Lexer<'input, I>
                     end: start,
                     expansion_id: NO_EXPANSION,
                 };
-                self.end_span = Some(span);
                 SpannedToken {
                     span: span,
                     value: Token::CloseBlock,
@@ -590,22 +587,11 @@ impl<'input, I> Lexer<'input, I>
 
     fn uncons_next(&mut self) -> Result<SpannedToken<'input>, Error<'input>> {
         let token = self.next_token();
-        match self.layout_independent_token(token) {
-            Ok(SpannedToken { value: Token::EOF, .. }) => Err(Error::end_of_input()),
-            Ok(token) => {
+        match self.layout_independent_token(token)? {
+            SpannedToken { value: Token::EOF, .. } => Err(Error::end_of_input()),
+            token => {
                 debug!("Lex {:?}", token);
                 Ok(token)
-            }
-            Err(err) => {
-                if let Some(input) = self.input.take() {
-                    let loc = input.position();
-                    self.end_span = Some(Span {
-                        start: loc,
-                        end: loc,
-                        expansion_id: NO_EXPANSION,
-                    });
-                }
-                Err(err)
             }
         }
     }
