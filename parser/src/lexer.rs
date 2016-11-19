@@ -673,18 +673,18 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                 token.value = Token::CloseBlock;
                 continue;
             }
-            (Context::Block { emit_semi }, Ordering::Equal) => {
-                match token.value {
-                    _ if emit_semi => {
-                        if let Some(offside) = lexer.indent_levels.last_mut() {
-                            // The enclosing block should not emit a block separator for the
-                            // next expression
-                            if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                                *emit_semi = false;
-                            }
-                        }
-                        return Ok(layout_token(lexer, token, Token::Semi));
+            (Context::Block { emit_semi: true }, Ordering::Equal) => {
+                if let Some(offside) = lexer.indent_levels.last_mut() {
+                    // The enclosing block should not emit a block separator for the
+                    // next expression
+                    if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                        *emit_semi = false;
                     }
+                }
+                return Ok(layout_token(lexer, token, Token::Semi));
+            }
+            (Context::Block { emit_semi: false }, Ordering::Equal) => {
+                match token.value {
                     Token::DocComment(_) |
                     Token::OpenBlock => (),
                     _ => {
