@@ -602,76 +602,71 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
         };
 
         debug!("--------\n{:?}\n{:?}", token, offside);
-        let ordering = token.span.start.column.cmp(&offside.location.column);
 
-        // If it is closing token we remove contexts until a context for that token is found
-        if [Token::In,
-            Token::CloseBlock,
-            Token::Else,
-            Token::Close(Delimiter::Brace),
-            Token::Close(Delimiter::Bracket),
-            Token::Close(Delimiter::Paren),
-            Token::Comma]
-            .iter()
-            .any(|t| *t == token.value) {
+        match (&token.value, offside.context) {
+            (&Token::Comma, Context::Delimiter(Delimiter::Brace)) |
+            (&Token::Comma, Context::Delimiter(Delimiter::Bracket)) => return Ok(token),
 
-            if token.value == Token::Comma &&
-               (offside.context == Context::Delimiter(Delimiter::Brace) ||
-                offside.context == Context::Delimiter(Delimiter::Bracket)) {
-                return Ok(token);
-            }
+            // If it is closing token we remove contexts until a context for that token is found
+            (&Token::In, _) |
+            (&Token::CloseBlock, _) |
+            (&Token::Else, _) |
+            (&Token::Close(_), _) |
+            (&Token::Comma, _) => {
+                lexer.indent_levels.pop();
 
-            lexer.indent_levels.pop();
-
-            match (&token.value, offside.context) {
-                (&Token::Else, Context::If) => (),
-                (&Token::Close(close_delim), Context::Delimiter(context_delim))
-                    if close_delim == context_delim => return Ok(token),
-                (&Token::CloseBlock, Context::Block { .. }) => {
-                    if let Some(offside) = lexer.indent_levels.last_mut() {
-                        // The enclosing block should not emit a block separator for the next
-                        // expression
-                        if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                            *emit_semi = false;
+                match (&token.value, offside.context) {
+                    (&Token::Else, Context::If) => (),
+                    (&Token::Close(close_delim), Context::Delimiter(context_delim))
+                        if close_delim == context_delim => return Ok(token),
+                    (&Token::CloseBlock, Context::Block { .. }) => {
+                        if let Some(offside) = lexer.indent_levels.last_mut() {
+                            // The enclosing block should not emit a block separator for the next
+                            // expression
+                            if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                                *emit_semi = false;
+                            }
                         }
+                        return Ok(token);
                     }
-                    return Ok(token);
+                    (&Token::In, Context::Let) |
+                    (&Token::In, Context::Type) => {
+                        let location = {
+                            let offside =
+                                lexer.indent_levels.last_mut().expect("No top level block found");
+                            // The enclosing block should not emit a block separator for the next
+                            // expression
+                            if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                                *emit_semi = false;
+                            }
+                            offside.location
+                        };
+                        // Inject a block to ensure that a sequence of expressions end up in the `let` body
+                        // ```
+                        // let x = 1
+                        // a
+                        // b
+                        // ```
+                        // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+                        lexer.indent_levels
+                            .push(Offside {
+                                location: location,
+                                context: Context::Block { emit_semi: false },
+                            })?;
+                        lexer.unprocessed_tokens.push(pos::spanned(token.span, Token::OpenBlock));
+                        return Ok(token);
+                    }
+                    (_, Context::Block { .. }) => {
+                        return Ok(layout_token(lexer, token, Token::CloseBlock));
+                    }
+                    (_, _) => continue,
                 }
-                (&Token::In, Context::Let) |
-                (&Token::In, Context::Type) => {
-                    let location = {
-                        let offside =
-                            lexer.indent_levels.last_mut().expect("No top level block found");
-                        // The enclosing block should not emit a block separator for the next
-                        // expression
-                        if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                            *emit_semi = false;
-                        }
-                        offside.location
-                    };
-                    // Inject a block to ensure that a sequence of expressions end up in the `let` body
-                    // ```
-                    // let x = 1
-                    // a
-                    // b
-                    // ```
-                    // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-                    lexer.indent_levels
-                        .push(Offside {
-                            location: location,
-                            context: Context::Block { emit_semi: false },
-                        })?;
-                    lexer.unprocessed_tokens.push(pos::spanned(token.span, Token::OpenBlock));
-                    return Ok(token);
-                }
-                (_, Context::Block { .. }) => {
-                    return Ok(layout_token(lexer, token, Token::CloseBlock));
-                }
-                (_, _) => continue,
             }
+            (_, _) => (),
         }
 
         // Next we check offside rules for each of the contexts
+        let ordering = token.span.start.column.cmp(&offside.location.column);
         match (offside.context, ordering) {
             (Context::Block { .. }, Ordering::Less) => {
                 lexer.unprocessed_tokens.push(token.clone());
@@ -753,7 +748,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
             _ => (),
         }
 
-        // Some tokens directly inserts a new context when emitted
+        // Some tokens directly insert a new context when emitted
         let push_context = match token.value {
             Token::Let => Some(Context::Let),
             Token::If => Some(Context::If),
