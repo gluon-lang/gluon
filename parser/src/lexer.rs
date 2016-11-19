@@ -342,12 +342,6 @@ impl<'input, I> Lexer<'input, I>
             .parse_stream(input)
     }
 
-    fn layout_independent_token(&mut self,
-                                token: SpannedToken<'input>)
-                                -> Result<SpannedToken<'input>, Error<'input>> {
-        layout(self, token)
-    }
-
     fn id_to_keyword(&self, id: Token<&'input str>) -> Token<&'input str> {
         match id {
             Token::Identifier("let") => Token::Let,
@@ -582,17 +576,6 @@ impl<'input, I> Lexer<'input, I>
         SpannedToken {
             span: span,
             value: layout_token,
-        }
-    }
-
-    fn uncons_next(&mut self) -> Result<SpannedToken<'input>, Error<'input>> {
-        let token = self.next_token();
-        match self.layout_independent_token(token)? {
-            SpannedToken { value: Token::EOF, .. } => Err(Error::end_of_input()),
-            token => {
-                debug!("Lex {:?}", token);
-                Ok(token)
-            }
         }
     }
 }
@@ -900,13 +883,15 @@ impl<'input, I> Iterator for Lexer<'input, I>
     fn next
         (&mut self)
          -> Option<Result<(BytePos, Token<&'input str>, BytePos), CombineError<String, String>>> {
-        match self.uncons_next() {
-            Ok(Spanned { value: Token::EOF, .. }) => None,
-            Err(ref err) if *err == Error::end_of_input() => None,
-            Ok(Spanned { span: Span { start, end, .. }, value }) => {
-                Some(Ok((start.absolute, value, end.absolute)))
-            }
+        let token = self.next_token();
+        match layout(self, token) {
             Err(error) => Some(Err(static_error(error))),
+            Ok(SpannedToken { value: Token::EOF, .. }) => None,
+            Ok(token) => {
+                debug!("Lex {:?}", token.value);
+                let Span { start, end, .. } = token.span;
+                Some(Ok((start.absolute, token.value, end.absolute)))
+            }
         }
     }
 }
