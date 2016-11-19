@@ -23,11 +23,15 @@ use base::types::ArcType;
 use combine::primitives::Error as CombineError;
 
 use infix::{OpTable, Reparser};
-use lexer::{Lexer, Token};
+use layout::Layout;
+use lexer::Lexer;
+use token::Token;
 
 mod grammar;
 mod infix;
 mod lexer;
+mod layout;
+mod token;
 
 type LalrpopError<'input> = lalrpop_util::ParseError<BytePos,
                                                      Token<'input>,
@@ -162,9 +166,10 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
     where Id: Clone,
 {
     let lexer = Lexer::new(input);
+    let layout = Layout::new(lexer);
     let mut parse_errors = Errors::new();
 
-    match grammar::parse_TopExpr(input, symbols, &mut parse_errors, lexer) {
+    match grammar::parse_TopExpr(input, symbols, &mut parse_errors, layout) {
         Ok(mut expr) => {
             let mut errors = transform_errors(parse_errors);
             let mut reparser = Reparser::new(OpTable::default(), symbols);

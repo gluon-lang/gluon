@@ -1,15 +1,16 @@
-use std::cmp::Ordering;
 use std::fmt;
 
 use base::ast::is_operator_char;
-use base::pos::{self, BytePos, Column, Line, Location, Span, Spanned};
-
-use combine::primitives::{Consumed, Error as CombineError, Info, RangeStream};
+use base::pos::{self, BytePos, Column, Line, Location};
+use combine::primitives::{Consumed, Error as CombineError, RangeStream};
 use combine::combinator::EnvParser;
 use combine::range::{take, take_while};
-use combine::*;
+use combine::{Parser, ParseResult, StreamOnce};
+use combine::{any, env_parser, not_followed_by, optional, parser, satisfy, skip_many, try};
 use combine::char::{alpha_num, char, letter, spaces, string};
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
+
+use token::{Delimiter, SpannedToken, Token};
 
 #[derive(Clone)]
 pub struct LocatedStream<I> {
@@ -76,193 +77,18 @@ impl<'input, I> RangeStream for LocatedStream<I>
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
-pub enum Delimiter {
-    Brace,
-    Bracket,
-    Paren,
-}
-
-impl Delimiter {
-    fn as_str(&self) -> &'static str {
-        use self::Delimiter::*;
-        match *self {
-            Brace => "Brace",
-            Bracket => "Bracket",
-            Paren => "Paren",
-        }
-    }
-}
-
-impl fmt::Display for Delimiter {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.as_str().fmt(f)
-    }
-}
-
 pub type Error<'input> = CombineError<Token<'input>, Token<'input>>;
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum Token<'input> {
-    Identifier(&'input str),
-    Operator(&'input str),
-    String(String),
-    Char(char),
-    Int(i64),
-    Byte(u8),
-    Float(f64),
-    DocComment(String),
-    Let,
-    And,
-    In,
-    Type,
-    Match,
-    With,
-    If,
-    Then,
-    Else,
-    Open(Delimiter),
-    Close(Delimiter),
-    Lambda,
-    RightArrow,
-    Colon,
-    Dot,
-    Comma,
-    Pipe,
-    Equals,
-    OpenBlock,
-    CloseBlock,
-    Semi,
-    EOF,
-}
-
-impl<'input> fmt::Display for Token<'input> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::Token::*;
-        use self::Delimiter::*;
-
-        let s = match *self {
-            Identifier(_) => "Identifier",
-            Operator(_) => "Operator",
-            String(_) => "String",
-            Char(_) => "Char",
-            Int(_) => "Int",
-            Byte(_) => "Byte",
-            Float(_) => "Float",
-            DocComment(_) => "DocComment",
-            Let => "Let",
-            And => "And",
-            In => "In",
-            Type => "Type",
-            Match => "Match",
-            With => "With",
-            If => "If",
-            Then => "Then",
-            Else => "Else",
-            Open(Brace) => "OpenBrace",
-            Close(Brace) => "CloseBrace",
-            Open(Paren) => "OpenParen",
-            Close(Paren) => "CloseParen",
-            Open(Bracket) => "OpenBracket",
-            Close(Bracket) => "CloseBracket",
-            Lambda => "Lambda",
-            RightArrow => "RightArrow",
-            Colon => "Colon",
-            Dot => "Dot",
-            Comma => "Comma",
-            Pipe => "Pipe",
-            Equals => "Equal",
-            OpenBlock => "OpenBlock",
-            CloseBlock => "CloseBlock",
-            Semi => "Semi",
-            EOF => "EOF",
-        };
-        s.fmt(f)
-    }
-}
-
-pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
-
-#[derive(Copy, Clone, Debug)]
-struct Offside {
-    location: Location,
-    context: Context,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-enum Context {
-    /// Context which contains several expressions/declarations separated by semicolons
-    Block { emit_semi: bool },
-    /// A simple expression
-    Expr,
-    Let,
-    Type,
-    If,
-    Delimiter(Delimiter),
-    MatchClause,
-    Lambda,
-}
 
 /// Parser passes the environment to each parser function
 type LanguageParser<'input: 'lexer, 'lexer, I: 'lexer, T> = EnvParser<&'lexer Lexer<'input, I>,
                                                                       LocatedStream<I>,
                                                                       T>;
 
-struct Contexts {
-    stack: Vec<Offside>,
-}
-
-impl Contexts {
-    fn last(&self) -> Option<&Offside> {
-        self.stack.last()
-    }
-
-    fn last_mut(&mut self) -> Option<&mut Offside> {
-        self.stack.last_mut()
-    }
-
-    fn pop(&mut self) -> Option<Offside> {
-        self.stack.pop()
-    }
-
-    fn push(&mut self, offside: Offside) -> Result<(), Error<'static>> {
-        self.check_unindentation_limit(&offside)?;
-        self.stack.push(offside);
-        Ok(())
-    }
-
-    fn check_unindentation_limit(&mut self, offside: &Offside) -> Result<(), Error<'static>> {
-        let mut skip_block = false;
-        for other_offside in self.stack.iter().rev() {
-            match other_offside.context {
-                Context::Lambda => {
-                    skip_block = true;
-                    continue;
-                }
-                Context::Delimiter(_) => return Ok(()),
-                Context::Block { .. } if skip_block => continue,
-                // New context should not be unindented past the closest enclosing block context
-                Context::MatchClause |
-                Context::Type |
-                Context::Let |
-                Context::Block { .. } if offside.location.column <
-                                         other_offside.location.column => (),
-                _ => continue,
-            }
-            debug!("Unindentation error: {:?} < {:?}", offside, other_offside);
-            return Err(CombineError::Message("Line was unindented to far".into()));
-        }
-        Ok(())
-    }
-}
-
 pub struct Lexer<'input, I>
     where I: RangeStream<Item = char, Range = &'input str>,
 {
     env: LanguageEnv<'input, LocatedStream<I>>,
     input: Option<LocatedStream<I>>,
-    unprocessed_tokens: Vec<SpannedToken<'input>>,
-    indent_levels: Contexts,
 }
 
 impl<'input, I> Lexer<'input, I>
@@ -302,8 +128,6 @@ impl<'input, I> Lexer<'input, I>
                 },
                 input: input,
             }),
-            unprocessed_tokens: Vec::new(),
-            indent_levels: Contexts { stack: Vec::new() },
         }
     }
 
@@ -353,10 +177,7 @@ impl<'input, I> Lexer<'input, I>
         }
     }
 
-    fn next_token(&mut self) -> SpannedToken<'input> {
-        if let Some(token) = self.unprocessed_tokens.pop() {
-            return token;
-        }
+    pub fn next_token(&mut self) -> SpannedToken<'input> {
         let input = match self.input.take() {
             Some(input) => input,
             None => {
@@ -539,321 +360,5 @@ impl<'input, I> Lexer<'input, I>
             }
         });
         block_doc_comment.parse_stream(input)
-    }
-}
-
-fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
-                     mut token: SpannedToken<'input>)
-                     -> Result<SpannedToken<'input>, Error<'input>>
-    where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug,
-{
-    fn layout_token<'input, I>(lexer: &mut Lexer<'input, I>,
-                               token: SpannedToken<'input>,
-                               layout_token: Token<'input>)
-                               -> SpannedToken<'input>
-        where I: RangeStream<Item = char, Range = &'input str> + 'input,
-              I::Range: fmt::Debug,
-    {
-        let span = token.span;
-        lexer.unprocessed_tokens.push(token);
-        pos::spanned(span, layout_token)
-    }
-
-    fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
-                                          context: Context)
-                                          -> Result<(), Error<'input>>
-        where I: RangeStream<Item = char, Range = &'input str> + 'input,
-              I::Range: fmt::Debug + 'input,
-    {
-        let next = lexer.next_token();
-        let span = next.span;
-        lexer.unprocessed_tokens.push(next);
-        if let Context::Block { .. } = context {
-            lexer.unprocessed_tokens.push(SpannedToken {
-                span: span,
-                value: Token::OpenBlock,
-            });
-        }
-        lexer.indent_levels.push(Offside {
-            location: span.start,
-            context: context,
-        })
-    }
-
-    if token.value == Token::EOF {
-        token.span.start.column = Column::from(0);
-    }
-
-    loop {
-        // Retrieve the current indentation level if one exists
-        let offside = match (&token.value, lexer.indent_levels.last().cloned()) {
-            (_, Some(offside)) => offside,
-            (&Token::EOF, None) => return Ok(token),
-            (_, None) => {
-                lexer.indent_levels
-                    .push(Offside {
-                        context: Context::Block { emit_semi: false },
-                        location: token.span.start,
-                    })?;
-                debug!("Default block {:?}", token);
-                return Ok(layout_token(lexer, token, Token::OpenBlock));
-            }
-        };
-
-        debug!("--------\n{:?}\n{:?}", token, offside);
-
-        match (&token.value, offside.context) {
-            (&Token::Comma, Context::Delimiter(Delimiter::Brace)) |
-            (&Token::Comma, Context::Delimiter(Delimiter::Bracket)) => return Ok(token),
-
-            // If it is closing token we remove contexts until a context for that token is found
-            (&Token::In, _) |
-            (&Token::CloseBlock, _) |
-            (&Token::Else, _) |
-            (&Token::Close(_), _) |
-            (&Token::Comma, _) => {
-                lexer.indent_levels.pop();
-
-                match (&token.value, offside.context) {
-                    (&Token::Else, Context::If) => (),
-                    (&Token::Close(close_delim), Context::Delimiter(context_delim))
-                        if close_delim == context_delim => return Ok(token),
-                    (&Token::CloseBlock, Context::Block { .. }) => {
-                        if let Some(offside) = lexer.indent_levels.last_mut() {
-                            // The enclosing block should not emit a block separator for the next
-                            // expression
-                            if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                                *emit_semi = false;
-                            }
-                        }
-                        return Ok(token);
-                    }
-                    (&Token::In, Context::Let) |
-                    (&Token::In, Context::Type) => {
-                        let location = {
-                            let offside =
-                                lexer.indent_levels.last_mut().expect("No top level block found");
-                            // The enclosing block should not emit a block separator for the next
-                            // expression
-                            if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                                *emit_semi = false;
-                            }
-                            offside.location
-                        };
-                        // Inject a block to ensure that a sequence of expressions end up in the `let` body
-                        // ```
-                        // let x = 1
-                        // a
-                        // b
-                        // ```
-                        // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-                        lexer.indent_levels
-                            .push(Offside {
-                                location: location,
-                                context: Context::Block { emit_semi: false },
-                            })?;
-                        lexer.unprocessed_tokens.push(pos::spanned(token.span, Token::OpenBlock));
-                        return Ok(token);
-                    }
-                    (_, Context::Block { .. }) => {
-                        return Ok(layout_token(lexer, token, Token::CloseBlock));
-                    }
-                    (_, _) => continue,
-                }
-            }
-            (_, _) => (),
-        }
-
-        // Next we check offside rules for each of the contexts
-        let ordering = token.span.start.column.cmp(&offside.location.column);
-        match (offside.context, ordering) {
-            (Context::Block { .. }, Ordering::Less) => {
-                lexer.unprocessed_tokens.push(token.clone());
-                token.value = Token::CloseBlock;
-                continue;
-            }
-            (Context::Block { emit_semi: true }, Ordering::Equal) => {
-                if let Some(offside) = lexer.indent_levels.last_mut() {
-                    // The enclosing block should not emit a block separator for the
-                    // next expression
-                    if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                        *emit_semi = false;
-                    }
-                }
-                return Ok(layout_token(lexer, token, Token::Semi));
-            }
-            (Context::Block { emit_semi: false }, Ordering::Equal) => {
-                match token.value {
-                    Token::DocComment(_) |
-                    Token::OpenBlock => (),
-                    _ => {
-                        // If it is the first token in a sequence we dont want to emit a
-                        // separator
-                        if let Some(offside) = lexer.indent_levels.last_mut() {
-                            if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                                *emit_semi = true;
-                            }
-                        }
-                    }
-                }
-            }
-            (Context::Expr, _) |
-            (Context::Lambda, _) => {
-                if ordering != Ordering::Greater {
-                    lexer.indent_levels.pop();
-                    continue;
-                }
-            }
-            (Context::MatchClause, _) => {
-                // Must allow `|` to be on the same line
-                if ordering == Ordering::Less ||
-                   (ordering == Ordering::Equal && token.value != Token::Pipe) {
-                    lexer.indent_levels.pop();
-                    continue;
-                }
-            }
-            // `and` and `}` are allowed to be on the same line as the `let` or `type`
-            (Context::Let, Ordering::Equal) |
-            (Context::Type, Ordering::Equal) if token.value != Token::And &&
-                                                token.value != Token::Close(Delimiter::Brace) => {
-                // Insert an `in` token
-                lexer.indent_levels.pop();
-                let location = {
-                    let offside = lexer.indent_levels.last_mut().expect("No top level block found");
-                    // The enclosing block should not emit a block separator for the next
-                    // expression
-                    if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                        *emit_semi = false;
-                    }
-                    offside.location
-                };
-                let span = token.span;
-                let result = Ok(layout_token(lexer, token, Token::In));
-                // Inject a block to ensure that a sequence of expressions end up in the `let` body
-                // ```
-                // let x = 1
-                // a
-                // b
-                // ```
-                // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-                lexer.indent_levels
-                    .push(Offside {
-                        location: location,
-                        context: Context::Block { emit_semi: false },
-                    })?;
-                lexer.unprocessed_tokens.push(pos::spanned(span, Token::OpenBlock));
-                return result;
-            }
-            _ => (),
-        }
-
-        // Some tokens directly insert a new context when emitted
-        let push_context = match token.value {
-            Token::Let => Some(Context::Let),
-            Token::If => Some(Context::If),
-            Token::Type => Some(Context::Type),
-            Token::Match => Some(Context::Expr),
-            Token::Lambda => Some(Context::Lambda),
-            Token::Open(delim) => Some(Context::Delimiter(delim)),
-            _ => None,
-        };
-        if let Some(context) = push_context {
-            let offside = Offside {
-                location: token.span.start,
-                context: context,
-            };
-            return lexer.indent_levels.push(offside).map(move |()| token);
-        }
-
-        // For other tokens we need to scan for the next token to get its position
-        match (&token.value, offside.context) {
-            (&Token::In, context) => {
-                lexer.indent_levels.pop();
-                if let Context::Block { .. } = context {
-                    return Ok(layout_token(lexer, token, Token::CloseBlock));
-                }
-            }
-
-            (&Token::Equals, Context::Let) |
-            (&Token::RightArrow, Context::Lambda) |
-            (&Token::RightArrow, Context::MatchClause) |
-            (&Token::Then, _) => scan_for_next_block(lexer, Context::Block { emit_semi: false })?,
-            (&Token::With, _) => scan_for_next_block(lexer, Context::MatchClause)?,
-
-            (&Token::Else, _) => {
-                let next = lexer.next_token();
-                // Need to allow "else if" expressions so avoid inserting a block for those cases
-                // (A block would be inserted at column 5 and we would then get unindentation
-                // errors on the branches)
-                // if x then
-                //     1
-                // else if y then
-                //     2
-                // else
-                //     3
-                let add_block = next.value != Token::If ||
-                                next.span.start.line != token.span.start.line;
-                lexer.unprocessed_tokens.push(next);
-                if add_block {
-                    scan_for_next_block(lexer, Context::Block { emit_semi: false })?;
-                }
-            }
-            (&Token::Comma, _) => {
-                // Prevent a semi to be emitted before the next token
-                if let Some(offside) = lexer.indent_levels.last_mut() {
-                    // The enclosing block should not emit a block separator for the next
-                    // expression
-                    if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                        *emit_semi = false;
-                    }
-                }
-            }
-            (_, _) => (),
-        }
-
-        return Ok(token);
-    }
-}
-
-// Converts an error into a static error by transforming any range arguments into strings
-fn static_error<'input>(e: CombineError<Token<'input>, Token<'input>>)
-                        -> CombineError<String, String> {
-    let static_info = |i: Info<Token<'input>, Token<'input>>| {
-        match i {
-            Info::Token(t) => Info::Token(t.to_string()),
-            Info::Range(t) => Info::Range(t.to_string()),
-            Info::Borrowed(t) => Info::Borrowed(t),
-            Info::Owned(t) => Info::Owned(t),
-        }
-    };
-
-    match e {
-        CombineError::Unexpected(t) => CombineError::Unexpected(static_info(t)),
-        CombineError::Expected(t) => CombineError::Expected(static_info(t)),
-        CombineError::Message(t) => CombineError::Message(static_info(t)),
-        CombineError::Other(t) => CombineError::Other(t),
-    }
-}
-
-// Adapt lexer for use with LALRPOP
-impl<'input, I> Iterator for Lexer<'input, I>
-    where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug,
-{
-    type Item = Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>;
-
-    fn next(&mut self)
-            -> Option<Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>> {
-        let token = self.next_token();
-        match layout(self, token) {
-            Err(error) => Some(Err(static_error(error))),
-            Ok(SpannedToken { value: Token::EOF, .. }) => None,
-            Ok(token) => {
-                debug!("Lex {:?}", token.value);
-                let Span { start, end, .. } = token.span;
-                Some(Ok((start.absolute, token.value, end.absolute)))
-            }
-        }
     }
 }
