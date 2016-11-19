@@ -3,7 +3,7 @@ use base::kind::Kind;
 use base::pos::{self, BytePos, Spanned};
 use base::types::{Alias, ArcType, BuiltinType, Field, Generic, Type};
 use combine::primitives::Error;
-use lexer::{Delimiter, StrToken, Token};
+use lexer::{Delimiter, Token};
 use std::str::FromStr;
 
 use {FieldExpr, FieldPattern, MutIdentEnv, ErrorEnv};
@@ -15,7 +15,7 @@ extern {
     type Location = BytePos;
     type Error = Error<String, String>;
 
-    enum StrToken<'input> {
+    enum Token<'input> {
         "Identifier" => Token::Identifier(<&'input str>),
         "Operator" => Token::Operator(<&'input str>),
         "StringLiteral" => Token::String(<String>),

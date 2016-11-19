@@ -30,7 +30,7 @@ mod infix;
 mod lexer;
 
 type LalrpopError<'input> = lalrpop_util::ParseError<BytePos,
-                                                     Token<&'input str>,
+                                                     Token<'input>,
                                                      CombineError<String, String>>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
@@ -151,7 +151,7 @@ pub enum FieldExpr<Id> {
 // Hack around LALRPOP's limited type syntax
 type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<lalrpop_util::ParseError<BytePos,
-                                                                        Token<&'input str>,
+                                                                        Token<'input>,
                                                                         CombineError<String,
                                                                                      String>>>;
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
