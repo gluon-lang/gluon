@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 use base::ast::is_operator_char;
-use base::pos::{BytePos, Column, Line, Location, Span, Spanned, NO_EXPANSION};
+use base::pos::{self, BytePos, Column, Line, Location, Span, Spanned};
 
 use combine::primitives::{Consumed, Error as CombineError, Info, RangeStream};
 use combine::combinator::EnvParser;
@@ -365,14 +365,7 @@ impl<'input, I> Lexer<'input, I>
                     column: Column::from(1),
                     absolute: BytePos::from(0),
                 };
-                return SpannedToken {
-                    span: Span {
-                        start: loc,
-                        end: loc,
-                        expansion_id: NO_EXPANSION,
-                    },
-                    value: Token::EOF,
-                };
+                return pos::spanned2(loc, loc, Token::EOF);
             }
         };
         let mut start = input.position();
@@ -386,27 +379,12 @@ impl<'input, I> Lexer<'input, I>
                     Err(_) => input,
                 };
                 self.input = Some(input);
-                SpannedToken {
-                    span: Span {
-                        start: start,
-                        end: end,
-                        expansion_id: NO_EXPANSION,
-                    },
-                    value: token,
-                }
+                pos::spanned2(start, end, token)
             }
             Err(err) => {
                 let err = err.into_inner();
                 debug!("Error tokenizing: {:?}", err);
-                let span = Span {
-                    start: start,
-                    end: start,
-                    expansion_id: NO_EXPANSION,
-                };
-                SpannedToken {
-                    span: span,
-                    value: Token::CloseBlock,
-                }
+                pos::spanned2(start, start, Token::CloseBlock)
             }
         }
     }
@@ -562,18 +540,6 @@ impl<'input, I> Lexer<'input, I>
         });
         block_doc_comment.parse_stream(input)
     }
-
-    fn layout_token(&mut self,
-                    token: SpannedToken<'input>,
-                    layout_token: Token<'input>)
-                    -> SpannedToken<'input> {
-        let span = token.span;
-        self.unprocessed_tokens.push(token);
-        SpannedToken {
-            span: span,
-            value: layout_token,
-        }
-    }
 }
 
 fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
@@ -582,6 +548,39 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
     where I: RangeStream<Item = char, Range = &'input str> + 'input,
           I::Range: fmt::Debug,
 {
+    fn layout_token<'input, I>(lexer: &mut Lexer<'input, I>,
+                               token: SpannedToken<'input>,
+                               layout_token: Token<'input>)
+                               -> SpannedToken<'input>
+        where I: RangeStream<Item = char, Range = &'input str> + 'input,
+              I::Range: fmt::Debug,
+    {
+        let span = token.span;
+        lexer.unprocessed_tokens.push(token);
+        pos::spanned(span, layout_token)
+    }
+
+    fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
+                                          context: Context)
+                                          -> Result<(), Error<'input>>
+        where I: RangeStream<Item = char, Range = &'input str> + 'input,
+              I::Range: fmt::Debug + 'input,
+    {
+        let next = lexer.next_token();
+        let span = next.span;
+        lexer.unprocessed_tokens.push(next);
+        if let Context::Block { .. } = context {
+            lexer.unprocessed_tokens.push(SpannedToken {
+                span: span,
+                value: Token::OpenBlock,
+            });
+        }
+        lexer.indent_levels.push(Offside {
+            location: span.start,
+            context: context,
+        })
+    }
+
     if token.value == Token::EOF {
         token.span.start.column = Column::from(0);
     }
@@ -598,7 +597,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                         location: token.span.start,
                     })?;
                 debug!("Default block {:?}", token);
-                return Ok(lexer.layout_token(token, Token::OpenBlock));
+                return Ok(layout_token(lexer, token, Token::OpenBlock));
             }
         };
 
@@ -662,14 +661,11 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                             location: location,
                             context: Context::Block { emit_semi: false },
                         })?;
-                    lexer.unprocessed_tokens.push(SpannedToken {
-                        span: token.span,
-                        value: Token::OpenBlock,
-                    });
+                    lexer.unprocessed_tokens.push(pos::spanned(token.span, Token::OpenBlock));
                     return Ok(token);
                 }
                 (_, Context::Block { .. }) => {
-                    return Ok(lexer.layout_token(token, Token::CloseBlock));
+                    return Ok(layout_token(lexer, token, Token::CloseBlock));
                 }
                 (_, _) => continue,
             }
@@ -692,7 +688,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                                 *emit_semi = false;
                             }
                         }
-                        return Ok(lexer.layout_token(token, Token::Semi));
+                        return Ok(layout_token(lexer, token, Token::Semi));
                     }
                     Token::DocComment(_) |
                     Token::OpenBlock => (),
@@ -738,7 +734,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                     offside.location
                 };
                 let span = token.span;
-                let result = Ok(lexer.layout_token(token, Token::In));
+                let result = Ok(layout_token(lexer, token, Token::In));
                 // Inject a block to ensure that a sequence of expressions end up in the `let` body
                 // ```
                 // let x = 1
@@ -751,10 +747,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
                         location: location,
                         context: Context::Block { emit_semi: false },
                     })?;
-                lexer.unprocessed_tokens.push(SpannedToken {
-                    span: span,
-                    value: Token::OpenBlock,
-                });
+                lexer.unprocessed_tokens.push(pos::spanned(span, Token::OpenBlock));
                 return result;
             }
             _ => (),
@@ -783,7 +776,7 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
             (&Token::In, context) => {
                 lexer.indent_levels.pop();
                 if let Context::Block { .. } = context {
-                    return Ok(lexer.layout_token(token, Token::CloseBlock));
+                    return Ok(layout_token(lexer, token, Token::CloseBlock));
                 }
             }
 
@@ -826,27 +819,6 @@ fn layout<'input, I>(lexer: &mut Lexer<'input, I>,
 
         return Ok(token);
     }
-}
-
-fn scan_for_next_block<'input, 'a, I>(lexer: &mut Lexer<'input, I>,
-                                      context: Context)
-                                      -> Result<(), Error<'input>>
-    where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug + 'input,
-{
-    let next = lexer.next_token();
-    let span = next.span;
-    lexer.unprocessed_tokens.push(next);
-    if let Context::Block { .. } = context {
-        lexer.unprocessed_tokens.push(SpannedToken {
-            span: span,
-            value: Token::OpenBlock,
-        });
-    }
-    lexer.indent_levels.push(Offside {
-        location: span.start,
-        context: context,
-    })
 }
 
 // Converts an error into a static error by transforming any range arguments into strings
