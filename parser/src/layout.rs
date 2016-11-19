@@ -1,7 +1,7 @@
 use base::pos::{self, BytePos, Column, Location, Span, Spanned};
-use combine::primitives::{Error as CombineError, Info};
+use combine::primitives::Error as CombineError;
 
-use lexer::{Error, Lexer};
+use lexer::Lexer;
 use token::{Delimiter, SpannedToken, Token};
 
 #[derive(Copy, Clone, Debug)]
@@ -54,13 +54,15 @@ impl Contexts {
         self.stack.pop()
     }
 
-    fn push(&mut self, offside: Offside) -> Result<(), Error<'static>> {
+    fn push(&mut self, offside: Offside) -> Result<(), CombineError<String, String>> {
         self.check_unindentation_limit(offside)?;
         self.stack.push(offside);
         Ok(())
     }
 
-    fn check_unindentation_limit(&mut self, offside: Offside) -> Result<(), Error<'static>> {
+    fn check_unindentation_limit(&mut self,
+                                 offside: Offside)
+                                 -> Result<(), CombineError<String, String>> {
         let mut skip_block = false;
         for other_offside in self.stack.iter().rev() {
             match other_offside.context {
@@ -116,7 +118,9 @@ impl<'input> Layout<'input> {
         pos::spanned(span, layout_token)
     }
 
-    fn scan_for_next_block(&mut self, context: Context) -> Result<(), Error<'input>> {
+    fn scan_for_next_block(&mut self,
+                           context: Context)
+                           -> Result<(), CombineError<String, String>> {
         let next = self.next_token();
         let span = next.span;
         self.unprocessed_tokens.push(next);
@@ -129,7 +133,7 @@ impl<'input> Layout<'input> {
         self.indent_levels.push(Offside::new(span.start, context))
     }
 
-    fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, Error<'input>> {
+    fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, CombineError<String, String>> {
         use std::cmp::Ordering;
 
         let mut token = self.next_token();
@@ -367,33 +371,13 @@ impl<'input> Layout<'input> {
     }
 }
 
-// Converts an error into a static error by transforming any range arguments into strings
-fn static_error<'input>(e: CombineError<Token<'input>, Token<'input>>)
-                        -> CombineError<String, String> {
-    let static_info = |i: Info<Token<'input>, Token<'input>>| {
-        match i {
-            Info::Token(t) => Info::Token(t.to_string()),
-            Info::Range(t) => Info::Range(t.to_string()),
-            Info::Borrowed(t) => Info::Borrowed(t),
-            Info::Owned(t) => Info::Owned(t),
-        }
-    };
-
-    match e {
-        CombineError::Unexpected(t) => CombineError::Unexpected(static_info(t)),
-        CombineError::Expected(t) => CombineError::Expected(static_info(t)),
-        CombineError::Message(t) => CombineError::Message(static_info(t)),
-        CombineError::Other(t) => CombineError::Other(t),
-    }
-}
-
 impl<'input> Iterator for Layout<'input> {
     type Item = Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>;
 
     fn next(&mut self)
             -> Option<Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>> {
         match self.layout_next_token() {
-            Err(error) => Some(Err(static_error(error))),
+            Err(error) => Some(Err(error)),
             Ok(Spanned { value: Token::EOF, .. }) => None,
             Ok(token) => {
                 debug!("Lex {:?}", token.value);

@@ -69,8 +69,6 @@ impl<'input> RangeStream for SourceStream<'input> {
     }
 }
 
-pub type Error<'input> = CombineError<Token<'input>, Token<'input>>;
-
 /// Parser passes the environment to each parser function
 type LanguageParser<'input: 'lexer, 'lexer, T> = EnvParser<&'lexer Lexer<'input>,
                                                            SourceStream<'input>,
