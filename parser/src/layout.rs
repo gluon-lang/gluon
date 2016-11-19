@@ -1,7 +1,5 @@
-use std::fmt;
-
 use base::pos::{self, BytePos, Column, Location, Span, Spanned};
-use combine::primitives::{Error as CombineError, Info, RangeStream};
+use combine::primitives::{Error as CombineError, Info};
 
 use lexer::{Error, Lexer};
 use token::{Delimiter, SpannedToken, Token};
@@ -87,19 +85,14 @@ impl Contexts {
     }
 }
 
-pub struct Layout<'input, I>
-    where I: RangeStream<Item = char, Range = &'input str>,
-{
-    lexer: Lexer<'input, I>,
+pub struct Layout<'input> {
+    lexer: Lexer<'input>,
     unprocessed_tokens: Vec<SpannedToken<'input>>,
     indent_levels: Contexts,
 }
 
-impl<'input, I> Layout<'input, I>
-    where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug + 'input,
-{
-    pub fn new(lexer: Lexer<'input, I>) -> Layout<'input, I> {
+impl<'input> Layout<'input> {
+    pub fn new(lexer: Lexer<'input>) -> Layout<'input> {
         Layout {
             lexer: lexer,
             unprocessed_tokens: Vec::new(),
@@ -394,10 +387,7 @@ fn static_error<'input>(e: CombineError<Token<'input>, Token<'input>>)
     }
 }
 
-impl<'input, I> Iterator for Layout<'input, I>
-    where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug,
-{
+impl<'input> Iterator for Layout<'input> {
     type Item = Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>;
 
     fn next(&mut self)

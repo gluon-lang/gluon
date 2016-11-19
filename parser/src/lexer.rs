@@ -1,5 +1,3 @@
-use std::fmt;
-
 use base::ast::is_operator_char;
 use base::pos::{self, BytePos, Column, Line, Location};
 use combine::primitives::{Consumed, Error as CombineError, RangeStream};
@@ -13,19 +11,17 @@ use combine_language::{LanguageEnv, LanguageDef, Identifier};
 use token::{Delimiter, SpannedToken, Token};
 
 #[derive(Clone)]
-pub struct LocatedStream<I> {
+pub struct SourceStream<'input> {
     location: Location,
-    input: I,
+    input: &'input str,
 }
 
-impl<I> StreamOnce for LocatedStream<I>
-    where I: StreamOnce<Item = char>,
-{
-    type Item = I::Item;
-    type Range = I::Range;
+impl<'input> StreamOnce for SourceStream<'input> {
+    type Item = char;
+    type Range = &'input str;
     type Position = Location;
 
-    fn uncons(&mut self) -> Result<Self::Item, CombineError<Self::Item, Self::Range>> {
+    fn uncons(&mut self) -> Result<char, CombineError<char, &'input str>> {
         self.input
             .uncons()
             .map(|ch| {
@@ -39,17 +35,13 @@ impl<I> StreamOnce for LocatedStream<I>
             })
     }
 
-    fn position(&self) -> Self::Position {
+    fn position(&self) -> Location {
         self.location
     }
 }
 
-impl<'input, I> RangeStream for LocatedStream<I>
-    where I: RangeStream<Item = char, Range = &'input str>,
-{
-    fn uncons_range(&mut self,
-                    len: usize)
-                    -> Result<Self::Range, CombineError<Self::Item, Self::Range>> {
+impl<'input> RangeStream for SourceStream<'input> {
+    fn uncons_range(&mut self, len: usize) -> Result<&'input str, CombineError<char, &'input str>> {
         self.input
             .uncons_range(len)
             .map(|range| {
@@ -62,8 +54,8 @@ impl<'input, I> RangeStream for LocatedStream<I>
 
     fn uncons_while<F>(&mut self,
                        mut predicate: F)
-                       -> Result<Self::Range, CombineError<Self::Item, Self::Range>>
-        where F: FnMut(Self::Item) -> bool,
+                       -> Result<&'input str, CombineError<char, &'input str>>
+        where F: FnMut(char) -> bool,
     {
         let location = &mut self.location;
         self.input.uncons_while(|t| {
@@ -80,22 +72,17 @@ impl<'input, I> RangeStream for LocatedStream<I>
 pub type Error<'input> = CombineError<Token<'input>, Token<'input>>;
 
 /// Parser passes the environment to each parser function
-type LanguageParser<'input: 'lexer, 'lexer, I: 'lexer, T> = EnvParser<&'lexer Lexer<'input, I>,
-                                                                      LocatedStream<I>,
-                                                                      T>;
+type LanguageParser<'input: 'lexer, 'lexer, T> = EnvParser<&'lexer Lexer<'input>,
+                                                           SourceStream<'input>,
+                                                           T>;
 
-pub struct Lexer<'input, I>
-    where I: RangeStream<Item = char, Range = &'input str>,
-{
-    env: LanguageEnv<'input, LocatedStream<I>>,
-    input: Option<LocatedStream<I>>,
+pub struct Lexer<'input> {
+    env: LanguageEnv<'input, SourceStream<'input>>,
+    input: Option<SourceStream<'input>>,
 }
 
-impl<'input, I> Lexer<'input, I>
-    where I: RangeStream<Item = char, Range = &'input str> + 'input,
-          I::Range: fmt::Debug + 'input,
-{
-    pub fn new(input: I) -> Lexer<'input, I> {
+impl<'input> Lexer<'input> {
+    pub fn new(input: &'input str) -> Lexer<'input> {
         let env = LanguageEnv::new(LanguageDef {
             ident: Identifier {
                 start: letter().or(char('_')),
@@ -120,7 +107,7 @@ impl<'input, I> Lexer<'input, I>
 
         Lexer {
             env: env,
-            input: Some(LocatedStream {
+            input: Some(SourceStream {
                 location: Location {
                     line: Line::from(0),
                     column: Column::from(1),
@@ -132,18 +119,20 @@ impl<'input, I> Lexer<'input, I>
     }
 
     fn parser<'a, T>(&'a self,
-                     parser: fn(&Lexer<'input, I>, LocatedStream<I>)
-                                -> ParseResult<T, LocatedStream<I>>)
-                     -> LanguageParser<'input, 'a, I, T> {
+                     parser: fn(&Lexer<'input>, SourceStream<'input>)
+                                -> ParseResult<T, SourceStream<'input>>)
+                     -> LanguageParser<'input, 'a, T> {
         env_parser(self, parser)
     }
 
     /// Parses an operator
-    fn op<'a>(&'a self) -> LanguageParser<'input, 'a, I, &'input str> {
+    fn op<'a>(&'a self) -> LanguageParser<'input, 'a, &'input str> {
         self.parser(Lexer::parse_op)
     }
 
-    fn parse_op(&self, input: LocatedStream<I>) -> ParseResult<&'input str, LocatedStream<I>> {
+    fn parse_op(&self,
+                input: SourceStream<'input>)
+                -> ParseResult<&'input str, SourceStream<'input>> {
         let initial = input.clone();
         let ((builtin, op), _) = (optional((char('#'), take_while(char::is_alphabetic))),
                                   try(self.env.op_())).parse_stream(input)?;
@@ -151,11 +140,13 @@ impl<'input, I> Lexer<'input, I>
         take(len).parse_stream(initial)
     }
 
-    fn ident<'a>(&'a self) -> LanguageParser<'input, 'a, I, Token<'input>> {
+    fn ident<'a>(&'a self) -> LanguageParser<'input, 'a, Token<'input>> {
         self.parser(Lexer::parse_ident)
     }
 
-    fn parse_ident(&self, input: LocatedStream<I>) -> ParseResult<Token<'input>, LocatedStream<I>> {
+    fn parse_ident(&self,
+                   input: SourceStream<'input>)
+                   -> ParseResult<Token<'input>, SourceStream<'input>> {
         self.env
             .range_identifier_()
             .map(Token::Identifier)
@@ -212,8 +203,8 @@ impl<'input, I> Lexer<'input, I>
 
     fn next_token_(&mut self,
                    location: &mut Location,
-                   mut input: LocatedStream<I>)
-                   -> ParseResult<Token<'input>, LocatedStream<I>> {
+                   mut input: SourceStream<'input>)
+                   -> ParseResult<Token<'input>, SourceStream<'input>> {
         loop {
             // Skip all whitespace before the token
             let parsed_spaces: Result<_, _> = spaces().parse_lazy(input).into();
@@ -316,7 +307,9 @@ impl<'input, I> Lexer<'input, I>
         }
     }
 
-    fn skip_block_comment(&self, input: LocatedStream<I>) -> ParseResult<(), LocatedStream<I>> {
+    fn skip_block_comment(&self,
+                          input: SourceStream<'input>)
+                          -> ParseResult<(), SourceStream<'input>> {
         let mut block_doc_comment = parser(|input| {
             let mut input = Consumed::Empty(input);
             loop {
@@ -338,8 +331,8 @@ impl<'input, I> Lexer<'input, I>
     }
 
     fn block_doc_comment(&self,
-                         input: LocatedStream<I>)
-                         -> ParseResult<Token<'input>, LocatedStream<I>> {
+                         input: SourceStream<'input>)
+                         -> ParseResult<Token<'input>, SourceStream<'input>> {
         let mut block_doc_comment = parser(|input| {
             let ((), mut input) = spaces().parse_stream(input)?;
             let mut out = String::new();
