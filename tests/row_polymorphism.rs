@@ -18,7 +18,7 @@ test_expr! { polymorphic_record_unpack,
 r#"
 let f record =
     let { x, y } = record
-    x #Int- y
+    prim.sub_Int x y
 f { y = 1, z = 0, x = 123 }
 "#,
 122

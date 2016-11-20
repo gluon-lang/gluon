@@ -550,33 +550,10 @@ impl<'a> Compiler<'a> {
                     let end = function.function.instructions.len();
                     function.function.instructions[end - 2] = Jump(end as VmIndex);
                 } else {
-                    let instr = match self.symbols.string(&op.name) {
-                        "#Int+" => AddInt,
-                        "#Int-" => SubtractInt,
-                        "#Int*" => MultiplyInt,
-                        "#Int/" => DivideInt,
-                        "#Int<" | "#Char<" => IntLT,
-                        "#Int==" | "#Char==" => IntEQ,
-                        "#Byte+" => AddByte,
-                        "#Byte-" => SubtractByte,
-                        "#Byte*" => MultiplyByte,
-                        "#Byte/" => DivideByte,
-                        "#Byte<" => ByteLT,
-                        "#Byte==" => ByteEQ,
-                        "#Float+" => AddFloat,
-                        "#Float-" => SubtractFloat,
-                        "#Float*" => MultiplyFloat,
-                        "#Float/" => DivideFloat,
-                        "#Float<" => FloatLT,
-                        "#Float==" => FloatEQ,
-                        _ => {
-                            self.load_identifier(&op.name, function);
-                            Call(2)
-                        }
-                    };
+                    self.load_identifier(&op.name, function);
                     self.compile(&**lhs, function, false)?;
                     self.compile(&**rhs, function, false)?;
-                    function.emit(instr);
+                    function.emit(Call(2));
                 }
             }
             Expr::LetBindings(ref bindings, ref body) => {

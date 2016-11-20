@@ -27,7 +27,7 @@ fn infer_fields() {
     let _ = env_logger::init();
 
     let text = r#"
-let f vec = vec.x #Int+ vec.y
+let f vec = prim.add_Int vec.x vec.y
 f
 "#;
     let result = support::typecheck(text);
@@ -49,7 +49,7 @@ fn infer_additional_fields() {
     let _ = env_logger::init();
 
     let text = r#"
-let f vec = vec.x #Int+ vec.y
+let f vec = prim.add_Int vec.x vec.y
 f { x = 1, y = 2, z = 3 }
 "#;
     let result = support::typecheck(text);
@@ -164,7 +164,7 @@ fn missing_field() {
     let _ = env_logger::init();
 
     let text = r#"
-let f vec = vec.x #Int+ vec.y
+let f vec = prim.add_Int vec.x vec.y
 f { x = 1 }
 "#;
     let result = support::typecheck(text);

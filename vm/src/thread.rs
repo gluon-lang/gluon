@@ -1243,26 +1243,6 @@ impl<'b> ExecuteContext<'b> {
                     let v = self.stack.get_upvar(i).clone();
                     self.stack.push(v);
                 }
-                AddInt => binop_int(self.thread, &mut self.stack, VmInt::add),
-                SubtractInt => binop_int(self.thread, &mut self.stack, VmInt::sub),
-                MultiplyInt => binop_int(self.thread, &mut self.stack, VmInt::mul),
-                DivideInt => binop_int(self.thread, &mut self.stack, VmInt::div),
-                IntLT => binop_bool(self.thread, &mut self.stack, |l: VmInt, r| l < r),
-                IntEQ => binop_bool(self.thread, &mut self.stack, |l: VmInt, r| l == r),
-
-                AddByte => binop_byte(self.thread, &mut self.stack, u8::add),
-                SubtractByte => binop_byte(self.thread, &mut self.stack, u8::sub),
-                MultiplyByte => binop_byte(self.thread, &mut self.stack, u8::mul),
-                DivideByte => binop_byte(self.thread, &mut self.stack, u8::div),
-                ByteLT => binop_bool(self.thread, &mut self.stack, |l: u8, r| l < r),
-                ByteEQ => binop_bool(self.thread, &mut self.stack, |l: u8, r| l == r),
-
-                AddFloat => binop_f64(self.thread, &mut self.stack, f64::add),
-                SubtractFloat => binop_f64(self.thread, &mut self.stack, f64::sub),
-                MultiplyFloat => binop_f64(self.thread, &mut self.stack, f64::mul),
-                DivideFloat => binop_f64(self.thread, &mut self.stack, f64::div),
-                FloatLT => binop_bool(self.thread, &mut self.stack, |l: f64, r| l < r),
-                FloatEQ => binop_bool(self.thread, &mut self.stack, |l: f64, r| l == r),
             }
             index += 1;
         }
@@ -1296,56 +1276,6 @@ impl<'b> ExecuteContext<'b> {
         } else {
             Ok(if stack_exists { Some(()) } else { None })
         }
-    }
-}
-
-#[inline]
-fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> VmInt,
-          T: Getable<'b> + fmt::Debug,
-{
-    binop(vm, stack, |l, r| Value::Int(f(l, r)))
-}
-
-#[inline]
-fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> f64,
-          T: Getable<'b> + fmt::Debug,
-{
-    binop(vm, stack, |l, r| Value::Float(f(l, r)))
-}
-
-#[inline]
-fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> u8,
-          T: Getable<'b> + fmt::Debug,
-{
-    binop(vm, stack, |l, r| Value::Byte(f(l, r)))
-}
-
-#[inline]
-fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> bool,
-          T: Getable<'b> + fmt::Debug,
-{
-    binop(vm, stack, |l, r| Value::Tag(if f(l, r) { 1 } else { 0 }))
-}
-
-
-#[inline]
-fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> Value,
-          T: Getable<'b> + fmt::Debug,
-{
-    let r = stack.pop();
-    let l = stack.pop();
-    match (T::from_value(vm, Variants(&l)), T::from_value(vm, Variants(&r))) {
-        (Some(l), Some(r)) => {
-            let result = f(l, r);
-            // pushing numbers should never return an error so unwrap
-            stack.stack.push(result);
-        }
-        _ => panic!("{:?} `op` {:?}", l, r),
     }
 }
 

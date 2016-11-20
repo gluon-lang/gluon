@@ -28,10 +28,10 @@ fn make_vm() -> RootedThread {
 fn call_function() {
     let _ = ::env_logger::init();
     let add10 = r"
-let add10 : Int -> Int = \x -> x #Int+ 10 in add10
+let add10 : Int -> Int = \x -> prim.add_Int x 10 in add10
 ";
     let mul = r"
-let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
+let mul : Float -> Float -> Float = \x y -> prim.mul_Float x y in mul
 ";
     let mut vm = make_vm();
     load_script(&mut vm, "add10", &add10).unwrap_or_else(|err| panic!("{}", err));

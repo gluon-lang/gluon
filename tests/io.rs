@@ -18,8 +18,8 @@ fn read_file() {
         io.open_file "Cargo.toml" >>= \file ->
             io.read_file file 9 >>= \bytes ->
             assert (array.length bytes == 9)
-            assert (array.index bytes 0 #Byte== 91b) // [
-            assert (array.index bytes 1 #Byte== 112b) // p
+            assert (array.index bytes (prim.eq_Byte 0 91b) // [
+            assert (array.index bytes (prim.eq_Byte 1 112b) // p
             pure (array.index bytes 8)
         "#;
     let result = Compiler::new().run_io_expr::<IO<u8>>(&thread, "<top>", text);
