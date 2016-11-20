@@ -65,7 +65,7 @@ let y =
 y
 "#);
 
-    let parse_error = ParseError { errors: vec![CombineError::Unexpected("Int".into())] };
+    let parse_error = ParseError { errors: vec![CombineError::Unexpected("IntLiteral".into())] };
     let span = pos::span(BytePos::from(32), BytePos::from(32));
     let errors = Errors::from(vec![pos::spanned(span, Error::Parser(parse_error))]);
 

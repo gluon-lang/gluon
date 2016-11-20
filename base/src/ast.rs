@@ -474,5 +474,5 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
 }
 
 pub fn is_operator_char(c: char) -> bool {
-    "+-*/&|=<>".chars().any(|x| x == c)
+    "#+-*/&|=<>:.".chars().any(|x| x == c)
 }

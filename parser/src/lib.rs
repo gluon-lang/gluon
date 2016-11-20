@@ -8,7 +8,6 @@ extern crate log;
 extern crate quick_error;
 extern crate gluon_base as base;
 extern crate combine;
-extern crate combine_language;
 extern crate lalrpop_util;
 
 use std::error::Error as StdError;
@@ -16,7 +15,7 @@ use std::fmt;
 
 use base::ast::{Expr, IdentEnv, SpannedExpr};
 use base::error::Errors;
-use base::pos::{self, BytePos, Spanned};
+use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
@@ -24,12 +23,10 @@ use combine::primitives::Error as CombineError;
 
 use infix::{OpTable, Reparser};
 use layout::Layout;
-use lexer::Lexer;
-use token::Token;
+use token::{Token, Tokenizer};
 
 mod grammar;
 mod infix;
-mod lexer;
 mod layout;
 mod token;
 
@@ -165,8 +162,16 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
                               -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
     where Id: Clone,
 {
-    let lexer = Lexer::new(input);
-    let layout = Layout::new(lexer);
+    let tokenizer = Tokenizer::new(input).map(|token| token.unwrap()); // FIXME
+
+    let layout = Layout::new(tokenizer).map(|token| {
+        token.map(|token| {
+            debug!("Lex {:?}", token.value);
+            let Span { start, end, .. } = token.span;
+            (start.absolute, token.value, end.absolute)
+        })
+    });
+
     let mut parse_errors = Errors::new();
 
     match grammar::parse_TopExpr(input, symbols, &mut parse_errors, layout) {

@@ -5,7 +5,7 @@ use base::types::{Alias, ArcType, BuiltinType, Field, Generic, Type};
 use combine::primitives::Error;
 use std::str::FromStr;
 
-use token::{Delimiter, Token};
+use token::Token;
 
 use {FieldExpr, FieldPattern, MutIdentEnv, ErrorEnv};
 
@@ -19,11 +19,11 @@ extern {
     enum Token<'input> {
         "Identifier" => Token::Identifier(<&'input str>),
         "Operator" => Token::Operator(<&'input str>),
-        "StringLiteral" => Token::String(<String>),
-        "CharLiteral" => Token::Char(<char>),
-        "IntLiteral" => Token::Int(<i64>),
-        "ByteLiteral" => Token::Byte(<u8>),
-        "FloatLiteral" => Token::Float(<f64>),
+        "StringLiteral" => Token::StringLiteral(<String>),
+        "CharLiteral" => Token::CharLiteral(<char>),
+        "IntLiteral" => Token::IntLiteral(<i64>),
+        "ByteLiteral" => Token::ByteLiteral(<u8>),
+        "FloatLiteral" => Token::FloatLiteral(<f64>),
         "DocComment" => Token::DocComment(<String>),
 
         "and" => Token::And,
@@ -42,14 +42,15 @@ extern {
         "=" => Token::Equals,
         "\\" => Token::Lambda,
         "|" => Token::Pipe,
-        "->" => Token::RightArrow,
+        "->" => Token::RArrow,
 
-        "{" => Token::Open(Delimiter::Brace),
-        "[" => Token::Open(Delimiter::Bracket),
-        "(" => Token::Open(Delimiter::Paren),
-        "}" => Token::Close(Delimiter::Brace),
-        "]" => Token::Close(Delimiter::Bracket),
-        ")" => Token::Close(Delimiter::Paren),
+        "{" => Token::LBrace,
+        "[" => Token::LBracket,
+        "(" => Token::LParen,
+
+        "}" => Token::RBrace,
+        "]" => Token::RBracket,
+        ")" => Token::RParen,
 
         "OpenBlock" => Token::OpenBlock,
         "CloseBlock" => Token::CloseBlock,
@@ -80,6 +81,9 @@ Ident: Id =
 
 Operator: TypedIdent<Id> =
     "Operator" => TypedIdent::new(env.from_str(<>));
+
+DocComment: String =
+    "DocComment"+ => <>.join("\n");
 
 // Types
 
@@ -268,7 +272,7 @@ FieldExpr: FieldExpr<Id> = {
 };
 
 ValueBinding: ValueBinding<Id> = {
-    <comment: "DocComment"?> <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    <comment: DocComment?> <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
             comment: comment,
             name: name,
@@ -277,7 +281,7 @@ ValueBinding: ValueBinding<Id> = {
             expr: body,
         },
 
-    <comment: "DocComment"?> <name: Sp<Ident>> <args: Ident+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    <comment: DocComment?> <name: Sp<Ident>> <args: Ident+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
             comment: comment,
             name: name.map(TypedIdent::new).map(Pattern::Ident),
@@ -363,14 +367,14 @@ InfixExpr = {
 };
 
 AndValueBinding: ValueBinding<Id> =
-    <comment: "DocComment"?> "and" <binding: ValueBinding> => {
+    <comment: DocComment?> "and" <binding: ValueBinding> => {
         let mut binding = binding;
         binding.comment = comment;
         binding
     };
 
 AndTypeBinding: TypeBinding<Id> =
-    <comment: "DocComment"?> "and" <binding: TypeBinding> => {
+    <comment: DocComment?> "and" <binding: TypeBinding> => {
         let mut binding = binding;
         binding.comment = comment;
         binding
@@ -385,7 +389,7 @@ Expr: Expr<Id> = {
     "match" <input: SpExpr> "with" <arms: Alternative+> =>
         Expr::Match(Box::new(input), arms),
 
-    <comment: "DocComment"?> "let" <first: ValueBinding> <bindings: AndValueBinding*> "in" <body: SpExpr> => {
+    <comment: DocComment?> "let" <first: ValueBinding> <bindings: AndValueBinding*> "in" <body: SpExpr> => {
         let mut first = first;
         let mut bindings = bindings;
         first.comment = comment;
@@ -394,7 +398,7 @@ Expr: Expr<Id> = {
         Expr::LetBindings(bindings, Box::new(body))
     },
 
-    <comment: "DocComment"?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> "in" <body: SpExpr> => {
+    <comment: DocComment?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> "in" <body: SpExpr> => {
         let mut first = first;
         let mut bindings = bindings;
         first.comment = comment;

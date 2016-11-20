@@ -1,8 +1,7 @@
-use base::pos::{self, BytePos, Column, Location, Span, Spanned};
+use base::pos::{self, BytePos, Column, Line, Location, Spanned};
 use combine::primitives::Error as CombineError;
 
-use lexer::Lexer;
-use token::{Delimiter, SpannedToken, Token};
+use token::{SpannedToken, Token};
 
 #[derive(Copy, Clone, Debug)]
 struct Offside {
@@ -23,13 +22,23 @@ impl Offside {
 enum Context {
     /// Context which contains several expressions/declarations separated by semicolons
     Block { emit_semi: bool },
+    /// After brace token
+    Brace,
+    /// After bracket token
+    Bracket,
+    /// After paren token
+    Paren,
     /// A simple expression
     Expr,
+    /// In a let expression
     Let,
+    /// In a type expression
     Type,
+    /// In an if expression
     If,
-    Delimiter(Delimiter),
+    /// In a match clause
     MatchClause,
+    /// In a lambda function
     Lambda,
 }
 
@@ -70,8 +79,8 @@ impl Contexts {
                     skip_block = true;
                     continue;
                 }
-                Context::Delimiter(_) => return Ok(()),
                 Context::Block { .. } if skip_block => continue,
+                Context::Brace | Context::Bracket | Context::Paren => return Ok(()),
                 // New context should not be unindented past the closest enclosing block context
                 Context::MatchClause |
                 Context::Type |
@@ -87,26 +96,35 @@ impl Contexts {
     }
 }
 
-pub struct Layout<'input> {
-    lexer: Lexer<'input>,
+pub struct Layout<'input, Tokens> {
+    tokens: Tokens,
     unprocessed_tokens: Vec<SpannedToken<'input>>,
     indent_levels: Contexts,
 }
 
-impl<'input> Layout<'input> {
-    pub fn new(lexer: Lexer<'input>) -> Layout<'input> {
+impl<'input, Tokens> Layout<'input, Tokens>
+    where Tokens: Iterator<Item = SpannedToken<'input>>,
+{
+    pub fn new(tokens: Tokens) -> Layout<'input, Tokens> {
         Layout {
-            lexer: lexer,
+            tokens: tokens,
             unprocessed_tokens: Vec::new(),
             indent_levels: Contexts::new(),
         }
     }
 
     fn next_token(&mut self) -> SpannedToken<'input> {
-        match self.unprocessed_tokens.pop() {
-            Some(token) => token,
-            None => self.lexer.next_token(),
-        }
+        self.unprocessed_tokens.pop().unwrap_or_else(|| {
+            self.tokens.next().unwrap_or_else(|| {
+                // Blegh
+                let location = Location {
+                    line: Line::from(0),
+                    column: Column::from(1),
+                    absolute: BytePos::from(0),
+                };
+                pos::spanned2(location, location, Token::EOF)
+            })
+        })
     }
 
     fn layout_token(&mut self,
@@ -125,10 +143,7 @@ impl<'input> Layout<'input> {
         let span = next.span;
         self.unprocessed_tokens.push(next);
         if let Context::Block { .. } = context {
-            self.unprocessed_tokens.push(SpannedToken {
-                span: span,
-                value: Token::OpenBlock,
-            });
+            self.unprocessed_tokens.push(pos::spanned(span, Token::OpenBlock));
         }
         self.indent_levels.push(Offside::new(span.start, context))
     }
@@ -158,21 +173,24 @@ impl<'input> Layout<'input> {
             debug!("--------\n{:?}\n{:?}", token, offside);
 
             match (&token.value, offside.context) {
-                (&Token::Comma, Context::Delimiter(Delimiter::Brace)) |
-                (&Token::Comma, Context::Delimiter(Delimiter::Bracket)) => return Ok(token),
+                (&Token::Comma, Context::Brace) |
+                (&Token::Comma, Context::Bracket) => return Ok(token),
 
                 // If it is closing token we remove contexts until a context for that token is found
                 (&Token::In, _) |
                 (&Token::CloseBlock, _) |
                 (&Token::Else, _) |
-                (&Token::Close(_), _) |
+                (&Token::RBrace, _) |
+                (&Token::RBracket, _) |
+                (&Token::RParen, _) |
                 (&Token::Comma, _) => {
                     self.indent_levels.pop();
 
                     match (&token.value, offside.context) {
                         (&Token::Else, Context::If) => (),
-                        (&Token::Close(close_delim), Context::Delimiter(context_delim))
-                            if close_delim == context_delim => return Ok(token),
+                        (&Token::RBrace, Context::Brace) |
+                        (&Token::RBracket, Context::Bracket) |
+                        (&Token::RParen, Context::Paren) => return Ok(token),
                         (&Token::CloseBlock, Context::Block { .. }) => {
                             if let Some(offside) = self.indent_levels.last_mut() {
                                 // The enclosing block should not emit a block separator for the next
@@ -272,8 +290,7 @@ impl<'input> Layout<'input> {
                 // `and` and `}` are allowed to be on the same line as the `let` or `type`
                 (Context::Let, Ordering::Equal) |
                 (Context::Type, Ordering::Equal) if token.value != Token::And &&
-                                                    token.value !=
-                                                    Token::Close(Delimiter::Brace) => {
+                                                    token.value != Token::RBrace => {
                     // Insert an `in` token
                     self.indent_levels.pop();
                     let location = {
@@ -312,7 +329,9 @@ impl<'input> Layout<'input> {
                 Token::Type => Some(Context::Type),
                 Token::Match => Some(Context::Expr),
                 Token::Lambda => Some(Context::Lambda),
-                Token::Open(delim) => Some(Context::Delimiter(delim)),
+                Token::LBrace => Some(Context::Brace),
+                Token::LBracket => Some(Context::Bracket),
+                Token::LParen => Some(Context::Paren),
                 _ => None,
             };
             if let Some(context) = push_context {
@@ -330,8 +349,8 @@ impl<'input> Layout<'input> {
                 }
 
                 (&Token::Equals, Context::Let) |
-                (&Token::RightArrow, Context::Lambda) |
-                (&Token::RightArrow, Context::MatchClause) |
+                (&Token::RArrow, Context::Lambda) |
+                (&Token::RArrow, Context::MatchClause) |
                 (&Token::Then, _) => self.scan_for_next_block(Context::Block { emit_semi: false })?,
                 (&Token::With, _) => self.scan_for_next_block(Context::MatchClause)?,
 
@@ -371,19 +390,15 @@ impl<'input> Layout<'input> {
     }
 }
 
-impl<'input> Iterator for Layout<'input> {
-    type Item = Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>;
+impl<'input, Tokens> Iterator for Layout<'input, Tokens>
+    where Tokens: Iterator<Item = SpannedToken<'input>>,
+{
+    type Item = Result<SpannedToken<'input>, CombineError<String, String>>;
 
-    fn next(&mut self)
-            -> Option<Result<(BytePos, Token<'input>, BytePos), CombineError<String, String>>> {
+    fn next(&mut self) -> Option<Result<SpannedToken<'input>, CombineError<String, String>>> {
         match self.layout_next_token() {
-            Err(error) => Some(Err(error)),
             Ok(Spanned { value: Token::EOF, .. }) => None,
-            Ok(token) => {
-                debug!("Lex {:?}", token.value);
-                let Span { start, end, .. } = token.span;
-                Some(Ok((start.absolute, token.value, end.absolute)))
-            }
+            token => Some(token),
         }
     }
 }
