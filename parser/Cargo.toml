@@ -21,6 +21,7 @@ gluon_base = { path = "../base", version = "0.4.2" } # GLUON
 
 [dev-dependencies]
 collect-mac = "0.1.0"
+pretty = "0.1.0"
 pretty_assertions = "0.2.0"
 
 [build-dependencies]

@@ -33,7 +33,7 @@ and make ord =
         | Bin key value l r ->
             to_list l ++ Cons { key, value } (to_list r)
         | Tip -> Nil
-    
+
     let fold f x m =
         match m with
         | Bin k v l r ->
