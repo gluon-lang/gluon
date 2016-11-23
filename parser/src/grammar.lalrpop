@@ -305,8 +305,8 @@ AtomicExpr: Expr<Id> = {
     <expr: Sp<AtomicExpr>> "." <id: Ident> =>
         Expr::Projection(Box::new(expr), id, Type::hole()),
 
-    <expr: Sp<AtomicExpr>> "." <err: error> => {
-        errors.push(err);
+    <expr: Sp<AtomicExpr>> "." <err: !> => {
+        errors.push(err.error); // Make use of `ErrorRecovery`'s `dropped_tokens` field?
         Expr::Projection(Box::new(expr), env.from_str(""), Type::hole())
     },
 
