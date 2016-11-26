@@ -44,22 +44,22 @@ let monoid_Option m : Monoid a -> Monoid (Option a) = {
 }
 
 let monoid_Int_Add = {
-    append = \x y -> x #Int+ y,
+    append = prim.add_Int,
     empty = 0
 }
 
 let monoid_Int_Mul = {
-    append = \x y -> x #Int* y,
+    append = prim.mul_Int,
     empty = 1
 }
 
 let monoid_Float_Add = {
-    append = \x y -> x #Float+ y,
+    append =prim.add_Float,
     empty = 0.0
 }
 
 let monoid_Float_Mul = {
-    append = \x y -> x #Float* y,
+    append = prim.mul_Float,
     empty = 1.0
 }
 
@@ -98,15 +98,15 @@ let eq_Bool : Eq Bool = {
 }
 
 let eq_Int = {
-    (==) = \l r -> l #Int== r
+    (==) = prim.eq_int
 }
 
 let eq_Float = {
-    (==) = \l r -> l #Float== r
+    (==) = prim.eq_float
 }
 
 let eq_Char = {
-    (==) = \l r -> l #Char== r
+    (==) = prim.char_float
 }
 
 let eq_Option a : Eq a -> Eq (Option a) = {
@@ -182,9 +182,9 @@ let ord_Bool = {
 let ord_Int = {
     eq = eq_Int,
     compare = \l r ->
-        if l #Int< r
+        if prim.lt_Int l r
         then LT
-        else if l #Int== r
+        else if prim.eq_Int l r
         then EQ
         else GT
 }
@@ -192,9 +192,9 @@ let ord_Int = {
 let ord_Float = {
     eq = eq_Float,
     compare = \l r ->
-        if l #Float< r
+        if prim.lt_Float l r
         then LT
-        else if l #Float== r
+        else if prim.eq_Float l r
         then EQ
         else GT
 }
@@ -202,9 +202,9 @@ let ord_Float = {
 let ord_Char = {
     eq = eq_Char,
     compare = \l r ->
-        if l #Char< r
+        if prim.lt_Char l r
         then LT
-        else if l #Char== r
+        else if prim.eq_Char l r
         then EQ
         else GT
 }
@@ -281,19 +281,19 @@ type Num a = {
 let num_Int = {
     ord = ord_Int,
     (+) = monoid_Int_Add.append,
-    (-) = \l r -> l #Int- r,
+    (-) = prim.sub_Int,
     (*) = monoid_Int_Mul.append,
-    (/) = \l r -> l #Int/ r,
-    negate = \x -> 0 #Int- x
+    (/) = prim.div_Int,
+    negate = prim.sub_Int 0
 }
 
 let num_Float : Num Float = {
     ord = ord_Float,
     (+) = monoid_Float_Add.append,
-    (-) = \l r -> l #Float- r,
+    (-) = prim.sub_Float,
     (*) = monoid_Float_Mul.append,
-    (/) = \l r -> l #Float/ r,
-    negate = \x -> 0.0 #Float- x
+    (/) = prim.div_Float,
+    negate = prim.sub_Float 0.0
 }
 
 type Category cat = {

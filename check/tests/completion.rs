@@ -119,8 +119,8 @@ fn binop() {
 
     let (mut expr, result) = support::typecheck_expr(r#"
 let (++) l r =
-    l #Int+ 1
-    r #Float+ 1.0
+    prim.add_Int l 1
+    prim.add_Float r 1.0
     l
 1 ++ 2.0
 "#);
@@ -217,7 +217,7 @@ fn suggest_after_unrelated_type_error() {
 
     let result = suggest(r#"
 let record = { aa = 1, ab = 2, c = "" }
-1.0 #Int+ 2
+prim.add_Int 1.0 2
 record.a
 "#,
                          BytePos::from(104));

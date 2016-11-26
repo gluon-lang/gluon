@@ -61,7 +61,7 @@ fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
 
     let text = r#"
     let for n f =
-        if n #Int== 0 then
+        if prim.eq_Int n 0 then
             ()
         else
             f n
@@ -74,7 +74,7 @@ fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
             f n
             f n
             f n
-            for (n #Int- 10) f
+            for (prim.sub_Int n 10) f
     \n -> for n test_fn
     "#;
     Compiler::new()

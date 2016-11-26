@@ -6,7 +6,7 @@ use base::pos::{BytePos, Column, Line, Location, Span, Spanned, NO_EXPANSION};
 
 use combine::primitives::{Consumed, Error as CombineError, RangeStream};
 use combine::combinator::EnvParser;
-use combine::range::{take, take_while};
+use combine::range::take;
 use combine::*;
 use combine::char::{alpha_num, char, letter, spaces, string};
 use combine_language::{LanguageEnv, LanguageDef, Identifier};
@@ -381,10 +381,8 @@ impl<'input, I> Lexer<'input, I>
 
     fn parse_op(&self, input: LocatedStream<I>) -> ParseResult<&'input str, LocatedStream<I>> {
         let initial = input.clone();
-        let ((builtin, op), _) = (optional((char('#'), take_while(char::is_alphabetic))),
-                                  try(self.env.op_())).parse_stream(input)?;
-        let len = builtin.map_or(0, |(c, typ)| c.len_utf8() + typ.len()) + op.len();
-        take(len).parse_stream(initial)
+        let (op, _) = self.env.op_().parse_stream(input)?;
+        take(op.len()).parse_stream(initial)
     }
 
     fn ident<'a>(&'a self) -> LanguageParser<'input, 'a, I, Token<&'input str>> {

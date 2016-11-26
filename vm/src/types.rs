@@ -94,27 +94,6 @@ pub enum Instruction {
     },
     /// Fills the previously allocated closure with `n` upvariables.
     CloseClosure(VmIndex),
-
-    AddInt,
-    SubtractInt,
-    MultiplyInt,
-    DivideInt,
-    IntLT,
-    IntEQ,
-
-    AddByte,
-    SubtractByte,
-    MultiplyByte,
-    DivideByte,
-    ByteLT,
-    ByteEQ,
-
-    AddFloat,
-    SubtractFloat,
-    MultiplyFloat,
-    DivideFloat,
-    FloatLT,
-    FloatEQ,
 }
 
 
@@ -141,9 +120,6 @@ impl Instruction {
             NewClosure { .. } => 1,
             CloseClosure(_) => -1,
             PushUpVar(_) => 1,
-            AddInt | SubtractInt | MultiplyInt | DivideInt | IntLT | IntEQ | AddFloat |
-            AddByte | SubtractByte | MultiplyByte | DivideByte | ByteLT | ByteEQ |
-            SubtractFloat | MultiplyFloat | DivideFloat | FloatLT | FloatEQ => -1,
         }
     }
 }

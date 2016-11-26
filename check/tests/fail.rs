@@ -177,9 +177,9 @@ in 1
 fn no_matching_overloaded_binding() {
     let _ = env_logger::init();
     let text = r#"
-let f x = x #Int+ 1
+let f x = prim.add_Int x 1
 in
-let f x = x #Float+ 1.0
+let f x = prim.add_Float x 1.0
 in f ""
 "#;
     let result = support::typecheck(text);
@@ -191,8 +191,8 @@ in f ""
 fn no_matching_binop_binding() {
     let _ = env_logger::init();
     let text = r#"
-let (++) x y = x #Int+ y
-let (++) x y = x #Float+ y
+let (++) x y = prim.add_Int x y
+let (++) x y = prim.add_Float x y
 "" ++ ""
 "#;
     let result = support::typecheck(text);
@@ -204,8 +204,8 @@ let (++) x y = x #Float+ y
 fn not_enough_information_to_decide_overload() {
     let _ = env_logger::init();
     let text = r#"
-let f x = x #Int+ 1
-let f x = x #Float+ 1.0
+let f x = prim.add_Int x 1
+let f x = prim.add_Float x 1.0
 \x -> f x
 "#;
     let result = support::typecheck(text);
@@ -255,9 +255,9 @@ type Ord a = {
 }
 let ord_Int = {
     compare = \l r ->
-        if l #Int< r
+        if prim.lt_Int l r
         then LT
-        else if l #Int== r
+        else if prim.eq_Int l r
         then EQ
         else GT
 }

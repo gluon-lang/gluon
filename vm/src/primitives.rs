@@ -152,6 +152,86 @@ fn show_char(c: char) -> String {
     format!("{}", c)
 }
 
+fn add_int(x: VmInt, y: VmInt) -> VmInt {
+    x + y
+}
+
+fn sub_int(x: VmInt, y: VmInt) -> VmInt {
+    x - y
+}
+
+fn mul_int(x: VmInt, y: VmInt) -> VmInt {
+    x * y
+}
+
+fn div_int(x: VmInt, y: VmInt) -> VmInt {
+    x / y
+}
+
+fn lt_int(x: VmInt, y: VmInt) -> bool {
+    x < y
+}
+
+fn eq_int(x: VmInt, y: VmInt) -> bool {
+    x == y
+}
+
+fn lt_char(x: char, y: char) -> bool {
+    x < y
+}
+
+fn eq_char(x: char, y: char) -> bool {
+    x == y
+}
+
+fn add_byte(x: u8, y: u8) -> u8 {
+    x + y
+}
+
+fn sub_byte(x: u8, y: u8) -> u8 {
+    x - y
+}
+
+fn mul_byte(x: u8, y: u8) -> u8 {
+    x * y
+}
+
+fn div_byte(x: u8, y: u8) -> u8 {
+    x / y
+}
+
+fn lt_byte(x: u8, y: u8) -> bool {
+    x < y
+}
+
+fn eq_byte(x: u8, y: u8) -> bool {
+    x == y
+}
+
+fn add_float(x: f64, y: f64) -> f64 {
+    x + y
+}
+
+fn sub_float(x: f64, y: f64) -> f64 {
+    x - y
+}
+
+fn mul_float(x: f64, y: f64) -> f64 {
+    x * y
+}
+
+fn div_float(x: f64, y: f64) -> f64 {
+    x / y
+}
+
+fn lt_float(x: f64, y: f64) -> bool {
+    x < y
+}
+
+fn eq_float(x: f64, y: f64) -> bool {
+    x == y
+}
+
 extern "C" fn error(_: &Thread) -> Status {
     // We expect a string as an argument to this function but we only return Status::Error
     // and let the caller take care of printing the message
@@ -284,6 +364,26 @@ pub fn load(vm: &Thread) -> Result<()> {
         show_Int => primitive!(1 prim::show_int),
         show_Float => primitive!(1 prim::show_float),
         show_Char => primitive!(1 prim::show_char)
+        add_Int => primitive!(2 add_int),
+        sub_Int => primitive!(2 sub_int),
+        mul_Int => primitive!(2 mul_int),
+        div_Int => primitive!(2 div_int),
+        lt_Int => primitive!(2 lt_int),
+        eq_Int => primitive!(2 eq_int),
+        lt_Char => primitive!(2 lt_char),
+        eq_Char => primitive!(2 eq_char),
+        add_Byte => primitive!(2 add_byte),
+        sub_Byte => primitive!(2 sub_byte),
+        mul_Byte => primitive!(2 mul_byte),
+        div_Byte => primitive!(2 div_byte),
+        lt_Byte => primitive!(2 lt_byte),
+        eq_Byte => primitive!(2 eq_byte),
+        add_Float => primitive!(2 add_float),
+        sub_Float => primitive!(2 sub_float),
+        mul_Float => primitive!(2 mul_float),
+        div_Float => primitive!(2 div_float),
+        lt_Float => primitive!(2 lt_float),
+        eq_Float => primitive!(2 eq_float),
     ))?;
 
     vm.define_global("#error",

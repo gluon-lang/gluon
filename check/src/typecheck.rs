@@ -511,38 +511,23 @@ impl<'a> Typecheck<'a> {
                 let lhs_type = self.typecheck(&mut **lhs);
                 let rhs_type = self.typecheck(&mut **rhs);
                 let op_name = String::from(self.symbols.string(&op.name));
-                let result = if op_name.starts_with('#') {
-                    // Handle primitives
-                    let arg_type = self.unify(&lhs_type, rhs_type)?;
-                    let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
-                    let prim_type = primitive_type(op_type);
-                    op.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
-                                            prim_type.clone());
-                    let typ = self.unify(&prim_type, arg_type)?;
-                    match &op_name[1 + op_type.len()..] {
-                        "+" | "-" | "*" | "/" => Ok(typ),
-                        "==" | "<" => Ok(self.bool()),
-                        _ => Err(UndefinedVariable(op.name.clone())),
+                let result = match &*op_name {
+                    "&&" | "||" => {
+                        self.unify(&lhs_type, rhs_type.clone())?;
+                        op.typ = Type::function(vec![self.bool(), self.bool()], self.bool());
+                        self.unify(&self.bool(), lhs_type)
                     }
-                } else {
-                    match &*op_name {
-                        "&&" | "||" => {
-                            self.unify(&lhs_type, rhs_type.clone())?;
-                            op.typ = Type::function(vec![self.bool(), self.bool()], self.bool());
-                            self.unify(&self.bool(), lhs_type)
-                        }
-                        _ => {
-                            op.typ = self.find(&op.name)?;
-                            let func_type = Type::function(vec![lhs_type, rhs_type],
-                                                           self.subs.new_var());
-                            let ret = self.unify(&op.typ, func_type)?
-                                .as_function()
-                                .and_then(|(_, ret)| ret.as_function())
-                                .map(|(_, ret)| ret.clone())
-                                .expect("ICE: unify binop");
+                    _ => {
+                        op.typ = self.find(&op.name)?;
+                        let func_type = Type::function(vec![lhs_type, rhs_type],
+                                                       self.subs.new_var());
+                        let ret = self.unify(&op.typ, func_type)?
+                            .as_function()
+                            .and_then(|(_, ret)| ret.as_function())
+                            .map(|(_, ret)| ret.clone())
+                            .expect("ICE: unify binop");
 
-                            Ok(ret)
-                        }
+                        Ok(ret)
                     }
                 };
                 result.map(TailCall::Type)
@@ -1427,16 +1412,6 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
 
 fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: ArcType) -> FunctionArgIter<'a, 'b> {
     FunctionArgIter { tc: tc, typ: typ }
-}
-
-fn primitive_type(op_type: &str) -> ArcType {
-    match op_type {
-        "Int" => Type::int(),
-        "Float" => Type::float(),
-        "Char" => Type::char(),
-        "Byte" => Type::byte(),
-        _ => panic!("ICE: Unknown primitive type"),
-    }
 }
 
 /// Removes layers of `Type::App` and `Type::Record` by packing them into a single `Type::App` or

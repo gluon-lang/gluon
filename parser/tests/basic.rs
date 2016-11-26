@@ -277,21 +277,14 @@ fn field_access_test() {
 }
 
 #[test]
-fn builtin_op() {
-    let _ = ::env_logger::init();
-    let e = parse_new!("x #Int+ 1");
-    assert_eq!(e, binop(id("x"), "#Int+", int(1)));
-}
-
-#[test]
 fn op_identifier() {
     let _ = ::env_logger::init();
-    let e = parse_new!("let (==) = \\x y -> x #Int== y in (==) 1 2");
+    let e = parse_new!("let (==) = \\x y -> x == y in (==) 1 2");
     assert_eq!(e,
                let_("==",
                     lambda("",
                            vec![intern("x"), intern("y")],
-                           binop(id("x"), "#Int==", id("y"))),
+                           binop(id("x"), "==", id("y"))),
                     app(id("=="), vec![int(1), int(2)])));
 }
 #[test]
@@ -332,10 +325,10 @@ fn array_expr() {
 #[test]
 fn operator_expr() {
     let _ = ::env_logger::init();
-    let e = parse_new!("test + 1 * 23 #Int- test");
+    let e = parse_new!("test + 1 * 23 - test");
     assert_eq!(e,
                binop(binop(id("test"), "+", binop(int(1), "*", int(23))),
-                     "#Int-",
+                     "-",
                      id("test")));
 }
 
