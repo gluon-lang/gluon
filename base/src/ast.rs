@@ -548,7 +548,8 @@ pub fn is_operator_char(c: char) -> bool {
 }
 
 pub fn is_constructor(s: &str) -> bool {
-    s.rsplit('.').next().unwrap().starts_with(
-        char::is_uppercase,
-    )
+    s.rsplit('.')
+        .next()
+        .unwrap()
+        .starts_with(char::is_uppercase)
 }

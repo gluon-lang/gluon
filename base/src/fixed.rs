@@ -68,9 +68,10 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
-        self.map.borrow().get(k).map(
-            |x| unsafe { forget_lifetime(&**x) },
-        )
+        self.map
+            .borrow()
+            .get(k)
+            .map(|x| unsafe { forget_lifetime(&**x) })
     }
 }
 

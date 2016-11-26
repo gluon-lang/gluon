@@ -17,7 +17,8 @@ fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
 }
 
 fn hang<'a, Id>(arena: &'a Arena<'a>, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
-    where Id: AsRef<str>,
+where
+    Id: AsRef<str>,
 {
     let line = if forced_new_line(&expr.value) {
         arena.newline()
@@ -27,10 +28,12 @@ fn hang<'a, Id>(arena: &'a Arena<'a>, expr: &'a SpannedExpr<Id>) -> DocBuilder<'
     line.append(pretty_expr(arena, &expr.value))
 }
 
-pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
-                              pattern: &'a SpannedPattern<Id>)
-                              -> DocBuilder<'a, Arena<'a>>
-    where Id: AsRef<str>,
+pub fn pretty_pattern<'a, Id>(
+    arena: &'a Arena<'a>,
+    pattern: &'a SpannedPattern<Id>,
+) -> DocBuilder<'a, Arena<'a>>
+where
+    Id: AsRef<str>,
 {
     match pattern.value {
         Pattern::Constructor(ref ctor, ref args) => {
@@ -42,14 +45,17 @@ pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
             ]
         }
         Pattern::Ident(ref id) => arena.text(id.as_ref()),
-        Pattern::Record { ref fields, ref types, .. } => {
+        Pattern::Record {
+            ref fields,
+            ref types,
+            ..
+        } => {
             chain![arena;
                 "{",
                 arena.concat(types.iter().map(|field| {
                     chain![arena;
                         arena.space(),
-                        field.0.as_ref(),
-                        ","
+                        field.0.as_ref()
                     ]
                 }).chain(fields.iter().map(|field| {
                     match field.1 {
@@ -58,19 +64,17 @@ pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
                                 arena.space(),
                                 field.0.as_ref(),
                                 " = ",
-                                pretty_pattern(arena, new_name),
-                                ","
+                                pretty_pattern(arena, new_name)
                             ]
                         }
                         None => {
                             chain![arena;
                                 arena.space(),
-                                field.0.as_ref(),
-                                ","
+                                field.0.as_ref()
                             ]
                         }
                     }
-                }))),
+                })).intersperse(arena.text(","))),
                 if types.is_empty() && fields.is_empty() {
                     arena.nil()
                 } else {
@@ -90,26 +94,42 @@ pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
                 ")"
             ]
         }
+        Pattern::Error => arena.text("<error>")
     }
 }
 
 pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuilder<'a, Arena<'a>>
-    where Id: AsRef<str>,
+where
+    Id: AsRef<str>,
 {
     let pretty = |expr: &'a SpannedExpr<_>| pretty_expr(arena, &expr.value);
     match *expr {
         Expr::App(ref func, ref args) => {
-            pretty(func)
-                .append(arena.concat(args.iter().map(|arg| arena.text(" ").append(pretty(arg)))))
+            pretty(func).append(
+                arena.concat(args.iter().map(|arg| arena.text(" ").append(pretty(arg)))),
+            )
         }
         Expr::Array(ref array) => {
-            arena.text("[")
-                .append(arena.concat(array.exprs.iter().map(|elem| pretty(elem).append(", "))))
+            arena
+                .text("[")
+                .append(
+                    arena.concat(
+                        array
+                            .exprs
+                            .iter()
+                            .map(|elem| pretty(elem))
+                            .intersperse(arena.text(",").append(arena.space())),
+                    ),
+                )
                 .append("]")
                 .group()
         }
         Expr::Block(ref elems) => {
-            arena.concat(elems.iter().map(|elem| pretty(elem).group().append(arena.newline())))
+            arena.concat(
+                elems
+                    .iter()
+                    .map(|elem| pretty(elem).group().append(arena.newline())),
+            )
         }
         Expr::Ident(ref id) => arena.text(id.name.as_ref()),
         Expr::IfElse(ref body, ref if_true, ref if_false) => {
@@ -196,14 +216,17 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                 field.as_ref()
             ]
         }
-        Expr::Record { ref types, ref exprs, .. } => {
+        Expr::Record {
+            ref types,
+            ref exprs,
+            ..
+        } => {
             chain![arena;
                 "{",
                 arena.concat(types.iter().map(|field| {
                     chain![arena;
                         arena.space(),
-                        field.name.as_ref(),
-                        ","
+                        field.name.as_ref()
                     ]
                 }).chain(exprs.iter().map(|field| {
                     chain![arena;
@@ -218,22 +241,28 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                                 ]
                             },
                             None => arena.nil(),
-                        },
-                        ","
+                        }
                     ]
-                }))).nest(INDENT),
+                })).intersperse(arena.text(","))).nest(INDENT),
                 if types.is_empty() && exprs.is_empty() {
                     arena.nil()
                 } else {
                     arena.space()
                 },
                 "}"
-            ]
-                .group()
+            ].group()
         }
-        Expr::Tuple{ ref elems, .. } => {
-            arena.text("(")
-                .append(arena.concat(elems.iter().map(|elem| pretty(elem).append(", "))))
+        Expr::Tuple { ref elems, .. } => {
+            arena
+                .text("(")
+                .append(
+                    arena.concat(
+                        elems
+                            .iter()
+                            .map(|elem| pretty(elem))
+                            .intersperse(arena.text(",").append(arena.space())),
+                    ),
+                )
                 .append(")")
                 .group()
         }
