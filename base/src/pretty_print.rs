@@ -221,7 +221,7 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                         },
                         ","
                     ]
-                })).map(|doc| doc.group().nest(INDENT))),
+                }))).nest(INDENT),
                 if types.is_empty() && exprs.is_empty() {
                     arena.nil()
                 } else {
@@ -229,6 +229,7 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                 },
                 "}"
             ]
+                .group()
         }
         Expr::Tuple{ ref elems, .. } => {
             arena.text("(")
