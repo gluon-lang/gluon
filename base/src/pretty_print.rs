@@ -160,8 +160,6 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                     ].group().nest(INDENT)
                 }).intersperse(arena.newline().append("and "))),
                 arena.newline(),
-                "in",
-                arena.space(),
                 pretty(body)
             ]
         }
@@ -255,8 +253,6 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                     ].group().nest(INDENT)
                 }).intersperse(arena.newline().append("and "))),
                 arena.newline(),
-                "in",
-                arena.space(),
                 pretty(body)
             ]
         }
