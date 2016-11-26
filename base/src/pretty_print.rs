@@ -27,7 +27,7 @@ pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
                     chain![arena;
                         field.0.as_ref(),
                         ",",
-                        arena.newline()
+                        arena.space()
                     ]
                 })),
                 arena.concat(fields.iter().map(|field| {
@@ -38,19 +38,30 @@ pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
                                 " = ",
                                 pretty_pattern(arena, new_name),
                                 ",",
-                                arena.newline()
+                                arena.space()
                             ]
                         }
                         None => {
                             chain![arena;
                                 field.0.as_ref(),
                                 ",",
-                                arena.newline()
+                                arena.space()
                             ]
                         }
                     }
                 })),
                 "}"
+            ]
+        }
+        Pattern::Tuple { ref elems, .. } => {
+            chain![arena;
+                "(",
+                arena.concat(elems
+                    .iter()
+                    .map(|elem| pretty_pattern(arena, elem))
+                    .intersperse(arena.text(",").append(arena.space()))
+                ),
+                ")"
             ]
         }
     }
@@ -119,14 +130,14 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                             ref typ => arena.text(": ").append(pretty_type(arena, typ)),
                         },
                         "=",
-                        arena.newline()
+                        arena.space()
                             .append(pretty(&bind.expr))
                             .group(),
                         arena.newline()
                     ].group().nest(INDENT)
                 })),
                 "in",
-                arena.newline(),
+                arena.space(),
                 pretty(body)
             ]
         }
@@ -150,7 +161,7 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                         "| ",
                         pretty_pattern(arena, &alt.pattern),
                         " ->",
-                        arena.newline(),
+                        arena.space(),
                         pretty(&alt.expr).group().nest(INDENT),
                         arena.newline()
                     ]
@@ -171,7 +182,7 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                     chain![arena;
                         field.name.as_ref(),
                         ",",
-                        arena.newline()
+                        arena.space()
                     ]
                 })),
                 arena.concat(exprs.iter().map(|field| {
@@ -181,22 +192,22 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                             Some(ref expr) => {
                                 chain![arena;
                                     " =",
-                                    arena.newline(),
+                                    arena.space(),
                                     pretty(&expr)
                                 ]
                             },
                             None => arena.nil(),
                         },
                         ",",
-                        arena.newline()
+                        arena.space()
                     ]
                 })),
                 "}"
             ]
         }
-        Expr::Tuple(ref exprs) => {
+        Expr::Tuple{ ref elems, .. } => {
             arena.text("(")
-                .append(arena.concat(exprs.iter().map(|elem| pretty(elem).append(", "))))
+                .append(arena.concat(elems.iter().map(|elem| pretty(elem).append(", "))))
                 .append(")")
                 .group()
         }
@@ -211,14 +222,16 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                             arena.text(arg.id.as_ref()).append(" ")
                         })),
                         "=",
+                        arena.space()
+                            .append(pretty_type(arena, &bind.alias.unresolved_type()))
+                            .group(),
                         arena.newline()
                             .append(pretty_type(arena, &bind.alias.unresolved_type()))
-                            .group()
                     ].group().nest(INDENT)
                 })),
-                arena.newline(),
+                arena.space(),
                 "in",
-                arena.newline(),
+                arena.space(),
                 pretty(body)
             ]
         }
