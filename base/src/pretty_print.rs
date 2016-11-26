@@ -6,6 +6,27 @@ use types::{Type, pretty_print as pretty_type};
 
 const INDENT: usize = 4;
 
+fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
+    match *expr {
+        Expr::Block(..) |
+        Expr::LetBindings(..) |
+        Expr::Match(..) |
+        Expr::TypeBindings(..) => true,
+        _ => false,
+    }
+}
+
+fn hang<'a, Id>(arena: &'a Arena<'a>, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
+    where Id: AsRef<str>,
+{
+    let line = if forced_new_line(&expr.value) {
+        arena.newline()
+    } else {
+        arena.space()
+    };
+    line.append(pretty_expr(arena, &expr.value))
+}
+
 pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
                               pattern: &'a SpannedPattern<Id>)
                               -> DocBuilder<'a, Arena<'a>>
@@ -115,7 +136,7 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                 "\\",
                 arena.concat(lambda.args.iter().map(|arg| arena.text(arg.name.as_ref()).append(" "))),
                 "->",
-                pretty(&lambda.body)
+                hang(arena, &lambda.body)
             ]
         }
         Expr::LetBindings(ref binds, ref body) => {
@@ -135,8 +156,7 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                             ref typ => arena.text(": ").append(pretty_type(arena, typ)),
                         },
                         "=",
-                        arena.space()
-                            .append(pretty(&bind.expr).group())
+                        hang(arena, &bind.expr).nest(INDENT)
                     ].group().nest(INDENT)
                 }).intersperse(arena.newline().append("and "))),
                 arena.newline(),
