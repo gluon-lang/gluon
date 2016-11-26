@@ -211,8 +211,7 @@ where
                         "| ",
                         pretty_pattern(arena, &alt.pattern),
                         " ->",
-                        arena.space(),
-                        pretty(&alt.expr).group().nest(INDENT)
+                        hang(arena, &alt.expr).group().nest(INDENT)
                     ]
                 }).intersperse(arena.newline()))
             ]
