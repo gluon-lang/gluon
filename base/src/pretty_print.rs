@@ -184,7 +184,7 @@ where
                             ref typ => arena.text(": ").append(pretty_type(arena, typ)),
                         },
                         "=",
-                        hang(arena, &bind.expr).nest(INDENT)
+                        hang(arena, &bind.expr)
                     ].group().nest(INDENT)
                 }).intersperse(arena.newline().append("and "))),
                 arena.newline(),
