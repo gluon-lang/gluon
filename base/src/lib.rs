@@ -9,6 +9,7 @@ extern crate pretty;
 extern crate smallvec;
 #[macro_use]
 extern crate collect_mac;
+extern crate itertools;
 
 macro_rules! type_cache {
     ($name: ident ($($args: ident),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {

@@ -938,7 +938,7 @@ fn top<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
     dt(Prec::Top, typ)
 }
 
-pub fn display_type<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
+pub fn display_type<'a, E, I, T>(_: &E, typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
     top(typ)
 }
 

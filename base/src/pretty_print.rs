@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use pretty::{Arena, DocAllocator, DocBuilder};
 
 use ast::{Expr, Literal, Pattern, SpannedExpr, SpannedPattern};
@@ -25,31 +26,35 @@ pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
                 "{",
                 arena.concat(types.iter().map(|field| {
                     chain![arena;
+                        arena.space(),
                         field.0.as_ref(),
-                        ",",
-                        arena.space()
+                        ","
                     ]
-                })),
-                arena.concat(fields.iter().map(|field| {
+                }).chain(fields.iter().map(|field| {
                     match field.1 {
                         Some(ref new_name) => {
                             chain![arena;
+                                arena.space(),
                                 field.0.as_ref(),
                                 " = ",
                                 pretty_pattern(arena, new_name),
-                                ",",
-                                arena.space()
+                                ","
                             ]
                         }
                         None => {
                             chain![arena;
+                                arena.space(),
                                 field.0.as_ref(),
-                                ",",
-                                arena.space()
+                                ","
                             ]
                         }
                     }
-                })),
+                }))),
+                if types.is_empty() && fields.is_empty() {
+                    arena.nil()
+                } else {
+                    arena.space()
+                },
                 "}"
             ]
         }
@@ -83,7 +88,7 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                 .group()
         }
         Expr::Block(ref elems) => {
-            arena.concat(elems.iter().map(|elem| pretty(elem).append(arena.newline())))
+            arena.concat(elems.iter().map(|elem| pretty(elem).group().append(arena.newline())))
         }
         Expr::Ident(ref id) => arena.text(id.name.as_ref()),
         Expr::IfElse(ref body, ref if_true, ref if_false) => {
@@ -131,11 +136,10 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                         },
                         "=",
                         arena.space()
-                            .append(pretty(&bind.expr))
-                            .group(),
-                        arena.newline()
+                            .append(pretty(&bind.expr).group())
                     ].group().nest(INDENT)
-                })),
+                }).intersperse(arena.newline().append("and "))),
+                arena.newline(),
                 "in",
                 arena.space(),
                 pretty(body)
@@ -162,10 +166,9 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                         pretty_pattern(arena, &alt.pattern),
                         " ->",
                         arena.space(),
-                        pretty(&alt.expr).group().nest(INDENT),
-                        arena.newline()
+                        pretty(&alt.expr).group().nest(INDENT)
                     ]
-                }))
+                }).intersperse(arena.newline()))
             ]
         }
         Expr::Projection(ref expr, ref field, _) => {
@@ -180,13 +183,13 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                 "{",
                 arena.concat(types.iter().map(|field| {
                     chain![arena;
+                        arena.space(),
                         field.name.as_ref(),
-                        ",",
-                        arena.space()
+                        ","
                     ]
-                })),
-                arena.concat(exprs.iter().map(|field| {
+                }).chain(exprs.iter().map(|field| {
                     chain![arena;
+                        arena.space(),
                         field.name.as_ref(),
                         match field.value {
                             Some(ref expr) => {
@@ -198,10 +201,14 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                             },
                             None => arena.nil(),
                         },
-                        ",",
-                        arena.space()
+                        ","
                     ]
-                })),
+                })).map(|doc| doc.group().nest(INDENT))),
+                if types.is_empty() && exprs.is_empty() {
+                    arena.nil()
+                } else {
+                    arena.space()
+                },
                 "}"
             ]
         }
@@ -224,12 +231,10 @@ pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuild
                         "=",
                         arena.space()
                             .append(pretty_type(arena, &bind.alias.unresolved_type()))
-                            .group(),
-                        arena.newline()
-                            .append(pretty_type(arena, &bind.alias.unresolved_type()))
+                            .group()
                     ].group().nest(INDENT)
-                })),
-                arena.space(),
+                }).intersperse(arena.newline().append("and "))),
+                arena.newline(),
                 "in",
                 arena.space(),
                 pretty(body)
