@@ -1,10 +1,18 @@
 use itertools::Itertools;
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use ast::{Expr, Literal, Pattern, SpannedExpr, SpannedPattern};
+use ast::{Expr, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern};
 use types::{Type, pretty_print as pretty_type};
 
 const INDENT: usize = 4;
+
+pub fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b>> {
+    if name.starts_with(is_operator_char) {
+        chain![arena; "(", name, ")"]
+    } else {
+        arena.text(name)
+    }
+}
 
 fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
     match *expr {
@@ -44,7 +52,7 @@ where
                 }))
             ]
         }
-        Pattern::Ident(ref id) => arena.text(id.as_ref()),
+        Pattern::Ident(ref id) => ident(arena, id.as_ref()),
         Pattern::Record {
             ref fields,
             ref types,
@@ -131,7 +139,7 @@ where
                     .map(|elem| pretty(elem).group().append(arena.newline())),
             )
         }
-        Expr::Ident(ref id) => arena.text(id.name.as_ref()),
+        Expr::Ident(ref id) => ident(arena, id.name.as_ref()),
         Expr::IfElse(ref body, ref if_true, ref if_false) => {
             chain![arena;
                 "if",

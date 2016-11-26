@@ -8,7 +8,7 @@ use pretty::{DocAllocator, Arena, DocBuilder};
 
 use smallvec::{SmallVec, VecLike};
 
-use ast::{self, IdentEnv, DisplayEnv, is_operator_char};
+use ast::IdentEnv;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use symbol::{Symbol, SymbolRef};
@@ -985,13 +985,7 @@ where
     where
         I: AsRef<str>,
     {
-        fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b>> {
-            if name.starts_with(is_operator_char) {
-                chain![arena; "(", name, ")"]
-            } else {
-                arena.text(name)
-            }
-        }
+        use pretty_print::ident;
 
         fn enclose<'a>(
             p: Prec,
