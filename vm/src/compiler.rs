@@ -13,7 +13,7 @@ use vm::GlobalVmState;
 use source_map::SourceMap;
 use self::Variable::*;
 
-use Result;
+use {Error, Result};
 
 pub type CExpr = SpannedExpr<Symbol>;
 
@@ -440,7 +440,7 @@ impl<'a> Compiler<'a> {
         Ok(function)
     }
 
-    fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) {
+    fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
         match self.find(id, function)
             .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id))) {
             Stack(index) => function.emit(Push(index)),
@@ -453,8 +453,11 @@ impl<'a> Compiler<'a> {
                     args: 0,
                 })
             }
-            Constructor(..) => panic!("Constructor {:?} is not fully applied", id),
+            Constructor(..) => {
+                return Err(Error::Message(format!("Constructor `{}` is not fully applied", id)))
+            }
         }
+        Ok(())
     }
 
     fn compile(&mut self,
@@ -504,7 +507,7 @@ impl<'a> Compiler<'a> {
                     Literal::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
-            Expr::Ident(ref id) => self.load_identifier(&id.name, function),
+            Expr::Ident(ref id) => self.load_identifier(&id.name, function)?,
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 self.compile(&**pred, function, false)?;
                 let jump_index = function.function.instructions.len();
@@ -570,7 +573,7 @@ impl<'a> Compiler<'a> {
                         "#Float<" => FloatLT,
                         "#Float==" => FloatEQ,
                         _ => {
-                            self.load_identifier(&op.name, function);
+                            self.load_identifier(&op.name, function)?;
                             Call(2)
                         }
                     };
@@ -689,7 +692,7 @@ impl<'a> Compiler<'a> {
                 // Create a catch all to prevent us from running into undefined behaviour
                 if !catch_all {
                     let error_fn = self.symbols.symbol("#error");
-                    self.load_identifier(&error_fn, function);
+                    self.load_identifier(&error_fn, function)?;
                     function.emit_string(self.intern("Non-exhaustive pattern")?);
                     function.emit(Call(1));
                     // The stack has been increased by 1 here but it should not affect compiling the
@@ -759,7 +762,7 @@ impl<'a> Compiler<'a> {
                 for field in fields {
                     match field.1 {
                         Some(ref field_expr) => self.compile(field_expr, function, false)?,
-                        None => self.load_identifier(&field.0, function),
+                        None => self.load_identifier(&field.0, function)?,
                     }
                 }
                 let index =

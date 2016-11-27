@@ -718,6 +718,15 @@ pure 123
 }
 
 #[test]
+fn dont_panic_on_partially_applied_constructor() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+
+    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "test", "Some");
+    assert!(result.is_err());
+}
+
+#[test]
 fn stacktrace() {
     use gluon::vm::stack::StacktraceFrame;
     let _ = ::env_logger::init();
@@ -740,17 +749,36 @@ g 10
             let f = stacktrace.frames[1].as_ref().unwrap().name.clone();
             let end = stacktrace.frames[6].as_ref().unwrap().name.clone();
             assert_eq!(stacktrace.frames,
-                       vec![
-                    // Removed due to being a tail call
-                    // Some(StacktraceFrame { name: f.clone(), line: 9 }),
-                    Some(StacktraceFrame { name: g.clone(), line: 7.into() }),
-                    Some(StacktraceFrame { name: f.clone(), line: 6.into() }),
-                    Some(StacktraceFrame { name: g.clone(), line: 7.into() }),
-                    Some(StacktraceFrame { name: f.clone(), line: 6.into() }),
-                    Some(StacktraceFrame { name: g.clone(), line: 7.into() }),
-                    Some(StacktraceFrame { name: f.clone(), line: 4.into() }),
-                    Some(StacktraceFrame { name: end.clone(), line: 1.into() }),
-                ]);
+                       vec![// Removed due to being a tail call
+                            // Some(StacktraceFrame { name: f.clone(), line: 9 }),
+                            Some(StacktraceFrame {
+                                name: g.clone(),
+                                line: 7.into(),
+                            }),
+                            Some(StacktraceFrame {
+                                name: f.clone(),
+                                line: 6.into(),
+                            }),
+                            Some(StacktraceFrame {
+                                name: g.clone(),
+                                line: 7.into(),
+                            }),
+                            Some(StacktraceFrame {
+                                name: f.clone(),
+                                line: 6.into(),
+                            }),
+                            Some(StacktraceFrame {
+                                name: g.clone(),
+                                line: 7.into(),
+                            }),
+                            Some(StacktraceFrame {
+                                name: f.clone(),
+                                line: 4.into(),
+                            }),
+                            Some(StacktraceFrame {
+                                name: end.clone(),
+                                line: 1.into(),
+                            })]);
         }
         Err(err) => panic!("Unexpected error `{}`", err),
         Ok(_) => panic!("Expected an error"),
