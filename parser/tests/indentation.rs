@@ -4,15 +4,12 @@ extern crate log;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
-extern crate combine;
 
 mod support;
 
-use combine::primitives::Error as CombineError;
 use base::ast::*;
-use base::error::Errors;
 use base::pos::{self, BytePos};
-use parser::{Error, parse_string, ParseError, ParseErrors};
+use parser::{Error, parse_string, ParseErrors};
 use support::MockEnv;
 
 fn parse(text: &str) -> Result<SpannedExpr<String>, ParseErrors> {
@@ -65,9 +62,9 @@ let y =
 y
 "#);
 
-    let parse_error = ParseError { errors: vec![CombineError::Unexpected("IntLiteral".into())] };
+    let error = Error::UnexpectedToken("IntLiteral".into());
     let span = pos::span(BytePos::from(32), BytePos::from(32));
-    let errors = Errors::from(vec![pos::spanned(span, Error::Parser(parse_error))]);
+    let errors = ParseErrors::from(vec![pos::spanned(span, error)]);
 
     assert_eq!(result, Err(errors));
 }

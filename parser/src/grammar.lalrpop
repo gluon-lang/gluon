@@ -2,19 +2,18 @@ use base::ast::{Alternative, Array, Expr, Lambda, Literal, Pattern, SpannedExpr,
 use base::kind::Kind;
 use base::pos::{self, BytePos, Spanned};
 use base::types::{Alias, ArcType, BuiltinType, Field, Generic, Type};
-use combine::primitives::Error;
 use std::str::FromStr;
 
 use token::Token;
 
-use {FieldExpr, FieldPattern, MutIdentEnv, ErrorEnv};
+use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
 grammar<'input, 'env, Id>(src: &'input str, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
     where Id: Clone;
 
 extern {
     type Location = BytePos;
-    type Error = Error<String, String>;
+    type Error = Error;
 
     enum Token<'input> {
         "Identifier" => Token::Identifier(<&'input str>),
@@ -306,7 +305,7 @@ AtomicExpr: Expr<Id> = {
         Expr::Projection(Box::new(expr), id, Type::hole()),
 
     <expr: Sp<AtomicExpr>> "." <err: !> => {
-        errors.push(err.error); // Make use of `ErrorRecovery`'s `dropped_tokens` field?
+        errors.push(err.error);
         Expr::Projection(Box::new(expr), env.from_str(""), Type::hole())
     },
 

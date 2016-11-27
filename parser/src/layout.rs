@@ -1,7 +1,15 @@
 use base::pos::{self, BytePos, Column, Line, Location, Spanned};
-use combine::primitives::Error as CombineError;
 
 use token::{SpannedToken, Token};
+
+quick_error! {
+    #[derive(Debug, PartialEq)]
+    pub enum Error {
+        UnindentedTooFar {
+            description("line was unindented too far")
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
 struct Offside {
@@ -63,15 +71,13 @@ impl Contexts {
         self.stack.pop()
     }
 
-    fn push(&mut self, offside: Offside) -> Result<(), CombineError<String, String>> {
+    fn push(&mut self, offside: Offside) -> Result<(), Error> {
         self.check_unindentation_limit(offside)?;
         self.stack.push(offside);
         Ok(())
     }
 
-    fn check_unindentation_limit(&mut self,
-                                 offside: Offside)
-                                 -> Result<(), CombineError<String, String>> {
+    fn check_unindentation_limit(&mut self, offside: Offside) -> Result<(), Error> {
         let mut skip_block = false;
         for other_offside in self.stack.iter().rev() {
             match other_offside.context {
@@ -90,7 +96,7 @@ impl Contexts {
                 _ => continue,
             }
             debug!("Unindentation error: {:?} < {:?}", offside, other_offside);
-            return Err(CombineError::Message("Line was unindented to far".into()));
+            return Err(Error::UnindentedTooFar);
         }
         Ok(())
     }
@@ -136,9 +142,7 @@ impl<'input, Tokens> Layout<'input, Tokens>
         pos::spanned(span, layout_token)
     }
 
-    fn scan_for_next_block(&mut self,
-                           context: Context)
-                           -> Result<(), CombineError<String, String>> {
+    fn scan_for_next_block(&mut self, context: Context) -> Result<(), Error> {
         let next = self.next_token();
         let span = next.span;
         self.unprocessed_tokens.push(next);
@@ -148,7 +152,7 @@ impl<'input, Tokens> Layout<'input, Tokens>
         self.indent_levels.push(Offside::new(span.start, context))
     }
 
-    fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, CombineError<String, String>> {
+    fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, Error> {
         use std::cmp::Ordering;
 
         let mut token = self.next_token();
@@ -393,9 +397,9 @@ impl<'input, Tokens> Layout<'input, Tokens>
 impl<'input, Tokens> Iterator for Layout<'input, Tokens>
     where Tokens: Iterator<Item = SpannedToken<'input>>,
 {
-    type Item = Result<SpannedToken<'input>, CombineError<String, String>>;
+    type Item = Result<SpannedToken<'input>, Error>;
 
-    fn next(&mut self) -> Option<Result<SpannedToken<'input>, CombineError<String, String>>> {
+    fn next(&mut self) -> Option<Result<SpannedToken<'input>, Error>> {
         match self.layout_next_token() {
             Ok(Spanned { value: Token::EOF, .. }) => None,
             token => Some(token),

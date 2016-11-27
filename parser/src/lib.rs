@@ -7,11 +7,7 @@ extern crate log;
 #[macro_use]
 extern crate quick_error;
 extern crate gluon_base as base;
-extern crate combine;
 extern crate lalrpop_util;
-
-use std::error::Error as StdError;
-use std::fmt;
 
 use base::ast::{Expr, IdentEnv, SpannedExpr};
 use base::error::Errors;
@@ -19,10 +15,8 @@ use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
-use combine::primitives::Error as CombineError;
-
 use infix::{OpTable, Reparser};
-use layout::Layout;
+use layout::{Layout, Error as LayoutError};
 use token::{Token, Tokenizer};
 
 mod grammar;
@@ -30,9 +24,7 @@ mod infix;
 mod layout;
 mod token;
 
-type LalrpopError<'input> = lalrpop_util::ParseError<BytePos,
-                                                     Token<'input>,
-                                                     CombineError<String, String>>;
+type LalrpopError<'input> = lalrpop_util::ParseError<BytePos, Token<'input>, Error>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
@@ -66,75 +58,62 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     expr
 }
 
-#[derive(Debug, PartialEq)]
-pub struct ParseError {
-    pub errors: Vec<CombineError<String, String>>,
-}
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        CombineError::fmt_errors(&self.errors, f)
-    }
-}
-
-impl StdError for ParseError {
-    fn description(&self) -> &str {
-        "Parse error"
-    }
-}
-
-fn transform_lalrpop_error(err: LalrpopError) -> Spanned<CombineError<String, String>, BytePos> {
-    use lalrpop_util::ParseError::*;
-
-    match err {
-        InvalidToken { location } => {
-            pos::spanned2(location,
-                          location,
-                          CombineError::Message("Invalid token".into()))
-        }
-        UnrecognizedToken { token: Some((lpos, token, rpos)), .. } => {
-            pos::spanned2(lpos,
-                          rpos,
-                          CombineError::Unexpected(format!("{}", token).into()))
-        }
-        UnrecognizedToken { token: None, .. } => {
-            pos::spanned2(0.into(),
-                          0.into(),
-                          CombineError::Unexpected("Unrecognized token".into()))
-        }
-        ExtraToken { token: (lpos, token, rpos) } => {
-            pos::spanned2(lpos,
-                          rpos,
-                          CombineError::Message(format!("Found an extra token `{}`", token).into()))
-        }
-        User { error } => pos::spanned2(0.into(), 0.into(), error),
-    }
-}
-
 fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
     where Iter: IntoIterator<Item = LalrpopError<'a>>,
 {
     errors.into_iter()
-        .map(|err| {
-            let Spanned { span, value: err } = transform_lalrpop_error(err);
-            let err = ParseError { errors: vec![err] };
-            pos::spanned(span, Error::Parser(err))
-        })
+        .map(Error::from_lalrpop)
         .collect()
 }
 
 quick_error! {
     #[derive(Debug, PartialEq)]
     pub enum Error {
-        Parser(err: ParseError) {
+        Layout(err: LayoutError) {
             description(err.description())
             display("{}", err)
             from()
+        }
+        InvalidToken {
+            description("invalid token")
+            display("Invalid token")
+        }
+        UnexpectedToken(token: String) {
+            description("unexpected token")
+            display("Unexpected token: {}", token)
+        }
+        UnexpectedEof {
+            description("unexpected end of file")
+            display("Undexpected end of file")
+        }
+        ExtraToken(token: String) {
+            description("extra token")
+            display("Extra token: {}", token)
         }
         Infix(err: infix::ReparseError) {
             description(err.description())
             display("{}", err)
             from()
+        }
+    }
+}
+
+impl Error {
+    fn from_lalrpop(err: LalrpopError) -> Spanned<Error, BytePos> {
+        use lalrpop_util::ParseError::*;
+
+        match err {
+            InvalidToken { location } => pos::spanned2(location, location, Error::InvalidToken),
+            UnrecognizedToken { token: Some((lpos, token, rpos)), .. } => {
+                pos::spanned2(lpos, rpos, Error::UnexpectedToken(token.to_string()))
+            }
+            UnrecognizedToken { token: None, .. } => {
+                pos::spanned2(0.into(), 0.into(), Error::UnexpectedEof)
+            }
+            ExtraToken { token: (lpos, token, rpos) } => {
+                pos::spanned2(lpos, rpos, Error::ExtraToken(token.to_string()))
+            }
+            User { error } => pos::spanned2(0.into(), 0.into(), error),
         }
     }
 }
@@ -151,10 +130,8 @@ pub enum FieldExpr<Id> {
 
 // Hack around LALRPOP's limited type syntax
 type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
-type ErrorEnv<'err, 'input> = &'err mut Errors<lalrpop_util::ParseError<BytePos,
-                                                                        Token<'input>,
-                                                                        CombineError<String,
-                                                                                     String>>>;
+type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
+
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 
 pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
@@ -165,11 +142,10 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
     let tokenizer = Tokenizer::new(input).map(|token| token.unwrap()); // FIXME
 
     let layout = Layout::new(tokenizer).map(|token| {
-        token.map(|token| {
-            debug!("Lex {:?}", token.value);
-            let Span { start, end, .. } = token.span;
-            (start.absolute, token.value, end.absolute)
-        })
+        let token = token?;
+        debug!("Lex {:?}", token.value);
+        let Span { start, end, .. } = token.span;
+        Ok((start.absolute, token.value, end.absolute))
     });
 
     let mut parse_errors = Errors::new();

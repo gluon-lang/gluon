@@ -1,7 +1,8 @@
 use base::ast::is_operator_char;
 use base::pos::{self, BytePos, Column, Line, Location, Spanned};
-use std::str::Chars;
+use std::error::Error as StdError;
 use std::fmt;
+use std::str::Chars;
 
 use self::ErrorCode::*;
 
@@ -107,14 +108,40 @@ pub struct Error {
     pub code: ErrorCode,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ErrorCode {
-    EmptyCharLiteral,
-    UnexpectedChar(char),
-    UnexpectedEof,
-    UnexpectedEscapeCode(char),
-    UnterminatedCharLiteral,
-    UnterminatedStringLiteral,
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.description()) // TODO: Improve
+    }
+}
+
+impl StdError for Error {
+    fn description(&self) -> &str {
+        self.code.description()
+    }
+}
+
+quick_error! {
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum ErrorCode {
+        EmptyCharLiteral {
+            description("empty char literal")
+        }
+        UnexpectedChar(ch: char) {
+            description("unexpected character")
+        }
+        UnexpectedEof {
+            description("unexpected end of file")
+        }
+        UnexpectedEscapeCode(ch: char) {
+            description("unexpected escape code")
+        }
+        UnterminatedCharLiteral {
+            description("unterminated character literal")
+        }
+        UnterminatedStringLiteral {
+            description("unterminated string literal")
+        }
+    }
 }
 
 fn error<T>(location: Location, code: ErrorCode) -> Result<T, Error> {
