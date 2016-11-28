@@ -1320,6 +1320,34 @@ macro_rules! record {
     }
 }
 
+/// Creates a pattern which matches on
+/// ```rust
+/// match record!(x => 1, y => "y") {
+///     record_p!(1, "y") => (),
+///     _ => assert!(false),
+/// }
+/// assert_eq!(a, 1);
+/// assert_eq!(b, "y");
+/// ```
+#[macro_export]
+macro_rules! record_p {
+    ($($field: pat),*) => {
+        macro_rules! hlist_p {
+            () => { () };
+            ($field: pat) => {
+                $crate::api::record::HList((_, $field), ())
+            };
+            ($field: pat, $($field_tail: pat),*) => {
+                $crate::api::record::HList((_, $field),
+                                        hlist_p!($($field_tail),*))
+            }
+        }
+        $crate::api::Record {
+            fields: hlist_p!($($field),*)
+        }
+    }
+}
+
 impl<'vm, F: VmType> VmType for Primitive<F> {
     type Type = F::Type;
     fn make_type(vm: &Thread) -> ArcType {
