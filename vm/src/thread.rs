@@ -247,13 +247,7 @@ impl RootedThread {
         let thread = Thread {
             global_state: Arc::new(GlobalVmState::new()),
             parent: None,
-            context: Mutex::new(Context {
-                gc: Gc::new(Generation::default(), usize::MAX),
-                stack: Stack::new(),
-                record_map: FieldMap::new(),
-                hook: None,
-                max_stack_size: VmIndex::max_value(),
-            }),
+            context: Mutex::new(Context::new(Gc::new(Generation::default(), usize::MAX))),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
@@ -293,13 +287,7 @@ impl Thread {
         let vm = Thread {
             global_state: self.global_state.clone(),
             parent: Some(self.root_thread()),
-            context: Mutex::new(Context {
-                gc: self.current_context().gc.new_child_gc(),
-                stack: Stack::new(),
-                record_map: FieldMap::new(),
-                hook: None,
-                max_stack_size: VmIndex::max_value(),
-            }),
+            context: Mutex::new(Context::new(self.current_context().gc.new_child_gc())),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
@@ -655,7 +643,7 @@ impl ThreadInternal for Thread {
         let mut cloner = ::value::Cloner::new(self, &mut context.gc);
         if full_clone {
             cloner.force_full_clone();
-        }
+    }
         cloner.deep_clone(value)
     }
 
@@ -692,16 +680,46 @@ impl ThreadInternal for Thread {
 
 pub type HookFn = Box<FnMut(&Thread) -> Result<()> + Send + Sync>;
 
+bitflags! {
+    pub flags HookFlags: u8 {
+        /// Call the hook when execution moves to a new line
+        const LINE_FLAG = 0b01,
+        /// Call the hook when a function is called
+        const CALL_FLAG = 0b10,
+    }
+}
+
+struct Hook {
+    function: Option<HookFn>,
+    flags: HookFlags,
+    // The index of the last executed instruction
+    previous_instruction_index: usize,
+}
+
 pub struct Context {
     // FIXME It is dangerous to write to gc and stack
     pub stack: Stack,
     pub gc: Gc,
     record_map: FieldMap,
-    hook: Option<HookFn>,
+    hook: Hook,
     max_stack_size: VmIndex,
 }
 
 impl Context {
+    fn new(gc: Gc) -> Context {
+        Context {
+            gc: gc,
+            stack: Stack::new(),
+            record_map: FieldMap::new(),
+            hook: Hook {
+                function: None,
+                flags: HookFlags::empty(),
+                previous_instruction_index: usize::max_value(),
+            },
+            max_stack_size: VmIndex::max_value(),
+        }
+    }
+
     pub fn new_data(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
         self.alloc_with(thread,
                         Def {
@@ -726,7 +744,11 @@ impl Context {
     }
 
     pub fn set_hook(&mut self, hook: Option<HookFn>) -> Option<HookFn> {
-        mem::replace(&mut self.hook, hook)
+        mem::replace(&mut self.hook.function, hook)
+    }
+
+    pub fn set_flags(&mut self, flags: HookFlags) {
+        self.hook.flags = flags;
     }
 
     pub fn set_max_stack_size(&mut self, limit: VmIndex) {
@@ -788,18 +810,23 @@ impl<'b> OwnedContext<'b> {
             debug!("STACK\n{:?}", context.stack.get_frames());
             let state = context.borrow_mut().stack.frame.state;
 
-            // Before entering a function (or reentering one after returning from
-            // another function) run the hook which may interuppt the execution by
-            // returning an error
-
-            match state {
-                State::Extern(_) |
-                State::Closure(_) => {
-                    if let Some(ref mut hook) = context.hook {
+            let instruction_index = context.borrow_mut().stack.frame.instruction_index;
+            if context.hook.flags.bits() != 0 {
+                if instruction_index == 0 {
+                    // Entering the function for the first time, set previous_instruction_index to max
+                    // to have the hook run on the first instruction
+                    context.hook.previous_instruction_index = usize::max_value();
+                } else {
+                    // Reentering the function after returning from a call
+                    context.hook.previous_instruction_index = instruction_index - 1;
+                }
+            }
+            if instruction_index == 0 {
+                if context.hook.flags.contains(CALL_FLAG) {
+                    if let Some(ref mut hook) = context.hook.function {
                         hook(context.thread)?
                     }
                 }
-                _ => (),
             }
 
             maybe_context = match state {
@@ -913,6 +940,7 @@ impl<'b> OwnedContext<'b> {
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
             record_map: &mut context.record_map,
+            hook: &mut context.hook,
         }
     }
 }
@@ -922,6 +950,7 @@ struct ExecuteContext<'b> {
     stack: StackFrame<'b>,
     gc: &'b mut Gc,
     record_map: &'b mut FieldMap,
+    hook: &'b mut Hook,
 }
 
 impl<'b> ExecuteContext<'b> {
@@ -1048,6 +1077,18 @@ impl<'b> ExecuteContext<'b> {
         }
         while let Some(&instr) = instructions.get(index) {
             debug_instruction(&self.stack, index, instr, function);
+
+            if self.hook.flags.contains(LINE_FLAG) {
+                if let Some(ref mut hook) = self.hook.function {
+                    let current_line = function.source_map.line(index);
+                    let previous_line = function.source_map
+                        .line(self.hook.previous_instruction_index);
+                    if current_line != previous_line {
+                        hook(self.thread)?
+                    }
+                }
+            }
+
             match instr {
                 Push(i) => {
                     let v = self.stack[i].clone();
