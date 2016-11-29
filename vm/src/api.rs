@@ -1259,9 +1259,18 @@ pub mod record {
     }
 }
 
+/// Declares fields useable by the record macros
+///
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// # fn main() { }
+///
+/// field_decl! {x, y}
+/// ```
 #[macro_export]
-macro_rules! types {
-    ($($field: ident),*) => {
+macro_rules! field_decl {
+    (impl $($field: ident),*) => {
         $(
         #[allow(non_camel_case_types)]
         #[derive(Default)]
@@ -1272,34 +1281,39 @@ macro_rules! types {
             }
         }
         )*
-    }
-}
-
-#[macro_export]
-macro_rules! hlist {
-    () => { () };
-    ($field: ident => $value: expr) => {
-        $crate::api::record::HList((_field::$field, $value), ())
     };
-    ($field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
-        $crate::api::record::HList((_field::$field, $value),
-                                   hlist!($($field_tail => $value_tail),*))
-    }
-}
-
-#[macro_export]
-macro_rules! field_decl {
     ($($field: ident),*) => {
-        mod _field { types!($($field),*); }
+        mod _field { field_decl!(impl $($field),*); }
     }
 }
 
+/// Macro that creates a record that can be passed to gluon. Reused already declared fields
+/// instead of generating unique ones.
+///
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+///
+/// field_decl! {x, y, name}
+///
+/// fn main() {
+///     record_no_decl!(x => 1, y => 2, name => "Gluon");
+/// }
+/// ```
 #[macro_export]
 macro_rules! record_no_decl {
+    (impl) => { () };
+    (impl $field: ident => $value: expr) => {
+        $crate::api::record::HList((_field::$field, $value), ())
+    };
+    (impl $field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
+        $crate::api::record::HList((_field::$field, $value),
+                                   record_no_decl!(impl $($field_tail => $value_tail),*))
+    };
     ($($field: ident => $value: expr),*) => {
         {
             $crate::api::Record {
-                fields: hlist!($($field => $value),*)
+                fields: record_no_decl!(impl $($field => $value),*)
             }
         }
     }
@@ -1307,8 +1321,12 @@ macro_rules! record_no_decl {
 
 /// Macro that creates a record that can be passed to gluon
 ///
-/// ```rust,ignore
-/// record!(x => 1, y => 2, name => "Gluon")
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// fn main() {
+///     record!(x => 1, y => 2, name => "Gluon");
+/// }
 /// ```
 #[macro_export]
 macro_rules! record {
@@ -1321,10 +1339,14 @@ macro_rules! record {
 }
 
 /// Creates a pattern which matches on
+///
 /// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// # fn main() { }
 /// // Fields used in `record_type!` needs to be forward declared
 /// field_decl! {x, y}
-/// fn new_vec(x: f64, y: f64) -> record_type!(x => f64, y f64) {
+/// fn new_vec(x: f64, y: f64) -> record_type!(x => f64, y => f64) {
 ///     record_no_decl!(x => y, y => y)
 /// }
 /// ```
@@ -1345,30 +1367,31 @@ macro_rules! record_type {
     }
 }
 
-/// Creates a pattern which matches on
+/// Creates a pattern which matches on marshalled gluon records
+///
 /// ```rust
-/// match record!(x => 1, y => "y") {
-///     record_p!(1, "y") => (),
-///     _ => assert!(false),
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// fn main() {
+///     match record!(x => 1, y => "y") {
+///         record_p!(a, "y") => assert_eq!(a, 1),
+///         _ => assert!(false),
+///     }
 /// }
-/// assert_eq!(a, 1);
-/// assert_eq!(b, "y");
 /// ```
 #[macro_export]
 macro_rules! record_p {
+    (impl) => { () };
+    (impl $field: pat) => {
+        $crate::api::record::HList((_, $field), ())
+    };
+    (impl $field: pat, $($field_tail: pat),*) => {
+        $crate::api::record::HList((_, $field),
+                                record_p!(impl $($field_tail),*))
+    };
     ($($field: pat),*) => {
-        macro_rules! hlist_p {
-            () => { () };
-            ($field: pat) => {
-                $crate::api::record::HList((_, $field), ())
-            };
-            ($field: pat, $($field_tail: pat),*) => {
-                $crate::api::record::HList((_, $field),
-                                        hlist_p!($($field_tail),*))
-            }
-        }
         $crate::api::Record {
-            fields: hlist_p!($($field),*)
+            fields: record_p!(impl $($field),*)
         }
     }
 }
