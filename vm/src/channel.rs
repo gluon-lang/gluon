@@ -6,7 +6,6 @@ use std::collections::VecDeque;
 use base::types::{ArcType, Type};
 
 use {Error, Result as VmResult};
-use api::record::{Record, HList};
 use api::{Generic, VmType, primitive, WithVM, Function, Pushable, RuntimeResult};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
@@ -98,7 +97,7 @@ impl<T: VmType> VmType for Receiver<T>
 field_decl!{ sender, receiver }
 
 
-pub type ChannelRecord<S, R> = Record<HList<(_field::sender, S), HList<(_field::receiver, R), ()>>>;
+pub type ChannelRecord<S, R> = record_type!(sender => S, receiver => R);
 
 /// FIXME The dummy `a` argument should not be needed to ensure that the channel can only be used
 /// with a single type

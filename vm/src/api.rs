@@ -1322,6 +1322,31 @@ macro_rules! record {
 
 /// Creates a pattern which matches on
 /// ```rust
+/// // Fields used in `record_type!` needs to be forward declared
+/// field_decl! {x, y}
+/// fn new_vec(x: f64, y: f64) -> record_type!(x => f64, y f64) {
+///     record_no_decl!(x => y, y => y)
+/// }
+/// ```
+#[macro_export]
+macro_rules! record_type {
+    (impl) => { () };
+    (impl $field: ident => $value: ty) => {
+        $crate::api::record::HList<(_field::$field, $value), ()>
+    };
+    (impl $field: ident => $value: ty, $($field_tail: ident => $value_tail: ty),*) => {
+        $crate::api::record::HList<(_field::$field, $value),
+                                record_type!(impl $($field_tail => $value_tail),*)>
+    };
+    ($($field: ident => $value: ty),*) => {
+        $crate::api::Record<
+            record_type!(impl $($field => $value),*)
+            >
+    }
+}
+
+/// Creates a pattern which matches on
+/// ```rust
 /// match record!(x => 1, y => "y") {
 ///     record_p!(1, "y") => (),
 ///     _ => assert!(false),
