@@ -485,7 +485,6 @@ impl Repr {
     }
 }
 
-#[macro_export]
 macro_rules! on_array {
     ($array: expr, $f: expr) => {
         {
