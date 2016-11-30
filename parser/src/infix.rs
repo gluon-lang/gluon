@@ -5,9 +5,9 @@
 use base::ast::{Expr, IdentEnv, Literal, MutVisitor, SpannedExpr, SpannedIdent, walk_mut_expr};
 use base::error::Errors;
 use base::fnv::FnvMap;
-use base::pos::{BytePos, spanned2};
+use base::pos::{self, BytePos, Spanned};
 use std::cmp::Ordering;
-use std::error::Error;
+use std::error::Error as StdError;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
@@ -129,7 +129,7 @@ impl<'a> Index<&'a str> for OpTable {
 pub struct Reparser<'s, Id: 's> {
     operators: OpTable,
     symbols: &'s IdentEnv<Ident = Id>,
-    errors: Errors<ReparseError>,
+    errors: Errors<Spanned<Error, BytePos>>,
     _marker: PhantomData<Id>,
 }
 
@@ -143,7 +143,9 @@ impl<'s, Id> Reparser<'s, Id> {
         }
     }
 
-    pub fn reparse(&mut self, expr: &mut SpannedExpr<Id>) -> Result<(), Errors<ReparseError>> {
+    pub fn reparse(&mut self,
+                   expr: &mut SpannedExpr<Id>)
+                   -> Result<(), Errors<Spanned<Error, BytePos>>> {
         self.visit_expr(expr);
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
@@ -158,9 +160,9 @@ impl<'s, Id> MutVisitor for Reparser<'s, Id> {
 
     fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
         if let Expr::Infix(..) = e.value {
-            let dummy = spanned2(BytePos::from(0),
-                                 BytePos::from(0),
-                                 Expr::Literal(Literal::Int(0)));
+            let dummy = pos::spanned2(BytePos::from(0),
+                                      BytePos::from(0),
+                                      Expr::Literal(Literal::Int(0)));
             let expr = mem::replace(e, dummy);
             match reparse(expr, self.symbols, &self.operators) {
                 Ok(expr) => {
@@ -174,13 +176,13 @@ impl<'s, Id> MutVisitor for Reparser<'s, Id> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ReparseError {
+pub enum Error {
     ConflictingFixities((String, OpMeta), (String, OpMeta)),
 }
 
-impl fmt::Display for ReparseError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::ReparseError::*;
+        use self::Error::*;
 
         match *self {
             ConflictingFixities((ref lhs_name, lhs_meta), (ref rhs_name, rhs_meta)) => {
@@ -196,7 +198,7 @@ impl fmt::Display for ReparseError {
     }
 }
 
-impl Error for ReparseError {
+impl StdError for Error {
     fn description(&self) -> &str {
         "Conflicting fixities at the same precedence level"
     }
@@ -211,9 +213,9 @@ impl Error for ReparseError {
 pub fn reparse<Id>(expr: SpannedExpr<Id>,
                    symbols: &IdentEnv<Ident = Id>,
                    operators: &OpTable)
-                   -> Result<SpannedExpr<Id>, ReparseError> {
+                   -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>> {
     use base::pos;
-    use self::ReparseError::*;
+    use self::Error::*;
 
     let make_op = |lhs: Box<SpannedExpr<Id>>, op, rhs: Box<SpannedExpr<Id>>| {
         let span = pos::span(lhs.span.start, rhs.span.end);
@@ -274,10 +276,11 @@ pub fn reparse<Id>(expr: SpannedExpr<Id>,
                                 let next_op_name = symbols.string(&next_op.value.name).to_string();
                                 let stack_op_name = symbols.string(&stack_op.value.name)
                                     .to_string();
+                                let span = pos::span(stack_op.span.start, next_op.span.end);
+                                let error = ConflictingFixities((stack_op_name, stack_op_meta),
+                                                                (next_op_name, next_op_meta));
 
-                                // TODO: Return a spanned error
-                                return Err(ConflictingFixities((stack_op_name, stack_op_meta),
-                                                               (next_op_name, next_op_meta)));
+                                return Err(pos::spanned(span, error));
                             }
                         }
                     }
@@ -373,7 +376,7 @@ mod tests {
     use std::marker::PhantomData;
 
     use super::{Fixity, Infixes, InfixToken, OpMeta, OpTable, reparse};
-    use super::ReparseError::*;
+    use super::Error::*;
 
     pub struct MockEnv<T>(PhantomData<T>);
 
@@ -539,8 +542,9 @@ mod tests {
 
         // 1 |> (2 <| 8)
         let expr = *op(int(1), "|>", op(int(2), "<|", int(8)));
-        let expected = Err(ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)),
-                                               ("<|".to_string(), OpMeta::new(5, Fixity::Right))));
+        let error = ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)),
+                                        ("<|".to_string(), OpMeta::new(5, Fixity::Right)));
+        let expected = Err(no_loc(error));
 
         assert_eq!(reparse(expr, &env, &ops), expected);
     }
@@ -555,8 +559,9 @@ mod tests {
 
         // 1 + (1 |> (2 <| 8))
         let expr = *op(int(1), "+", op(int(1), "|>", op(int(2), "<|", int(8))));
-        let expected = Err(ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)),
-                                               ("<|".to_string(), OpMeta::new(5, Fixity::Right))));
+        let error = ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)),
+                                        ("<|".to_string(), OpMeta::new(5, Fixity::Right)));
+        let expected = Err(no_loc(error));
 
         assert_eq!(reparse(expr, &env, &ops), expected);
     }

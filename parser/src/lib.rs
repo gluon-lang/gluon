@@ -15,7 +15,7 @@ use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
-use infix::{OpTable, Reparser};
+use infix::{OpTable, Reparser, Error as InfixError};
 use layout::{Layout, Error as LayoutError};
 use token::{Token, Tokenizer};
 
@@ -90,7 +90,7 @@ quick_error! {
             description("extra token")
             display("Extra token: {}", token)
         }
-        Infix(err: infix::ReparseError) {
+        Infix(err: InfixError) {
             description(err.description())
             display("{}", err)
             from()
@@ -155,11 +155,9 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
             let mut errors = transform_errors(parse_errors);
             let mut reparser = Reparser::new(OpTable::default(), symbols);
             if let Err(reparse_errors) = reparser.reparse(&mut expr) {
-                errors.extend(reparse_errors.into_iter()
-                        .map(|err| {
-                            pos::spanned2(BytePos::from(0), BytePos::from(0), Error::Infix(err))
-                        }));
+                errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
             }
+
             if errors.has_errors() {
                 Err((Some(expr), errors))
             } else {
