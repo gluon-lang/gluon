@@ -6,6 +6,6 @@ let { (+), (-), (*) } = prelude.num_Int
 
 let l = lazy (\_ -> 123 + 57)
 
-assert_ieq (force (lazy \_ -> 2)) 2
+assert_ieq (force (lazy (\_ -> 2))) 2
     *> pure ()
     *> assert_ieq 180 (force l)

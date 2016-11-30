@@ -526,7 +526,7 @@ impl<'a> Compiler<'a> {
                     Jump(function.function.instructions.len() as VmIndex);
             }
             Expr::Infix(ref lhs, ref op, ref rhs) => {
-                if op.name.as_ref() == "&&" {
+                if op.value.name.as_ref() == "&&" {
                     self.compile(&**lhs, function, false)?;
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(lhs_end as VmIndex + 3));//Jump to rhs evaluation
@@ -539,7 +539,7 @@ impl<'a> Compiler<'a> {
                     // replace jump instruction
                     function.function.instructions[lhs_end + 2] =
                         Jump(function.function.instructions.len() as VmIndex);
-                } else if op.name.as_ref() == "||" {
+                } else if op.value.name.as_ref() == "||" {
                     self.compile(&**lhs, function, false)?;
                     let lhs_end = function.function.instructions.len();
                     function.emit(CJump(0));
@@ -553,7 +553,7 @@ impl<'a> Compiler<'a> {
                     let end = function.function.instructions.len();
                     function.function.instructions[end - 2] = Jump(end as VmIndex);
                 } else {
-                    let instr = match self.symbols.string(&op.name) {
+                    let instr = match self.symbols.string(&op.value.name) {
                         "#Int+" => AddInt,
                         "#Int-" => SubtractInt,
                         "#Int*" => MultiplyInt,
@@ -573,7 +573,7 @@ impl<'a> Compiler<'a> {
                         "#Float<" => FloatLT,
                         "#Float==" => FloatEQ,
                         _ => {
-                            self.load_identifier(&op.name, function)?;
+                            self.load_identifier(&op.value.name, function)?;
                             Call(2)
                         }
                     };
@@ -782,12 +782,12 @@ impl<'a> Compiler<'a> {
                 });
             }
             Expr::Block(ref exprs) => {
-                let (last, exprs) = exprs.split_last().expect("Expr in block");
-                for expr in exprs {
+                let (last, inits) = exprs.split_last().expect("Expr in block");
+                for expr in inits {
                     self.compile(expr, function, false)?;
                 }
                 self.compile(last, function, tail_position)?;
-                function.emit(Slide(exprs.len() as u32 - 1));
+                function.emit(Slide(inits.len() as u32));
             }
         }
         Ok(None)

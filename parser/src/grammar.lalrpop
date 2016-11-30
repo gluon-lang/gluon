@@ -1,0 +1,426 @@
+use base::ast::{Alternative, Array, Expr, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
+use base::kind::Kind;
+use base::pos::{self, BytePos, Spanned};
+use base::types::{Alias, ArcType, BuiltinType, Field, Generic, Type};
+use std::str::FromStr;
+
+use token::Token;
+
+use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
+
+grammar<'input, 'env, Id>(src: &'input str, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
+    where Id: Clone;
+
+extern {
+    type Location = BytePos;
+    type Error = Error;
+
+    enum Token<'input> {
+        "Identifier" => Token::Identifier(<&'input str>),
+        "Operator" => Token::Operator(<&'input str>),
+        "StringLiteral" => Token::StringLiteral(<String>),
+        "CharLiteral" => Token::CharLiteral(<char>),
+        "IntLiteral" => Token::IntLiteral(<i64>),
+        "ByteLiteral" => Token::ByteLiteral(<u8>),
+        "FloatLiteral" => Token::FloatLiteral(<f64>),
+        "DocComment" => Token::DocComment(<String>),
+
+        "and" => Token::And,
+        "else" => Token::Else,
+        "if" => Token::If,
+        "in" => Token::In,
+        "let" => Token::Let,
+        "match" => Token::Match,
+        "then" => Token::Then,
+        "type" => Token::Type,
+        "with" => Token::With,
+
+        ":" => Token::Colon,
+        "," => Token::Comma,
+        "." => Token::Dot,
+        "=" => Token::Equals,
+        "\\" => Token::Lambda,
+        "|" => Token::Pipe,
+        "->" => Token::RArrow,
+
+        "{" => Token::LBrace,
+        "[" => Token::LBracket,
+        "(" => Token::LParen,
+
+        "}" => Token::RBrace,
+        "]" => Token::RBracket,
+        ")" => Token::RParen,
+
+        "OpenBlock" => Token::OpenBlock,
+        "CloseBlock" => Token::CloseBlock,
+        "Semi" => Token::Semi,
+    }
+}
+
+// Utils
+
+Comma<Rule>: Vec<Rule> =
+    <rules: (<Rule> ",")*> <last: Rule?> => {
+        let mut rules = rules;
+        rules.extend(last);
+        rules
+    };
+
+Sp<Rule>: Spanned<Rule, BytePos> =
+    <l: @L> <rule: Rule> <r: @R> =>
+        pos::spanned2(l, r, rule);
+
+IdentStr: &'input str = {
+    "Identifier" => <>,
+    "(" <"Operator"> ")" => <>,
+};
+
+Ident: Id =
+    IdentStr => env.from_str(<>);
+
+Operator: TypedIdent<Id> =
+    "Operator" => TypedIdent::new(env.from_str(<>));
+
+DocComment: String =
+    "DocComment"+ => <>.join("\n");
+
+// Types
+
+RecordField: Field<Id> =
+    <Ident> ":" <Type> => Field::new(<>);
+
+VariantField: (Id, Vec<ArcType<Id>>) =
+    "|" <Ident> <AtomicType*> => (<>);
+
+TypeBinding: TypeBinding<Id> = {
+    <id: Ident> <params: Ident*> "=" <row: VariantField+> => {
+        let params: Vec<_> = params.into_iter()
+            .map(|id| Generic { kind: Kind::variable(0), id: id })
+            .collect();
+
+        let typ_args = params.iter().cloned().map(Type::generic).collect();
+        let typ: ArcType<Id> = Type::app(Type::ident(id.clone()), typ_args);
+
+        let row = row.into_iter()
+            .map(|(id, params)| Field::new(id, Type::function(params, typ.clone())))
+            .collect();
+
+        TypeBinding {
+            comment: None,
+            name: id.clone(),
+            alias: Alias::new(id, params, Type::variant(row)),
+        }
+    },
+
+    <id: Ident> <params: Ident*> "=" <body: Type> => {
+        let params = params.into_iter()
+            .map(|id| Generic { kind: Kind::variable(0), id: id })
+            .collect();
+
+        TypeBinding {
+            comment: None,
+            name: id.clone(),
+            alias: Alias::new(id, params, body),
+        }
+    },
+};
+
+AtomicType: ArcType<Id> = {
+    "(" "->" ")" =>
+        Type::builtin(BuiltinType::Function),
+
+    IdentStr =>
+        match BuiltinType::from_str(<>) {
+            Ok(ty) => Type::builtin(ty),
+            Err(_) if (<>).starts_with(char::is_uppercase) => {
+                Type::ident(env.from_str(<>))
+            }
+            Err(_) => {
+                Type::generic(Generic {
+                    kind: Kind::variable(0),
+                    id: env.from_str(<>),
+                })
+            }
+        },
+
+    "(" <elems: Comma<Type>> ")" =>
+        match elems.len() {
+            // Unit type
+            0 => Type::unit(),
+            // Parenthesized type
+            1 => elems.into_iter().next().unwrap(),
+            // TODO: Tuples
+            _ => unimplemented!(),
+        },
+
+    "{" <row: Comma<RecordField>> "}" =>
+        Type::record(vec![], row),
+};
+
+AppType = {
+    AtomicType,
+
+    <ty: AtomicType> <args: AtomicType+> =>
+        Type::app(ty, args.into_iter().collect()),
+};
+
+Type = {
+    AppType,
+
+    <lhs: AppType> "->" <rhs: Type> =>
+        Type::function(vec![lhs], rhs),
+};
+
+// Patterns
+
+FieldPattern : FieldPattern<Id> = {
+    <id: Ident> "=" <body: Ident> =>
+        FieldPattern::Value(id, Some(body)),
+
+    <IdentStr> => {
+        let id = env.from_str(<>);
+        if <>.starts_with(char::is_uppercase) {
+            FieldPattern::Type(id, None)
+        } else {
+            FieldPattern::Value(id, None)
+        }
+    },
+};
+
+AtomicPattern: Pattern<Id> = {
+    <id: Ident> =>
+        if env.string(&id).starts_with(char::is_uppercase) {
+            Pattern::Constructor(TypedIdent::new(id), Vec::new())
+        } else {
+            Pattern::Ident(TypedIdent::new(id))
+        },
+
+    "(" <elems: Comma<Pattern>> ")" =>
+        match elems.len() {
+            // Unit pattern
+            0 => unimplemented!(),
+            // Parenthesized pattern
+            1 => elems.into_iter().next().unwrap(),
+            // TODO: Tuples
+            _ => unimplemented!(),
+        },
+
+    "{" <fields: Comma<FieldPattern>> "}" => {
+        let mut types = Vec::new();
+        let mut values = Vec::new();
+
+        for field in fields {
+            match field {
+                FieldPattern::Type(id, typ) => types.push((id, typ)),
+                FieldPattern::Value(id, field) => values.push((id, field)),
+            }
+        }
+
+        Pattern::Record {
+            typ: Type::hole(),
+            types: types,
+            fields: values,
+        }
+    },
+};
+
+Pattern = {
+    AtomicPattern,
+
+    <id: Ident> <args: Ident+> => {
+        let id = TypedIdent::new(id);
+        let args = args.into_iter()
+                       .map(TypedIdent::new)
+                       .collect();
+
+        Pattern::Constructor(id, args)
+    },
+};
+
+// Expressions
+
+Literal: Literal = {
+    "StringLiteral" => Literal::String(<>),
+    "CharLiteral" => Literal::Char(<>),
+    "IntLiteral" => Literal::Int(<>),
+    "ByteLiteral" => Literal::Byte(<>),
+    "FloatLiteral" => Literal::Float(<>),
+};
+
+Alternative: Alternative<Id> =
+    "|" <pat: Sp<Pattern>> "->" <expr: Sp<BlockExpr>> => {
+        Alternative {
+            pattern: pat,
+            expr: super::shrink_hidden_spans(expr),
+        }
+    };
+
+FieldExpr: FieldExpr<Id> = {
+    <id: Ident> "=" <body: SpExpr> => {
+        FieldExpr::Value(id, Some(body))
+    },
+
+    <IdentStr> => {
+        let id = env.from_str(<>);
+        if <>.starts_with(char::is_uppercase) {
+            FieldExpr::Type(id, None)
+        } else {
+            FieldExpr::Value(id, None)
+        }
+    },
+};
+
+ValueBinding: ValueBinding<Id> = {
+    <comment: DocComment?> <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+        ValueBinding {
+            comment: comment,
+            name: name,
+            typ: typ.unwrap_or_else(Type::hole),
+            args: vec![],
+            expr: body,
+        },
+
+    <comment: DocComment?> <name: Sp<Ident>> <args: Ident+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+        ValueBinding {
+            comment: comment,
+            name: name.map(TypedIdent::new).map(Pattern::Ident),
+            typ: typ.unwrap_or_else(Type::hole),
+            args: args.into_iter().map(TypedIdent::new).collect(),
+            expr: body,
+        },
+};
+
+AtomicExpr: Expr<Id> = {
+    <id: Ident> =>
+        Expr::Ident(TypedIdent::new(id)),
+
+    <lit: Literal> =>
+        Expr::Literal(lit),
+
+    // TODO: Getters
+    // "(" "." <id: Ident> ")" =>
+    //     Expr::Getter(id),
+
+    <expr: Sp<AtomicExpr>> "." <id: Ident> =>
+        Expr::Projection(Box::new(expr), id, Type::hole()),
+
+    <expr: Sp<AtomicExpr>> "." <err: !> => {
+        errors.push(err.error);
+        Expr::Projection(Box::new(expr), env.from_str(""), Type::hole())
+    },
+
+    "(" <elems: Comma<SpExpr>> ")" =>
+        match elems.len() {
+            // Unit expression
+            0 => Expr::Tuple(vec![]),
+            // Parenthesized expression - wrap in a block to ensure
+            // that it survives operator reparsing
+            1 => Expr::Block(elems),
+            // TODO: Tuples
+            _ => unimplemented!(),
+        },
+
+    "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
+            typ: Type::hole(),
+            exprs: elems,
+        }),
+
+    "{" <fields: Comma<FieldExpr>> "}" => {
+        let mut types = Vec::new();
+        let mut values = Vec::new();
+
+        for field in fields {
+            match field {
+                FieldExpr::Type(id, typ) => types.push((id, typ)),
+                FieldExpr::Value(id, expr) => values.push((id, expr)),
+            }
+        }
+
+        Expr::Record {
+            typ: Type::hole(),
+            types: types,
+            exprs: values,
+        }
+    },
+};
+
+AppExpr = {
+    AtomicExpr,
+
+    <expr: Sp<AtomicExpr>> <args: Sp<AtomicExpr>+> =>
+        Expr::App(Box::new(expr), args),
+};
+
+InfixExpr = {
+    AppExpr,
+
+    "\\" <args: Ident+> "->" <body: SpExpr> =>
+        Expr::Lambda(Lambda {
+            id: TypedIdent::new(env.from_str("")),
+            args: args.into_iter().map(TypedIdent::new).collect(),
+            body: Box::new(body),
+        }),
+
+    <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
+        Expr::Infix(Box::new(lhs), op, Box::new(rhs)),
+};
+
+AndValueBinding: ValueBinding<Id> =
+    <comment: DocComment?> "and" <binding: ValueBinding> => {
+        let mut binding = binding;
+        binding.comment = comment;
+        binding
+    };
+
+AndTypeBinding: TypeBinding<Id> =
+    <comment: DocComment?> "and" <binding: TypeBinding> => {
+        let mut binding = binding;
+        binding.comment = comment;
+        binding
+    };
+
+Expr: Expr<Id> = {
+    InfixExpr,
+
+    "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
+        Expr::IfElse(Box::new(pred), Box::new(if_true), Box::new(if_false)),
+
+    "match" <input: SpExpr> "with" <arms: Alternative+> =>
+        Expr::Match(Box::new(input), arms),
+
+    <comment: DocComment?> "let" <first: ValueBinding> <bindings: AndValueBinding*> "in" <body: SpExpr> => {
+        let mut first = first;
+        let mut bindings = bindings;
+        first.comment = comment;
+        bindings.insert(0, first);
+
+        Expr::LetBindings(bindings, Box::new(body))
+    },
+
+    <comment: DocComment?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> "in" <body: SpExpr> => {
+        let mut first = first;
+        let mut bindings = bindings;
+        first.comment = comment;
+        bindings.insert(0, first);
+
+        Expr::TypeBindings(bindings, Box::new(body))
+    },
+
+    BlockExpr,
+};
+
+BlockExpr: Expr<Id> = {
+    "OpenBlock" <exprs: (<SpExpr> "Semi")*> <last: SpExpr> "CloseBlock" => {
+        let mut exprs = exprs;
+        exprs.push(last);
+        Expr::Block(exprs)
+    },
+};
+
+SpExpr: SpannedExpr<Id> = {
+    <expr: Sp<Expr>> => super::shrink_hidden_spans(expr),
+};
+
+pub TopExpr: SpannedExpr<Id> = {
+    <expr: SpExpr> => expr,
+};

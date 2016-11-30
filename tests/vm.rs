@@ -368,7 +368,7 @@ in y
 
 test_expr!{ let_not_in_tail_position,
 r#"
-1 #Int+ let x = 2 in x
+1 #Int+ (let x = 2 in x)
 "#,
 3i32
 }

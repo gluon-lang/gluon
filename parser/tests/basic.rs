@@ -6,162 +6,13 @@ extern crate log;
 #[macro_use]
 extern crate collect_mac;
 
+#[macro_use]
 mod support;
 
 use base::ast::*;
-use base::kind::Kind;
-use base::pos::{self, BytePos, Span, Spanned};
-use base::types::{Alias, ArcType, Field, Generic, Type};
-use parser::{parse_string, Error};
-use support::MockEnv;
-
-pub fn intern(s: &str) -> String {
-    String::from(s)
-}
-
-type SpExpr = SpannedExpr<String>;
-
-fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
-    pos::spanned(Span::default(), value)
-}
-
-fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
-    no_loc(Expr::Infix(Box::new(l), TypedIdent::new(intern(s)), Box::new(r)))
-}
-
-fn int(i: i64) -> SpExpr {
-    no_loc(Expr::Literal(Literal::Int(i)))
-}
-
-fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
-    let_a(s, &[], e, b)
-}
-
-fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
-    no_loc(Expr::LetBindings(vec![ValueBinding {
-                                      comment: None,
-                                      name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
-                                      typ: Type::hole(),
-                                      args: args.iter()
-                                          .map(|i| TypedIdent::new(intern(i)))
-                                          .collect(),
-                                      expr: e,
-                                  }],
-                             Box::new(b)))
-}
-
-fn id(s: &str) -> SpExpr {
-    no_loc(Expr::Ident(TypedIdent::new(intern(s))))
-}
-
-fn field(s: &str, typ: ArcType<String>) -> Field<String> {
-    Field {
-        name: intern(s),
-        typ: typ,
-    }
-}
-
-fn typ(s: &str) -> ArcType<String> {
-    assert!(s.len() != 0);
-    match s.parse() {
-        Ok(b) => Type::builtin(b),
-        Err(()) if s.starts_with(char::is_lowercase) => generic_ty(s),
-        Err(()) => Type::ident(intern(s)),
-    }
-}
-
-fn generic_ty(s: &str) -> ArcType<String> {
-    Type::generic(generic(s))
-}
-
-fn generic(s: &str) -> Generic<String> {
-    Generic {
-        kind: Kind::variable(0),
-        id: intern(s),
-    }
-}
-
-fn app(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
-    no_loc(Expr::App(Box::new(e), args))
-}
-
-fn if_else(p: SpExpr, if_true: SpExpr, if_false: SpExpr) -> SpExpr {
-    no_loc(Expr::IfElse(Box::new(p), Box::new(if_true), Box::new(if_false)))
-}
-
-fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
-    no_loc(Expr::Match(Box::new(e),
-                       alts.into_iter()
-                           .map(|(p, e)| {
-                               Alternative {
-                                   pattern: no_loc(p),
-                                   expr: e,
-                               }
-                           })
-                           .collect()))
-}
-
-fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
-    no_loc(Expr::Lambda(Lambda {
-        id: TypedIdent::new(intern(name)),
-        args: args.into_iter().map(|id| TypedIdent::new(id)).collect(),
-        body: Box::new(body),
-    }))
-}
-
-fn type_decl(name: String,
-             args: Vec<Generic<String>>,
-             typ: ArcType<String>,
-             body: SpExpr)
-             -> SpExpr {
-    type_decls(vec![TypeBinding {
-                        comment: None,
-                        name: name.clone(),
-                        alias: Alias::new(name, args, typ),
-                    }],
-               body)
-}
-
-fn type_decls(binds: Vec<TypeBinding<String>>, body: SpExpr) -> SpExpr {
-    no_loc(Expr::TypeBindings(binds, Box::new(body)))
-}
-
-fn record(fields: Vec<(String, Option<SpExpr>)>) -> SpExpr {
-    record_a(Vec::new(), fields)
-}
-
-fn record_a(types: Vec<(String, Option<ArcType<String>>)>,
-            fields: Vec<(String, Option<SpExpr>)>)
-            -> SpExpr {
-    no_loc(Expr::Record {
-        typ: Type::hole(),
-        types: types,
-        exprs: fields,
-    })
-}
-
-fn field_access(expr: SpExpr, field: &str) -> SpExpr {
-    no_loc(Expr::Projection(Box::new(expr), intern(field), Type::hole()))
-}
-
-fn array(fields: Vec<SpExpr>) -> SpExpr {
-    no_loc(Expr::Array(Array {
-        typ: Type::hole(),
-        exprs: fields,
-    }))
-}
-
-fn parse(input: &str) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Error)> {
-    parse_string(&mut MockEnv::new(), input)
-}
-
-macro_rules! parse_new {
-    ($input:expr) => {{
-        // Replace windows line endings so that byte positins match up on multiline expressions
-        let input = $input.replace("\r\n", "\n");
-        parse(&input).unwrap_or_else(|(_, err)| panic!("{}", err))
-    }}
-}
+use base::pos::{BytePos, Span, Spanned};
+use base::types::{Alias, Field, Type};
+use support::*;
 
 #[test]
 fn dangling_in() {
@@ -386,26 +237,6 @@ fn let_pattern() {
 }
 
 #[test]
-fn associated_record() {
-    let _ = ::env_logger::init();
-    let e = parse_new!("type Test a = { Fn, x: a } in { Fn = Int -> Array Int, Test, x = 1 }");
-
-    let test_type = Type::record(vec![Field {
-                                          name: String::from("Fn"),
-                                          typ: Alias::new(String::from("Fn"), vec![], typ("Fn")),
-                                      }],
-                                 vec![Field {
-                                          name: intern("x"),
-                                          typ: typ("a"),
-                                      }]);
-    let fn_type = Type::function(vec![typ("Int")], Type::array(typ("Int")));
-    let record = record_a(vec![(intern("Fn"), Some(fn_type)), (intern("Test"), None)],
-                          vec![(intern("x"), Some(int(1)))]);
-    assert_eq!(e,
-               type_decl(intern("Test"), vec![generic("a")], test_type, record));
-}
-
-#[test]
 fn span_identifier() {
     let _ = ::env_logger::init();
 
@@ -421,9 +252,7 @@ fn span_integer() {
     assert_eq!(e.span, Span::new(BytePos::from(0), BytePos::from(4)));
 }
 
-// FIXME The span of string literals includes the spaces after them
 #[test]
-#[ignore]
 fn span_string_literal() {
     let _ = ::env_logger::init();
 
@@ -567,7 +396,7 @@ id
 }
 
 #[test]
-fn partial_field_access() {
+fn partial_field_access_simple() {
     let _ = ::env_logger::init();
     let text = r#"test."#;
     let e = parse(text);
@@ -631,4 +460,45 @@ fn quote_in_identifier() {
                         binop(id("x"), "+", id("y"))),
                  app(id("f'"), vec![int(1), int(2)]));
     assert_eq!(e, a);
+}
+
+// Test that this is `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+#[test]
+fn block_open_after_let_in() {
+    let _ = ::env_logger::init();
+    let text = r#"
+        let x = 1
+        a
+        b
+        "#;
+    let e = parse_new!(text);
+    match e.value {
+        Expr::LetBindings(..) => (),
+        _ => panic!("{:?}", e),
+    }
+}
+
+#[test]
+fn block_open_after_explicit_let_in() {
+    let _ = ::env_logger::init();
+    let text = r#"
+        let x = 1
+        in
+        a
+        b
+        "#;
+    let e = parse_new!(text);
+    match e.value {
+        Expr::LetBindings(..) => (),
+        _ => panic!("{:?}", e),
+    }
+}
+
+#[test]
+fn record_type_field() {
+    let _ = ::env_logger::init();
+    let text = r"{ Test, x }";
+    let e = parse_new!(text);
+    assert_eq!(e,
+               record_a(vec![("Test".into(), None)], vec![("x".into(), None)]))
 }

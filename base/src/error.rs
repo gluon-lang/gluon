@@ -4,6 +4,9 @@
 use std::any::Any;
 use std::error::Error as StdError;
 use std::fmt;
+use std::iter::{Extend, FromIterator};
+use std::slice;
+use std::vec;
 
 use pos::{BytePos, Location, Span, Spanned, spanned2};
 use source::Source;
@@ -11,13 +14,13 @@ use source::Source;
 /// An error type which can represent multiple errors.
 #[derive(Debug, PartialEq)]
 pub struct Errors<T> {
-    pub errors: Vec<T>,
+    errors: Vec<T>,
 }
 
 impl<T> Errors<T> {
     /// Creates a new, empty `Errors` instance.
     pub fn new() -> Errors<T> {
-        Errors { errors: Vec::new() }
+        Errors::from(Vec::new())
     }
 
     /// Returns true if `self` contains any errors
@@ -25,9 +28,63 @@ impl<T> Errors<T> {
         !self.errors.is_empty()
     }
 
+    /// The number of errors in the error list
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
     /// Adds an error to `self`
-    pub fn error(&mut self, t: T) {
+    pub fn push(&mut self, t: T) {
         self.errors.push(t);
+    }
+
+    /// Pops and error off the error list
+    pub fn pop(&mut self) -> Option<T> {
+        self.errors.pop()
+    }
+}
+
+impl<T> Extend<T> for Errors<T> {
+    fn extend<Iter: IntoIterator<Item = T>>(&mut self, iter: Iter) {
+        self.errors.extend(iter);
+    }
+}
+
+impl<T> From<Vec<T>> for Errors<T> {
+    fn from(errors: Vec<T>) -> Errors<T> {
+        Errors { errors: errors }
+    }
+}
+
+impl<T> FromIterator<T> for Errors<T> {
+    fn from_iter<Iter: IntoIterator<Item = T>>(iter: Iter) -> Errors<T> {
+        Errors { errors: iter.into_iter().collect() }
+    }
+}
+
+impl<T> Into<Vec<T>> for Errors<T> {
+    fn into(self) -> Vec<T> {
+        self.errors
+    }
+}
+
+impl<T> IntoIterator for Errors<T> {
+    type Item = T;
+
+    type IntoIter = vec::IntoIter<T>;
+
+    fn into_iter(self) -> vec::IntoIter<T> {
+        self.errors.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Errors<T> {
+    type Item = &'a T;
+
+    type IntoIter = slice::Iter<'a, T>;
+
+    fn into_iter(self) -> slice::Iter<'a, T> {
+        self.errors.iter()
     }
 }
 

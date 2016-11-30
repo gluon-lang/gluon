@@ -1,917 +1,188 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
+
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate quick_error;
 extern crate gluon_base as base;
-extern crate combine;
-extern crate combine_language;
+extern crate lalrpop_util;
 
-// pub mod grammar;
-pub mod lexer;
-
-use std::cell::RefCell;
-use std::fmt;
-use std::iter::FromIterator;
-use std::marker::PhantomData;
-use std::rc::Rc;
-
-use base::ast::*;
-use base::kind::Kind;
+use base::ast::{Expr, IdentEnv, SpannedExpr};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
-use base::symbol::{Name, Symbol};
-use base::types::{Alias, AppVec, ArcType, Generic, Field, Type};
+use base::symbol::Symbol;
+use base::types::ArcType;
 
-use combine::primitives::{Consumed, Stream, StreamOnce, Error as CombineError, Info,
-                          BufferedStream};
-use combine::primitives::FastResult::*;
-use combine::combinator::EnvParser;
-use combine::{between, choice, env_parser, many, many1, optional, parser, satisfy, sep_by1,
-              sep_end_by, token, try, value, ParseError as CombineParseError, ParseResult, Parser};
-use combine_language::{Assoc, Fixity, expression_parser};
+use infix::{OpTable, Reparser};
+use layout::{Layout, Error as LayoutError};
+use token::{Token, Tokenizer};
 
-use lexer::{Lexer, Delimiter, Token, IdentType};
+mod grammar;
+mod infix;
+mod layout;
+mod token;
 
-#[derive(Debug, PartialEq)]
-pub struct ParseError {
-    pub errors: Vec<CombineError<Token<String>, Token<String>>>,
+type LalrpopError<'input> = lalrpop_util::ParseError<BytePos, Token<'input>, Error>;
+
+/// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
+fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
+    match expr.value {
+        Expr::IfElse(_, _, ref last) |
+        Expr::LetBindings(_, ref last) |
+        Expr::TypeBindings(_, ref last) => expr.span.end = last.span.end,
+        Expr::Lambda(ref lambda) => expr.span.end = lambda.body.span.end,
+        Expr::Block(ref mut exprs) => {
+            match exprs.len() {
+                0 => (),
+                1 => return exprs.pop().unwrap(),
+                _ => expr.span.end = exprs.last().unwrap().span.end,
+            }
+        }
+        Expr::Match(_, ref alts) => {
+            if let Some(last_alt) = alts.last() {
+                let end = last_alt.expr.span.end;
+                expr.span.end = end;
+            }
+        }
+        Expr::App(_, _) |
+        Expr::Ident(_) |
+        Expr::Literal(_) |
+        Expr::Projection(_, _, _) |
+        Expr::Infix(_, _, _) |
+        Expr::Array(_) |
+        Expr::Record { .. } |
+        Expr::Tuple(_) => (),
+    }
+    expr
 }
 
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        CombineError::fmt_errors(&self.errors, f)
-    }
-}
-
-pub type Error = Errors<Spanned<ParseError, BytePos>>;
-
-// Dummy type for ParseError which has the correct associated types
-#[derive(Clone)]
-pub struct StreamType(());
-
-impl StreamOnce for StreamType {
-    type Item = Token<String>;
-    type Range = Token<String>;
-    type Position = BytePos;
-
-    fn uncons(&mut self) -> Result<Token<String>, ::lexer::Error<String>> {
-        unimplemented!()
-    }
-
-    fn position(&self) -> Self::Position {
-        unimplemented!()
-    }
-}
-
-
-/// Parser passes the environment to each parser function
-type LanguageParser<'parser, I: 'parser, F: 'parser, T> = EnvParser<&'parser ParserEnv<I, F>, I, T>;
-
-/// `ParserEnv` is passed around to all individual parsers so that identifiers can always be
-/// constructed through calling `make_ident`.
-struct ParserEnv<I, F>
-    where F: IdentEnv,
-          I: Stream,
+fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
+    where Iter: IntoIterator<Item = LalrpopError<'a>>,
 {
-    empty_id: F::Ident,
-    hole_typ: ArcType<F::Ident>,
-    make_ident: Rc<RefCell<F>>,
-    errors: RefCell<Error>,
-    env: PhantomData<I>,
+    errors.into_iter()
+        .map(Error::from_lalrpop)
+        .collect()
 }
 
-// Wrapper type to reduce typechecking times
-#[derive(Clone)]
-pub struct Wrapper<'input: 'lexer, 'lexer> {
-    stream: BufferedStream<'lexer, Lexer<'input, &'input str>>,
-}
-
-impl<'input, 'lexer> StreamOnce for Wrapper<'input, 'lexer> {
-    type Item = Token<&'input str>;
-    type Range = Token<&'input str>;
-    type Position = Span<BytePos>;
-
-    fn uncons(&mut self) -> Result<Token<&'input str>, lexer::Error<&'input str>> {
-        self.stream.uncons()
-    }
-
-    fn position(&self) -> Self::Position {
-        let span = self.stream.position();
-
-        Span {
-            start: span.start.absolute,
-            end: span.end.absolute,
-            expansion_id: pos::NO_EXPANSION,
+quick_error! {
+    #[derive(Debug, PartialEq)]
+    pub enum Error {
+        Layout(err: LayoutError) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+        InvalidToken {
+            description("invalid token")
+            display("Invalid token")
+        }
+        UnexpectedToken(token: String) {
+            description("unexpected token")
+            display("Unexpected token: {}", token)
+        }
+        UnexpectedEof {
+            description("unexpected end of file")
+            display("Undexpected end of file")
+        }
+        ExtraToken(token: String) {
+            description("extra token")
+            display("Extra token: {}", token)
+        }
+        Infix(err: infix::ReparseError) {
+            description(err.description())
+            display("{}", err)
+            from()
         }
     }
 }
 
-enum Bindings<Id> {
-    LetBindings(Vec<ValueBinding<Id>>),
-    TypeBindings(Vec<TypeBinding<Id>>),
-}
+impl Error {
+    fn from_lalrpop(err: LalrpopError) -> Spanned<Error, BytePos> {
+        use lalrpop_util::ParseError::*;
 
-macro_rules! match_parser {
-    ($function: ident, $variant: ident -> $typ: ty) => {
-        fn $function<'a>(&'a self) -> LanguageParser<'a, I, F, $typ> {
-            fn inner<'input, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<$typ, I>
-                where I: Stream<Item = Token<&'input str>>,
-                      F: IdentEnv<Ident = Id>,
-                      Id: Clone + PartialEq + fmt::Debug,
-                      I::Range: fmt::Debug
-            {
-                satisfy(|t: Token<&'input str>| {
-                    match t {
-                        Token::$variant(_) => true,
-                        _ => false,
-                    }
-                })
-                    .map(|t| {
-                        match t {
-                            Token::$variant(s) => s,
-                            _ => unreachable!(),
-                        }
-                    })
-                    .parse_stream(input)
+        match err {
+            InvalidToken { location } => pos::spanned2(location, location, Error::InvalidToken),
+            UnrecognizedToken { token: Some((lpos, token, rpos)), .. } => {
+                pos::spanned2(lpos, rpos, Error::UnexpectedToken(token.to_string()))
             }
-
-            self.parser(inner)
+            UnrecognizedToken { token: None, .. } => {
+                pos::spanned2(0.into(), 0.into(), Error::UnexpectedEof)
+            }
+            ExtraToken { token: (lpos, token, rpos) } => {
+                pos::spanned2(lpos, rpos, Error::ExtraToken(token.to_string()))
+            }
+            User { error } => pos::spanned2(0.into(), 0.into(), error),
         }
     }
 }
 
-fn as_trait<P: Parser>(p: &mut P) -> &mut Parser<Input = P::Input, Output = P::Output> {
-    p
+pub enum FieldPattern<Id> {
+    Type(Id, Option<Id>),
+    Value(Id, Option<Id>),
 }
 
-impl<'input, I, Id, F> ParserEnv<I, F>
-    where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
-          F: IdentEnv<Ident = Id>,
-          Id: Clone + PartialEq + fmt::Debug,
-          I::Range: fmt::Debug,
+pub enum FieldExpr<Id> {
+    Type(Id, Option<ArcType<Id>>),
+    Value(Id, Option<SpannedExpr<Id>>),
+}
+
+// Hack around LALRPOP's limited type syntax
+type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
+type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
+
+pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
+
+pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
+                              input: &str)
+                              -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
+    where Id: Clone,
 {
-    fn intern(&self, s: &str) -> Id {
-        self.make_ident.borrow_mut().from_str(s)
-    }
+    let tokenizer = Tokenizer::new(input).map(|token| token.unwrap()); // FIXME
 
-    fn parser<'a, T>(&'a self,
-                     parser: fn(&ParserEnv<I, F>, I) -> ParseResult<T, I>)
-                     -> LanguageParser<'a, I, F, T> {
-        env_parser(self, parser)
-    }
+    let layout = Layout::new(tokenizer).map(|token| {
+        let token = token?;
+        debug!("Lex {:?}", token.value);
+        let Span { start, end, .. } = token.span;
+        Ok((start.absolute, token.value, end.absolute))
+    });
 
-    fn precedence(&self, s: &str) -> i32 {
-        match s {
-            "*" | "/" | "%" => 7,
-            "+" | "-" => 6,
-            ":" | "++" => 5,
-            "&&" => 3,
-            "||" => 2,
-            "$" => 0,
-            "==" | "/=" | "<" | ">" | "<=" | ">=" => 4,
-            // Primitive operators starts with # and has the op at the end
-            _ if s.starts_with("#") => {
-                let op = s[1..].trim_left_matches(|c: char| c.is_alphanumeric());
-                self.precedence(op)
+    let mut parse_errors = Errors::new();
+
+    match grammar::parse_TopExpr(input, symbols, &mut parse_errors, layout) {
+        Ok(mut expr) => {
+            let mut errors = transform_errors(parse_errors);
+            let mut reparser = Reparser::new(OpTable::default(), symbols);
+            if let Err(reparse_errors) = reparser.reparse(&mut expr) {
+                errors.extend(reparse_errors.into_iter()
+                        .map(|err| {
+                            pos::spanned2(BytePos::from(0), BytePos::from(0), Error::Infix(err))
+                        }));
             }
-            // Hack for some library operators
-            "<<" | ">>" => 9,
-            "<|" | "|>" => 0,
-            // User-defined operators
-            _ => 9,
-        }
-    }
-
-    fn fixity(&self, i: &str) -> Fixity {
-        match i {
-            "*" | "/" | "%" | "+" | "-" | "==" | "/=" | "<" | ">" | "<=" | ">=" => Fixity::Left,
-            ":" | "++" | "&&" | "||" | "$" => Fixity::Right,
-            // Hack for some library operators
-            ">>" | "|>" => Fixity::Left,
-            "<<" | "<|" => Fixity::Right,
-            // User-defined operators
-            _ => Fixity::Left,
-        }
-    }
-
-    fn ident<'a>(&'a self) -> LanguageParser<'a, I, F, Id> {
-        self.parser(ParserEnv::<I, F>::parse_ident)
-    }
-
-    fn parse_ident(&self, input: I) -> ParseResult<Id, I> {
-        self.parser(ParserEnv::<I, F>::parse_ident2)
-            .map(|x| x.0)
-            .parse_stream(input)
-    }
-
-    /// Identifier parser which returns the identifier as well as the type of the identifier
-    fn parse_ident2(&self, input: I) -> ParseResult<(Id, IdentType), I> {
-        satisfy(|t: Token<&'input str>| {
-                match t {
-                    Token::Ident(..) => true,
-                    _ => false,
-                }
-            })
-            .map(|t| {
-                match t {
-                    Token::Ident(id, typ) => (self.intern(id), typ),
-                    _ => unreachable!(),
-                }
-            })
-            .parse_stream(input)
-    }
-
-    fn ident_type<'a>(&'a self) -> LanguageParser<'a, I, F, ArcType<Id>> {
-        self.parser(ParserEnv::<I, F>::parse_ident_type)
-    }
-
-    fn parse_ident_type(&self, input: I) -> ParseResult<ArcType<Id>, I> {
-        try(self.parser(ParserEnv::<I, F>::parse_ident2))
-            .map(|(s, typ)| {
-                debug!("Id: {:?}", s);
-                if typ == IdentType::Variable {
-                    Type::generic(Generic {
-                        kind: Kind::variable(0),
-                        id: s,
-                    })
-                } else {
-                    let ident_env = self.make_ident.borrow();
-                    match ident_env.string(&s).parse() {
-                        Ok(prim) => Type::builtin(prim),
-                        Err(()) => Type::ident(s),
-                    }
-                }
-            })
-            .parse_stream(input)
-    }
-
-    match_parser! { string_literal, String -> String }
-
-    match_parser! { char_literal, Char -> char }
-
-    match_parser! { float, Float -> f64 }
-
-    match_parser! { int, Int -> i64 }
-
-    match_parser! { byte, Byte -> u8 }
-
-    match_parser! { doc_comment, DocComment -> String }
-
-    fn typ<'a>(&'a self) -> LanguageParser<'a, I, F, ArcType<Id>> {
-        self.parser(ParserEnv::<I, F>::parse_type)
-    }
-
-    fn parse_adt(&self, return_type: &ArcType<Id>, input: I) -> ParseResult<ArcType<Id>, I> {
-        let variant =
-            (token(Token::Pipe), self.ident(), many(self.parser(ParserEnv::<I, F>::type_arg)))
-                .map(|(_, id, args): (_, _, Vec<_>)| {
-                    Field {
-                        name: id,
-                        typ: Type::function(args, return_type.clone()),
-                    }
-                });
-
-        many1(variant)
-            .map(Type::variant)
-            .parse_stream(input)
-    }
-
-    fn parse_type(&self, input: I) -> ParseResult<ArcType<Id>, I> {
-        (many1(self.parser(ParserEnv::<I, F>::type_arg)),
-         optional(token(Token::RightArrow).with(self.typ())))
-            .map(|(mut arg, ret): (AppVec<_>, _)| {
-                let arg = if arg.len() == 1 {
-                    arg.pop().unwrap()
-                } else {
-                    let x = arg.remove(0);
-                    Type::app(x, arg)
-                };
-                debug!("Parse: {:?} -> {:?}", arg, ret);
-                match ret {
-                    Some(ret) => Type::function(vec![arg], ret),
-                    None => arg,
-                }
-            })
-            .parse_stream(input)
-    }
-
-    fn record_type(&self, input: I) -> ParseResult<ArcType<Id>, I> {
-        let field = self.parser(ParserEnv::<I, F>::parse_ident2)
-            .then(|(id, typ)| {
-                parser(move |input| {
-                    if typ == IdentType::Constructor {
-                        value((id.clone(), None)).parse_stream(input)
-                    } else {
-                        token(Token::Colon)
-                            .with(self.typ())
-                            .map(|typ| (id.clone(), Some(typ)))
-                            .parse_stream(input)
-                    }
-                })
-            });
-        between(token(Token::Open(Delimiter::Brace)),
-                token(Token::Close(Delimiter::Brace)),
-                sep_end_by(field, token(Token::Comma)))
-            .map(|fields: Vec<(Id, _)>| {
-                let mut associated = Vec::new();
-                let mut types = Vec::new();
-                let mut ids = self.make_ident.borrow_mut();
-                for (id, field) in fields {
-                    let untyped_id = id.clone();
-                    match field {
-                        Some(typ) => {
-                            types.push(Field {
-                                name: untyped_id,
-                                typ: typ,
-                            })
-                        }
-                        None => {
-                            let typ = Type::ident(untyped_id.clone());
-                            let short_name = String::from(Name::new(ids.string(&id))
-                                .name()
-                                .as_str());
-                            associated.push(Field {
-                                name: ids.from_str(&short_name),
-                                typ: Alias::new(untyped_id, vec![], typ),
-                            });
-                        }
-                    }
-                }
-                Type::record(associated, types)
-            })
-            .parse_stream(input)
-    }
-
-    fn type_arg(&self, input: I) -> ParseResult<ArcType<Id>, I> {
-        choice::<[&mut Parser<Input = I, Output = ArcType<Id>>; 3],
-                 _>([&mut self.parser(ParserEnv::<I, F>::record_type),
-                     &mut between(token(Token::Open(Delimiter::Paren)),
-                                  token(Token::Close(Delimiter::Paren)),
-                                  optional(self.typ()))
-                         .map(|typ| {
-                             match typ {
-                                 Some(typ) => typ,
-                                 None => Type::unit(),
-                             }
-                         }),
-                     &mut self.ident_type()])
-            .parse_stream(input)
-    }
-
-    fn type_decl(&self, input: I) -> ParseResult<Bindings<Id>, I> {
-        debug!("type_decl");
-        let type_binding = |t| {
-            (try(optional(self.doc_comment()).skip(token(t))),
-             self.parser(ParserEnv::<I, F>::type_binding))
-                .map(|(comment, mut bind)| {
-                    bind.comment = comment;
-                    bind
-                })
-        };
-        (as_trait(&mut type_binding(Token::Type)),
-         many(as_trait(&mut type_binding(Token::And))),
-         token(Token::In).expected("`in` or an expression in the same column as the `let`"))
-            .map(|(first, mut bindings, _): (_, Vec<_>, _)| {
-                bindings.insert(0, first);
-                Bindings::TypeBindings(bindings)
-            })
-            .parse_stream(input)
-    }
-
-    fn type_binding(&self, input: I) -> ParseResult<TypeBinding<Id>, I> {
-        (self.ident(), many(self.ident()))
-            .then(|(name, args): (Id, AppVec<Id>)| {
-                let return_type = if args.is_empty() {
-                    Type::ident(name.clone())
-                } else {
-                    let arg_types = args.iter()
-                        .map(|id| {
-                            Type::generic(Generic {
-                                kind: Kind::variable(0),
-                                id: id.clone(),
-                            })
-                        })
-                        .collect();
-                    Type::app(Type::ident(name.clone()), arg_types)
-                };
-                token(Token::Equal)
-                    .with(self.typ()
-                        .or(parser(move |input| self.parse_adt(&return_type, input))))
-                    .map(move |rhs_type| {
-                        TypeBinding {
-                            comment: None,
-                            name: name.clone(),
-                            alias: Alias::new(name.clone(),
-                                              args.iter()
-                                                  .map(|id| {
-                                                      Generic {
-                                                          kind: Kind::variable(0),
-                                                          id: id.clone(),
-                                                      }
-                                                  })
-                                                  .collect(),
-                                              rhs_type),
-                        }
-                    })
-            })
-            .parse_stream(input)
-    }
-
-    fn expr<'a>(&'a self) -> LanguageParser<'a, I, F, SpannedExpr<Id>> {
-        self.parser(ParserEnv::<I, F>::top_expr)
-    }
-
-    fn parse_expr(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
-        let arg_expr1 = self.parser(ParserEnv::<I, F>::parse_arg);
-        let arg_expr2 = self.parser(ParserEnv::<I, F>::parse_arg);
-        (arg_expr1, many(arg_expr2))
-            .map(|(f, args): (SpannedExpr<Id>, Vec<SpannedExpr<_>>)| {
-                if let Some(end) = args.last().map(|last| last.span.end) {
-                    pos::spanned2(f.span.start, end, Expr::App(Box::new(f), args))
-                } else {
-                    f
-                }
-            })
-            .parse_stream(input)
-    }
-
-    /// Parses an expression which could be an argument to a function
-    fn parse_arg(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
-        debug!("Expr start: {:?}", input.clone().uncons());
-        let start = input.position().start;
-
-        // To prevent stack overflows we push all binding groups (which are commonly deeply nested)
-        // to a stack and construct the expressions afterwards
-        let mut let_bindings = Vec::new();
-        let mut resulting_expr;
-        let mut input = input;
-        let mut declaration_parser = self.parser(ParserEnv::<I, F>::type_decl)
-            .or(self.parser(ParserEnv::<I, F>::let_in))
-            .and(parser(move |input: I| {
-                let span = Span {
-                    start: start,
-                    end: input.position().end,
-                    expansion_id: pos::NO_EXPANSION,
-                };
-                Ok((span, Consumed::Empty(input)))
-            }))
-            .map(|(decl, span)| pos::spanned(span, decl));
-        loop {
-            match declaration_parser.parse_lazy(input.clone()) {
-                ConsumedOk((bindings, new_input)) |
-                EmptyOk((bindings, new_input)) => {
-                    let_bindings.push(bindings);
-                    input = new_input;
-                }
-                ConsumedErr(err) => return Err(Consumed::Consumed(err)),
-                EmptyErr(err) => {
-                    // If a let or type binding has been parsed then any kind of expression can
-                    // follow
-                    let mut expr_parser = if let_bindings.is_empty() {
-                        self.parser(ParserEnv::<I, F>::rest_expr)
-                    } else {
-                        self.expr()
-                    };
-                    let (expr, new_input) = expr_parser.parse_stream(input)
-                        .map_err(|err2| err2.map(|err2| err.merge(err2)))?;
-                    resulting_expr = expr;
-                    input = new_input.into_inner();
-                    break;
-                }
+            if errors.has_errors() {
+                Err((Some(expr), errors))
+            } else {
+                Ok(expr)
             }
         }
-        for binding in let_bindings.into_iter().rev() {
-            resulting_expr =
-                pos::spanned(binding.span,
-                             match binding.value {
-                                 Bindings::LetBindings(bindings) => {
-                                     Expr::LetBindings(bindings, Box::new(resulting_expr))
-                                 }
-                                 Bindings::TypeBindings(bindings) => {
-                                     Expr::TypeBindings(bindings, Box::new(resulting_expr))
-                                 }
-                             });
+        Err(err) => {
+            parse_errors.push(err);
+            Err((None, transform_errors(parse_errors)))
         }
-        Ok((resulting_expr, Consumed::Consumed(input)))
-    }
-
-    fn rest_expr(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
-        let span = input.position();
-        let loc = |expr| pos::spanned(span, expr);
-
-        choice::<[&mut Parser<Input = I, Output = SpannedExpr<Id>>; 12],
-                 _>([&mut parser(|input| self.if_else(input)),
-                     &mut self.parser(ParserEnv::<I, F>::case_of),
-                     &mut self.parser(ParserEnv::<I, F>::lambda),
-                     &mut self.int()
-                         .map(|i| loc(Expr::Literal(Literal::Int(i)))),
-                     &mut self.byte()
-                         .map(|i| loc(Expr::Literal(Literal::Byte(i)))),
-                     &mut self.float()
-                         .map(|f| loc(Expr::Literal(Literal::Float(f)))),
-                     &mut self.ident()
-                         .map(|id| loc(Expr::Ident(TypedIdent::new(id.clone())))),
-                     &mut self.parser(ParserEnv::<I, F>::record).map(&loc),
-                     &mut between(token(Token::Open(Delimiter::Paren)),
-                                  token(Token::Close(Delimiter::Paren)),
-                                  optional(self.expr()).map(|expr| {
-                                      match expr {
-                                          Some(expr) => expr,
-                                          None => loc(Expr::Tuple(vec![])),
-                                      }
-                                  })),
-                     &mut self.string_literal()
-                         .map(|s| loc(Expr::Literal(Literal::String(s)))),
-                     &mut self.char_literal()
-                         .map(|s| loc(Expr::Literal(Literal::Char(s)))),
-                     &mut between(token(Token::Open(Delimiter::Bracket)),
-                                  token(Token::Close(Delimiter::Bracket)),
-                                  sep_end_by(self.expr(), token(Token::Comma)))
-                         .map(|exprs| {
-                             loc(Expr::Array(Array {
-                                 typ: self.hole_typ.clone(),
-                                 exprs: exprs,
-                             }))
-                         })])
-            .and(self.parser(Self::fields))
-            .map(|(expr, fields): (_, Vec<_>)| {
-                debug!("Parsed expr {:?}", expr);
-                fields.into_iter().fold(expr, |expr, (id, end): (Id, _)| {
-                    pos::spanned2(span.start,
-                                  end,
-                                  Expr::Projection(Box::new(expr), id, Type::hole()))
-                })
-            })
-            .parse_stream(input)
-
-    }
-
-    // The BytePos is the end of the field
-    fn fields(&self, input: I) -> ParseResult<Vec<(Id, BytePos)>, I> {
-        let mut fields = Vec::new();
-        let mut input = Consumed::Empty(input);
-        loop {
-            input = match input.clone()
-                .combine(|input| token(Token::Dot).parse_lazy(input).into()) {
-                Ok((_, input)) => input,
-                Err(_) => return Ok((fields, input)),
-            };
-            let end = input.clone().into_inner().position().end;
-            input = match input.clone()
-                .combine(|input| self.ident().parse_lazy(input).into()) {
-                Ok((field, input)) => {
-                    fields.push((field, end));
-                    input
-                }
-                Err(err) => {
-                    // If not field where found after the '.' add an empty field so that running
-                    // completion can be done for the attempt to access the field
-                    self.errors
-                        .borrow_mut()
-                        .error(static_error(err.into_inner()));
-                    fields.push((self.empty_id.clone(), end));
-                    return Ok((fields, input));
-                }
-            };
-        }
-    }
-
-    fn op<'a>(&'a self) -> LanguageParser<'a, I, F, &'input str> {
-        fn inner<'input, I, Id, F>(_: &ParserEnv<I, F>, input: I) -> ParseResult<&'input str, I>
-            where I: Stream<Item = Token<&'input str>,
-                            Range = Token<&'input str>,
-                            Position = Span<BytePos>>,
-                  F: IdentEnv<Ident = Id>,
-                  Id: Clone + PartialEq + fmt::Debug,
-                  I::Range: fmt::Debug,
-        {
-            satisfy(|t: Token<&'input str>| {
-                    match t {
-                        Token::Operator(_) => true,
-                        _ => false,
-                    }
-                })
-                .map(|t| {
-                    match t {
-                        Token::Operator(s) => s,
-                        _ => unreachable!(),
-                    }
-                })
-                .parse_stream(input)
-        }
-        self.parser(inner)
-    }
-
-    /// Parses any sort of expression
-    fn top_expr(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
-        let term = self.parser(ParserEnv::<I, F>::parse_expr);
-        let op = self.op()
-            .map(|op| {
-                let assoc = Assoc {
-                    precedence: self.precedence(&op),
-                    fixity: self.fixity(&op),
-                };
-                (op, assoc)
-            });
-        between(token(Token::OpenBlock),
-                token(Token::CloseBlock),
-                self.expr())
-            .or(sep_by1(expression_parser(term, op, |l, op, r| {
-                pos::spanned2(l.span.start,
-                              r.span.end,
-                              Expr::Infix(Box::new(l),
-                                          TypedIdent::new(self.intern(&op)),
-                                          Box::new(r)))
-            }),
-                        token(Token::Semi))
-                .map(|mut exprs: Vec<SpannedExpr<Id>>| {
-                    if exprs.len() == 1 {
-                        exprs.pop().unwrap()
-                    } else {
-                        pos::spanned(exprs.first().expect("Expr in block").span,
-                                     Expr::Block(exprs))
-                    }
-                }))
-            .parse_stream(input)
-    }
-
-    fn lambda(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
-        let start = input.position().start;
-        (token(Token::Lambda), many(self.ident()), token(Token::RightArrow), self.expr())
-            .map(|(_, args, _, expr): (_, Vec<Id>, _, SpannedExpr<_>)| {
-                pos::spanned2(start,
-                              expr.span.end,
-                              Expr::Lambda(Lambda {
-                                  // TODO: Generate name of lambda here?
-                                  id: TypedIdent::new(self.empty_id.clone()),
-                                  args: args.iter()
-                                      .map(|arg| TypedIdent::new(arg.clone()))
-                                      .collect(),
-                                  body: Box::new(expr),
-                              }))
-            })
-            .parse_stream(input)
-    }
-
-    fn case_of(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
-        let alt = (token(Token::Pipe), self.pattern(), token(Token::RightArrow), self.expr())
-            .map(|(_, pattern, _, expr)| {
-                Alternative {
-                    pattern: pattern,
-                    expr: expr,
-                }
-            });
-        let start = input.position().start;
-        (token(Token::Match), self.expr(), token(Token::With), many1::<Vec<_>, _>(alt))
-            .map(|(_, expr, _, alts)| {
-                pos::spanned2(start,
-                              alts.last().expect("No alternatives").expr.span.end,
-                              Expr::Match(Box::new(expr), alts))
-            })
-            .parse_stream(input)
-    }
-
-    fn pattern<'a>(&'a self) -> LanguageParser<'a, I, F, SpannedPattern<Id>> {
-        self.parser(ParserEnv::<I, F>::parse_pattern)
-    }
-
-    fn parse_pattern(&self, input: I) -> ParseResult<SpannedPattern<Id>, I> {
-        self.record_parser(self.ident(), self.ident(), |record| {
-            let span = input.position();
-
-            self.parser(ParserEnv::<I, F>::parse_ident2)
-                .then(|(id, typ)| {
-                    parser(move |input| {
-                        if typ == IdentType::Constructor {
-                            many(self.ident())
-                                .parse_stream(input)
-                                .map(|(args, input): (Vec<Id>, _)| {
-                                    (Pattern::Constructor(TypedIdent::new(id.clone()),
-                                                          args.iter()
-                                                              .map(|arg| {
-                                                                  TypedIdent::new(arg.clone())
-                                                              })
-                                                              .collect()),
-                                     input)
-                                })
-                        } else {
-                            Ok((Pattern::Ident(TypedIdent::new(id.clone())),
-                                Consumed::Empty(input)))
-                        }
-                    })
-                })
-                .or(record.map(|fields: Vec<_>| {
-                    let mut types = Vec::new();
-                    let mut patterns = Vec::new();
-                    for (id, field) in fields {
-                        match field {
-                            Ok(name) => types.push((id, name)),
-                            Err(pattern) => patterns.push((id, pattern)),
-                        }
-                    }
-                    Pattern::Record {
-                        typ: self.hole_typ.clone(),
-                        types: types,
-                        fields: patterns,
-                    }
-                }))
-                .map(|p| pos::spanned(span, p))
-                .or(between(token(Token::Open(Delimiter::Paren)),
-                            token(Token::Close(Delimiter::Paren)),
-                            self.pattern()))
-                .parse_stream(input)
-        })
-    }
-
-    fn if_else(&self, input: I) -> ParseResult<SpannedExpr<Id>, I> {
-        let start = input.position().start;
-        (token(Token::If),
-         self.expr(),
-         token(Token::Then),
-         self.expr(),
-         token(Token::Else),
-         self.expr())
-            .map(|(_, b, _, t, _, f)| {
-                pos::spanned2(start,
-                              f.span.end,
-                              Expr::IfElse(Box::new(b), Box::new(t), Box::new(f)))
-            })
-            .parse_stream(input)
-    }
-
-    fn let_in(&self, input: I) -> ParseResult<Bindings<Id>, I> {
-        let binding = |t| {
-            (try(optional(self.doc_comment()).skip(token(t))),
-             self.parser(ParserEnv::<I, F>::binding))
-                .map(|(comment, mut bind)| {
-                    bind.comment = comment;
-                    bind
-                })
-        };
-        (as_trait(&mut binding(Token::Let)),
-         many(as_trait(&mut binding(Token::And))),
-         token(Token::In).expected("`in` or an expression in the same column as the `let`"))
-            .map(|(b, bindings, _)| {
-                let mut bindings: Vec<_> = bindings;
-                bindings.insert(0, b);
-                Bindings::LetBindings(bindings)
-            })
-            .parse_stream(input)
-    }
-
-    fn binding(&self, input: I) -> ParseResult<ValueBinding<Id>, I> {
-        let (name, input) = self.pattern().parse_stream(input)?;
-        let (args, input) = match name.value {
-            Pattern::Ident(_) => input.combine(|input| many(self.ident()).parse_stream(input))?,
-            _ => (Vec::new(), input),
-        };
-        let type_sig = token(Token::Colon).with(self.typ());
-        let ((typ, _, e), input) = input.combine(|input| {
-                (optional(type_sig), token(Token::Equal), self.expr()).parse_stream(input)
-            })?;
-
-        Ok((ValueBinding {
-            comment: None,
-            name: name,
-            typ: typ.unwrap_or_else(|| self.hole_typ.clone()),
-            args: args.iter()
-                .map(|arg| TypedIdent::new(arg.clone()))
-                .collect(),
-            expr: e,
-        },
-            input))
-    }
-
-    fn record(&self, input: I) -> ParseResult<Expr<Id>, I> {
-        self.record_parser(self.typ(), self.expr(), |record| {
-            record.map(|fields: Vec<_>| {
-                    let mut types = Vec::new();
-                    let mut exprs = Vec::new();
-                    for (id, field) in fields {
-                        match field {
-                            Ok(typ) => types.push((id, typ)),
-                            Err(expr) => exprs.push((id, expr)),
-                        }
-                    }
-                    Expr::Record {
-                        typ: self.hole_typ.clone(),
-                        types: types,
-                        exprs: exprs,
-                    }
-                })
-                .parse_stream(input)
-        })
-    }
-
-    fn record_parser<'a, P1, P2, O, G, R>(&'a self, ref p1: P1, ref p2: P2, f: G) -> R
-        where P1: Parser<Input = I> + Clone,
-              P2: Parser<Input = I> + Clone,
-              O: FromIterator<(Id, Result<Option<P1::Output>, Option<P2::Output>>)>,
-              G: FnOnce(&mut Parser<Input = I, Output = O>) -> R,
-    {
-        let mut field = self.parser(ParserEnv::<I, F>::parse_ident2)
-            .then(move |(id, typ)| {
-                parser(move |input| {
-                    let result = if typ == IdentType::Constructor {
-                        optional(token(Token::Equal).with(p1.clone()))
-                            .map(Ok)
-                            .parse_stream(input)
-
-                    } else {
-                        optional(token(Token::Equal).with(p2.clone()))
-                            .map(Err)
-                            .parse_stream(input)
-                    };
-                    result.map(|(x, input)| ((id.clone(), x), input))
-                })
-            });
-        let mut parser = between(token(Token::Open(Delimiter::Brace)),
-                                 token(Token::Close(Delimiter::Brace)),
-                                 sep_end_by(&mut field, token(Token::Comma)));
-        f(&mut parser)
     }
 }
 
-// Force a specialized version of `parse_expr` to be created in the parser crate so the the
-// compiletimes of the parser does not bleed into the other crates
 pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
                   input: &str)
-                  -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, Error)> {
-    parse_expr_(symbols, input)
+                  -> Result<SpannedExpr<Symbol>, ParseErrors> {
+    parse_partial_expr(symbols, input).map_err(|t| t.1)
 }
 
 #[cfg(feature = "test")]
 pub fn parse_string<'env, 'input>
-    (make_ident: &'env mut IdentEnv<Ident = String>,
+    (symbols: &'env mut IdentEnv<Ident = String>,
      input: &'input str)
-     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, Error)> {
-    parse_expr_(make_ident, input)
-}
-
-/// Parses a gluon expression
-pub fn parse_expr_<'env, 'input, Id>(make_ident: &'env mut IdentEnv<Ident = Id>,
-                                     input: &'input str)
-                                     -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, Error)>
-    where Id: Clone + PartialEq + fmt::Debug,
-{
-    let make_ident = Rc::new(RefCell::new(make_ident));
-    let lexer = Lexer::new(input);
-    let env = ParserEnv {
-        empty_id: make_ident.borrow_mut().from_str(""),
-        hole_typ: Type::hole(),
-        make_ident: make_ident.clone(),
-        errors: RefCell::new(Errors::new()),
-        env: PhantomData,
-    };
-    let buffer = BufferedStream::new(lexer, 10);
-    let stream = Wrapper { stream: buffer.as_stream() };
-
-    let result = env.expr()
-        .parse(stream)
-        .map(|t| t.0);
-
-    let mut errors = env.errors.into_inner();
-    match result {
-        Ok(x) => {
-            if !errors.has_errors() {
-                Ok(x)
-            } else {
-                Err((Some(x), errors))
-            }
-        }
-        Err(err) => {
-            errors.errors.push(static_error(err));
-            Err((None, errors))
-        }
-    }
-}
-
-fn static_error<'input, I>(error: CombineParseError<I>) -> Spanned<ParseError, BytePos>
-    where I: Stream<Item = Token<&'input str>, Range = Token<&'input str>, Position = Span<BytePos>>,
-{
-    let errors = error.errors
-        .into_iter()
-        .map(static_error_)
-        .collect();
-    pos::spanned(error.position, ParseError { errors: errors })
-}
-
-// Converts an error into a static error by transforming any range arguments into strings
-fn static_error_<'input>(e: CombineError<Token<&'input str>, Token<&'input str>>)
-                         -> CombineError<Token<String>, Token<String>> {
-    let static_info = |i: Info<Token<&'input str>, Token<&'input str>>| {
-        match i {
-            Info::Token(t) => Info::Token(t.map(|id| String::from(*id))),
-            Info::Range(t) => Info::Token(t.map(|id| String::from(*id))),
-            Info::Borrowed(t) => Info::Borrowed(t),
-            Info::Owned(t) => Info::Owned(t),
-        }
-    };
-    match e {
-        CombineError::Unexpected(t) => CombineError::Unexpected(static_info(t)),
-        CombineError::Expected(t) => CombineError::Expected(static_info(t)),
-        CombineError::Message(t) => CombineError::Message(static_info(t)),
-        CombineError::Other(t) => CombineError::Other(t),
-    }
+     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
+    parse_partial_expr(symbols, input)
 }

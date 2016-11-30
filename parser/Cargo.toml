@@ -10,13 +10,20 @@ description = "The parser for the gluon programming language"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
+build = "build.rs"
+
 [dependencies]
-combine-language = "=2.0.0-beta4"
-combine = "=2.0.0-beta3"
 env_logger = { version = "0.3.4", optional = true }
+quick-error = "1.0.0"
+lalrpop-util = "0.12.4"
 log = "0.3.6"
 gluon_base = { path = "../base", version = "0.2.2" }
+
+[dev-dependencies]
 collect-mac = "0.1.0"
+
+[build-dependencies]
+lalrpop = "0.12.4"
 
 [features]
 test = ["env_logger"]

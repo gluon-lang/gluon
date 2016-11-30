@@ -4,14 +4,14 @@ let { (*>) } = prelude.make_Applicative writer.applicative
 
 
 let _ =
-    let { sender, receiver } = channel (lazy \_ -> 0)
+    let { sender, receiver } = channel (lazy (\_ -> 0))
 
-    let thread = spawn \_ ->
-        send sender (lazy \_ -> 1)
-        let l = lazy \_ -> 2
+    let thread = spawn (\_ ->
+        send sender (lazy (\_ -> 1))
+        let l = lazy (\_ -> 2)
         force l
         send sender l
-        ()
+        ())
     
     resume thread
 
@@ -26,9 +26,9 @@ let _ =
 let _ =
     let { sender, receiver } = channel (ref 0)
 
-    let thread = spawn \_ ->
+    let thread = spawn (\_ ->
         send sender (ref 3)
-        ()
+        ())
         
     resume thread
 

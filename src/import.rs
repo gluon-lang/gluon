@@ -202,15 +202,15 @@ impl<I> Macro for Import<I>
                     };
 
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
-                    let errors = macros.errors.errors.len();
+                    let errors = macros.errors.len();
                     let macro_result =
                         file_contents.expand_macro_with(&mut compiler, macros, &modulename)?;
-                    if errors != macros.errors.errors.len() {
+                    if errors != macros.errors.len() {
                         // If macro expansion of the imported module fails we need to stop
                         // compilation of that module. To return an error we return one of the
                         // already emitted errors (which will be pushed back after this function
                         // returns)
-                        if let Some(err) = macros.errors.errors.pop() {
+                        if let Some(err) = macros.errors.pop() {
                             return Err(err);
                         }
                     }

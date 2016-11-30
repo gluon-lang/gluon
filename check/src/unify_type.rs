@@ -637,7 +637,7 @@ struct Merge<'e> {
 impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
     fn report_error(unifier: &mut UnifierState<Self>,
                     error: UnifyError<ArcType, TypeError<Symbol>>) {
-        unifier.unifier.errors.error(error);
+        unifier.unifier.errors.push(error);
     }
 
     fn try_match(unifier: &mut UnifierState<Self>, l: &ArcType, r: &ArcType) -> Option<ArcType> {
@@ -662,7 +662,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                             Type::Variable(ref var) if var.id > r_var.id => {
                                 let error = UnifyError::Other(TypeError::UnableToGeneralize(l_gen.id
                                     .clone()));
-                                unifier.unifier.errors.error(error);
+                                unifier.unifier.errors.push(error);
                                 return None;
                             }
                             _ => l,
@@ -698,7 +698,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
         match result {
             Ok(typ) => typ,
             Err(error) => {
-                unifier.unifier.errors.error(error);
+                unifier.unifier.errors.push(error);
                 Some(subs.new_var())
             }
         }
@@ -743,10 +743,8 @@ mod tests {
         let state = State::new(&env, &subs);
         let result = unify(&subs, state, &l, &r);
         assert_eq!(result,
-                   Err(Errors {
-                       errors: vec![TypeMismatch(Type::int(), Type::string()),
-                                    TypeMismatch(Type::string(), Type::int())],
-                   }));
+                   Err(Errors::from(vec![TypeMismatch(Type::int(), Type::string()),
+                                         TypeMismatch(Type::string(), Type::int())])));
     }
 
     #[test]

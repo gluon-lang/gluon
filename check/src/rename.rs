@@ -217,15 +217,15 @@ pub fn rename(symbols: &mut SymbolModule,
                         }
                     }
                 }
-                Expr::Infix(ref mut l, ref mut id, ref mut r) => {
-                    if let Some(new_id) = self.rename(&id.name, &id.typ)? {
+                Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
+                    if let Some(new_id) = self.rename(&op.value.name, &op.value.typ)? {
                         debug!("Rename {} = {}",
-                               self.symbols.string(&id.name),
+                               self.symbols.string(&op.value.name),
                                self.symbols.string(&new_id));
-                        id.name = new_id;
+                        op.value.name = new_id;
                     }
-                    self.visit_expr(l);
-                    self.visit_expr(r);
+                    self.visit_expr(lhs);
+                    self.visit_expr(rhs);
                 }
                 Expr::Match(ref mut expr, ref mut alts) => {
                     self.visit_expr(expr);
@@ -290,7 +290,7 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::Ident>) {
             if let Err(err) = self.rename_expr(expr) {
-                self.errors.error(Spanned {
+                self.errors.push(Spanned {
                     span: expr.span,
                     value: err,
                 });
