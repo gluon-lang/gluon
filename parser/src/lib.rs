@@ -11,13 +11,13 @@ extern crate lalrpop_util;
 
 use base::ast::{Expr, IdentEnv, SpannedExpr};
 use base::error::Errors;
-use base::pos::{self, BytePos, Span, Spanned};
+use base::pos::{self, BytePos, Column, Line, Location, Spanned};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
 use infix::{OpTable, Reparser, Error as InfixError};
-use layout::{Layout, Error as LayoutError};
-use token::{Token, Tokenizer};
+use layout::{LayoutContext, Error as LayoutError};
+use token::{SpannedToken, Token, Tokenizer, Error as TokenizeError};
 
 mod grammar;
 mod infix;
@@ -69,6 +69,11 @@ fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
 quick_error! {
     #[derive(Debug, PartialEq)]
     pub enum Error {
+        Token(err: TokenizeError) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
         Layout(err: LayoutError) {
             description(err.description())
             display("{}", err)
@@ -134,26 +139,77 @@ type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 
+struct Lexer<'input> {
+    tokenizer: Tokenizer<'input>,
+    layout: LayoutContext<'input>,
+}
+
+impl<'input> Lexer<'input> {
+    fn new(input: &'input str) -> Lexer<'input> {
+        Lexer {
+            tokenizer: Tokenizer::new(input),
+            layout: LayoutContext::new(),
+        }
+    }
+
+    fn next_spanned(&mut self) -> Option<Result<SpannedToken<'input>, Error>> {
+        match self.layout.next() {
+            Err(err) => Some(Err(Error::Layout(err))),
+            Ok(Some(Spanned { value: Token::EOF, .. })) => None,
+            Ok(Some(token)) => Some(Ok(token)),
+            Ok(None) => {
+                match self.tokenizer.next() {
+                    Some(Ok(token)) => {
+                        self.layout.push(token);
+                        self.next_spanned()
+                    }
+                    Some(Err(err)) => Some(Err(Error::Token(err))),
+                    None => {
+                        // Blegh
+                        let location = Location {
+                            line: Line::from(0),
+                            column: Column::from(0),
+                            absolute: BytePos::from(0),
+                        };
+                        let token = pos::spanned2(location, location, Token::EOF);
+                        self.layout.push(token);
+                        self.next_spanned()
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<'input> Iterator for Lexer<'input> {
+    type Item = Result<(BytePos, Token<'input>, BytePos), Error>;
+
+    fn next(&mut self) -> Option<Result<(BytePos, Token<'input>, BytePos), Error>> {
+        self.next_spanned().map(|token| {
+            token.map(|token| {
+                let start = token.span.start.absolute;
+                let end = token.span.end.absolute;
+                let token = token.value;
+
+                (start, token, end)
+            })
+        })
+    }
+}
+
 pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
                               input: &str)
                               -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
     where Id: Clone,
 {
-    let tokenizer = Tokenizer::new(input).map(|token| token.unwrap()); // FIXME
-
-    let layout = Layout::new(tokenizer).map(|token| {
-        let token = token?;
-        debug!("Lex {:?}", token.value);
-        let Span { start, end, .. } = token.span;
-        Ok((start.absolute, token.value, end.absolute))
-    });
-
     let mut parse_errors = Errors::new();
+    let lexer = Lexer::new(input);
 
-    match grammar::parse_TopExpr(input, symbols, &mut parse_errors, layout) {
+    match grammar::parse_TopExpr(input, symbols, &mut parse_errors, lexer) {
         Ok(mut expr) => {
             let mut errors = transform_errors(parse_errors);
             let mut reparser = Reparser::new(OpTable::default(), symbols);
+
             if let Err(reparse_errors) = reparser.reparse(&mut expr) {
                 errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
             }
