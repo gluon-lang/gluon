@@ -165,7 +165,7 @@ pub struct StackFrame<'b> {
 impl<'b> Drop for StackFrame<'b> {
     fn drop(&mut self) {
         // Move the cached frame back to storage
-        *self.stack.frames.last_mut().unwrap() = self.frame;
+        self.store_frame()
     }
 }
 
@@ -319,6 +319,10 @@ impl<'a: 'b, 'b> StackFrame<'b> {
                frame,
                prev);
         frame
+    }
+
+    pub fn store_frame(&mut self) {
+        *self.stack.frames.last_mut().unwrap() = self.frame;
     }
 }
 

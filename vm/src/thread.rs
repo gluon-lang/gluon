@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::usize;
 
 use base::metadata::Metadata;
+use base::pos::Line;
 use base::symbol::Symbol;
 use base::types::ArcType;
 use base::types;
@@ -22,7 +23,7 @@ use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
 use compiler::CompiledFunction;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
-use stack::{Stack, StackFrame, State};
+use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
 use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction, GcStr,
@@ -678,7 +679,64 @@ impl ThreadInternal for Thread {
     }
 }
 
-pub type HookFn = Box<FnMut(&Thread) -> Result<()> + Send + Sync>;
+pub type HookFn = Box<FnMut(&Thread, DebugInfo) -> Result<()> + Send + Sync>;
+
+pub struct DebugInfo<'a> {
+    stack: &'a Stack,
+    state: HookFlags,
+}
+
+pub struct StackInfo<'a> {
+    info: &'a DebugInfo<'a>,
+    index: usize,
+}
+
+impl<'a> DebugInfo<'a> {
+    /// Returns the reason for the hook being called
+    pub fn state(&self) -> HookFlags {
+        self.state
+    }
+
+    /// Returns a struct which can be queried about information about the stack
+    /// at a specific level where `0` is the currently executing frame.
+    pub fn stack_info(&self, level: usize) -> Option<StackInfo> {
+        let frames = self.stack.get_frames();
+        if level < frames.len() {
+            Some(StackInfo {
+                info: self,
+                index: frames.len() - level - 1,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> StackInfo<'a> {
+    fn frame(&self) -> &Frame {
+        &self.info.stack.get_frames()[self.index]
+    }
+
+    /// Returns the line which create the current instruction of this frame
+    pub fn line(&self) -> Option<Line> {
+        let frame = self.frame();
+        match frame.state {
+            State::Closure(ref closure) => {
+                Some(closure.function.source_map.line(frame.instruction_index))
+            }
+            _ => None,
+        }
+    }
+
+    /// Returns the name of the function executing at this frame
+    pub fn function_name(&self) -> Option<&str> {
+        match self.frame().state {
+            State::Unknown | State::Lock | State::Excess => None,
+            State::Closure(ref closure) => Some(closure.function.name.declared_name()),
+            State::Extern(ref function) => Some(function.id.declared_name()),
+        }
+    }
+}
 
 bitflags! {
     pub flags HookFlags: u8 {
@@ -747,7 +805,7 @@ impl Context {
         mem::replace(&mut self.hook.function, hook)
     }
 
-    pub fn set_flags(&mut self, flags: HookFlags) {
+    pub fn set_hook_mask(&mut self, flags: HookFlags) {
         self.hook.flags = flags;
     }
 
@@ -813,19 +871,27 @@ impl<'b> OwnedContext<'b> {
             let instruction_index = context.borrow_mut().stack.frame.instruction_index;
             if context.hook.flags.bits() != 0 {
                 if instruction_index == 0 {
-                    // Entering the function for the first time, set previous_instruction_index to max
-                    // to have the hook run on the first instruction
-                    context.hook.previous_instruction_index = usize::max_value();
+                    context.hook.previous_instruction_index = 0;
                 } else {
                     // Reentering the function after returning from a call
                     context.hook.previous_instruction_index = instruction_index - 1;
                 }
             }
-            if instruction_index == 0 {
-                if context.hook.flags.contains(CALL_FLAG) {
-                    if let Some(ref mut hook) = context.hook.function {
-                        hook(context.thread)?
+            if instruction_index == 0 && context.hook.flags.contains(CALL_FLAG) {
+                match state {
+                    State::Extern(_) |
+                    State::Closure(_) => {
+                        let thread = context.thread;
+                        let context = &mut *context;
+                        if let Some(ref mut hook) = context.hook.function {
+                            let info = DebugInfo {
+                                stack: &context.stack,
+                                state: CALL_FLAG,
+                            };
+                            hook(thread, info)?
+                        }
                     }
+                    _ => (),
                 }
             }
 
@@ -1083,9 +1149,16 @@ impl<'b> ExecuteContext<'b> {
                     let current_line = function.source_map.line(index);
                     let previous_line = function.source_map
                         .line(self.hook.previous_instruction_index);
-                    if current_line != previous_line {
-                        hook(self.thread)?
+                    if index == 0 || current_line != previous_line {
+                        self.stack.frame.instruction_index = index;
+                        self.stack.store_frame();
+                        let info = DebugInfo {
+                            stack: &self.stack.stack,
+                            state: LINE_FLAG,
+                        };
+                        hook(self.thread, info)?
                     }
+                    self.hook.previous_instruction_index = index;
                 }
             }
 
