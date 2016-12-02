@@ -610,11 +610,9 @@ impl<Id> ArcType<Id> {
     pub fn level(&self) -> u32 {
         use std::cmp::min;
         fold_type(self,
-                  |typ, level| {
-                      match **typ {
-                          Type::Variable(ref var) => min(var.id, level),
-                          _ => level,
-                      }
+                  |typ, level| match **typ {
+                      Type::Variable(ref var) => min(var.id, level),
+                      _ => level,
                   },
                   u32::max_value())
     }
@@ -702,7 +700,6 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
             .1
             .render(WIDTH, &mut s)
             .map_err(|_| fmt::Error)?;
-        s.pop();// Remove the ending newline
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
@@ -757,7 +754,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                         let doc = chain![arena;
                                          dt(self.env, Prec::Function, arg).pretty(arena).group(),
                                          " ->",
-                                         arena.newline(),
+                                         arena.space(),
                                          top(self.env, ret).pretty(arena)];
 
                         enclose(p, Prec::Function, arena, doc)
@@ -765,7 +762,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                     None => {
                         let mut doc = dt(self.env, Prec::Top, t).pretty(arena);
                         for arg in args {
-                            doc = doc.append(arena.newline())
+                            doc = doc.append(arena.space())
                                 .append(dt(self.env, Prec::Constructor, arg).pretty(arena));
                         }
                         enclose(p, Prec::Constructor, arena, doc).group()
@@ -781,7 +778,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                     Type::ExtendRow { ref fields, .. } => {
                         for field in fields.iter() {
                             if !first {
-                                doc = doc.append(arena.newline());
+                                doc = doc.append(arena.space());
                             }
                             first = false;
                             doc = doc.append("| ")
@@ -811,14 +808,14 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                     Type::EmptyRow => doc,
                     Type::ExtendRow { .. } => doc.append(top(self.env, row).pretty(arena)).nest(4),
                     _ => {
-                        doc.append(arena.newline())
+                        doc.append(arena.space())
                             .append("| ")
                             .append(top(self.env, row).pretty(arena))
                             .nest(4)
                     }
                 };
                 if !empty_fields {
-                    doc = doc.append(arena.newline());
+                    doc = doc.append(arena.space());
                 }
 
                 doc.append("}")
@@ -832,9 +829,9 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                     for (i, field) in types.iter().enumerate() {
                         let f = chain![arena;
                             self.env.string(&field.name),
-                            arena.newline(),
+                            arena.space(),
                             arena.concat(field.typ.args.iter().map(|arg| {
-                                arena.text(self.env.string(&arg.id)).append(" ").into()
+                                arena.text(self.env.string(&arg.id)).append(" ")
                             })),
                             arena.text("= ")
                                  .append(top(self.env, &field.typ.typ).pretty(arena)),
@@ -844,7 +841,7 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                                 arena.nil()
                             }]
                             .group();
-                        doc = doc.append(arena.newline()).append(f);
+                        doc = doc.append(arena.space()).append(f);
                     }
                     typ = rest;
                 }
@@ -871,14 +868,14 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                                 arena.nil()
                             }]
                             .group();
-                        doc = doc.append(arena.newline()).append(f);
+                        doc = doc.append(arena.space()).append(f);
                         typ = rest;
                     }
                 }
                 match *typ {
                     Type::EmptyRow => doc,
                     _ => {
-                        doc.append(arena.newline())
+                        doc.append(arena.space())
                             .append("| ")
                             .append(top(self.env, typ).pretty(arena))
                     }
@@ -959,9 +956,8 @@ pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
           T: Deref<Target = Type<I, T>>,
 {
     let mut a = Some(a);
-    walk_type(typ, |t| {
-        a = Some(f(t, a.take().expect("None in fold_type")));
-    });
+    walk_type(typ,
+              |t| { a = Some(f(t, a.take().expect("None in fold_type"))); });
     a.expect("fold_type")
 }
 

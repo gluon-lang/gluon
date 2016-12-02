@@ -1,4 +1,7 @@
+use std::slice::Iter;
+
 use base::pos::Line;
+use base::symbol::Symbol;
 
 #[derive(Debug)]
 pub struct SourceMap {
@@ -33,5 +36,66 @@ impl SourceMap {
         } else {
             self.map[p - 1].1
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct LocalMap {
+    // Instruction indexes marking [start, end) where the local variable `Symbol` exists
+    map: Vec<(usize, Symbol, usize)>,
+}
+
+impl LocalMap {
+    pub fn new() -> LocalMap {
+        LocalMap { map: Vec::new() }
+    }
+
+    /// Emits a local which is available starting from `instruction_index`. The end of each local's
+    /// scope must be defined by calling `close`
+    pub fn emit(&mut self, instruction_index: usize, name: Symbol) {
+        self.map.push((instruction_index, name, instruction_index));
+    }
+
+    /// `close` marks the end of a variables span and should be called for each variable inserted with
+    /// `emit` but in reverse order
+    pub fn close(&mut self, instruction_index: usize) {
+        if let Some(&mut (_, _, ref mut end)) = self.map.iter_mut().rev().find(|t| t.0 == t.2) {
+            *end = instruction_index;
+        }
+    }
+
+    /// Returns an iterator over the variables in scope at `instruction_index`
+    pub fn locals(&self, instruction_index: usize) -> LocalIter {
+        LocalIter {
+            locals: self.map.iter(),
+            instruction_index: instruction_index,
+        }
+    }
+}
+
+pub struct LocalIter<'a> {
+    locals: Iter<'a, (usize, Symbol, usize)>,
+    instruction_index: usize,
+}
+
+impl<'a> LocalIter<'a> {
+    pub fn empty() -> LocalIter<'a> {
+        LocalIter {
+            locals: [].iter(),
+            instruction_index: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for LocalIter<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        while let Some(local) = self.locals.next() {
+            if local.0 <= self.instruction_index && self.instruction_index < local.2 {
+                return Some(local.1.declared_name());
+            }
+        }
+        None
     }
 }

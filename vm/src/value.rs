@@ -1,6 +1,7 @@
 use std::fmt;
 use std::collections::hash_map::Entry;
 use std::result::Result as StdResult;
+use std::string::String as StdString;
 
 use itertools::Itertools;
 
@@ -14,7 +15,7 @@ use base::fnv::FnvMap;
 use interner::InternedStr;
 use gc::{Gc, GcPtr, Generation, Traverseable, DataDef, Move, WriteOnly};
 use array::Array;
-use source_map::SourceMap;
+use source_map::{LocalMap, SourceMap};
 use thread::{Thread, Status};
 use {Error, Result};
 
@@ -117,6 +118,8 @@ pub struct BytecodeFunction {
     pub globals: Vec<Value>,
     pub records: Vec<Vec<InternedStr>>,
     pub source_map: SourceMap,
+    pub local_map: LocalMap,
+    pub source_name: StdString,
 }
 
 impl Traverseable for BytecodeFunction {
@@ -1030,49 +1033,49 @@ impl<'t> Cloner<'t> {
     fn deep_clone_ptr<T, A, R>(&mut self, value: GcPtr<T>, alloc: A) -> Result<StdResult<Value, R>>
         where A: FnOnce(&mut Gc, &T) -> Result<(Value, R)>,
     {
-        let key = &*value as *const T as *const ();
+    let key = &*value as *const T as *const ();
         let new_ptr = match self.visited.entry(key) {
-            Entry::Occupied(entry) => return Ok(Ok(*entry.get())),
-            Entry::Vacant(entry) => {
-                // FIXME Should allocate the real `Value` and possibly fill it later
+        Entry::Occupied(entry) => return Ok(Ok(*entry.get())),
+        Entry::Vacant(entry) => {
+            // FIXME Should allocate the real `Value` and possibly fill it later
                 let (value, new_ptr) = alloc(self.gc, &value)?;
-                entry.insert(value);
-                new_ptr
-            }
-        };
-        Ok(Err(new_ptr))
+            entry.insert(value);
+            new_ptr
+        }
+    };
+    Ok(Err(new_ptr))
     }
 
     fn deep_clone_str(&mut self, data: GcStr) -> Result<Value> {
         unsafe {
             Ok(self.deep_clone_ptr(data.into_inner(), |gc, data| {
                     let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
-                    Ok((String(ptr), ptr))
+            Ok((String(ptr), ptr))
                 })?
-                .unwrap_or_else(String))
+        .unwrap_or_else(String))
         }
     }
     fn deep_clone_data(&mut self, data: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
-                let ptr = gc.alloc(Def {
-                        tag: data.tag,
-                        elems: &data.fields,
-                    })?;
-                Ok((Value::Data(ptr), ptr))
+        let ptr = gc.alloc(Def {
+                tag: data.tag,
+                elems: &data.fields,
             })?;
-        match result {
-            Ok(Value::Data(ptr)) => Ok(ptr),
-            Ok(_) => unreachable!(),
-            Err(mut new_data) => {
-                {
-                    let new_fields = unsafe { &mut new_data.as_mut().fields };
-                    for (new, old) in new_fields.iter_mut().zip(&data.fields) {
+        Ok((Value::Data(ptr), ptr))
+    })?;
+    match result {
+        Ok(Value::Data(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_fields = unsafe { &mut new_data.as_mut().fields };
+                for (new, old) in new_fields.iter_mut().zip(&data.fields) {
                         *new = self.deep_clone(*old)?;
-                    }
                 }
-                Ok(new_data)
             }
+            Ok(new_data)
         }
+    }
     }
 
     fn deep_clone_userdata(&mut self, ptr: GcPtr<Box<Userdata>>) -> Result<GcPtr<Box<Userdata>>> {
@@ -1086,79 +1089,79 @@ impl<'t> Cloner<'t> {
             where T: Copy,
                   F: FnMut(T) -> Result<T>,
         {
-            let new_array = new_array.as_mut().unsafe_array_mut::<T>();
-            for field in new_array.iter_mut() {
+        let new_array = new_array.as_mut().unsafe_array_mut::<T>();
+        for field in new_array.iter_mut() {
                 *field = deep_clone(*field)?;
-            }
-            Ok(())
         }
+        Ok(())
+    }
 
         let result = self.deep_clone_ptr(array, |gc, array| {
-                let ptr = gc.alloc(array)?;
-                Ok((Value::Array(ptr), ptr))
-            })?;
-        match result {
-            Ok(Value::Array(ptr)) => Ok(ptr),
-            Ok(_) => unreachable!(),
-            Err(new_array) => {
-                unsafe {
-                    match new_array.repr() {
-                        Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
+        let ptr = gc.alloc(array)?;
+        Ok((Value::Array(ptr), ptr))
+    })?;
+    match result {
+        Ok(Value::Array(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(new_array) => {
+            unsafe {
+                match new_array.repr() {
+                    Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
                         Repr::Array => deep_clone_elems(new_array, |e| self.deep_clone_array(e)),
                         Repr::Unknown => deep_clone_elems(new_array, |e| self.deep_clone(e)),
-                        Repr::Userdata => {
+                    Repr::Userdata => {
                             deep_clone_elems(new_array, |e| self.deep_clone_userdata(e))
-                        }
-                        Repr::Thread => {
-                            return Err(Error::Message("Threads cannot be deep cloned yet".into()))
-                        }
-                    }?;
-                }
-                Ok(new_array)
+                    }
+                    Repr::Thread => {
+                        return Err(Error::Message("Threads cannot be deep cloned yet".into()))
+                    }
+                }?;
             }
+            Ok(new_array)
         }
+    }
     }
 
     fn deep_clone_closure(&mut self, data: GcPtr<ClosureData>) -> Result<GcPtr<ClosureData>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
-                let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars))?;
-                Ok((Closure(ptr), ptr))
-            })?;
-        match result {
-            Ok(Value::Closure(ptr)) => Ok(ptr),
-            Ok(_) => unreachable!(),
-            Err(mut new_data) => {
-                {
-                    let new_upvars = unsafe { &mut new_data.as_mut().upvars };
-                    for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
+        let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars))?;
+        Ok((Closure(ptr), ptr))
+    })?;
+    match result {
+        Ok(Value::Closure(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_upvars = unsafe { &mut new_data.as_mut().upvars };
+                for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
                         *new = self.deep_clone(*old)?;
-                    }
                 }
-                Ok(new_data)
             }
+            Ok(new_data)
         }
+    }
     }
     fn deep_clone_app(&mut self,
                       data: GcPtr<PartialApplicationData>)
-                      -> Result<GcPtr<PartialApplicationData>> {
+                  -> Result<GcPtr<PartialApplicationData>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
-                let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.args))?;
-                Ok((PartialApplication(ptr), ptr))
-            })?;
-        match result {
-            Ok(Value::PartialApplication(ptr)) => Ok(ptr),
-            Ok(_) => unreachable!(),
-            Err(mut new_data) => {
-                {
-                    let new_args = unsafe { &mut new_data.as_mut().args };
-                    for (new, old) in new_args.iter_mut()
-                        .zip(&data.args) {
+        let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.args))?;
+        Ok((PartialApplication(ptr), ptr))
+    })?;
+    match result {
+        Ok(Value::PartialApplication(ptr)) => Ok(ptr),
+        Ok(_) => unreachable!(),
+        Err(mut new_data) => {
+            {
+                let new_args = unsafe { &mut new_data.as_mut().args };
+                for (new, old) in new_args.iter_mut()
+                    .zip(&data.args) {
                         *new = self.deep_clone(*old)?;
-                    }
                 }
-                Ok(new_data)
             }
+            Ok(new_data)
         }
+    }
     }
 }
 
@@ -1177,13 +1180,13 @@ mod tests {
     impl KindEnv for MockEnv {
         fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
             None
-        }
     }
+        }
 
     impl TypeEnv for MockEnv {
         fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
             None
-        }
+    }
 
         fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
             self.0.as_ref()

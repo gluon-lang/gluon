@@ -23,6 +23,7 @@ use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
 use compiler::CompiledFunction;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
+use source_map::LocalIter;
 use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
@@ -562,7 +563,7 @@ impl ThreadInternal for Thread {
                     instructions: Vec<Instruction>)
                     -> Result<()> {
         let id = Symbol::from(name);
-        let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
+        let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone(), "".into());
         compiled_fn.instructions = instructions;
         let closure = self.global_env().new_global_thunk(compiled_fn)?;
         self.set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
@@ -683,6 +684,7 @@ pub type HookFn = Box<FnMut(&Thread, DebugInfo) -> Result<()> + Send + Sync>;
 
 pub struct DebugInfo<'a> {
     stack: &'a Stack,
+    instruction_index: usize,
     state: HookFlags,
 }
 
@@ -728,12 +730,30 @@ impl<'a> StackInfo<'a> {
         }
     }
 
+    /// Returns the name of the source which defined the funtion executing at this frame
+    pub fn source_name(&self) -> &str {
+        match self.frame().state {
+            State::Closure(ref closure) => &closure.function.source_name,
+            _ => "<unknown>",
+        }
+    }
+
     /// Returns the name of the function executing at this frame
     pub fn function_name(&self) -> Option<&str> {
         match self.frame().state {
             State::Unknown | State::Lock | State::Excess => None,
             State::Closure(ref closure) => Some(closure.function.name.declared_name()),
             State::Extern(ref function) => Some(function.id.declared_name()),
+        }
+    }
+
+    /// Returns an iterator over all locals available at the current executing instruction
+    pub fn locals(&self) -> LocalIter {
+        match self.frame().state {
+            State::Closure(ref closure) => {
+                closure.function.local_map.locals(self.info.instruction_index)
+            }
+            _ => LocalIter::empty(),
         }
     }
 }
@@ -886,6 +906,7 @@ impl<'b> OwnedContext<'b> {
                         if let Some(ref mut hook) = context.hook.function {
                             let info = DebugInfo {
                                 stack: &context.stack,
+                                instruction_index: instruction_index,
                                 state: CALL_FLAG,
                             };
                             hook(thread, info)?
@@ -1154,6 +1175,7 @@ impl<'b> ExecuteContext<'b> {
                         self.stack.store_frame();
                         let info = DebugInfo {
                             stack: &self.stack.stack,
+                            instruction_index: index,
                             state: LINE_FLAG,
                         };
                         hook(self.thread, info)?

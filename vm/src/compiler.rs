@@ -10,7 +10,7 @@ use base::pos::Line;
 use base::source::Source;
 use types::*;
 use vm::GlobalVmState;
-use source_map::SourceMap;
+use source_map::{LocalMap, SourceMap};
 use self::Variable::*;
 
 use {Error, Result};
@@ -47,10 +47,12 @@ pub struct CompiledFunction {
     pub records: Vec<Vec<Symbol>>,
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
+    pub local_map: LocalMap,
+    pub source_name: String,
 }
 
 impl CompiledFunction {
-    pub fn new(args: VmIndex, id: Symbol, typ: ArcType) -> CompiledFunction {
+    pub fn new(args: VmIndex, id: Symbol, typ: ArcType, source_name: String) -> CompiledFunction {
         CompiledFunction {
             args: args,
             max_stack_size: 0,
@@ -62,6 +64,8 @@ impl CompiledFunction {
             module_globals: Vec::new(),
             records: Vec::new(),
             source_map: SourceMap::new(),
+            local_map: LocalMap::new(),
+            source_name: source_name,
         }
     }
 }
@@ -105,7 +109,7 @@ impl FunctionEnvs {
                       typ: ArcType) {
         compiler.stack_types.enter_scope();
         compiler.stack_constructors.enter_scope();
-        self.envs.push(FunctionEnv::new(args, id, typ));
+        self.envs.push(FunctionEnv::new(args, id, typ, compiler.source_name.clone()));
     }
 
     fn end_function(&mut self, compiler: &mut Compiler) -> FunctionEnv {
@@ -116,12 +120,12 @@ impl FunctionEnvs {
 }
 
 impl FunctionEnv {
-    fn new(args: VmIndex, id: Symbol, typ: ArcType) -> FunctionEnv {
+    fn new(args: VmIndex, id: Symbol, typ: ArcType, source_name: String) -> FunctionEnv {
         FunctionEnv {
             free_vars: Vec::new(),
             stack: ScopedMap::new(),
             stack_size: 0,
-            function: CompiledFunction::new(args, id, typ),
+            function: CompiledFunction::new(args, id, typ, source_name),
             current_line: Line::from(0),
         }
     }
@@ -220,6 +224,7 @@ impl FunctionEnv {
 
     fn new_stack_var(&mut self, _compiler: &Compiler, s: Symbol) {
         debug!("Push var: {:?} at {}", s, self.stack_size - 1);
+        self.function.local_map.emit(self.function.instructions.len(), s.clone());
         self.stack.insert(s, self.stack_size - 1);
     }
 
@@ -272,6 +277,7 @@ pub struct Compiler<'a> {
     stack_constructors: ScopedMap<Symbol, ArcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
     source: &'a Source<'a>,
+    source_name: String,
     empty_symbol: Symbol,
 }
 
@@ -306,7 +312,8 @@ impl<'a> Compiler<'a> {
     pub fn new(globals: &'a (CompilerEnv + 'a),
                vm: &'a GlobalVmState,
                mut symbols: SymbolModule<'a>,
-               source: &'a Source<'a>)
+               source: &'a Source<'a>,
+               source_name: String)
                -> Compiler<'a> {
         Compiler {
             globals: globals,
@@ -316,6 +323,7 @@ impl<'a> Compiler<'a> {
             stack_constructors: ScopedMap::new(),
             stack_types: ScopedMap::new(),
             source: source,
+            source_name: source_name,
         }
     }
 
