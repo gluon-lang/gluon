@@ -1105,10 +1105,7 @@ impl<'a> Typecheck<'a> {
                     let generic = format!("{}{}", generic, i);
                     *i += 1;
                     let id = self.symbols.symbol(generic);
-                    let gen: ArcType = Type::generic(Generic {
-                        kind: var.kind.clone(),
-                        id: id.clone(),
-                    });
+                    let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
                     self.subs.insert(var.id, gen.clone());
                     Some(gen)
                 }

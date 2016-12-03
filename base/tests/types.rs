@@ -4,7 +4,7 @@ extern crate collect_mac;
 
 use std::ops::Deref;
 
-use base::kind::{ArcKind, Kind};
+use base::kind::Kind;
 use base::types::*;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
@@ -15,10 +15,7 @@ fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
     match s.parse() {
         Ok(b) => Type::Builtin(b),
         Err(()) if s.starts_with(char::is_lowercase) => {
-            Type::Generic(Generic {
-                kind: ArcKind::new(Kind::Type),
-                id: s,
-            })
+            Type::Generic(Generic::new(s, Kind::typ()))
         }
         Err(()) => Type::App(Type::ident(s), args.into_iter().collect()),
     }
@@ -55,12 +52,7 @@ fn some_record() -> ArcType<&'static str> {
     let test = data("Test", vec![data("a", vec![])]);
     Type::record(vec![Field {
                           name: "Test",
-                          typ: Alias::new("Test",
-                                          vec![Generic {
-                                                   kind: Kind::typ(),
-                                                   id: "a",
-                                               }],
-                                          f.clone()),
+                          typ: Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone()),
                       }],
                  vec![Field {
                           name: "x",
@@ -92,10 +84,7 @@ fn show_record() {
     let typ = Type::record(vec![Field {
                                     name: "Test",
                                     typ: Alias::new("Test",
-                                                    vec![Generic {
-                                                             kind: Kind::typ(),
-                                                             id: "a",
-                                                         }],
+                                                    vec![Generic::new("a", Kind::typ())],
                                                     f.clone()),
                                 }],
                            vec![Field {
@@ -108,10 +97,7 @@ fn show_record() {
     let typ = Type::record(vec![Field {
                                     name: "Test",
                                     typ: Alias::new("Test",
-                                                    vec![Generic {
-                                                             kind: Kind::typ(),
-                                                             id: "a",
-                                                         }],
+                                                    vec![Generic::new("a", Kind::typ())],
                                                     f.clone()),
                                 }],
                            vec![]);
@@ -127,10 +113,7 @@ fn show_record_multi_line() {
     let typ = Type::record(vec![Field {
                                     name: "Test",
                                     typ: Alias::new("Test",
-                                                    vec![Generic {
-                                                             kind: Kind::typ(),
-                                                             id: "a",
-                                                         }],
+                                                    vec![Generic::new("a", Kind::typ())],
                                                     f.clone()),
                                 }],
                            vec![Field {
@@ -212,10 +195,7 @@ fn show_polymorphic_record_associated_type() {
     let type_fields = vec![Field {
                                name: "Test",
                                typ: Alias::new("Test",
-                                               vec![Generic {
-                                                        kind: Kind::typ(),
-                                                        id: "a",
-                                                    }],
+                                               vec![Generic::new("a", Kind::typ())],
                                                Type::ident("a")),
                            }];
     let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));

@@ -173,10 +173,7 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
     match s.parse() {
         Ok(b) => Type::builtin(b),
         Err(()) if s.starts_with(char::is_lowercase) => {
-            Type::generic(Generic {
-                kind: Kind::typ(),
-                id: intern(s),
-            })
+            Type::generic(Generic::new(intern(s), Kind::typ()))
         }
         Err(()) => {
             if args.len() == 0 {
@@ -193,12 +190,7 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
     assert!(s.len() != 0);
     Type::alias(intern(s),
                 args.iter()
-                    .map(|id| {
-                        Generic {
-                            kind: Kind::typ(),
-                            id: intern(id),
-                        }
-                    })
+                    .map(|id| Generic::new(intern(id), Kind::typ()))
                     .collect(),
                 typ)
 }
