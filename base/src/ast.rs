@@ -673,7 +673,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
                 // Replace the generic variable with the type from the list
                 // or if it is not found the make a fresh variable
                 alias
-                    .args
+                    .params()
                     .iter()
                     .zip(alias_type.unapplied_args())
                     .find(|&(arg, _)| arg.id == generic.id)

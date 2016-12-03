@@ -186,6 +186,14 @@ impl<'a> KindCheck<'a> {
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
+            Type::Forall(ref params, ref typ) => {
+                let (ret_kind, ret_typ) = self.kindcheck(typ)?;
+                let kind = params.into_iter().rev().fold(ret_kind, |body, param| {
+                    Kind::function(param.kind.clone(), body)
+                });
+
+                Ok((kind, ret_typ.clone()))
+            }
             Type::App(ref ctor, ref args) => {
                 let (mut kind, ctor) = self.kindcheck(ctor)?;
                 let mut new_args = AppVec::new();

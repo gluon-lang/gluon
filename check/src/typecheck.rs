@@ -180,7 +180,7 @@ impl<'a> KindEnv for Environment<'a> {
             .get(type_name)
             .map(|&(_, ref alias)| {
                 let mut kind = Kind::typ();
-                for arg in alias.args.iter().rev() {
+                for arg in alias.params().iter().rev() {
                     kind = Kind::function(arg.kind.clone(), kind);
                 }
                 kind
@@ -379,7 +379,7 @@ impl<'a> Typecheck<'a> {
                 self.stack_var(field.name, field.typ);
             }
         }
-        let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
+        let generic_args = alias.params().iter().cloned().map(Type::generic).collect();
         let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
             // FIXME: Workaround so that both the types name in this module and its global
@@ -1281,7 +1281,7 @@ impl<'a> Typecheck<'a> {
                 // and bind the same variables to the arguments of the type binding
                 // ('a' and 'b' in the example)
                 let mut id_kind = check.type_kind();
-                for generic in alias.args.iter_mut().rev() {
+                for generic in alias.unresolved_type_mut().params_mut().iter_mut().rev() {
                     check.instantiate_kinds(&mut generic.kind);
                     id_kind = Kind::function(generic.kind.clone(), id_kind);
                 }
@@ -1290,14 +1290,14 @@ impl<'a> Typecheck<'a> {
 
             // Kindcheck all the types in the environment
             for alias in resolved_aliases.iter_mut() {
-                check.set_variables(&alias.args);
+                check.set_variables(alias.params());
                 check.kindcheck_type(alias.unresolved_type_mut())?;
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
             for alias in resolved_aliases.iter_mut() {
                 *alias.unresolved_type_mut() = check.finalize_type(alias.unresolved_type().clone());
-                for arg in &mut alias.args {
+                for arg in alias.unresolved_type_mut().params_mut() {
                     *arg = check.finalize_generic(arg);
                 }
             }
@@ -1814,14 +1814,16 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
         loop {
             let (arg, new) = match self.typ.as_function() {
                 Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
-                None => match get_alias_app(&self.tc.environment, &self.typ) {
-                    Some((alias, args)) => {
-                        match resolve::type_of_alias(&self.tc.environment, alias, args) {
-                            Some(typ) => (None, typ.clone()),
-                            None => return None,
+                None => {
+                    match get_alias_app(&self.tc.environment, &self.typ) {
+                        Some((alias, args)) => {
+                            match alias.unresolved_type().apply_args(args) {
+                                Some(typ) => (None, typ.clone()),
+                                None => return None,
+                            }
                         }
+                        None => return Some(self.tc.subs.new_var()),
                     }
-                    None => return Some(self.tc.subs.new_var()),
                 },
             };
             self.typ = new;

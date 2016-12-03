@@ -257,7 +257,7 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                             " ",
                             bind.name.value.as_ref(),
                             " ",
-                            arena.concat(bind.alias.value.args.iter().map(|arg| {
+                            arena.concat(bind.alias.value.params().iter().map(|arg| {
                                 chain![arena;
                                     if *arg.kind != Kind::Type && *arg.kind != Kind::Hole {
                                         chain![arena;

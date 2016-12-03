@@ -305,7 +305,6 @@ in eq_Int
     let result = support::typecheck(text);
     let bool = Type::alias(
         support::intern_unscoped("Bool"),
-        vec![],
         Type::ident(support::intern_unscoped("Bool")),
     );
     let eq = alias(
@@ -587,10 +586,13 @@ return 1
     let id = alias("Id", &["a"], variant("Id"));
     let id_t = Type::alias(
         intern("IdT"),
-        vec![m.clone(), Generic::new(intern("a"), Kind::typ())],
-        Type::app(
-            Type::generic(m),
-            collect![Type::app(id, collect![typ("a")])],
+        Type::forall(
+            vec![m.clone(),
+        Generic::new(intern("a"), Kind::typ())],
+            Type::app(
+                Type::generic(m),
+                collect![Type::app(id, collect![typ("a")])],
+            ),
         ),
     );
     let expected = Ok(Type::app(id_t, collect![test, typ("Int")]));

@@ -107,10 +107,11 @@ type Category (cat : Type -> Type -> Type) = { id : cat a a, compose : cat b c -
 let make_Category category : Category cat -> _ =
     let { id, compose } = category
 
+
     /// Right-to-left composition. Alias for `compose`.
-    let (<<) : cat b c -> cat a b -> cat a c = compose
+    let (<<) : forall a b c . cat b c -> cat a b -> cat a c = compose
     /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
-    let (>>) f g : cat a b -> cat b c -> cat a c = compose g f
+    let (>>) f g : forall a b c . cat a b -> cat b c -> cat a c = compose g f
 
     { id, compose, (<<), (>>) }
 

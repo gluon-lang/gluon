@@ -385,7 +385,6 @@ impl GlobalVmState {
                 name.into(),
                 Alias::from(AliasData::new(
                     Symbol::from(name),
-                    Vec::new(),
                     self_.type_cache.opaque(),
                 )),
             );
@@ -489,7 +488,7 @@ impl GlobalVmState {
             let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(
                 name.into(),
-                Alias::from(AliasData::new(n, args, self.type_cache.opaque())),
+                Alias::from(AliasData::new(n, Type::forall(args, self.type_cache.opaque())),
             );
             Ok(t)
         }

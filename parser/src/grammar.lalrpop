@@ -33,6 +33,7 @@ extern {
 
         "and" => Token::And,
         "else" => Token::Else,
+        "forall" => Token::Forall,
         "if" => Token::If,
         "in" => Token::In,
         "let" => Token::Let,
@@ -256,6 +257,11 @@ AppType : AstType<Id> = {
 
 Type_ = {
     AppType_,
+    "forall" <args: Ident+> "." <ty: Type> =>
+        Type::Forall(args.into_iter()
+                         .map(|id| Generic::new(id, Kind::variable(0)))
+                         .collect(),
+                     ty),
 
     <lhs: AppType> <f: Sp<"->">> <rhs: Type> =>
         Type::App(

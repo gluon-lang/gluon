@@ -160,7 +160,7 @@ pub fn type_decl(
             TypeBinding {
                 comment: None,
                 name: no_loc(name.clone()),
-                alias: alias(name, args, typ),
+                alias: Alias::new(name, Type::forall(args, typ)),
                 finalized_alias: None,
             },
         ],
