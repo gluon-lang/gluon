@@ -410,10 +410,7 @@ impl GlobalVmState {
         if let Some(g) = generics.get(name) {
             return g.clone();
         }
-        let g: ArcType = Type::generic(Generic {
-            id: Symbol::from(name),
-            kind: Kind::typ(),
-        });
+        let g: ArcType = Type::generic(Generic::new(Symbol::from(name), Kind::typ()));
         generics.insert(name.into(), g.clone());
         g
     }

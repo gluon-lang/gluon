@@ -95,7 +95,7 @@ VariantField: (Id, Vec<ArcType<Id>>) =
 TypeBinding: TypeBinding<Id> = {
     <id: Ident> <params: Ident*> "=" <row: VariantField+> => {
         let params: Vec<_> = params.into_iter()
-            .map(|id| Generic { kind: Kind::variable(0), id: id })
+            .map(|id| Generic::new(id, Kind::variable(0)))
             .collect();
 
         let typ_args = params.iter().cloned().map(Type::generic).collect();
@@ -114,7 +114,7 @@ TypeBinding: TypeBinding<Id> = {
 
     <id: Ident> <params: Ident*> "=" <body: Type> => {
         let params = params.into_iter()
-            .map(|id| Generic { kind: Kind::variable(0), id: id })
+            .map(|id| Generic::new(id, Kind::variable(0)))
             .collect();
 
         TypeBinding {
@@ -136,10 +136,7 @@ AtomicType: ArcType<Id> = {
                 Type::ident(env.from_str(<>))
             }
             Err(_) => {
-                Type::generic(Generic {
-                    kind: Kind::variable(0),
-                    id: env.from_str(<>),
-                })
+                Type::generic(Generic::new(env.from_str(<>), Kind::variable(0)))
             }
         },
 
