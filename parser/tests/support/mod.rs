@@ -5,7 +5,7 @@ use base::ast::{Alternative, Array, DisplayEnv, Expr, IdentEnv, Lambda, Literal,
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
-use base::types::{Alias, ArcType, Field, Generic, Type};
+use base::types::{Alias, AppVec, ArcType, Field, Generic, Type};
 use parser::{Error, ParseErrors, parse_string};
 use std::marker::PhantomData;
 
@@ -131,14 +131,14 @@ pub fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
 }
 
 pub fn type_decl(name: String,
-                 args: Vec<Generic<String>>,
+                 args: AppVec<Generic<String>>,
                  typ: ArcType<String>,
                  body: SpExpr)
                  -> SpExpr {
     type_decls(vec![TypeBinding {
                         comment: None,
                         name: name.clone(),
-                        alias: Alias::new(name, args, typ),
+                        alias: Alias::new(name, Type::forall(args, typ)),
                     }],
                body)
 }

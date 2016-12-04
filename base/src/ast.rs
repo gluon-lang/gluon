@@ -461,7 +461,8 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
             Type::Generic(ref generic) => {
                 // Replace the generic variable with the type from the list
                 // or if it is not found the make a fresh variable
-                alias.args
+                alias.typ
+                    .params()
                     .iter()
                     .zip(alias_type.unapplied_args())
                     .find(|&(arg, _)| arg.id == generic.id)

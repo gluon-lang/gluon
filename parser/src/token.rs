@@ -20,6 +20,7 @@ pub enum Token<'input> {
 
     And,
     Else,
+    Forall,
     If,
     In,
     Let,
@@ -66,6 +67,7 @@ impl<'input> fmt::Display for Token<'input> {
 
             And => "And",
             Else => "Else",
+            Forall => "Forall",
             If => "If",
             In => "In",
             Let => "Let",
@@ -413,6 +415,7 @@ impl<'input> Tokenizer<'input> {
         let token = match ident {
             "and" => Token::And,
             "else" => Token::Else,
+            "forall" => Token::Forall,
             "if" => Token::If,
             "in" => Token::In,
             "let" => Token::Let,

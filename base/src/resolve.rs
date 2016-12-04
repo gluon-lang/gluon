@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
-use types;
-use types::{AliasData, AppVec, Type, ArcType, TypeEnv};
+use types::{Type, ArcType, TypeEnv};
 use symbol::Symbol;
 
 quick_error! {
@@ -33,10 +32,10 @@ pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t ArcType) -> Cow<'t, ArcTyp
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
     let maybe_alias = match **typ {
-        Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
+        Type::Alias(ref alias) if alias.typ.params().is_empty() => Some(alias),
         Type::App(ref alias, ref args) => {
             match **alias {
-                Type::Alias(ref alias) if alias.args.len() == args.len() => Some(alias),
+                Type::Alias(ref alias) if alias.typ.params().len() == args.len() => Some(alias),
                 _ => None,
             }
         }
@@ -54,73 +53,8 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
                 }
             };
 
-            Ok(type_of_alias(alias, typ.unapplied_args()))
+            Ok(alias.typ.apply_args(typ.unapplied_args()))
         }
         None => Ok(None),
     }
-}
-
-/// Returns the type which is aliased by `alias` if it was possible to do a substitution on the
-/// type arguments of `alias` using `args`
-///
-/// Example:
-///     alias = Result e t (| Err e | Ok t)
-///     args = [Error, Option a]
-///     result = | Err Error | Ok (Option a)
-pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Option<ArcType> {
-    let alias_args = &alias.args;
-    let mut typ = alias.typ.clone();
-
-    // It is ok to take the aliased type only if the alias is fully applied or if it
-    // the missing argument only appear in order at the end of the alias
-    // i.e
-    // type Test a b c = Type (a Int) b c
-    //
-    // Test a b == Type (a Int) b
-    // Test a == Type (a Int)
-    // Test == ??? (Impossible to do a sane substitution)
-    match *typ.clone() {
-        Type::App(ref d, ref arg_types) => {
-            let allowed_missing_args = arg_types.iter()
-                .rev()
-                .zip(alias_args.iter().rev())
-                .take_while(|&(l, r)| {
-                    match **l {
-                        Type::Generic(ref g) => g == r,
-                        _ => false,
-                    }
-                })
-                .count();
-            if alias_args.len() - args.len() <= allowed_missing_args {
-                // Remove the args at the end of the aliased type
-                let arg_types: AppVec<_> = arg_types.iter()
-                    .take(arg_types.len() - (alias_args.len() - args.len()))
-                    .cloned()
-                    .collect();
-                typ = Type::app(d.clone(), arg_types);
-            } else {
-                return None;
-            }
-        }
-        _ => {
-            if args.len() != alias_args.len() {
-                return None;
-            }
-        }
-    }
-
-    Some(types::walk_move_type(typ,
-                               &mut |typ| {
-        match *typ {
-            Type::Generic(ref generic) => {
-                // Replace the generic variable with the type from the list
-                // or if it is not found the make a fresh variable
-                alias_args.iter()
-                    .zip(args)
-                    .find(|&(arg, _)| arg.id == generic.id)
-                    .map(|(_, typ)| typ.clone())
-            }
-            _ => None,
-        }
-    }))
 }

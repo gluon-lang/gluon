@@ -40,7 +40,8 @@ fn expression() {
                          vec![intern("x"), intern("y")],
                          binop(id("x"), "+", id("y")))));
     let e = parse(r#"type Test = Int in 0"#);
-    assert_eq!(e, Ok(type_decl(intern("Test"), vec![], typ("Int"), int(0))));
+    assert_eq!(e,
+               Ok(type_decl(intern("Test"), collect![], typ("Int"), int(0))));
 }
 
 #[test]
@@ -72,6 +73,7 @@ fn let_type_decl() {
         _ => assert!(false),
     }
 }
+
 #[test]
 fn let_args() {
     let _ = ::env_logger::init();
@@ -87,7 +89,7 @@ fn type_decl_record() {
     let record = Type::record(Vec::new(),
                               vec![Field::new(intern("x"), typ("Int")),
                                    Field::new(intern("y"), Type::record(vec![], vec![]))]);
-    assert_eq!(e, type_decl(intern("Test"), vec![], record, int(1)));
+    assert_eq!(e, type_decl(intern("Test"), collect![], record, int(1)));
 }
 
 #[test]
@@ -103,12 +105,12 @@ fn type_mutually_recursive() {
         TypeBinding {
             comment: None,
             name: intern("Test"),
-            alias: Alias::new(intern("Test"), Vec::new(), test),
+            alias: Alias::new(intern("Test"), test),
         },
         TypeBinding {
             comment: None,
             name: intern("Test2"),
-            alias: Alias::new(intern("Test2"), Vec::new(), test2),
+            alias: Alias::new(intern("Test2"), test2),
         },
         ];
     assert_eq!(e, type_decls(binds, int(1)));
@@ -140,6 +142,7 @@ fn op_identifier() {
                            binop(id("x"), "#Int==", id("y"))),
                     app(id("=="), vec![int(1), int(2)])));
 }
+
 #[test]
 fn variant_type() {
     let _ = ::env_logger::init();
@@ -149,11 +152,12 @@ fn variant_type() {
     let some = Type::function(vec![typ("a")], option.clone());
     assert_eq!(e,
                type_decl(intern("Option"),
-                         vec![generic("a")],
+                         collect![generic("a")],
                          Type::variant(vec![Field::new(intern("None"), none),
                                             Field::new(intern("Some"), some)]),
                          app(id("Some"), vec![int(1)])));
 }
+
 #[test]
 fn case_expr() {
     let _ = ::env_logger::init();
@@ -170,12 +174,14 @@ match None with
                             (Pattern::Constructor(TypedIdent::new(intern("None")), vec![]),
                              int(0))])));
 }
+
 #[test]
 fn array_expr() {
     let _ = ::env_logger::init();
     let e = parse_new!("[1, a]");
     assert_eq!(e, array(vec![int(1), id("a")]));
 }
+
 #[test]
 fn operator_expr() {
     let _ = ::env_logger::init();
@@ -212,6 +218,7 @@ fn record_pattern() {
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
+
 #[test]
 fn let_pattern() {
     let _ = ::env_logger::init();
@@ -343,7 +350,7 @@ id
                type_decls(vec![TypeBinding {
                                    comment: Some("Test type ".into()),
                                    name: intern("Test"),
-                                   alias: Alias::new(intern("Test"), Vec::new(), typ("Int")),
+                                   alias: Alias::new(intern("Test"), typ("Int")),
                                }],
                           id("id")));
 }
@@ -366,7 +373,7 @@ id
                      type_decls(vec![TypeBinding {
                                          comment: Some("Test type ".into()),
                                          name: intern("Test"),
-                                         alias: Alias::new(intern("Test"), Vec::new(), typ("Int")),
+                                         alias: Alias::new(intern("Test"), typ("Int")),
                                      }],
                                 id("id"))));
 }
@@ -386,7 +393,7 @@ id
                type_decls(vec![TypeBinding {
                                    comment: Some("Merge\nconsecutive\nline comments.".into()),
                                    name: intern("Test"),
-                                   alias: Alias::new(intern("Test"), Vec::new(), typ("Int")),
+                                   alias: Alias::new(intern("Test"), typ("Int")),
                                }],
                           id("id")));
 }

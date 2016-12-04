@@ -160,8 +160,9 @@ impl KindEnv for TypeInfos {
         self.id_to_type
             .get(type_name)
             .map(|alias| {
-                alias.args.iter().rev().fold(Kind::typ(),
-                                             |acc, arg| Kind::function(arg.kind.clone(), acc))
+                alias.typ.params().iter().rev().fold(Kind::typ(), |acc, arg| {
+                    Kind::function(arg.kind.clone(), acc)
+                })
             })
     }
 }

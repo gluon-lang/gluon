@@ -172,9 +172,9 @@ impl<Id, T> AsRef<T> for Alias<Id, T> {
 impl<Id, T> Alias<Id, T>
     where T: From<Type<Id, T>>,
 {
-    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
+    pub fn new(name: Id, typ: T) -> Alias<Id, T> {
         Alias {
-            _typ: Type::alias(name, args, typ),
+            _typ: Type::alias(name, typ),
             _marker: PhantomData,
         }
     }
@@ -201,8 +201,6 @@ impl<Id> Alias<Id, ArcType<Id>>
 pub struct AliasData<Id, T> {
     /// Name of the Alias
     pub name: Id,
-    /// Arguments to the alias
-    pub args: Vec<Generic<Id>>,
     /// The type that is being aliased
     pub typ: T,
 }
@@ -242,6 +240,8 @@ pub enum Type<Id, T = ArcType<Id>> {
     Opaque,
     /// A builtin type
     Builtin(BuiltinType),
+    /// Universally quantified types
+    Forall(AppVec<Generic<Id>>, T),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
     App(T, AppVec<T>),
@@ -285,6 +285,18 @@ impl<Id, T> Type<Id, T>
 
     pub fn opaque() -> T {
         T::from(Type::Opaque)
+    }
+
+    pub fn builtin(typ: BuiltinType) -> T {
+        T::from(Type::Builtin(typ))
+    }
+
+    pub fn forall(params: AppVec<Generic<Id>>, typ: T) -> T {
+        if params.is_empty() {
+            typ
+        } else {
+            T::from(Type::Forall(params, typ))
+        }
     }
 
     pub fn array(typ: T) -> T {
@@ -351,18 +363,13 @@ impl<Id, T> Type<Id, T>
         T::from(Type::Generic(typ))
     }
 
-    pub fn builtin(typ: BuiltinType) -> T {
-        T::from(Type::Builtin(typ))
-    }
-
     pub fn variable(typ: TypeVariable) -> T {
         T::from(Type::Variable(typ))
     }
 
-    pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
+    pub fn alias(name: Id, typ: T) -> T {
         T::from(Type::Alias(AliasData {
             name: name,
-            args: args,
             typ: typ,
         }))
     }
@@ -423,6 +430,14 @@ impl<Id, T> Type<Id, T>
             Type::Ident(ref id) => Some(id),
             Type::Alias(ref alias) => Some(&alias.name),
             _ => None,
+        }
+    }
+
+    pub fn params(&self) -> &[Generic<Id>] {
+        match *self {
+            Type::Alias(ref alias) => alias.typ.params(),
+            Type::Forall(ref params, _) => params,
+            _ => &[],
         }
     }
 }
@@ -499,6 +514,98 @@ impl<Id> ArcType<Id> {
             typ: self,
             current: 0,
         }
+    }
+
+    pub fn variant_row_iter(&self) -> Option<RowIterator<Self>> {
+        let typ = match **self {
+            Type::Forall(_, ref typ) => typ,
+            _ => self,
+        };
+
+        match **typ {
+            Type::Variant(ref row) => Some(row.row_iter()),
+            _ => None,
+        }
+    }
+}
+
+impl ArcType {
+    pub fn params_mut(&mut self) -> &mut [Generic<Symbol>] {
+        use std::sync::Arc;
+
+        match *Arc::make_mut(&mut self.typ) {
+            Type::Alias(ref mut alias) => alias.typ.params_mut(),
+            Type::Forall(ref mut params, _) => params,
+            _ => &mut [],
+        }
+    }
+
+    /// Applies a list of arguments to a parameterised type, returning `Some`
+    /// if the substitution was successful.
+    ///
+    /// Example:
+    ///
+    /// ```text
+    /// self = forall e t . | Err e | Ok t
+    /// args = [Error, Option a]
+    /// result = | Err Error | Ok (Option a)
+    /// ```
+    pub fn apply_args(&self, args: &[ArcType]) -> Option<ArcType> {
+        let params = self.params();
+
+        // It is ok to take the type only if it is fully applied or if it
+        // the missing argument only appears in order at the end, i.e:
+        //
+        // type Test a b c = Type (a Int) b c
+        //
+        // Test a b == Type (a Int) b
+        // Test a == Type (a Int)
+        // Test == ??? (Impossible to do a sane substitution)
+        let typ = match *self.typ {
+            Type::App(ref d, ref arg_types) => {
+                let unapplied_param_count = params.len() - args.len();
+                let allowed_missing_args = arg_types.iter()
+                    .rev()
+                    .zip(params.iter().rev())
+                    .take_while(|&(l, r)| {
+                        match **l {
+                            Type::Generic(ref g) => g == r,
+                            _ => false,
+                        }
+                    })
+                    .count();
+
+                if unapplied_param_count <= allowed_missing_args {
+                    // Remove the args at the end of the aliased type
+                    let arg_types = arg_types.iter()
+                        .take(arg_types.len() - unapplied_param_count)
+                        .cloned()
+                        .collect();
+
+                    Type::app(d.clone(), arg_types)
+                } else {
+                    return None;
+                }
+            }
+            _ if args.len() != params.len() => return None,
+            Type::Forall(_, ref typ) => typ.clone(),
+            _ => self.clone(),
+        };
+
+        Some(walk_move_type(typ,
+                            &mut |typ| {
+            match *typ {
+                Type::Generic(ref generic) => {
+                    // Replace the generic variable with the type from the list
+                    // or if it is not found the make a fresh variable
+                    params.iter()
+                        .zip(args)
+                        .find(|&(arg, _)| arg.id == generic.id)
+                        .map(|(_, typ)| typ.clone())
+                }
+                _ => None,
+            }
+        }))
     }
 }
 
@@ -748,6 +855,16 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
         match *self.typ {
             Type::Hole => arena.text("_"),
             Type::Opaque => arena.text("<opaque>"),
+            Type::Forall(ref args, ref typ) => {
+                chain![arena;
+                       "forall ",
+                       arena.concat(args.iter().map(|arg| {
+                           arena.text(self.env.string(&arg.id)).append(" ").into()
+                       })),
+                       ".",
+                       arena.newline(),
+                       top(self.env, typ).pretty(arena)]
+            }
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::App(ref t, ref args) => {
@@ -832,9 +949,6 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                         let f = chain![arena;
                             self.env.string(&field.name),
                             arena.newline(),
-                            arena.concat(field.typ.args.iter().map(|arg| {
-                                arena.text(self.env.string(&arg.id)).append(" ").into()
-                            })),
                             arena.text("= ")
                                  .append(top(self.env, &field.typ.typ).pretty(arena)),
                             if i + 1 != types.len() || !fields.is_empty() {
@@ -925,6 +1039,7 @@ pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
           T: Deref<Target = Type<I, T>>,
 {
     match **typ {
+        Type::Forall(_, ref typ) => f.walk(typ),
         Type::App(ref t, ref args) => {
             f.walk(t);
             for a in args {
@@ -1049,6 +1164,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
           I: Clone,
 {
     match *typ {
+        Type::Forall(ref args, ref typ) => f.visit(typ).map(|typ| Type::forall(args.clone(), typ)),
         Type::App(ref id, ref args) => {
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)

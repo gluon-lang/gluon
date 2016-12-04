@@ -119,7 +119,7 @@ pub fn rename(symbols: &mut SymbolModule,
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
                     let typ = self.env
                         .find_type(&id.name)
-                        .expect("ICE: Expected constructor")
+                        .unwrap_or_else(|| panic!("ICE: Expected constructor: {}", id.name))
                         .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
                         arg.name = self.stack_var(arg.name.clone(), pattern.span, arg_type.clone());
@@ -143,8 +143,8 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
             // Insert variant constructors into the local scope
-            if let Type::Variant(ref row) = *alias.typ {
-                for field in row.row_iter().cloned() {
+            if let Some(row) = alias.typ.variant_row_iter() {
+                for field in row.cloned() {
                     self.env.stack.insert(field.name.clone(), (field.name, span, field.typ));
                 }
             }

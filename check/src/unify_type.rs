@@ -199,9 +199,11 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
 {
     debug!("Unifying:\n{:?} <=> {:?}", expected, actual);
     match (&**expected, &**actual) {
-        (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
-            Ok(unify_app(unifier, l, l_args, r, r_args))
+        (&Type::App(ref l_typ, ref l_args), &Type::App(ref r_typ, ref r_args)) => {
+            Ok(unify_app(unifier, l_typ, l_args, r_typ, r_args))
         }
+        (&Type::Forall(_, ref l_typ), _) => Ok(unifier.try_match(l_typ, actual)),
+        (_, &Type::Forall(_, ref r_typ)) => Ok(unifier.try_match(expected, r_typ)),
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
             let previous = mem::replace(&mut unifier.state.record_context,
