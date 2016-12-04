@@ -29,14 +29,10 @@ pub fn remove_aliases(env: &TypeEnv, mut typ: ArcType) -> ArcType {
 }
 
 pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t ArcType) -> Cow<'t, ArcType> {
-    let mut typ = match maybe_remove_alias(env, typ) {
-        Ok(Some(new)) => new,
+    match maybe_remove_alias(env, typ) {
+        Ok(Some(typ)) => Cow::Owned(remove_aliases(env, typ)),
         _ => return Cow::Borrowed(typ),
-    };
-    while let Ok(Some(new)) = maybe_remove_alias(env, &typ) {
-        typ = new;
     }
-    Cow::Owned(typ)
 }
 
 /// Removes all possible aliases while checking that
@@ -170,47 +166,32 @@ impl Instantiator {
         Instantiator { named_variables: FnvMap::default() }
     }
 
-    fn variable_for(&mut self,
-                    generic: &Generic<Symbol>,
-                    on_unbound: &mut FnMut(&Symbol) -> ArcType)
-                    -> ArcType {
-        let var = match self.named_variables.entry(generic.id.clone()) {
-            Entry::Vacant(entry) => {
-                let t = on_unbound(&generic.id);
-                entry.insert(t).clone()
+    pub fn instantiate<F>(&mut self, typ: &ArcType, mut on_unbound: F) -> ArcType
+        where F: FnMut(&Symbol) -> ArcType,
+    {
+        instantiate(typ.clone(), |generic| {
+            let var = match self.named_variables.entry(generic.id.clone()) {
+                Entry::Vacant(entry) => entry.insert(on_unbound(&generic.id)).clone(),
+                Entry::Occupied(entry) => entry.get().clone(),
+            };
+
+            let mut var = (*var).clone();
+            if let Type::Variable(ref mut var) = var {
+                var.kind = generic.kind.clone();
             }
-            Entry::Occupied(entry) => entry.get().clone(),
-        };
-        let mut var = (*var).clone();
-        if let Type::Variable(ref mut var) = var {
-            var.kind = generic.kind.clone();
-        }
-        ArcType::from(var)
-    }
 
-    /// Instantiates a type, replacing all generic variables with fresh type variables
-    pub fn instantiate<F>(&mut self, typ: &ArcType, on_unbound: F) -> ArcType
-        where F: FnMut(&Symbol) -> ArcType,
-    {
-        self.named_variables.clear();
-        self.instantiate_(typ, on_unbound)
-    }
-
-    pub fn instantiate_<F>(&mut self, typ: &ArcType, mut on_unbound: F) -> ArcType
-        where F: FnMut(&Symbol) -> ArcType,
-    {
-        instantiate(typ.clone(),
-                    |id| Some(self.variable_for(id, &mut on_unbound)))
+            Some(ArcType::from(var))
+        })
     }
 }
 
-pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
+pub fn instantiate<F>(typ: ArcType, mut on_unbound: F) -> ArcType
     where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
 {
     types::walk_move_type(typ,
                           &mut |typ| {
                               match *typ {
-                                  Type::Generic(ref x) => f(x),
+                                  Type::Generic(ref x) => on_unbound(x),
                                   _ => None,
                               }
                           })

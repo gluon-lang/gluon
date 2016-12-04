@@ -258,20 +258,17 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find(&mut self, id: &Symbol) -> TcResult<ArcType> {
-        let symbols = &mut self.symbols;
-        let subs = &mut self.subs;
-        let inst = &mut self.inst;
-        self.environment
-            .find_type(id)
-            .ok_or_else(|| UndefinedVariable(id.clone()))
-            .map(|typ| {
-                let typ = subs.set_type(typ.clone());
-                let typ = inst.instantiate(&typ, |_| subs.new_var());
+        match self.environment.find_type(id).map(ArcType::clone) {
+            Some(typ) => {
+                let typ = self.subs.set_type(typ);
+                let typ = self.instantiate(&typ);
                 debug!("Find {} : {}",
-                       symbols.string(id),
-                       types::display_type(symbols, &typ));
-                typ
-            })
+                       self.symbols.string(id),
+                       types::display_type(&self.symbols, &typ));
+                Ok(typ)
+            }
+            None => Err(UndefinedVariable(id.clone())),
+        }
     }
 
     fn find_record(&self, fields: &[Symbol]) -> TcResult<(&ArcType, &ArcType)> {
@@ -1301,13 +1298,13 @@ impl<'a> Typecheck<'a> {
     }
 
     fn instantiate(&mut self, typ: &ArcType) -> ArcType {
-        let subs = &mut self.subs;
-        self.inst.instantiate(typ, |_| subs.new_var())
+        self.inst.named_variables.clear();
+        self.instantiate_(typ)
     }
 
     fn instantiate_(&mut self, typ: &ArcType) -> ArcType {
         let subs = &mut self.subs;
-        self.inst.instantiate_(typ, |_| subs.new_var())
+        self.inst.instantiate(typ, |_| subs.new_var())
     }
 
     fn error_on_duplicated_field(&mut self,

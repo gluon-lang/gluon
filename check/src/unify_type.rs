@@ -149,7 +149,7 @@ impl<'a> Unifiable<State<'a>> for ArcType {
             }
             Err(()) => (),
         }
-        let result = do_zip_match(l, r, unifier).map(|mut unified_type| {
+        let result = do_zip_match(unifier, l, r).map(|mut unified_type| {
             // If the match was done through an alias the unified type is likely less precise than
             // `self` or `other`.
             // So just return `None` which means `self` is used as the type if necessary
@@ -163,21 +163,21 @@ impl<'a> Unifiable<State<'a>> for ArcType {
     }
 }
 
-fn do_zip_match<'a, U>(self_: &ArcType,
-                       other: &ArcType,
-                       unifier: &mut UnifierState<'a, U>)
+fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
+                       expected: &ArcType,
+                       actual: &ArcType)
                        -> Result<Option<ArcType>, Error<Symbol>>
     where U: Unifier<State<'a>, ArcType>,
 {
-    debug!("Unifying:\n{:?} <=> {:?}", self_, other);
-    match (&**self_, &**other) {
+    debug!("Unifying:\n{:?} <=> {:?}", expected, actual);
+    match (&**expected, &**actual) {
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             unify_app(unifier, l, l_args, r, r_args)
         }
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
             let previous = mem::replace(&mut unifier.state.record_context,
-                                        Some((self_.clone(), other.clone())));
+                                        Some((expected.clone(), actual.clone())));
             let result = unifier.try_match(l_row, r_row)
                 .map(|row| ArcType::from(Type::Record(row)));
             unifier.state.record_context = previous;
@@ -206,9 +206,9 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                          new_rest,
                          |fields, rest| Type::extend_row(l_types.clone(), fields, rest)))
             } else if **l_rest == Type::EmptyRow && **r_rest == Type::EmptyRow {
-                for l_typ in self_.type_field_iter() {
-                    if let None = other.type_field_iter().find(|r_typ| *r_typ == l_typ) {
-                        return Err(UnifyError::TypeMismatch(self_.clone(), other.clone()));
+                for l_typ in expected.type_field_iter() {
+                    if let None = actual.type_field_iter().find(|r_typ| *r_typ == l_typ) {
+                        return Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()));
                     }
                 }
 
@@ -237,19 +237,37 @@ fn do_zip_match<'a, U>(self_: &ArcType,
                          new_rest,
                          |fields, rest| Type::extend_row(l_types.clone(), fields, rest)))
             } else {
-                unify_rows(unifier, self_, other)
+                unify_rows(unifier, expected, actual)
             }
         }
         (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
-            Ok(Some(other.clone()))
+            Ok(Some(actual.clone()))
         }
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
-        _ => {
-            if self_ == other {
-                // Successful unification
-                return Ok(None);
-            } else {
-                Ok(try_with_alias(unifier, self_, other)?)
+
+        // Successful unification!
+        (lhs, rhs) if lhs == rhs => return Ok(None),
+
+        // Last ditch effort attempt to unify the types again by expanding the aliases
+        // (if the types are alias types).
+        (_, _) => {
+            let lhs = instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
+                                                          unifier.state.env,
+                                                          expected)?;
+            let rhs = instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
+                                                          unifier.state.env,
+                                                          actual)?;
+            match (&lhs, &rhs) {
+                (&None, &None) => {
+                    debug!("Unify error: {} <=> {}", expected, actual);
+                    Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
+                }
+                (_, _) => {
+                    let lhs = lhs.as_ref().unwrap_or(expected);
+                    let rhs = rhs.as_ref().unwrap_or(actual);
+                    unifier.try_match(lhs, rhs);
+                    Ok(None)
+                }
             }
         }
     }
@@ -536,34 +554,6 @@ fn find_common_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
         };
     }
     Ok((l, r))
-}
-
-/// As a last ditch effort attempt to unify the types again by expanding the aliases (if the types
-/// are alias types).
-fn try_with_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
-                         expected: &ArcType,
-                         actual: &ArcType)
-                         -> Result<Option<ArcType>, Error<Symbol>>
-    where U: Unifier<State<'a>, ArcType>,
-{
-    let l = instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                unifier.state.env,
-                                                expected)?;
-    let r = instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                unifier.state.env,
-                                                actual)?;
-    match (&l, &r) {
-        (&None, &None) => {
-            debug!("Unify error: {} <=> {}", expected, actual);
-            Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
-        }
-        _ => {
-            let l = l.as_ref().unwrap_or(expected);
-            let r = r.as_ref().unwrap_or(actual);
-            unifier.try_match(l, r);
-            Ok(None)
-        }
-    }
 }
 
 fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
