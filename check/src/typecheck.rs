@@ -8,8 +8,8 @@ use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, SpannedExpr};
 use base::ast::{SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding};
 use base::error::Errors;
-use base::fnv::FnvSet;
-use base::instantiate::{self, Instantiator};
+use base::fnv::{FnvMap, FnvSet};
+use base::resolve;
 use base::kind::{Kind, KindEnv, ArcKind};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
@@ -207,7 +207,7 @@ pub struct Typecheck<'a> {
     /// during typechecking
     original_symbols: ScopedMap<Symbol, Symbol>,
     subs: Substitution<ArcType>,
-    inst: Instantiator,
+    named_variables: FnvMap<Symbol, ArcType>,
     errors: Errors<SpannedTypeError<Symbol>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, ArcType>,
@@ -232,7 +232,7 @@ impl<'a> Typecheck<'a> {
             symbols: symbols,
             original_symbols: ScopedMap::new(),
             subs: Substitution::new(),
-            inst: Instantiator::new(),
+            named_variables: FnvMap::default(),
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
         }
@@ -258,20 +258,17 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find(&mut self, id: &Symbol) -> TcResult<ArcType> {
-        let symbols = &mut self.symbols;
-        let subs = &mut self.subs;
-        let inst = &mut self.inst;
-        self.environment
-            .find_type(id)
-            .ok_or_else(|| UndefinedVariable(id.clone()))
-            .map(|typ| {
-                let typ = subs.set_type(typ.clone());
-                let typ = inst.instantiate(&typ, |_| subs.new_var());
+        match self.environment.find_type(id).map(ArcType::clone) {
+            Some(typ) => {
+                let typ = self.subs.set_type(typ);
+                let typ = self.instantiate(&typ);
                 debug!("Find {} : {}",
-                       symbols.string(id),
-                       types::display_type(symbols, &typ));
-                typ
-            })
+                       self.symbols.string(id),
+                       types::display_type(&self.symbols, &typ));
+                Ok(typ)
+            }
+            None => Err(UndefinedVariable(id.clone())),
+        }
     }
 
     fn find_record(&self, fields: &[Symbol]) -> TcResult<(&ArcType, &ArcType)> {
@@ -1145,7 +1142,7 @@ impl<'a> Typecheck<'a> {
     fn instantiate_signature(&mut self, typ: &ArcType) -> ArcType {
         let typ = self.instantiate(typ);
         // Put all new generic variable names into scope
-        for (generic, variable) in &self.inst.named_variables {
+        for (generic, variable) in &self.named_variables {
             if self.type_variables.get(generic).is_none() {
                 self.type_variables.insert(generic.clone(), variable.clone());
             }
@@ -1286,28 +1283,40 @@ impl<'a> Typecheck<'a> {
     }
 
     fn remove_alias(&self, typ: ArcType) -> ArcType {
-        instantiate::remove_alias(&self.environment, typ)
+        resolve::remove_alias(&self.environment, &typ).unwrap_or(None).unwrap_or(typ)
     }
 
     fn remove_aliases(&self, typ: ArcType) -> ArcType {
-        instantiate::remove_aliases(&self.environment, typ)
-    }
-
-    fn type_of_alias(&self,
-                     id: &AliasData<Symbol, ArcType>,
-                     args: &[ArcType])
-                     -> Result<Option<ArcType>, unify_type::Error<Symbol>> {
-        Ok(instantiate::type_of_alias(id, args))
+        resolve::remove_aliases(&self.environment, typ)
     }
 
     fn instantiate(&mut self, typ: &ArcType) -> ArcType {
-        let subs = &mut self.subs;
-        self.inst.instantiate(typ, |_| subs.new_var())
+        self.named_variables.clear();
+        self.instantiate_(typ)
     }
 
     fn instantiate_(&mut self, typ: &ArcType) -> ArcType {
-        let subs = &mut self.subs;
-        self.inst.instantiate_(typ, |_| subs.new_var())
+        use std::collections::hash_map::Entry;
+
+        types::walk_move_type(typ.clone(),
+                              &mut |typ| {
+            match *typ {
+                Type::Generic(ref generic) => {
+                    let var = match self.named_variables.entry(generic.id.clone()) {
+                        Entry::Vacant(entry) => entry.insert(self.subs.new_var()).clone(),
+                        Entry::Occupied(entry) => entry.get().clone(),
+                    };
+
+                    let mut var = (*var).clone();
+                    if let Type::Variable(ref mut var) = var {
+                        var.kind = generic.kind.clone();
+                    }
+
+                    Some(ArcType::from(var))
+                }
+                _ => None,
+            }
+        })
     }
 
     fn error_on_duplicated_field(&mut self,
@@ -1404,10 +1413,9 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                 None => {
                     match get_alias_app(&self.tc.environment, &self.typ) {
                         Some((alias, args)) => {
-                            match self.tc.type_of_alias(alias, args) {
-                                Ok(Some(typ)) => (None, typ.clone()),
-                                Ok(None) => return None,
-                                Err(_) => return Some(self.tc.subs.new_var()),
+                            match resolve::type_of_alias(alias, args) {
+                                Some(typ) => (None, typ.clone()),
+                                None => return None,
                             }
                         }
                         None => return Some(self.tc.subs.new_var()),

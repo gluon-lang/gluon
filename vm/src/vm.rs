@@ -5,6 +5,7 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::usize;
 
+use base::ast;
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
@@ -219,7 +220,8 @@ impl VmEnv {
     }
 
     pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
-        use base::instantiate;
+        use base::resolve;
+
         let globals = &self.globals;
         let mut module = Name::new(name);
         let global;
@@ -252,7 +254,7 @@ impl VmEnv {
         for mut field_name in remaining_fields.components() {
             if field_name.starts_with('(') && field_name.ends_with(')') {
                 field_name = &field_name[1..field_name.len() - 1];
-            } else if field_name.chars().any(|c| "+-*/&|=<>".chars().any(|x| x == c)) {
+            } else if field_name.chars().any(ast::is_operator_char) {
                 return Err(Error::Message(format!("Operators cannot be used as fields \
                                                    directly. To access an operator field, \
                                                    enclose the operator with parentheses \
@@ -260,8 +262,8 @@ impl VmEnv {
                                                    test.+)")));
             }
             typ = match typ {
-                Cow::Borrowed(typ) => instantiate::remove_aliases_cow(self, typ),
-                Cow::Owned(typ) => Cow::Owned(instantiate::remove_aliases(self, typ)),
+                Cow::Borrowed(typ) => resolve::remove_aliases_cow(self, typ),
+                Cow::Owned(typ) => Cow::Owned(resolve::remove_aliases(self, typ)),
             };
             // HACK Can't return the data directly due to the use of cow on the type
             let next_type = map_cow_option(typ.clone(), |typ| {

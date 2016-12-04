@@ -51,18 +51,6 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     }
 }
 
-pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
-    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
-{
-    walk_move_type(typ,
-                   &mut |typ| {
-                       match *typ {
-                           Type::Generic(ref x) => f(x),
-                           _ => None,
-                       }
-                   })
-}
-
 /// All the builtin types of gluon
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType {
@@ -722,24 +710,6 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
     }
 }
 
-fn enclose<'a>(p: Prec,
-               limit: Prec,
-               arena: &'a Arena<'a>,
-               doc: DocBuilder<'a, Arena<'a>>)
-               -> DocBuilder<'a, Arena<'a>> {
-    let pre = if p >= limit {
-        arena.text("(")
-    } else {
-        arena.nil()
-    };
-    let mid = pre.append(doc);
-    if p >= limit {
-        mid.append(arena.text(")"))
-    } else {
-        mid
-    }
-}
-
 macro_rules! chain {
     ($alloc: expr; $first: expr, $($rest: expr),+) => {{
         let mut doc = ::pretty::DocBuilder($alloc, $first.into());
@@ -762,6 +732,18 @@ impl<'a, I, T, E> DisplayType<'a, I, T, E>
                 chain![arena; "(", name, ")"]
             } else {
                 arena.text(name)
+            }
+        }
+
+        fn enclose<'a>(p: Prec,
+                       limit: Prec,
+                       arena: &'a Arena<'a>,
+                       doc: DocBuilder<'a, Arena<'a>>)
+                       -> DocBuilder<'a, Arena<'a>> {
+            if p >= limit {
+                chain![arena; "(", doc, ")"]
+            } else {
+                doc
             }
         }
 

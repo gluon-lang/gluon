@@ -1,10 +1,8 @@
 use std::borrow::Cow;
-use std::collections::hash_map::Entry;
 
 use types;
-use types::{AliasData, AppVec, Type, Generic, ArcType, TypeEnv};
+use types::{AliasData, AppVec, Type, ArcType, TypeEnv};
 use symbol::Symbol;
-use fnv::FnvMap;
 
 quick_error! {
     #[derive(Debug)]
@@ -22,21 +20,17 @@ quick_error! {
 
 /// Removes type aliases from `typ` until it is an actual type
 pub fn remove_aliases(env: &TypeEnv, mut typ: ArcType) -> ArcType {
-    while let Ok(Some(new)) = maybe_remove_alias(env, &typ) {
+    while let Ok(Some(new)) = remove_alias(env, &typ) {
         typ = new;
     }
     typ
 }
 
 pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t ArcType) -> Cow<'t, ArcType> {
-    let mut typ = match maybe_remove_alias(env, typ) {
-        Ok(Some(new)) => new,
+    match remove_alias(env, typ) {
+        Ok(Some(typ)) => Cow::Owned(remove_aliases(env, typ)),
         _ => return Cow::Borrowed(typ),
-    };
-    while let Ok(Some(new)) = maybe_remove_alias(env, &typ) {
-        typ = new;
     }
-    Cow::Owned(typ)
 }
 
 /// Removes all possible aliases while checking that
@@ -50,7 +44,7 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
         }
         reduced_aliases.push(alias_id.clone());
     }
-    let mut typ = match maybe_remove_alias(env, typ)? {
+    let mut typ = match remove_alias(env, typ)? {
         Some(new) => new,
         None => return Ok(None),
     };
@@ -61,7 +55,7 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
             }
             reduced_aliases.push(alias_id.clone());
         }
-        match maybe_remove_alias(env, &typ)? {
+        match remove_alias(env, &typ)? {
             Some(new) => typ = new,
             None => break,
         }
@@ -69,13 +63,9 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
     Ok(Some(typ))
 }
 
-pub fn remove_alias(env: &TypeEnv, typ: ArcType) -> ArcType {
-    maybe_remove_alias(env, &typ).unwrap_or(None).unwrap_or(typ)
-}
-
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
-pub fn maybe_remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
+pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
         Type::App(ref alias, ref args) => {
@@ -150,68 +140,18 @@ pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Op
         }
     }
 
-    Some(instantiate(typ, |gen| {
-        // Replace the generic variable with the type from the list
-        // or if it is not found the make a fresh variable
-        alias_args.iter()
-            .zip(args)
-            .find(|&(arg, _)| arg.id == gen.id)
-            .map(|(_, typ)| typ.clone())
-    }))
-}
-
-#[derive(Debug, Default)]
-pub struct Instantiator {
-    pub named_variables: FnvMap<Symbol, ArcType>,
-}
-
-impl Instantiator {
-    pub fn new() -> Instantiator {
-        Instantiator { named_variables: FnvMap::default() }
-    }
-
-    fn variable_for(&mut self,
-                    generic: &Generic<Symbol>,
-                    on_unbound: &mut FnMut(&Symbol) -> ArcType)
-                    -> ArcType {
-        let var = match self.named_variables.entry(generic.id.clone()) {
-            Entry::Vacant(entry) => {
-                let t = on_unbound(&generic.id);
-                entry.insert(t).clone()
+    Some(types::walk_move_type(typ,
+                               &mut |typ| {
+        match *typ {
+            Type::Generic(ref generic) => {
+                // Replace the generic variable with the type from the list
+                // or if it is not found the make a fresh variable
+                alias_args.iter()
+                    .zip(args)
+                    .find(|&(arg, _)| arg.id == generic.id)
+                    .map(|(_, typ)| typ.clone())
             }
-            Entry::Occupied(entry) => entry.get().clone(),
-        };
-        let mut var = (*var).clone();
-        if let Type::Variable(ref mut var) = var {
-            var.kind = generic.kind.clone();
+            _ => None,
         }
-        ArcType::from(var)
-    }
-
-    /// Instantiates a type, replacing all generic variables with fresh type variables
-    pub fn instantiate<F>(&mut self, typ: &ArcType, on_unbound: F) -> ArcType
-        where F: FnMut(&Symbol) -> ArcType,
-    {
-        self.named_variables.clear();
-        self.instantiate_(typ, on_unbound)
-    }
-
-    pub fn instantiate_<F>(&mut self, typ: &ArcType, mut on_unbound: F) -> ArcType
-        where F: FnMut(&Symbol) -> ArcType,
-    {
-        instantiate(typ.clone(),
-                    |id| Some(self.variable_for(id, &mut on_unbound)))
-    }
-}
-
-pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
-    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
-{
-    types::walk_move_type(typ,
-                          &mut |typ| {
-                              match *typ {
-                                  Type::Generic(ref x) => f(x),
-                                  _ => None,
-                              }
-                          })
+    }))
 }

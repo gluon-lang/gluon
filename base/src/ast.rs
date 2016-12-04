@@ -1,10 +1,8 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
 
-use std::ops::Deref;
-
 use pos::{BytePos, Spanned};
 use symbol::Symbol;
-use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
+use types::{self, Alias, ArcType, Type, TypeEnv};
 
 pub trait DisplayEnv {
     type Ident;
@@ -439,38 +437,39 @@ impl Typed for Pattern<Symbol> {
 
 fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
     if arg_count == 0 {
-        alias_type.clone()
-    } else {
-        match alias_type.as_function() {
-            Some((_, ret)) => get_return_type(env, ret, arg_count - 1),
-            None => {
-                match alias_type.as_alias() {
-                    Some((id, alias_args)) => {
-                        let (args, typ) = match env.find_type_info(&id).map(Alias::deref) {
-                            Some(&AliasData { ref args, ref typ, .. }) => (args, typ),
-                            None => panic!("Unexpected type {:?} is not a function", alias_type),
-                        };
-
-                        let typ = types::instantiate(typ.clone(), |gen| {
-                            // Replace the generic variable with the type from the list
-                            // or if it is not found the make a fresh variable
-                            args.iter()
-                                .zip(alias_args)
-                                .find(|&(arg, _)| arg.id == gen.id)
-                                .map(|(_, typ)| typ.clone())
-                        });
-
-                        get_return_type(env, &typ, arg_count)
-                    }
-                    None => {
-                        panic!("ICE: Expected function with {} more arguments, found {:?}",
-                               arg_count,
-                               alias_type)
-                    }
-                }
-            }
-        }
+        return alias_type.clone();
     }
+
+    if let Some((_, ret)) = alias_type.as_function() {
+        return get_return_type(env, ret, arg_count - 1);
+    }
+
+    let (id, alias_args) = alias_type.as_alias().unwrap_or_else(|| {
+        panic!("ICE: Expected function with {} more arguments, found {:?}",
+               arg_count,
+               alias_type)
+    });
+
+    let alias = env.find_type_info(&id)
+        .unwrap_or_else(|| panic!("Unexpected type {:?} is not a function", alias_type));
+
+    let typ = types::walk_move_type(alias.typ.clone(),
+                                    &mut |typ| {
+        match *typ {
+            Type::Generic(ref generic) => {
+                // Replace the generic variable with the type from the list
+                // or if it is not found the make a fresh variable
+                alias.args
+                    .iter()
+                    .zip(alias_args)
+                    .find(|&(arg, _)| arg.id == generic.id)
+                    .map(|(_, typ)| typ.clone())
+            }
+            _ => None,
+        }
+    });
+
+    get_return_type(env, &typ, arg_count)
 }
 
 pub fn is_operator_char(c: char) -> bool {
