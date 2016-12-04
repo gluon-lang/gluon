@@ -51,18 +51,6 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     }
 }
 
-pub fn instantiate<F>(typ: ArcType, mut f: F) -> ArcType
-    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
-{
-    walk_move_type(typ,
-                   &mut |typ| {
-                       match *typ {
-                           Type::Generic(ref x) => f(x),
-                           _ => None,
-                       }
-                   })
-}
-
 /// All the builtin types of gluon
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum BuiltinType {
