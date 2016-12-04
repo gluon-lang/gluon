@@ -1283,7 +1283,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn remove_alias(&self, typ: ArcType) -> ArcType {
-        resolve::remove_alias(&self.environment, typ)
+        resolve::remove_alias(&self.environment, &typ).unwrap_or(None).unwrap_or(typ)
     }
 
     fn remove_aliases(&self, typ: ArcType) -> ArcType {

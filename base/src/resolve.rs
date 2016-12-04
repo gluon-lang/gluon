@@ -20,14 +20,14 @@ quick_error! {
 
 /// Removes type aliases from `typ` until it is an actual type
 pub fn remove_aliases(env: &TypeEnv, mut typ: ArcType) -> ArcType {
-    while let Ok(Some(new)) = maybe_remove_alias(env, &typ) {
+    while let Ok(Some(new)) = remove_alias(env, &typ) {
         typ = new;
     }
     typ
 }
 
 pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t ArcType) -> Cow<'t, ArcType> {
-    match maybe_remove_alias(env, typ) {
+    match remove_alias(env, typ) {
         Ok(Some(typ)) => Cow::Owned(remove_aliases(env, typ)),
         _ => return Cow::Borrowed(typ),
     }
@@ -44,7 +44,7 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
         }
         reduced_aliases.push(alias_id.clone());
     }
-    let mut typ = match maybe_remove_alias(env, typ)? {
+    let mut typ = match remove_alias(env, typ)? {
         Some(new) => new,
         None => return Ok(None),
     };
@@ -55,7 +55,7 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
             }
             reduced_aliases.push(alias_id.clone());
         }
-        match maybe_remove_alias(env, &typ)? {
+        match remove_alias(env, &typ)? {
             Some(new) => typ = new,
             None => break,
         }
@@ -63,13 +63,9 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
     Ok(Some(typ))
 }
 
-pub fn remove_alias(env: &TypeEnv, typ: ArcType) -> ArcType {
-    maybe_remove_alias(env, &typ).unwrap_or(None).unwrap_or(typ)
-}
-
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
-pub fn maybe_remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
+pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
         Type::App(ref alias, ref args) => {

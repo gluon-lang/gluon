@@ -495,7 +495,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                     return Ok(if did_alias { Some(l.clone()) } else { None });
                 }
                 did_alias = true;
-                match resolve::maybe_remove_alias(unifier.state.env, &l) {
+                match resolve::remove_alias(unifier.state.env, &l) {
                     Ok(Some(typ)) => {
                         unifier.state
                             .reduced_aliases
