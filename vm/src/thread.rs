@@ -684,7 +684,6 @@ pub type HookFn = Box<FnMut(&Thread, DebugInfo) -> Result<()> + Send + Sync>;
 
 pub struct DebugInfo<'a> {
     stack: &'a Stack,
-    instruction_index: usize,
     state: HookFlags,
 }
 
@@ -724,7 +723,7 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                Some(closure.function.source_map.line(frame.instruction_index))
+                closure.function.source_map.line(frame.instruction_index)
             }
             _ => None,
         }
@@ -749,9 +748,10 @@ impl<'a> StackInfo<'a> {
 
     /// Returns an iterator over all locals available at the current executing instruction
     pub fn locals(&self) -> LocalIter {
-        match self.frame().state {
+        let frame = self.frame();
+        match frame.state {
             State::Closure(ref closure) => {
-                closure.function.local_map.locals(self.info.instruction_index)
+                closure.function.local_map.locals(frame.instruction_index)
             }
             _ => LocalIter::empty(),
         }
@@ -842,6 +842,13 @@ impl<'b> OwnedContext<'b> {
         let Context { ref mut gc, ref stack, .. } = **self;
         alloc(gc, self.thread, &stack, data)
     }
+
+    pub fn debug_info(&self) -> DebugInfo {
+        DebugInfo {
+            stack: &self.stack,
+            state: HookFlags::empty(),
+        }
+    }
 }
 
 pub fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
@@ -889,14 +896,6 @@ impl<'b> OwnedContext<'b> {
             let state = context.borrow_mut().stack.frame.state;
 
             let instruction_index = context.borrow_mut().stack.frame.instruction_index;
-            if context.hook.flags.bits() != 0 {
-                if instruction_index == 0 {
-                    context.hook.previous_instruction_index = 0;
-                } else {
-                    // Reentering the function after returning from a call
-                    context.hook.previous_instruction_index = instruction_index - 1;
-                }
-            }
             if instruction_index == 0 && context.hook.flags.contains(CALL_FLAG) {
                 match state {
                     State::Extern(_) |
@@ -906,7 +905,6 @@ impl<'b> OwnedContext<'b> {
                         if let Some(ref mut hook) = context.hook.function {
                             let info = DebugInfo {
                                 stack: &context.stack,
-                                instruction_index: instruction_index,
                                 state: CALL_FLAG,
                             };
                             hook(thread, info)?
@@ -1051,11 +1049,17 @@ impl<'b> ExecuteContext<'b> {
 
     fn enter_scope(&mut self, args: VmIndex, state: State) {
         self.stack.enter_scope(args, state);
+        self.hook.previous_instruction_index = usize::max_value();
     }
 
     fn exit_scope(&mut self) -> StdResult<(), ()> {
         match self.stack.exit_scope() {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                if self.hook.flags.bits() != 0 {
+                    self.hook.previous_instruction_index = self.stack.frame.instruction_index;
+                }
+                Ok(())
+            }
             Err(_) => Err(()),
         }
     }
@@ -1170,17 +1174,16 @@ impl<'b> ExecuteContext<'b> {
                     let current_line = function.source_map.line(index);
                     let previous_line = function.source_map
                         .line(self.hook.previous_instruction_index);
-                    if index == 0 || current_line != previous_line {
+                    self.hook.previous_instruction_index = index;
+                    if current_line != previous_line {
                         self.stack.frame.instruction_index = index;
                         self.stack.store_frame();
                         let info = DebugInfo {
                             stack: &self.stack.stack,
-                            instruction_index: index,
                             state: LINE_FLAG,
                         };
                         hook(self.thread, info)?
                     }
-                    self.hook.previous_instruction_index = index;
                 }
             }
 

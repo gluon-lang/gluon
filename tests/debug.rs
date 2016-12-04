@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
 
 use gluon::base::pos::Line;
-use gluon::{Compiler, new_vm};
+use gluon::{Compiler, Error, new_vm};
+use gluon::vm;
 use gluon::vm::thread::{ThreadInternal, CALL_FLAG, LINE_FLAG};
 
 
@@ -50,19 +51,31 @@ fn line_hook() {
     let _ = env_logger::init();
 
     let thread = new_vm();
-    let lines = Arc::new(Mutex::new(Vec::new()));
     {
-        let lines = lines.clone();
         let mut context = thread.context();
-        context.set_hook(Some(Box::new(move |_, debug_context| {
-            lines.lock().unwrap().push(debug_context.stack_info(0).unwrap().line().unwrap());
-            Ok(())
-        })));
+        context.set_hook(Some(Box::new(move |_, _| Err(vm::Error::Yield))));
         context.set_hook_mask(LINE_FLAG);
     }
-    Compiler::new().implicit_prelude(false).run_expr::<i32>(&thread, "test", SIMPLE_EXPR).unwrap();
+    let mut result = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<i32>(&thread, "test", SIMPLE_EXPR)
+        .map(|_| ());
 
-    assert_eq!(*lines.lock().unwrap(),
+    let mut lines = Vec::new();
+    loop {
+        match result {
+            Ok(_) => break,
+            Err(Error::VM(vm::Error::Yield)) => {
+                let context = thread.context();
+                let debug_info = context.debug_info();
+                lines.push(debug_info.stack_info(0).unwrap().line().unwrap());
+            }
+            Err(err) => panic!("{}", err),
+        }
+        result = thread.resume().map_err(From::from);
+    }
+
+    assert_eq!(lines,
                vec![1, 3, 4, 3, 1].into_iter().map(Line::from).collect::<Vec<_>>());
 }
 

@@ -112,9 +112,11 @@ impl FunctionEnvs {
         self.envs.push(FunctionEnv::new(args, id, typ, compiler.source_name.clone()));
     }
 
-    fn end_function(&mut self, compiler: &mut Compiler) -> FunctionEnv {
+    fn end_function(&mut self, compiler: &mut Compiler, current_line: Line) -> FunctionEnv {
         compiler.stack_types.exit_scope();
         compiler.stack_constructors.exit_scope();
+        let instructions = self.function.instructions.len();
+        self.function.source_map.close(instructions, current_line);
         self.envs.pop().expect("FunctionEnv in scope")
     }
 }
@@ -419,9 +421,11 @@ impl<'a> Compiler<'a> {
         let id = self.empty_symbol.clone();
         let typ = Type::function(vec![],
                                  ArcType::from(expr.env_type_of(&self.globals).clone()));
+
         env.start_function(self, 0, id, typ);
         self.compile(expr, &mut env, true)?;
-        let FunctionEnv { function, .. } = env.end_function(self);
+        let current_line = self.source.line_number_at_byte(expr.span.end);
+        let FunctionEnv { function, .. } = env.end_function(self, current_line);
         Ok(function)
     }
 
@@ -862,7 +866,8 @@ impl<'a> Compiler<'a> {
 
         // Insert all free variables into the above globals free variables
         // if they arent in that lambdas scope
-        let f = function.end_function(self);
+        let current_line = self.source.line_number_at_byte(body.span.end);
+        let f = function.end_function(self, current_line);
         for var in f.free_vars.iter() {
             match self.find(var, function).expect("free_vars: find") {
                 Stack(index) => function.emit(Push(index)),

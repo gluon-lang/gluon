@@ -110,9 +110,11 @@ impl Stack {
                 match frame.state {
                     State::Closure(ref closure) => {
                         let line = closure.function.source_map.line(frame.instruction_index);
-                        Some(Some(StacktraceFrame {
-                            name: closure.function.name.clone(),
-                            line: line,
+                        Some(line.map(|line| {
+                            StacktraceFrame {
+                                name: closure.function.name.clone(),
+                                line: line,
+                            }
                         }))
                     }
                     State::Extern(ref ext) => {

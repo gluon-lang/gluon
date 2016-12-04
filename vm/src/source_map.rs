@@ -23,18 +23,26 @@ impl SourceMap {
         }
     }
 
+    pub fn close(&mut self, instruction_index: usize, current_line: Line) {
+        // Push one final item to indicate the end of the function
+        self.map.push((instruction_index, current_line));
+    }
+
     /// Returns the line where the instruction at `instruction_index` were defined
-    pub fn line(&self, instruction_index: usize) -> Line {
+    pub fn line(&self, instruction_index: usize) -> Option<Line> {
         // The line for `instruction_index` is at the last index still larger than
         // the index in `map`
         let p = self.map
             .iter()
             .position(|&(index, _)| index > instruction_index)
             .unwrap_or(self.map.len());
-        if p == 0 {
-            Line::from(0)
+        if p == 0 ||
+           (p == self.map.len() &&
+            instruction_index >= self.map.last().expect("Empty source_map").0) {
+            // instruction_index is not valid in the function
+            None
         } else {
-            self.map[p - 1].1
+            Some(self.map[p - 1].1)
         }
     }
 }
