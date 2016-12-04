@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
 use base::ast::{Literal, Pattern, TypedIdent, Typed, DisplayEnv, SpannedExpr, Expr};
-use base::instantiate;
+use base::resolve;
 use base::kind::{ArcKind, KindEnv};
 use base::types::{self, Alias, ArcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
@@ -399,7 +399,7 @@ impl<'a> Compiler<'a> {
 
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
         // Remove all type aliases to get the actual record type
-        let typ = instantiate::remove_aliases_cow(self, typ);
+        let typ = resolve::remove_aliases_cow(self, typ);
         let mut iter = typ.row_iter();
         match iter.by_ref().position(|f| f.name.name_eq(field)) {
             Some(index) => {
@@ -416,7 +416,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
-        match **instantiate::remove_aliases_cow(self, typ) {
+        match **resolve::remove_aliases_cow(self, typ) {
             Type::Variant(ref row) => {
                 row.row_iter()
                     .enumerate()
@@ -803,7 +803,7 @@ impl<'a> Compiler<'a> {
                 function.new_stack_var(name.name.clone());
             }
             Pattern::Record { ref types, ref fields, .. } => {
-                let typ = instantiate::remove_aliases(self, pattern_type.clone());
+                let typ = resolve::remove_aliases(self, pattern_type.clone());
                 // Insert all variant constructor into scope
                 with_pattern_types(types, &typ, |name, alias| {
                     // FIXME: Workaround so that both the types name in this module and its global

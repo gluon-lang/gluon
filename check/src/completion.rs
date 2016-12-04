@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 
 use base::ast::{Expr, SpannedExpr, SpannedPattern, Pattern, TypedIdent, Typed, Visitor, walk_expr,
                 walk_pattern};
-use base::instantiate;
+use base::resolve;
 use base::pos::{BytePos, Span, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
@@ -70,7 +70,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         match pattern.value {
             Pattern::Record { ref typ, fields: ref field_ids, .. } => {
-                let unaliased = instantiate::remove_aliases(&self.env, typ.clone());
+                let unaliased = resolve::remove_aliases(&self.env, typ.clone());
                 if let Type::Record(ref row) = *unaliased {
                     if let Type::ExtendRow { ref fields, .. } = **row {
                         for (field, field_type) in field_ids.iter().zip(fields) {
@@ -106,7 +106,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 
     fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, _: &ArcType) {
         if let Expr::Projection(ref expr, _, _) = context.value {
-            let typ = instantiate::remove_aliases(&self.env, expr.env_type_of(&self.env));
+            let typ = resolve::remove_aliases(&self.env, expr.env_type_of(&self.env));
             let id = ident.as_ref();
             for field in typ.row_iter() {
                 if field.name.as_ref().starts_with(id) {

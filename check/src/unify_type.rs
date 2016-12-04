@@ -6,7 +6,7 @@ use smallvec::VecLike;
 use base::error::Errors;
 use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv, merge};
 use base::symbol::{Symbol, SymbolRef};
-use base::instantiate;
+use base::resolve;
 use base::scoped_map::ScopedMap;
 
 use unify;
@@ -44,11 +44,11 @@ pub enum TypeError<I> {
     MissingFields(ArcType<I>, Vec<I>),
 }
 
-impl From<instantiate::Error> for Error<Symbol> {
-    fn from(error: instantiate::Error) -> Error<Symbol> {
+impl From<resolve::Error> for Error<Symbol> {
+    fn from(error: resolve::Error) -> Error<Symbol> {
         UnifyError::Other(match error {
-            instantiate::Error::UndefinedType(id) => TypeError::UndefinedType(id),
-            instantiate::Error::SelfRecursive(id) => TypeError::SelfRecursive(id),
+            resolve::Error::UndefinedType(id) => TypeError::UndefinedType(id),
+            resolve::Error::SelfRecursive(id) => TypeError::SelfRecursive(id),
         })
     }
 }
@@ -251,12 +251,12 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
         // Last ditch effort attempt to unify the types again by expanding the aliases
         // (if the types are alias types).
         (_, _) => {
-            let lhs = instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                          unifier.state.env,
-                                                          expected)?;
-            let rhs = instantiate::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                          unifier.state.env,
-                                                          actual)?;
+            let lhs = resolve::remove_aliases_checked(&mut unifier.state.reduced_aliases,
+                                                      unifier.state.env,
+                                                      expected)?;
+            let rhs = resolve::remove_aliases_checked(&mut unifier.state.reduced_aliases,
+                                                      unifier.state.env,
+                                                      actual)?;
             match (&lhs, &rhs) {
                 (&None, &None) => {
                     debug!("Unify error: {} <=> {}", expected, actual);
@@ -495,7 +495,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                     return Ok(if did_alias { Some(l.clone()) } else { None });
                 }
                 did_alias = true;
-                match instantiate::maybe_remove_alias(unifier.state.env, &l) {
+                match resolve::maybe_remove_alias(unifier.state.env, &l) {
                     Ok(Some(typ)) => {
                         unifier.state
                             .reduced_aliases

@@ -9,7 +9,7 @@ use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, SpannedExpr};
 use base::ast::{SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
-use base::instantiate;
+use base::resolve;
 use base::kind::{Kind, KindEnv, ArcKind};
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
@@ -1283,18 +1283,18 @@ impl<'a> Typecheck<'a> {
     }
 
     fn remove_alias(&self, typ: ArcType) -> ArcType {
-        instantiate::remove_alias(&self.environment, typ)
+        resolve::remove_alias(&self.environment, typ)
     }
 
     fn remove_aliases(&self, typ: ArcType) -> ArcType {
-        instantiate::remove_aliases(&self.environment, typ)
+        resolve::remove_aliases(&self.environment, typ)
     }
 
     fn type_of_alias(&self,
                      id: &AliasData<Symbol, ArcType>,
                      args: &[ArcType])
                      -> Result<Option<ArcType>, unify_type::Error<Symbol>> {
-        Ok(instantiate::type_of_alias(id, args))
+        Ok(resolve::type_of_alias(id, args))
     }
 
     fn instantiate(&mut self, typ: &ArcType) -> ArcType {

@@ -219,7 +219,8 @@ impl VmEnv {
     }
 
     pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
-        use base::instantiate;
+        use base::resolve;
+
         let globals = &self.globals;
         let mut module = Name::new(name);
         let global;
@@ -260,8 +261,8 @@ impl VmEnv {
                                                    test.+)")));
             }
             typ = match typ {
-                Cow::Borrowed(typ) => instantiate::remove_aliases_cow(self, typ),
-                Cow::Owned(typ) => Cow::Owned(instantiate::remove_aliases(self, typ)),
+                Cow::Borrowed(typ) => resolve::remove_aliases_cow(self, typ),
+                Cow::Owned(typ) => Cow::Owned(resolve::remove_aliases(self, typ)),
             };
             // HACK Can't return the data directly due to the use of cow on the type
             let next_type = map_cow_option(typ.clone(), |typ| {

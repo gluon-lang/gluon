@@ -75,7 +75,7 @@ pub fn rename(symbols: &mut SymbolModule,
               env: &TypeEnv,
               expr: &mut SpannedExpr<Symbol>)
               -> Result<(), Error> {
-    use base::instantiate;
+    use base::resolve;
 
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
@@ -86,7 +86,7 @@ pub fn rename(symbols: &mut SymbolModule,
     impl<'a, 'b> RenameVisitor<'a, 'b> {
         fn find_fields(&self, typ: &ArcType) -> Vec<types::Field<Symbol, ArcType>> {
             // Walk through all type aliases
-            let record = instantiate::remove_aliases(&self.env, typ.clone());
+            let record = resolve::remove_aliases(&self.env, typ.clone());
             record.row_iter().cloned().collect()
         }
 
@@ -104,7 +104,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         field.1 = Some(self.stack_var(id, pattern.span, field_type));
                     }
 
-                    let record_type = instantiate::remove_aliases(&self.env, typ.clone()).clone();
+                    let record_type = resolve::remove_aliases(&self.env, typ.clone()).clone();
                     for &(ref name, _) in types {
                         let field_type = record_type.type_field_iter()
                             .find(|field| field.name.name_eq(name))
