@@ -457,7 +457,6 @@ impl<'a> Compiler<'a> {
         // Store a stack of expressions which need to be cleaned up after this "tailcall" loop is
         // done
         function.stack.enter_scope();
-        let saved_line = function.current_line;
         function.current_line = self.source
             .line_number_at_byte(expr.span.start);
         while let Some(next) = self.compile_(expr, function, tail_position)? {
@@ -467,7 +466,6 @@ impl<'a> Compiler<'a> {
         }
         let count = function.exit_scope(self);
         function.emit(Slide(count));
-        function.current_line = saved_line;
         Ok(())
     }
 
