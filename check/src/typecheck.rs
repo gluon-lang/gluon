@@ -1290,13 +1290,6 @@ impl<'a> Typecheck<'a> {
         resolve::remove_aliases(&self.environment, typ)
     }
 
-    fn type_of_alias(&self,
-                     id: &AliasData<Symbol, ArcType>,
-                     args: &[ArcType])
-                     -> Result<Option<ArcType>, unify_type::Error<Symbol>> {
-        Ok(resolve::type_of_alias(id, args))
-    }
-
     fn instantiate(&mut self, typ: &ArcType) -> ArcType {
         self.named_variables.clear();
         self.instantiate_(typ)
@@ -1420,10 +1413,9 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                 None => {
                     match get_alias_app(&self.tc.environment, &self.typ) {
                         Some((alias, args)) => {
-                            match self.tc.type_of_alias(alias, args) {
-                                Ok(Some(typ)) => (None, typ.clone()),
-                                Ok(None) => return None,
-                                Err(_) => return Some(self.tc.subs.new_var()),
+                            match resolve::type_of_alias(alias, args) {
+                                Some(typ) => (None, typ.clone()),
+                                None => return None,
                             }
                         }
                         None => return Some(self.tc.subs.new_var()),
