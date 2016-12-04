@@ -263,12 +263,12 @@ impl Compiler {
         let ExecuteValue { typ: actual, value, .. } =
             expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?;
         let is_io = {
-            expected.as_alias()
-                .and_then(|(expected_alias_id, _)| {
+            expected.alias_ident()
+                .and_then(|expected_ident| {
                     let env = vm.get_env();
                     env.find_type_info("IO")
                         .ok()
-                        .map(|alias| *expected_alias_id == alias.name)
+                        .map(|alias| *expected_ident == alias.name)
                 })
                 .unwrap_or(false)
         };

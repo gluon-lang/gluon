@@ -410,17 +410,18 @@ impl<Id, T> Type<Id, T>
         None
     }
 
-    pub fn as_alias(&self) -> Option<(&Id, &[T])> {
+    pub fn unapplied_args(&self) -> &[T] {
         match *self {
-            Type::App(ref id, ref args) => {
-                match **id {
-                    Type::Ident(ref id) => Some((id, args)),
-                    Type::Alias(ref alias) => Some((&alias.name, args)),
-                    _ => None,
-                }
-            }
-            Type::Ident(ref id) => Some((id, &[][..])),
-            Type::Alias(ref alias) => Some((&alias.name, &[][..])),
+            Type::App(_, ref args) => args,
+            _ => &[],
+        }
+    }
+
+    pub fn alias_ident(&self) -> Option<&Id> {
+        match *self {
+            Type::App(ref id, _) => id.alias_ident(),
+            Type::Ident(ref id) => Some(id),
+            Type::Alias(ref alias) => Some(&alias.name),
             _ => None,
         }
     }
@@ -434,18 +435,20 @@ impl<T> Type<Symbol, T>
     /// Option a => Option
     /// Int => Int
     pub fn name(&self) -> Option<&SymbolRef> {
-        self.as_alias()
-            .map(|(id, _)| &**id)
-            .or_else(|| match *self {
-                Type::App(ref id, _) => {
-                    match **id {
-                        Type::Builtin(b) => Some(b.symbol()),
-                        _ => None,
-                    }
+        if let Some(id) = self.alias_ident() {
+            return Some(&**id);
+        }
+
+        match *self {
+            Type::App(ref id, _) => {
+                match **id {
+                    Type::Builtin(b) => Some(b.symbol()),
+                    _ => None,
                 }
-                Type::Builtin(b) => Some(b.symbol()),
-                _ => None,
-            })
+            }
+            Type::Builtin(b) => Some(b.symbol()),
+            _ => None,
+        }
     }
 }
 

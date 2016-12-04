@@ -483,7 +483,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
     loop {
         l = match l.name() {
             Some(l_id) => {
-                if let Some((l_id, _)) = l.as_alias() {
+                if let Some(l_id) = l.alias_ident() {
                     if unifier.state.reduced_aliases.iter().any(|id| id == l_id) {
                         return Err(());
                     }
@@ -499,7 +499,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                     Ok(Some(typ)) => {
                         unifier.state
                             .reduced_aliases
-                            .push(l.as_alias().expect("Alias").0.clone());
+                            .push(l.alias_ident().expect("Alias").clone());
                         typ
                     }
                     Ok(None) => break,

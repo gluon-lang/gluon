@@ -1398,8 +1398,8 @@ fn get_alias_app<'a>(env: &'a TypeEnv,
             }
         }
         _ => {
-            typ.as_alias()
-                .and_then(|(id, args)| env.find_type_info(id).map(|alias| (&**alias, &args[..])))
+            typ.alias_ident()
+                .and_then(|id| env.find_type_info(id).map(|alias| (&**alias, typ.unapplied_args())))
         }
     }
 }

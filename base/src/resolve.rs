@@ -38,23 +38,26 @@ pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
                               env: &TypeEnv,
                               typ: &ArcType)
                               -> Result<Option<ArcType>, Error> {
-    if let Some((alias_id, _)) = typ.as_alias() {
+    if let Some(alias_id) = typ.alias_ident() {
         if reduced_aliases.iter().any(|name| name == alias_id) {
             return Err(Error::SelfRecursive(alias_id.clone()));
         }
         reduced_aliases.push(alias_id.clone());
     }
+
     let mut typ = match remove_alias(env, typ)? {
         Some(new) => new,
         None => return Ok(None),
     };
+
     loop {
-        if let Some((alias_id, _)) = typ.as_alias() {
+        if let Some(alias_id) = typ.alias_ident() {
             if reduced_aliases.iter().any(|name| name == alias_id) {
                 return Err(Error::SelfRecursive(alias_id.clone()));
             }
             reduced_aliases.push(alias_id.clone());
         }
+
         match remove_alias(env, &typ)? {
             Some(new) => typ = new,
             None => break,
@@ -76,19 +79,22 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
         }
         _ => None,
     };
-    let (id, args) = match typ.as_alias() {
-        Some(x) => x,
-        None => return Ok(None),
-    };
-    let alias = match maybe_alias {
-        Some(alias) => alias,
-        None => {
-            env.find_type_info(&id)
-                .map(|a| &**a)
-                .ok_or_else(|| Error::UndefinedType(id.clone()))?
+
+    match typ.alias_ident() {
+        Some(id) => {
+            let alias = match maybe_alias {
+                Some(alias) => alias,
+                None => {
+                    env.find_type_info(&id)
+                        .map(|a| &**a)
+                        .ok_or_else(|| Error::UndefinedType(id.clone()))?
+                }
+            };
+
+            Ok(type_of_alias(alias, typ.unapplied_args()))
         }
-    };
-    Ok(type_of_alias(alias, args))
+        None => Ok(None),
+    }
 }
 
 /// Returns the type which is aliased by `alias` if it was possible to do a substitution on the
