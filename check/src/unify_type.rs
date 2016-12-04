@@ -4,7 +4,7 @@ use std::mem;
 use smallvec::VecLike;
 
 use base::error::Errors;
-use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv, merge};
+use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve;
 use base::scoped_map::ScopedMap;
@@ -200,11 +200,11 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                         })
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
-                Ok(merge(l_args,
-                         new_args,
-                         l_rest,
-                         new_rest,
-                         |fields, rest| Type::extend_row(l_types.clone(), fields, rest)))
+                Ok(types::merge(l_args,
+                                new_args,
+                                l_rest,
+                                new_rest,
+                                |fields, rest| Type::extend_row(l_types.clone(), fields, rest)))
             } else if **l_rest == Type::EmptyRow && **r_rest == Type::EmptyRow {
                 for l_typ in expected.type_field_iter() {
                     if let None = actual.type_field_iter().find(|r_typ| *r_typ == l_typ) {
@@ -231,11 +231,11 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                     })
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
-                Ok(merge(l_args,
-                         new_args,
-                         l_rest,
-                         new_rest,
-                         |fields, rest| Type::extend_row(l_types.clone(), fields, rest)))
+                Ok(types::merge(l_args,
+                                new_args,
+                                l_rest,
+                                new_rest,
+                                |fields, rest| Type::extend_row(l_types.clone(), fields, rest)))
             } else {
                 unify_rows(unifier, expected, actual)
             }
@@ -295,7 +295,7 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
             let new_type = unifier.try_match(l, r);
             let new_args = walk_move_types(l_args.iter().zip(r_args),
                                            |l, r| unifier.try_match(l, r));
-            Ok(merge(l, new_type, l_args, new_args, Type::app))
+            Ok(types::merge(l, new_type, l_args, new_args, Type::app))
         }
         Less => {
             let offset = r_args.len() - l_args.len();
@@ -305,7 +305,7 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
 
             let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
                                            |l, r| unifier.try_match(l, r));
-            Ok(merge(l, new_type, l_args, new_args, Type::app))
+            Ok(types::merge(l, new_type, l_args, new_args, Type::app))
         }
         Greater => {
             let offset = l_args.len() - r_args.len();
@@ -315,7 +315,7 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
 
             let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
                                            |l, r| unifier.try_match(l, r));
-            Ok(merge(r, new_type, r_args, new_args, Type::app))
+            Ok(types::merge(r, new_type, r_args, new_args, Type::app))
         }
     }
 }
