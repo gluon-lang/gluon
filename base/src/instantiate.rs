@@ -1,10 +1,8 @@
 use std::borrow::Cow;
-use std::collections::hash_map::Entry;
 
 use types;
 use types::{AliasData, AppVec, Type, ArcType, TypeEnv};
 use symbol::Symbol;
-use fnv::FnvMap;
 
 quick_error! {
     #[derive(Debug)]
@@ -160,39 +158,4 @@ pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Op
             _ => None,
         }
     }))
-}
-
-#[derive(Debug, Default)]
-pub struct Instantiator {
-    pub named_variables: FnvMap<Symbol, ArcType>,
-}
-
-impl Instantiator {
-    pub fn new() -> Instantiator {
-        Instantiator { named_variables: FnvMap::default() }
-    }
-
-    pub fn instantiate<F>(&mut self, typ: &ArcType, mut on_unbound: F) -> ArcType
-        where F: FnMut(&Symbol) -> ArcType,
-    {
-        types::walk_move_type(typ.clone(),
-                              &mut |typ| {
-            match *typ {
-                Type::Generic(ref generic) => {
-                    let var = match self.named_variables.entry(generic.id.clone()) {
-                        Entry::Vacant(entry) => entry.insert(on_unbound(&generic.id)).clone(),
-                        Entry::Occupied(entry) => entry.get().clone(),
-                    };
-
-                    let mut var = (*var).clone();
-                    if let Type::Variable(ref mut var) = var {
-                        var.kind = generic.kind.clone();
-                    }
-
-                    Some(ArcType::from(var))
-                }
-                _ => None,
-            }
-        })
-    }
 }
