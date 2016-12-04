@@ -5,6 +5,7 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::usize;
 
+use base::ast;
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
@@ -253,7 +254,7 @@ impl VmEnv {
         for mut field_name in remaining_fields.components() {
             if field_name.starts_with('(') && field_name.ends_with(')') {
                 field_name = &field_name[1..field_name.len() - 1];
-            } else if field_name.chars().any(|c| "+-*/&|=<>".chars().any(|x| x == c)) {
+            } else if field_name.chars().any(ast::is_operator_char) {
                 return Err(Error::Message(format!("Operators cannot be used as fields \
                                                    directly. To access an operator field, \
                                                    enclose the operator with parentheses \
