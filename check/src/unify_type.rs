@@ -172,7 +172,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
     debug!("Unifying:\n{:?} <=> {:?}", expected, actual);
     match (&**expected, &**actual) {
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
-            unify_app(unifier, l, l_args, r, r_args)
+            Ok(unify_app(unifier, l, l_args, r, r_args))
         }
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
@@ -278,7 +278,7 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
                     l_args: &AppVec<ArcType>,
                     r: &ArcType,
                     r_args: &AppVec<ArcType>)
-                    -> Result<Option<ArcType>, Error<Symbol>>
+                    -> Option<ArcType>
     where U: Unifier<State<'a>, ArcType>,
 {
     use std::cmp::Ordering::*;
@@ -295,7 +295,7 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
             let new_type = unifier.try_match(l, r);
             let new_args = walk_move_types(l_args.iter().zip(r_args),
                                            |l, r| unifier.try_match(l, r));
-            Ok(types::merge(l, new_type, l_args, new_args, Type::app))
+            types::merge(l, new_type, l_args, new_args, Type::app)
         }
         Less => {
             let offset = r_args.len() - l_args.len();
@@ -305,7 +305,7 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
 
             let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
                                            |l, r| unifier.try_match(l, r));
-            Ok(types::merge(l, new_type, l_args, new_args, Type::app))
+            types::merge(l, new_type, l_args, new_args, Type::app)
         }
         Greater => {
             let offset = l_args.len() - r_args.len();
@@ -315,7 +315,7 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
 
             let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
                                            |l, r| unifier.try_match(l, r));
-            Ok(types::merge(r, new_type, r_args, new_args, Type::app))
+            types::merge(r, new_type, r_args, new_args, Type::app)
         }
     }
 }
