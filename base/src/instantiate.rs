@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 
 use types;
-use types::{AliasData, AppVec, Type, Generic, ArcType, TypeEnv};
+use types::{AliasData, AppVec, Type, ArcType, TypeEnv};
 use symbol::Symbol;
 use fnv::FnvMap;
 
@@ -146,13 +146,19 @@ pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Op
         }
     }
 
-    Some(instantiate(typ, |gen| {
-        // Replace the generic variable with the type from the list
-        // or if it is not found the make a fresh variable
-        alias_args.iter()
-            .zip(args)
-            .find(|&(arg, _)| arg.id == gen.id)
-            .map(|(_, typ)| typ.clone())
+    Some(types::walk_move_type(typ,
+                               &mut |typ| {
+        match *typ {
+            Type::Generic(ref generic) => {
+                // Replace the generic variable with the type from the list
+                // or if it is not found the make a fresh variable
+                alias_args.iter()
+                    .zip(args)
+                    .find(|&(arg, _)| arg.id == generic.id)
+                    .map(|(_, typ)| typ.clone())
+            }
+            _ => None,
+        }
     }))
 }
 
@@ -169,30 +175,24 @@ impl Instantiator {
     pub fn instantiate<F>(&mut self, typ: &ArcType, mut on_unbound: F) -> ArcType
         where F: FnMut(&Symbol) -> ArcType,
     {
-        instantiate(typ.clone(), |generic| {
-            let var = match self.named_variables.entry(generic.id.clone()) {
-                Entry::Vacant(entry) => entry.insert(on_unbound(&generic.id)).clone(),
-                Entry::Occupied(entry) => entry.get().clone(),
-            };
+        types::walk_move_type(typ.clone(),
+                              &mut |typ| {
+            match *typ {
+                Type::Generic(ref generic) => {
+                    let var = match self.named_variables.entry(generic.id.clone()) {
+                        Entry::Vacant(entry) => entry.insert(on_unbound(&generic.id)).clone(),
+                        Entry::Occupied(entry) => entry.get().clone(),
+                    };
 
-            let mut var = (*var).clone();
-            if let Type::Variable(ref mut var) = var {
-                var.kind = generic.kind.clone();
+                    let mut var = (*var).clone();
+                    if let Type::Variable(ref mut var) = var {
+                        var.kind = generic.kind.clone();
+                    }
+
+                    Some(ArcType::from(var))
+                }
+                _ => None,
             }
-
-            Some(ArcType::from(var))
         })
     }
-}
-
-pub fn instantiate<F>(typ: ArcType, mut on_unbound: F) -> ArcType
-    where F: FnMut(&Generic<Symbol>) -> Option<ArcType>,
-{
-    types::walk_move_type(typ,
-                          &mut |typ| {
-                              match *typ {
-                                  Type::Generic(ref x) => on_unbound(x),
-                                  _ => None,
-                              }
-                          })
 }

@@ -451,13 +451,19 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
                             None => panic!("Unexpected type {:?} is not a function", alias_type),
                         };
 
-                        let typ = types::instantiate(typ.clone(), |gen| {
-                            // Replace the generic variable with the type from the list
-                            // or if it is not found the make a fresh variable
-                            args.iter()
-                                .zip(alias_args)
-                                .find(|&(arg, _)| arg.id == gen.id)
-                                .map(|(_, typ)| typ.clone())
+                        let typ = types::walk_move_type(typ.clone(),
+                                                        &mut |typ| {
+                            match *typ {
+                                Type::Generic(ref generic) => {
+                                    // Replace the generic variable with the type from the list
+                                    // or if it is not found the make a fresh variable
+                                    args.iter()
+                                        .zip(alias_args)
+                                        .find(|&(arg, _)| arg.id == generic.id)
+                                        .map(|(_, typ)| typ.clone())
+                                }
+                                _ => None,
+                            }
                         });
 
                         get_return_type(env, &typ, arg_count)
