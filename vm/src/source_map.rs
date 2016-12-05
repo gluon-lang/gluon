@@ -17,8 +17,8 @@ impl SourceMap {
     /// Defines the instruction at `instruction_index` to be at `current_line`.
     /// This function must be called with indexes in increasing order
     pub fn emit(&mut self, instruction_index: usize, current_line: Line) {
-        let last_emitted_line = self.map.last().map_or(Line::from(0), |&(_, x)| x);
-        if last_emitted_line != current_line {
+        let last_emitted_line = self.map.last().map(|&(_, x)| x);
+        if last_emitted_line != Some(current_line) {
             self.map.push((instruction_index, current_line));
         }
     }

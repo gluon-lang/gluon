@@ -6,7 +6,7 @@ use base::kind::{ArcKind, KindEnv};
 use base::types::{self, Alias, ArcType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::pos::Line;
+use base::pos::{Line, NO_EXPANSION};
 use base::source::Source;
 use types::*;
 use vm::GlobalVmState;
@@ -74,8 +74,11 @@ struct FunctionEnv {
     /// The variables currently in scope in the this function.
     stack: ScopedMap<Symbol, VmIndex>,
     /// The current size of the stack. Not the same as `stack.len()`.
+    /// The current size of the stack. Not the same as `stack.len()`.
     stack_size: VmIndex,
+    /// The variables which this function takes from the outer scope
     free_vars: Vec<Symbol>,
+    /// The line where instructions are currently being emitted
     current_line: Line,
     function: CompiledFunction,
 }
@@ -457,12 +460,18 @@ impl<'a> Compiler<'a> {
         // Store a stack of expressions which need to be cleaned up after this "tailcall" loop is
         // done
         function.stack.enter_scope();
-        function.current_line = self.source
-            .line_number_at_byte(expr.span.start);
-        while let Some(next) = self.compile_(expr, function, tail_position)? {
-            expr = next;
+        // Don't update the current_line for macro expanded code as the lines in that code do not come
+        // from this module
+        if expr.span.expansion_id == NO_EXPANSION {
             function.current_line = self.source
                 .line_number_at_byte(expr.span.start);
+        }
+        while let Some(next) = self.compile_(expr, function, tail_position)? {
+            expr = next;
+            if expr.span.expansion_id == NO_EXPANSION {
+                function.current_line = self.source
+                    .line_number_at_byte(expr.span.start);
+            }
         }
         let count = function.exit_scope(self);
         function.emit(Slide(count));

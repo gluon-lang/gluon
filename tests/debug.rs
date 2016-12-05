@@ -79,6 +79,43 @@ fn line_hook() {
                vec![1, 3, 4, 3, 1].into_iter().map(Line::from).collect::<Vec<_>>());
 }
 
+#[test]
+fn implicit_prelude_lines_not_counted() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+    {
+        let mut context = thread.context();
+        context.set_hook(Some(Box::new(move |_, debug_info| {
+            if debug_info.stack_info(0).unwrap().source_name() == "test" {
+                Err(vm::Error::Yield)
+            } else {
+                Ok(())
+            }
+        })));
+        context.set_hook_mask(LINE_FLAG);
+    }
+    let mut result = Compiler::new()
+        .run_expr::<i32>(&thread, "test", "1")
+        .map(|_| ());
+
+    let mut lines = Vec::new();
+    loop {
+        match result {
+            Ok(_) => break,
+            Err(Error::VM(vm::Error::Yield)) => {
+                let context = thread.context();
+                let debug_info = context.debug_info();
+                let stack_info = debug_info.stack_info(0).unwrap();
+                lines.push(stack_info.line().unwrap());
+            }
+            Err(err) => panic!("{}", err),
+        }
+        result = thread.resume().map_err(From::from);
+    }
+
+    assert_eq!(lines, vec![Line::from(0)]);
+}
 
 #[test]
 fn read_variables() {
