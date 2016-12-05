@@ -253,8 +253,19 @@ Alternative: Alternative<Id> =
     };
 
 FieldExpr: FieldExpr<Id> = {
-    <id: Ident> "=" <body: SpExpr> => {
-        FieldExpr::Value(id, Some(body))
+    <id: Ident> <args: Ident*> "=" <body: SpExpr> => {
+        if args.is_empty() {
+            FieldExpr::Value(id, Some(body))
+        } else {
+            let body_span = body.span;
+            let fun = Expr::Lambda(Lambda {
+                id: TypedIdent::new(id.clone()),
+                args: args.into_iter().map(TypedIdent::new).collect(),
+                body: Box::new(body),
+            });
+
+            FieldExpr::Value(id, Some(pos::spanned(body_span, fun)))
+        }
     },
 
     <IdentStr> => {

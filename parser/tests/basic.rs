@@ -502,3 +502,16 @@ fn record_type_field() {
     assert_eq!(e,
                record_a(vec![("Test".into(), None)], vec![("x".into(), None)]))
 }
+
+#[test]
+fn record_function_field() {
+    let _ = ::env_logger::init();
+    let text = r"{ foo x y = x * y }";
+    let e = parse_new!(text);
+    assert_eq!(e,
+               record_a(vec![],
+                        vec![("foo".into(),
+                              Some(lambda("foo",
+                                          vec![intern("x"), intern("y")],
+                                          binop(id("x"), "*", id("y")))))]))
+}
