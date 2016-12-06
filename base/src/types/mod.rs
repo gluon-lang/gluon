@@ -1759,7 +1759,7 @@ where
     I: Clone,
 {
     match *typ {
-        Type::Forall(_, ref typ) => f.visit(typ),
+        Type::Forall(ref args, ref typ) => f.visit(typ).map(|typ| Type::forall(args.clone(), typ)),
         Type::App(ref id, ref args) => {
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
