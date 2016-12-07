@@ -109,7 +109,8 @@ impl Stack {
             .filter_map(|frame| {
                 match frame.state {
                     State::Closure(ref closure) => {
-                        let line = closure.function.source_map.line(frame.instruction_index);
+                        let line =
+                            closure.function.debug_info.source_map.line(frame.instruction_index);
                         Some(line.map(|line| {
                             StacktraceFrame {
                                 name: closure.function.name.clone(),

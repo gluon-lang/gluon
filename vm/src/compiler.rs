@@ -33,6 +33,15 @@ enum FieldAccess {
 }
 
 #[derive(Debug)]
+pub struct DebugInfo {
+    /// Maps instruction indexes to the line that spawned them
+    pub source_map: SourceMap,
+    pub local_map: LocalMap,
+    pub upvar_names: Vec<String>,
+    pub source_name: String,
+}
+
+#[derive(Debug)]
 pub struct CompiledFunction {
     pub args: VmIndex,
     /// The maximum possible number of stack slots needed for this function
@@ -45,11 +54,7 @@ pub struct CompiledFunction {
     /// Storage for globals which are needed by the module which is currently being compiled
     pub module_globals: Vec<Symbol>,
     pub records: Vec<Vec<Symbol>>,
-    /// Maps instruction indexes to the line that spawned them
-    pub source_map: SourceMap,
-    pub local_map: LocalMap,
-    pub upvar_names: Vec<String>,
-    pub source_name: String,
+    pub debug_info: DebugInfo,
 }
 
 impl CompiledFunction {
@@ -64,10 +69,12 @@ impl CompiledFunction {
             strings: Vec::new(),
             module_globals: Vec::new(),
             records: Vec::new(),
-            source_map: SourceMap::new(),
-            local_map: LocalMap::new(),
-            upvar_names: Vec::new(),
-            source_name: source_name,
+            debug_info: DebugInfo {
+                source_map: SourceMap::new(),
+                local_map: LocalMap::new(),
+                upvar_names: Vec::new(),
+                source_name: source_name,
+            },
         }
     }
 }
@@ -121,10 +128,11 @@ impl FunctionEnvs {
         compiler.stack_types.exit_scope();
         compiler.stack_constructors.exit_scope();
         let instructions = self.function.instructions.len();
-        self.function.source_map.close(instructions, current_line);
+        self.function.debug_info.source_map.close(instructions, current_line);
         {
             let function = &mut **self;
             function.function
+                .debug_info
                 .upvar_names
                 .extend(function.free_vars.iter().map(|s| s.declared_name().to_string()));
         }
@@ -157,7 +165,10 @@ impl FunctionEnv {
         }
 
         self.function.instructions.push(instruction);
-        self.function.source_map.emit(self.function.instructions.len() - 1, self.current_line);
+        self.function
+            .debug_info
+            .source_map
+            .emit(self.function.instructions.len() - 1, self.current_line);
     }
 
     fn increase_stack(&mut self, adjustment: VmIndex) {
@@ -237,7 +248,7 @@ impl FunctionEnv {
 
     fn new_stack_var(&mut self, _compiler: &Compiler, s: Symbol) {
         debug!("Push var: {:?} at {}", s, self.stack_size - 1);
-        self.function.local_map.emit(self.function.instructions.len(), s.clone());
+        self.function.debug_info.local_map.emit(self.function.instructions.len(), s.clone());
         self.stack.insert(s, self.stack_size - 1);
     }
 

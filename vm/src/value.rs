@@ -1,7 +1,6 @@
 use std::fmt;
 use std::collections::hash_map::Entry;
 use std::result::Result as StdResult;
-use std::string::String as StdString;
 
 use itertools::Itertools;
 
@@ -13,9 +12,9 @@ use types::*;
 use base::fnv::FnvMap;
 
 use interner::InternedStr;
+use compiler::DebugInfo;
 use gc::{Gc, GcPtr, Generation, Traverseable, DataDef, Move, WriteOnly};
 use array::Array;
-use source_map::{LocalMap, SourceMap};
 use thread::{Thread, Status};
 use {Error, Result};
 
@@ -117,10 +116,7 @@ pub struct BytecodeFunction {
     pub strings: Vec<InternedStr>,
     pub globals: Vec<Value>,
     pub records: Vec<Vec<InternedStr>>,
-    pub source_map: SourceMap,
-    pub local_map: LocalMap,
-    pub upvar_names: Vec<StdString>,
-    pub source_name: StdString,
+    pub debug_info: DebugInfo,
 }
 
 impl Traverseable for BytecodeFunction {

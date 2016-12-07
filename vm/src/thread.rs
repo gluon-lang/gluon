@@ -723,7 +723,7 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure.function.source_map.line(frame.instruction_index)
+                closure.function.debug_info.source_map.line(frame.instruction_index)
             }
             _ => None,
         }
@@ -732,7 +732,7 @@ impl<'a> StackInfo<'a> {
     /// Returns the name of the source which defined the funtion executing at this frame
     pub fn source_name(&self) -> &str {
         match self.frame().state {
-            State::Closure(ref closure) => &closure.function.source_name,
+            State::Closure(ref closure) => &closure.function.debug_info.source_name,
             _ => "<unknown>",
         }
     }
@@ -751,7 +751,7 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure.function.local_map.locals(frame.instruction_index)
+                closure.function.debug_info.local_map.locals(frame.instruction_index)
             }
             _ => LocalIter::empty(),
         }
@@ -759,7 +759,7 @@ impl<'a> StackInfo<'a> {
 
     pub fn upvars(&self) -> &[StdString] {
         match self.frame().state {
-            State::Closure(ref closure) => &closure.function.upvar_names,
+            State::Closure(ref closure) => &closure.function.debug_info.upvar_names,
             _ => panic!("Attempted to access upvar in non closure function"),
         }
     }
@@ -1178,8 +1178,9 @@ impl<'b> ExecuteContext<'b> {
 
             if self.hook.flags.contains(LINE_FLAG) {
                 if let Some(ref mut hook) = self.hook.function {
-                    let current_line = function.source_map.line(index);
-                    let previous_line = function.source_map
+                    let current_line = function.debug_info.source_map.line(index);
+                    let previous_line = function.debug_info
+                        .source_map
                         .line(self.hook.previous_instruction_index);
                     self.hook.previous_instruction_index = index;
                     if current_line != previous_line {
