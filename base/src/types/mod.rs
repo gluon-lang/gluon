@@ -227,8 +227,7 @@ impl BuiltinType {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
     pub id: u32,
 }
 
@@ -242,10 +241,8 @@ pub struct TypeVariable {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub id: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub id: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
 }
 
 impl<Id> Generic<Id> {
@@ -266,10 +263,8 @@ impl<Id> Generic<Id> {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    _typ: T,
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    _marker: PhantomData<Id>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] _typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] _marker: PhantomData<Id>,
 }
 
 impl<Id, T> Deref for Alias<Id, T>
@@ -429,8 +424,7 @@ where
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
@@ -488,10 +482,8 @@ impl<Id, T> Deref for AliasRef<Id, T> {
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub typ: T,
 }
 
 /// `SmallVec` used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
@@ -538,10 +530,8 @@ pub enum Type<Id, T = ArcType<Id>> {
     Builtin(BuiltinType),
     /// Universally quantified types
     Forall(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Vec<Generic<Id>>,
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
+        #[cfg_attr(feature = "serde_derive", serde(state))] Vec<Generic<Id>>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] T,
     ),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
@@ -550,15 +540,9 @@ pub enum Type<Id, T = ArcType<Id>> {
         #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::seq"))] AppVec<T>,
     ),
     /// Record constructor, of kind `Row -> Type`
-    Record(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Record(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// Variant constructor, of kind `Row -> Type`
-    Variant(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Variant(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
@@ -579,25 +563,19 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
-    Ident(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Id,
-    ),
+    Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        TypeVariable,
+        #[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable,
     ),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Generic<Id>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>,
     ),
     Alias(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        AliasRef<Id, T>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>,
     ),
 }
 
@@ -617,11 +595,11 @@ where
         T::from(Type::Builtin(typ))
     }
 
-    pub fn forall(args: Vec<Generic<Id>>, typ: T) -> T {
-        if args.is_empty() {
+    pub fn forall(params: Vec<Generic<Id>>, typ: T) -> T {
+        if params.is_empty() {
             typ
         } else {
-            T::from(Type::Forall(args, typ))
+            T::from(Type::Forall(params, typ))
         }
     }
 
@@ -984,6 +962,13 @@ impl<Id> ArcType<Id> {
         Arc::strong_count(&typ.typ)
     }
 
+    pub fn remove_forall(&self) -> &ArcType<Id> {
+        match **self {
+            Type::Forall(_, ref typ) => typ,
+            _ => self,
+        }
+    }
+
     pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
     where
         Id: AsRef<str>,
@@ -1060,7 +1045,7 @@ impl ArcType {
             },
         }
 
-        Some(walk_move_type(typ, &mut |typ| {
+        Some(walk_move_type(typ.remove_forall().clone(), &mut |typ| {
             match **typ {
                 Type::Generic(ref generic) => {
                     // Replace the generic variable with the type from the list

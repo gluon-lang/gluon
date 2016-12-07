@@ -372,13 +372,11 @@ impl<'a> Typecheck<'a> {
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
         let aliased_type = alias.typ();
-        if let Type::Forall(_, ref typ) = **typ {
-            if let Type::Variant(ref row) = **typ {
-                for field in row.row_iter().cloned() {
-                    let symbol = self.symbols.symbol(field.name.as_ref());
-                    self.original_symbols.insert(symbol, field.name.clone());
-                    self.stack_var(field.name, field.typ);
-                }
+        if let Type::Variant(ref row) = **aliased_type.remove_forall() {
+            for field in row.row_iter().cloned() {
+                let symbol = self.symbols.symbol(field.name.as_ref());
+                self.original_symbols.insert(symbol, field.name.clone());
+                self.stack_var(field.name, field.typ);
             }
         }
         let generic_args = alias.params().iter().cloned().map(Type::generic).collect();
@@ -1293,7 +1291,18 @@ impl<'a> Typecheck<'a> {
             // Kindcheck all the types in the environment
             for alias in resolved_aliases.iter_mut() {
                 check.set_variables(alias.params());
-                check.kindcheck_type(alias.unresolved_type_mut())?;
+                *alias.unresolved_type_mut() = match **alias.unresolved_type() {
+                    Type::Forall(ref args, ref typ) => {
+                        let mut typ = typ.clone();
+                        check.kindcheck_type(&mut typ)?;
+                        Type::forall(args.clone(), typ.clone())
+                    }
+                    _ => {
+                        let mut typ = alias.unresolved_type().clone();
+                        check.kindcheck_type(&mut typ)?;
+                        typ
+                    }
+                };
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
@@ -1816,16 +1825,12 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
         loop {
             let (arg, new) = match self.typ.as_function() {
                 Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
-                None => {
-                    match get_alias_app(&self.tc.environment, &self.typ) {
-                        Some((alias, args)) => {
-                            match alias.unresolved_type().apply_args(args) {
-                                Some(typ) => (None, typ.clone()),
-                                None => return None,
-                            }
-                        }
-                        None => return Some(self.tc.subs.new_var()),
-                    }
+                None => match get_alias_app(&self.tc.environment, &self.typ) {
+                    Some((alias, args)) => match alias.unresolved_type().apply_args(args) {
+                        Some(typ) => (None, typ.clone()),
+                        None => return None,
+                    },
+                    None => return Some(self.tc.subs.new_var()),
                 },
             };
             self.typ = new;

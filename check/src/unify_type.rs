@@ -256,8 +256,7 @@ where
                 l_row
                     .iter()
                     .zip(r_row)
-                    .all(|(l, r)| l.name.name_eq(&r.name)) &&
-                l_rest == r_rest
+                    .all(|(l, r)| l.name.name_eq(&r.name)) && l_rest == r_rest
             {
                 let iter = l_row.iter().zip(r_row);
                 let new_fields = merge::merge_tuple_iter(iter, |l, r| {
