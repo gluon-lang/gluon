@@ -119,6 +119,7 @@ pub type Result<T> = StdResult<T, Error>;
 pub struct Compiler {
     symbols: Symbols,
     implicit_prelude: bool,
+    emit_debug_info: bool,
 }
 
 impl Compiler {
@@ -127,6 +128,7 @@ impl Compiler {
         Compiler {
             symbols: Symbols::new(),
             implicit_prelude: true,
+            emit_debug_info: true,
         }
     }
 
@@ -134,6 +136,13 @@ impl Compiler {
     /// compiler (default: true)
     pub fn implicit_prelude(mut self, implicit_prelude: bool) -> Compiler {
         self.implicit_prelude = implicit_prelude;
+        self
+    }
+
+    /// Sets wheter the compiler should emit debug information such as source maps and variable names.
+    /// (default: true)
+    pub fn emit_debug_info(mut self, emit_debug_info: bool) -> Compiler {
+        self.emit_debug_info = emit_debug_info;
         self
     }
 

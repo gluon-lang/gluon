@@ -89,6 +89,7 @@ struct FunctionEnv {
     free_vars: Vec<Symbol>,
     /// The line where instructions are currently being emitted
     current_line: Line,
+    emit_debug_info: bool,
     function: CompiledFunction,
 }
 
@@ -121,15 +122,19 @@ impl FunctionEnvs {
                       typ: ArcType) {
         compiler.stack_types.enter_scope();
         compiler.stack_constructors.enter_scope();
-        self.envs.push(FunctionEnv::new(args, id, typ, compiler.source_name.clone()));
+        self.envs.push(FunctionEnv::new(args,
+                                        id,
+                                        typ,
+                                        compiler.source_name.clone(),
+                                        compiler.emit_debug_info));
     }
 
     fn end_function(&mut self, compiler: &mut Compiler, current_line: Line) -> FunctionEnv {
         compiler.stack_types.exit_scope();
         compiler.stack_constructors.exit_scope();
         let instructions = self.function.instructions.len();
-        self.function.debug_info.source_map.close(instructions, current_line);
-        {
+        if compiler.emit_debug_info {
+            self.function.debug_info.source_map.close(instructions, current_line);
             let function = &mut **self;
             function.function
                 .debug_info
@@ -141,13 +146,19 @@ impl FunctionEnvs {
 }
 
 impl FunctionEnv {
-    fn new(args: VmIndex, id: Symbol, typ: ArcType, source_name: String) -> FunctionEnv {
+    fn new(args: VmIndex,
+           id: Symbol,
+           typ: ArcType,
+           source_name: String,
+           emit_debug_info: bool)
+           -> FunctionEnv {
         FunctionEnv {
             free_vars: Vec::new(),
             stack: ScopedMap::new(),
             stack_size: 0,
             function: CompiledFunction::new(args, id, typ, source_name),
             current_line: Line::from(0),
+            emit_debug_info: emit_debug_info,
         }
     }
 
@@ -165,10 +176,13 @@ impl FunctionEnv {
         }
 
         self.function.instructions.push(instruction);
-        self.function
-            .debug_info
-            .source_map
-            .emit(self.function.instructions.len() - 1, self.current_line);
+
+        if self.emit_debug_info {
+            self.function
+                .debug_info
+                .source_map
+                .emit(self.function.instructions.len() - 1, self.current_line);
+        }
     }
 
     fn increase_stack(&mut self, adjustment: VmIndex) {
@@ -248,7 +262,9 @@ impl FunctionEnv {
 
     fn new_stack_var(&mut self, _compiler: &Compiler, s: Symbol) {
         debug!("Push var: {:?} at {}", s, self.stack_size - 1);
-        self.function.debug_info.local_map.emit(self.function.instructions.len(), s.clone());
+        if self.emit_debug_info {
+            self.function.debug_info.local_map.emit(self.function.instructions.len(), s.clone());
+        }
         self.stack.insert(s, self.stack_size - 1);
     }
 
@@ -302,6 +318,7 @@ pub struct Compiler<'a> {
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
     source: &'a Source<'a>,
     source_name: String,
+    emit_debug_info: bool,
     empty_symbol: Symbol,
 }
 
@@ -337,7 +354,8 @@ impl<'a> Compiler<'a> {
                vm: &'a GlobalVmState,
                mut symbols: SymbolModule<'a>,
                source: &'a Source<'a>,
-               source_name: String)
+               source_name: String,
+               emit_debug_info: bool)
                -> Compiler<'a> {
         Compiler {
             globals: globals,
@@ -348,6 +366,7 @@ impl<'a> Compiler<'a> {
             stack_types: ScopedMap::new(),
             source: source,
             source_name: source_name,
+            emit_debug_info: emit_debug_info,
         }
     }
 

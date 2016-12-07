@@ -217,7 +217,8 @@ impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
                                              thread.global_env(),
                                              symbols,
                                              &source,
-                                             filename.to_string());
+                                             filename.to_string(),
+                                             compiler.emit_debug_info);
             compiler.compile_expr(self.expr.borrow())?
         };
         function.id = Symbol::from(filename);
