@@ -866,3 +866,51 @@ make_applicative applicative_Function
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn type_alias_with_explicit_hole_kind() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test (a : _) = a
+type Bar = Test Int
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn type_alias_with_explicit_type_kind() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test (a : Type) = a
+type Bar = Test Int
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn type_alias_with_explicit_row_kind() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test (a : Row -> Type) (b : Row) = a b
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn type_alias_with_explicit_function_kind() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test (a : Type -> Type) = a Int
+type Foo a = a
+type Bar = Test Foo
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

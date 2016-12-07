@@ -54,6 +54,7 @@ fn walk_move_kind2<F>(kind: &ArcKind, f: &mut F) -> Option<ArcKind>
                 let ret_new = walk_move_kind2(ret, f);
                 types::merge(arg, arg_new, ret, ret_new, Kind::function)
             }
+            Kind::Hole |
             Kind::Type |
             Kind::Variable(_) |
             Kind::Row => None,
@@ -104,6 +105,22 @@ impl<'a> KindCheck<'a> {
 
     pub fn row_kind(&self) -> ArcKind {
         self.row_kind.clone()
+    }
+
+    pub fn instantiate_kinds(&mut self, kind: &mut ArcKind) {
+        match *ArcKind::make_mut(kind) {
+            // Can't assign a new var to `kind` here because it is borrowed mutably...
+            // We'll rely on fall-through instead.
+            Kind::Hole => (),
+            Kind::Variable(_) => panic!("Unexpected kind variable while instantiating"),
+            Kind::Function(ref mut lhs, ref mut rhs) => {
+                self.instantiate_kinds(lhs);
+                self.instantiate_kinds(rhs);
+                return;
+            }
+            Kind::Row | Kind::Type => return,
+        }
+        *kind = self.subs.new_var();
     }
 
     fn find(&mut self, id: &Symbol) -> Result<ArcKind> {

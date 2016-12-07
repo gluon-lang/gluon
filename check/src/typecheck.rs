@@ -918,6 +918,7 @@ impl<'a> Typecheck<'a> {
                                expr: &SpannedExpr<Symbol>)
                                -> TcResult<()> {
         self.enter_scope();
+
         // Rename the types so they get a name which is distinct from types from other
         // modules
         for bind in bindings.iter_mut() {
@@ -927,24 +928,27 @@ impl<'a> Typecheck<'a> {
             // Rename the aliase's name to its global name
             Alias::make_mut(&mut bind.alias).name = new;
         }
+
         for bind in bindings.iter_mut() {
             let typ = &mut Alias::make_mut(&mut bind.alias).typ;
             *typ = self.create_unifiable_signature(typ.clone());
         }
+
         {
             let mut check = KindCheck::new(&self.environment, &self.symbols);
-            // Setup kind variables for all type variables and insert the types in the
-            // this type expression into the kindcheck environment
+
+            // Setup kind variables for all holes and insert the types in the
+            // the type expression into the kindcheck environment
             for bind in bindings.iter_mut() {
                 // Create the kind for this binding
-                // Test a b: 2 -> 1 -> Type
+                // Test a b : 2 -> 1 -> Type
                 // and bind the same variables to the arguments of the type binding
                 // ('a' and 'b' in the example)
                 let mut id_kind = check.type_kind();
                 let alias = Alias::make_mut(&mut bind.alias);
-                for gen in alias.args.iter_mut().rev() {
-                    gen.kind = check.subs.new_var();
-                    id_kind = Kind::function(gen.kind.clone(), id_kind);
+                for generic in alias.args.iter_mut().rev() {
+                    check.instantiate_kinds(&mut generic.kind);
+                    id_kind = Kind::function(generic.kind.clone(), id_kind);
                 }
                 check.add_local(alias.name.clone(), id_kind);
             }
@@ -977,6 +981,7 @@ impl<'a> Typecheck<'a> {
                 self.stack_type(bind.name.clone(), &bind.alias);
             }
         }
+
         Ok(())
     }
 
