@@ -48,6 +48,7 @@ pub struct CompiledFunction {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
     pub local_map: LocalMap,
+    pub upvar_names: Vec<String>,
     pub source_name: String,
 }
 
@@ -65,6 +66,7 @@ impl CompiledFunction {
             records: Vec::new(),
             source_map: SourceMap::new(),
             local_map: LocalMap::new(),
+            upvar_names: Vec::new(),
             source_name: source_name,
         }
     }
@@ -120,6 +122,12 @@ impl FunctionEnvs {
         compiler.stack_constructors.exit_scope();
         let instructions = self.function.instructions.len();
         self.function.source_map.close(instructions, current_line);
+        {
+            let function = &mut **self;
+            function.function
+                .upvar_names
+                .extend(function.free_vars.iter().map(|s| s.declared_name().to_string()));
+        }
         self.envs.pop().expect("FunctionEnv in scope")
     }
 }

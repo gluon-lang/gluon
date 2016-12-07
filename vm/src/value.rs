@@ -119,6 +119,7 @@ pub struct BytecodeFunction {
     pub records: Vec<Vec<InternedStr>>,
     pub source_map: SourceMap,
     pub local_map: LocalMap,
+    pub upvar_names: Vec<StdString>,
     pub source_name: StdString,
 }
 

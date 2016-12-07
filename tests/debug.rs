@@ -189,3 +189,40 @@ fn source_name() {
     let name = result.lock().unwrap();
     assert_eq!(*name, "test");
 }
+
+
+#[test]
+fn upvars() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+    let result = Arc::new(Mutex::new(Vec::new()));
+    {
+        let result = result.clone();
+        let mut context = thread.context();
+        context.set_hook(Some(Box::new(move |_, debug_info| {
+            let stack_info = debug_info.stack_info(0).unwrap();
+            if stack_info.source_name() == "test" {
+                result.lock().unwrap().push(stack_info.upvars().to_owned());
+            }
+            Ok(())
+        })));
+        context.set_hook_mask(CALL_FLAG);
+    }
+    let expr = r#"
+    let x = 1
+    let y = 2
+    let f z =
+        let g w = x
+        g x + y + z
+    f 3
+    "#;
+    Compiler::new()
+        .run_expr::<i32>(&thread, "test", expr)
+        .unwrap();
+
+    assert_eq!(*result.lock().unwrap(),
+               vec![vec![],
+                    vec!["x".to_string(), "+".to_string(), "y".to_string()],
+                    vec!["x".to_string()]]);
+}

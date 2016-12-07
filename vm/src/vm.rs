@@ -42,6 +42,7 @@ fn new_bytecode(gc: &mut Gc,
                            records,
                            source_map,
                            local_map,
+                           upvar_names,
                            source_name,
                            .. } = f;
 
@@ -72,6 +73,7 @@ fn new_bytecode(gc: &mut Gc,
         records: records?,
         source_map: source_map,
         local_map: local_map,
+        upvar_names: upvar_names,
         source_name: source_name,
     }))
 }

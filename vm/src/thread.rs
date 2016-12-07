@@ -756,6 +756,13 @@ impl<'a> StackInfo<'a> {
             _ => LocalIter::empty(),
         }
     }
+
+    pub fn upvars(&self) -> &[StdString] {
+        match self.frame().state {
+            State::Closure(ref closure) => &closure.function.upvar_names,
+            _ => panic!("Attempted to access upvar in non closure function"),
+        }
+    }
 }
 
 bitflags! {
