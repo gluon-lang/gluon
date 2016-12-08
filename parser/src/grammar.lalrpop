@@ -1,5 +1,5 @@
 use base::ast::{Alternative, Array, Expr, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
-use base::kind::Kind;
+use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
 use base::types::{Alias, ArcType, BuiltinType, Field, Generic, Type};
 use std::str::FromStr;
@@ -84,7 +84,41 @@ Operator: TypedIdent<Id> =
 DocComment: String =
     "DocComment"+ => <>.join("\n");
 
+// Kinds
+
+AtomicKind: ArcKind = {
+    <l: @L> <id: "Identifier"> <r: @R> =>? {
+        use lalrpop_util::ParseError;
+
+        match id {
+            "_" => Ok(Kind::hole()),
+            "Type" => Ok(Kind::typ()),
+            "Row" => Ok(Kind::row()),
+            id => Err(ParseError::User {
+                error: Error::UnexpectedToken("Identifier".to_string()),
+            }),
+        }
+    },
+
+    "(" <kind: Kind> ")" => kind,
+};
+
+Kind: ArcKind = {
+    AtomicKind,
+
+    <lhs: AtomicKind> "->" <rhs: Kind> =>
+        Kind::function(lhs, rhs),
+};
+
 // Types
+
+TypeParam: Generic<Id> = {
+    <id : Ident> =>
+        Generic::new(id, Kind::hole()),
+
+    "(" <id: Ident> ":" <kind: Kind> ")" =>
+        Generic::new(id, kind),
+};
 
 RecordField: Field<Id> =
     <Ident> ":" <Type> => Field::new(<>);
@@ -93,11 +127,7 @@ VariantField: (Id, Vec<ArcType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
 
 TypeBinding: TypeBinding<Id> = {
-    <id: Ident> <params: Ident*> "=" <row: VariantField+> => {
-        let params: Vec<_> = params.into_iter()
-            .map(|id| Generic::new(id, Kind::variable(0)))
-            .collect();
-
+    <id: Ident> <params: TypeParam*> "=" <row: VariantField+> => {
         let typ_args = params.iter().cloned().map(Type::generic).collect();
         let typ: ArcType<Id> = Type::app(Type::ident(id.clone()), typ_args);
 
@@ -112,11 +142,7 @@ TypeBinding: TypeBinding<Id> = {
         }
     },
 
-    <id: Ident> <params: Ident*> "=" <body: Type> => {
-        let params = params.into_iter()
-            .map(|id| Generic::new(id, Kind::variable(0)))
-            .collect();
-
+    <id: Ident> <params: TypeParam*> "=" <body: Type> => {
         TypeBinding {
             comment: None,
             name: id.clone(),
@@ -130,13 +156,17 @@ AtomicType: ArcType<Id> = {
         Type::builtin(BuiltinType::Function),
 
     IdentStr =>
-        match BuiltinType::from_str(<>) {
-            Ok(ty) => Type::builtin(ty),
-            Err(_) if (<>).starts_with(char::is_uppercase) => {
-                Type::ident(env.from_str(<>))
-            }
-            Err(_) => {
-                Type::generic(Generic::new(env.from_str(<>), Kind::variable(0)))
+        if <> == "_" {
+            Type::hole()
+        } else {
+            match BuiltinType::from_str(<>) {
+                Ok(ty) => Type::builtin(ty),
+                Err(_) if (<>).starts_with(char::is_uppercase) => {
+                    Type::ident(env.from_str(<>))
+                }
+                Err(_) => {
+                    Type::generic(Generic::new(env.from_str(<>), Kind::hole()))
+                }
             }
         },
 

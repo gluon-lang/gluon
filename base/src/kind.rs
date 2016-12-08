@@ -26,6 +26,7 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Kind {
+    Hole,
     /// Representation for a kind which is yet to be inferred.
     Variable(u32),
     /// The simplest possible kind. All values in a program have this kind.
@@ -37,6 +38,10 @@ pub enum Kind {
 }
 
 impl Kind {
+    pub fn hole() -> ArcKind {
+        ArcKind::new(Kind::Hole)
+    }
+
     pub fn variable(v: u32) -> ArcKind {
         ArcKind::new(Kind::Variable(v))
     }
@@ -74,6 +79,7 @@ impl fmt::Display for Kind {
 impl<'a> fmt::Display for DisplayKind<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self.1 {
+            Kind::Hole => "_".fmt(f),
             Kind::Variable(i) => i.fmt(f),
             Kind::Type => "Type".fmt(f),
             Kind::Row => "Row".fmt(f),
@@ -92,6 +98,16 @@ impl<'a> fmt::Display for DisplayKind<'a> {
 /// Reference counted kind type.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ArcKind(Arc<Kind>);
+
+impl ArcKind {
+    pub fn new(kind: Kind) -> ArcKind {
+        ArcKind(Arc::new(kind))
+    }
+
+    pub fn make_mut(kind: &mut ArcKind) -> &mut Kind {
+        Arc::make_mut(&mut kind.0)
+    }
+}
 
 impl Deref for ArcKind {
     type Target = Kind;
@@ -113,12 +129,6 @@ impl fmt::Display for ArcKind {
     }
 }
 
-impl ArcKind {
-    pub fn new(k: Kind) -> ArcKind {
-        ArcKind(Arc::new(k))
-    }
-}
-
 impl<F: ?Sized> Walker<ArcKind> for F
     where F: FnMut(&ArcKind),
 {
@@ -136,6 +146,7 @@ pub fn walk_kind<F: ?Sized>(k: &ArcKind, f: &mut F)
             f.walk(a);
             f.walk(r);
         }
+        Kind::Hole |
         Kind::Variable(_) |
         Kind::Type |
         Kind::Row => (),

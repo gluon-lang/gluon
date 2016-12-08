@@ -351,3 +351,41 @@ let { Test, Test, x = y, x } = { Test, x = 1 }
     let result = support::typecheck(text);
     assert_err!(result, DuplicateField(..), DuplicateField(..));
 }
+
+#[test]
+fn type_alias_with_explicit_type_kind() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test (a : Type) = a
+type Foo a = a
+type Bar = Test Foo
+()
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, KindError(TypeMismatch(..)));
+}
+
+#[test]
+fn type_alias_with_explicit_row_kind() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test (a : Row) = a
+type Bar = Test Int
+()
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, KindError(TypeMismatch(..)));
+}
+
+
+#[test]
+fn type_alias_with_explicit_function_kind() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test (a : Type -> Type) = a Int
+type Foo = Test Int
+()
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, KindError(TypeMismatch(..)));
+}

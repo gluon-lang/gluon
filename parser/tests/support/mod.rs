@@ -106,7 +106,7 @@ pub fn generic_ty(s: &str) -> ArcType<String> {
 }
 
 pub fn generic(s: &str) -> Generic<String> {
-    Generic::new(intern(s), Kind::variable(0))
+    Generic::new(intern(s), Kind::hole())
 }
 
 pub fn app(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
