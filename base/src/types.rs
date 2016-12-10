@@ -707,6 +707,7 @@ impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
     }
 }
 
+#[macro_export]
 macro_rules! chain {
     ($alloc: expr; $first: expr, $($rest: expr),+) => {{
         let mut doc = ::pretty::DocBuilder($alloc, $first.into());

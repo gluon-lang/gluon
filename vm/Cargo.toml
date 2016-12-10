@@ -16,6 +16,8 @@ log = "0.3.6"
 quick-error = "1.1.0"
 mopa = "0.2.2"
 collect-mac = "0.1.0"
+pretty = "0.2.0"
+itertools = "0.5.6"
 gluon_base = { path = "../base", version = "0.2.2" }
 
 [features]

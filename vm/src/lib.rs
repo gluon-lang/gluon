@@ -10,7 +10,10 @@ extern crate quick_error;
 extern crate mopa;
 #[macro_use]
 extern crate collect_mac;
+extern crate itertools;
+extern crate pretty;
 
+#[macro_use]
 extern crate gluon_base as base;
 
 #[macro_use]
