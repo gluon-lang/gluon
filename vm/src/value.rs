@@ -273,16 +273,22 @@ impl<'t> ValuePrinter<'t> {
             let typ = remove_aliases_cow(env, typ);
             match **typ {
                 Type::Record(ref row) => {
-                        chain![arena;
+                    chain![arena;
                             "{",
                             arena.concat(fields.into_iter().zip(row.row_iter())
                                 .map(|(field, type_field)| {
-                                    arena.space().append(p(&type_field.typ, env, Top, field).pretty(arena))
+                                chain![arena;
+                                    arena.space(),
+                                    type_field.name.to_string(),
+                                    ":",
+                                    arena.space(),
+                                    p(&type_field.typ, env, Top, field).pretty(arena)
+                                ]
                                 }).intersperse(arena.text(","))),
                             arena.space(),
                             "}"
                         ]
-                    }
+                }
                 Type::Variant(ref row) => {
                     let type_field = row.row_iter()
                         .nth(tag as usize)
