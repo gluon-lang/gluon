@@ -212,12 +212,21 @@ enum Prec {
     Top,
     Constructor,
 }
+use self::Prec::*;
 
 pub struct ValuePrinter<'a> {
     typ: &'a ArcType,
     env: &'a TypeEnv,
-    prec: Prec,
     value: Value,
+    level: i32,
+}
+
+struct InternalPrinter<'a, 't> {
+    typ: &'t ArcType,
+    env: &'t TypeEnv,
+    arena: &'a Arena<'a>,
+    prec: Prec,
+    level: i32,
 }
 
 impl<'a> fmt::Display for ValuePrinter<'a> {
@@ -226,7 +235,13 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
 
         let arena = Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena)
+        InternalPrinter {
+                typ: self.typ,
+                env: self.env,
+                arena: &arena,
+                prec: Top,
+                level: self.level,
+            }.pretty(self.value)
             .group()
             .1
             .render(WIDTH, &mut s)
@@ -235,110 +250,33 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
     }
 }
 
-fn p<'t>(typ: &'t ArcType, env: &'t TypeEnv, prec: Prec, value: Value) -> ValuePrinter<'t> {
-    ValuePrinter {
-        typ: typ,
-        env: env,
-        prec: prec,
-        value: value,
+
+
+impl<'t> ValuePrinter<'t> {
+    pub fn new(env: &'t TypeEnv,
+               typ: &'t ArcType,
+               display_levels: i32,
+               value: Value)
+               -> ValuePrinter<'t> {
+        ValuePrinter {
+            typ: typ,
+            env: env,
+            value: value,
+            level: display_levels,
+        }
     }
 }
 
-impl<'t> ValuePrinter<'t> {
-    pub fn new(typ: &'t ArcType, env: &'t TypeEnv, value: Value) -> ValuePrinter<'t> {
-        p(typ, env, Prec::Top, value)
-    }
-
-    pub fn pretty<'a>(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        fn enclose<'a>(p: Prec,
-                       limit: Prec,
-                       arena: &'a Arena<'a>,
-                       doc: DocBuilder<'a, Arena<'a>>)
-                       -> DocBuilder<'a, Arena<'a>> {
-            if p >= limit {
-                chain![arena; "(", doc, ")"]
-            } else {
-                doc
-            }
-        }
-        fn pretty_data<'a, I>(tag: VmTag,
-                              fields: I,
-                              prec: Prec,
-                              env: &TypeEnv,
-                              typ: &ArcType,
-                              arena: &'a Arena<'a>)
-                              -> DocBuilder<'a, Arena<'a>>
-            where I: IntoIterator<Item = Value>,
-        {
-            let typ = remove_aliases_cow(env, typ);
-            match **typ {
-                Type::Record(ref row) => {
-                    chain![arena;
-                            "{",
-                            arena.concat(fields.into_iter().zip(row.row_iter())
-                                .map(|(field, type_field)| {
-                                chain![arena;
-                                    arena.space(),
-                                    type_field.name.to_string(),
-                                    ":",
-                                    arena.space(),
-                                    p(&type_field.typ, env, Top, field).pretty(arena)
-                                ]
-                                }).intersperse(arena.text(","))),
-                            arena.space(),
-                            "}"
-                        ]
-                }
-                Type::Variant(ref row) => {
-                    let type_field = row.row_iter()
-                        .nth(tag as usize)
-                        .expect("Variant tag is out of bounds");
-                    let mut empty = true;
-                    let doc = chain![arena;
-                            type_field.name.declared_name().to_string(),
-                            arena.concat(fields.into_iter().zip(arg_iter(&type_field.typ))
-                                .map(|(field, typ)| {
-                                    empty = false;
-                                    arena.space().append(p(typ, env, Constructor, field).pretty(arena))
-                                }))
-                        ];
-                    if empty {
-                        doc
-                    } else {
-                        enclose(prec, Constructor, arena, doc)
-                    }
-                }
-                _ => {
-                    chain![arena;
-                        "{",
-                        arena.concat(fields.into_iter().map(|field| {
-                            arena.space().append(p(&Type::hole(), env, Top, field).pretty(arena))
-                        }).intersperse(arena.text(","))),
-                        arena.space(),
-                        "}"
-                    ]
-                }
-            }
-        }
-
-        use self::Prec::*;
-        use base::types::arg_iter;
-        use base::resolve::remove_aliases_cow;
-
+impl<'a, 't> InternalPrinter<'a, 't> {
+    fn pretty(&self, value: Value) -> DocBuilder<'a, Arena<'a>> {
         use std::iter;
 
-        let env = self.env;
-        match self.value {
+        let arena = self.arena;
+        match value {
+            _ if self.level == 0 => arena.text(".."),
             Value::String(s) => arena.text(format!("{:?}", s)),
-            Value::Data(ref data) => {
-                pretty_data(data.tag,
-                            data.fields.iter().cloned(),
-                            self.prec,
-                            env,
-                            self.typ,
-                            arena)
-            }
-            Value::Tag(tag) => pretty_data(tag, iter::empty(), self.prec, env, self.typ, arena),
+            Value::Data(ref data) => self.pretty_data(data.tag, data.fields.iter().cloned()),
+            Value::Tag(tag) => self.pretty_data(tag, iter::empty()),
             Value::Function(ref function) => {
                 chain![arena;
                     "<extern ",
@@ -360,7 +298,7 @@ impl<'t> ValuePrinter<'t> {
                     "[",
                     arena.concat(array.iter().map(|field| {
                         match **self.typ {
-                            Type::App(_, ref args) => p(&args[0], env, Top, field).pretty(arena),
+                            Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
                             _ => arena.text(format!("{:?}", field)),
                         }
                     }).intersperse(arena.text(",").append(arena.space()))),
@@ -373,6 +311,85 @@ impl<'t> ValuePrinter<'t> {
             Value::Byte(b) => arena.text(format!("{}", b)),
             Value::Int(i) => arena.text(format!("{}", i)),
             Value::Float(f) => arena.text(format!("{}", f)),
+        }
+    }
+
+    fn pretty_data<I>(&self, tag: VmTag, fields: I) -> DocBuilder<'a, Arena<'a>>
+        where I: IntoIterator<Item = Value>,
+    {
+        fn enclose<'a>(p: Prec,
+                       limit: Prec,
+                       arena: &'a Arena<'a>,
+                       doc: DocBuilder<'a, Arena<'a>>)
+                       -> DocBuilder<'a, Arena<'a>> {
+            if p >= limit {
+                chain![arena; "(", doc, ")"]
+            } else {
+                doc
+            }
+        }
+        use base::resolve::remove_aliases_cow;
+        use base::types::arg_iter;
+
+        let typ = remove_aliases_cow(self.env, self.typ);
+        let arena = self.arena;
+        match **typ {
+            Type::Record(ref row) => {
+                chain![arena;
+                            "{",
+                            arena.concat(fields.into_iter().zip(row.row_iter())
+                                .map(|(field, type_field)| {
+                                chain![arena;
+                                    arena.space(),
+                                    type_field.name.to_string(),
+                                    ":",
+                                    arena.space(),
+                                    self.p(&type_field.typ, Top).pretty(field)
+                                ]
+                                }).intersperse(arena.text(","))),
+                            arena.space(),
+                            "}"
+                        ]
+            }
+            Type::Variant(ref row) => {
+                let type_field = row.row_iter()
+                    .nth(tag as usize)
+                    .expect("Variant tag is out of bounds");
+                let mut empty = true;
+                let doc = chain![arena;
+                            type_field.name.declared_name().to_string(),
+                            arena.concat(fields.into_iter().zip(arg_iter(&type_field.typ))
+                                .map(|(field, typ)| {
+                                    empty = false;
+                                    arena.space().append(self.p(typ, Constructor).pretty(field))
+                                }))
+                        ];
+                if empty {
+                    doc
+                } else {
+                    enclose(self.prec, Constructor, arena, doc)
+                }
+            }
+            _ => {
+                chain![arena;
+                        "{",
+                        arena.concat(fields.into_iter().map(|field| {
+                            arena.space().append(self.p(&Type::hole(), Top).pretty(field))
+                        }).intersperse(arena.text(","))),
+                        arena.space(),
+                        "}"
+                    ]
+            }
+        }
+    }
+
+    fn p(&self, typ: &'t ArcType, prec: Prec) -> InternalPrinter<'a, 't> {
+        InternalPrinter {
+            typ: typ,
+            env: self.env,
+            arena: self.arena,
+            prec: prec,
+            level: self.level - 1,
         }
     }
 }
