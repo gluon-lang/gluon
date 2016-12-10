@@ -840,60 +840,25 @@ impl ValueArray {
         where I: IntoIterator<Item = Value>,
     {
         let iter = iter.into_iter();
-        match self.repr {
-            Repr::Byte => {
-                let iter = iter.map(|v| match v {
-                    Value::Byte(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
-            }
-            Repr::Int => {
-                let iter = iter.map(|v| match v {
-                    Value::Int(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
-            }
-            Repr::Float => {
-                let iter = iter.map(|v| match v {
-                    Value::Float(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
-            }
-            Repr::String => {
-                let iter = iter.map(|v| match v {
-                    Value::String(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
-            }
-            Repr::Array => {
-                let iter = iter.map(|v| match v {
-                    Value::Array(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
-            }
-            Repr::Unknown => {
-                self.unsafe_array_mut().initialize(iter);
-            }
-            Repr::Userdata => {
-                let iter = iter.map(|v| match v {
-                    Value::Userdata(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
-            }
-            Repr::Thread => {
-                let iter = iter.map(|v| match v {
-                    Value::Thread(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
+
+        macro_rules! initialize_variants {
+            ($($id: ident)+) => {
+                match self.repr {
+                    $(Repr::$id => {
+                        let iter = iter.map(|v| match v {
+                            Value::$id(x) => x,
+                            _ => unreachable!(),
+                        });
+                        self.unsafe_array_mut().initialize(iter);
+                    })+
+                    Repr::Unknown => {
+                        self.unsafe_array_mut().initialize(iter);
+                    }
+                }
             }
         }
+
+        initialize_variants! { Byte Int Float String Array Userdata Thread }
     }
 
     pub fn as_slice<T: ArrayRepr + Copy>(&self) -> Option<&[T]> {
