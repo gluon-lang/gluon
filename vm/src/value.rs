@@ -263,7 +263,6 @@ enum Prec {
 }
 use self::Prec::*;
 
-
 pub struct ValuePrinter<'a> {
     pub typ: &'a ArcType,
     pub env: &'a TypeEnv,
@@ -341,11 +340,19 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             }
             Value::Closure(ref closure) => {
                 chain![arena;
-                    "{",
-                    arena.concat(closure.upvars.iter().map(|field| {
-                        arena.text(format!("{:?}", field))
-                    })),
-                    "}"
+                    "<",
+                    arena.text(closure.function.name.declared_name().to_string()),
+                    arena.concat(closure.upvars.iter().zip(&closure.function.debug_info.upvars)
+                        .map(|(field, info)| {
+                            chain![arena;
+                                arena.space(),
+                                info.name.clone(),
+                                ":",
+                                arena.space(),
+                                self.p(&info.typ, Top).pretty(*field)
+                            ]
+                        }).intersperse(arena.text(","))),
+                    ">"
                 ]
             }
             Value::Array(ref array) => {
