@@ -28,6 +28,15 @@ pub struct Frame {
     pub excess: bool,
 }
 
+impl Frame {
+    pub fn upvars(&self) -> &[Value] {
+        match self.state {
+            State::Closure(ref c) => &c.upvars,
+            _ => &[],
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Lock(VmIndex);
 
@@ -235,11 +244,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     }
 
     pub fn get_upvar(&self, index: VmIndex) -> Value {
-        let upvars = match self.frame.state {
-            State::Closure(ref c) => c,
-            _ => panic!("Attempted to access upvar in non closure function"),
-        };
-        upvars.upvars[index as usize]
+        self.frame.upvars()[index as usize]
     }
 
     pub fn excess_args(&self) -> Option<GcPtr<DataStruct>> {
