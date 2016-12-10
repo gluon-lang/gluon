@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
 
 use gluon::base::pos::Line;
-use gluon::base::types::Type;
+use gluon::base::types::{ArcType, Type};
 use gluon::{Compiler, Error, new_vm};
 use gluon::vm;
 use gluon::vm::compiler::UpvarInfo;
@@ -165,6 +165,51 @@ fn read_variables() {
                          vec![("x".to_string(), Type::int()),
                               ("y".to_string(), Type::unit()),
                               ("z".to_string(), Type::float())])]);
+}
+
+#[test]
+fn argument_types() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+    let result = Arc::new(Mutex::new(Vec::new()));
+    {
+        let result = result.clone();
+        let mut context = thread.context();
+        context.set_hook(Some(Box::new(move |_, debug_context| {
+            let stack_info = debug_context.stack_info(0).unwrap();
+            result.lock().unwrap().push((stack_info.line().unwrap().to_usize(),
+                                         stack_info.locals()
+                                             .map(|(s, typ)| (s.to_string(), typ.clone()))
+                                             .collect::<Vec<_>>()));
+            Ok(())
+        })));
+        context.set_hook_mask(LINE_FLAG);
+    }
+    let expr = r#"
+    let int_function x: Int -> Int = x
+    let g = \y -> int_function y
+    let f z = g z
+    f 1
+    "#;
+    Compiler::new().implicit_prelude(false).run_expr::<i32>(&thread, "test", expr).unwrap();
+
+    let int_function: ArcType = Type::function(vec![Type::int()], Type::int());
+
+    let map = result.lock().unwrap();
+    assert_eq!(*map,
+               vec![(1, vec![]),
+                    (2, vec![("int_function".to_string(), int_function.clone())]),
+                    (3,
+                     vec![("int_function".to_string(), int_function.clone()),
+                          ("g".to_string(), int_function.clone())]),
+                    (4,
+                     vec![("int_function".to_string(), int_function.clone()),
+                          ("g".to_string(), int_function.clone()),
+                          ("f".to_string(), int_function.clone())]),
+                    (3, vec![("z".to_string(), Type::int())]),
+                    (2, vec![("y".to_string(), Type::int())]),
+                    (1, vec![("x".to_string(), Type::int())])]);
 }
 
 #[test]
