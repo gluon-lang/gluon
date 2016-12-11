@@ -152,11 +152,7 @@ r.x
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&typ_env, &mut expr, BytePos::from(19));
-    let expected = Ok(Type::record(vec![],
-                                   vec![Field {
-                                            name: intern("x"),
-                                            typ: typ("Int"),
-                                        }]));
+    let expected = Ok(Type::record(vec![], vec![Field::new(intern("x"), typ("Int"))]));
     assert_eq!(result.map(support::close_record), expected);
 
     let result = completion::find(&typ_env, &mut expr, BytePos::from(22));

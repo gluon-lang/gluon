@@ -7,8 +7,7 @@ use vm::{self, Thread, Status, RootStr, RootedValue, Root};
 use value::{ArrayRepr, DataStruct, ExternFunction, Value, ValueArray, Def};
 use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
-use base::types;
-use base::types::{ArcType, Type};
+use base::types::{self, ArcType, Type};
 use types::{VmIndex, VmTag, VmInt};
 use std::any::Any;
 use std::cell::Ref;
@@ -1030,13 +1029,9 @@ macro_rules! define_tuple {
             type Type = ($($id::Type),+);
 
             fn make_type(vm: &Thread) -> ArcType {
-                let fields = vec![$(
-                    types::Field {
-                        name: Symbol::from(stringify!($id)),
-                        typ: $id::make_type(vm),
-                    }
-                ),+];
-                Type::record(Vec::new(), fields)
+                Type::record(Vec::new(),
+                             vec![$(types::Field::new(Symbol::from(stringify!($id)),
+                                                      $id::make_type(vm))),+])
             }
         }
         impl<'vm, $($id: Getable<'vm>),+> Getable<'vm> for ($($id),+) {
@@ -1155,10 +1150,7 @@ pub mod record {
         where T: FieldTypes,
     {
         fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
-            fields.push(types::Field {
-                name: Symbol::from(F::name()),
-                typ: H::make_type(vm),
-            });
+            fields.push(types::Field::new(Symbol::from(F::name()), H::make_type(vm)));
             T::field_types(vm, fields);
         }
     }

@@ -602,10 +602,7 @@ impl<'a> Typecheck<'a> {
                                 // checked if the field exists which lets field accesses on
                                 // types with type fields still work
                                 let field_var = self.subs.new_var();
-                                let field = Field {
-                                    name: field_id.clone(),
-                                    typ: field_var.clone(),
-                                };
+                                let field = Field::new(field_id.clone(), field_var.clone());
                                 let record_type =
                                     Type::poly_record(vec![], vec![field], self.subs.new_var());
                                 self.unify(&record_type, record)?;
@@ -650,10 +647,7 @@ impl<'a> Typecheck<'a> {
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
                                                       symbol.clone()) {
-                        new_types.push(Field {
-                            name: symbol.clone(),
-                            typ: alias,
-                        });
+                        new_types.push(Field::new(symbol.clone(), alias));
                     }
                 }
 
@@ -666,10 +660,7 @@ impl<'a> Typecheck<'a> {
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
                                                       field.0.clone()) {
-                        new_fields.push(Field {
-                            name: field.0.clone(),
-                            typ: typ,
-                        });
+                        new_fields.push(Field::new(field.0.clone(), typ));
                     }
                 }
                 let result = self.find_record(&new_fields.iter()
@@ -770,12 +761,7 @@ impl<'a> Typecheck<'a> {
                             .collect();
 
                         let fields = fields.iter()
-                            .map(|field| {
-                                Field {
-                                    name: field.0.clone(),
-                                    typ: self.subs.new_var(),
-                                }
-                            })
+                            .map(|&(ref id, _)| Field::new(id.clone(), self.subs.new_var()))
                             .collect();
                         let t = Type::poly_record(types, fields, self.subs.new_var());
                         (t.clone(), t)
@@ -1116,12 +1102,8 @@ impl<'a> Typecheck<'a> {
                         // Make a new name base for any unbound variables in the record field
                         // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                         // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                        self.finish_type(level, &field.typ).map(|typ| {
-                            Field {
-                                name: field.name.clone(),
-                                typ: typ,
-                            }
-                        })
+                        self.finish_type(level, &field.typ)
+                            .map(|typ| Field::new(field.name.clone(), typ))
                     });
                     let new_rest = self.finish_type(level, rest);
                     types::merge(fields,
@@ -1205,12 +1187,7 @@ impl<'a> Typecheck<'a> {
                             .zip(row.row_iter())
                             .map(|(new, old)| {
                                 match new {
-                                    Some(new) => {
-                                        Field {
-                                            name: new.clone(),
-                                            typ: old.typ.clone(),
-                                        }
-                                    }
+                                    Some(new) => Field::new(new.clone(), old.typ.clone()),
                                     None => old.clone(),
                                 }
                             })

@@ -222,13 +222,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                l_args.iter().zip(r_args).all(|(l, r)| l.name.name_eq(&r.name)) &&
                l_types == r_types {
                 let new_args = walk_move_types(l_args.iter().zip(r_args), |l, r| {
-                    unifier.try_match(&l.typ, &r.typ)
-                        .map(|typ| {
-                            types::Field {
-                                name: l.name.clone(),
-                                typ: typ,
-                            }
-                        })
+                    unifier.try_match(&l.typ, &r.typ).map(|typ| Field::new(l.name.clone(), typ))
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(types::merge(l_args,
@@ -254,12 +248,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                     } else {
                         unifier.try_match(&l.typ, &r.typ)
                     };
-                    opt_type.map(|typ| {
-                        types::Field {
-                            name: l.name.clone(),
-                            typ: typ,
-                        }
-                    })
+                    opt_type.map(|typ| Field::new(l.name.clone(), typ))
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(types::merge(l_args,
@@ -402,13 +391,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
 
     // Unify the fields that exists in both records
     let new_both = walk_move_types(both.iter().cloned(), |l, r| {
-        unifier.try_match(&l.typ, &r.typ)
-            .map(|typ| {
-                types::Field {
-                    name: l.name.clone(),
-                    typ: typ,
-                }
-            })
+        unifier.try_match(&l.typ, &r.typ).map(|typ| Field::new(l.name.clone(), typ))
     });
 
     // Pack all fields from both records into a single `Type::ExtendRow` value
@@ -734,7 +717,7 @@ mod tests {
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
-    use base::types::{self, ArcType, Type};
+    use base::types::{ArcType, Field, Type};
     use tests::*;
 
     #[test]
@@ -742,23 +725,11 @@ mod tests {
         let _ = ::env_logger::init();
         let (x, y) = (intern("x"), intern("y"));
         let l: ArcType = Type::record(vec![],
-                                      vec![types::Field {
-                                               name: x.clone(),
-                                               typ: Type::int(),
-                                           },
-                                           types::Field {
-                                               name: y.clone(),
-                                               typ: Type::string(),
-                                           }]);
+                                      vec![Field::new(x.clone(), Type::int()),
+                                           Field::new(y.clone(), Type::string())]);
         let r = Type::record(vec![],
-                             vec![types::Field {
-                                      name: x.clone(),
-                                      typ: Type::string(),
-                                  },
-                                  types::Field {
-                                      name: y.clone(),
-                                      typ: Type::int(),
-                                  }]);
+                             vec![Field::new(x.clone(), Type::string()),
+                                  Field::new(y.clone(), Type::int())]);
         let subs = Substitution::new();
         let env = MockEnv;
         let state = State::new(&env, &subs);
@@ -771,22 +742,17 @@ mod tests {
     #[test]
     fn unify_row_polymorphism() {
         let _ = ::env_logger::init();
-        let x = types::Field {
-            name: intern("x"),
-            typ: Type::int(),
-        };
-        let y = types::Field {
-            name: intern("y"),
-            typ: Type::int(),
-        };
+
+        let env = MockEnv;
         let subs = Substitution::new();
+        let state = State::new(&env, &subs);
+
+        let x = Field::new(intern("x"), Type::int());
+        let y = Field::new(intern("y"), Type::int());
         let l: ArcType = Type::poly_record(vec![], vec![x.clone()], subs.new_var());
         let r = Type::poly_record(vec![], vec![y.clone()], subs.new_var());
 
-        let env = MockEnv;
-        let state = State::new(&env, &subs);
-        let result = unify(&subs, state, &l, &r);
-        match result {
+        match unify(&subs, state, &l, &r) {
             Ok(result) => {
                 // Get the row variable at the end of the resulting type so we can compare the types
                 let mut iter = result.row_iter();

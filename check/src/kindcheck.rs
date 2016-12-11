@@ -215,10 +215,7 @@ impl<'a> KindCheck<'a> {
                         let (kind, typ) = self.kindcheck(&field.typ)?;
                         let type_kind = self.type_kind();
                         self.unify(&type_kind, kind)?;
-                        Ok(Field {
-                            name: field.name.clone(),
-                            typ: typ,
-                        })
+                        Ok(Field::new(field.name.clone(), typ))
                     })
                     .collect();
 
@@ -236,10 +233,7 @@ impl<'a> KindCheck<'a> {
                         let (kind, typ) = self.kindcheck(&field.typ)?;
                         let type_kind = self.type_kind();
                         self.unify(&type_kind, kind)?;
-                        Ok(types::Field {
-                            name: field.name.clone(),
-                            typ: typ,
-                        })
+                        Ok(Field::new(field.name.clone(), typ))
                     })
                     .collect();
 

@@ -1063,12 +1063,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
         Type::Variant(ref row) => f.visit(row).map(|row| T::from(Type::Variant(row))),
         Type::ExtendRow { ref types, ref fields, ref rest } => {
             let new_fields = walk_move_types(fields, |field| {
-                f.visit(&field.typ).map(|typ| {
-                    Field {
-                        name: field.name.clone(),
-                        typ: typ,
-                    }
-                })
+                f.visit(&field.typ).map(|typ| Field::new(field.name.clone(), typ))
             });
             let new_rest = f.visit(rest);
             merge(fields,
