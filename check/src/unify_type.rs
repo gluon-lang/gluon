@@ -6,7 +6,7 @@ use smallvec::VecLike;
 use base::error::Errors;
 use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv};
 use base::symbol::{Symbol, SymbolRef};
-use base::resolve;
+use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 
 use unify;
@@ -44,12 +44,11 @@ pub enum TypeError<I> {
     MissingFields(ArcType<I>, Vec<I>),
 }
 
-impl From<resolve::Error> for Error<Symbol> {
-    fn from(error: resolve::Error) -> Error<Symbol> {
-        UnifyError::Other(match error {
-            resolve::Error::UndefinedType(id) => TypeError::UndefinedType(id),
-            resolve::Error::SelfRecursive(id) => TypeError::SelfRecursive(id),
-        })
+impl From<ResolveError> for TypeError<Symbol> {
+    fn from(error: ResolveError) -> TypeError<Symbol> {
+        match error {
+            ResolveError::UndefinedType(id) => TypeError::UndefinedType(id),
+        }
     }
 }
 
@@ -163,6 +162,38 @@ impl<'a> Unifiable<State<'a>> for ArcType {
     }
 }
 
+fn try_remove_aliases(reduced_aliases: &mut Vec<Symbol>,
+                      env: &TypeEnv,
+                      typ: &ArcType)
+                      -> Result<Option<ArcType>, TypeError<Symbol>> {
+    if let Some(alias_id) = typ.alias_ident() {
+        if reduced_aliases.iter().any(|name| name == alias_id) {
+            return Err(TypeError::SelfRecursive(alias_id.clone()));
+        }
+        reduced_aliases.push(alias_id.clone());
+    }
+
+    match resolve::remove_alias(env, typ)? {
+        Some(mut typ) => {
+            loop {
+                if let Some(alias_id) = typ.alias_ident() {
+                    if reduced_aliases.iter().any(|name| name == alias_id) {
+                        return Err(TypeError::SelfRecursive(alias_id.clone()));
+                    }
+                    reduced_aliases.push(alias_id.clone());
+                }
+
+                match resolve::remove_alias(env, &typ)? {
+                    Some(new_typ) => typ = new_typ,
+                    None => break,
+                }
+            }
+            Ok(Some(typ))
+        }
+        None => Ok(None),
+    }
+}
+
 fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                        expected: &ArcType,
                        actual: &ArcType)
@@ -251,12 +282,12 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
         // Last ditch effort attempt to unify the types again by expanding the aliases
         // (if the types are alias types).
         (_, _) => {
-            let lhs = resolve::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                      unifier.state.env,
-                                                      expected)?;
-            let rhs = resolve::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                      unifier.state.env,
-                                                      actual)?;
+            let lhs = try_remove_aliases(&mut unifier.state.reduced_aliases,
+                                         unifier.state.env,
+                                         expected).map_err(UnifyError::Other)?;
+            let rhs = try_remove_aliases(&mut unifier.state.reduced_aliases,
+                                         unifier.state.env,
+                                         actual).map_err(UnifyError::Other)?;
             match (&lhs, &rhs) {
                 (&None, &None) => {
                     debug!("Unify error: {} <=> {}", expected, actual);
@@ -504,7 +535,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                     }
                     Ok(None) => break,
                     Err(err) => {
-                        unifier.report_error(err.into());
+                        unifier.report_error(UnifyError::Other(err.into()));
                         return Err(());
                     }
                 }

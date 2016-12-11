@@ -7,10 +7,6 @@ use symbol::Symbol;
 quick_error! {
     #[derive(Debug)]
     pub enum Error {
-        SelfRecursive(id: Symbol) {
-            description("self recursive")
-            display("The use of self recursion in type `{}` could not be unified.", id)
-        }
         UndefinedType(id: Symbol) {
             description("undefined type")
             display("Type `{}` does not exist.", id)
@@ -31,39 +27,6 @@ pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t ArcType) -> Cow<'t, ArcTyp
         Ok(Some(typ)) => Cow::Owned(remove_aliases(env, typ)),
         _ => return Cow::Borrowed(typ),
     }
-}
-
-/// Removes all possible aliases while checking that
-pub fn remove_aliases_checked(reduced_aliases: &mut Vec<Symbol>,
-                              env: &TypeEnv,
-                              typ: &ArcType)
-                              -> Result<Option<ArcType>, Error> {
-    if let Some(alias_id) = typ.alias_ident() {
-        if reduced_aliases.iter().any(|name| name == alias_id) {
-            return Err(Error::SelfRecursive(alias_id.clone()));
-        }
-        reduced_aliases.push(alias_id.clone());
-    }
-
-    let mut typ = match remove_alias(env, typ)? {
-        Some(new) => new,
-        None => return Ok(None),
-    };
-
-    loop {
-        if let Some(alias_id) = typ.alias_ident() {
-            if reduced_aliases.iter().any(|name| name == alias_id) {
-                return Err(Error::SelfRecursive(alias_id.clone()));
-            }
-            reduced_aliases.push(alias_id.clone());
-        }
-
-        match remove_alias(env, &typ)? {
-            Some(new) => typ = new,
-            None => break,
-        }
-    }
-    Ok(Some(typ))
 }
 
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
