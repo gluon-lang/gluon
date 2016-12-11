@@ -273,9 +273,9 @@ impl FunctionEnv {
         self.new_stack_var(compiler, s, typ)
     }
 
-    fn new_stack_var(&mut self, _compiler: &Compiler, s: Symbol, typ: ArcType) {
+    fn new_stack_var(&mut self, compiler: &Compiler, s: Symbol, typ: ArcType) {
         debug!("Push var: {:?} at {}", s, self.stack_size - 1);
-        if self.emit_debug_info {
+        if self.emit_debug_info && compiler.empty_symbol != s {
             self.function
                 .debug_info
                 .local_map
@@ -289,6 +289,9 @@ impl FunctionEnv {
         for x in self.stack.exit_scope() {
             count += 1;
             debug!("Pop var: {:?}", x);
+            if self.emit_debug_info && compiler.empty_symbol != x.0 {
+                self.function.debug_info.local_map.close(self.function.instructions.len());
+            }
         }
         count
     }
@@ -895,7 +898,7 @@ impl<'a> Compiler<'a> {
                                     Some(&(ref name, ref bind)) => {
                                         (bind.as_ref().unwrap_or(name).clone(), field.typ.clone())
                                     }
-                                    None => (self.symbols.symbol(""), Type::hole()),
+                                    None => (self.empty_symbol.clone(), Type::hole()),
                                 };
                                 function.push_stack_var(self, name, typ);
                             }
