@@ -1308,16 +1308,13 @@ impl<'a> Typecheck<'a> {
                                  span: Span<BytePos>,
                                  name: Symbol)
                                  -> bool {
-        match duplicated_fields.replace(name) {
-            Some(name) => {
-                self.errors.push(Spanned {
-                    span: span,
-                    value: DuplicateField(name),
-                });
-                false
-            }
-            None => true,
-        }
+        duplicated_fields.replace(name).map_or(true, |name| {
+            self.errors.push(Spanned {
+                span: span,
+                value: DuplicateField(name),
+            });
+            false
+        })
     }
 }
 
