@@ -33,6 +33,35 @@ impl<'a> State<'a> {
             record_context: None,
         }
     }
+
+    fn remove_aliases(&mut self, typ: &ArcType) -> Result<Option<ArcType>, TypeError<Symbol>> {
+        if let Some(alias_id) = typ.alias_ident() {
+            if self.reduced_aliases.iter().any(|name| name == alias_id) {
+                return Err(TypeError::SelfRecursive(alias_id.clone()));
+            }
+            self.reduced_aliases.push(alias_id.clone());
+        }
+
+        match resolve::remove_alias(&self.env, typ)? {
+            Some(mut typ) => {
+                loop {
+                    if let Some(alias_id) = typ.alias_ident() {
+                        if self.reduced_aliases.iter().any(|name| name == alias_id) {
+                            return Err(TypeError::SelfRecursive(alias_id.clone()));
+                        }
+                        self.reduced_aliases.push(alias_id.clone());
+                    }
+
+                    match resolve::remove_alias(&self.env, &typ)? {
+                        Some(new_typ) => typ = new_typ,
+                        None => break,
+                    }
+                }
+                Ok(Some(typ))
+            }
+            None => Ok(None),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -162,38 +191,6 @@ impl<'a> Unifiable<State<'a>> for ArcType {
     }
 }
 
-fn try_remove_aliases(reduced_aliases: &mut Vec<Symbol>,
-                      env: &TypeEnv,
-                      typ: &ArcType)
-                      -> Result<Option<ArcType>, TypeError<Symbol>> {
-    if let Some(alias_id) = typ.alias_ident() {
-        if reduced_aliases.iter().any(|name| name == alias_id) {
-            return Err(TypeError::SelfRecursive(alias_id.clone()));
-        }
-        reduced_aliases.push(alias_id.clone());
-    }
-
-    match resolve::remove_alias(env, typ)? {
-        Some(mut typ) => {
-            loop {
-                if let Some(alias_id) = typ.alias_ident() {
-                    if reduced_aliases.iter().any(|name| name == alias_id) {
-                        return Err(TypeError::SelfRecursive(alias_id.clone()));
-                    }
-                    reduced_aliases.push(alias_id.clone());
-                }
-
-                match resolve::remove_alias(env, &typ)? {
-                    Some(new_typ) => typ = new_typ,
-                    None => break,
-                }
-            }
-            Ok(Some(typ))
-        }
-        None => Ok(None),
-    }
-}
-
 fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                        expected: &ArcType,
                        actual: &ArcType)
@@ -271,12 +268,9 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
         // Last ditch attempt to unify the types expanding the aliases
         // (if the types are alias types).
         (_, _) => {
-            let lhs = try_remove_aliases(&mut unifier.state.reduced_aliases,
-                                         unifier.state.env,
-                                         expected).map_err(UnifyError::Other)?;
-            let rhs = try_remove_aliases(&mut unifier.state.reduced_aliases,
-                                         unifier.state.env,
-                                         actual).map_err(UnifyError::Other)?;
+            let lhs = unifier.state.remove_aliases(expected).map_err(UnifyError::Other)?;
+            let rhs = unifier.state.remove_aliases(actual).map_err(UnifyError::Other)?;
+
             match (&lhs, &rhs) {
                 (&None, &None) => {
                     debug!("Unify error: {} <=> {}", expected, actual);
