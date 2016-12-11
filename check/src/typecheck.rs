@@ -23,8 +23,6 @@ use unify::Error as UnifyError;
 use unify;
 use unify_type::{self, Error as UnifyTypeError};
 
-use self::TypeError::*;
-
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
 pub enum TypeError<I> {
@@ -61,8 +59,8 @@ impl<I> From<KindCheckError<I>> for TypeError<I>
 {
     fn from(e: KindCheckError<I>) -> TypeError<I> {
         match e {
-            UnifyError::Other(KindError::UndefinedType(name)) => UndefinedType(name),
-            e => KindError(e),
+            UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
+            e => TypeError::KindError(e),
         }
     }
 }
@@ -269,20 +267,20 @@ impl<'a> Typecheck<'a> {
                        types::display_type(&self.symbols, &typ));
                 Ok(typ)
             }
-            None => Err(UndefinedVariable(id.clone())),
+            None => Err(TypeError::UndefinedVariable(id.clone())),
         }
     }
 
     fn find_record(&self, fields: &[Symbol]) -> TcResult<(&ArcType, &ArcType)> {
         self.environment
             .find_record(fields)
-            .ok_or(UndefinedRecord { fields: fields.to_owned() })
+            .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })
     }
 
     fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, ArcType>> {
         self.environment
             .find_type_info(id)
-            .ok_or_else(|| UndefinedType(id.clone()))
+            .ok_or_else(|| TypeError::UndefinedType(id.clone()))
     }
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
@@ -491,7 +489,7 @@ impl<'a> Typecheck<'a> {
                             self.unify_span(arg.span, arg_ty, actual);
                             ret_ty.clone()
                         }
-                        None => return Err(NotAFunction(func_type.clone())),
+                        None => return Err(TypeError::NotAFunction(func_type.clone())),
                     };
                 }
                 Ok(TailCall::Type(func_type))
@@ -521,7 +519,7 @@ impl<'a> Typecheck<'a> {
                     match &op_name[1 + op_type.len()..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
                         "==" | "<" => Ok(self.bool()),
-                        _ => Err(UndefinedVariable(op.value.name.clone())),
+                        _ => Err(TypeError::UndefinedVariable(op.value.name.clone())),
                     }
                 } else {
                     match &*op_name {
@@ -566,7 +564,7 @@ impl<'a> Typecheck<'a> {
                     }
                     expected_alt_type = Some(alt_type);
                 }
-                expected_alt_type.ok_or(EmptyCase)
+                expected_alt_type.ok_or(TypeError::EmptyCase)
                     .map(TailCall::Type)
             }
             Expr::LetBindings(ref mut bindings, _) => {
@@ -613,7 +611,7 @@ impl<'a> Typecheck<'a> {
                         };
                         Ok(TailCall::Type(ast_field_typ.clone()))
                     }
-                    _ => Err(InvalidProjection(record)),
+                    _ => Err(TypeError::InvalidProjection(record)),
                 }
             }
             Expr::Array(ref mut array) => {
@@ -799,7 +797,7 @@ impl<'a> Typecheck<'a> {
                             self.stack_type(name, &field_type.typ);
                         }
                         None => {
-                            self.error(span, UndefinedField(match_type.clone(), name));
+                            self.error(span, TypeError::UndefinedField(match_type.clone(), name));
                         }
                     }
                 }
@@ -823,7 +821,7 @@ impl<'a> Typecheck<'a> {
                 self.stack_var(args[0].name.clone(), arg.clone());
                 self.typecheck_pattern_rec(&args[1..], ret.clone())
             }
-            None => Err(PatternError(typ.clone(), args.len())),
+            None => Err(TypeError::PatternError(typ.clone(), args.len())),
         }
     }
 
@@ -963,7 +961,7 @@ impl<'a> Typecheck<'a> {
             if self.environment.stack_types.get(&bind.name).is_some() {
                 self.errors.push(Spanned {
                     span: expr.span,
-                    value: DuplicateTypeDefinition(bind.name.clone()),
+                    value: TypeError::DuplicateTypeDefinition(bind.name.clone()),
                 });
             } else {
                 self.stack_type(bind.name.clone(), &bind.alias);
@@ -1311,7 +1309,7 @@ impl<'a> Typecheck<'a> {
         duplicated_fields.replace(name).map_or(true, |name| {
             self.errors.push(Spanned {
                 span: span,
-                value: DuplicateField(name),
+                value: TypeError::DuplicateField(name),
             });
             false
         })
