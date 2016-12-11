@@ -500,12 +500,6 @@ impl<Id> ArcType<Id> {
             current: 0,
         }
     }
-
-    pub fn into_inner(self) -> Type<Id, ArcType<Id>>
-        where Id: Clone,
-    {
-        (*self.typ).clone()
-    }
 }
 
 impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
