@@ -85,13 +85,6 @@ pub fn id(s: &str) -> SpExpr {
     no_loc(Expr::Ident(TypedIdent::new(intern(s))))
 }
 
-pub fn field(s: &str, typ: ArcType<String>) -> Field<String> {
-    Field {
-        name: intern(s),
-        typ: typ,
-    }
-}
-
 pub fn typ(s: &str) -> ArcType<String> {
     assert!(s.len() != 0);
     match s.parse() {

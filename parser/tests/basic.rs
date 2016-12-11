@@ -85,8 +85,8 @@ fn type_decl_record() {
     let _ = ::env_logger::init();
     let e = parse_new!("type Test = { x: Int, y: {} } in 1");
     let record = Type::record(Vec::new(),
-                              vec![field("x", typ("Int")),
-                                   field("y", Type::record(vec![], vec![]))]);
+                              vec![Field::new(intern("x"), typ("Int")),
+                                   Field::new(intern("y"), Type::record(vec![], vec![]))]);
     assert_eq!(e, type_decl(intern("Test"), vec![], record, int(1)));
 }
 
@@ -94,16 +94,11 @@ fn type_decl_record() {
 fn type_mutually_recursive() {
     let _ = ::env_logger::init();
     let e = parse_new!("type Test = | Test Int and Test2 = { x: Int, y: {} } in 1");
-    let test = Type::variant(vec![field("Test", Type::function(vec![typ("Int")], typ("Test")))]);
+    let test = Type::variant(vec![Field::new(intern("Test"),
+                                             Type::function(vec![typ("Int")], typ("Test")))]);
     let test2 = Type::record(Vec::new(),
-                             vec![Field {
-                                      name: intern("x"),
-                                      typ: typ("Int"),
-                                  },
-                                  Field {
-                                      name: intern("y"),
-                                      typ: Type::record(vec![], vec![]),
-                                  }]);
+                             vec![Field::new(intern("x"), typ("Int")),
+                                  Field::new(intern("y"), Type::record(vec![], vec![]))]);
     let binds = vec![
         TypeBinding {
             comment: None,
@@ -155,7 +150,8 @@ fn variant_type() {
     assert_eq!(e,
                type_decl(intern("Option"),
                          vec![generic("a")],
-                         Type::variant(vec![field("None", none), field("Some", some)]),
+                         Type::variant(vec![Field::new(intern("None"), none),
+                                            Field::new(intern("Some"), some)]),
                          app(id("Some"), vec![int(1)])));
 }
 #[test]

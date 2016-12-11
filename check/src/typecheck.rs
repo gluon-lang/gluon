@@ -15,13 +15,13 @@ use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
 use base::types::{PrimitiveEnv, Type, TypeEnv, TypeVariable};
-use kindcheck::{self, KindCheck};
+
+use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::Substitution;
+use rename::RenameError;
 use unify::Error as UnifyError;
 use unify;
-use unify_type;
-
-use self::TypeError::*;
+use unify_type::{self, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -37,11 +37,11 @@ pub enum TypeError<I> {
     /// Constructor type was found in a pattern but did not have the expected number of arguments
     PatternError(ArcType<I>, usize),
     /// Errors found when trying to unify two types
-    Unification(ArcType<I>, ArcType<I>, Vec<unify_type::Error<I>>),
+    Unification(ArcType<I>, ArcType<I>, Vec<UnifyTypeError<I>>),
     /// Error were found when trying to unify the kinds of two types
-    KindError(kindcheck::Error<I>),
+    KindError(KindCheckError<I>),
     /// Errors found during renaming (overload resolution)
-    Rename(::rename::RenameError),
+    Rename(RenameError),
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// A field was defined more than once in a record constructor or pattern match
@@ -54,19 +54,19 @@ pub enum TypeError<I> {
     EmptyCase,
 }
 
-impl<I> From<kindcheck::Error<I>> for TypeError<I>
+impl<I> From<KindCheckError<I>> for TypeError<I>
     where I: PartialEq + Clone,
 {
-    fn from(e: kindcheck::Error<I>) -> TypeError<I> {
+    fn from(e: KindCheckError<I>) -> TypeError<I> {
         match e {
-            UnifyError::Other(::kindcheck::KindError::UndefinedType(name)) => UndefinedType(name),
-            e => KindError(e),
+            UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
+            e => TypeError::KindError(e),
         }
     }
 }
 
-impl<I> From<::rename::RenameError> for TypeError<I> {
-    fn from(e: ::rename::RenameError) -> TypeError<I> {
+impl<I> From<RenameError> for TypeError<I> {
+    fn from(e: RenameError) -> TypeError<I> {
         TypeError::Rename(e)
     }
 }
@@ -99,7 +99,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             PatternError(ref typ, expected_len) => {
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
-            KindError(ref err) => ::kindcheck::fmt_kind_error(err, f),
+            KindError(ref err) => kindcheck::fmt_kind_error(err, f),
             Rename(ref err) => write!(f, "{}", err),
             DuplicateTypeDefinition(ref id) => {
                 write!(f,
@@ -267,20 +267,20 @@ impl<'a> Typecheck<'a> {
                        types::display_type(&self.symbols, &typ));
                 Ok(typ)
             }
-            None => Err(UndefinedVariable(id.clone())),
+            None => Err(TypeError::UndefinedVariable(id.clone())),
         }
     }
 
     fn find_record(&self, fields: &[Symbol]) -> TcResult<(&ArcType, &ArcType)> {
         self.environment
             .find_record(fields)
-            .ok_or(UndefinedRecord { fields: fields.to_owned() })
+            .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })
     }
 
     fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, ArcType>> {
         self.environment
             .find_type_info(id)
-            .ok_or_else(|| UndefinedType(id.clone()))
+            .ok_or_else(|| TypeError::UndefinedType(id.clone()))
     }
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
@@ -489,7 +489,7 @@ impl<'a> Typecheck<'a> {
                             self.unify_span(arg.span, arg_ty, actual);
                             ret_ty.clone()
                         }
-                        None => return Err(NotAFunction(func_type.clone())),
+                        None => return Err(TypeError::NotAFunction(func_type.clone())),
                     };
                 }
                 Ok(TailCall::Type(func_type))
@@ -519,7 +519,7 @@ impl<'a> Typecheck<'a> {
                     match &op_name[1 + op_type.len()..] {
                         "+" | "-" | "*" | "/" => Ok(typ),
                         "==" | "<" => Ok(self.bool()),
-                        _ => Err(UndefinedVariable(op.value.name.clone())),
+                        _ => Err(TypeError::UndefinedVariable(op.value.name.clone())),
                     }
                 } else {
                     match &*op_name {
@@ -564,7 +564,7 @@ impl<'a> Typecheck<'a> {
                     }
                     expected_alt_type = Some(alt_type);
                 }
-                expected_alt_type.ok_or(EmptyCase)
+                expected_alt_type.ok_or(TypeError::EmptyCase)
                     .map(TailCall::Type)
             }
             Expr::LetBindings(ref mut bindings, _) => {
@@ -602,10 +602,7 @@ impl<'a> Typecheck<'a> {
                                 // checked if the field exists which lets field accesses on
                                 // types with type fields still work
                                 let field_var = self.subs.new_var();
-                                let field = Field {
-                                    name: field_id.clone(),
-                                    typ: field_var.clone(),
-                                };
+                                let field = Field::new(field_id.clone(), field_var.clone());
                                 let record_type =
                                     Type::poly_record(vec![], vec![field], self.subs.new_var());
                                 self.unify(&record_type, record)?;
@@ -614,7 +611,7 @@ impl<'a> Typecheck<'a> {
                         };
                         Ok(TailCall::Type(ast_field_typ.clone()))
                     }
-                    _ => Err(InvalidProjection(record)),
+                    _ => Err(TypeError::InvalidProjection(record)),
                 }
             }
             Expr::Array(ref mut array) => {
@@ -650,10 +647,7 @@ impl<'a> Typecheck<'a> {
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
                                                       symbol.clone()) {
-                        new_types.push(Field {
-                            name: symbol.clone(),
-                            typ: alias,
-                        });
+                        new_types.push(Field::new(symbol.clone(), alias));
                     }
                 }
 
@@ -666,10 +660,7 @@ impl<'a> Typecheck<'a> {
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
                                                       field.0.clone()) {
-                        new_fields.push(Field {
-                            name: field.0.clone(),
-                            typ: typ,
-                        });
+                        new_fields.push(Field::new(field.0.clone(), typ));
                     }
                 }
                 let result = self.find_record(&new_fields.iter()
@@ -770,12 +761,7 @@ impl<'a> Typecheck<'a> {
                             .collect();
 
                         let fields = fields.iter()
-                            .map(|field| {
-                                Field {
-                                    name: field.0.clone(),
-                                    typ: self.subs.new_var(),
-                                }
-                            })
+                            .map(|&(ref id, _)| Field::new(id.clone(), self.subs.new_var()))
                             .collect();
                         let t = Type::poly_record(types, fields, self.subs.new_var());
                         (t.clone(), t)
@@ -811,7 +797,7 @@ impl<'a> Typecheck<'a> {
                             self.stack_type(name, &field_type.typ);
                         }
                         None => {
-                            self.error(span, UndefinedField(match_type.clone(), name));
+                            self.error(span, TypeError::UndefinedField(match_type.clone(), name));
                         }
                     }
                 }
@@ -835,7 +821,7 @@ impl<'a> Typecheck<'a> {
                 self.stack_var(args[0].name.clone(), arg.clone());
                 self.typecheck_pattern_rec(&args[1..], ret.clone())
             }
-            None => Err(PatternError(typ.clone(), args.len())),
+            None => Err(TypeError::PatternError(typ.clone(), args.len())),
         }
     }
 
@@ -975,7 +961,7 @@ impl<'a> Typecheck<'a> {
             if self.environment.stack_types.get(&bind.name).is_some() {
                 self.errors.push(Spanned {
                     span: expr.span,
-                    value: DuplicateTypeDefinition(bind.name.clone()),
+                    value: TypeError::DuplicateTypeDefinition(bind.name.clone()),
                 });
             } else {
                 self.stack_type(bind.name.clone(), &bind.alias);
@@ -1116,12 +1102,8 @@ impl<'a> Typecheck<'a> {
                         // Make a new name base for any unbound variables in the record field
                         // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                         // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                        self.finish_type(level, &field.typ).map(|typ| {
-                            Field {
-                                name: field.name.clone(),
-                                typ: typ,
-                            }
-                        })
+                        self.finish_type(level, &field.typ)
+                            .map(|typ| Field::new(field.name.clone(), typ))
                     });
                     let new_rest = self.finish_type(level, rest);
                     types::merge(fields,
@@ -1205,12 +1187,7 @@ impl<'a> Typecheck<'a> {
                             .zip(row.row_iter())
                             .map(|(new, old)| {
                                 match new {
-                                    Some(new) => {
-                                        Field {
-                                            name: new.clone(),
-                                            typ: old.typ.clone(),
-                                        }
-                                    }
+                                    Some(new) => Field::new(new.clone(), old.typ.clone()),
                                     None => old.clone(),
                                 }
                             })
@@ -1329,16 +1306,13 @@ impl<'a> Typecheck<'a> {
                                  span: Span<BytePos>,
                                  name: Symbol)
                                  -> bool {
-        match duplicated_fields.replace(name) {
-            Some(name) => {
-                self.errors.push(Spanned {
-                    span: span,
-                    value: DuplicateField(name),
-                });
-                false
-            }
-            None => true,
-        }
+        duplicated_fields.replace(name).map_or(true, |name| {
+            self.errors.push(Spanned {
+                span: span,
+                value: TypeError::DuplicateField(name),
+            });
+            false
+        })
     }
 }
 
@@ -1356,8 +1330,8 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut
 }
 
 fn apply_subs(subs: &Substitution<ArcType>,
-              errors: Errors<unify_type::Error<Symbol>>)
-              -> Vec<unify_type::Error<Symbol>> {
+              errors: Errors<UnifyTypeError<Symbol>>)
+              -> Vec<UnifyTypeError<Symbol>> {
     use unify::Error::*;
     errors.into_iter()
         .map(|error| {
@@ -1398,8 +1372,8 @@ fn get_alias_app<'a>(env: &'a TypeEnv,
             }
         }
         _ => {
-            typ.as_alias()
-                .and_then(|(id, args)| env.find_type_info(id).map(|alias| (&**alias, &args[..])))
+            typ.alias_ident()
+                .and_then(|id| env.find_type_info(id).map(|alias| (&**alias, typ.unapplied_args())))
         }
     }
 }

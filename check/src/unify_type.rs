@@ -6,7 +6,7 @@ use smallvec::VecLike;
 use base::error::Errors;
 use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv};
 use base::symbol::{Symbol, SymbolRef};
-use base::resolve;
+use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 
 use unify;
@@ -33,6 +33,35 @@ impl<'a> State<'a> {
             record_context: None,
         }
     }
+
+    fn remove_aliases(&mut self, typ: &ArcType) -> Result<Option<ArcType>, TypeError<Symbol>> {
+        if let Some(alias_id) = typ.alias_ident() {
+            if self.reduced_aliases.iter().any(|name| name == alias_id) {
+                return Err(TypeError::SelfRecursive(alias_id.clone()));
+            }
+            self.reduced_aliases.push(alias_id.clone());
+        }
+
+        match resolve::remove_alias(&self.env, typ)? {
+            Some(mut typ) => {
+                loop {
+                    if let Some(alias_id) = typ.alias_ident() {
+                        if self.reduced_aliases.iter().any(|name| name == alias_id) {
+                            return Err(TypeError::SelfRecursive(alias_id.clone()));
+                        }
+                        self.reduced_aliases.push(alias_id.clone());
+                    }
+
+                    match resolve::remove_alias(&self.env, &typ)? {
+                        Some(new_typ) => typ = new_typ,
+                        None => break,
+                    }
+                }
+                Ok(Some(typ))
+            }
+            None => Ok(None),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -44,12 +73,11 @@ pub enum TypeError<I> {
     MissingFields(ArcType<I>, Vec<I>),
 }
 
-impl From<resolve::Error> for Error<Symbol> {
-    fn from(error: resolve::Error) -> Error<Symbol> {
-        UnifyError::Other(match error {
-            resolve::Error::UndefinedType(id) => TypeError::UndefinedType(id),
-            resolve::Error::SelfRecursive(id) => TypeError::SelfRecursive(id),
-        })
+impl From<ResolveError> for TypeError<Symbol> {
+    fn from(error: ResolveError) -> TypeError<Symbol> {
+        match error {
+            ResolveError::UndefinedType(id) => TypeError::UndefinedType(id),
+        }
     }
 }
 
@@ -191,13 +219,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                l_args.iter().zip(r_args).all(|(l, r)| l.name.name_eq(&r.name)) &&
                l_types == r_types {
                 let new_args = walk_move_types(l_args.iter().zip(r_args), |l, r| {
-                    unifier.try_match(&l.typ, &r.typ)
-                        .map(|typ| {
-                            types::Field {
-                                name: l.name.clone(),
-                                typ: typ,
-                            }
-                        })
+                    unifier.try_match(&l.typ, &r.typ).map(|typ| Field::new(l.name.clone(), typ))
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(types::merge(l_args,
@@ -223,12 +245,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                     } else {
                         unifier.try_match(&l.typ, &r.typ)
                     };
-                    opt_type.map(|typ| {
-                        types::Field {
-                            name: l.name.clone(),
-                            typ: typ,
-                        }
-                    })
+                    opt_type.map(|typ| Field::new(l.name.clone(), typ))
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(types::merge(l_args,
@@ -248,15 +265,12 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
         // Successful unification!
         (lhs, rhs) if lhs == rhs => return Ok(None),
 
-        // Last ditch effort attempt to unify the types again by expanding the aliases
+        // Last ditch attempt to unify the types expanding the aliases
         // (if the types are alias types).
         (_, _) => {
-            let lhs = resolve::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                      unifier.state.env,
-                                                      expected)?;
-            let rhs = resolve::remove_aliases_checked(&mut unifier.state.reduced_aliases,
-                                                      unifier.state.env,
-                                                      actual)?;
+            let lhs = unifier.state.remove_aliases(expected).map_err(UnifyError::Other)?;
+            let rhs = unifier.state.remove_aliases(actual).map_err(UnifyError::Other)?;
+
             match (&lhs, &rhs) {
                 (&None, &None) => {
                     debug!("Unify error: {} <=> {}", expected, actual);
@@ -371,13 +385,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
 
     // Unify the fields that exists in both records
     let new_both = walk_move_types(both.iter().cloned(), |l, r| {
-        unifier.try_match(&l.typ, &r.typ)
-            .map(|typ| {
-                types::Field {
-                    name: l.name.clone(),
-                    typ: typ,
-                }
-            })
+        unifier.try_match(&l.typ, &r.typ).map(|typ| Field::new(l.name.clone(), typ))
     });
 
     // Pack all fields from both records into a single `Type::ExtendRow` value
@@ -483,7 +491,7 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
     loop {
         l = match l.name() {
             Some(l_id) => {
-                if let Some((l_id, _)) = l.as_alias() {
+                if let Some(l_id) = l.alias_ident() {
                     if unifier.state.reduced_aliases.iter().any(|id| id == l_id) {
                         return Err(());
                     }
@@ -499,12 +507,12 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                     Ok(Some(typ)) => {
                         unifier.state
                             .reduced_aliases
-                            .push(l.as_alias().expect("Alias").0.clone());
+                            .push(l.alias_ident().expect("Alias").clone());
                         typ
                     }
                     Ok(None) => break,
                     Err(err) => {
-                        unifier.report_error(err.into());
+                        unifier.report_error(UnifyError::Other(err.into()));
                         return Err(());
                     }
                 }
@@ -703,7 +711,7 @@ mod tests {
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
-    use base::types::{self, ArcType, Type};
+    use base::types::{ArcType, Field, Type};
     use tests::*;
 
     #[test]
@@ -711,23 +719,11 @@ mod tests {
         let _ = ::env_logger::init();
         let (x, y) = (intern("x"), intern("y"));
         let l: ArcType = Type::record(vec![],
-                                      vec![types::Field {
-                                               name: x.clone(),
-                                               typ: Type::int(),
-                                           },
-                                           types::Field {
-                                               name: y.clone(),
-                                               typ: Type::string(),
-                                           }]);
+                                      vec![Field::new(x.clone(), Type::int()),
+                                           Field::new(y.clone(), Type::string())]);
         let r = Type::record(vec![],
-                             vec![types::Field {
-                                      name: x.clone(),
-                                      typ: Type::string(),
-                                  },
-                                  types::Field {
-                                      name: y.clone(),
-                                      typ: Type::int(),
-                                  }]);
+                             vec![Field::new(x.clone(), Type::string()),
+                                  Field::new(y.clone(), Type::int())]);
         let subs = Substitution::new();
         let env = MockEnv;
         let state = State::new(&env, &subs);
@@ -740,22 +736,17 @@ mod tests {
     #[test]
     fn unify_row_polymorphism() {
         let _ = ::env_logger::init();
-        let x = types::Field {
-            name: intern("x"),
-            typ: Type::int(),
-        };
-        let y = types::Field {
-            name: intern("y"),
-            typ: Type::int(),
-        };
+
+        let env = MockEnv;
         let subs = Substitution::new();
+        let state = State::new(&env, &subs);
+
+        let x = Field::new(intern("x"), Type::int());
+        let y = Field::new(intern("y"), Type::int());
         let l: ArcType = Type::poly_record(vec![], vec![x.clone()], subs.new_var());
         let r = Type::poly_record(vec![], vec![y.clone()], subs.new_var());
 
-        let env = MockEnv;
-        let state = State::new(&env, &subs);
-        let result = unify(&subs, state, &l, &r);
-        match result {
+        match unify(&subs, state, &l, &r) {
             Ok(result) => {
                 // Get the row variable at the end of the resulting type so we can compare the types
                 let mut iter = result.row_iter();

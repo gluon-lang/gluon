@@ -444,14 +444,16 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
         return get_return_type(env, ret, arg_count - 1);
     }
 
-    let (id, alias_args) = alias_type.as_alias().unwrap_or_else(|| {
-        panic!("ICE: Expected function with {} more arguments, found {:?}",
-               arg_count,
-               alias_type)
-    });
+    let alias = {
+        let alias_ident = alias_type.alias_ident().unwrap_or_else(|| {
+            panic!("ICE: Expected function with {} more arguments, found {:?}",
+                   arg_count,
+                   alias_type)
+        });
 
-    let alias = env.find_type_info(&id)
-        .unwrap_or_else(|| panic!("Unexpected type {:?} is not a function", alias_type));
+        env.find_type_info(&alias_ident)
+            .unwrap_or_else(|| panic!("Unexpected type {:?} is not a function", alias_type))
+    };
 
     let typ = types::walk_move_type(alias.typ.clone(),
                                     &mut |typ| {
@@ -461,7 +463,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
                 // or if it is not found the make a fresh variable
                 alias.args
                     .iter()
-                    .zip(alias_args)
+                    .zip(alias_type.unapplied_args())
                     .find(|&(arg, _)| arg.id == generic.id)
                     .map(|(_, typ)| typ.clone())
             }

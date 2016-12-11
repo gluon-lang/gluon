@@ -32,14 +32,8 @@ f
 "#;
     let result = support::typecheck(text);
     let record = Type::record(vec![],
-                              vec![Field {
-                                       name: intern("x"),
-                                       typ: typ("Int"),
-                                   },
-                                   Field {
-                                       name: intern("y"),
-                                       typ: typ("Int"),
-                                   }]);
+                              vec![Field::new(intern("x"), typ("Int")),
+                                   Field::new(intern("y"), typ("Int"))]);
     assert_eq!(result.map(support::close_record),
                Ok(Type::function(vec![record], typ("Int"))));
 }
@@ -245,10 +239,7 @@ fn row_kinds() {
     assert_eq!(result, Ok(Kind::row()));
 
     let mut typ = Type::extend_row(vec![],
-                                   vec![Field {
-                                            name: intern("x"),
-                                            typ: Type::int(),
-                                        }],
+                                   vec![Field::new(intern("x"), Type::int())],
                                    Type::empty_row());
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert_eq!(result, Ok(Kind::row()));
@@ -262,19 +253,13 @@ fn row_kinds_error() {
     let mut kindcheck = KindCheck::new(&env, &ident_env);
 
     let mut typ = Type::extend_row(vec![],
-                                   vec![Field {
-                                            name: intern("x"),
-                                            typ: Type::int(),
-                                        }],
+                                   vec![Field::new(intern("x"), Type::int())],
                                    Type::int());
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());
 
     let mut typ = Type::extend_row(vec![],
-                                   vec![Field {
-                                            name: intern("x"),
-                                            typ: Type::empty_row(),
-                                        }],
+                                   vec![Field::new(intern("x"), Type::empty_row())],
                                    Type::empty_row());
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());

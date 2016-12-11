@@ -50,22 +50,14 @@ fn some_record() -> ArcType<&'static str> {
     let f = Type::function(vec![data("a", vec![])], Type::string());
 
     let test = data("Test", vec![data("a", vec![])]);
-    Type::record(vec![Field {
-                          name: "Test",
-                          typ: Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone()),
-                      }],
-                 vec![Field {
-                          name: "x",
-                          typ: Type::int(),
-                      },
-                      Field {
-                          name: "test",
-                          typ: test.clone(),
-                      },
-                      Field {
-                          name: "+",
-                          typ: Type::function(vec![Type::int(), Type::int()], Type::int()),
-                      }])
+    Type::record(vec![Field::new("Test",
+                                 Alias::new("Test",
+                                            vec![Generic::new("a", Kind::typ())],
+                                            f.clone()))],
+                 vec![Field::new("x", Type::int()),
+                      Field::new("test", test.clone()),
+                      Field::new("+",
+                                 Type::function(vec![Type::int(), Type::int()], Type::int()))])
 }
 
 #[test]
@@ -73,33 +65,23 @@ fn show_record() {
     assert_eq_display!(format!("{}", Type::<&str, ArcType<&str>>::record(vec![], vec![])),
                        "{}");
     let typ = Type::record(vec![],
-                           vec![Field {
-                                    name: "x",
-                                    typ: Type::<&str, ArcType<&str>>::int(),
-                                }]);
+                           vec![Field::new("x", Type::<&str, ArcType<&str>>::int())]);
     assert_eq_display!(format!("{}", typ), "{ x : Int }");
 
     let data = |s, a| ArcType::from(type_con(s, a));
     let f = Type::function(vec![data("a", vec![])], Type::string());
-    let typ = Type::record(vec![Field {
-                                    name: "Test",
-                                    typ: Alias::new("Test",
-                                                    vec![Generic::new("a", Kind::typ())],
-                                                    f.clone()),
-                                }],
-                           vec![Field {
-                                    name: "x",
-                                    typ: Type::int(),
-                                }]);
+    let typ = Type::record(vec![Field::new("Test",
+                                           Alias::new("Test",
+                                                      vec![Generic::new("a", Kind::typ())],
+                                                      f.clone()))],
+                           vec![Field::new("x", Type::int())]);
     assert_eq_display!(format!("{}", typ), "{ Test a = a -> String, x : Int }");
     assert_eq_display!(format!("{}", some_record()),
                        "{ Test a = a -> String, x : Int, test : Test a, (+) : Int -> Int -> Int }");
-    let typ = Type::record(vec![Field {
-                                    name: "Test",
-                                    typ: Alias::new("Test",
-                                                    vec![Generic::new("a", Kind::typ())],
-                                                    f.clone()),
-                                }],
+    let typ = Type::record(vec![Field::new("Test",
+                                           Alias::new("Test",
+                                                      vec![Generic::new("a", Kind::typ())],
+                                                      f.clone()))],
                            vec![]);
     assert_eq_display!(format!("{}", typ), "{ Test a = a -> String }");
 }
@@ -110,33 +92,23 @@ fn show_record_multi_line() {
     let data = |s, a| ArcType::from(type_con(s, a));
     let f = Type::function(vec![data("a", vec![])], Type::string());
     let test = data("Test", vec![data("a", vec![])]);
-    let typ = Type::record(vec![Field {
-                                    name: "Test",
-                                    typ: Alias::new("Test",
-                                                    vec![Generic::new("a", Kind::typ())],
-                                                    f.clone()),
-                                }],
-                           vec![Field {
-                                    name: "x",
-                                    typ: Type::int(),
-                                },
-                                Field {
-                                    name: "test",
-                                    typ: Type::function(vec![data("Test",
-                                                                  vec![Type::int(), f.clone()]),
-                                                             Type::float(),
-                                                             f.clone(),
-                                                             f.clone()],
-                                                        f.clone()),
-                                },
-                                Field {
-                                    name: "record_looooooooooooooooooooooooooooooooooong",
-                                    typ: some_record(),
-                                },
-                                Field {
-                                    name: "looooooooooooooooooooooooooooooooooong_field",
-                                    typ: test.clone(),
-                                }]);
+    let typ = Type::record(vec![Field::new("Test",
+                                           Alias::new("Test",
+                                                      vec![Generic::new("a", Kind::typ())],
+                                                      f.clone()))],
+                           vec![Field::new("x", Type::int()),
+                                Field::new("test",
+                                           Type::function(vec![data("Test",
+                                                                    vec![Type::int(),
+                                                                         f.clone()]),
+                                                               Type::float(),
+                                                               f.clone(),
+                                                               f.clone()],
+                                                          f.clone())),
+                                Field::new("record_looooooooooooooooooooooooooooooooooong",
+                                           some_record()),
+                                Field::new("looooooooooooooooooooooooooooooooooong_field",
+                                           test.clone())]);
     let expected = r#"{
     Test a = a -> String,
     x : Int,
@@ -160,15 +132,9 @@ fn show_record_multi_line() {
 
 #[test]
 fn show_variant() {
-    let typ: ArcType<&str> = Type::variant(vec![Field {
-                                                    name: "A",
-                                                    typ: Type::function(vec![Type::int()],
-                                                                        Type::ident("A")),
-                                                },
-                                                Field {
-                                                    name: "B",
-                                                    typ: Type::ident("A"),
-                                                }]);
+    let typ: ArcType<&str> =
+        Type::variant(vec![Field::new("A", Type::function(vec![Type::int()], Type::ident("A"))),
+                           Field::new("B", Type::ident("A"))]);
     assert_eq_display!(format!("{}", typ), "| A Int | B");
 }
 
@@ -182,22 +148,17 @@ fn show_kind() {
 
 #[test]
 fn show_polymorphic_record() {
-    let fields = vec![Field {
-                          name: "x",
-                          typ: Type::string(),
-                      }];
+    let fields = vec![Field::new("x", Type::string())];
     let typ: ArcType<&str> = Type::poly_record(vec![], fields, Type::ident("r"));
     assert_eq_display!(format!("{}", typ), "{ x : String | r }");
 }
 
 #[test]
 fn show_polymorphic_record_associated_type() {
-    let type_fields = vec![Field {
-                               name: "Test",
-                               typ: Alias::new("Test",
-                                               vec![Generic::new("a", Kind::typ())],
-                                               Type::ident("a")),
-                           }];
+    let type_fields = vec![Field::new("Test",
+                                      Alias::new("Test",
+                                                 vec![Generic::new("a", Kind::typ())],
+                                                 Type::ident("a")))];
     let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));
     assert_eq_display!(format!("{}", typ), "{ Test a = a | r }");
 }
