@@ -326,6 +326,14 @@ match { x = 1, y = "abc" } with
 4i32
 }
 
+test_expr!{ match_stack,
+r#"
+1 #Int+ (match string_prim with
+         | { length } -> length "abc")
+"#,
+4i32
+}
+
 test_expr!{ let_record_pattern,
 r#"
 let (+) x y = x #Int+ y

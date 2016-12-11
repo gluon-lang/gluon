@@ -36,9 +36,10 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
     /// Exits the current scope, removing anything inserted since the
     /// matching enter_scope call
-    pub fn exit_scope(&mut self) {
-        while let Some(Some(key)) = self.scopes.pop() {
-            self.map.get_mut(&key).map(|x| x.pop());
+    pub fn exit_scope(&mut self) -> ExitScopeIter<K, V> {
+        ExitScopeIter {
+            map: self,
+            done: false,
         }
     }
 
@@ -186,6 +187,47 @@ impl<'a, K, V> Iterator for Iter<'a, K, V>
                     }
                 }
                 None => return None,
+            }
+        }
+    }
+}
+
+pub struct ExitScopeIter<'a, K, V>
+    where K: 'a + Eq + Hash + Clone,
+          V: 'a,
+{
+    map: &'a mut ScopedMap<K, V>,
+    done: bool,
+}
+
+impl<'a, K, V> Drop for ExitScopeIter<'a, K, V>
+    where K: Eq + Hash + Clone,
+{
+    fn drop(&mut self) {
+        for _ in self {
+        }
+    }
+}
+
+impl<'a, K, V> Iterator for ExitScopeIter<'a, K, V>
+    where K: Eq + Hash + Clone,
+{
+    type Item = (K, V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            None
+        } else {
+            match self.map.scopes.pop() {
+                Some(Some(key)) => {
+                    let result = self.map.map.get_mut(&key).and_then(|x| x.pop());
+                    self.done = result.is_none();
+                    result.map(|value| (key, value))
+                }
+                _ => {
+                    self.done = true;
+                    None
+                }
             }
         }
     }
