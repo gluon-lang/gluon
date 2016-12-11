@@ -15,11 +15,13 @@ use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
 use base::types::{PrimitiveEnv, Type, TypeEnv, TypeVariable};
-use kindcheck::{self, KindCheck};
+
+use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::Substitution;
+use rename::RenameError;
 use unify::Error as UnifyError;
 use unify;
-use unify_type;
+use unify_type::{self, Error as UnifyTypeError};
 
 use self::TypeError::*;
 
@@ -37,11 +39,11 @@ pub enum TypeError<I> {
     /// Constructor type was found in a pattern but did not have the expected number of arguments
     PatternError(ArcType<I>, usize),
     /// Errors found when trying to unify two types
-    Unification(ArcType<I>, ArcType<I>, Vec<unify_type::Error<I>>),
+    Unification(ArcType<I>, ArcType<I>, Vec<UnifyTypeError<I>>),
     /// Error were found when trying to unify the kinds of two types
-    KindError(kindcheck::Error<I>),
+    KindError(KindCheckError<I>),
     /// Errors found during renaming (overload resolution)
-    Rename(::rename::RenameError),
+    Rename(RenameError),
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// A field was defined more than once in a record constructor or pattern match
@@ -54,19 +56,19 @@ pub enum TypeError<I> {
     EmptyCase,
 }
 
-impl<I> From<kindcheck::Error<I>> for TypeError<I>
+impl<I> From<KindCheckError<I>> for TypeError<I>
     where I: PartialEq + Clone,
 {
-    fn from(e: kindcheck::Error<I>) -> TypeError<I> {
+    fn from(e: KindCheckError<I>) -> TypeError<I> {
         match e {
-            UnifyError::Other(::kindcheck::KindError::UndefinedType(name)) => UndefinedType(name),
+            UnifyError::Other(KindError::UndefinedType(name)) => UndefinedType(name),
             e => KindError(e),
         }
     }
 }
 
-impl<I> From<::rename::RenameError> for TypeError<I> {
-    fn from(e: ::rename::RenameError) -> TypeError<I> {
+impl<I> From<RenameError> for TypeError<I> {
+    fn from(e: RenameError) -> TypeError<I> {
         TypeError::Rename(e)
     }
 }
@@ -99,7 +101,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             PatternError(ref typ, expected_len) => {
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
-            KindError(ref err) => ::kindcheck::fmt_kind_error(err, f),
+            KindError(ref err) => kindcheck::fmt_kind_error(err, f),
             Rename(ref err) => write!(f, "{}", err),
             DuplicateTypeDefinition(ref id) => {
                 write!(f,
@@ -1333,8 +1335,8 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut
 }
 
 fn apply_subs(subs: &Substitution<ArcType>,
-              errors: Errors<unify_type::Error<Symbol>>)
-              -> Vec<unify_type::Error<Symbol>> {
+              errors: Errors<UnifyTypeError<Symbol>>)
+              -> Vec<UnifyTypeError<Symbol>> {
     use unify::Error::*;
     errors.into_iter()
         .map(|error| {

@@ -7,9 +7,7 @@ use base::symbol::Symbol;
 use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
 
 use substitution::{Substitution, Substitutable};
-use unify;
-
-use unify::Error as UnifyError;
+use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
 
@@ -346,14 +344,14 @@ impl Substitutable for ArcKind {
     }
 }
 
-impl<S> unify::Unifiable<S> for ArcKind {
+impl<S> Unifiable<S> for ArcKind {
     type Error = KindError<Symbol>;
 
     fn zip_match<U>(&self,
                     other: &Self,
-                    unifier: &mut unify::UnifierState<S, U>)
+                    unifier: &mut UnifierState<S, U>)
                     -> StdResult<Option<Self>, Error<Symbol>>
-        where U: unify::Unifier<S, Self>,
+        where U: Unifier<S, Self>,
     {
         match (&**self, &**other) {
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
