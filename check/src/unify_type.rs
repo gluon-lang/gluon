@@ -268,7 +268,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
         // Successful unification!
         (lhs, rhs) if lhs == rhs => return Ok(None),
 
-        // Last ditch effort attempt to unify the types again by expanding the aliases
+        // Last ditch attempt to unify the types expanding the aliases
         // (if the types are alias types).
         (_, _) => {
             let lhs = try_remove_aliases(&mut unifier.state.reduced_aliases,
