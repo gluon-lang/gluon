@@ -107,5 +107,5 @@ quick_error! {
 
 /// Internal types and functions exposed to the main `gluon` crate
 pub mod internal {
-    pub use value::{Value, ClosureDataDef};
+    pub use value::{Value, ClosureDataDef, ValuePrinter};
 }

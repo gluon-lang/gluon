@@ -214,11 +214,35 @@ enum Prec {
 }
 use self::Prec::*;
 
+
 pub struct ValuePrinter<'a> {
-    typ: &'a ArcType,
-    env: &'a TypeEnv,
-    value: Value,
-    level: i32,
+    pub typ: &'a ArcType,
+    pub env: &'a TypeEnv,
+    pub value: Value,
+    pub max_level: i32,
+    pub width: usize,
+}
+
+impl<'t> ValuePrinter<'t> {
+    pub fn new(env: &'t TypeEnv, typ: &'t ArcType, value: Value) -> ValuePrinter<'t> {
+        ValuePrinter {
+            typ: typ,
+            env: env,
+            value: value,
+            max_level: i32::max_value(),
+            width: 80,
+        }
+    }
+
+    pub fn max_level(&mut self, max_level: i32) -> &mut ValuePrinter<'t> {
+        self.max_level = max_level;
+        self
+    }
+
+    pub fn width(&mut self, width: usize) -> &mut ValuePrinter<'t> {
+        self.width = width;
+        self
+    }
 }
 
 struct InternalPrinter<'a, 't> {
@@ -231,7 +255,6 @@ struct InternalPrinter<'a, 't> {
 
 impl<'a> fmt::Display for ValuePrinter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        const WIDTH: usize = 80;
 
         let arena = Arena::new();
         let mut s = Vec::new();
@@ -240,30 +263,13 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
                 env: self.env,
                 arena: &arena,
                 prec: Top,
-                level: self.level,
+                level: self.max_level,
             }.pretty(self.value)
             .group()
             .1
-            .render(WIDTH, &mut s)
+            .render(self.width, &mut s)
             .map_err(|_| fmt::Error)?;
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
-    }
-}
-
-
-
-impl<'t> ValuePrinter<'t> {
-    pub fn new(env: &'t TypeEnv,
-               typ: &'t ArcType,
-               display_levels: i32,
-               value: Value)
-               -> ValuePrinter<'t> {
-        ValuePrinter {
-            typ: typ,
-            env: env,
-            value: value,
-            level: display_levels,
-        }
     }
 }
 
@@ -1155,20 +1161,20 @@ mod tests {
         })));
 
         let nil = Value::Tag(1);
-        assert_eq!(format!("{}", ValuePrinter::new(&typ, &env, nil)), "Nil");
+        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)), "Nil");
         let list1 = Value::Data(gc.alloc(Def {
                 tag: 0,
                 elems: &[Value::Int(123), nil],
             })
             .unwrap());
-        assert_eq!(format!("{}", ValuePrinter::new(&typ, &env, list1)),
+        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, list1)),
                    "Cons 123 Nil");
         let list2 = Value::Data(gc.alloc(Def {
                 tag: 0,
                 elems: &[Value::Int(0), list1],
             })
             .unwrap());
-        assert_eq!(format!("{}", ValuePrinter::new(&typ, &env, list2)),
+        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, list2)),
                    "Cons 0 (Cons 123 Nil)");
     }
 
@@ -1181,7 +1187,7 @@ mod tests {
         let env = MockEnv(None);
 
         let nil = Value::Array(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
-        assert_eq!(format!("{}", ValuePrinter::new(&typ, &env, nil)),
+        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)),
                    "[1, 2, 3]");
     }
 }
