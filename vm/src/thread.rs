@@ -711,6 +711,10 @@ impl<'a> DebugInfo<'a> {
             None
         }
     }
+
+    pub fn stack_info_len(&self) -> usize {
+        self.stack.get_frames().len()
+    }
 }
 
 impl<'a> StackInfo<'a> {
