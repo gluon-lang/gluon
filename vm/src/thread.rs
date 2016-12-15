@@ -347,11 +347,12 @@ impl Thread {
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
         where T: Getable<'vm> + VmType,
     {
+        use check::check_signature;
         let env = self.get_env();
         let (value, actual) = env.get_binding(name)?;
         // Finally check that type of the returned value is correct
         let expected = T::make_type(self);
-        if expected == *actual {
+        if check_signature(&*env, &expected, &actual) {
             T::from_value(self, Variants(&value))
                 .ok_or_else(|| Error::UndefinedBinding(name.into()))
         } else {

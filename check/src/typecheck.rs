@@ -21,7 +21,7 @@ use substitution::Substitution;
 use rename::RenameError;
 use unify::Error as UnifyError;
 use unify;
-use unify_type::{self, Error as UnifyTypeError};
+use unify_type::{self, Error as UnifyTypeError, instantiate_generic_variables};
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -675,7 +675,9 @@ impl<'a> Typecheck<'a> {
                     }
                 };
                 let id_type = self.instantiate(&id_type);
-                let record_type = self.instantiate_(&record_type);
+                let record_type = instantiate_generic_variables(&mut self.named_variables,
+                                                                &self.subs,
+                                                                &record_type);
                 self.unify(&Type::record(new_types, new_fields), record_type)?;
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
@@ -768,7 +770,9 @@ impl<'a> Typecheck<'a> {
                     }
                 };
                 typ = self.instantiate(&typ);
-                actual_type = self.instantiate_(&actual_type);
+                actual_type = instantiate_generic_variables(&mut self.named_variables,
+                                                            &self.subs,
+                                                            &actual_type);
                 self.unify_span(span, &match_type, typ);
                 match_type = actual_type;
 
@@ -1274,31 +1278,7 @@ impl<'a> Typecheck<'a> {
 
     fn instantiate(&mut self, typ: &ArcType) -> ArcType {
         self.named_variables.clear();
-        self.instantiate_(typ)
-    }
-
-    fn instantiate_(&mut self, typ: &ArcType) -> ArcType {
-        use std::collections::hash_map::Entry;
-
-        types::walk_move_type(typ.clone(),
-                              &mut |typ| {
-            match *typ {
-                Type::Generic(ref generic) => {
-                    let var = match self.named_variables.entry(generic.id.clone()) {
-                        Entry::Vacant(entry) => entry.insert(self.subs.new_var()).clone(),
-                        Entry::Occupied(entry) => entry.get().clone(),
-                    };
-
-                    let mut var = (*var).clone();
-                    if let Type::Variable(ref mut var) = var {
-                        var.kind = generic.kind.clone();
-                    }
-
-                    Some(ArcType::from(var))
-                }
-                _ => None,
-            }
-        })
+        instantiate_generic_variables(&mut self.named_variables, &self.subs, typ)
     }
 
     fn error_on_duplicated_field(&mut self,

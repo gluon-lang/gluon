@@ -12,6 +12,7 @@ extern crate mopa;
 extern crate collect_mac;
 
 extern crate gluon_base as base;
+extern crate gluon_check as check;
 
 #[macro_use]
 pub mod api;
