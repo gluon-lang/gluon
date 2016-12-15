@@ -107,7 +107,7 @@ impl VmType for Hole {
     }
 }
 
-/// Type representing gluon's IO type#[derive(Debug)]
+/// Type representing gluon's IO type
 #[derive(Debug, PartialEq)]
 pub enum IO<T> {
     Value(T),
@@ -153,6 +153,19 @@ pub unsafe fn primitive_f<'vm, F>(name: &'static str,
     }
 }
 
+/// Creates a `GluonFunction` from a function implementing `VMFunction`
+///
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// fn test(_x: i32, _y: String) -> f64 {
+///     panic!()
+/// }
+///
+/// fn main() {
+///     primitive!(2 test);
+/// }
+/// ```
 #[macro_export]
 macro_rules! primitive {
     (0 $name: expr) => {
@@ -1251,8 +1264,9 @@ pub mod record {
     }
 }
 
+#[doc(hidden)]
 #[macro_export]
-macro_rules! types {
+macro_rules! field_decl_inner {
     ($($field: ident),*) => {
         $(
         #[allow(non_camel_case_types)]
@@ -1267,31 +1281,54 @@ macro_rules! types {
     }
 }
 
+/// Declares fields useable by the record macros
+///
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// # fn main() { }
+///
+/// field_decl! {x, y}
+/// ```
 #[macro_export]
-macro_rules! hlist {
+macro_rules! field_decl {
+    ($($field: ident),*) => {
+        mod _field { field_decl_inner!($($field),*); }
+    }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! record_no_decl_inner {
     () => { () };
     ($field: ident => $value: expr) => {
         $crate::api::record::HList((_field::$field, $value), ())
     };
     ($field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
         $crate::api::record::HList((_field::$field, $value),
-                                   hlist!($($field_tail => $value_tail),*))
-    }
+                                   record_no_decl_inner!($($field_tail => $value_tail),*))
+    };
 }
 
-#[macro_export]
-macro_rules! field_decl {
-    ($($field: ident),*) => {
-        mod _field { types!($($field),*); }
-    }
-}
-
+/// Macro that creates a record that can be passed to gluon. Reuses already declared fields
+/// instead of generating unique ones.
+///
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+///
+/// field_decl! {x, y, name}
+///
+/// fn main() {
+///     record_no_decl!(x => 1, y => 2, name => "Gluon");
+/// }
+/// ```
 #[macro_export]
 macro_rules! record_no_decl {
     ($($field: ident => $value: expr),*) => {
         {
             $crate::api::Record {
-                fields: hlist!($($field => $value),*)
+                fields: record_no_decl_inner!($($field => $value),*)
             }
         }
     }
@@ -1299,8 +1336,12 @@ macro_rules! record_no_decl {
 
 /// Macro that creates a record that can be passed to gluon
 ///
-/// ```rust,ignore
-/// record!(x => 1, y => 2, name => "Gluon")
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// fn main() {
+///     record!(x => 1, y => 2, name => "Gluon");
+/// }
 /// ```
 #[macro_export]
 macro_rules! record {
@@ -1308,6 +1349,74 @@ macro_rules! record {
         {
             field_decl!($($field),*);
             record_no_decl!($($field => $value),*)
+        }
+    }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! record_type_inner {
+    () => { () };
+    ($field: ident => $value: ty) => {
+        $crate::api::record::HList<(_field::$field, $value), ()>
+    };
+    ($field: ident => $value: ty, $($field_tail: ident => $value_tail: ty),*) => {
+        $crate::api::record::HList<(_field::$field, $value),
+                                record_type_inner!( $($field_tail => $value_tail),*)>
+    }
+}
+
+/// Creates a Rust type compatible with the type of `record_no_decl!`
+///
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// # fn main() { }
+/// // Fields used in `record_type!` needs to be forward declared
+/// field_decl! {x, y}
+/// fn new_vec(x: f64, y: f64) -> record_type!(x => f64, y => f64) {
+///     record_no_decl!(x => y, y => y)
+/// }
+/// ```
+#[macro_export]
+macro_rules! record_type {
+    ($($field: ident => $value: ty),*) => {
+        $crate::api::Record<
+            record_type_inner!($($field => $value),*)
+            >
+    }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! record_p_impl {
+    () => { () };
+    ($field: pat) => {
+        $crate::api::record::HList((_, $field), ())
+    };
+    ($field: pat, $($field_tail: pat),*) => {
+        $crate::api::record::HList((_, $field),
+                                record_p_impl!($($field_tail),*))
+    }
+}
+
+/// Creates a pattern which matches on marshalled gluon records
+///
+/// ```rust
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// fn main() {
+///     match record!(x => 1, y => "y") {
+///         record_p!(a, "y") => assert_eq!(a, 1),
+///         _ => assert!(false),
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! record_p {
+    ($($field: pat),*) => {
+        $crate::api::Record {
+            fields: record_p_impl!($($field),*)
         }
     }
 }
@@ -1632,13 +1741,3 @@ make_vm_function!(A, B, C, D);
 make_vm_function!(A, B, C, D, E);
 make_vm_function!(A, B, C, D, E, F);
 make_vm_function!(A, B, C, D, E, F, G);
-
-#[macro_export]
-macro_rules! vm_function {
-    ($func: expr) => ({
-        fn wrapper<'b, 'c>(vm: &Thread) {
-            $func.unpack_and_call(vm)
-        }
-        wrapper
-    })
-}
