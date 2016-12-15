@@ -905,6 +905,13 @@ impl<T, V> fmt::Debug for OpaqueValue<T, V>
     }
 }
 
+impl<T, V> Clone for OpaqueValue<T, V>
+    where T: Deref<Target = Thread> + Clone,
+{
+    fn clone(&self) -> Self {
+        OpaqueValue(self.0.clone(), self.1.clone())
+    }
+}
 
 impl<T, V> OpaqueValue<T, V>
     where T: Deref<Target = Thread>,
@@ -1525,6 +1532,17 @@ pub struct Function<T, F>
 {
     value: RootedValue<T>,
     _marker: PhantomData<F>,
+}
+
+impl<T, F> Clone for Function<T, F>
+    where T: Deref<Target = Thread> + Clone,
+{
+    fn clone(&self) -> Self {
+        Function {
+            value: self.value.clone(),
+            _marker: self._marker.clone(),
+        }
+    }
 }
 
 impl<T, F> Function<T, F>
