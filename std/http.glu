@@ -1,0 +1,105 @@
+let prelude = import "std/prelude.glu"
+let { Functor, Applicative, Alternative, Monad } = prelude
+let { (<<), id } = prelude.make_Category prelude.category_Function
+let { pure } = prelude.applicative_IO
+
+type Method = | Get | Post | Delete | Update
+type Failure = | DontProcess
+type Request = { method: Method }
+type Response = { body: String }
+type Handler a =
+    // Success
+    (a -> Request -> IO Response) ->
+    // Failure
+    (Failure -> Request -> IO Response) ->
+    Request ->
+    IO Response
+type Server = {}
+
+// Force the value to be a Handler
+let make: Handler a -> Handler a = id
+
+let functor: Functor Handler = {
+    map = \f handler ->
+        // FIXME type inference fails without this
+        let handler = make handler
+        make (\success failure request -> handler (success << f) failure request)
+}
+
+let flat_map f handler: (a -> Handler b) -> Handler a -> Handler b =
+    // FIXME type inference fails without this
+    let handler = make handler
+    make (\success failure request ->
+        let success2 a r = make (f a) success failure request
+        handler success2 failure request)
+
+
+let applicative: Applicative Handler = {
+    functor,
+    apply = \a m ->
+        let m = make m
+        flat_map (\f -> functor.map f m) a,
+    pure = \a -> make (\success _ request -> success a request)
+}
+let { (*>) } = prelude.make_Applicative applicative
+
+let alternative: Alternative Handler = {
+    applicative,
+    or = \l r -> make (\success failure request ->
+        let failure2 reason request2 =
+            match reason with
+            | DontProcess -> make r success failure request2
+
+        make l success failure2 request),
+    empty = make (\_ failure request -> failure DontProcess request)
+}
+let { or, empty, (<|>) } = prelude.make_Alternative alternative
+
+let monad: Monad Handler = {
+    applicative,
+    flat_map
+}
+
+let test predicate: (Request -> Bool) -> Handler () =
+    \success failure request ->
+        if predicate request then
+            success () request
+        else
+            failure DontProcess request
+
+let get handler: Handler a -> Handler a =
+    test (\request ->
+        match request.method with
+        | Get -> True
+        | _ -> False) *> handler
+
+let post handler: Handler a -> Handler a =
+    test (\request ->
+        match request.method with
+        | Post -> True
+        | _ -> False) *> handler
+
+let get_request : Handler Request =
+    \success _ request -> success request request
+
+let handle handler request : Handler Response -> Request -> IO Response =
+    let not_found _ _ =
+        pure { body = "404" }
+    handler (\response _ -> pure response) not_found request 
+
+{
+    Method,
+    Failure,
+    Request,
+    Response,
+    Handler,
+
+    functor,
+    applicative,
+    monad,
+
+    get_request,
+    handle,
+    get,
+    post
+}

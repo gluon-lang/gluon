@@ -29,6 +29,7 @@ gluon_vm = { path = "vm", version = "0.3.0" }
 
 log = "0.3.6"
 quick-error = "1.0.0"
+collect-mac = "0.1.0"
 futures = "0.1.11"
 
 # Binding crates
@@ -44,6 +45,9 @@ skeptic = { version = "0.6", optional = true }
 [dev-dependencies]
 collect-mac = "0.1.0"
 env_logger = "0.3.4"
+
+hyper = { version = "0.9.12", default-features = false }
+curl = "0.4.1"
 
 [features]
 default = ["regex"]
