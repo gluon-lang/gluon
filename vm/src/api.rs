@@ -1572,10 +1572,20 @@ impl<'vm, T, F: Any> Pushable<'vm> for Function<T, F>
         Ok(())
     }
 }
+
 impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Function<&'vm Thread, F>> {
         Some(Function {
             value: vm.root_value_ref(*value.0),
+            _marker: PhantomData,
+        })//TODO not type safe
+    }
+}
+
+impl<'vm, F> Getable<'vm> for Function<RootedThread, F> {
+    fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
+        Some(Function {
+            value: vm.root_value(*value.0),
             _marker: PhantomData,
         })//TODO not type safe
     }
