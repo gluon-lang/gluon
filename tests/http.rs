@@ -17,11 +17,13 @@ fn http() {
         .and_then(|path| path.parent())
         .expect("http executable")
         .join("examples/http");
-    let mut child = Command::new(http_path).spawn().unwrap();
+    let port = "2345";
+    let mut child = Command::new(http_path).arg(port).spawn().unwrap();
+
 
     let start = Instant::now();
     let mut easy = Easy::new();
-    easy.url("localhost").unwrap();
+    easy.url(&format!("localhost:{}", port)).unwrap();
     let out = Arc::new(Mutex::new(Vec::new()));
     {
         let out = out.clone();
@@ -29,16 +31,16 @@ fn http() {
             .unwrap();
     }
 
-    let mut response_code = Ok(0);
+    let mut result = None;
     while start.elapsed().as_secs() < 7 {
-        easy.perform().unwrap();
-        response_code = easy.response_code();
-        if response_code == Ok(200) {
+        result = Some(easy.perform());
+        if let Some(Ok(())) = result {
             break;
         }
     }
 
-    assert_eq!(response_code, Ok(200));
+    assert_eq!(result, Some(Ok(())));
+    assert_eq!(easy.response_code(), Ok(200));
     assert_eq!(from_utf8(&out.lock().unwrap()), Ok("Hello World"));
 
     child.kill().unwrap();
