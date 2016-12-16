@@ -3,20 +3,29 @@ let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category prelude.category_Function
 let { pure } = prelude.applicative_IO
 
+/// HTTP method
 type Method = | Get | Post | Delete | Update
+
+/// Type used by handlers to indicate why they could not process a request
 type Failure = | DontProcess
+
+/// HTTP server request
 type Request = { method: Method }
+
+/// HTTP server response
 type Response = { body: String }
+
+/// The main type of this micro http framework. A handler takes two continuations and a `Request` and
+/// cakks one of the continuations depending on if it can successfully handle the request or not
 type Handler a =
-    // Success
+    // Success continuation
     (a -> Request -> IO Response) ->
-    // Failure
+    // Failure continuation
     (Failure -> Request -> IO Response) ->
     Request ->
     IO Response
-type Server = {}
 
-// Force the value to be a Handler
+/// Force the value to be a Handler. Used to make the the type inference work for higher-kinded types
 let make: Handler a -> Handler a = id
 
 let functor: Functor Handler = {
@@ -45,6 +54,7 @@ let { (*>) } = prelude.make_Applicative applicative
 
 let alternative: Alternative Handler = {
     applicative,
+    // Tries to handle the request with `l`, if it fails with `DontProcess` then `r` is tried instead
     or = \l r -> make (\success failure request ->
         let failure2 reason request2 =
             match reason with
@@ -60,6 +70,7 @@ let monad: Monad Handler = {
     flat_map
 }
 
+/// Handles the request if `predicate` returns `True
 let test predicate: (Request -> Bool) -> Handler () =
     \success failure request ->
         if predicate request then
@@ -67,21 +78,25 @@ let test predicate: (Request -> Bool) -> Handler () =
         else
             failure DontProcess request
 
+/// Handles `Get` requests
 let get handler: Handler a -> Handler a =
     test (\request ->
         match request.method with
         | Get -> True
         | _ -> False) *> handler
 
+/// Handles `Post` requests
 let post handler: Handler a -> Handler a =
     test (\request ->
         match request.method with
         | Post -> True
         | _ -> False) *> handler
 
+/// Retrieves the HTTP request
 let get_request : Handler Request =
     \success _ request -> success request request
 
+/// Takes a `Handler` and a `Request` tries to process the request
 let handle handler request : Handler Response -> Request -> IO Response =
     let not_found _ _ =
         pure { body = "404" }

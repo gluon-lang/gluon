@@ -9,6 +9,7 @@ extern crate collect_mac;
 extern crate hyper;
 
 use std::env;
+use std::io::{stderr, Write};
 use std::marker::PhantomData;
 
 use self::hyper::method::Method;
@@ -25,6 +26,8 @@ use vm::internal::Value;
 
 use gluon::{Compiler, new_vm};
 
+// `Handler` is a type defined in http.glu but since we need to refer to it in the signature of
+// listen we define a phantom type to use with `OpaqueValue`
 struct Handler<T>(PhantomData<T>);
 
 impl<T: VmType + 'static> VmType for Handler<T> {
@@ -37,6 +40,7 @@ impl<T: VmType + 'static> VmType for Handler<T> {
     }
 }
 
+// Since we want to marshal types defined in hyper we use `Wrap` to implement the traits we need
 struct Wrap<T>(T);
 
 impl VmType for Wrap<Method> {
@@ -55,7 +59,7 @@ impl<'vm> Pushable<'vm> for Wrap<Method> {
             Get => 0,
             Post => 1,
             Delete => 2,
-            _ => return Err(VmError::Message(format!("Unhandled method")).into()),
+            _ => return Err(VmError::Message(format!("Method `{:?}` does not exist in gluon", self.0)).into()),
         }));
         Ok(())
     }
@@ -77,7 +81,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     type ListenFn = fn (OpaqueValue<RootedThread, Handler<Response>>, Request) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread.get_global("std.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
-    server.handle(move |request: HyperRequest, response: HyperResponse<_>| {
+    let result = server.handle(move |request: HyperRequest, response: HyperResponse<_>| {
         let gluon_request = record_no_decl! {
             method => Wrap(request.method)
         };
@@ -85,10 +89,15 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
             IO::Value(record_p!{ body }) => {
                 response.send(body.as_bytes()).unwrap();
             }
-            IO::Exception(_) => panic!(),
+            IO::Exception(ref err) => {
+                let _ = stderr().write(err.as_bytes());
+            }
         }
-    }).unwrap();
-    IO::Value(())
+    });
+    match result {
+        Ok(_) => IO::Value(()),
+        Err(err) => IO::Exception(err.to_string())
+    }
 }
 
 pub fn load(vm: &Thread) -> Result<()> {
@@ -124,7 +133,8 @@ fn main() {
         .unwrap_or_else(|err| panic!("{}", err));
     load(&thread).unwrap();
 
-    let (mut listen, _) = Compiler::new().run_expr::<FunctionRef<fn(i32) -> IO<()>>>(&thread, "http_test", expr)
+    let (mut listen, _) = Compiler::new()
+        .run_expr::<FunctionRef<fn(i32) -> IO<()>>>(&thread, "http_test", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     
     listen.call(port)
