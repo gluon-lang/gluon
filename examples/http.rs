@@ -32,7 +32,7 @@ struct Handler<T>(PhantomData<T>);
 impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        let typ = (*vm.global_env().get_env().find_type_info("std.http.Handler").unwrap())
+        let typ = (*vm.global_env().get_env().find_type_info("examples.http_types.Handler").unwrap())
             .clone()
             .into_type();
         Type::app(typ, collect![T::make_type(vm)])
@@ -45,7 +45,7 @@ struct Wrap<T>(T);
 impl VmType for Wrap<Method> {
     type Type = Method;
     fn make_type(vm: &Thread) -> ArcType {
-        (*vm.global_env().get_env().find_type_info("std.http.Method").unwrap())
+        (*vm.global_env().get_env().find_type_info("examples.http_types.Method").unwrap())
             .clone()
             .into_type()
     }
@@ -82,7 +82,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
 
     let server = Server::http(("localhost", port as u16)).unwrap();
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, Request) -> IO<Response>;
-    let handle: Function<RootedThread, ListenFn> = thread.get_global("std.http.handle")
+    let handle: Function<RootedThread, ListenFn> = thread.get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
     let result = server.handle(move |request: HyperRequest, response: HyperResponse<_>| {
         let gluon_request = record_no_decl! {
@@ -122,18 +122,19 @@ fn main() {
 
         let { (*>) } = prelude.make_Applicative prelude.applicative_IO
 
-        let { handle, get, applicative } = import! "std/http.glu"
+        let { handle, get, applicative, listen } = import! "examples/http.glu"
         let { (*>), pure } = prelude.make_Applicative applicative
 
         let handler = get (pure { body = "Hello World" })
 
         \port ->
             io.println ("Opened server on port " <> show port) *>
-                http_prim.listen port handler
+                listen port handler
     "#;
     let thread = new_vm();
+
     Compiler::new()
-        .run_expr::<()>(&thread, "", r#"let _ = import! "std/http.glu" in () "#)
+        .run_expr::<()>(&thread, "", r#"let _ = import! "examples/http_types.glu" in () "#)
         .unwrap_or_else(|err| panic!("{}", err));
     load(&thread).unwrap();
 

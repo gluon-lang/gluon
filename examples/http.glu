@@ -3,27 +3,12 @@ let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category prelude.category_Function
 let { pure } = prelude.applicative_IO
 
-/// HTTP method
-type Method = | Get | Post | Delete | Update
-
-/// Type used by handlers to indicate why they could not process a request
-type Failure = | DontProcess
-
-/// HTTP server request
-type Request = { method: Method }
-
-/// HTTP server response
-type Response = { body: String }
-
-/// The main type of this micro http framework. A handler takes two continuations and a `Request` and
-/// cakks one of the continuations depending on if it can successfully handle the request or not
-type Handler a =
-    // Success continuation
-    (a -> Request -> IO Response) ->
-    // Failure continuation
-    (Failure -> Request -> IO Response) ->
-    Request ->
-    IO Response
+let {
+    Method,
+    Failure,
+    Request,
+    Response,
+    Handler } = import "examples/http_types.glu"
 
 /// Force the value to be a Handler. Used to make the the type inference work for higher-kinded types
 let make: Handler a -> Handler a = id
@@ -116,5 +101,6 @@ let handle handler request : Handler Response -> Request -> IO Response =
     get_request,
     handle,
     get,
-    post
+    post,
+    listen = http_prim.listen
 }
