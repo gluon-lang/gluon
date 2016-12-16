@@ -8,9 +8,6 @@
 extern crate log;
 #[macro_use]
 extern crate quick_error;
-#[macro_use]
-extern crate collect_mac;
-
 extern crate futures;
 
 #[macro_use]

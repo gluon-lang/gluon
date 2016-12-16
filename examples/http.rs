@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate gluon_base as base;
 #[macro_use]
 extern crate gluon_vm as vm;
@@ -59,7 +58,11 @@ impl<'vm> Pushable<'vm> for Wrap<Method> {
             Get => 0,
             Post => 1,
             Delete => 2,
-            _ => return Err(VmError::Message(format!("Method `{:?}` does not exist in gluon", self.0)).into()),
+            _ => {
+                return Err(VmError::Message(format!("Method `{:?}` does not exist in gluon",
+                                                    self.0))
+                    .into())
+            }
         }));
         Ok(())
     }
@@ -78,7 +81,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     use self::hyper::server::Response as HyperResponse;
 
     let server = Server::http(("localhost", port as u16)).unwrap();
-    type ListenFn = fn (OpaqueValue<RootedThread, Handler<Response>>, Request) -> IO<Response>;
+    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, Request) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread.get_global("std.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
     let result = server.handle(move |request: HyperRequest, response: HyperResponse<_>| {
@@ -96,12 +99,13 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     });
     match result {
         Ok(_) => IO::Value(()),
-        Err(err) => IO::Exception(err.to_string())
+        Err(err) => IO::Exception(err.to_string()),
     }
 }
 
 pub fn load(vm: &Thread) -> Result<()> {
-    vm.define_global("http_prim", record! {
+    vm.define_global("http_prim",
+                       record! {
         listen => primitive!(2 listen)
     })?;
     Ok(())
@@ -111,14 +115,14 @@ fn main() {
     let port = env::args().nth(1).map(|port| port.parse::<i32>().expect("port")).unwrap_or(80);
 
     let expr = r#"
-        let prelude = import "std/prelude.glu"
+        let prelude = import! "std/prelude.glu"
         let { show } = prelude.show_Int
-        let string = import "std/string.glu"
+        let string = import! "std/string.glu"
         let { (<>) } = prelude.make_Monoid string.monoid
 
         let { (*>) } = prelude.make_Applicative prelude.applicative_IO
 
-        let { handle, get, applicative } = import "std/http.glu"
+        let { handle, get, applicative } = import! "std/http.glu"
         let { (*>), pure } = prelude.make_Applicative applicative
 
         let handler = get (pure { body = "Hello World" })
@@ -129,14 +133,14 @@ fn main() {
     "#;
     let thread = new_vm();
     Compiler::new()
-        .run_expr::<()>(&thread, "", r#"let _ = import "std/http.glu" in () "#)
+        .run_expr::<()>(&thread, "", r#"let _ = import! "std/http.glu" in () "#)
         .unwrap_or_else(|err| panic!("{}", err));
     load(&thread).unwrap();
 
     let (mut listen, _) = Compiler::new()
         .run_expr::<FunctionRef<fn(i32) -> IO<()>>>(&thread, "http_test", expr)
         .unwrap_or_else(|err| panic!("{}", err));
-    
+
     listen.call(port)
         .unwrap_or_else(|err| panic!("{}", err));
 }

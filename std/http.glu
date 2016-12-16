@@ -1,4 +1,4 @@
-let prelude = import "std/prelude.glu"
+let prelude = import! "std/prelude.glu"
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category prelude.category_Function
 let { pure } = prelude.applicative_IO

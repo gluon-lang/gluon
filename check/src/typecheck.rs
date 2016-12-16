@@ -275,9 +275,16 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find_record(&self, fields: &[Symbol]) -> TcResult<(ArcType, ArcType)> {
-        self.environment
-            .find_record(fields)
-            .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })
+        // If fields is empty it is going to match any record which means this function probably
+        // returns the wron record as the record we expect can still contain type fields.
+        // Just return an error so that inference continues without any guessed record type.
+        if fields.is_empty() {
+            Err(TypeError::UndefinedRecord { fields: fields.to_owned() })
+        } else {
+            self.environment
+                .find_record(fields)
+                .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })
+        }
     }
 
     fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, ArcType>> {
