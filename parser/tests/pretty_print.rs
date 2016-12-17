@@ -1,13 +1,17 @@
 extern crate pretty;
 extern crate difference;
+extern crate itertools;
 
 extern crate gluon_parser as parser;
 extern crate gluon_base as base;
 
 use std::fs::File;
 use std::io::Read;
+use std::iter::repeat;
 
 use difference::assert_diff;
+
+use itertools::Itertools;
 
 use base::source::Source;
 use base::pretty_print::ExprPrinter;
@@ -25,6 +29,8 @@ fn map() {
         .unwrap()
         .read_to_string(&mut contents)
         .unwrap();
+    // The output uses \n line endings
+    contents = contents.replace("\r\n", "\n");
 
     let expr = parse_string(&mut MockEnv::new(), &contents).unwrap();
 
@@ -33,10 +39,19 @@ fn map() {
     let doc = printer.pretty_expr(&expr);
     let mut out = Vec::new();
     doc.1.render(110, &mut out).unwrap();
+    out.push(b'\n');
+    let out_str = ::std::str::from_utf8(&out).unwrap();
+    // Remove any trailing whitespace that pretty has emitted (on lines that only contains whitespace)
+    let out_str = out_str
+        .lines()
+        .map(|line| line.trim_right())
+        .interleave_shortest(repeat("\n"))
+        .collect::<String>();
+
     use std::io::Write;
     File::create("../test.glu")
         .unwrap()
         .write_all(&out)
         .unwrap();
-    assert_diff(&contents, ::std::str::from_utf8(&out).unwrap(), " ", 0);
+    assert_diff(&contents, &out_str, " ", 0);
 }

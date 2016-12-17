@@ -27,8 +27,7 @@ and make ord =
     and to_list m =
         let (++) = prelude.monoid_List.append
         match m with
-        | Bin key value l r ->
-            to_list l ++ Cons { key, value } (to_list r)
+        | Bin key value l r -> to_list l ++ Cons { key, value } (to_list r)
         | Tip -> Nil
 
     let fold f x m =
@@ -38,8 +37,7 @@ and make ord =
             fold f (fold f y l) r
         | Tip -> x
 
-    let append l r =
-        fold insert l r
+    let append l r = fold insert l r
 
     let monoid = { append, empty }
 

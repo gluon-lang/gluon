@@ -154,11 +154,19 @@ impl<'a> ExprPrinter<'a> {
                     .group()
             }
             Expr::Block(ref elems) => {
-                arena.concat(
-                    elems
-                        .iter()
-                        .map(|elem| pretty(elem).group().append(arena.newline())),
-                )
+                if elems.len() == 1 {
+                    chain![arena;
+                        "(",
+                        pretty(&elems[0]),
+                        ")"
+                    ]
+                } else {
+                    arena.concat(
+                        elems
+                            .iter()
+                            .map(|elem| pretty(elem).group().append(arena.newline())),
+                    )
+                }
             }
             Expr::Ident(ref id) => ident(arena, id.name.as_ref()),
             Expr::IfElse(ref body, ref if_true, ref if_false) => {
