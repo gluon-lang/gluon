@@ -6,8 +6,9 @@ extern crate gluon_parser as parser;
 extern crate gluon_base as base;
 
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::iter::repeat;
+use std::path::Path;
 
 use difference::assert_diff;
 
@@ -22,13 +23,9 @@ use support::MockEnv;
 
 mod support;
 
-#[test]
-fn map() {
+fn test_format(name: &str) {
     let mut contents = String::new();
-    File::open("../std/map.glu")
-        .unwrap()
-        .read_to_string(&mut contents)
-        .unwrap();
+    File::open(Path::new("../std").join(name)).unwrap().read_to_string(&mut contents).unwrap();
     // The output uses \n line endings
     contents = contents.replace("\r\n", "\n");
 
@@ -47,11 +44,22 @@ fn map() {
         .map(|line| line.trim_right())
         .interleave_shortest(repeat("\n"))
         .collect::<String>();
+    if contents != out_str {
+        let out_path = Path::new(env!("OUT_DIR")).join(name);
+        File::create(out_path)
+            .unwrap()
+            .write_all(out_str.as_bytes())
+            .unwrap();
+        assert_diff(&contents, &out_str, " ", 0);
+    }
+}
 
-    use std::io::Write;
-    File::create("../test.glu")
-        .unwrap()
-        .write_all(&out)
-        .unwrap();
-    assert_diff(&contents, &out_str, " ", 0);
+#[test]
+fn map() {
+    test_format("map.glu");
+}
+
+#[test]
+fn types() {
+    test_format("types.glu");
 }

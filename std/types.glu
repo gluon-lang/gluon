@@ -8,4 +8,4 @@ type Option a = | None | Some a
 type Result e t = | Err e | Ok t
 /// `Ordering` represents the result of comparing two values
 type Ordering = | LT | EQ | GT
-in { Bool, Option, Result, Ordering }
+{ Bool, Option, Result, Ordering }

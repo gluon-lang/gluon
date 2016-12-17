@@ -4,6 +4,7 @@ use itertools::Itertools;
 use pretty::{Arena, DocAllocator, DocBuilder};
 
 use ast::{Expr, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern};
+use pos::{BytePos, Span};
 use source::Source;
 use types::{Type, pretty_print as pretty_type};
 
@@ -23,16 +24,25 @@ fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
         Expr::LetBindings(..) |
         Expr::Match(..) |
         Expr::TypeBindings(..) => true,
+        Expr::Lambda(ref lambda) => forced_new_line(&lambda.body.value),
         _ => false,
     }
 }
 
-pub fn pretty_pattern<'a, Id>(
-    arena: &'a Arena<'a>,
-    pattern: &'a SpannedPattern<Id>,
-) -> DocBuilder<'a, Arena<'a>>
-where
-    Id: AsRef<str>,
+fn doc_comment<'a>(arena: &'a Arena<'a>, text: &'a Option<String>) -> DocBuilder<'a, Arena<'a>> {
+    match *text {
+        Some(ref text) => {
+            arena.concat(text.lines()
+                .map(|line| arena.text("/// ").append(line).append(arena.newline())))
+        }
+        None => arena.nil(),
+    }
+}
+
+pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
+                              pattern: &'a SpannedPattern<Id>)
+                              -> DocBuilder<'a, Arena<'a>>
+    where Id: AsRef<str>,
 {
     match pattern.value {
         Pattern::Constructor(ref ctor, ref args) => {
@@ -114,9 +124,17 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
+        self.pretty_expr_(BytePos::from(0), expr)
+    }
+    pub fn pretty_expr_<Id>(&'a self,
+                            previous_end: BytePos,
+                            expr: &'a SpannedExpr<Id>)
+                            -> DocBuilder<'a, Arena<'a>>
+        where Id: AsRef<str>,
+    {
         let arena = &self.arena;
 
-        let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr(next);
+        let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start, next);
 
         let newlines = |prev, next| {
             let prev_line = self.source.line_number_at_byte(prev);
@@ -132,7 +150,7 @@ impl<'a> ExprPrinter<'a> {
         }
 
 
-        match expr.value {
+        let doc = match expr.value {
             Expr::App(ref func, ref args) => {
                 pretty(func).append(
                     arena.concat(args.iter().map(|arg| arena.space().append(pretty(arg)))),
@@ -198,6 +216,7 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::LetBindings(ref binds, ref body) => {
                 chain![arena;
+                    doc_comment(arena, &binds.first().unwrap().comment),
                     "let ",
                     arena.concat(binds.iter().map(|bind| {
                         chain![arena;
@@ -289,12 +308,12 @@ impl<'a> ExprPrinter<'a> {
                     "}"
                 ].group()
             }
-            Expr::Tuple(ref exprs) => {
+            Expr::Tuple { ref elems, .. } => {
                 arena
                     .text("(")
                     .append(
                         arena.concat(
-                            exprs
+                            elems
                                 .iter()
                                 .map(|elem| pretty(elem))
                                 .intersperse(arena.text(",").append(arena.space())),
@@ -305,6 +324,7 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::TypeBindings(ref binds, ref body) => {
                 chain![arena;
+                    doc_comment(arena, &binds.first().unwrap().comment),
                     "type ",
                     arena.concat(binds.iter().map(|bind| {
                         chain![arena;
@@ -325,7 +345,20 @@ impl<'a> ExprPrinter<'a> {
                 ]
             }
             Expr::Error => arena.text("<error expr>"),
-        }
+        };
+        arena.concat(self.source
+                .comments_between(Span::new(previous_end, expr.span.start))
+                .map(|comment| {
+                    chain![arena;
+                        if comment.is_empty() {
+                            arena.nil()
+                        } else {
+                            arena.text("// ").append(comment)
+                        },
+                        arena.newline()
+                    ]
+                }))
+            .append(doc)
     }
 
     fn hang<Id>(&'a self, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>

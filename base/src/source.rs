@@ -1,7 +1,7 @@
 //! Module containing types and functions for mapping between byte indexes and line and column
 //! locations
 
-use pos::{BytePos, Column, Line, Location};
+use pos::{BytePos, Column, Line, Location, Span};
 
 /// Type which provides a bidirectional mapping between byte offsets and line and column locations
 /// for some source file
@@ -113,6 +113,37 @@ impl<'a> Source<'a> {
     /// Returns the line and column location of `byte`
     pub fn location(&self, byte: BytePos) -> Option<Location> {
         self.lines.location(byte)
+    }
+
+    pub fn comments_between(&self, span: Span<BytePos>) -> CommentIter {
+        CommentIter { src: &self.src[span.start.to_usize()..span.end.to_usize()] }
+    }
+}
+
+pub struct CommentIter<'a> {
+    src: &'a str,
+}
+
+impl<'a> Iterator for CommentIter<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        if self.src.is_empty() {
+            None
+        } else {
+            self.src = self.src.trim_matches(|c: char| c.is_whitespace() && c != '\n');
+            if self.src.starts_with("//") && !self.src.starts_with("///") {
+                let comment_line = self.src[2..].lines().next().unwrap();
+                // Add 1 to skip `\n' as well
+                self.src = &self.src[(2 + comment_line.len() + 1)..];
+                Some(comment_line.trim_left())
+            } else if self.src.starts_with("\n") {
+                self.src = &self.src[1..];
+                Some("")
+            } else {
+                None
+            }
+        }
     }
 }
 
