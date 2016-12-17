@@ -216,7 +216,7 @@ impl<T: Substitutable> Substitution<T> {
             Some(_) => {
                 panic!(
                     "Tried to insert variable which is not allowed as that would cause memory \
-                        unsafety"
+                     unsafety"
                 )
             }
             None => {
@@ -320,10 +320,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     {
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
-        if typ.get_var().map_or(
-            false,
-            |other| other.get_id() == id.get_id(),
-        )
+        if typ.get_var()
+            .map_or(false, |other| other.get_id() == id.get_id())
         {
             return Ok(());
         }
@@ -341,10 +339,9 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         }
         match typ.get_var() {
             Some(other_id) => {
-                self.union.borrow_mut().union(
-                    id.get_id() as usize,
-                    other_id.get_id() as usize,
-                );
+                self.union
+                    .borrow_mut()
+                    .union(id.get_id() as usize, other_id.get_id() as usize);
                 self.update_level(id.get_id(), other_id.get_id());
                 self.update_level(other_id.get_id(), id.get_id());
             }

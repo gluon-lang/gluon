@@ -154,8 +154,8 @@ pub fn type_decl(
         vec![
             TypeBinding {
                 comment: None,
-                name: name.clone(),
-                alias: AliasData::new(name, args, typ),
+                name: no_loc(name.clone()),
+                alias: alias(name, args, typ),
                 finalized_alias: None,
             },
         ],
@@ -217,4 +217,12 @@ pub fn array(fields: Vec<SpExpr>) -> SpExpr {
 
 pub fn error() -> SpExpr {
     no_loc(Expr::Error)
+}
+
+pub fn alias<Id>(
+    name: Id,
+    args: Vec<Generic<Id>>,
+    typ: ArcType<Id>,
+) -> Spanned<AliasData<Id, ArcType<Id>>, BytePos> {
+    no_loc(AliasData::new(name, args, typ))
 }

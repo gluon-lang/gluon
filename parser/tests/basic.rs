@@ -10,7 +10,7 @@ mod support;
 
 use base::ast::*;
 use base::pos::{BytePos, Span, Spanned};
-use base::types::{AliasData, Field, Type};
+use base::types::{Field, Type};
 use support::*;
 
 #[test]
@@ -123,14 +123,14 @@ fn type_mutually_recursive() {
     let binds = vec![
         TypeBinding {
             comment: None,
-            name: intern("Test"),
-            alias: AliasData::new(intern("Test"), Vec::new(), test),
+            name: no_loc(intern("Test")),
+            alias: alias(intern("Test"), Vec::new(), test),
             finalized_alias: None,
         },
         TypeBinding {
             comment: None,
-            name: intern("Test2"),
-            alias: AliasData::new(intern("Test2"), Vec::new(), test2),
+            name: no_loc(intern("Test2")),
+            alias: alias(intern("Test2"), Vec::new(), test2),
             finalized_alias: None,
         },
     ];
@@ -217,17 +217,12 @@ match None with
                 (
                     Pattern::Constructor(
                         TypedIdent::new(intern("Some")),
-                        vec![
-                            no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
-                        ],
+                        vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))],
                     ),
                     id("x")
                 ),
                 (
-                    Pattern::Constructor(
-                        TypedIdent::new(intern("None")),
-                        vec![],
-                    ),
+                    Pattern::Constructor(TypedIdent::new(intern("None")), vec![]),
                     int(0)
                 ),
             ],
@@ -466,8 +461,8 @@ id
             vec![
                 TypeBinding {
                     comment: Some("Test type ".into()),
-                    name: intern("Test"),
-                    alias: AliasData::new(intern("Test"), Vec::new(), typ("Int")),
+                    name: no_loc(intern("Test")),
+                    alias: alias(intern("Test"), Vec::new(), typ("Int")),
                     finalized_alias: None,
                 },
             ],
@@ -497,8 +492,8 @@ id
                 vec![
                     TypeBinding {
                         comment: Some("Test type ".into()),
-                        name: intern("Test"),
-                        alias: AliasData::new(intern("Test"), Vec::new(), typ("Int")),
+                        name: no_loc(intern("Test")),
+                        alias: alias(intern("Test"), Vec::new(), typ("Int")),
                         finalized_alias: None,
                     },
                 ],
@@ -525,8 +520,8 @@ id
             vec![
                 TypeBinding {
                     comment: Some("Merge\nconsecutive\nline comments.".into()),
-                    name: intern("Test"),
-                    alias: AliasData::new(intern("Test"), Vec::new(), typ("Int")),
+                    name: no_loc(intern("Test")),
+                    alias: alias(intern("Test"), Vec::new(), typ("Int")),
                     finalized_alias: None,
                 },
             ],

@@ -60,9 +60,7 @@ fn missing_match_expr() {
         expr,
         Some(case(
             error(),
-            vec![
-                (Pattern::Ident(TypedIdent::new(intern("x"))), id("x")),
-            ],
+            vec![(Pattern::Ident(TypedIdent::new(intern("x"))), id("x"))],
         ))
     );
 
@@ -167,14 +165,14 @@ fn missing_pattern() {
     let result = parse(expr);
     assert!(result.is_err());
     let (expr, err) = result.unwrap_err();
-    assert_eq!(expr,
-               Some(case(int(1),
-                         vec![(Pattern::Error, id("x"))])));
+    assert_eq!(expr, Some(case(int(1), vec![(Pattern::Error, id("x"))])));
 
     let error = Error::UnexpectedToken("RArrow".into(), vec![]);
     let span = pos::span(BytePos::from(24), BytePos::from(26));
-    assert_eq!(remove_expected(err),
-               ParseErrors::from(vec![pos::spanned(span, error)]));
+    assert_eq!(
+        remove_expected(err),
+        ParseErrors::from(vec![pos::spanned(span, error)])
+    );
 }
 
 #[test]
@@ -188,14 +186,14 @@ fn incomplete_alternative() {
     let result = parse(expr);
     assert!(result.is_err());
     let (expr, err) = result.unwrap_err();
-    assert_eq!(expr,
-               Some(case(int(1),
-                         vec![(Pattern::Error, error())])));
+    assert_eq!(expr, Some(case(int(1), vec![(Pattern::Error, error())])));
 
     let error = Error::UnexpectedToken("CloseBlock".into(), vec![]);
     let span = pos::span(BytePos::from(24), BytePos::from(26));
-    assert_eq!(remove_expected(err),
-               ParseErrors::from(vec![pos::spanned(span, error)]));
+    assert_eq!(
+        remove_expected(err),
+        ParseErrors::from(vec![pos::spanned(span, error)])
+    );
 }
 
 #[test]
@@ -210,15 +208,23 @@ fn incomplete_alternative_before_complete_alternative() {
     let result = parse(expr);
     assert!(result.is_err());
     let (expr, err) = result.unwrap_err();
-    assert_eq!(expr,
-               Some(case(int(1),
-                         vec![(Pattern::Error, error()),
-                              (Pattern::Ident(TypedIdent::new(intern("x"))), id("x"))])));
+    assert_eq!(
+        expr,
+        Some(case(
+            int(1),
+            vec![
+                (Pattern::Error, error()),
+                (Pattern::Ident(TypedIdent::new(intern("x"))), id("x")),
+            ],
+        ))
+    );
 
     let error = Error::UnexpectedToken("Pipe".into(), vec![]);
     let span = pos::span(BytePos::from(24), BytePos::from(24));
-    assert_eq!(remove_expected(err),
-               ParseErrors::from(vec![pos::spanned(span, error)]));
+    assert_eq!(
+        remove_expected(err),
+        ParseErrors::from(vec![pos::spanned(span, error)])
+    );
 }
 
 #[test]
@@ -241,7 +247,7 @@ fn incomplete_alternative_with_partial_pattern() {
                     Pattern::Record {
                         typ: Type::hole(),
                         types: vec![],
-                        fields: vec![(intern("x"), Some(no_loc(Pattern::Error)))]
+                        fields: vec![(intern("x"), Some(no_loc(Pattern::Error)))],
                     },
                     error()
                 ),
@@ -251,10 +257,7 @@ fn incomplete_alternative_with_partial_pattern() {
 
     let errors = vec![
         no_loc(Error::UnexpectedToken("RBrace".into(), vec![])),
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))
+        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
     ];
-    assert_eq!(
-        remove_expected(err),
-        ParseErrors::from(errors)
-    );
+    assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }

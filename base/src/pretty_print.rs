@@ -1,7 +1,10 @@
+use std::iter::repeat;
+
 use itertools::Itertools;
 use pretty::{Arena, DocAllocator, DocBuilder};
 
 use ast::{Expr, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern};
+use source::Source;
 use types::{Type, pretty_print as pretty_type};
 
 const INDENT: usize = 4;
@@ -22,18 +25,6 @@ fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
         Expr::TypeBindings(..) => true,
         _ => false,
     }
-}
-
-fn hang<'a, Id>(arena: &'a Arena<'a>, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
-where
-    Id: AsRef<str>,
-{
-    let line = if forced_new_line(&expr.value) {
-        arena.newline()
-    } else {
-        arena.space()
-    };
-    line.append(pretty_expr(arena, &expr.value))
 }
 
 pub fn pretty_pattern<'a, Id>(
@@ -102,197 +93,242 @@ where
                 ")"
             ]
         }
-        Pattern::Error => arena.text("<error>")
+        Pattern::Error => arena.text("<error>"),
     }
 }
 
-pub fn pretty_expr<'a, Id>(arena: &'a Arena<'a>, expr: &'a Expr<Id>) -> DocBuilder<'a, Arena<'a>>
-where
-    Id: AsRef<str>,
-{
-    let pretty = |expr: &'a SpannedExpr<_>| pretty_expr(arena, &expr.value);
-    match *expr {
-        Expr::App(ref func, ref args) => {
-            pretty(func).append(
-                arena.concat(args.iter().map(|arg| arena.text(" ").append(pretty(arg)))),
-            )
+pub struct ExprPrinter<'a> {
+    arena: Arena<'a>,
+    source: &'a Source<'a>,
+}
+
+impl<'a> ExprPrinter<'a> {
+    pub fn new(source: &'a Source<'a>) -> ExprPrinter<'a> {
+        ExprPrinter {
+            arena: Arena::new(),
+            source: source,
         }
-        Expr::Array(ref array) => {
-            arena
-                .text("[")
-                .append(
-                    arena.concat(
-                        array
-                            .exprs
-                            .iter()
-                            .map(|elem| pretty(elem))
-                            .intersperse(arena.text(",").append(arena.space())),
-                    ),
-                )
-                .append("]")
-                .group()
-        }
-        Expr::Block(ref elems) => {
+    }
+
+    pub fn pretty_expr<Id>(&'a self, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        let arena = &self.arena;
+
+        let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr(next);
+
+        let newlines = |prev, next| {
+            let prev_line = self.source.line_number_at_byte(prev);
+            let next_line = self.source.line_number_at_byte(next);
             arena.concat(
-                elems
-                    .iter()
-                    .map(|elem| pretty(elem).group().append(arena.newline())),
+                repeat(arena.newline()).take((next_line - prev_line).to_usize()),
             )
-        }
-        Expr::Ident(ref id) => ident(arena, id.name.as_ref()),
-        Expr::IfElse(ref body, ref if_true, ref if_false) => {
-            chain![arena;
-                "if",
-                pretty(body),
-                "then",
-                pretty(if_true),
-                "else",
-                pretty(if_false)
-            ]
-        }
-        Expr::Infix(ref l, ref op, ref r) => {
-            chain![arena;
-                pretty(l),
-                " ",
-                op.value.name.as_ref(),
-                " ",
-                pretty(r)
-            ]
-        }
-        Expr::Lambda(ref lambda) => {
-            chain![arena;
-                "\\",
-                arena.concat(lambda.args.iter().map(|arg| arena.text(arg.name.as_ref()).append(" "))),
-                "->",
-                hang(arena, &lambda.body)
-            ]
-        }
-        Expr::LetBindings(ref binds, ref body) => {
-            chain![arena;
-                "let ",
-                arena.concat(binds.iter().map(|bind| {
-                    chain![arena;
-                        chain![arena;
-                            pretty_pattern(arena, &bind.name),
-                            " ",
-                            arena.concat(bind.args.iter().map(|arg| {
-                                arena.text(arg.name.as_ref()).append(" ")
-                            }))
-                        ].group(),
-                        match *bind.typ {
-                            Type::Hole => arena.nil(),
-                            ref typ => arena.text(": ").append(pretty_type(arena, typ)),
-                        },
-                        "=",
-                        hang(arena, &bind.expr)
-                    ].group().nest(INDENT)
-                }).intersperse(arena.newline().append("and "))),
-                arena.newline(),
-                pretty(body)
-            ]
-        }
-        Expr::Literal(ref literal) => {
-            match *literal {
-                Literal::Byte(b) => arena.text(format!("b{}", b)),
-                Literal::Char(c) => arena.text(format!("{:?}", c)),
-                Literal::Float(f) => arena.text(format!("{}", f)),
-                Literal::Int(i) => arena.text(format!("{}", i)),
-                Literal::String(ref s) => arena.text(format!("{:?}", s)),
+        };
+        macro_rules! newlines_iter {
+            ($iterable: expr) => {
+                $iterable.into_iter().tuple_windows().map(|(prev, next)| newlines(prev.end, next.start))
             }
         }
-        Expr::Match(ref expr, ref alts) => {
-            chain![arena;
-                "match ",
-                pretty(expr),
-                " with",
-                arena.newline(),
-                arena.concat(alts.iter().map(|alt| {
-                    chain![arena;
-                        "| ",
-                        pretty_pattern(arena, &alt.pattern),
-                        " ->",
-                        hang(arena, &alt.expr).group().nest(INDENT)
-                    ]
-                }).intersperse(arena.newline()))
-            ]
-        }
-        Expr::Projection(ref expr, ref field, _) => {
-            chain![arena;
-                pretty(expr),
-                ".",
-                field.as_ref()
-            ]
-        }
-        Expr::Record {
-            ref types,
-            ref exprs,
-            ..
-        } => {
-            chain![arena;
-                "{",
-                arena.concat(types.iter().map(|field| {
-                    chain![arena;
-                        arena.space(),
-                        field.name.as_ref()
-                    ]
-                }).chain(exprs.iter().map(|field| {
-                    chain![arena;
-                        arena.space(),
-                        field.name.as_ref(),
-                        match field.value {
-                            Some(ref expr) => {
-                                chain![arena;
-                                    " =",
-                                    arena.space(),
-                                    pretty(&expr)
-                                ]
-                            },
-                            None => arena.nil(),
-                        }
-                    ]
-                })).intersperse(arena.text(","))).nest(INDENT),
-                if types.is_empty() && exprs.is_empty() {
-                    arena.nil()
-                } else {
-                    arena.space()
-                },
-                "}"
-            ].group()
-        }
-        Expr::Tuple { ref elems, .. } => {
-            arena
-                .text("(")
-                .append(
-                    arena.concat(
-                        elems
-                            .iter()
-                            .map(|elem| pretty(elem))
-                            .intersperse(arena.text(",").append(arena.space())),
-                    ),
+
+
+        match expr.value {
+            Expr::App(ref func, ref args) => {
+                pretty(func).append(
+                    arena.concat(args.iter().map(|arg| arena.space().append(pretty(arg)))),
                 )
-                .append(")")
-                .group()
-        }
-        Expr::TypeBindings(ref binds, ref body) => {
+            }
+            Expr::Array(ref array) => {
+                arena
+                    .text("[")
+                    .append(
+                        arena.concat(
+                            array
+                                .exprs
+                                .iter()
+                                .map(|elem| pretty(elem))
+                                .intersperse(arena.text(",").append(arena.space())),
+                        ),
+                    )
+                    .append("]")
+                    .group()
+            }
+            Expr::Block(ref elems) => {
+                arena.concat(
+                    elems
+                        .iter()
+                        .map(|elem| pretty(elem).group().append(arena.newline())),
+                )
+            }
+            Expr::Ident(ref id) => ident(arena, id.name.as_ref()),
+            Expr::IfElse(ref body, ref if_true, ref if_false) => {
+                chain![arena;
+                    "if",
+                    pretty(body),
+                    "then",
+                    pretty(if_true),
+                    "else",
+                    pretty(if_false)
+                ]
+            }
+            Expr::Infix(ref l, ref op, ref r) => {
+                chain![arena;
+                    pretty(l),
+                    " ",
+                    op.value.name.as_ref(),
+                    " ",
+                    pretty(r)
+                ]
+            }
+            Expr::Lambda(ref lambda) => {
             chain![arena;
-                "type ",
-                arena.concat(binds.iter().map(|bind| {
-                    chain![arena;
-                        bind.name.as_ref(),
-                        " ",
-                        arena.concat(bind.alias.args.iter().map(|arg| {
-                            arena.text(arg.id.as_ref()).append(" ")
-                        })),
-                        "=",
+                    "\\",
+                    arena.concat(lambda.args.iter().map(|arg| arena.text(arg.name.as_ref()).append(" "))),
+                    "->",
+                    self.hang(&lambda.body)
+                ]
+            }
+            Expr::LetBindings(ref binds, ref body) => {
+                chain![arena;
+                    "let ",
+                    arena.concat(binds.iter().map(|bind| {
+                        chain![arena;
+                            chain![arena;
+                                pretty_pattern(arena, &bind.name),
+                                " ",
+                                arena.concat(bind.args.iter().map(|arg| {
+                                    arena.text(arg.name.as_ref()).append(" ")
+                                }))
+                            ].group(),
+                            match *bind.typ {
+                                Type::Hole => arena.nil(),
+                                ref typ => arena.text(": ").append(pretty_type(arena, typ)),
+                            },
+                            "=",
+                            self.hang(&bind.expr)
+                        ].group().nest(INDENT)
+                    }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span()))
+                        .map(|doc| doc.append("and ")))),
+                    newlines(binds.last().unwrap().expr.span.end, body.span.start),
+                    pretty(body)
+                ]
+            }
+            Expr::Literal(ref literal) => {
+                match *literal {
+                    Literal::Byte(b) => arena.text(format!("b{}", b)),
+                    Literal::Char(c) => arena.text(format!("{:?}", c)),
+                    Literal::Float(f) => arena.text(format!("{}", f)),
+                    Literal::Int(i) => arena.text(format!("{}", i)),
+                    Literal::String(ref s) => arena.text(format!("{:?}", s)),
+                }
+            }
+            Expr::Match(ref expr, ref alts) => {
+                chain![arena;
+                    "match ",
+                    pretty(expr),
+                    " with",
+                    arena.newline(),
+                    arena.concat(alts.iter().map(|alt| {
+                        chain![arena;
+                            "| ",
+                            pretty_pattern(arena, &alt.pattern),
+                            " ->",
+                            self.hang(&alt.expr).group().nest(INDENT)
+                        ]
+                    }).intersperse(arena.newline()))
+                ]
+            }
+            Expr::Projection(ref expr, ref field, _) => {
+                chain![arena;
+                    pretty(expr),
+                    ".",
+                    field.as_ref()
+                ]
+            }
+            Expr::Record {
+                ref types,
+                ref exprs,
+                ..
+            } => {
+                chain![arena;
+                    "{",
+                    arena.concat(types.iter().map(|field| {
+                        chain![arena;
+                            arena.space(),
+                            field.name.as_ref()
+                        ]
+                    }).chain(exprs.iter().map(|field| {
+                        chain![arena;
+                            arena.space(),
+                            field.name.as_ref(),
+                            match field.value {
+                                Some(ref expr) => {
+                                    chain![arena;
+                                        " =",
+                                        arena.space(),
+                                        pretty(&expr)
+                                    ]
+                                },
+                                None => arena.nil(),
+                            }
+                        ]
+                    })).intersperse(arena.text(","))).nest(INDENT),
+                    if types.is_empty() && exprs.is_empty() {
+                        arena.nil()
+                    } else {
                         arena.space()
-                            .append(pretty_type(arena, &bind.alias.unresolved_type()))
-                            .group()
-                    ].group().nest(INDENT)
-                }).intersperse(arena.newline().append("and "))),
-                arena.newline(),
-                pretty(body)
-            ]
+                    },
+                    "}"
+                ].group()
+            }
+            Expr::Tuple(ref exprs) => {
+                arena
+                    .text("(")
+                    .append(
+                        arena.concat(
+                            exprs
+                                .iter()
+                                .map(|elem| pretty(elem))
+                                .intersperse(arena.text(",").append(arena.space())),
+                        ),
+                    )
+                    .append(")")
+                    .group()
+            }
+            Expr::TypeBindings(ref binds, ref body) => {
+                chain![arena;
+                    "type ",
+                    arena.concat(binds.iter().map(|bind| {
+                        chain![arena;
+                            bind.name.value.as_ref(),
+                            " ",
+                            arena.concat(bind.alias.value.args.iter().map(|arg| {
+                                arena.text(arg.id.as_ref()).append(" ")
+                            })),
+                            "=",
+                            arena.space()
+                                .append(pretty_type(arena, &bind.alias.value.unresolved_type()))
+                                .group()
+                        ].group().nest(INDENT)
+                    }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span()))
+                        .map(|doc| doc.append("and ")))),
+                    newlines(binds.last().unwrap().alias.span.end, body.span.start),
+                    pretty(body)
+                ]
+            }
+            Expr::Error => arena.text("<error expr>"),
         }
-        Expr::Error => arena.text("<error expr>"),
+    }
+
+    fn hang<Id>(&'a self, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        let line = if forced_new_line(&expr.value) {
+            self.arena.newline()
+        } else {
+            self.arena.space()
+        };
+        line.append(self.pretty_expr(expr))
     }
 }

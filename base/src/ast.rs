@@ -1,6 +1,6 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
 
-use pos::{BytePos, Spanned};
+use pos::{BytePos, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
 
@@ -155,10 +155,17 @@ pub enum Expr<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
     pub comment: Option<String>,
-    pub name: Id,
-    pub alias: AliasData<Id, ArcType<Id>>,
+    pub name: Spanned<Id, BytePos>,
+    pub alias: Spanned<AliasData<Id, ArcType<Id>>, BytePos>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
 }
+
+impl<Id> TypeBinding<Id> {
+    pub fn span(&self) -> Span<BytePos> {
+        Span::new(self.name.span.start, self.alias.span.end)
+    }
+}
+
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
@@ -167,6 +174,12 @@ pub struct ValueBinding<Id> {
     pub typ: ArcType<Id>,
     pub args: Vec<TypedIdent<Id>>,
     pub expr: SpannedExpr<Id>,
+}
+
+impl<Id> ValueBinding<Id> {
+    pub fn span(&self) -> Span<BytePos> {
+        Span::new(self.name.span.start, self.expr.span.end)
+    }
 }
 
 /// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By

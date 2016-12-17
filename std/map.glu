@@ -1,14 +1,11 @@
 let prelude = import! "std/prelude.glu"
 and { Ordering, Ord, Option, List, Monoid } = prelude
 
-type Map k a =
-    | Bin k a (Map k a) (Map k a)
-    | Tip
+type Map k a = | Bin k a (Map k a) (Map k a) | Tip
 
 let empty = Tip
 
-let singleton k v =
-    Bin k v empty empty
+let singleton k v = Bin k v empty empty
 
 and make ord =
     let find k m =

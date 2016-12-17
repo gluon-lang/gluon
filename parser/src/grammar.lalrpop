@@ -140,27 +140,28 @@ VariantField: (Id, Vec<ArcType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
 
 TypeBinding: TypeBinding<Id> = {
-    <id: Ident> <params: TypeParam*> "=" <row: VariantField+> => {
+    <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantField+>> => {
         let typ_args = params.iter().cloned().map(Type::generic).collect();
-        let typ: ArcType<Id> = Type::app(Type::ident(id.clone()), typ_args);
+        let typ: ArcType<Id> = Type::app(Type::ident(id.value.clone()), typ_args);
 
-        let row = row.into_iter()
+        let row_span = row.span;
+        let row = row.value.into_iter()
             .map(|(id, params)| Field::new(id, type_cache.function(params, typ.clone())))
             .collect();
-
+        
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: AliasData::new(id, params, Type::variant(row)),
+            alias: pos::spanned(row_span, AliasData::new(id.value, params, Type::variant(row))),
             finalized_alias: None,
         }
     },
 
-    <id: Ident> <params: TypeParam*> "=" <body: Type> => {
+    <id: Sp<Ident>> <params: TypeParam*> "=" <body: Sp<Type>> => {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: AliasData::new(id, params, body),
+            alias: pos::spanned(body.span, AliasData::new(id.value, params, body.value)),
             finalized_alias: None,
         }
     },

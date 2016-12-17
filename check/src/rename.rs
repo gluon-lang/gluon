@@ -63,15 +63,16 @@ impl<'a> KindEnv for Environment<'a> {
 
 impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
-        self.stack.get(id).map(|t| &t.2).or_else(
-            || self.env.find_type(id),
-        )
+        self.stack
+            .get(id)
+            .map(|t| &t.2)
+            .or_else(|| self.env.find_type(id))
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.stack_types.get(id).or_else(
-            || self.env.find_type_info(id),
-        )
+        self.stack_types
+            .get(id)
+            .or_else(|| self.env.find_type_info(id))
     }
 
     fn find_record(
@@ -160,7 +161,7 @@ pub fn rename(
                         self.new_pattern(arg_type, arg);
                     }
                 }
-                ast::Pattern::Error => ()
+                ast::Pattern::Error => (),
             }
         }
 
@@ -184,20 +185,17 @@ pub fn rename(
             let aliased_type = alias.typ();
             if let Type::Variant(ref row) = **aliased_type {
                 for field in row.row_iter().cloned() {
-                    self.env.stack.insert(field.name.clone(), (
-                        field.name,
-                        span,
-                        field.typ,
-                    ));
+                    self.env
+                        .stack
+                        .insert(field.name.clone(), (field.name, span, field.typ));
                 }
             }
 
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
-            self.env.stack_types.insert(
-                alias.name.clone(),
-                alias.clone(),
-            );
+            self.env
+                .stack_types
+                .insert(alias.name.clone(), alias.clone());
             self.env.stack_types.insert(id, alias.clone());
         }
 
@@ -211,9 +209,10 @@ pub fn rename(
                 locals
                     .iter()
                     .flat_map(|bindings| {
-                        bindings.iter().rev().map(|bind| {
-                            (&bind.0, Some(&bind.1), &bind.2)
-                        })
+                        bindings
+                            .iter()
+                            .rev()
+                            .map(|bind| (&bind.0, Some(&bind.1), &bind.2))
                     })
                     .chain(global)
             };
@@ -329,11 +328,11 @@ pub fn rename(
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
                         self.stack_type(
-                            bind.name.clone(),
+                            bind.name.value.clone(),
                             expr.span,
                             bind.finalized_alias.as_ref().expect(
                                 "ICE: Alias should have been finalized \
-                                                     before renaming",
+                                 before renaming",
                             ),
                         );
                     }

@@ -68,7 +68,8 @@ pub fn metadata(
                     self.stack_var(id.name.clone(), metadata);
                 }
                 Pattern::Tuple { .. } |
-                Pattern::Constructor(..) | Pattern::Error => (),
+                Pattern::Constructor(..) |
+                Pattern::Error => (),
             }
         }
 
@@ -81,17 +82,18 @@ pub fn metadata(
 
         fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
             debug!("Lookup {}", id);
-            self.env.stack.get(id).or_else(
-                || self.env.env.get_metadata(id),
-            )
+            self.env
+                .stack
+                .get(id)
+                .or_else(|| self.env.env.get_metadata(id))
         }
 
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
                 Expr::Ident(ref id) => {
-                    self.metadata(&id.name).cloned().unwrap_or_else(
-                        Metadata::default,
-                    )
+                    self.metadata(&id.name)
+                        .cloned()
+                        .unwrap_or_else(Metadata::default)
                 }
                 Expr::Record {
                     ref exprs,
@@ -161,7 +163,7 @@ pub fn metadata(
                             }
                         });
                         if let Some(metadata) = maybe_metadata {
-                            self.stack_var(bind.name.clone(), metadata);
+                            self.stack_var(bind.name.value.clone(), metadata);
                         }
                     }
                     let result = self.metadata_expr(expr);
