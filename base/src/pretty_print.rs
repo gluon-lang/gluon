@@ -67,22 +67,19 @@ pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
                         field.0.as_ref()
                     ]
                 }).chain(fields.iter().map(|field| {
-                    match field.1 {
-                        Some(ref new_name) => {
-                            chain![arena;
-                                arena.space(),
-                                field.0.as_ref(),
-                                " = ",
-                                pretty_pattern(arena, new_name)
-                            ]
+                    chain![arena;
+                        arena.space(),
+                        ident(arena, field.0.as_ref()),
+                        match field.1 {
+                            Some(ref new_name) => {
+                                chain![arena;
+                                    " = ",
+                                    pretty_pattern(arena, new_name)
+                                ]
+                            }
+                            None => arena.nil(),
                         }
-                        None => {
-                            chain![arena;
-                                arena.space(),
-                                field.0.as_ref()
-                            ]
-                        }
-                    }
+                    ]
                 })).intersperse(arena.text(","))),
                 if types.is_empty() && fields.is_empty() {
                     arena.nil()
@@ -229,7 +226,9 @@ impl<'a> ExprPrinter<'a> {
                             ].group(),
                             match *bind.typ {
                                 Type::Hole => arena.nil(),
-                                ref typ => arena.text(": ").append(pretty_type(arena, typ)),
+                                ref typ => arena.text(": ")
+                                    .append(pretty_type(arena, typ))
+                                    .append(arena.space()),
                             },
                             "=",
                             self.hang(&bind.expr)
@@ -299,7 +298,7 @@ impl<'a> ExprPrinter<'a> {
                                 None => arena.nil(),
                             }
                         ]
-                    })).intersperse(arena.text(","))).nest(INDENT),
+                    })).intersperse(arena.text(","))).block(INDENT),
                     if types.is_empty() && exprs.is_empty() {
                         arena.nil()
                     } else {
@@ -344,7 +343,7 @@ impl<'a> ExprPrinter<'a> {
                     pretty(body)
                 ]
             }
-            Expr::Error => arena.text("<error expr>"),
+            Expr::Error => arena.text("<error>"),
         };
         arena.concat(self.source
                 .comments_between(Span::new(previous_end, expr.span.start))
@@ -371,5 +370,6 @@ impl<'a> ExprPrinter<'a> {
             self.arena.space()
         };
         line.append(self.pretty_expr(expr))
+            .block(INDENT)
     }
 }
