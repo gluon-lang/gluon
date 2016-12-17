@@ -6,10 +6,18 @@ type Method = | Get | Post | Delete | Update
 type Failure = | DontProcess
 
 /// HTTP server request
-type Request = { method: Method }
+type Request = {
+    method : Method,
+    uri : String
+}
+
+type StatusCode = | OK | NotFound | InternalServerError
 
 /// HTTP server response
-type Response = { body: String }
+type Response = {
+    status : StatusCode,
+    body: String
+}
 
 /// The main type of this micro http framework. A handler takes two continuations and a `Request` and
 /// cakks one of the continuations depending on if it can successfully handle the request or not
@@ -25,6 +33,7 @@ type Handler a =
     Method,
     Failure,
     Request,
+    StatusCode,
     Response,
     Handler,
 }

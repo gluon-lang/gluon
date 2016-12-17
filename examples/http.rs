@@ -12,6 +12,7 @@ use std::io::{stderr, Write};
 use std::marker::PhantomData;
 
 use self::hyper::method::Method;
+use self::hyper::status::StatusCode;
 
 use base::types::{Type, ArcType};
 
@@ -19,7 +20,8 @@ use vm::{Result, Error as VmError};
 
 use vm::thread::ThreadInternal;
 use vm::thread::{Context, RootedThread, Thread};
-use vm::api::{VmType, Function, FunctionRef, OpaqueValue, Pushable, IO, WithVM};
+use vm::Variants;
+use vm::api::{VmType, Function, FunctionRef, Getable,OpaqueValue, Pushable, IO, ValueRef, WithVM};
 
 use vm::internal::Value;
 
@@ -42,14 +44,22 @@ impl<T: VmType + 'static> VmType for Handler<T> {
 // Since we want to marshal types defined in hyper we use `Wrap` to implement the traits we need
 struct Wrap<T>(T);
 
-impl VmType for Wrap<Method> {
-    type Type = Method;
-    fn make_type(vm: &Thread) -> ArcType {
-        (*vm.global_env().get_env().find_type_info("examples.http_types.Method").unwrap())
-            .clone()
-            .into_type()
+macro_rules! define_vmtype {
+    ($name: ident) => {
+        impl VmType for Wrap<$name> {
+            type Type = $name;
+            fn make_type(vm: &Thread) -> ArcType {
+                let typ = concat!("examples.http_types.", stringify!($name));
+                (*vm.global_env().get_env().find_type_info(typ).unwrap())
+                    .clone()
+                    .into_type()
+            }
+        }
+
     }
 }
+
+define_vmtype! { Method }
 
 impl<'vm> Pushable<'vm> for Wrap<Method> {
     fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
@@ -68,10 +78,36 @@ impl<'vm> Pushable<'vm> for Wrap<Method> {
     }
 }
 
-field_decl! { body, method }
+define_vmtype! { StatusCode }
 
-type Request = record_type!( method => Wrap<Method> );
-type Response = record_type!( body => String );
+impl<'vm> Getable<'vm> for Wrap<StatusCode> {
+    fn from_value(_: &'vm Thread, value: Variants) -> Option<Self> {
+        use self::hyper::status::StatusCode::*;
+        match value.as_ref() {
+            ValueRef::Tag(tag) => {
+                Some(Wrap(match tag {
+                    0 => Ok,
+                    1 => NotFound,
+                    2 => InternalServerError,
+                    _ => panic!("Unexpected tag"),
+                }))
+            }
+            _ => panic!(),
+        }
+    }
+}
+
+
+field_decl! { method, uri, status, body  }
+
+type Request = record_type!{
+    method => Wrap<Method>,
+    uri => String
+};
+type Response = record_type!{
+    status => Wrap<StatusCode>,
+    body => String
+};
 
 fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>) -> IO<()> {
     let WithVM { value: handler, vm: thread } = value;
@@ -84,12 +120,14 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, Request) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread.get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
-    let result = server.handle(move |request: HyperRequest, response: HyperResponse<_>| {
+    let result = server.handle(move |request: HyperRequest, mut response: HyperResponse<_>| {
         let gluon_request = record_no_decl! {
-            method => Wrap(request.method)
+            method => Wrap(request.method),
+            uri => request.uri.to_string()
         };
         match handle.clone().call(handler.clone(), gluon_request).unwrap() {
-            IO::Value(record_p!{ body }) => {
+            IO::Value(record_p!{ status, body }) => {
+                *response.status_mut() = status.0;
                 response.send(body.as_bytes()).unwrap();
             }
             IO::Exception(ref err) => {
@@ -122,10 +160,18 @@ fn main() {
 
         let { (*>) } = prelude.make_Applicative prelude.applicative_IO
 
-        let { handle, get, applicative, listen } = import! "examples/http.glu"
-        let { (*>), pure } = prelude.make_Applicative applicative
+        let {
+            StatusCode,
+            handle, empty_response, get, get_request, path, listen,
+            applicative, alternative, monad } = import! "examples/http.glu"
 
-        let handler = get (pure { body = "Hello World" })
+        let { (*>), pure } = prelude.make_Applicative applicative
+        let { (<|>) } = prelude.make_Alternative alternative
+        let { (>>=) } = prelude.make_Monad monad
+
+        let handler =
+            (get *> path "/" *> (pure { status = OK, body = "Hello World" })) <|>
+                (get *> path "/error" *> (pure { status = InternalServerError, body = "Error" }))
 
         \port ->
             io.println ("Opened server on port " <> show port) *>

@@ -1,4 +1,6 @@
 let prelude = import! "std/prelude.glu"
+let string = import! "std/string.glu"
+let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category prelude.category_Function
 let { pure } = prelude.applicative_IO
@@ -7,8 +9,9 @@ let {
     Method,
     Failure,
     Request,
+    StatusCode,
     Response,
-    Handler } = import "examples/http_types.glu"
+    Handler } = import! "examples/http_types.glu"
 
 /// Force the value to be a Handler. Used to make the the type inference work for higher-kinded types
 let make: Handler a -> Handler a = id
@@ -64,43 +67,52 @@ let test predicate: (Request -> Bool) -> Handler () =
             failure DontProcess request
 
 /// Handles `Get` requests
-let get handler: Handler a -> Handler a =
+let get : Handler () =
     test (\request ->
         match request.method with
         | Get -> True
-        | _ -> False) *> handler
+        | _ -> False)
 
 /// Handles `Post` requests
-let post handler: Handler a -> Handler a =
+let post : Handler () =
     test (\request ->
         match request.method with
         | Post -> True
-        | _ -> False) *> handler
+        | _ -> False)
+
+let path uri: String -> Handler () =
+    test (\request -> request.uri == uri)
 
 /// Retrieves the HTTP request
 let get_request : Handler Request =
     \success _ request -> success request request
 
+let empty_response = { status = OK, body = "" }
+
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler request : Handler Response -> Request -> IO Response =
     let not_found _ _ =
-        pure { body = "404" }
+        pure { status = NotFound, body = "Page not found" }
     handler (\response _ -> pure response) not_found request 
 
 {
     Method,
     Failure,
     Request,
+    StatusCode,
     Response,
     Handler,
 
     functor,
     applicative,
+    alternative,
     monad,
 
+    empty_response,
     get_request,
     handle,
     get,
     post,
+    path,
     listen = http_prim.listen
 }
