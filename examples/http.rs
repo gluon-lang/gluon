@@ -8,7 +8,8 @@ extern crate collect_mac;
 extern crate hyper;
 
 use std::env;
-use std::io::{stderr, Write};
+use std::fs::File;
+use std::io::{stderr, Read, Write};
 use std::marker::PhantomData;
 
 use self::hyper::method::Method;
@@ -152,31 +153,11 @@ pub fn load(vm: &Thread) -> Result<()> {
 fn main() {
     let port = env::args().nth(1).map(|port| port.parse::<i32>().expect("port")).unwrap_or(80);
 
-    let expr = r#"
-        let prelude = import! "std/prelude.glu"
-        let { show } = prelude.show_Int
-        let string = import! "std/string.glu"
-        let { (<>) } = prelude.make_Monoid string.monoid
-
-        let { (*>) } = prelude.make_Applicative prelude.applicative_IO
-
-        let {
-            StatusCode,
-            handle, empty_response, get, get_request, path, listen,
-            applicative, alternative, monad } = import! "examples/http.glu"
-
-        let { (*>), pure } = prelude.make_Applicative applicative
-        let { (<|>) } = prelude.make_Alternative alternative
-        let { (>>=) } = prelude.make_Monad monad
-
-        let handler =
-            (get *> path "/" *> (pure { status = OK, body = "Hello World" })) <|>
-                (get *> path "/error" *> (pure { status = InternalServerError, body = "Error" }))
-
-        \port ->
-            io.println ("Opened server on port " <> show port) *>
-                listen port handler
-    "#;
+    let mut expr = String::new();
+    {
+        let mut file = File::open("examples/http_server.glu").unwrap();
+        file.read_to_string(&mut expr).unwrap();
+    }
     let thread = new_vm();
 
     Compiler::new()
@@ -185,7 +166,7 @@ fn main() {
     load(&thread).unwrap();
 
     let (mut listen, _) = Compiler::new()
-        .run_expr::<FunctionRef<fn(i32) -> IO<()>>>(&thread, "http_test", expr)
+        .run_expr::<FunctionRef<fn(i32) -> IO<()>>>(&thread, "http_test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     listen.call(port)

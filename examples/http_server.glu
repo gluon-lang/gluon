@@ -1,0 +1,23 @@
+let prelude = import! "std/prelude.glu"
+let { show } = prelude.show_Int
+let string = import! "std/string.glu"
+let { (<>) } = prelude.make_Monoid string.monoid
+
+let { (*>) } = prelude.make_Applicative prelude.applicative_IO
+
+let {
+    StatusCode,
+    handle, empty_response, get, get_request, path, listen,
+    applicative, alternative, monad } = import! "examples/http.glu"
+
+let { (*>), pure } = prelude.make_Applicative applicative
+let { (<|>) } = prelude.make_Alternative alternative
+let { (>>=) } = prelude.make_Monad monad
+
+let handler =
+    (get *> path "/" *> (pure { status = OK, body = "Hello World" })) <|>
+        (get *> path "/error" *> (pure { status = InternalServerError, body = "Error" }))
+
+\port ->
+    io.println ("Opened server on port " <> show port) *>
+        listen port handler
