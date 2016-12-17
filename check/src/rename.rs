@@ -173,7 +173,7 @@ pub fn rename(
                 "Rename binding `{}` = `{}` `{}`",
                 self.symbols.string(&old_id),
                 self.symbols.string(&new_id),
-                types::display_type(&self.symbols, &typ)
+                typ
             );
             self.env.stack.insert(old_id, (new_id.clone(), span, typ));
             new_id

@@ -21,10 +21,8 @@ macro_rules! assert_err {
         #[allow(unused_imports)]
         use check::unify_type::TypeError::FieldMismatch;
 
-        let symbols = support::get_local_interner();
         match $e {
-            Ok(x) => assert!(false, "Expected error, got {}",
-                             types::display_type(&*symbols.borrow(), &x)),
+            Ok(x) => assert!(false, "Expected error, got {}", x),
             Err(err) => {
                 let errors = err.errors();
                 let mut iter = (&errors).into_iter();
@@ -49,11 +47,8 @@ macro_rules! assert_unify_err {
         #[allow(unused_imports)]
         use check::unify_type::TypeError::{FieldMismatch, SelfRecursive, MissingFields};
 
-        let symbols = support::get_local_interner();
-
         match $e {
-            Ok(x) => assert!(false, "Expected error, got {}",
-                             types::display_type(&*symbols.borrow(), &x)),
+            Ok(x) => assert!(false, "Expected error, got {}", x),
             Err(err) => {
                 for error in err.errors() {
                     match error {

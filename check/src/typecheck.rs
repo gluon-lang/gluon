@@ -288,11 +288,7 @@ impl<'a> Typecheck<'a> {
             Some(typ) => {
                 let typ = self.subs.set_type(typ);
                 let typ = self.instantiate(&typ);
-                debug!(
-                    "Find {} : {}",
-                    self.symbols.string(id),
-                    types::display_type(&self.symbols, &typ)
-                );
+                debug!("Find {} : {}", self.symbols.string(id), typ);
                 Ok(typ)
             }
             None => Err(TypeError::UndefinedVariable(id.clone())),
@@ -709,7 +705,7 @@ impl<'a> Typecheck<'a> {
                 let mut expr_typ = self.typecheck(&mut **expr);
                 debug!(
                     "Projection {} . {:?}",
-                    types::display_type(&self.symbols, &expr_typ),
+                    &expr_typ,
                     self.symbols.string(field_id)
                 );
                 self.subs.make_real(&mut expr_typ);
@@ -1083,11 +1079,7 @@ impl<'a> Typecheck<'a> {
                 self.typecheck_lambda(function_typ, &mut bind.args, &mut bind.expr)
             };
 
-            debug!(
-                "let {:?} : {}",
-                bind.name,
-                types::display_type(&self.symbols, &typ)
-            );
+            debug!("let {:?} : {}", bind.name, typ);
 
             typ = self.merge_signature(bind.name.span, level, &bind.typ, typ);
 
@@ -1221,11 +1213,7 @@ impl<'a> Typecheck<'a> {
                 if let Some(typ) = self.finish_type(level, &id.typ) {
                     id.typ = typ;
                 }
-                debug!(
-                    "{}: {}",
-                    self.symbols.string(&id.name),
-                    types::display_type(&self.symbols, &id.typ)
-                );
+                debug!("{}: {}", self.symbols.string(&id.name), id.typ);
                 self.intersect_type(level, &id.name, &id.typ);
             }
             Pattern::Record {
@@ -1233,7 +1221,7 @@ impl<'a> Typecheck<'a> {
                 ref mut fields,
                 ..
             } => {
-                debug!("{{ .. }}: {}", types::display_type(&self.symbols, typ));
+                debug!("{{ .. }}: {}", typ);
                 if let Some(finished) = self.finish_type(level, typ) {
                     *typ = finished;
                 }
@@ -1258,19 +1246,10 @@ impl<'a> Typecheck<'a> {
                 }
             }
             Pattern::Constructor(ref id, ref mut args) => {
-                debug!(
-                    "{}: {}",
-                    self.symbols.string(&id.name),
-                    types::display_type(&self.symbols, typ)
-                );
-
-                let len = args.len();
-                let iter = args.iter_mut().zip(
-                    function_arg_iter(self, typ.clone())
-                        .take(len)
-                        .collect::<Vec<_>>(),
-                );
-                for (arg, arg_type) in iter {
+                debug!("{}: {}", self.symbols.string(&id.name), typ);
+                for (arg, arg_type) in args.iter_mut()
+                    .zip(function_arg_iter(self, typ.clone()).collect::<Vec<_>>())
+                {
                     self.finish_pattern(level, arg, &arg_type);
                 }
             }
@@ -1289,8 +1268,8 @@ impl<'a> Typecheck<'a> {
                 debug!(
                     "Intersect `{}`\n{} ∩ {}",
                     symbol,
-                    types::display_type(&self.symbols, self.subs.real(existing_type)),
-                    types::display_type(&self.symbols, self.subs.real(symbol_type))
+                    self.subs.real(existing_type),
+                    self.subs.real(symbol_type)
                 );
                 let state = unify_type::State::new(&self.environment, &self.subs);
                 let result = unify::intersection(&self.subs, state, existing_type, symbol_type);
@@ -1347,11 +1326,7 @@ impl<'a> Typecheck<'a> {
                 .map(|t| self.finish_type_(level, generic, i, &t).unwrap_or(t));
             let mut typ = typ;
             if let Some(ref t) = replacement {
-                debug!(
-                    "{} ==> {}",
-                    types::display_type(&self.symbols, &typ),
-                    types::display_type(&self.symbols, t)
-                );
+                debug!("{} ==> {}", typ, t);
                 typ = &**t;
             }
             match *typ {
@@ -1505,11 +1480,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn unify(&self, expected: &ArcType, mut actual: ArcType) -> TcResult<ArcType> {
-        debug!(
-            "Unify {} <=> {}",
-            types::display_type(&self.symbols, expected),
-            types::display_type(&self.symbols, &actual)
-        );
+        debug!("Unify {} <=> {}", expected, actual);
         let state = unify_type::State::new(&self.environment, &self.subs);
         match unify::unify(&self.subs, state, expected, &actual) {
             Ok(typ) => Ok(self.subs.set_type(typ)),
@@ -1520,8 +1491,8 @@ impl<'a> Typecheck<'a> {
                 debug!(
                     "Error '{:?}' between:\n>> {}\n>> {}",
                     errors,
-                    types::display_type(&self.symbols, &expected),
-                    types::display_type(&self.symbols, &actual)
+                    expected,
+                    actual
                 );
                 Err(TypeError::Unification(
                     expected,

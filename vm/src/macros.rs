@@ -28,9 +28,8 @@ mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
 where
-    F: Fn(&mut MacroExpander,
-       &mut [SpannedExpr<Symbol>])
-       -> Result<SpannedExpr<Symbol>, Error>,
+    F: Fn(&mut MacroExpander, &mut [SpannedExpr<Symbol>])
+        -> Result<SpannedExpr<Symbol>, Error>,
 {
     fn expand(
         &self,

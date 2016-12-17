@@ -266,9 +266,11 @@ impl Pattern {
 }
 
 fn is_constructor(s: &Symbol) -> bool {
-    s.as_ref().rsplit('.').next().unwrap().starts_with(
-        char::is_uppercase,
-    )
+    s.as_ref()
+        .rsplit('.')
+        .next()
+        .unwrap()
+        .starts_with(char::is_uppercase)
 }
 
 pub struct Allocator<'a> {
@@ -314,9 +316,7 @@ impl<'a, 'e> Translator<'a, 'e> {
         let tail = self.translate_(current);
         lets.iter().rev().fold(
             tail,
-            |result, &(span_start, ref binds)| {
-                self.translate_let(binds, result, span_start)
-            },
+            |result, &(span_start, ref binds)| self.translate_let(binds, result, span_start),
         )
     }
 
@@ -377,8 +377,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 }
             }
             ast::Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                let alts: SmallVec<[_; 2]> =
-                    collect![
+                let alts: SmallVec<[_; 2]> = collect![
                     Alternative {
                         pattern: Pattern::Constructor(self.bool_constructor(true), vec![]),
                         expr: self.translate_alloc(if_true),
@@ -390,9 +389,9 @@ impl<'a, 'e> Translator<'a, 'e> {
                 ];
                 Expr::Match(
                     self.translate_alloc(pred),
-                    self.allocator.alternative_arena.alloc_extend(
-                        alts.into_iter(),
-                    ),
+                    self.allocator
+                        .alternative_arena
+                        .alloc_extend(alts.into_iter()),
                 )
             }
             ast::Expr::Infix(ref l, ref op, ref r) => {
@@ -616,9 +615,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                 .collect();
             data_type = args.typ.clone();
         }
-        new_args.extend(unapplied_args.iter().map(
-            |arg| Expr::Ident(arg.clone(), span),
-        ));
+        new_args.extend(
+            unapplied_args
+                .iter()
+                .map(|arg| Expr::Ident(arg.clone(), span)),
+        );
         let data = Expr::Data(
             TypedIdent {
                 name: id.name.clone(),
@@ -768,9 +769,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             CType::Record => {
 
                 let new_alt = {
-                    let pattern = self.pattern_identifiers(equations.iter().map(|equation| {
-                        *equation.patterns.first().unwrap()
-                    }));
+                    let pattern = self.pattern_identifiers(
+                        equations
+                            .iter()
+                            .map(|equation| *equation.patterns.first().unwrap()),
+                    );
                     let temp = equations
                         .iter()
                         .map(|equation| match equation.patterns.first().unwrap().value {
@@ -821,9 +824,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         .collect::<Vec<_>>();
                     let new_variables = PatternIdentifiers::new(&pattern)
                         .map(|id| {
-                            &*self.0.allocator.arena.alloc(
-                                Expr::Ident(id, Span::default()),
-                            )
+                            &*self.0
+                                .allocator
+                                .arena
+                                .alloc(Expr::Ident(id, Span::default()))
                         })
                         .chain(variables[1..].iter().cloned())
                         .collect::<Vec<_>>();
@@ -835,9 +839,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 };
                 let expr = Expr::Match(
                     variables[0],
-                    self.0.allocator.alternative_arena.alloc_extend(
-                        Some(new_alt).into_iter(),
-                    ),
+                    self.0
+                        .allocator
+                        .alternative_arena
+                        .alloc_extend(Some(new_alt).into_iter()),
                 );
                 self.0.allocator.arena.alloc(expr)
             }
@@ -871,9 +876,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     .into_iter()
                     .map(|key| {
                         let equations = &groups[key];
-                        let pattern = self.pattern_identifiers(equations.iter().map(|equation| {
-                            *equation.patterns.first().unwrap()
-                        }));
+                        let pattern = self.pattern_identifiers(
+                            equations
+                                .iter()
+                                .map(|equation| *equation.patterns.first().unwrap()),
+                        );
                         let new_equations = equations
                             .iter()
                             .map(|equation| {
@@ -892,9 +899,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                             .collect::<Vec<_>>();
                         let new_variables = PatternIdentifiers::new(&pattern)
                             .map(|id| {
-                                &*self.0.allocator.arena.alloc(
-                                    Expr::Ident(id, Span::default()),
-                                )
+                                &*self.0
+                                    .allocator
+                                    .arena
+                                    .alloc(Expr::Ident(id, Span::default()))
                             })
                             .chain(variables[1..].iter().cloned())
                             .collect::<Vec<_>>();
@@ -936,9 +944,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     .collect::<Vec<_>>();
                 let expr = Expr::Match(
                     variables[0],
-                    self.0.allocator.alternative_arena.alloc_extend(
-                        new_alts.into_iter(),
-                    ),
+                    self.0
+                        .allocator
+                        .alternative_arena
+                        .alloc_extend(new_alts.into_iter()),
                 );
                 self.0.allocator.arena.alloc(expr)
 
@@ -957,9 +966,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         })
                         .collect::<Vec<_>>(),
                 );
-                let pattern = self.pattern_identifiers(equations.iter().map(|equation| {
-                    *equation.patterns.first().unwrap()
-                }));
+                let pattern = self.pattern_identifiers(
+                    equations
+                        .iter()
+                        .map(|equation| *equation.patterns.first().unwrap()),
+                );
                 let alt = Alternative {
                     pattern: pattern,
                     expr: expr,
@@ -977,9 +988,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
 
                 let expr = Expr::Match(
                     variables[0],
-                    self.0.allocator.alternative_arena.alloc_extend(
-                        Some(alt).into_iter(),
-                    ),
+                    self.0
+                        .allocator
+                        .alternative_arena
+                        .alloc_extend(Some(alt).into_iter()),
                 );
                 self.0.allocator.arena.alloc(expr)
             }
@@ -1011,9 +1023,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     name: Symbol::from("match_pattern"),
                     typ: expr.env_type_of(&self.0.env),
                 };
-                let id_expr = self.0.allocator.arena.alloc(
-                    Expr::Ident(name.clone(), expr.span()),
-                );
+                let id_expr = self.0
+                    .allocator
+                    .arena
+                    .alloc(Expr::Ident(name.clone(), expr.span()));
                 Expr::Let(
                     LetBinding {
                         name: name,
@@ -1094,9 +1107,12 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         for pattern in patterns {
             match pattern.value {
                 ast::Pattern::Constructor(ref id, ref patterns) => {
-                    identifiers.extend(patterns.iter().enumerate().map(|(i, pattern)| {
-                        self.extract_ident(i, &pattern.value)
-                    }));
+                    identifiers.extend(
+                        patterns
+                            .iter()
+                            .enumerate()
+                            .map(|(i, pattern)| self.extract_ident(i, &pattern.value)),
+                    );
                     // Just extract the patterns of the first constructor found
                     return Pattern::Constructor(id.clone(), identifiers);
                 }
@@ -1127,9 +1143,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     for (i, field) in fields.iter().enumerate() {
                         // Don't add one field twice
                         if record_fields.iter().all(|id| id.0.name != field.0) {
-                            let x = field.1.as_ref().map(|pattern| {
-                                self.extract_ident(i, &pattern.value).name
-                            });
+                            let x = field
+                                .1
+                                .as_ref()
+                                .map(|pattern| self.extract_ident(i, &pattern.value).name);
                             let field_type = remove_aliases_cow(&self.0.env, typ)
                                 .row_iter()
                                 .find(|f| f.name.name_eq(&field.0))
@@ -1300,12 +1317,15 @@ mod tests {
             (&Expr::Match(_, l_alts), &Expr::Match(_, r_alts)) => {
                 for (l, r) in l_alts.iter().zip(r_alts) {
                     let eq = match (&l.pattern, &r.pattern) {
-                        (&Pattern::Constructor(ref l, ref l_ids),
-                         &Pattern::Constructor(ref r, ref r_ids)) => {
+                        (
+                            &Pattern::Constructor(ref l, ref l_ids),
+                            &Pattern::Constructor(ref r, ref r_ids),
+                        ) => {
                             check(map, &l.name, &r.name) &&
-                                l_ids.iter().zip(r_ids).all(
-                                    |(l, r)| check(map, &l.name, &r.name),
-                                )
+                                l_ids
+                                    .iter()
+                                    .zip(r_ids)
+                                    .all(|(l, r)| check(map, &l.name, &r.name))
                         }
                         (&Pattern::Ident(ref l), &Pattern::Ident(ref r)) => {
                             check(map, &l.name, &r.name)

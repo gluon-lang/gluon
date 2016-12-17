@@ -117,10 +117,11 @@ impl Stack {
             .iter()
             .filter_map(|frame| match frame.state {
                 State::Closure(ref closure) => {
-                    let line = closure.function.debug_info.source_map.line(
-                        frame
-                            .instruction_index,
-                    );
+                    let line = closure
+                        .function
+                        .debug_info
+                        .source_map
+                        .line(frame.instruction_index);
                     Some(line.map(|line| {
                         StacktraceFrame {
                             name: closure.function.name.clone(),
@@ -238,10 +239,8 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
-        self.stack.remove_range(
-            self.frame.offset + from,
-            self.frame.offset + to,
-        );
+        self.stack
+            .remove_range(self.frame.offset + from, self.frame.offset + to);
     }
 
     pub fn get_rooted_value(&self, index: VmIndex) -> Value {
