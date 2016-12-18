@@ -1,12 +1,10 @@
-
-
-
 #[cfg(feature = "skeptic")]
 mod gen_skeptic {
     extern crate skeptic;
 
-    use std::io::prelude::*;
+    use std::env;
     use std::fs::File;
+    use std::io::prelude::*;
     use std::path::Path;
 
     /// skeptic templates look for `rust` after the opening code fences so writing
@@ -39,7 +37,7 @@ fn main() {{
 
     fn generate_skeptic_tests(file: &str) -> String {
         // Preprocess the readme to inject the skeptic template needed to to run the examples
-        let out_file_name = Path::new(env!("OUT_DIR")).join(file);
+        let out_file_name = Path::new(&env::var("OUT_DIR").unwrap()).join(file);
         let mut contents = TEMPLATE.as_bytes().into();
         File::open(file)
             .and_then(|mut raw_file| raw_file.read_to_end(&mut contents))
