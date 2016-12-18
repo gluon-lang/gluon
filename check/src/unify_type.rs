@@ -136,10 +136,6 @@ impl<I> Substitutable for ArcType<I> {
         Type::variable(TypeVariable::new(id))
     }
 
-    fn from_variable(var: TypeVariable) -> ArcType<I> {
-        Type::variable(var)
-    }
-
     fn get_var(&self) -> Option<&TypeVariable> {
         match **self {
             Type::Variable(ref var) => Some(var),

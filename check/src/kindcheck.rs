@@ -326,10 +326,6 @@ impl Substitutable for ArcKind {
         Kind::variable(x)
     }
 
-    fn from_variable(x: u32) -> ArcKind {
-        Kind::variable(x)
-    }
-
     fn get_var(&self) -> Option<&u32> {
         match **self {
             Kind::Variable(ref var) => Some(var),
