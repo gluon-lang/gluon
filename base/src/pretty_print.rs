@@ -232,7 +232,7 @@ impl<'a> ExprPrinter<'a> {
                             },
                             "=",
                             self.hang(&bind.expr)
-                        ].group().nest(INDENT)
+                        ].group()
                     }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span()))
                         .map(|doc| doc.append("and ")))),
                     newlines(binds.last().unwrap().expr.span.end, body.span.start),
@@ -259,7 +259,7 @@ impl<'a> ExprPrinter<'a> {
                             "| ",
                             pretty_pattern(arena, &alt.pattern),
                             " ->",
-                            self.hang(&alt.expr).group().nest(INDENT)
+                            self.hang(&alt.expr).group()
                         ]
                     }).intersperse(arena.newline()))
                 ]
@@ -336,7 +336,7 @@ impl<'a> ExprPrinter<'a> {
                             arena.space()
                                 .append(pretty_type(arena, &bind.alias.value.unresolved_type()))
                                 .group()
-                        ].group().nest(INDENT)
+                        ].group()
                     }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span()))
                         .map(|doc| doc.append("and ")))),
                     newlines(binds.last().unwrap().alias.span.end, body.span.start),

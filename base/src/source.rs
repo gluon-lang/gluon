@@ -115,6 +115,15 @@ impl<'a> Source<'a> {
         self.lines.location(byte)
     }
 
+    /// Returns the starting position of any comments and whitespace before `end`
+    pub fn comment_start_before(&self, end: BytePos) -> BytePos {
+        let mut iter = self.comments_between(Span::new(BytePos::from(0), end));
+        // Scan from `end` until a non comment token is found
+        for _ in iter.by_ref().rev() {
+        }
+        BytePos::from(iter.src.len())
+    }
+
     pub fn comments_between(&self, span: Span<BytePos>) -> CommentIter {
         CommentIter { src: &self.src[span.start.to_usize()..span.end.to_usize()] }
     }
@@ -140,6 +149,30 @@ impl<'a> Iterator for CommentIter<'a> {
             } else if self.src.starts_with("\n") {
                 self.src = &self.src[1..];
                 Some("")
+            } else {
+                None
+            }
+        }
+    }
+}
+
+impl<'a> DoubleEndedIterator for CommentIter<'a> {
+    fn next_back(&mut self) -> Option<&'a str> {
+        if self.src.is_empty() {
+            None
+        } else {
+            self.src = self.src.trim_right_matches(|c: char| c.is_whitespace() && c != '\n');
+            if self.src.starts_with("\n") {
+                let comment_line = self.src[..self.src.len() - 1].lines().next_back().unwrap();
+                // Add 1 to skip `\n' as well
+                self.src = &self.src[..(self.src.len() - 2 - comment_line.len() - 1)];
+
+                let trimmed = comment_line.trim_left();
+                if trimmed.starts_with("//") && !trimmed.starts_with("///") {
+                    Some(trimmed)
+                } else {
+                    Some("")
+                }
             } else {
                 None
             }

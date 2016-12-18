@@ -65,6 +65,11 @@ fn types() {
 }
 
 #[test]
+fn state() {
+    test_format("state.glu");
+}
+
+#[test]
 fn stream() {
     test_format("stream.glu");
 }

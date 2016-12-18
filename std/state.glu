@@ -1,6 +1,6 @@
-let { Applicative, Functor, Monad }  = import! "std/prelude.glu"
+let { Applicative, Functor, Monad } = import! "std/prelude.glu"
 
-type State s a = s -> { value: a, state: s }
+type State s a = s -> { value : a, state : s }
 
 let functor : Functor (State s) =
     let map f m : (a -> b) -> State s a -> State s b =
@@ -16,12 +16,11 @@ let applicative : Applicative (State s) =
             let { value, state } = mf state
             functor.map value n state
 
-    let pure value: a -> State s a =
-        \state -> { value, state }
+    let pure value : a -> State s a = \state -> { value, state }
 
     { functor, apply, pure }
 
-let monad: Monad (State s) =
+let monad : Monad (State s) =
     let flat_map f m : (a -> State s b) -> State s a -> State s b =
         \state ->
             let { value, state } = m state
@@ -30,18 +29,18 @@ let monad: Monad (State s) =
 
     { applicative, flat_map }
 
-let put value: s -> State s () = \state -> { value = (), state = value }
+let put value : s -> State s () = \state -> { value = (), state = value }
 
-let get: State s s = \state -> { value = state, state }
+let get : State s s = \state -> { value = state, state }
 
-let gets f: (s -> a) -> State s a = \state -> { value = f state, state }
+let gets f : (s -> a) -> State s a = \state -> { value = f state, state }
 
-let modify f: (s -> s) -> State s () = \state -> { value = (), state = f state }
+let modify f : (s -> s) -> State s () = \state -> { value = (), state = f state }
 
-let runState f state: State s a -> s -> { value: a, state: s } = f state
+let runState f state : State s a -> s -> { value : a, state : s } = f state
 
-let evalState f state: State s a -> s -> a = (runState f state).value
+let evalState f state : State s a -> s -> a = (runState f state).value
 
-let execState f state: State s a -> s -> s = (runState f state).state
+let execState f state : State s a -> s -> s = (runState f state).state
 
 { State, applicative, functor, monad, put, get, modify, runState, evalState, execState }
