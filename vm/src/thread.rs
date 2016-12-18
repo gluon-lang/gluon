@@ -722,12 +722,21 @@ impl<'a> StackInfo<'a> {
         &self.info.stack.get_frames()[self.index]
     }
 
+    // For frames except the top we subtract one to account for the `Call` instruction adding one
+    fn instruction_index(&self) -> usize {
+        if self.info.stack.get_frames().len() - 1 == self.index {
+            self.frame().instruction_index
+        } else {
+            self.frame().instruction_index - 1
+        }
+    }
+
     /// Returns the line which create the current instruction of this frame
     pub fn line(&self) -> Option<Line> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure.function.debug_info.source_map.line(frame.instruction_index)
+                closure.function.debug_info.source_map.line(self.instruction_index())
             }
             _ => None,
         }
@@ -755,7 +764,7 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure.function.debug_info.local_map.locals(frame.instruction_index)
+                closure.function.debug_info.local_map.locals(self.instruction_index())
             }
             _ => LocalIter::empty(),
         }
@@ -1068,7 +1077,10 @@ impl<'b> ExecuteContext<'b> {
         match self.stack.exit_scope() {
             Ok(_) => {
                 if self.hook.flags.bits() != 0 {
-                    self.hook.previous_instruction_index = self.stack.frame.instruction_index;
+                    // Subtract 1 to compensate for the `Call` instruction adding one earlier
+                    // ensuring that the line hook runs after function calls
+                    self.hook.previous_instruction_index =
+                        self.stack.frame.instruction_index.saturating_sub(1);
                 }
                 Ok(())
             }

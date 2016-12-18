@@ -82,6 +82,45 @@ fn line_hook() {
 }
 
 #[test]
+fn line_hook_after_call() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+    {
+        let mut context = thread.context();
+        context.set_hook(Some(Box::new(move |_, _| Err(vm::Error::Yield))));
+        context.set_hook_mask(LINE_FLAG);
+    }
+
+    let expr = r#"
+        let id x = x
+        id 0
+        1
+    "#;
+    let mut result = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<i32>(&thread, "test", expr)
+        .map(|_| ());
+
+    let mut lines = Vec::new();
+    loop {
+        match result {
+            Ok(_) => break,
+            Err(Error::VM(vm::Error::Yield)) => {
+                let context = thread.context();
+                let debug_info = context.debug_info();
+                lines.push(debug_info.stack_info(0).unwrap().line().unwrap());
+            }
+            Err(err) => panic!("{}", err),
+        }
+        result = thread.resume().map_err(From::from);
+    }
+
+    assert_eq!(lines,
+               vec![1, 2, 1, 3].into_iter().map(Line::from).collect::<Vec<_>>());
+}
+
+#[test]
 fn implicit_prelude_lines_not_counted() {
     let _ = env_logger::init();
 
