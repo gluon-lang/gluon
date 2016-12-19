@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
 
 use gluon::base::pos::Line;
+use gluon::base::types::Type;
 use gluon::{Compiler, Error, new_vm};
 use gluon::vm;
+use gluon::vm::compiler::UpvarInfo;
 use gluon::vm::thread::{ThreadInternal, CALL_FLAG, LINE_FLAG};
 
 
@@ -130,7 +132,7 @@ fn read_variables() {
             let stack_info = debug_context.stack_info(0).unwrap();
             result.lock().unwrap().insert(stack_info.line().unwrap().to_usize(),
                                           stack_info.locals()
-                                              .map(|s| s.to_string())
+                                              .map(|(s, typ)| (s.to_string(), typ.clone()))
                                               .collect::<Vec<_>>());
             Ok(())
         })));
@@ -143,7 +145,7 @@ fn read_variables() {
         ()
 
     ()
-    let z = { x }
+    let z = 1.0
     1
     "#;
     Compiler::new().implicit_prelude(false).run_expr::<i32>(&thread, "test", expr).unwrap();
@@ -151,11 +153,18 @@ fn read_variables() {
     let map = result.lock().unwrap();
     assert_eq!(*map,
                collect![(1, vec![]),
-                        (3, vec!["x".to_string()]),
-                        (4, vec!["x".to_string(), "y2".to_string()]),
-                        (6, vec!["x".to_string(), "y".to_string()]),
-                        (7, vec!["x".to_string(), "y".to_string()]),
-                        (8, vec!["x".to_string(), "y".to_string(), "z".to_string()])]);
+                        (3, vec![("x".to_string(), Type::int())]),
+                        (4,
+                         vec![("x".to_string(), Type::int()),
+                              ("y2".to_string(), Type::string())]),
+                        (6,
+                         vec![("x".to_string(), Type::int()), ("y".to_string(), Type::unit())]),
+                        (7,
+                         vec![("x".to_string(), Type::int()), ("y".to_string(), Type::unit())]),
+                        (8,
+                         vec![("x".to_string(), Type::int()),
+                              ("y".to_string(), Type::unit()),
+                              ("z".to_string(), Type::float())])]);
 }
 
 #[test]
@@ -223,6 +232,20 @@ fn upvars() {
 
     assert_eq!(*result.lock().unwrap(),
                vec![vec![],
-                    vec!["x".to_string(), "+".to_string(), "y".to_string()],
-                    vec!["x".to_string()]]);
+                    vec![UpvarInfo {
+                             name: "x".to_string(),
+                             typ: Type::int(),
+                         },
+                         UpvarInfo {
+                             name: "+".to_string(),
+                             typ: Type::function(vec![Type::int(), Type::int()], Type::int()),
+                         },
+                         UpvarInfo {
+                             name: "y".to_string(),
+                             typ: Type::int(),
+                         }],
+                    vec![UpvarInfo {
+                             name: "x".to_string(),
+                             typ: Type::int(),
+                         }]]);
 }

@@ -2,6 +2,7 @@ use std::slice::Iter;
 
 use base::pos::Line;
 use base::symbol::Symbol;
+use base::types::ArcType;
 
 #[derive(Debug)]
 pub struct SourceMap {
@@ -48,9 +49,17 @@ impl SourceMap {
 }
 
 #[derive(Debug)]
+struct Local {
+    start: usize,
+    end: usize,
+    name: Symbol,
+    typ: ArcType,
+}
+
+#[derive(Debug)]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
-    map: Vec<(usize, Symbol, usize)>,
+    map: Vec<Local>,
 }
 
 impl LocalMap {
@@ -60,15 +69,20 @@ impl LocalMap {
 
     /// Emits a local which is available starting from `instruction_index`. The end of each local's
     /// scope must be defined by calling `close`
-    pub fn emit(&mut self, instruction_index: usize, name: Symbol) {
-        self.map.push((instruction_index, name, instruction_index));
+    pub fn emit(&mut self, instruction_index: usize, name: Symbol, typ: ArcType) {
+        self.map.push(Local {
+            start: instruction_index,
+            end: instruction_index,
+            name: name,
+            typ: typ,
+        });
     }
 
     /// `close` marks the end of a variables span and should be called for each variable inserted with
     /// `emit` but in reverse order
     pub fn close(&mut self, instruction_index: usize) {
-        if let Some(&mut (_, _, ref mut end)) = self.map.iter_mut().rev().find(|t| t.0 == t.2) {
-            *end = instruction_index;
+        if let Some(local) = self.map.iter_mut().rev().find(|t| t.start == t.end) {
+            local.end = instruction_index;
         }
     }
 
@@ -82,7 +96,7 @@ impl LocalMap {
 }
 
 pub struct LocalIter<'a> {
-    locals: Iter<'a, (usize, Symbol, usize)>,
+    locals: Iter<'a, Local>,
     instruction_index: usize,
 }
 
@@ -96,12 +110,12 @@ impl<'a> LocalIter<'a> {
 }
 
 impl<'a> Iterator for LocalIter<'a> {
-    type Item = &'a str;
+    type Item = (&'a str, &'a ArcType);
 
-    fn next(&mut self) -> Option<&'a str> {
+    fn next(&mut self) -> Option<(&'a str, &'a ArcType)> {
         while let Some(local) = self.locals.next() {
-            if local.0 <= self.instruction_index && self.instruction_index < local.2 {
-                return Some(local.1.declared_name());
+            if local.start <= self.instruction_index && self.instruction_index < local.end {
+                return Some((local.name.declared_name(), &local.typ));
             }
         }
         None

@@ -21,7 +21,7 @@ use field_map::FieldMap;
 use interner::InternedStr;
 use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
-use compiler::CompiledFunction;
+use compiler::{CompiledFunction, UpvarInfo};
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use source_map::LocalIter;
 use stack::{Frame, Stack, StackFrame, State};
@@ -757,9 +757,10 @@ impl<'a> StackInfo<'a> {
         }
     }
 
-    pub fn upvars(&self) -> &[StdString] {
+    /// Returns a slice with information about the values bound to this closure
+    pub fn upvars(&self) -> &[UpvarInfo] {
         match self.frame().state {
-            State::Closure(ref closure) => &closure.function.debug_info.upvar_names,
+            State::Closure(ref closure) => &closure.function.debug_info.upvars,
             _ => panic!("Attempted to access upvar in non closure function"),
         }
     }
