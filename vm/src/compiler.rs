@@ -275,13 +275,17 @@ impl FunctionEnv {
 
     fn new_stack_var(&mut self, compiler: &Compiler, s: Symbol, typ: ArcType) {
         debug!("Push var: {:?} at {}", s, self.stack_size - 1);
+        let index = self.stack_size - 1;
         if self.emit_debug_info && compiler.empty_symbol != s {
             self.function
                 .debug_info
                 .local_map
-                .emit(self.function.instructions.len(), s.clone(), typ.clone());
+                .emit(self.function.instructions.len(),
+                      index,
+                      s.clone(),
+                      typ.clone());
         }
-        self.stack.insert(s, (self.stack_size - 1, typ));
+        self.stack.insert(s, (index, typ));
     }
 
     fn exit_scope(&mut self, compiler: &Compiler) -> VmIndex {

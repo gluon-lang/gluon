@@ -132,7 +132,9 @@ fn read_variables() {
             let stack_info = debug_context.stack_info(0).unwrap();
             result.lock().unwrap().insert(stack_info.line().unwrap().to_usize(),
                                           stack_info.locals()
-                                              .map(|(s, typ)| (s.to_string(), typ.clone()))
+                                              .map(|local| {
+                                                  (local.name.declared_name().to_string(), local.typ.clone())
+                                              })
                                               .collect::<Vec<_>>());
             Ok(())
         })));
@@ -180,7 +182,10 @@ fn argument_types() {
             let stack_info = debug_context.stack_info(0).unwrap();
             result.lock().unwrap().push((stack_info.line().unwrap().to_usize(),
                                          stack_info.locals()
-                                             .map(|(s, typ)| (s.to_string(), typ.clone()))
+                                             .map(|local| {
+                                                 (local.name.declared_name().to_string(),
+                                                  local.typ.clone())
+                                             })
                                              .collect::<Vec<_>>()));
             Ok(())
         })));
@@ -293,4 +298,35 @@ fn upvars() {
                              name: "x".to_string(),
                              typ: Type::int(),
                          }]]);
+}
+
+#[test]
+fn implicit_prelude_variable_names() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+    let functions = Arc::new(Mutex::new(Vec::<ArcType>::new()));
+    {
+        let functions = functions.clone();
+        let mut context = thread.context();
+        context.set_hook(Some(Box::new(move |_, debug_context| {
+            let stack_info = debug_context.stack_info(0).unwrap();
+            functions.lock()
+                .unwrap()
+                .extend(stack_info.locals()
+                    .filter(|local| local.name.declared_name() == "__implicit_prelude")
+                    .map(|local| local.typ.clone()));
+            Ok(())
+        })));
+        context.set_hook_mask(LINE_FLAG);
+    }
+    Compiler::new().run_expr::<i32>(&thread, "test", "\n1").unwrap();
+    let f = functions.lock().unwrap();
+    match *f[0] {
+        Type::Record(ref row) => {
+            assert!(row.row_iter().any(|field| field.name.declared_name() == "id"));
+            assert!(row.row_iter().any(|field| field.name.declared_name() == "not"));
+        }
+        _ => panic!(),
+    }
 }

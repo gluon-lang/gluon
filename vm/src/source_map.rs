@@ -4,6 +4,8 @@ use base::pos::Line;
 use base::symbol::Symbol;
 use base::types::ArcType;
 
+use types::VmIndex;
+
 #[derive(Debug)]
 pub struct SourceMap {
     /// The index of the first instruction for each line
@@ -49,11 +51,12 @@ impl SourceMap {
 }
 
 #[derive(Debug)]
-struct Local {
+pub struct Local {
     start: usize,
     end: usize,
-    name: Symbol,
-    typ: ArcType,
+    pub index: VmIndex,
+    pub name: Symbol,
+    pub typ: ArcType,
 }
 
 #[derive(Debug)]
@@ -69,10 +72,11 @@ impl LocalMap {
 
     /// Emits a local which is available starting from `instruction_index`. The end of each local's
     /// scope must be defined by calling `close`
-    pub fn emit(&mut self, instruction_index: usize, name: Symbol, typ: ArcType) {
+    pub fn emit(&mut self, instruction_index: usize, index: VmIndex, name: Symbol, typ: ArcType) {
         self.map.push(Local {
             start: instruction_index,
             end: instruction_index,
+            index: index,
             name: name,
             typ: typ,
         });
@@ -110,12 +114,12 @@ impl<'a> LocalIter<'a> {
 }
 
 impl<'a> Iterator for LocalIter<'a> {
-    type Item = (&'a str, &'a ArcType);
+    type Item = &'a Local;
 
-    fn next(&mut self) -> Option<(&'a str, &'a ArcType)> {
+    fn next(&mut self) -> Option<&'a Local> {
         while let Some(local) = self.locals.next() {
             if local.start <= self.instruction_index && self.instruction_index < local.end {
-                return Some((local.name.declared_name(), &local.typ));
+                return Some(local);
             }
         }
         None
