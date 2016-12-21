@@ -7,9 +7,9 @@ use self::typed_arena::Arena;
 
 use self::smallvec::SmallVec;
 
-use base::ast::{self, Literal, SpannedExpr, TypedIdent};
+use base::ast::{self, Literal, SpannedExpr, TypedIdent, Typed};
 use base::symbol::Symbol;
-use base::types::Type;
+use base::types::{ArcType, Type, TypeEnv};
 
 #[derive(Clone, Debug)]
 pub struct Closure<'a> {
@@ -49,26 +49,36 @@ pub enum Expr<'a> {
     Const(Literal),
     Ident(TypedIdent<Symbol>),
     Call(&'a Expr<'a>, &'a [Expr<'a>]),
-    Data(Option<Symbol>, &'a [Expr<'a>]),
+    Data(ArcType<Symbol>, &'a [Expr<'a>]),
     Let(LetBinding<'a>, &'a Expr<'a>),
     Match(&'a Expr<'a>, &'a [Alternative<'a>]),
 }
 
 pub struct Allocator<'a> {
-    arena: &'a Arena<Expr<'a>>,
-    alternative_arena: &'a Arena<Alternative<'a>>,
+    arena: Arena<Expr<'a>>,
+    alternative_arena: Arena<Alternative<'a>>,
     true_constructor: TypedIdent<Symbol>,
     false_constructor: TypedIdent<Symbol>,
     dummy_symbol: TypedIdent<Symbol>,
 }
 
 impl<'a> Allocator<'a> {
-    pub fn translate_alloc(&self, expr: &SpannedExpr<Symbol>) -> &'a Expr<'a> {
+    pub fn new() -> Allocator<'a> {
+        Allocator {
+            arena: Arena::new(),
+            alternative_arena: Arena::new(),
+            // TODO
+            true_constructor: TypedIdent::new(Symbol::from("true")),
+            false_constructor: TypedIdent::new(Symbol::from("false")),
+            dummy_symbol: TypedIdent::new(Symbol::from("")),
+        }
+    }
+    pub fn translate_alloc(&'a self, expr: &SpannedExpr<Symbol>) -> &'a Expr<'a> {
         self.arena.alloc(self.translate(expr))
     }
 
-    pub fn translate(&self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
-        let arena = self.arena;
+    pub fn translate(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
+        let arena = &self.arena;
         match expr.value {
             ast::Expr::App(ref function, ref args) => {
                 let new_args: SmallVec<[_; 16]> =
@@ -79,7 +89,7 @@ impl<'a> Allocator<'a> {
             ast::Expr::Array(ref array) => {
                 let exprs: SmallVec<[_; 16]> =
                     array.exprs.iter().map(|expr| self.translate(expr)).collect();
-                Expr::Data(None, arena.alloc_extend(exprs.into_iter()))
+                Expr::Data(array.typ.clone(), arena.alloc_extend(exprs.into_iter()))
             }
             ast::Expr::Block(ref exprs) => {
                 let (last, prefix) = exprs.split_last().unwrap();
@@ -189,20 +199,21 @@ impl<'a> Allocator<'a> {
                 Expr::Match(self.translate_alloc(expr),
                             self.alternative_arena.alloc_extend(once(alt)))
             }
-            ast::Expr::Record { ref exprs, .. } => {
+            ast::Expr::Record { ref typ, ref exprs, .. } => {
                 let args: SmallVec<[_; 16]> = exprs.iter()
                     .map(|&(ref field, ref expr)| match *expr {
                         Some(ref expr) => self.translate(expr),
                         None => Expr::Ident(TypedIdent::new(field.clone())),
                     })
                     .collect();
-                Expr::Data(None, arena.alloc_extend(args.into_iter()))
+                Expr::Data(typ.clone(), arena.alloc_extend(args.into_iter()))
             }
             ast::Expr::Tuple(ref exprs) => {
+                assert!(exprs.len() == 0, "Only unit is handled at the moment");
                 let args: SmallVec<[_; 16]> = exprs.iter()
                     .map(|expr| self.translate(expr))
                     .collect();
-                Expr::Data(None, arena.alloc_extend(args.into_iter()))
+                Expr::Data(Type::unit(), arena.alloc_extend(args.into_iter()))
             }
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
             ast::Expr::Error => panic!("ICE: Error expression found in the compiler"),
@@ -218,4 +229,30 @@ impl<'a> Allocator<'a> {
             ast::Pattern::Record { ref fields, .. } => Pattern::Record(fields.clone()),
         }
     }
+}
+
+impl<'a> Typed for Expr<'a> {
+    type Ident = Symbol;
+
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType<Self::Ident> {
+        match *self {
+            Expr::Call(expr, args) => get_return_type(env, &expr.env_type_of(env), args.len()),
+            Expr::Const(ref literal) => literal.env_type_of(env),
+            Expr::Data(ref typ, args) => get_return_type(env, typ, args.len()),
+            Expr::Ident(ref id) => id.typ.clone(),
+            Expr::Let(_, ref body) => body.env_type_of(env),
+            Expr::Match(_, alts) => alts[0].expr.env_type_of(env),
+        }
+    }
+}
+fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
+    use base::resolve::remove_aliases_cow;
+
+    if arg_count == 0 {
+        return alias_type.clone();
+    }
+    let function_type = remove_aliases_cow(env, alias_type);
+
+    let (_, ret) = function_type.as_function().expect("Call expression with a non function type");
+    get_return_type(env, ret, arg_count - 1)
 }
