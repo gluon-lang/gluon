@@ -184,6 +184,9 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
+                for arg in &mut bind.args {
+                    v.visit_typ(&mut arg.typ);
+                }
                 v.visit_expr(&mut bind.expr);
                 v.visit_typ(&mut bind.typ);
             }
@@ -227,6 +230,9 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         }
         Expr::Lambda(ref mut lambda) => {
             v.visit_typ(&mut lambda.id.typ);
+            for arg in &mut lambda.args {
+                v.visit_typ(&mut arg.typ);
+            }
             v.visit_expr(&mut lambda.body);
         }
         Expr::TypeBindings(_, ref mut expr) => v.visit_expr(expr),
