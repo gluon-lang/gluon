@@ -37,6 +37,7 @@ pub mod stack;
 pub mod types;
 
 mod array;
+mod core;
 mod field_map;
 mod interner;
 mod lazy;
