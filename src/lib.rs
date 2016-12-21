@@ -132,14 +132,14 @@ impl Compiler {
         }
     }
 
-    /// Sets wheter the implicit prelude should be include when compiling a file using this
+    /// Sets whether the implicit prelude should be include when compiling a file using this
     /// compiler (default: true)
     pub fn implicit_prelude(mut self, implicit_prelude: bool) -> Compiler {
         self.implicit_prelude = implicit_prelude;
         self
     }
 
-    /// Sets wheter the compiler should emit debug information such as source maps and variable names.
+    /// Sets whether the compiler should emit debug information such as source maps and variable names.
     /// (default: true)
     pub fn emit_debug_info(mut self, emit_debug_info: bool) -> Compiler {
         self.emit_debug_info = emit_debug_info;
@@ -162,7 +162,7 @@ impl Compiler {
          expr_str: &str)
          -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
         Ok(parser::parse_partial_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
-                                   expr_str)
+                                      expr_str)
             .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
 
