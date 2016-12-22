@@ -377,7 +377,7 @@ impl<Id: Clone> Typed for TypedIdent<Id> {
 impl Typed for Literal {
     type Ident = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
+    fn env_type_of(&self, _: &TypeEnv) -> ArcType {
         match *self {
             Literal::Int(_) => Type::int(),
             Literal::Float(_) => Type::float(),
@@ -486,4 +486,11 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
 
 pub fn is_operator_char(c: char) -> bool {
     "#+-*/&|=<>:.".chars().any(|x| x == c)
+}
+
+pub fn is_constructor(s: &str) -> bool {
+    s.rsplit('.')
+        .next()
+        .unwrap()
+        .starts_with(char::is_uppercase)
 }

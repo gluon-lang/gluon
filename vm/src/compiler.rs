@@ -1,13 +1,14 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast::{Literal, Pattern, TypedIdent, Typed, DisplayEnv, SpannedExpr, Expr};
+use base::ast::{Literal, TypedIdent, Typed, DisplayEnv, SpannedExpr};
 use base::resolve;
 use base::kind::{ArcKind, KindEnv};
-use base::types::{self, Alias, ArcType, Type, TypeEnv};
+use base::types::{self, Alias, ArcType, BuiltinType, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::pos::{Line, NO_EXPANSION};
 use base::source::Source;
+use core::{self, Expr, Pattern};
 use types::*;
 use vm::GlobalVmState;
 use source_map::{LocalMap, SourceMap};
@@ -15,7 +16,7 @@ use self::Variable::*;
 
 use {Error, Result};
 
-pub type CExpr = SpannedExpr<Symbol>;
+pub type CExpr<'a> = &'a core::Expr<'a>;
 
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
@@ -480,15 +481,18 @@ impl<'a> Compiler<'a> {
 
     /// Compiles an expression to a zero argument function which can be directly fed to the
     /// interpreter
-    pub fn compile_expr(&mut self, expr: &CExpr) -> Result<CompiledFunction> {
+    pub fn compile_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Result<CompiledFunction> {
+        let env = self.vm.get_env();
+        let allocator = core::Allocator::new(&*env);
+        let expr = allocator.translate(expr);
         let mut env = FunctionEnvs::new();
         let id = self.empty_symbol.clone();
         let typ = Type::function(vec![],
                                  ArcType::from(expr.env_type_of(&self.globals).clone()));
 
         env.start_function(self, 0, id, typ);
-        self.compile(expr, &mut env, true)?;
-        let current_line = self.source.line_number_at_byte(expr.span.end);
+        self.compile(&expr, &mut env, true)?;
+        let current_line = self.source.line_number_at_byte(expr.span().end);
         let FunctionEnv { function, .. } = env.end_function(self, current_line);
         Ok(function)
     }
@@ -514,7 +518,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile(&mut self,
-               mut expr: &CExpr,
+               mut expr: CExpr,
                function: &mut FunctionEnvs,
                tail_position: bool)
                -> Result<()> {
@@ -523,15 +527,15 @@ impl<'a> Compiler<'a> {
         function.stack.enter_scope();
         // Don't update the current_line for macro expanded code as the lines in that code do not come
         // from this module
-        if expr.span.expansion_id == NO_EXPANSION {
+        if expr.span().expansion_id == NO_EXPANSION {
             function.current_line = self.source
-                .line_number_at_byte(expr.span.start);
+                .line_number_at_byte(expr.span().start);
         }
         while let Some(next) = self.compile_(expr, function, tail_position)? {
             expr = next;
-            if expr.span.expansion_id == NO_EXPANSION {
+            if expr.span().expansion_id == NO_EXPANSION {
                 function.current_line = self.source
-                    .line_number_at_byte(expr.span.start);
+                    .line_number_at_byte(expr.span().start);
             }
         }
         let count = function.exit_scope(self);
@@ -540,12 +544,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn compile_<'e>(&mut self,
-                    expr: &'e CExpr,
+                    expr: CExpr<'e>,
                     function: &mut FunctionEnvs,
                     tail_position: bool)
-                    -> Result<Option<&'e CExpr>> {
-        match expr.value {
-            Expr::Literal(ref lit) => {
+                    -> Result<Option<CExpr<'e>>> {
+        match *expr {
+            Expr::Const(ref lit, _) => {
                 match *lit {
                     Literal::Int(i) => function.emit(PushInt(i as isize)),
                     Literal::Byte(b) => function.emit(PushByte(b)),
@@ -554,133 +558,64 @@ impl<'a> Compiler<'a> {
                     Literal::Char(c) => function.emit(PushInt(c as isize)),
                 }
             }
-            Expr::Ident(ref id) => self.load_identifier(&id.name, function)?,
-            Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                self.compile(&**pred, function, false)?;
-                let jump_index = function.function.instructions.len();
-                function.emit(CJump(0));
-
-                self.compile(&**if_false, function, tail_position)?;
-                // The stack size of the true branch should not be increased by the false branch
-                function.stack_size -= 1;
-                let false_jump_index = function.function.instructions.len();
-                function.emit(Jump(0));
-
-                function.function.instructions[jump_index] =
-                    CJump(function.function.instructions.len() as VmIndex);
-                self.compile(&**if_true, function, tail_position)?;
-                function.function.instructions[false_jump_index] =
-                    Jump(function.function.instructions.len() as VmIndex);
-            }
-            Expr::Infix(ref lhs, ref op, ref rhs) => {
-                if op.value.name.as_ref() == "&&" {
-                    self.compile(&**lhs, function, false)?;
-                    let lhs_end = function.function.instructions.len();
-                    function.emit(CJump(lhs_end as VmIndex + 3));//Jump to rhs evaluation
-                    function.emit(Construct { tag: 0, args: 0 });
-                    function.emit(Jump(0));//lhs false, jump to after rhs
-                    // Dont count the integer added added above as the next part of the code never
-                    // pushed it
-                    function.stack_size -= 1;
-                    self.compile(&**rhs, function, tail_position)?;
-                    // replace jump instruction
-                    function.function.instructions[lhs_end + 2] =
-                        Jump(function.function.instructions.len() as VmIndex);
-                } else if op.value.name.as_ref() == "||" {
-                    self.compile(&**lhs, function, false)?;
-                    let lhs_end = function.function.instructions.len();
-                    function.emit(CJump(0));
-                    self.compile(&**rhs, function, tail_position)?;
-                    function.emit(Jump(0));
-                    function.function.instructions[lhs_end] =
-                        CJump(function.function.instructions.len() as VmIndex);
-                    function.emit(Construct { tag: 1, args: 0 });
-                    // Dont count the integer above
-                    function.stack_size -= 1;
-                    let end = function.function.instructions.len();
-                    function.function.instructions[end - 2] = Jump(end as VmIndex);
-                } else {
-                    let instr = match self.symbols.string(&op.value.name) {
-                        "#Int+" => AddInt,
-                        "#Int-" => SubtractInt,
-                        "#Int*" => MultiplyInt,
-                        "#Int/" => DivideInt,
-                        "#Int<" | "#Char<" => IntLT,
-                        "#Int==" | "#Char==" => IntEQ,
-                        "#Byte+" => AddByte,
-                        "#Byte-" => SubtractByte,
-                        "#Byte*" => MultiplyByte,
-                        "#Byte/" => DivideByte,
-                        "#Byte<" => ByteLT,
-                        "#Byte==" => ByteEQ,
-                        "#Float+" => AddFloat,
-                        "#Float-" => SubtractFloat,
-                        "#Float*" => MultiplyFloat,
-                        "#Float/" => DivideFloat,
-                        "#Float<" => FloatLT,
-                        "#Float==" => FloatEQ,
-                        _ => {
-                            self.load_identifier(&op.value.name, function)?;
-                            Call(2)
-                        }
-                    };
-                    self.compile(&**lhs, function, false)?;
-                    self.compile(&**rhs, function, false)?;
-                    function.emit(instr);
-                }
-            }
-            Expr::LetBindings(ref bindings, ref body) => {
+            Expr::Ident(ref id, _) => self.load_identifier(&id.name, function)?,
+            Expr::Let(ref let_binding, ref body) => {
                 self.stack_constructors.enter_scope();
                 let stack_start = function.stack_size;
                 // Index where the instruction to create the first closure should be at
                 let first_index = function.function.instructions.len();
-                let is_recursive = bindings.iter().all(|bind| bind.args.len() > 0);
-                if is_recursive {
-                    for bind in bindings.iter() {
-                        // Add the NewClosure instruction before hand
-                        // it will be fixed later
-                        function.emit(NewClosure {
-                            function_index: 0,
-                            upvars: 0,
-                        });
-                        match bind.name.value {
-                            Pattern::Ident(ref name) => {
-                                function.new_stack_var(self, name.name.clone(), name.typ.clone());
-                            }
-                            _ => panic!("ICE: Unexpected non identifer pattern"),
-                        }
+                match let_binding.expr {
+                    core::Named::Expr(ref bind_expr) => {
+                        self.compile(bind_expr, function, false)?;
+                        function.new_stack_var(self,
+                                               let_binding.name.name.clone(),
+                                               let_binding.name.typ.clone());
                     }
-                }
-                for (i, bind) in bindings.iter().enumerate() {
+                    core::Named::Recursive(ref closures) => {
+                        for closure in closures.iter() {
+                            // Add the NewClosure instruction before hand
+                            // it will be fixed later
+                            function.emit(NewClosure {
+                                function_index: 0,
+                                upvars: 0,
+                            });
+                            function.new_stack_var(self,
+                                                   closure.name.name.clone(),
+                                                   closure.name.typ.clone());
+                        }
+                        for (i, closure) in closures.iter().enumerate() {
+                            function.stack.enter_scope();
 
-                    if is_recursive {
-                        function.emit(Push(stack_start + i as VmIndex));
-                        let name = match bind.name.value {
-                            Pattern::Ident(ref name) => name,
-                            _ => panic!("Lambda binds to non identifer pattern"),
-                        };
-                        let (function_index, vars, cf) =
-                            self.compile_lambda(name, &bind.args, &bind.expr, function)?;
-                        let offset = first_index + i;
-                        function.function.instructions[offset] = NewClosure {
-                            function_index: function_index,
-                            upvars: vars,
-                        };
-                        function.emit(CloseClosure(vars));
-                        function.stack_size -= vars;
-                        function.function.inner_functions.push(cf);
-                    } else {
-                        self.compile(&bind.expr, function, false)?;
-                        let typ = bind.expr.env_type_of(self);
-                        self.compile_let_pattern(&bind.name.value, &typ, function)?;
+                            function.emit(Push(stack_start + i as VmIndex));
+                            let (function_index, vars, cf) = self.compile_lambda(&closure.name,
+                                                &closure.args,
+                                                &closure.expr,
+                                                function)?;
+                            let offset = first_index + i;
+                            function.function.instructions[offset] = NewClosure {
+                                function_index: function_index,
+                                upvars: vars,
+                            };
+                            function.emit(CloseClosure(vars));
+                            function.stack_size -= vars;
+                            function.function.inner_functions.push(cf);
+
+                            function.exit_scope(self);
+                        }
                     }
                 }
                 return Ok(Some(body));
             }
-            Expr::App(ref func, ref args) => {
-                if let Expr::Ident(ref id) = func.value {
+            Expr::Call(func, args) => {
+                if let Expr::Ident(ref id, _) = *func {
+                    if id.name.as_ref() == "&&" || id.name.as_ref() == "||" ||
+                       id.name.as_ref().starts_with('#') {
+                        self.compile_primitive(&id.name, args, function, tail_position)?;
+                        return Ok(None);
+                    }
+
                     if let Some(Constructor(tag, num_args)) = self.find(&id.name, function) {
-                        for arg in args.iter() {
+                        for arg in args {
                             self.compile(arg, function, false)?;
                         }
                         function.emit(Construct {
@@ -690,22 +625,14 @@ impl<'a> Compiler<'a> {
                         return Ok(None);
                     }
                 }
-                self.compile(&**func, function, false)?;
+                self.compile(func, function, false)?;
                 for arg in args.iter() {
                     self.compile(arg, function, false)?;
                 }
                 function.emit_call(args.len() as VmIndex, tail_position);
             }
-            Expr::Projection(ref expr, ref id, ref typ) => {
-                self.compile(&**expr, function, false)?;
-                debug!("{:?} {:?} {:?}", expr, id, typ);
-                let typ = expr.env_type_of(self);
-                debug!("Projection {}", types::display_type(&self.symbols, &typ));
-
-                function.emit_field(self, &typ, id)?;
-            }
             Expr::Match(ref expr, ref alts) => {
-                self.compile(&**expr, function, false)?;
+                self.compile(expr, function, false)?;
                 // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
@@ -713,7 +640,7 @@ impl<'a> Compiler<'a> {
                 // Emit a TestTag + Jump instuction for each alternative which jumps to the
                 // alternatives code if TestTag is sucessesful
                 for alt in alts.iter() {
-                    match alt.pattern.value {
+                    match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
                             let tag = self.find_tag(&typ, &id.name)
                                 .unwrap_or_else(|| {
@@ -752,7 +679,7 @@ impl<'a> Compiler<'a> {
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
                     self.stack_constructors.enter_scope();
                     function.stack.enter_scope();
-                    match alt.pattern.value {
+                    match alt.pattern {
                         Pattern::Constructor(_, ref args) => {
                             function.function.instructions[start_index] =
                                 CJump(function.function.instructions.len() as VmIndex);
@@ -763,7 +690,7 @@ impl<'a> Compiler<'a> {
                         }
                         Pattern::Record { .. } => {
                             let typ = &expr.env_type_of(self);
-                            self.compile_let_pattern(&alt.pattern.value, typ, function)?;
+                            self.compile_let_pattern(&alt.pattern, typ, function)?;
                         }
                         Pattern::Ident(ref id) => {
                             function.function.instructions[start_index] =
@@ -783,72 +710,110 @@ impl<'a> Compiler<'a> {
                         Jump(function.function.instructions.len() as VmIndex);
                 }
             }
-            Expr::Array(ref a) => {
-                for expr in a.exprs.iter() {
-                    self.compile(expr, function, false)?;
-                }
-                function.emit(ConstructArray(a.exprs.len() as VmIndex));
-            }
-            Expr::Lambda(ref lambda) => {
-                let (function_index, vars, cf) =
-                    self.compile_lambda(&lambda.id, &lambda.args, &lambda.body, function)?;
-                function.emit(MakeClosure {
-                    function_index: function_index,
-                    upvars: vars,
-                });
-                function.stack_size -= vars;
-                function.function.inner_functions.push(cf);
-            }
-            Expr::TypeBindings(ref type_bindings, ref expr) => {
-                for bind in type_bindings {
-                    let alias = bind.finalized_alias
-                        .as_ref()
-                        .expect("ICE: Expected finalized alias");
-
-                    self.stack_types.insert(bind.alias.name.clone(), alias.clone());
-                    self.stack_constructors
-                        .insert(bind.name.clone(), alias.typ().into_owned());
-                }
-                return Ok(Some(expr));
-            }
-            Expr::Record { exprs: ref fields, .. } => {
-                for field in fields {
-                    match field.1 {
-                        Some(ref field_expr) => self.compile(field_expr, function, false)?,
-                        None => self.load_identifier(&field.0, function)?,
-                    }
-                }
-                let index =
-                    function.add_record_map(fields.iter().map(|field| field.0.clone()).collect());
-                function.emit(ConstructRecord {
-                    record: index,
-                    args: fields.len() as u32,
-                });
-            }
-            Expr::Tuple(ref exprs) => {
+            Expr::Data(ref id, exprs, _) => {
                 for expr in exprs {
                     self.compile(expr, function, false)?;
                 }
-                function.emit(Construct {
-                    tag: 0,
-                    args: exprs.len() as u32,
-                });
-            }
-            Expr::Block(ref exprs) => {
-                let (last, inits) = exprs.split_last().expect("Expr in block");
-                for expr in inits {
-                    self.compile(expr, function, false)?;
+                let typ = resolve::remove_aliases_cow(self, &id.typ);
+                match **typ {
+                    Type::Record(_) => {
+                        let index = function.add_record_map(typ.row_iter()
+                            .map(|field| field.name.clone())
+                            .collect());
+                        function.emit(ConstructRecord {
+                            record: index,
+                            args: exprs.len() as u32,
+                        });
+                    }
+                    Type::App(ref array, _) if **array == Type::Builtin(BuiltinType::Array) => {
+                        function.emit(ConstructArray(exprs.len() as VmIndex));
+                    }
+                    Type::Builtin(BuiltinType::Unit) => {
+                        function.emit(Construct { tag: 0, args: 0 })
+                    }
+                    Type::Variant(ref variants) => {
+                        function.emit(Construct {
+                            tag: variants.row_iter()
+                                .position(|field| field.name == id.name)
+                                .unwrap() as VmTag,
+                            args: exprs.len() as u32,
+                        });
+                    }
+                    _ => panic!("ICE: Unexpected data type: {}", typ),
                 }
-                self.compile(last, function, tail_position)?;
-                function.emit(Slide(inits.len() as u32));
             }
-            Expr::Error => panic!("ICE: Error expression found in the compiler"),
         }
         Ok(None)
     }
 
+    fn compile_primitive(&mut self,
+                         op: &Symbol,
+                         args: &[Expr],
+                         function: &mut FunctionEnvs,
+                         tail_position: bool)
+                         -> Result<()> {
+        let lhs = &args[0];
+        let rhs = &args[1];
+        if op.as_ref() == "&&" {
+            self.compile(lhs, function, false)?;
+            let lhs_end = function.function.instructions.len();
+            function.emit(CJump(lhs_end as VmIndex + 3)); //Jump to rhs evaluation
+            function.emit(Construct { tag: 0, args: 0 });
+            function.emit(Jump(0)); //lhs false, jump to after rhs
+            // Dont count the integer added added above as the next part of the code never
+            // pushed it
+            function.stack_size -= 1;
+            self.compile(rhs, function, tail_position)?;
+            // replace jump instruction
+            function.function.instructions[lhs_end + 2] =
+                Jump(function.function.instructions.len() as VmIndex);
+        } else if op.as_ref() == "||" {
+            self.compile(lhs, function, false)?;
+            let lhs_end = function.function.instructions.len();
+            function.emit(CJump(0));
+            self.compile(rhs, function, tail_position)?;
+            function.emit(Jump(0));
+            function.function.instructions[lhs_end] =
+                CJump(function.function.instructions.len() as VmIndex);
+            function.emit(Construct { tag: 1, args: 0 });
+            // Dont count the integer above
+            function.stack_size -= 1;
+            let end = function.function.instructions.len();
+            function.function.instructions[end - 2] = Jump(end as VmIndex);
+        } else {
+            let instr = match self.symbols.string(op) {
+                "#Int+" => AddInt,
+                "#Int-" => SubtractInt,
+                "#Int*" => MultiplyInt,
+                "#Int/" => DivideInt,
+                "#Int<" | "#Char<" => IntLT,
+                "#Int==" | "#Char==" => IntEQ,
+                "#Byte+" => AddByte,
+                "#Byte-" => SubtractByte,
+                "#Byte*" => MultiplyByte,
+                "#Byte/" => DivideByte,
+                "#Byte<" => ByteLT,
+                "#Byte==" => ByteEQ,
+                "#Float+" => AddFloat,
+                "#Float-" => SubtractFloat,
+                "#Float*" => MultiplyFloat,
+                "#Float/" => DivideFloat,
+                "#Float<" => FloatLT,
+                "#Float==" => FloatEQ,
+                _ => {
+                    self.load_identifier(op, function)?;
+                    Call(2)
+                }
+            };
+            self.compile(lhs, function, false)?;
+            self.compile(rhs, function, false)?;
+            function.emit(instr);
+        }
+        Ok(())
+    }
+
     fn compile_let_pattern(&mut self,
-                           pattern: &Pattern<Symbol>,
+                           pattern: &Pattern,
                            pattern_type: &ArcType,
                            function: &mut FunctionEnvs)
                            -> Result<()> {
@@ -856,18 +821,8 @@ impl<'a> Compiler<'a> {
             Pattern::Ident(ref name) => {
                 function.new_stack_var(self, name.name.clone(), pattern_type.clone());
             }
-            Pattern::Record { ref types, ref fields, .. } => {
+            Pattern::Record(ref fields) => {
                 let typ = resolve::remove_aliases(self, pattern_type.clone());
-                // Insert all variant constructor into scope
-                with_pattern_types(types, &typ, |name, alias| {
-                    // FIXME: Workaround so that both the types name in this module and its global
-                    // name are imported. Without this aliases may not be traversed properly
-                    self.stack_types.insert(alias.name.clone(), alias.clone());
-                    self.stack_types.insert(name.clone(), alias.clone());
-                    let aliased_type = alias.typ().into_owned();
-                    self.stack_constructors.insert(alias.name.clone(), aliased_type.clone());
-                    self.stack_constructors.insert(name.clone(), aliased_type);
-                });
                 match *typ {
                     Type::Record(_) => {
                         let mut field_iter = typ.row_iter();
@@ -929,7 +884,7 @@ impl<'a> Compiler<'a> {
     fn compile_lambda(&mut self,
                       id: &TypedIdent,
                       args: &[TypedIdent],
-                      body: &SpannedExpr<Symbol>,
+                      body: CExpr,
                       function: &mut FunctionEnvs)
                       -> Result<(VmIndex, VmIndex, CompiledFunction)> {
         function.start_function(self, args.len() as VmIndex, id.name.clone(), id.typ.clone());
@@ -944,7 +899,7 @@ impl<'a> Compiler<'a> {
 
         // Insert all free variables into the above globals free variables
         // if they arent in that lambdas scope
-        let current_line = self.source.line_number_at_byte(body.span.end);
+        let current_line = self.source.line_number_at_byte(body.span().end);
         let f = function.end_function(self, current_line);
         for &(ref var, _) in f.free_vars.iter() {
             match self.find(var, function).expect("free_vars: find") {
@@ -957,16 +912,5 @@ impl<'a> Compiler<'a> {
         let free_vars = f.free_vars.len() as VmIndex;
         let FunctionEnv { function, .. } = f;
         Ok((function_index, free_vars, function))
-    }
-}
-
-fn with_pattern_types<F>(types: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut f: F)
-    where F: FnMut(&Symbol, &Alias<Symbol, ArcType>),
-{
-    for field in types {
-        let associated_type = typ.type_field_iter()
-            .find(|type_field| type_field.name.name_eq(&field.0))
-            .expect("Associated type to exist in record");
-        f(&field.0, &associated_type.typ);
     }
 }

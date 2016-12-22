@@ -660,7 +660,8 @@ impl<'a, Id: 'a, T> Iterator for RowIterator<'a, T>
 
     fn next(&mut self) -> Option<&'a Field<Id, T>> {
         match **self.typ {
-            Type::Record(ref row) => {
+            Type::Record(ref row) |
+            Type::Variant(ref row) => {
                 self.typ = row;
                 self.next()
             }

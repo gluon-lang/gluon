@@ -84,15 +84,15 @@ fn script() {
     let _ = ::env_logger::init();
     let text = r"
 type T = { x: Int, y: Int } in
-let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
-let sub = \l r -> { x = l.x #Int- r.x, y = l.y #Int- r.y } in
+let add l r = { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
+let sub l r = { x = l.x #Int- r.x, y = l.y #Int- r.y } in
 { T, add, sub }
 ";
     let mut vm = make_vm();
-    load_script(&mut vm, "Vec", text).unwrap_or_else(|err| panic!("{}", err));
+    load_script(&mut vm, "vec", text).unwrap_or_else(|err| panic!("{}", err));
 
     let script = r#"
-let { T, add, sub } = Vec
+let { T, add, sub } = vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, script);
@@ -318,7 +318,7 @@ match A with
     assert!(result.is_err());
 }
 
-test_expr!{ record_pattern,
+test_expr!{ match_record_pattern,
 r#"
 match { x = 1, y = "abc" } with
 | { x, y = z } -> x #Int+ string_prim.length z
@@ -761,14 +761,14 @@ pure 123
 }
 
 #[test]
-fn dont_panic_on_partially_applied_constructor() {
+fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
     let result = Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "test", "Some")
-        .sync_or_error();
-    assert!(result.is_err());
+        .run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
 }
 
 #[test]

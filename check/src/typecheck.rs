@@ -521,26 +521,27 @@ impl<'a> Typecheck<'a> {
                 let lhs_type = self.typecheck(&mut **lhs);
                 let rhs_type = self.typecheck(&mut **rhs);
                 let op_name = String::from(self.symbols.string(&op.value.name));
-                let result = if op_name.starts_with('#') {
+                let return_type = if op_name.starts_with('#') {
                     // Handle primitives
                     let arg_type = self.unify(&lhs_type, rhs_type)?;
                     let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
                     let prim_type = primitive_type(op_type);
-                    op.value.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
-                                                  prim_type.clone());
                     let typ = self.unify(&prim_type, arg_type)?;
-                    match &op_name[1 + op_type.len()..] {
-                        "+" | "-" | "*" | "/" => Ok(typ),
-                        "==" | "<" => Ok(self.bool()),
-                        _ => Err(TypeError::UndefinedVariable(op.value.name.clone())),
-                    }
+                    let return_type = match &op_name[1 + op_type.len()..] {
+                        "+" | "-" | "*" | "/" => typ,
+                        "==" | "<" => self.bool(),
+                        _ => return Err(TypeError::UndefinedVariable(op.value.name.clone())),
+                    };
+                    op.value.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
+                                                  return_type.clone());
+                    return_type
                 } else {
                     match &*op_name {
                         "&&" | "||" => {
                             self.unify(&lhs_type, rhs_type.clone())?;
                             op.value.typ = Type::function(vec![self.bool(), self.bool()],
                                                           self.bool());
-                            self.unify(&self.bool(), lhs_type)
+                            self.unify(&self.bool(), lhs_type)?
                         }
                         _ => {
                             op.value.typ = self.find(&op.value.name)?;
@@ -552,11 +553,11 @@ impl<'a> Typecheck<'a> {
                                 .map(|(_, ret)| ret.clone())
                                 .expect("ICE: unify binop");
 
-                            Ok(ret)
+                            ret
                         }
                     }
                 };
-                result.map(TailCall::Type)
+                Ok(TailCall::Type(return_type))
             }
             Expr::Tuple(ref mut exprs) => {
                 assert!(exprs.len() == 0);
