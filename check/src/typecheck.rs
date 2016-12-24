@@ -173,14 +173,17 @@ impl<'a> TypeEnv for Environment<'a> {
     fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
         self.stack_types
             .iter()
-            .find(|&(_, &(_, ref alias))| match *alias.typ {
-                Type::Record(_) => {
-                    fields.iter()
-                        .all(|name| alias.typ.row_iter().any(|f| f.name.name_eq(name)))
+            .find(|&(_, &(_, ref alias))| {
+                match **alias.unresolved_type() {
+                    Type::Record(ref row) => {
+                        fields.iter()
+                            .all(|name| row.row_iter().any(|f| f.name.name_eq(name)))
+                    }
+                    _ => false,
                 }
-                _ => false,
             })
-            .map(|t| (&(t.1).0, &(t.1).1.typ))
+            // FIXME Don't use unresolved_type
+            .map(|t| (&(t.1).0, (t.1).1.unresolved_type()))
             .or_else(|| self.environment.find_record(fields))
     }
 }
@@ -290,7 +293,8 @@ impl<'a> Typecheck<'a> {
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
-        if let Type::Variant(ref row) = *alias.typ {
+        let aliased_type = alias.typ();
+        if let Type::Variant(ref row) = **aliased_type {
             for field in row.row_iter().cloned() {
                 let symbol = self.symbols.symbol(field.name.as_ref());
                 self.original_symbols.insert(symbol, field.name.clone());
@@ -929,12 +933,12 @@ impl<'a> Typecheck<'a> {
             let new = self.symbols.scoped_symbol(&s);
             self.original_symbols.insert(bind.alias.name.clone(), new.clone());
             // Rename the aliase's name to its global name
-            Alias::make_mut(&mut bind.alias).name = new;
+            bind.alias.name = new;
         }
 
         for bind in bindings.iter_mut() {
-            let typ = &mut Alias::make_mut(&mut bind.alias).typ;
-            *typ = self.create_unifiable_signature(typ.clone());
+            *bind.alias.unresolved_type_mut() =
+                self.create_unifiable_signature(bind.alias.unresolved_type().clone());
         }
 
         {
@@ -948,28 +952,31 @@ impl<'a> Typecheck<'a> {
                 // and bind the same variables to the arguments of the type binding
                 // ('a' and 'b' in the example)
                 let mut id_kind = check.type_kind();
-                let alias = Alias::make_mut(&mut bind.alias);
-                for generic in alias.args.iter_mut().rev() {
+                for generic in bind.alias.args.iter_mut().rev() {
                     check.instantiate_kinds(&mut generic.kind);
                     id_kind = Kind::function(generic.kind.clone(), id_kind);
                 }
-                check.add_local(alias.name.clone(), id_kind);
+                check.add_local(bind.alias.name.clone(), id_kind);
             }
 
             // Kindcheck all the types in the environment
             for bind in bindings.iter_mut() {
                 check.set_variables(&bind.alias.args);
-                let typ = &mut Alias::make_mut(&mut bind.alias).typ;
-                check.kindcheck_type(typ)?;
+                check.kindcheck_type(bind.alias.unresolved_type_mut())?;
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
             for bind in bindings.iter_mut() {
-                let alias = Alias::make_mut(&mut bind.alias);
-                alias.typ = check.finalize_type(alias.typ.clone());
+                let alias = &mut bind.alias;
+                *alias.unresolved_type_mut() = check.finalize_type(alias.unresolved_type().clone());
                 for arg in &mut alias.args {
                     *arg = check.finalize_generic(&arg);
                 }
+            }
+            let alias_group =
+                Alias::group(bindings.iter().map(|bind| bind.alias.clone()).collect());
+            for (bind, alias) in bindings.iter_mut().zip(alias_group) {
+                bind.finalized_alias = Some(alias);
             }
         }
 
@@ -981,7 +988,7 @@ impl<'a> Typecheck<'a> {
                     value: TypeError::DuplicateTypeDefinition(bind.name.clone()),
                 });
             } else {
-                self.stack_type(bind.name.clone(), &bind.alias);
+                self.stack_type(bind.name.clone(), &bind.finalized_alias.as_ref().unwrap());
             }
         }
 
@@ -1161,23 +1168,6 @@ impl<'a> Typecheck<'a> {
     fn create_unifiable_signature(&mut self, typ: ArcType) -> ArcType {
         let mut f = |typ: &Type<Symbol, ArcType>| {
             match *typ {
-                Type::Alias(ref alias) => {
-                    self.original_symbols
-                        .get(&alias.name)
-                        .or_else(|| {
-                            self.environment
-                                .find_type_info(&alias.name)
-                                .map(|found_alias| &found_alias.name)
-                        })
-                        .cloned()
-                        .map(|new_id| {
-                            ArcType::from(Type::Alias(AliasData {
-                                name: new_id,
-                                args: alias.args.clone(),
-                                typ: alias.typ.clone(),
-                            }))
-                        })
-                }
                 Type::Ident(ref id) => {
                     // Substitute the Id by its alias if possible
                     let new_id = self.original_symbols
@@ -1376,7 +1366,7 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                 None => {
                     match get_alias_app(&self.tc.environment, &self.typ) {
                         Some((alias, args)) => {
-                            match resolve::type_of_alias(alias, args) {
+                            match resolve::type_of_alias(&self.tc.environment, alias, args) {
                                 Some(typ) => (None, typ.clone()),
                                 None => return None,
                             }

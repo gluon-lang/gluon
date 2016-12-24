@@ -264,7 +264,7 @@ impl CompilerEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| {
-                match *alias.typ {
+                match **alias.unresolved_type() {
                     Type::Variant(ref row) => {
                         row.row_iter()
                             .enumerate()
@@ -753,8 +753,13 @@ impl<'a> Compiler<'a> {
             }
             Expr::TypeBindings(ref type_bindings, ref expr) => {
                 for bind in type_bindings {
-                    self.stack_types.insert(bind.alias.name.clone(), bind.alias.clone());
-                    self.stack_constructors.insert(bind.name.clone(), bind.alias.typ.clone());
+                    let alias = bind.finalized_alias
+                        .as_ref()
+                        .expect("ICE: Expected finalized alias");
+
+                    self.stack_types.insert(bind.alias.name.clone(), alias.clone());
+                    self.stack_constructors
+                        .insert(bind.name.clone(), alias.typ().into_owned());
                 }
                 return Ok(Some(expr));
             }
@@ -811,8 +816,9 @@ impl<'a> Compiler<'a> {
                     // name are imported. Without this aliases may not be traversed properly
                     self.stack_types.insert(alias.name.clone(), alias.clone());
                     self.stack_types.insert(name.clone(), alias.clone());
-                    self.stack_constructors.insert(alias.name.clone(), alias.typ.clone());
-                    self.stack_constructors.insert(name.clone(), alias.typ.clone());
+                    let aliased_type = alias.typ().into_owned();
+                    self.stack_constructors.insert(alias.name.clone(), aliased_type.clone());
+                    self.stack_constructors.insert(name.clone(), aliased_type);
                 });
                 match *typ {
                     Type::Record(_) => {

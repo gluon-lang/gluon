@@ -54,7 +54,7 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
                 }
             };
 
-            Ok(type_of_alias(alias, typ.unapplied_args()))
+            Ok(type_of_alias(env, alias, typ.unapplied_args()))
         }
         None => Ok(None),
     }
@@ -67,9 +67,12 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
 ///     alias = Result e t (| Err e | Ok t)
 ///     args = [Error, Option a]
 ///     result = | Err Error | Ok (Option a)
-pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Option<ArcType> {
+pub fn type_of_alias(env: &TypeEnv,
+                     alias: &AliasData<Symbol, ArcType>,
+                     args: &[ArcType])
+                     -> Option<ArcType> {
     let alias_args = &alias.args;
-    let mut typ = alias.typ.clone();
+    let mut typ = alias.unresolved_type().clone();
 
     // It is ok to take the aliased type only if the alias is fully applied or if it
     // the missing argument only appear in order at the end of the alias
@@ -119,6 +122,12 @@ pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Op
                     .zip(args)
                     .find(|&(arg, _)| arg.id == generic.id)
                     .map(|(_, typ)| typ.clone())
+            }
+            Type::Ident(ref id) => {
+                // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
+                // to resolve the type later on
+                env.find_type_info(id)
+                    .map(|a| a.clone().into_type())
             }
             _ => None,
         }

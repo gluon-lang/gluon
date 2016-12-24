@@ -172,7 +172,7 @@ impl TypeEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| {
-                match *alias.typ {
+                match **alias.unresolved_type() {
                     Type::Variant(ref row) => {
                         row.row_iter().find(|field| field.name.as_ref() == id)
                     }
@@ -193,17 +193,17 @@ impl TypeEnv for TypeInfos {
         self.id_to_type
             .iter()
             .find(|&(_, alias)| {
-                match *alias.typ {
-                    Type::Record(_) => {
-                        fields.iter().all(|name| {
-                            alias.typ.row_iter().any(|f| f.name.as_ref() == name.as_ref())
-                        })
+                match **alias.unresolved_type() {
+                    Type::Record(ref row) => {
+                        fields.iter()
+                            .all(|name| row.row_iter().any(|f| f.name.as_ref() == name.as_ref()))
                     }
                     _ => false,
                 }
             })
             .and_then(|t| {
-                let typ = &t.1.typ;
+                // FIXME Don't use unresolved type
+                let typ = t.1.unresolved_type();
                 self.type_to_id.get(typ).map(|id_type| (id_type, typ))
             })
     }
