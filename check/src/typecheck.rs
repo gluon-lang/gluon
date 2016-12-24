@@ -182,7 +182,8 @@ impl<'a> TypeEnv for Environment<'a> {
                     _ => false,
                 }
             })
-            .map(|t| ((t.1).0.clone(), (t.1).1.typ().into_owned()))
+            // FIXME Don't use unresolved_type
+            .map(|t| ((t.1).0.clone(), (t.1).1.unresolved_type().clone()))
             .or_else(|| self.environment.find_record(fields))
     }
 }
