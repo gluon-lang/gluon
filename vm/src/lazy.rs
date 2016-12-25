@@ -5,14 +5,13 @@ use std::sync::Mutex;
 
 use base::types;
 use base::types::{Type, ArcType};
-use base::fnv::FnvMap;
 use gc::{Gc, GcPtr, Move, Traverseable};
 use api::{OpaqueValue, Userdata, VmType};
 use api::Generic;
 use api::generic::A;
 use vm::{Status, Thread};
 use {Error, Result};
-use value::{Value, deep_clone};
+use value::{Value, Cloner};
 use stack::StackFrame;
 use thread::ThreadInternal;
 
@@ -24,22 +23,18 @@ pub struct Lazy<T> {
 impl<T> Userdata for Lazy<T>
     where T: Any + Send + Sync,
 {
-    fn deep_clone(&self,
-                  visited: &mut FnvMap<*const (), Value>,
-                  gc: &mut Gc,
-                  thread: &Thread)
-                  -> Result<GcPtr<Box<Userdata>>> {
+    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
         let value = self.value.lock().unwrap();
         let cloned_value = match *value {
             Lazy_::Blackhole => return Err(Error::Message("<<loop>>".into())),
-            Lazy_::Thunk(value) => Lazy_::Thunk(deep_clone(value, visited, gc, thread)?),
-            Lazy_::Value(value) => Lazy_::Value(deep_clone(value, visited, gc, thread)?),
+            Lazy_::Thunk(value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?),
+            Lazy_::Value(value) => Lazy_::Value(deep_cloner.deep_clone(value)?),
         };
         let data: Box<Userdata> = Box::new(Lazy {
             value: Mutex::new(cloned_value),
             _marker: PhantomData::<A>,
         });
-        gc.alloc(Move(data))
+        deep_cloner.gc().alloc(Move(data))
     }
 }
 

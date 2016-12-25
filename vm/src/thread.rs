@@ -14,7 +14,6 @@ use base::metadata::Metadata;
 use base::symbol::Symbol;
 use base::types::ArcType;
 use base::types;
-use base::fnv::FnvMap;
 
 use {Variants, Error, Result};
 use field_map::FieldMap;
@@ -644,18 +643,13 @@ impl ThreadInternal for Thread {
                   metadata: Metadata,
                   value: Value)
                   -> Result<()> {
-        let mut visited = FnvMap::default();
-        let value = ::value::deep_clone(value,
-                                        &mut visited,
-                                        &mut self.global_env().gc.lock().unwrap(),
-                                        self)?;
+        let value = ::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap()).deep_clone(value)?;
         self.global_env().set_global(name, typ, metadata, value)
     }
 
     fn deep_clone_value(&self, value: Value) -> Result<Value> {
-        let mut visited = FnvMap::default();
         let mut context = self.current_context();
-        ::value::deep_clone(value, &mut visited, &mut context.gc, self)
+        ::value::Cloner::new(self, &mut context.gc).deep_clone(value)
     }
 }
 
