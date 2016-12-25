@@ -23,6 +23,7 @@ pub mod gc;
 pub mod macros;
 pub mod thread;
 pub mod primitives;
+pub mod reference;
 pub mod stack;
 pub mod types;
 
@@ -30,7 +31,6 @@ mod array;
 mod field_map;
 mod interner;
 mod lazy;
-mod reference;
 mod source_map;
 mod value;
 mod vm;

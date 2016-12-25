@@ -721,6 +721,7 @@ pub struct Cloner<'t> {
     visited: FnvMap<*const (), Value>,
     thread: &'t Thread,
     gc: &'t mut Gc,
+    receiver_generation: Generation,
 }
 
 impl<'t> Cloner<'t> {
@@ -728,6 +729,7 @@ impl<'t> Cloner<'t> {
         Cloner {
             visited: FnvMap::default(),
             thread: thread,
+            receiver_generation: gc.generation(),
             gc: gc,
         }
     }
@@ -740,10 +742,16 @@ impl<'t> Cloner<'t> {
         self.gc
     }
 
+    /// Deep clones the entire value doing no sharing
+    pub fn force_full_clone(&mut self) -> &mut Self {
+        self.receiver_generation = Generation::disjoint();
+        self
+    }
+
     pub fn deep_clone(&mut self, value: Value) -> Result<Value> {
         // Only need to clone values which belong to a younger generation than the gc that the new
         // value will live in
-        if self.gc.generation().can_contain_values_from(value.generation()) {
+        if self.receiver_generation.can_contain_values_from(value.generation()) {
             return Ok(value);
         }
         match value {

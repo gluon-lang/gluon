@@ -514,7 +514,10 @@ pub trait ThreadInternal {
                   value: Value)
                   -> Result<()>;
 
-    fn deep_clone_value(&self, value: Value) -> Result<Value>;
+    /// `owner` is theread that owns `value` which is not necessarily the same as `self`
+    fn deep_clone_value(&self, owner: &Thread, value: Value) -> Result<Value>;
+
+    fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
 }
 
 
@@ -647,9 +650,44 @@ impl ThreadInternal for Thread {
         self.global_env().set_global(name, typ, metadata, value)
     }
 
-    fn deep_clone_value(&self, value: Value) -> Result<Value> {
+    fn deep_clone_value(&self, owner: &Thread, value: Value) -> Result<Value> {
         let mut context = self.current_context();
-        ::value::Cloner::new(self, &mut context.gc).deep_clone(value)
+        let full_clone = !self.can_share_values_with(&mut context.gc, owner);
+        let mut cloner = ::value::Cloner::new(self, &mut context.gc);
+        if full_clone {
+            cloner.force_full_clone();
+        }
+        cloner.deep_clone(value)
+    }
+
+    fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool {
+        if self as *const Thread == other as *const Thread {
+            return true;
+        }
+        // If the threads do not share the same global state then they are disjoint and can't share
+        // values
+        if &*self.global_state as *const GlobalVmState !=
+           &*other.global_state as *const GlobalVmState {
+            return false;
+        }
+        // Otherwise the threads might be able to share values but only if they are on the same
+        // of the generation tree (see src/gc.rs)
+        // Search from the thread which MAY be a child to the parent. If `parent` could not be
+        // found then the threads must be in different branches of the tree
+        let self_gen = gc.generation();
+        let other_gen = other.context.lock().unwrap().gc.generation();
+        let (parent, mut child) = if self_gen.is_parent_of(other_gen) {
+            (self, other)
+        } else {
+            (other, self)
+        };
+        while let Some(ref next) = child.parent {
+            if &**next as *const Thread == parent as *const Thread {
+                return true;
+            }
+            child = next;
+        }
+        false
     }
 }
 

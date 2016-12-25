@@ -4,7 +4,7 @@ use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, StackFrame};
 use vm::{self, Thread, Status, RootStr, RootedValue, Root};
-use value::{ArrayRepr, DataStruct, ExternFunction, Value, ValueArray, Def};
+use value::{ArrayRepr, Cloner, DataStruct, ExternFunction, Value, ValueArray, Def};
 use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
@@ -942,8 +942,13 @@ impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
           V: VmType,
           V::Type: Sized,
 {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(*self.0);
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        let full_clone = !thread.can_share_values_with(&mut context.gc, self.0.vm());
+        let mut cloner = Cloner::new(thread, &mut context.gc);
+        if full_clone {
+            cloner.force_full_clone();
+        }
+        context.stack.push(cloner.deep_clone(*self.0)?);
         Ok(())
     }
 }

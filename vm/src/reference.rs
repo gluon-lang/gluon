@@ -12,7 +12,7 @@ use value::{Value, Cloner};
 use api::{RuntimeResult, Generic, Userdata, VmType, WithVM};
 use api::generic::A;
 
-struct Reference<T> {
+pub struct Reference<T> {
     value: Mutex<Value>,
     thread: GcPtr<Thread>,
     _marker: PhantomData<T>,
@@ -60,7 +60,7 @@ impl<T> VmType for Reference<T>
 }
 
 fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
-    match r.thread.deep_clone_value(a.0) {
+    match r.thread.deep_clone_value(&r.thread, a.0) {
         Ok(a) => {
             *r.value.lock().unwrap() = a;
             RuntimeResult::Return(())
