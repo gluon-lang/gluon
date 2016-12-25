@@ -7,7 +7,7 @@ use types::*;
 use base::fnv::FnvMap;
 
 use interner::InternedStr;
-use gc::{Gc, GcPtr, Traverseable, DataDef, Move, WriteOnly};
+use gc::{Gc, GcPtr, Generation, Traverseable, DataDef, Move, WriteOnly};
 use array::{Array, Str};
 use source_map::SourceMap;
 use thread::{Thread, Status};
@@ -187,7 +187,7 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn generation(self) -> usize {
+    pub fn generation(self) -> Generation {
         match self {
             String(p) => p.generation(),
             Value::Data(p) => p.generation(),
@@ -197,7 +197,7 @@ impl Value {
             PartialApplication(p) => p.generation(),
             Value::Userdata(p) => p.generation(),
             Value::Thread(p) => p.generation(),
-            Value::Tag(_) | Value::Byte(_) | Int(_) | Float(_) => 0,
+            Value::Tag(_) | Value::Byte(_) | Int(_) | Float(_) => Generation::default(),
         }
     }
 }
@@ -887,7 +887,7 @@ pub fn deep_clone(value: Value,
                   -> Result<Value> {
     // Only need to clone values which belong to a younger generation than the gc that the new
     // value will live in
-    if value.generation() <= gc.generation() {
+    if gc.generation().can_contain_values_from(value.generation()) {
         return Ok(value);
     }
     match value {

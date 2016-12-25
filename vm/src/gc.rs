@@ -95,6 +95,32 @@ impl<'s> WriteOnly<'s, str> {
     }
 }
 
+#[derive(Clone, Copy, Default, Debug)]
+pub struct Generation(i32);
+
+impl Generation {
+    /// Returns a generation which compared to any normal generation is always younger.
+    pub fn disjoint() -> Generation {
+        Generation(-1)
+    }
+
+    /// Returns wheter `self` is a parent of the other generation.
+    pub fn is_parent_of(self, other: Generation) -> bool {
+        self.0 < other.0
+    }
+
+    /// Returns true if `self` can contain a value from generation `other`
+    pub fn can_contain_values_from(self, other: Generation) -> bool {
+        other.0 <= self.0
+    }
+
+    pub fn next(self) -> Generation {
+        assert!(self.0 < i32::max_value(),
+                "To many generations has been created");
+        Generation(self.0 + 1)
+    }
+}
+
 /// A mark and sweep garbage collector.
 #[derive(Debug)]
 pub struct Gc {
@@ -126,7 +152,7 @@ pub struct Gc {
     /// Between the generation 2 garbage collectors no values can be directly shared as they could
     /// only refer to each other through some reference or channel allocated in generation 0 (and
     /// if they do interact with eachother this means the values are cloned into generation 0).
-    generation: usize,
+    generation: Generation,
 }
 
 
@@ -177,7 +203,7 @@ unsafe impl<T> DataDef for Move<T> {
 #[derive(Debug)]
 struct TypeInfo {
     drop: unsafe fn(*mut ()),
-    generation: usize,
+    generation: Generation,
 }
 
 #[derive(Debug)]
@@ -267,7 +293,7 @@ impl GcHeader {
         hs + ((max_align - (hs % max_align)) % max_align)
     }
 
-    fn generation(&self) -> usize {
+    fn generation(&self) -> Generation {
         unsafe { (*self.type_info).generation }
     }
 }
@@ -353,7 +379,7 @@ impl<T: ?Sized> GcPtr<T> {
         GcPtr { ptr: ptr }
     }
 
-    pub fn generation(&self) -> usize {
+    pub fn generation(&self) -> Generation {
         self.header().generation()
     }
 
@@ -514,7 +540,7 @@ impl<T: ?Sized> Traverseable for GcPtr<T>
 
 impl Gc {
     /// Constructs a new garbage collector
-    pub fn new(generation: usize, memory_limit: usize) -> Gc {
+    pub fn new(generation: Generation, memory_limit: usize) -> Gc {
         Gc {
             values: None,
             allocated_memory: 0,
@@ -529,13 +555,12 @@ impl Gc {
         self.memory_limit = memory_limit;
     }
 
-    pub fn generation(&self) -> usize {
+    pub fn generation(&self) -> Generation {
         self.generation
     }
 
     pub fn new_child_gc(&self) -> Gc {
-        assert!(self.generation < ::std::usize::MAX);
-        Gc::new(self.generation + 1, self.memory_limit)
+        Gc::new(self.generation.next(), self.memory_limit)
     }
 
     /// Allocates a new object. If the garbage collector has hit the collection limit a collection
@@ -620,7 +645,7 @@ impl Gc {
     pub unsafe fn collect<R>(&mut self, roots: R)
         where R: Traverseable,
     {
-        info!("Start collect {}", self.generation);
+        info!("Start collect {:?}", self.generation);
         roots.traverse(self);
         self.sweep();
         self.collect_limit = 2 * self.allocated_memory;
@@ -631,7 +656,7 @@ impl Gc {
     pub fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
         let header = value.header();
         // We only need to mark and traverse values from this garbage collectors generation
-        if header.generation() < self.generation || header.marked.get() {
+        if header.generation().is_parent_of(self.generation()) || header.marked.get() {
             return true;
         } else {
             header.marked.set(true);
@@ -699,7 +724,7 @@ impl Gc {
 
 #[cfg(test)]
 mod tests {
-    use super::{Gc, GcPtr, GcHeader, Traverseable, DataDef, WriteOnly, Move};
+    use super::{Gc, GcPtr, GcHeader, Generation, Traverseable, DataDef, WriteOnly, Move};
     use std::fmt;
     use std::mem;
     use std::rc::Rc;
@@ -777,7 +802,7 @@ mod tests {
 
     #[test]
     fn gc_header() {
-        let mut gc: Gc = Gc::new(0, usize::MAX);
+        let mut gc: Gc = Gc::new(Generation::default(), usize::MAX);
         let ptr = gc.alloc(Def { elems: &[Int(1)] }).unwrap();
         let header: *const _ = ptr.header();
         let other: &mut GcHeader = gc.values.as_mut().unwrap();
@@ -787,7 +812,7 @@ mod tests {
 
     #[test]
     fn basic() {
-        let mut gc: Gc = Gc::new(0, usize::MAX);
+        let mut gc: Gc = Gc::new(Generation::default(), usize::MAX);
         let mut stack: Vec<Value> = Vec::new();
         stack.push(new_data(gc.alloc(Def { elems: &[Int(1)] }).unwrap()));
         let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }).unwrap());
@@ -826,7 +851,7 @@ mod tests {
     #[test]
     fn drop() {
         let dropped = Rc::new(Cell::new(false));
-        let mut gc = Gc::new(0, usize::MAX);
+        let mut gc = Gc::new(Generation::default(), usize::MAX);
         {
             let ptr = gc.alloc(Move(Dropable { dropped: dropped.clone() })).unwrap();
             assert_eq!(false, ptr.dropped.get());

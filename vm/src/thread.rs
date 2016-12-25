@@ -23,7 +23,7 @@ use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
 use array::Str;
 use compiler::CompiledFunction;
-use gc::{DataDef, Gc, GcPtr, Move};
+use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use stack::{Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
@@ -215,7 +215,7 @@ impl Drop for RootedThread {
             // The last RootedThread was dropped, there is no way to refer to the global state any
             // longer so drop everything
             let mut gc_ref = self.0.global_state.gc.lock().unwrap();
-            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new(0, 0));
+            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
             // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
             // when the Gc is dropped
             drop(gc_ref);
@@ -250,7 +250,7 @@ impl RootedThread {
             global_state: Arc::new(GlobalVmState::new()),
             parent: None,
             context: Mutex::new(Context {
-                gc: Gc::new(1, usize::MAX),
+                gc: Gc::new(Generation::default(), usize::MAX),
                 stack: Stack::new(),
                 record_map: FieldMap::new(),
                 hook: None,
@@ -260,7 +260,7 @@ impl RootedThread {
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
         };
-        let mut gc = Gc::new(0, usize::MAX);
+        let mut gc = Gc::new(Generation::default(), usize::MAX);
         let vm =
             gc.alloc(Move(thread)).expect("Not enough memory to allocate thread").root_thread();
         *vm.global_state.gc.lock().unwrap() = gc;
@@ -416,6 +416,7 @@ impl Thread {
     pub fn set_memory_limit(&self, memory_limit: usize) {
         self.current_context().gc.set_memory_limit(memory_limit)
     }
+
     fn current_context(&self) -> OwnedContext {
         OwnedContext {
             thread: self,
