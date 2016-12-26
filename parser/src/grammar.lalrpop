@@ -75,6 +75,11 @@ IdentStr: &'input str = {
     "(" <"Operator"> ")" => <>,
 };
 
+SkipExtraTokens: () = {
+    => (),
+    <!> => errors.push(<>.error),
+};
+
 Ident: Id =
     IdentStr => env.from_str(<>);
 
@@ -415,7 +420,7 @@ Expr: Expr<Id> = {
     "match" <input: SpExpr> "with" <arms: Alternative+> =>
         Expr::Match(Box::new(input), arms),
 
-    <comment: DocComment?> "let" <first: ValueBinding> <bindings: AndValueBinding*> "in" <body: SpExpr> => {
+    <comment: DocComment?> "let" <first: ValueBinding> <bindings: AndValueBinding*> SkipExtraTokens "in" <body: SpExpr> => {
         let mut first = first;
         let mut bindings = bindings;
         first.comment = comment;
@@ -424,7 +429,7 @@ Expr: Expr<Id> = {
         Expr::LetBindings(bindings, Box::new(body))
     },
 
-    <comment: DocComment?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> "in" <body: SpExpr> => {
+    <comment: DocComment?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> SkipExtraTokens "in" <body: SpExpr> => {
         let mut first = first;
         let mut bindings = bindings;
         first.comment = comment;

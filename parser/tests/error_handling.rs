@@ -1,3 +1,5 @@
+extern crate env_logger;
+
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
@@ -12,6 +14,8 @@ use support::*;
 
 #[test]
 fn empty_input() {
+    let _ = ::env_logger::init();
+
     let result = parse("");
     assert!(result.is_err());
     let (expr, err) = result.unwrap_err();
@@ -24,6 +28,8 @@ fn empty_input() {
 
 #[test]
 fn missing_match_expr() {
+    let _ = ::env_logger::init();
+
     let expr = r#"
     match with
     | x -> x
@@ -38,4 +44,22 @@ fn missing_match_expr() {
     let error = Error::UnexpectedToken("With".into());
     let span = pos::span(BytePos::from(11), BytePos::from(15));
     assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
+}
+
+#[test]
+fn wrong_indent_expression() {
+    let _ = ::env_logger::init();
+
+    let result = parse(r#"
+let y =
+    let x = 1
+    x
+   2
+y
+"#);
+    let error = Error::UnexpectedToken("IntLiteral".into());
+    let span = pos::span(BytePos::from(32), BytePos::from(32));
+    let errors = ParseErrors::from(vec![pos::spanned(span, error)]);
+
+    assert_eq!(result.map_err(|(_, err)| err), Err(errors));
 }

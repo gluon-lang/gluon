@@ -51,26 +51,6 @@ g ""
 }
 
 #[test]
-fn wrong_indent_expression() {
-    let _ = ::env_logger::init();
-
-    let result = parse(r#"
-let y =
-    let x = 1
-    x
-   2
-y
-"#);
-
-    let error = Error::UnexpectedToken("IntLiteral".into());
-    let span = pos::span(BytePos::from(32), BytePos::from(32));
-
-    assert!(result.is_err());
-    assert_eq!(result.unwrap_err().into_iter().next().unwrap(),
-               pos::spanned(span, error));
-}
-
-#[test]
 fn let_in_let_args() {
     let _ = ::env_logger::init();
 
