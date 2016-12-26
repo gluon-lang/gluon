@@ -132,6 +132,8 @@ pub enum Expr<Id> {
     TypeBindings(Vec<TypeBinding<Id>>, Box<SpannedExpr<Id>>),
     /// A group of sequenced expressions
     Block(Vec<SpannedExpr<Id>>),
+    /// An invalid expression
+    Error,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -235,6 +237,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 v.visit_expr(expr);
             }
         }
+        Expr::Error => (),
     }
 }
 
@@ -336,6 +339,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
                 v.visit_expr(expr);
             }
         }
+        Expr::Error => (),
     }
 }
 
@@ -410,6 +414,7 @@ impl Typed for Expr<Symbol> {
             Expr::Lambda(ref lambda) => lambda.id.typ.clone(),
             Expr::Record { ref typ, .. } => typ.clone(),
             Expr::Block(ref exprs) => exprs.last().expect("Expr in block").env_type_of(env),
+            Expr::Error => Type::hole(),
         }
     }
 }

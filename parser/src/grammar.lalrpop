@@ -434,6 +434,11 @@ Expr: Expr<Id> = {
     },
 
     BlockExpr,
+
+    ! => {
+        errors.push(<>.error);
+        Expr::Error
+    }
 };
 
 BlockExpr: Expr<Id> = {

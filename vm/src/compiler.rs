@@ -789,6 +789,7 @@ impl<'a> Compiler<'a> {
                 self.compile(last, function, tail_position)?;
                 function.emit(Slide(inits.len() as u32));
             }
+            Expr::Error => panic!("ICE: Error expression found in the compiler"),
         }
         Ok(None)
     }

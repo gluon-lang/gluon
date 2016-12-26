@@ -281,6 +281,7 @@ impl<F> FindVisitor<F>
             }
             Expr::Tuple(ref args) => self.visit_one(args),
             Expr::Block(ref exprs) => self.visit_one(exprs),
+            Expr::Error => (),
         };
     }
 }

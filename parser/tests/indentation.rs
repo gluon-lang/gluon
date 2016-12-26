@@ -64,9 +64,10 @@ y
 
     let error = Error::UnexpectedToken("IntLiteral".into());
     let span = pos::span(BytePos::from(32), BytePos::from(32));
-    let errors = ParseErrors::from(vec![pos::spanned(span, error)]);
 
-    assert_eq!(result, Err(errors));
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().into_iter().next().unwrap(),
+               pos::spanned(span, error));
 }
 
 #[test]

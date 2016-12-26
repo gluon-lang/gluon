@@ -52,6 +52,8 @@ pub enum TypeError<I> {
     UndefinedRecord { fields: Vec<I> },
     /// Found a case expression without any alternatives
     EmptyCase,
+    /// An `Error` expression was found indicating an invalid parse
+    ErrorExpression,
 }
 
 impl<I> From<KindCheckError<I>> for TypeError<I>
@@ -123,6 +125,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 Ok(())
             }
             EmptyCase => write!(f, "`case` expression with no alternatives"),
+            ErrorExpression => write!(f, "`Error` expression found during typechecking"),
         }
     }
 }
@@ -687,6 +690,7 @@ impl<'a> Typecheck<'a> {
                 }
                 Ok(TailCall::Type(self.typecheck(last)))
             }
+            Expr::Error => Err(TypeError::ErrorExpression),
         }
     }
 
