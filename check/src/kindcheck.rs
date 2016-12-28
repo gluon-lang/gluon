@@ -16,7 +16,6 @@ pub type Result<T> = StdResult<T, Error<Symbol>>;
 
 /// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
-    variables: Vec<Generic<Symbol>>,
     /// Type bindings local to the current kindcheck invocation
     locals: Vec<(Symbol, ArcKind)>,
     info: &'a (KindEnv + 'a),
@@ -40,6 +39,7 @@ fn walk_move_kind<F>(kind: ArcKind, f: &mut F) -> ArcKind
         None => kind,
     }
 }
+
 fn walk_move_kind2<F>(kind: &ArcKind, f: &mut F) -> Option<ArcKind>
     where F: FnMut(&Kind) -> Option<ArcKind>,
 {
@@ -68,7 +68,6 @@ impl<'a> KindCheck<'a> {
         let typ = Kind::typ();
         let function1_kind = Kind::function(typ.clone(), typ.clone());
         KindCheck {
-            variables: Vec::new(),
             locals: Vec::new(),
             info: info,
             idents: idents,
@@ -84,31 +83,26 @@ impl<'a> KindCheck<'a> {
         self.locals.push((name, kind));
     }
 
-    pub fn set_variables(&mut self, variables: &[Generic<Symbol>]) {
-        self.variables.clear();
-        self.variables.extend(variables.iter().cloned());
-    }
-
-    pub fn type_kind(&self) -> ArcKind {
+    fn type_kind(&self) -> ArcKind {
         self.type_kind.clone()
     }
 
-    pub fn function1_kind(&self) -> ArcKind {
+    fn function1_kind(&self) -> ArcKind {
         self.function1_kind.clone()
     }
 
-    pub fn function2_kind(&self) -> ArcKind {
+    fn function2_kind(&self) -> ArcKind {
         self.function2_kind.clone()
     }
 
-    pub fn row_kind(&self) -> ArcKind {
+    fn row_kind(&self) -> ArcKind {
         self.row_kind.clone()
     }
 
-    pub fn instantiate_kinds(&mut self, kind: &mut ArcKind) {
+    fn instantiate_kinds(&mut self, kind: &mut ArcKind) {
         match *ArcKind::make_mut(kind) {
             // Can't assign a new var to `kind` here because it is borrowed mutably...
-            // We'll rely on fall-through instead.
+            // Instead we'll rely on fall-through to instantiate the holes.
             Kind::Hole => (),
             Kind::Variable(_) => panic!("Unexpected kind variable while instantiating"),
             Kind::Function(ref mut lhs, ref mut rhs) => {
@@ -118,20 +112,17 @@ impl<'a> KindCheck<'a> {
             }
             Kind::Row | Kind::Type => return,
         }
+
+        // Instantiate a new kind variable if it was a hole.
         *kind = self.subs.new_var();
     }
 
-    fn find(&mut self, id: &Symbol) -> Result<ArcKind> {
-        let kind = self.variables
-            .iter()
+    fn find(&mut self, id: &Symbol, variables: &[Generic<Symbol>]) -> Result<ArcKind> {
+        let kind = variables.iter()
+            .rev() // Inner variables should shadow outer variables
             .find(|var| var.id == *id)
-            .map(|t| t.kind.clone())
-            .or_else(|| {
-                self.locals
-                    .iter()
-                    .find(|t| t.0 == *id)
-                    .map(|t| t.1.clone())
-            })
+            .map(|typ| typ.kind.clone())
+            .or_else(|| self.locals.iter().find(|typ| typ.0 == *id).map(|typ| typ.1.clone()))
             .or_else(|| self.info.find_kind(id))
             .map_or_else(|| {
                 let id_str = self.idents.string(id);
@@ -139,11 +130,12 @@ impl<'a> KindCheck<'a> {
                     Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
                 } else {
                     // Create a new variable
-                    self.locals.push((id.clone(), self.subs.new_var()));
-                    Ok(self.locals.last().unwrap().1.clone())
+                    let var = self.subs.new_var();
+                    self.locals.push((id.clone(), var.clone()));
+                    Ok(var)
                 }
             },
-                         Ok);
+            Ok);
 
         if let Ok(ref kind) = kind {
             debug!("Find kind: {} => {}", self.idents.string(&id), kind);
@@ -160,7 +152,7 @@ impl<'a> KindCheck<'a> {
 
     pub fn kindcheck_expected(&mut self, typ: &mut ArcType, expected: &ArcKind) -> Result<ArcKind> {
         debug!("Kindcheck {:?}", typ);
-        let (kind, t) = self.kindcheck(typ)?;
+        let (kind, t) = self.kindcheck(typ, &[])?;
         let kind = self.unify(expected, kind)?;
         *typ = self.finalize_type(t);
         debug!("Done {:?}", typ);
@@ -176,25 +168,43 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    fn kindcheck(&mut self, typ: &ArcType) -> Result<(ArcKind, ArcType)> {
+    fn kindcheck(&mut self,
+                 typ: &ArcType,
+                 variables: &[Generic<Symbol>])
+                 -> Result<(ArcKind, ArcType)> {
         match **typ {
             Type::Hole | Type::Opaque => Ok((self.subs.new_var(), typ.clone())),
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
-                gen.kind = self.find(&gen.id)?;
+                gen.kind = self.find(&gen.id, variables)?;
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
+            Type::Forall(ref params, ref typ) => {
+                let params: AppVec<_> = params.iter()
+                    .cloned()
+                    .map(|mut param| {
+                        self.instantiate_kinds(&mut param.kind);
+                        param
+                    })
+                    .collect();
+
+                // Add the instantiated type params to the list of variables
+                let variables: Vec<_> = variables.iter().chain(&params).cloned().collect();
+                let (ret_kind, ret_typ) = self.kindcheck(typ, &variables)?;
+
+                Ok((ret_kind.clone(), Type::forall(params, ret_typ)))
+            }
             Type::App(ref ctor, ref args) => {
-                let (mut kind, ctor) = self.kindcheck(ctor)?;
+                let (mut kind, ctor) = self.kindcheck(ctor, variables)?;
                 let mut new_args = AppVec::new();
                 for arg in args {
                     let f = Kind::function(self.subs.new_var(), self.subs.new_var());
                     kind = self.unify(&f, kind)?;
                     kind = match *kind {
                         Kind::Function(ref arg_kind, ref ret) => {
-                            let (actual, new_arg) = self.kindcheck(arg)?;
+                            let (actual, new_arg) = self.kindcheck(arg, variables)?;
                             new_args.push(new_arg);
                             self.unify(arg_kind, actual)?;
                             ret.clone()
@@ -210,7 +220,7 @@ impl<'a> KindCheck<'a> {
             Type::Variant(ref row) => {
                 let row: StdResult<_, _> = row.row_iter()
                     .map(|field| {
-                        let (kind, typ) = self.kindcheck(&field.typ)?;
+                        let (kind, typ) = self.kindcheck(&field.typ, variables)?;
                         let type_kind = self.type_kind();
                         self.unify(&type_kind, kind)?;
                         Ok(Field::new(field.name.clone(), typ))
@@ -220,7 +230,7 @@ impl<'a> KindCheck<'a> {
                 Ok((self.type_kind(), Type::variant(row?)))
             }
             Type::Record(ref row) => {
-                let (kind, row) = self.kindcheck(row)?;
+                let (kind, row) = self.kindcheck(row, variables)?;
                 let row_kind = self.row_kind();
                 self.unify(&row_kind, kind)?;
                 Ok((self.type_kind(), ArcType::from(Type::Record(row))))
@@ -228,22 +238,24 @@ impl<'a> KindCheck<'a> {
             Type::ExtendRow { ref types, ref fields, ref rest } => {
                 let fields: StdResult<_, _> = fields.iter()
                     .map(|field| {
-                        let (kind, typ) = self.kindcheck(&field.typ)?;
+                        let (kind, typ) = self.kindcheck(&field.typ, variables)?;
                         let type_kind = self.type_kind();
                         self.unify(&type_kind, kind)?;
                         Ok(Field::new(field.name.clone(), typ))
                     })
                     .collect();
 
-                let (kind, rest) = self.kindcheck(rest)?;
+                let (kind, rest) = self.kindcheck(rest, variables)?;
                 let row_kind = self.row_kind();
                 self.unify(&row_kind, kind)?;
 
                 Ok((row_kind, Type::extend_row(types.clone(), fields?, rest)))
             }
             Type::EmptyRow => Ok((self.row_kind(), typ.clone())),
-            Type::Ident(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
-            Type::Alias(ref alias) => self.find(&alias.name).map(|kind| (kind, typ.clone())),
+            Type::Ident(ref id) => self.find(id, variables).map(|kind| (kind, typ.clone())),
+            Type::Alias(ref alias) => {
+                self.find(&alias.name, variables).map(|kind| (kind, typ.clone()))
+            }
         }
     }
 
@@ -279,6 +291,7 @@ impl<'a> KindCheck<'a> {
             }
         })
     }
+
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
         let mut kind = var.kind.clone();
         kind = update_kind(&self.subs, kind, Some(&self.type_kind));

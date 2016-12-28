@@ -30,6 +30,7 @@ fn function_type_new() {
 ";
     let result = support::typecheck(text);
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert!(result.unwrap().as_function().is_some());
 }
 
@@ -43,6 +44,7 @@ fn char_literal() {
     let result = support::typecheck(text);
     let expected = Ok(Type::char());
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -56,6 +58,7 @@ fn byte_literal() {
     let result = support::typecheck(text);
     let expected = Ok(Type::byte());
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -70,6 +73,7 @@ fn function_2_args() {
     let result = support::typecheck(text);
     let expected = Ok(Type::function(vec![typ("Int"), typ("Int")], typ("Int")));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -85,6 +89,7 @@ type Test = { x: Int } in { x = 0 }
                             &[],
                             Type::record(vec![], vec![Field::new(intern("x"), typ("Int"))])));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -100,6 +105,7 @@ in Test2 (\x -> x #Int+ 2)
     let result = support::typecheck(text);
     let expected = Ok(typ("Test2"));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -149,6 +155,7 @@ let fac x = if x #Int== 0 then 1 else x #Int* fac (x #Int- 1) in fac
     let (_, result) = support::typecheck_expr(text);
     let expected = Ok(Type::function(vec![typ("Int")], typ("Int")));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 #[test]
@@ -165,6 +172,7 @@ in g 5
     let (_, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Int"));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -188,6 +196,7 @@ in test2 1";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Int"));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
     assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
@@ -223,6 +232,7 @@ in 1 + 2
     let result = support::typecheck(text);
     let expected = Ok(typ("Int"));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -237,6 +247,7 @@ in Some 1
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Option", vec![typ("Int")]));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -253,6 +264,7 @@ in match Some 1 with
     let result = support::typecheck(text);
     let expected = Ok(typ("Int"));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -272,7 +284,6 @@ in eq_Int
 ";
     let result = support::typecheck(text);
     let bool = Type::alias(support::intern_unscoped("Bool"),
-                           vec![],
                            Type::ident(support::intern_unscoped("Bool")));
     let eq = alias("Eq",
                    &["a"],
@@ -280,6 +291,7 @@ in eq_Int
                                 vec![Field::new(support::intern_unscoped("=="), Type::function(vec![typ("a"), typ("a")], bool))]));
     let expected = Ok(Type::app(eq, collect![typ("Int")]));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -308,6 +320,7 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
 
     let expected = Ok(Type::app(option, collect![typ("Int")]));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -345,6 +358,7 @@ test
                                                                                     vec![typ("a")])))]);
     let expected = Ok(Type::app(alias("Test", &["a"], variants), collect![Type::unit()]));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -359,6 +373,7 @@ f
     let result = support::typecheck(text);
     let expected = Ok(Type::function(vec![typ("Int")], typ("Int")));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -378,6 +393,7 @@ function_test.test
     let result = support::typecheck(text);
     let expected = Ok(Type::function(vec![typ("a0")], typ("Int")));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -396,6 +412,7 @@ in f
     let args = collect![typ("String"), typ("Int")];
     let expected = Ok(Type::app(function, args));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -467,6 +484,7 @@ in y
     let result = support::typecheck(text);
     let expected = Ok(typ("String"));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -481,9 +499,10 @@ type Test = | Test String Int in { Test, x = 1 }
     let variant = Type::function(vec![typ("String"), typ("Int")], typ("Test"));
     let test = Type::variant(vec![Field::new(intern("Test"), variant)]);
     let expected = Ok(Type::record(vec![Field::new(support::intern_unscoped("Test"),
-                                                   Alias::new(intern("Test"), vec![], test))],
+                                                   Alias::new(intern("Test"), test))],
                                    vec![Field::new(intern("x"), typ("Int"))]));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result.map(support::close_record), expected);
 }
 
@@ -498,6 +517,7 @@ Test 1
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Test", vec![typ("Int")]));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -523,12 +543,13 @@ return 1
 
     let id = alias("Id", &["a"], variant("Id"));
     let id_t = Type::alias(intern("IdT"),
-                           vec![m.clone(),
-                                Generic::new(intern("a"), Kind::typ())],
-                           Type::app(Type::generic(m),
-                                     collect![Type::app(id, collect![typ("a")])]));
+                           Type::forall(collect![m.clone(),
+                                                 Generic::new(intern("a"), Kind::typ())],
+                                        Type::app(Type::generic(m),
+                                                  collect![Type::app(id, collect![typ("a")])])));
     let expected = Ok(Type::app(id_t, collect![test, typ("Int")]));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -567,6 +588,7 @@ in Node { value = 1, tree = Empty } rhs
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Tree", vec![typ("Int")]));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -585,6 +607,7 @@ t.x
     let result = support::typecheck(text);
     let expected = Ok(typ("Int"));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -605,6 +628,7 @@ in eq t u
     let result = support::typecheck(text);
     let expected = Ok(typ("Int"));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result, expected);
 }
 
@@ -626,6 +650,7 @@ in
     ];
     let expected = Ok(Type::record(vec![], fields));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result.map(support::close_record), expected);
 }
 
@@ -647,6 +672,7 @@ in
     ];
     let expected = Ok(Type::record(vec![], fields));
 
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
     assert_eq!(result.map(support::close_record), expected);
 }
 
@@ -870,4 +896,120 @@ type Bar = Test Foo
 "#;
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn forall_id() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let id : forall a . a -> a = \x -> x
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn forall_id_explicit_kinds() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let id : forall (a : Type) . a -> a = \x -> x
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn forall_rank_2_second() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let second : a -> forall b . b -> b = \_ x -> x
+second 1 "hi"
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(typ("String"));
+
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
+    assert_eq!(result, expected.unwrap_err());
+}
+
+#[test]
+fn forall_rank_2_second_shadowed() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let second : a -> forall a . a -> a = \_ x -> x
+second 1 "hi"
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(typ("String"));
+
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
+    assert_eq!(result, expected.unwrap_err());
+}
+
+#[test]
+fn forall_rank_2_apply_id() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let apply : a -> b -> (forall c . c -> c) -> { fst : a, snd : b } =
+    \x y f -> { fst = f x, snd = f y }
+let id x = x
+
+apply id 1 "hi"
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(Type::record(vec![],
+                                   vec![Field::new(intern("fst"), typ("Int")),
+                                        Field::new(intern("snd"), typ("String"))]));
+
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
+    assert_eq!(result, expected.unwrap_err());
+}
+
+#[test]
+fn forall_rank_2_apply_id_shadowed() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let apply : a -> b -> (forall a . a -> a) -> { fst : a, snd : b } =
+    \x y f -> { fst = f x, snd = f y }
+let id x = x
+
+apply id 1 "hi"
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(Type::record(vec![],
+                                   vec![Field::new(intern("fst"), typ("Int")),
+                                        Field::new(intern("snd"), typ("String"))]));
+
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
+    assert_eq!(result, expected.unwrap_err());
+}
+
+#[test]
+fn forall_record_fields() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Monad m =
+    { return : forall a . a -> m a
+    , flat_map : forall a b . (a -> m b) -> m a -> m b
+    }
+
+type Option a =
+    | Some a
+    | None
+
+let monad_Option : Monad Option =
+    { return = \x -> Some x
+    , flat_map = \f m ->
+        match m with
+            | Some x -> f x
+            | None -> None
+    }
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
 }

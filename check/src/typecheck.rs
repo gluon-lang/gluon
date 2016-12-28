@@ -149,7 +149,7 @@ impl<'a> KindEnv for Environment<'a> {
             .get(type_name)
             .map(|&(_, ref alias)| {
                 let mut kind = Kind::typ();
-                for arg in alias.args.iter().rev() {
+                for arg in alias.typ.params().iter().rev() {
                     kind = Kind::function(arg.kind.clone(), kind);
                 }
                 kind
@@ -292,14 +292,14 @@ impl<'a> Typecheck<'a> {
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
-        if let Type::Variant(ref row) = *alias.typ {
-            for field in row.row_iter().cloned() {
+        if let Some(row) = alias.typ.variant_row_iter() {
+            for field in row.cloned() {
                 let symbol = self.symbols.symbol(field.name.as_ref());
                 self.original_symbols.insert(symbol, field.name.clone());
                 self.stack_var(field.name, field.typ);
             }
         }
-        let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
+        let generic_args = alias.typ.params().iter().cloned().map(Type::generic).collect();
         let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
             // FIXME: Workaround so that both the types name in this module and its global
@@ -743,7 +743,9 @@ impl<'a> Typecheck<'a> {
 
                 let mut duplicated_fields = FnvSet::default();
                 for field in associated_types.iter().chain(fields.iter()) {
-                    if self.error_on_duplicated_field(&mut duplicated_fields, span, field.0.clone()) {
+                    if self.error_on_duplicated_field(&mut duplicated_fields,
+                                                      span,
+                                                      field.0.clone()) {
                         pattern_fields.push(field.0.clone());
                     }
                 }
@@ -927,35 +929,24 @@ impl<'a> Typecheck<'a> {
         {
             let mut check = KindCheck::new(&self.environment, &self.symbols);
 
-            // Setup kind variables for all holes and insert the types in the
-            // the type expression into the kindcheck environment
-            for bind in bindings.iter_mut() {
-                // Create the kind for this binding
-                // Test a b : 2 -> 1 -> Type
-                // and bind the same variables to the arguments of the type binding
-                // ('a' and 'b' in the example)
-                let mut id_kind = check.type_kind();
-                let alias = Alias::make_mut(&mut bind.alias);
-                for generic in alias.args.iter_mut().rev() {
-                    check.instantiate_kinds(&mut generic.kind);
-                    id_kind = Kind::function(generic.kind.clone(), id_kind);
-                }
-                check.add_local(alias.name.clone(), id_kind);
-            }
-
             // Kindcheck all the types in the environment
             for bind in bindings.iter_mut() {
-                check.set_variables(&bind.alias.args);
-                let typ = &mut Alias::make_mut(&mut bind.alias).typ;
-                check.kindcheck_type(typ)?;
+                let mut alias = Alias::make_mut(&mut bind.alias);
+                let ret_kind = check.kindcheck_type(&mut alias.typ)?;
+
+                let kind = alias.typ.params().iter().rev().fold(ret_kind, |kind, param| {
+                    Kind::function(param.kind.clone(), kind)
+                });
+
+                check.add_local(alias.name.clone(), kind);
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
             for bind in bindings.iter_mut() {
                 let alias = Alias::make_mut(&mut bind.alias);
                 alias.typ = check.finalize_type(alias.typ.clone());
-                for arg in &mut alias.args {
-                    *arg = check.finalize_generic(&arg);
+                for param in alias.typ.params_mut() {
+                    *param = check.finalize_generic(&param);
                 }
             }
         }
@@ -1156,12 +1147,11 @@ impl<'a> Typecheck<'a> {
                                 .find_type_info(&alias.name)
                                 .map(|found_alias| &found_alias.name)
                         })
-                        .cloned()
                         .map(|new_id| {
                             ArcType::from(Type::Alias(AliasData {
-                                name: new_id,
-                                args: alias.args.clone(),
-                                typ: alias.typ.clone(),
+                                name: new_id.clone(),
+                                typ: Type::forall(AppVec::from(alias.typ.params()),
+                                                  alias.typ.clone()),
                             }))
                         })
                 }
@@ -1377,7 +1367,8 @@ fn get_alias_app<'a>(env: &'a TypeEnv,
         }
         _ => {
             typ.alias_ident()
-                .and_then(|id| env.find_type_info(id).map(|alias| (&**alias, typ.unapplied_args())))
+                .and_then(|id| env.find_type_info(id))
+                .map(|alias| (&**alias, typ.unapplied_args()))
         }
     }
 }
@@ -1396,7 +1387,7 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                 None => {
                     match get_alias_app(&self.tc.environment, &self.typ) {
                         Some((alias, args)) => {
-                            match resolve::type_of_alias(alias, args) {
+                            match alias.typ.apply_args(args) {
                                 Some(typ) => (None, typ.clone()),
                                 None => return None,
                             }

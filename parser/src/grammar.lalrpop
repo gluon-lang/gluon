@@ -1,8 +1,9 @@
 use base::ast::{Alternative, Array, Expr, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
-use base::types::{Alias, ArcType, BuiltinType, Field, Generic, Type};
+use base::types::{Alias, AppVec, ArcType, BuiltinType, Field, Generic, Type};
 use std::str::FromStr;
+use std::iter::FromIterator;
 
 use token::Token;
 
@@ -27,6 +28,7 @@ extern {
 
         "and" => Token::And,
         "else" => Token::Else,
+        "forall" => Token::Forall,
         "if" => Token::If,
         "in" => Token::In,
         "let" => Token::Let,
@@ -143,7 +145,7 @@ TypeBinding: TypeBinding<Id> = {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: Alias::new(id, params, Type::variant(row)),
+            alias: Alias::new(id, Type::forall(AppVec::from_iter(params), Type::variant(row))),
         }
     },
 
@@ -151,7 +153,7 @@ TypeBinding: TypeBinding<Id> = {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: Alias::new(id, params, body),
+            alias: Alias::new(id, Type::forall(AppVec::from_iter(params), body)),
         }
     },
 };
@@ -198,6 +200,9 @@ AppType = {
 
 Type = {
     AppType,
+
+    "forall" <params: TypeParam+> "." <ty: Type> =>
+        Type::forall(AppVec::from_iter(params), ty),
 
     <lhs: AppType> "->" <rhs: Type> =>
         Type::function(vec![lhs], rhs),

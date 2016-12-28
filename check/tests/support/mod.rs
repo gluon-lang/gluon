@@ -62,7 +62,7 @@ impl MockEnv {
         let bool_sym = interner.symbol("Bool");
         let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
 
-        MockEnv { bool: Alias::new(bool_sym, vec![], bool_ty) }
+        MockEnv { bool: Alias::new(bool_sym, bool_ty) }
     }
 }
 
@@ -189,10 +189,10 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
 pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
     assert!(s.len() != 0);
     Type::alias(intern(s),
-                args.iter()
-                    .map(|id| Generic::new(intern(id), Kind::typ()))
-                    .collect(),
-                typ)
+                Type::forall(args.iter()
+                                 .map(|id| Generic::new(intern(id), Kind::typ()))
+                                 .collect(),
+                             typ))
 }
 
 

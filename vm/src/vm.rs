@@ -10,7 +10,7 @@ use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeEnv};
+use base::types::{Alias, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeEnv};
 
 use macros::MacroEnv;
 use {Error, Result};
@@ -343,12 +343,9 @@ impl GlobalVmState {
                             typ: ArcType) {
             ids.insert(TypeId::of::<T>(), typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
-            env.type_infos.id_to_type.insert(name.into(),
-                                             Alias::from(AliasData {
-                                                 name: Symbol::from(name),
-                                                 args: Vec::new(),
-                                                 typ: Type::opaque(),
-                                             }));
+            env.type_infos
+                .id_to_type
+                .insert(name.into(), Alias::new(Symbol::from(name), Type::opaque()));
         }
 
         {
@@ -440,11 +437,7 @@ impl GlobalVmState {
                 .insert(id, typ.clone());
             let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(name.into(),
-                                         Alias::from(AliasData {
-                                             name: n,
-                                             args: args,
-                                             typ: Type::opaque(),
-                                         }));
+                                         Alias::new(n, Type::forall(args, Type::opaque())));
             Ok(t)
         }
     }

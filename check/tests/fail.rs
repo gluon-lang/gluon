@@ -389,3 +389,44 @@ type Foo = Test Int
     let result = support::typecheck(text);
     assert_err!(result, KindError(TypeMismatch(..)));
 }
+
+#[test]
+fn forall_mismatched_return_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let test : forall (r : Row) (f : Type) . r -> f = \x -> x
+()
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, KindError(TypeMismatch(..)));
+}
+
+#[test]
+fn forall_mismatched_kind_passed_as_argument() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let test : forall (r : Row) . r -> () = \x -> ()
+let bad = test Int
+()
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, KindError(TypeMismatch(..)));
+}
+
+#[test]
+fn forall_mismatched_type_application() {
+    let _ = ::env_logger::init();
+
+    let valid_text = r#"
+type Test = forall f a . a f
+()"#; // This should be valid!
+    let result = support::typecheck(valid_text);
+    assert!(result.is_ok(), "{}", result.as_ref().unwrap_err());
+
+    let mismatched_text = r#"
+type Test = forall (f : Type -> Type) (a : Type) . a f
+()
+"#;
+    let result = support::typecheck(mismatched_text);
+    assert_err!(result, KindError(TypeMismatch(..)));
+}
