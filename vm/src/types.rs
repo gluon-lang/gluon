@@ -151,7 +151,6 @@ impl Instruction {
 #[derive(Debug)]
 pub struct TypeInfos {
     pub id_to_type: FnvMap<String, Alias<Symbol, ArcType>>,
-    pub type_to_id: FnvMap<ArcType, ArcType>,
 }
 
 impl KindEnv for TypeInfos {
@@ -190,36 +189,17 @@ impl TypeEnv for TypeInfos {
     }
 
     fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
-        self.id_to_type
-            .iter()
-            .find(|&(_, alias)| {
-                match **alias.unresolved_type() {
-                    Type::Record(ref row) => {
-                        fields.iter()
-                            .all(|name| row.row_iter().any(|f| f.name.as_ref() == name.as_ref()))
-                    }
-                    _ => false,
-                }
-            })
-            .and_then(|t| {
-                // FIXME Don't use unresolved type
-                let typ = t.1.unresolved_type();
-                self.type_to_id.get(typ).map(|id_type| (id_type, typ))
-            })
+        None
     }
 }
 
 impl TypeInfos {
     pub fn new() -> TypeInfos {
-        TypeInfos {
-            id_to_type: FnvMap::default(),
-            type_to_id: FnvMap::default(),
-        }
+        TypeInfos { id_to_type: FnvMap::default() }
     }
 
     pub fn extend(&mut self, other: TypeInfos) {
-        let TypeInfos { id_to_type, type_to_id } = other;
+        let TypeInfos { id_to_type } = other;
         self.id_to_type.extend(id_to_type);
-        self.type_to_id.extend(type_to_id);
     }
 }
