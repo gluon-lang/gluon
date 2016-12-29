@@ -1189,7 +1189,7 @@ mod tests {
             self.0.as_ref()
         }
 
-        fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+        fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
             None
         }
     }

@@ -22,7 +22,7 @@ pub trait TypeEnv: KindEnv {
 
     /// Returns a record which contains all `fields`. The first element is the record type and the
     /// second is the alias type.
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)>;
+    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)>;
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
@@ -34,7 +34,7 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
         (**self).find_type_info(id)
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         (**self).find_record(fields)
     }
 }

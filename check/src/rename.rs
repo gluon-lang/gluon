@@ -66,7 +66,7 @@ impl<'a> TypeEnv for Environment<'a> {
             .or_else(|| self.env.find_type_info(id))
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         None
     }
 }

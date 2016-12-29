@@ -170,7 +170,7 @@ impl<'a> TypeEnv for Environment<'a> {
             .or_else(|| self.environment.find_type_info(id))
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         self.stack_types
             .iter()
             .find(|&(_, &(_, ref alias))| {
@@ -182,8 +182,7 @@ impl<'a> TypeEnv for Environment<'a> {
                     _ => false,
                 }
             })
-            // FIXME Don't use unresolved_type
-            .map(|t| (&(t.1).0, (t.1).1.unresolved_type()))
+            .map(|t| ((t.1).0.clone(), (t.1).1.typ().into_owned()))
             .or_else(|| self.environment.find_record(fields))
     }
 }
@@ -275,7 +274,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> TcResult<(&ArcType, &ArcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> TcResult<(ArcType, ArcType)> {
         self.environment
             .find_record(fields)
             .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })

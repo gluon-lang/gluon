@@ -162,7 +162,7 @@ impl TypeEnv for VmEnv {
         self.type_infos
             .find_type_info(id)
     }
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         self.type_infos.find_record(fields)
     }
 }

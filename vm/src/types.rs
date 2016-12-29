@@ -188,7 +188,7 @@ impl TypeEnv for TypeInfos {
             .get(id)
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         None
     }
 }

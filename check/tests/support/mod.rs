@@ -90,7 +90,7 @@ impl TypeEnv for MockEnv {
         }
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         None
     }
 }
