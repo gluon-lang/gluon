@@ -209,30 +209,9 @@ impl<Id, T> Alias<Id, T>
 {
     /// Returns the actual type of the alias
     pub fn typ(&self) -> Cow<T> {
-        let group = match *self._typ {
-            Type::Alias(ref alias) => &alias.group,
+        match *self._typ {
+            Type::Alias(ref alias) => alias.typ(),
             _ => unreachable!(),
-        };
-        let opt = walk_move_type_opt(&self.typ,
-                                     &mut |typ: &Type<_, _>| {
-            match *typ {
-                Type::Ident(ref id) => {
-                    // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
-                    // to resolve the type later on
-                    let index = group.iter()
-                        .position(|alias| alias.name == *id)
-                        .expect("ICE: Alias group were not able to resolve an identifier");
-                    Some(T::from(Type::Alias(AliasRef {
-                        index: index,
-                        group: group.clone(),
-                    })))
-                }
-                _ => None,
-            }
-        });
-        match opt {
-            Some(typ) => Cow::Owned(typ),
-            None => Cow::Borrowed(&self.typ),
         }
     }
 }
@@ -256,6 +235,36 @@ pub struct AliasRef<Id, T> {
     index: usize,
     /// The other aliases defined in this group
     pub group: Arc<Vec<AliasData<Id, T>>>,
+}
+
+impl<Id, T> AliasRef<Id, T>
+    where T: From<Type<Id, T>> + Deref<Target = Type<Id, T>> + Clone,
+          Id: Clone + PartialEq,
+{
+    pub fn typ(&self) -> Cow<T> {
+        let opt = walk_move_type_opt(&self.typ,
+                                     &mut |typ: &Type<_, _>| {
+            match *typ {
+                Type::Ident(ref id) => {
+                    // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
+                    // to resolve the type later on
+                    let index = self.group
+                        .iter()
+                        .position(|alias| alias.name == *id)
+                        .expect("ICE: Alias group were not able to resolve an identifier");
+                    Some(T::from(Type::Alias(AliasRef {
+                        index: index,
+                        group: self.group.clone(),
+                    })))
+                }
+                _ => None,
+            }
+        });
+        match opt {
+            Some(typ) => Cow::Owned(typ),
+            None => Cow::Borrowed(&self.typ),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
