@@ -49,7 +49,9 @@ pub enum TypeError<I> {
     /// Type is not a type which has any fields
     InvalidProjection(ArcType<I>),
     /// Expected to find a record with the following fields
-    UndefinedRecord { fields: Vec<I> },
+    UndefinedRecord {
+        fields: Vec<I>,
+    },
     /// Found a case expression without any alternatives
     EmptyCase,
     /// An `Error` expression was found indicating an invalid parse
@@ -89,7 +91,8 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                           errors were found during unification:",
                          expected,
                          actual,
-                         errors.len())?;
+                         errors.len())
+                    ?;
                 if errors.is_empty() {
                     return Ok(());
                 }
@@ -337,7 +340,10 @@ impl<'a> Typecheck<'a> {
     /// `let` basically infers that the variables in `id` does not refer to anything outside the
     /// `let` scope and can thus be "generalized" into `a -> a` which is instantiated with a fresh
     /// type variable in the `id 2` call.
-    fn generalize_variables(&mut self, level: u32, expr: &mut SpannedExpr<Symbol>) {
+    fn generalize_variables(&mut self,
+                            level: u32,
+                            args: &mut [TypedIdent<Symbol>],
+                            expr: &mut SpannedExpr<Symbol>) {
         self.type_variables.enter_scope();
 
         // Replaces all type variables with their inferred types
@@ -355,12 +361,16 @@ impl<'a> Typecheck<'a> {
                 }
             }
         }
-
-        ReplaceVisitor {
+        {
+            let mut visitor = ReplaceVisitor {
                 level: level,
                 tc: self,
+            };
+            visitor.visit_expr(expr);
+            for arg in args {
+                visitor.visit_typ(&mut arg.typ)
             }
-            .visit_expr(expr);
+        }
 
         self.type_variables.exit_scope();
     }
@@ -394,7 +404,8 @@ impl<'a> Typecheck<'a> {
         typ = types::walk_move_type(typ, &mut unroll_typ);
         // Only the 'tail' expression need to be generalized at this point as all bindings
         // will have already been generalized
-        self.generalize_variables(0, tail_expr(expr));
+        self.generalize_variables(0, &mut [], tail_expr(expr));
+
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
         } else {
@@ -743,7 +754,10 @@ impl<'a> Typecheck<'a> {
 
                 let mut duplicated_fields = FnvSet::default();
                 for field in associated_types.iter().chain(fields.iter()) {
-                    if self.error_on_duplicated_field(&mut duplicated_fields, span, field.0.clone()) {
+                    if 
+                        self.error_on_duplicated_field(&mut duplicated_fields,
+                                                       span,
+                                                       field.0.clone()) {
                         pattern_fields.push(field.0.clone());
                     }
                 }
@@ -874,7 +888,7 @@ impl<'a> Typecheck<'a> {
 
             if !is_recursive {
                 // Merge the type declaration and the actual type
-                self.generalize_variables(level, &mut bind.expr);
+                self.generalize_variables(level, &mut bind.args, &mut bind.expr);
                 self.typecheck_pattern(&mut bind.name, typ);
             } else {
                 types.push(typ);
@@ -892,7 +906,7 @@ impl<'a> Typecheck<'a> {
         // Once all variables inside the let has been unified we can quantify them
         debug!("Generalize {}", level);
         for bind in bindings {
-            self.generalize_variables(level, &mut bind.expr);
+            self.generalize_variables(level, &mut bind.args, &mut bind.expr);
             if let Some(typ) = self.finish_type(level, &bind.typ) {
                 bind.typ = typ;
             }
@@ -1326,8 +1340,8 @@ fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut
     for field in fields {
         // If the field in the pattern does not exist (undefined field error) then skip it as
         // the error itself will already have been reported
-        if let Some(associated_type) = typ.row_iter()
-            .find(|type_field| type_field.name.name_eq(&field.0)) {
+        let opt = typ.row_iter().find(|type_field| type_field.name.name_eq(&field.0));
+        if let Some(associated_type) = opt {
             f(&field.0, &field.1, &associated_type.typ);
         }
     }
