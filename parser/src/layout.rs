@@ -190,54 +190,68 @@ impl<'input, Tokens> Layout<'input, Tokens>
                 (&Token::Comma, _) => {
                     self.indent_levels.pop();
 
-                    match (&token.value, offside.context) {
-                        (&Token::Else, Context::If) => (),
-                        (&Token::RBrace, Context::Brace) |
-                        (&Token::RBracket, Context::Bracket) |
-                        (&Token::RParen, Context::Paren) => return Ok(token),
-                        (&Token::CloseBlock, Context::Block { .. }) => {
-                            if let Some(offside) = self.indent_levels.last_mut() {
-                                // The enclosing block should not emit a block separator for the next
-                                // expression
-                                if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                                    *emit_semi = false;
+                    // If none of the contexts would be closed by this token then this is likely a
+                    // syntax error. Just return the token directly in that case to avoid an
+                    // infinite loop caused by repeatedly inserting a default block and removing
+                    // it.
+                    if self.indent_levels
+                        .stack
+                        .iter()
+                        .all(|offside| !token_closes_context(&token.value, offside.context)) {
+                        return Ok(token);
+                    }
+
+                    if token_closes_context(&token.value, offside.context) {
+                        match offside.context {
+                            Context::If => (),
+                            Context::Brace | Context::Bracket | Context::Paren => return Ok(token),
+                            Context::Block { .. } if token.value == Token::CloseBlock => {
+                                if let Some(offside) = self.indent_levels.last_mut() {
+                                    // The enclosing block should not emit a block separator for the next
+                                    // expression
+                                    if let Context::Block { ref mut emit_semi, .. } =
+                                        offside.context {
+                                        *emit_semi = false;
+                                    }
                                 }
+                                return Ok(token);
                             }
-                            return Ok(token);
-                        }
-                        (&Token::In, Context::Let) |
-                        (&Token::In, Context::Type) => {
-                            let location = {
-                                let offside = self.indent_levels
-                                    .last_mut()
-                                    .expect("No top level block found");
-                                // The enclosing block should not emit a block separator for the next
-                                // expression
-                                if let Context::Block { ref mut emit_semi, .. } = offside.context {
-                                    *emit_semi = false;
-                                }
-                                offside.location
-                            };
+                            Context::Let | Context::Type => {
+                                let location = {
+                                    let offside = self.indent_levels
+                                        .last_mut()
+                                        .expect("No top level block found");
+                                    // The enclosing block should not emit a block separator for the next
+                                    // expression
+                                    if let Context::Block { ref mut emit_semi, .. } =
+                                        offside.context {
+                                        *emit_semi = false;
+                                    }
+                                    offside.location
+                                };
 
-                            // Inject a block to ensure that a sequence of expressions end up in the `let` body
-                            // ```
-                            // let x = 1
-                            // a
-                            // b
-                            // ```
-                            // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-                            let offside = Offside::new(location,
-                                                       Context::Block { emit_semi: false });
-                            self.indent_levels.push(offside)?;
-                            self.unprocessed_tokens
-                                .push(pos::spanned(token.span, Token::OpenBlock));
+                                // Inject a block to ensure that a sequence of expressions end up in the `let` body
+                                // ```
+                                // let x = 1
+                                // a
+                                // b
+                                // ```
+                                // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+                                let offside = Offside::new(location,
+                                                           Context::Block { emit_semi: false });
+                                self.indent_levels.push(offside)?;
+                                self.unprocessed_tokens
+                                    .push(pos::spanned(token.span, Token::OpenBlock));
 
-                            return Ok(token);
+                                return Ok(token);
+                            }
+                            Context::Block { .. } => {
+                                return Ok(self.layout_token(token, Token::CloseBlock));
+                            }
+                            _ => continue,
                         }
-                        (_, Context::Block { .. }) => {
-                            return Ok(self.layout_token(token, Token::CloseBlock));
-                        }
-                        (_, _) => continue,
+                    } else {
+                        continue;
                     }
                 }
                 (_, _) => (),
@@ -391,6 +405,20 @@ impl<'input, Tokens> Layout<'input, Tokens>
 
             return Ok(token);
         }
+    }
+}
+
+fn token_closes_context(token: &Token, context: Context) -> bool {
+    match (token, context) {
+        (&Token::Else, Context::If) |
+        (&Token::RBrace, Context::Brace) |
+        (&Token::RBracket, Context::Bracket) |
+        (&Token::RParen, Context::Paren) |
+        (&Token::CloseBlock, Context::Block { .. }) |
+        (&Token::In, Context::Let) |
+        (&Token::In, Context::Type) |
+        (_, Context::Block { .. }) => true,
+        (_, _) => false,
     }
 }
 
