@@ -9,6 +9,8 @@ extern crate quick_error;
 extern crate gluon_base as base;
 extern crate lalrpop_util;
 
+use std::cell::RefCell;
+
 use base::ast::{Expr, IdentEnv, SpannedExpr};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
@@ -17,7 +19,7 @@ use base::types::ArcType;
 
 use infix::{OpTable, Reparser, Error as InfixError};
 use layout::{Layout, Error as LayoutError};
-use token::{Token, Tokenizer};
+use token::{Token, Tokenizer, Error as TokenizeError};
 
 mod grammar;
 mod infix;
@@ -70,6 +72,11 @@ fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
 quick_error! {
     #[derive(Debug, PartialEq)]
     pub enum Error {
+        Token(err: TokenizeError) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
         Layout(err: LayoutError) {
             description(err.description())
             display("{}", err)
@@ -119,6 +126,73 @@ impl Error {
     }
 }
 
+/// An iterator which forwards only the `Ok` values. If an `Err` is found the iterator returns
+/// `None` and the error can be retrieved using the `result` method.
+struct ResultOkIter<I, E> {
+    iter: I,
+    error: Option<E>,
+}
+
+impl<I, E> ResultOkIter<I, E> {
+    fn new(iter: I) -> ResultOkIter<I, E> {
+        ResultOkIter {
+            iter: iter,
+            error: None,
+        }
+    }
+
+    fn result<T>(&mut self, value: T) -> Result<T, E> {
+        match self.error.take() {
+            Some(err) => Err(err),
+            None => Ok(value),
+        }
+    }
+}
+
+impl<I, T, E> Iterator for ResultOkIter<I, E>
+    where I: Iterator<Item = Result<T, E>>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        match self.iter.next() {
+            Some(Ok(t)) => Some(t),
+            Some(Err(err)) => {
+                self.error = Some(err);
+                None
+            }
+            None => None,
+        }
+    }
+}
+
+/// An iterator which can be shared
+struct SharedIter<'a, I: 'a> {
+    iter: &'a RefCell<I>,
+}
+
+impl<'a, I> Clone for SharedIter<'a, I> {
+    fn clone(&self) -> SharedIter<'a, I> {
+        SharedIter { iter: self.iter.clone() }
+    }
+}
+
+impl<'a, I> SharedIter<'a, I> {
+    fn new(iter: &'a RefCell<I>) -> SharedIter<'a, I> {
+        SharedIter { iter: iter }
+    }
+}
+
+impl<'a, I> Iterator for SharedIter<'a, I>
+    where I: Iterator,
+{
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<I::Item> {
+        self.iter.borrow_mut().next()
+    }
+}
+
 pub enum FieldPattern<Id> {
     Type(Id, Option<Id>),
     Value(Id, Option<Id>),
@@ -140,9 +214,15 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
                               -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
     where Id: Clone,
 {
-    let tokenizer = Tokenizer::new(input).map(|token| token.unwrap()); // FIXME
+    let tokenizer = Tokenizer::new(input);
+    let result_ok_iter = RefCell::new(ResultOkIter {
+        iter: tokenizer,
+        error: None,
+    });
 
-    let layout = Layout::new(tokenizer).map(|token| {
+    let layout = Layout::new(SharedIter::new(&result_ok_iter)).map(|token| {
+        /// Return the tokenizer error if one exists
+        result_ok_iter.borrow_mut().result(())?;
         let token = token?;
         debug!("Lex {:?}", token.value);
         let Span { start, end, .. } = token.span;

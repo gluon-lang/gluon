@@ -63,3 +63,13 @@ y
 
     assert_eq!(result.map_err(|(_, err)| err), Err(errors));
 }
+
+#[test]
+fn unclosed_string() {
+    let _ = ::env_logger::init();
+
+    let result = parse(r#"
+"abc
+"#);
+    assert!(result.is_err());
+}

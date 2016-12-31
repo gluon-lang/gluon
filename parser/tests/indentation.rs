@@ -8,8 +8,7 @@ extern crate gluon_parser as parser;
 mod support;
 
 use base::ast::*;
-use base::pos::{self, BytePos};
-use parser::{Error, parse_string, ParseErrors};
+use parser::{parse_string, ParseErrors};
 use support::MockEnv;
 
 fn parse(text: &str) -> Result<SpannedExpr<String>, ParseErrors> {
