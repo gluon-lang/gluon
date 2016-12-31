@@ -5,12 +5,12 @@ let { (<>) } = make_Monoid string.monoid
 type OffsetString = { start: Int, end: Int, buffer: String }
 type Position = Int
 type Error = String
-type ParseResult = Result Error { rest: OffsetString }
+type ParseResult a = Result Error { value: a, rest: OffsetString }
 type Parser a =
     OffsetString -> Position ->
-    (a -> OffsetString -> Position -> ParseResult) ->
-    (OffsetString -> Position -> String -> ParseResult) ->
-    ParseResult
+    (a -> OffsetString -> Position -> ParseResult a) ->
+    (OffsetString -> Position -> String -> ParseResult a) ->
+    ParseResult a
 
 let parser: Parser a -> Parser a = id
 
@@ -79,11 +79,25 @@ let satisfy predicate: (Char -> Bool) -> Parser Char =
         if predicate c then
             pure c
         else
-            fail ("Unexpected character " <> show c)
+            fail ("Unexpected character " <> show.show c)
     flat_map f any
+
+let parse p input: Parser a -> String -> Result String a =
+    let success a rest _ = Ok { value = a, rest }
+    let failure _ _ message = Err message
+    match (parser p) { start = 0, end = string.length input, rest = input } 0 success failure with
+    | Ok ok -> Ok ok.value
+    | Err err -> Err err
+    
 
 {
     Position, Error, ParseResult, Parser,
+
     functor, applicative, alternative, monad,
-    parser
+
+    parser,
+
+    any, satisfy,
+
+    parse
 }

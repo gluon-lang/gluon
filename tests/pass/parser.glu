@@ -1,0 +1,19 @@
+let prelude = import "std/prelude.glu"
+let { List } = prelude
+let { show = show_String, eq = eq_String } = import "std/string.glu"
+let { Test, run, writer, assert, assert_eq } = import "std/test.glu"
+let { Writer } = import "std/writer.glu"
+
+let { Parser, applicative, functor, alternative, monad, any } = import "std/parser.glu"
+let { (*>), pure } = prelude.make_Applicative applicative
+let { (<|>) } = prelude.make_Alternative alternative
+
+let assert_parse show eq =
+    assert_eq
+        (prelude.show_Result show show_String)
+        (prelude.eq_Result eq eq_String)
+
+let tests =
+    assert_parse (prelude.show_Char prelude.eq_Char) (parse any "abc") (Ok 'a')
+
+run tests
