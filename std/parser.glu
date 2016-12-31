@@ -1,0 +1,89 @@
+let { Functor, Applicative, Alternative, Monad, id, make_Monoid, show_Char = show } = import "std/prelude.glu"
+let string = import "std/string.glu"
+let { (<>) } = make_Monoid string.monoid
+
+type OffsetString = { start: Int, end: Int, buffer: String }
+type Position = Int
+type Error = String
+type ParseResult = Result Error { rest: OffsetString }
+type Parser a =
+    OffsetString -> Position ->
+    (a -> OffsetString -> Position -> ParseResult) ->
+    (OffsetString -> Position -> String -> ParseResult) ->
+    ParseResult
+
+let parser: Parser a -> Parser a = id
+
+let functor: Functor Parser = {
+    map = \f p -> parser (\stream position success failure ->
+        let success2 v s p = success (f v) s p
+        (parser p) stream position success2 failure)
+}
+
+let flat_map f m: (a -> Parser b) -> Parser a -> Parser b = parser (\stream position success failure ->
+    let success2 v s p = (parser (f v)) s p success failure
+    (parser m) stream position success2 failure
+    )
+
+let applicative: Applicative Parser = {
+    functor,
+    apply = \a m -> flat_map (\f -> functor.map f m) a,
+    pure = \value -> parser (\stream position success failure -> success value stream position)
+}
+let { pure } = applicative
+
+let alternative: Alternative Parser = {
+    applicative,
+    or = \l r -> parser (\stream position success failure ->
+        let failure2 _ _ _ = (parser r) stream position success failure
+        (parser l) stream position success failure2),
+    empty = parser (\stream position _ failure -> failure stream position "empty")
+}
+
+let monad: Monad Parser = {
+    applicative,
+    flat_map
+}
+
+let uncons stream : OffsetString -> Option { char: Char, rest: OffsetString } =
+    if stream.start == stream.end then
+        None
+    else
+        let c = string.char_at stream.buffer stream.start
+        let char_len = char.len_utf8 c
+        Some {
+            char = c,
+            rest = {
+                start = stream.start + char_len,
+                end = stream.end,
+                buffer = stream.buffer,
+            }
+        }
+
+let update_position c position: Char -> Position -> Position =
+    position + char.len_utf8 c
+
+let any: Parser Char =
+    parser (\stream position success failure ->
+        match uncons stream with
+        | Some record ->
+            let { char, rest } = record
+            success char rest (update_position char position)
+        | None -> failure stream position "End of stream")
+
+let fail message: String -> Parser a =
+    parser (\stream position _ failure -> failure stream position message)
+
+let satisfy predicate: (Char -> Bool) -> Parser Char =
+    let f c =
+        if predicate c then
+            pure c
+        else
+            fail ("Unexpected character " <> show c)
+    flat_map f any
+
+{
+    Position, Error, ParseResult, Parser,
+    functor, applicative, alternative, monad,
+    parser
+}
