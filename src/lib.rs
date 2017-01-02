@@ -9,6 +9,8 @@ extern crate log;
 #[macro_use]
 extern crate quick_error;
 
+extern crate futures;
+
 #[macro_use]
 pub extern crate gluon_vm as vm;
 pub extern crate gluon_base as base;
@@ -26,6 +28,8 @@ pub use vm::thread::{RootedThread, Thread};
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::env;
+
+use futures::Async;
 
 use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
@@ -290,7 +294,12 @@ impl Compiler {
                 .unwrap_or(false)
         };
         let value = if is_io {
-            vm.execute_io(*value)?
+            match vm.execute_io(*value)? {
+                Async::Ready(value) => value,
+                Async::NotReady => {
+                    return Err(VmError::Message("Unhandled asynchronous execution".into()).into())
+                }
+            }
         } else {
             *value
         };

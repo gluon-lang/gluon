@@ -3,6 +3,8 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
+use futures::Async;
+
 use base::types;
 use base::types::{Type, ArcType};
 use gc::{Gc, GcPtr, Move, Traverseable};
@@ -92,8 +94,8 @@ extern "C" fn force(vm: &Thread) -> Status {
                     *lazy.value.lock().unwrap() = Lazy_::Blackhole;
                     let result = vm.call_function(context, 1);
                     match result {
-                        Ok(None) => panic!("Expected stack"),
-                        Ok(Some(mut context)) => {
+                        Ok(Async::Ready(None)) => panic!("Expected stack"),
+                        Ok(Async::Ready(Some(mut context))) => {
                             let mut stack = StackFrame::current(&mut context.stack);
                             let value = stack.pop();
                             while stack.len() > 1 {
@@ -102,6 +104,14 @@ extern "C" fn force(vm: &Thread) -> Status {
                             *lazy.value.lock().unwrap() = Lazy_::Value(value);
                             stack.push(value);
                             Status::Ok
+                        }
+                        Ok(Async::NotReady) => {
+                            let mut context = vm.context();
+                            let err = "Evaluating a lazy value cannot be done asynchronously at \
+                                       the moment";
+                            let result = Value::String(context.alloc_ignore_limit(&err[..]));
+                            context.stack.push(result);
+                            Status::Error
                         }
                         Err(err) => {
                             let mut context = vm.context();

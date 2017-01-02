@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use base::types::{ArcType, Type};
 
 use {Error, Result as VmResult};
-use api::{Generic, VmType, primitive, WithVM, Function, Pushable, RuntimeResult};
+use api::{Generic, VmType, primitive, WithVM, Function, AsyncPushable, Pushable, RuntimeResult};
 use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
 use vm::{Thread, RootedThread, Status};
@@ -132,8 +132,7 @@ extern "C" fn resume(vm: &Thread) -> Status {
             context = vm.context();
             context.stack.release_lock(lock);
             match result {
-                Ok(()) |
-                Err(Error::Yield) => {
+                Ok(_) => {
                     let value: Result<(), &str> = Ok(());
                     value.status_push(vm, &mut context)
                 }

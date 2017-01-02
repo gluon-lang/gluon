@@ -1,10 +1,16 @@
 extern crate env_logger;
+extern crate futures;
+
 #[macro_use]
 extern crate gluon_vm;
 extern crate gluon;
 
+use futures::{BoxFuture, Future, IntoFuture};
+use futures::future::lazy;
+
 use gluon::base::types::Type;
-use gluon::vm::api::{VmType, FunctionRef, Userdata};
+use gluon::vm::Error;
+use gluon::vm::api::{FutureResult, VmType, FunctionRef, Userdata};
 use gluon::vm::thread::{RootedThread, Thread, Traverseable, Root, RootStr};
 use gluon::vm::types::VmInt;
 use gluon::Compiler;
@@ -115,6 +121,65 @@ sum_bytes [100b, 42b, 3b, 15b]
     let result =
         Compiler::new().run_expr::<u8>(&vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
     let expected = (160, Type::byte());
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn return_finished_future() {
+    let _ = ::env_logger::init();
+
+    fn add(x: i32, y: i32) -> FutureResult<BoxFuture<i32, Error>> {
+        FutureResult(Ok(x + y).into_future().boxed())
+    }
+
+    let expr = r#"
+    add 1 2
+"#;
+
+    let vm = make_vm();
+    vm.define_global("add", primitive!(2 add)).unwrap();
+
+    let result =
+        Compiler::new().run_expr::<i32>(&vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
+    let expected = (3, Type::int());
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn return_delayed_future() {
+    let _ = ::env_logger::init();
+
+    fn poll_n(i: i32) -> FutureResult<BoxFuture<i32, Error>> {
+        use std::thread::spawn;
+        use futures::sync::oneshot::channel;
+
+        let (ping_c, ping_p) = channel();
+        let (pong_c, pong_p) = channel();
+        spawn(move || {
+            ping_p.wait().unwrap();
+            pong_c.complete(i);
+        });
+        FutureResult(lazy(move || {
+                ping_c.complete(());
+                Ok(())
+            })
+            .and_then(|_| pong_p.map_err(|err| Error::Message(format!("{}", err))))
+            .boxed())
+    }
+
+    let expr = r#"
+    poll_n 3
+"#;
+
+    let vm = make_vm();
+    vm.define_global("poll_n", primitive!(1 poll_n)).unwrap();
+
+    let result = Compiler::new()
+        .run_expr::<i32>(&vm, "<top>", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    let expected = (3, Type::int());
 
     assert_eq!(result, expected);
 }
