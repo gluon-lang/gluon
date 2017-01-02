@@ -578,7 +578,7 @@ in id 1
 fn run_expr_int() {
     let _ = ::env_logger::init();
 
-    let text = r#"io.run_expr_async "123" "#;
+    let text = r#"io.run_expr "123" "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
         .run_io_expr_async::<IO<String>>(&mut vm, "<top>", text)
@@ -594,7 +594,7 @@ fn run_expr_int() {
 }
 
 test_expr!{ io run_expr_io,
-r#"io_flat_map (\x -> io_pure 100) (io.run_expr_async "io.print \"123\" ") "#,
+r#"io_flat_map (\x -> io_pure 100) (io.run_expr "io.print \"123\" ") "#,
 100i32
 }
 

@@ -717,7 +717,7 @@ impl ThreadInternal for Thread {
     }
 }
 
-pub type HookFn = Box<FnMut(&Thread, DebugInfo) -> Result<()> + Send + Sync>;
+pub type HookFn = Box<FnMut(&Thread, DebugInfo) -> Result<Async<()>> + Send + Sync>;
 
 pub struct DebugInfo<'a> {
     stack: &'a Stack,
@@ -987,7 +987,7 @@ impl<'b> OwnedContext<'b> {
                                 stack: &context.stack,
                                 state: CALL_FLAG,
                             };
-                            hook(thread, info)?
+                            try_ready!(hook(thread, info))
                         }
                     }
                     _ => (),
@@ -1031,9 +1031,10 @@ impl<'b> OwnedContext<'b> {
                                    instruction_index,
                                    closure.function.instructions.len());
 
-                            let new_context = context.execute_(instruction_index,
-                                          &closure.function.instructions,
-                                          &closure.function)?;
+                            let new_context = try_ready!(context.execute_(instruction_index,
+                                                                          &closure.function
+                                                                              .instructions,
+                                                                          &closure.function));
                             if new_context.is_some() {
                                 State::Exists
                             } else {
@@ -1263,7 +1264,7 @@ impl<'b> ExecuteContext<'b> {
                 mut index: usize,
                 instructions: &[Instruction],
                 function: &BytecodeFunction)
-                -> Result<Option<()>> {
+                -> Result<Async<Option<()>>> {
         {
             debug!(">>>\nEnter frame {}: {:?}\n{:?}",
                    function.name,
@@ -1287,7 +1288,7 @@ impl<'b> ExecuteContext<'b> {
                             stack: &self.stack.stack,
                             state: LINE_FLAG,
                         };
-                        hook(self.thread, info)?
+                        try_ready!(hook(self.thread, info))
                     }
                 }
             }
@@ -1313,7 +1314,7 @@ impl<'b> ExecuteContext<'b> {
                 PushFloat(f) => self.stack.push(Float(f)),
                 Call(args) => {
                     self.stack.frame.instruction_index = index + 1;
-                    return self.do_call(args).map(Some);
+                    return self.do_call(args).map(|x| Async::Ready(Some(x)));
                 }
                 TailCall(mut args) => {
                     let mut amount = self.stack.len() - args;
@@ -1347,7 +1348,7 @@ impl<'b> ExecuteContext<'b> {
                     let end = self.stack.len() - args - 1;
                     self.stack.remove_range(end - amount, end);
                     debug!("{:?}", &self.stack[..]);
-                    return self.do_call(args).map(Some);
+                    return self.do_call(args).map(|x| Async::Ready(Some(x)));
                 }
                 Construct { tag, args } => {
                     let d = {
@@ -1582,12 +1583,12 @@ impl<'b> ExecuteContext<'b> {
                     for value in &excess.fields {
                         self.stack.push(*value);
                     }
-                    self.do_call(excess.fields.len() as VmIndex).map(Some)
+                    self.do_call(excess.fields.len() as VmIndex).map(|x| Async::Ready(Some(x)))
                 }
                 x => panic!("Expected excess arguments found {:?}", x),
             }
         } else {
-            Ok(if stack_exists { Some(()) } else { None })
+            Ok(Async::Ready(if stack_exists { Some(()) } else { None }))
         }
     }
 }
