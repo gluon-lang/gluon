@@ -1054,22 +1054,19 @@ impl<'a> Typecheck<'a> {
     }
 
     /// Generate a generic variable name which is not used in the current scope
-    fn next_variable(&mut self, level: u32, s: &mut String) {
-        for c in b'a'..(b'z' + 1) {
-            s.push(c as char);
-            let symbol = self.symbols.symbol(&s[..]);
+    fn next_variable(&mut self, level: u32, name: &mut String, kind: ArcKind) {
+        for ch in b'a'..(b'z' + 1) {
+            name.push(ch as char);
+            let symbol = self.symbols.symbol(&name[..]);
             if self.type_variables.get(&symbol).is_none() {
-                self.type_variables.insert(symbol,
-                                           Type::variable(TypeVariable {
-                                               id: level,
-                                               kind: Kind::typ(),
-                                           }));
+                let var = TypeVariable::new(level, kind);
+                self.type_variables.insert(symbol, Type::variable(var));
                 return;
             }
-            s.pop();
+            name.pop();
         }
-        s.push('a');
-        self.next_variable(level, s)
+        name.push('a');
+        self.next_variable(level, name, kind)
     }
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
@@ -1102,12 +1099,11 @@ impl<'a> Typecheck<'a> {
                 Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
                     // Create a prefix if none exists
                     if generic.is_none() {
-                        let mut g = String::new();
-                        self.next_variable(level, &mut g);
-                        *generic = Some(g);
+                        let mut name = String::new();
+                        self.next_variable(level, &mut name, var.kind.clone());
+                        *generic = Some(name);
                     }
                     let generic = generic.as_ref().unwrap();
-
                     let generic = format!("{}{}", generic, i);
                     *i += 1;
                     let id = self.symbols.symbol(generic);

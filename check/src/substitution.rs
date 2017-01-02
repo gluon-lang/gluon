@@ -45,13 +45,12 @@ impl Variable for u32 {
 /// Trait implemented on types which may contain substitutable variables
 pub trait Substitutable: Sized {
     type Variable: Variable;
+
     fn new(x: u32) -> Self;
-    /// Constructs a new object from its variable type
-    fn from_variable(x: Self::Variable) -> Self {
-        Self::new(x.get_id())
-    }
+
     /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
+
     fn traverse<F>(&self, f: &mut F) where F: Walker<Self>;
 }
 

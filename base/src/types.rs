@@ -9,7 +9,7 @@ use pretty::{DocAllocator, Arena, DocBuilder};
 use smallvec::{SmallVec, VecLike};
 
 use ast::{self, DisplayEnv};
-use kind::{ArcKind, Kind, KindEnv};
+use kind::{ArcKind, KindEnv};
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains typed values which can be refered by name
@@ -110,10 +110,31 @@ impl BuiltinType {
     }
 }
 
+impl fmt::Display for BuiltinType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.to_str().fmt(f)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TypeVariable {
     pub kind: ArcKind,
     pub id: u32,
+}
+
+impl TypeVariable {
+    pub fn new(var: u32, kind: ArcKind) -> TypeVariable {
+        TypeVariable {
+            kind: kind,
+            id: var,
+        }
+    }
+}
+
+impl fmt::Display for TypeVariable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.id.fmt(f)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -128,6 +149,12 @@ impl<Id> Generic<Id> {
             id: id,
             kind: kind,
         }
+    }
+}
+
+impl<Id: fmt::Display> fmt::Display for Generic<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.id.fmt(f)
     }
 }
 
@@ -458,29 +485,24 @@ pub struct ArcType<Id = Symbol> {
     typ: Arc<Type<Id, ArcType<Id>>>,
 }
 
-impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
-    }
-}
-
-impl<Id> Deref for ArcType<Id> {
-    type Target = Type<Id, ArcType<Id>>;
-
-    fn deref(&self) -> &Type<Id, ArcType<Id>> {
-        &self.typ
-    }
-}
-
 impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
+    }
+
+    /// Returns the lowest level which this type contains. The level informs from where type
+    /// variables where created.
+    pub fn level(&self) -> u32 {
+        use std::cmp::min;
+
+        fold_type(self,
+                  |typ, level| {
+                      match **typ {
+                          Type::Variable(ref var) => min(var.id, level),
+                          _ => level,
+                      }
+                  },
+                  u32::max_value())
     }
 
     /// Returns an iterator over all type fields in a record.
@@ -505,6 +527,26 @@ impl<Id> ArcType<Id> {
 impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
     fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType::new(typ)
+    }
+}
+
+impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Id> Deref for ArcType<Id> {
+    type Target = Type<Id, ArcType<Id>>;
+
+    fn deref(&self) -> &Type<Id, ArcType<Id>> {
+        &self.typ
     }
 }
 
@@ -596,58 +638,12 @@ impl<'a, Id, T> Iterator for ArgIterator<'a, T>
           T: Deref<Target = Type<Id, T>>,
 {
     type Item = &'a T;
+
     fn next(&mut self) -> Option<&'a T> {
         self.typ.as_function().map(|(arg, ret)| {
             self.typ = ret;
             arg
         })
-    }
-}
-
-impl<Id> ArcType<Id> {
-    /// Returns the lowest level which this type contains. The level informs from where type
-    /// variables where created.
-    pub fn level(&self) -> u32 {
-        use std::cmp::min;
-        fold_type(self,
-                  |typ, level| {
-                      match **typ {
-                          Type::Variable(ref var) => min(var.id, level),
-                          _ => level,
-                      }
-                  },
-                  u32::max_value())
-    }
-}
-
-impl TypeVariable {
-    pub fn new(var: u32) -> TypeVariable {
-        TypeVariable::with_kind(Kind::Type, var)
-    }
-
-    pub fn with_kind(kind: Kind, var: u32) -> TypeVariable {
-        TypeVariable {
-            kind: ArcKind::new(kind),
-            id: var,
-        }
-    }
-}
-
-impl fmt::Display for TypeVariable {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.id.fmt(f)
-    }
-}
-
-impl<Id: fmt::Display> fmt::Display for Generic<Id> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.id.fmt(f)
-    }
-}
-
-impl fmt::Display for BuiltinType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.to_str().fmt(f)
     }
 }
 

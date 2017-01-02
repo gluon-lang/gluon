@@ -4,7 +4,7 @@ use std::result::Result as StdResult;
 use base::ast;
 use base::kind::{self, ArcKind, Kind, KindEnv};
 use base::symbol::Symbol;
-use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
+use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, TypeVariable, Walker};
 
 use substitution::{Substitution, Substitutable};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
@@ -249,51 +249,41 @@ impl<'a> KindCheck<'a> {
 
     fn unify(&mut self, expected: &ArcKind, mut actual: ArcKind) -> Result<ArcKind> {
         debug!("Unify {:?} <=> {:?}", expected, actual);
-        let result = unify::unify(&self.subs, &mut (), expected, &actual);
-        match result {
-            Ok(k) => Ok(k),
-            Err(_errors) => {
-                let mut expected = expected.clone();
-                expected = update_kind(&self.subs, expected, None);
-                actual = update_kind(&self.subs, actual, None);
-                Err(UnifyError::TypeMismatch(expected, actual))
-            }
-        }
+
+        unify::unify(&self.subs, &mut (), expected, &actual).or_else(|_| {
+            let expected = update_kind(&self.subs, expected.clone());
+            actual = update_kind(&self.subs, actual);
+            Err(UnifyError::TypeMismatch(expected, actual))
+        })
     }
 
     pub fn finalize_type(&self, typ: ArcType) -> ArcType {
-        let default = Some(&self.type_kind);
         types::walk_move_type(typ,
                               &mut |typ| {
             match *typ {
                 Type::Variable(ref var) => {
-                    let mut kind = var.kind.clone();
-                    kind = update_kind(&self.subs, kind, default);
-                    Some(Type::variable(types::TypeVariable {
-                        id: var.id,
-                        kind: kind,
-                    }))
+                    let kind = update_kind(&self.subs, var.kind.clone());
+                    Some(Type::variable(TypeVariable::new(var.id, kind)))
                 }
                 Type::Generic(ref var) => Some(Type::generic(self.finalize_generic(var))),
                 _ => None,
             }
         })
     }
+
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
-        let mut kind = var.kind.clone();
-        kind = update_kind(&self.subs, kind, Some(&self.type_kind));
-        Generic::new(var.id.clone(), kind)
+        Generic::new(var.id.clone(), update_kind(&self.subs, var.kind.clone()))
     }
 }
 
-fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
+fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind) -> ArcKind {
     walk_move_kind(kind,
                    &mut |kind| {
-        match *kind {
-            Kind::Variable(id) => subs.find_type_for_var(id).cloned().or_else(|| default.cloned()),
-            _ => None,
-        }
-    })
+                       match *kind {
+                           Kind::Variable(id) => subs.find_type_for_var(id).cloned(),
+                           _ => None,
+                       }
+                   })
 }
 
 /// Enumeration possible errors other than mismatch and occurs when kindchecking
@@ -323,10 +313,6 @@ impl Substitutable for ArcKind {
     type Variable = u32;
 
     fn new(x: u32) -> ArcKind {
-        Kind::variable(x)
-    }
-
-    fn from_variable(x: u32) -> ArcKind {
         Kind::variable(x)
     }
 

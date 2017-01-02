@@ -4,13 +4,13 @@ use std::mem;
 use smallvec::VecLike;
 
 use base::error::Errors;
-use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv};
-use base::symbol::{Symbol, SymbolRef};
+use base::kind::Kind;
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
+use base::symbol::{Symbol, SymbolRef};
+use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv};
 
-use unify;
-use unify::{Error as UnifyError, Unifier, Unifiable};
+use unify::{self, Error as UnifyError, Unifier, Unifiable};
 use substitution::{Variable, Substitutable, Substitution};
 
 pub type Error<I> = UnifyError<ArcType<I>, TypeError<I>>;
@@ -133,11 +133,8 @@ impl<I> Substitutable for ArcType<I> {
     type Variable = TypeVariable;
 
     fn new(id: u32) -> ArcType<I> {
-        Type::variable(TypeVariable::new(id))
-    }
-
-    fn from_variable(var: TypeVariable) -> ArcType<I> {
-        Type::variable(var)
+        // FIXME: using `Kind::hole()` here results in test failures
+        Type::variable(TypeVariable::new(id, Kind::typ()))
     }
 
     fn get_var(&self) -> Option<&TypeVariable> {
