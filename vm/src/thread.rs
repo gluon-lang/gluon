@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::usize;
 
 use futures::{Async, Future, Poll};
+use future::FutureValue;
 
 use base::metadata::Metadata;
 use base::pos::Line;
@@ -475,7 +476,9 @@ impl Thread {
 
 /// Internal functions for interacting with threads. These functions should be considered both
 /// unsafe and unstable.
-pub trait ThreadInternal {
+pub trait ThreadInternal
+    where for<'a> &'a Self: Deref<Target = Thread>,
+{
     /// Locks and retrives this threads stack
     fn context(&self) -> OwnedContext;
 
@@ -499,7 +502,7 @@ pub trait ThreadInternal {
                     -> Result<()>;
 
     /// Evaluates a zero argument function (a thunk)
-    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Execute<&Self>;
+    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Result<FutureValue<Execute<&Self>>>;
 
     /// Executes an `IO` action
     fn execute_io(&self, value: Value) -> Result<Async<Value>>;
@@ -589,11 +592,16 @@ impl ThreadInternal for Thread {
         Ok(())
     }
 
-    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Execute<&Thread> {
+    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Result<FutureValue<Execute<&Thread>>> {
         let mut context = self.current_context();
         context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
-        Execute { thread: self }
+        context.execute().map(|async| {
+            match async {
+                Async::Ready(context) => FutureValue::Value(context.unwrap().stack.pop()),
+                Async::NotReady => FutureValue::Future(Execute { thread: self }),
+            }
+        })
     }
 
     /// Calls a module, allowed to to run IO expressions

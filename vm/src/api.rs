@@ -877,15 +877,11 @@ impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
     where F: Future<Error = Error> + Send + 'static,
           F::Item: Pushable<'vm>,
 {
-    fn async_push(mut self, vm: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
-        match self.0.poll() {
-            Ok(Async::Ready(value)) => value.push(vm, context).map(Async::Ready),
-            Ok(Async::NotReady) => unsafe {
-                context.return_future(self.0);
-                Ok(Async::NotReady)
-            },
-            Err(err) => Err(err),
+    fn async_push(self, _: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+        unsafe {
+            context.return_future(self.0);
         }
+        Ok(Async::NotReady)
     }
 }
 

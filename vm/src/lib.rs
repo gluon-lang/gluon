@@ -26,6 +26,7 @@ pub mod api;
 pub mod channel;
 pub mod compiler;
 pub mod debug;
+pub mod future;
 pub mod gc;
 pub mod macros;
 pub mod thread;
