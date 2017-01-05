@@ -25,12 +25,16 @@ impl<T> Errors<T> {
 
     /// Returns true if `self` contains any errors
     pub fn has_errors(&self) -> bool {
-        !self.errors.is_empty()
+        !self.is_empty()
     }
 
     /// The number of errors in the error list
     pub fn len(&self) -> usize {
         self.errors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
     }
 
     /// Adds an error to `self`

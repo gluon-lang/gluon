@@ -526,7 +526,7 @@ impl<T> Traverseable for VecDeque<T>
     }
 }
 
-/// When traversing a GcPtr we need to mark it
+/// When traversing a `GcPtr` we need to mark it
 impl<T: ?Sized> Traverseable for GcPtr<T>
     where T: Traverseable,
 {
@@ -657,10 +657,10 @@ impl Gc {
         let header = value.header();
         // We only need to mark and traverse values from this garbage collectors generation
         if header.generation().is_parent_of(self.generation()) || header.marked.get() {
-            return true;
+            true
         } else {
             header.marked.set(true);
-            return false;
+            false
         }
     }
 

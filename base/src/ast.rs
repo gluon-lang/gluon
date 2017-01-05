@@ -223,7 +223,8 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 }
             }
         }
-        Expr::Tuple(ref mut exprs) => {
+        Expr::Tuple(ref mut exprs) |
+        Expr::Block(ref mut exprs) => {
             for expr in exprs {
                 v.visit_expr(expr);
             }
@@ -237,12 +238,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         }
         Expr::TypeBindings(_, ref mut expr) => v.visit_expr(expr),
         Expr::Ident(ref mut id) => v.visit_typ(&mut id.typ),
-        Expr::Literal(..) => (),
-        Expr::Block(ref mut exprs) => {
-            for expr in exprs {
-                v.visit_expr(expr);
-            }
-        }
+        Expr::Literal(..) |
         Expr::Error => (),
     }
 }
@@ -295,7 +291,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
                 v.visit_expr(&bind.expr);
                 v.visit_typ(&bind.typ);
             }
-            v.visit_expr(&body);
+            v.visit_expr(body);
         }
         Expr::App(ref func, ref args) => {
             v.visit_expr(func);
@@ -328,7 +324,8 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
                 }
             }
         }
-        Expr::Tuple(ref exprs) => {
+        Expr::Tuple(ref exprs) |
+        Expr::Block(ref exprs) => {
             for expr in exprs {
                 v.visit_expr(expr);
             }
@@ -339,12 +336,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
         }
         Expr::TypeBindings(_, ref expr) => v.visit_expr(expr),
         Expr::Ident(ref id) => v.visit_typ(&id.typ),
-        Expr::Literal(..) => (),
-        Expr::Block(ref exprs) => {
-            for expr in exprs {
-                v.visit_expr(expr);
-            }
-        }
+        Expr::Literal(..) |
         Expr::Error => (),
     }
 }
@@ -387,7 +379,8 @@ impl Typed for Expr<Symbol> {
     fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         match *self {
             Expr::Ident(ref id) => id.typ.clone(),
-            Expr::Projection(_, _, ref typ) => typ.clone(),
+            Expr::Projection(_, _, ref typ) |
+            Expr::Record { ref typ, .. } => typ.clone(),
             Expr::Literal(ref lit) => {
                 match *lit {
                     Literal::Int(_) => Type::int(),
@@ -418,7 +411,6 @@ impl Typed for Expr<Symbol> {
             Expr::Match(_, ref alts) => alts[0].expr.env_type_of(env),
             Expr::Array(ref array) => array.typ.clone(),
             Expr::Lambda(ref lambda) => lambda.id.typ.clone(),
-            Expr::Record { ref typ, .. } => typ.clone(),
             Expr::Block(ref exprs) => exprs.last().expect("Expr in block").env_type_of(env),
             Expr::Error => Type::hole(),
         }
@@ -462,7 +454,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
                    alias_type)
         });
 
-        env.find_type_info(&alias_ident)
+        env.find_type_info(alias_ident)
             .unwrap_or_else(|| panic!("Unexpected type {:?} is not a function", alias_type))
     };
 

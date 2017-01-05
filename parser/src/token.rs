@@ -353,7 +353,7 @@ impl<'input> Tokenizer<'input> {
             Some((_, 't')) => Ok('\t'),
             // TODO: Unicode escape codes
             Some((start, ch)) => self.error(start, UnexpectedEscapeCode(ch)),
-            None => return self.eof_error(),
+            None => self.eof_error(),
         }
     }
 
@@ -403,8 +403,7 @@ impl<'input> Tokenizer<'input> {
                 self.bump(); // Skip 'b'
                 if let Ok(val) = int.parse() {
                     (start, end.shift('b'), Token::ByteLiteral(val))
-                }
-                else {
+                } else {
                     return self.error(start, NonParseableInt);
                 }
             }
@@ -412,8 +411,7 @@ impl<'input> Tokenizer<'input> {
             None | Some(_) => {
                 if let Ok(val) = int.parse() {
                     (start, end, Token::IntLiteral(val))
-                }
-                else {
+                } else {
                     return self.error(start, NonParseableInt);
                 }
             }
@@ -523,80 +521,68 @@ mod test {
     #[test]
     fn sample_lambda_expr() {
         test(r#"(hi_, \a -> a ** a)"#,
-             vec![
-            (r#"~                  "#, LParen),
-            (r#" ~~~               "#, Identifier("hi_")),
-            (r#"    ~              "#, Comma),
-            (r#"      ~            "#, Lambda),
-            (r#"       ~           "#, Identifier("a")),
-            (r#"         ~~        "#, RArrow),
-            (r#"            ~      "#, Identifier("a")),
-            (r#"              ~~   "#, Operator("**")),
-            (r#"                 ~ "#, Identifier("a")),
-            (r#"                  ~"#, RParen),
-        ]);
+             vec![(r#"~                  "#, LParen),
+                  (r#" ~~~               "#, Identifier("hi_")),
+                  (r#"    ~              "#, Comma),
+                  (r#"      ~            "#, Lambda),
+                  (r#"       ~           "#, Identifier("a")),
+                  (r#"         ~~        "#, RArrow),
+                  (r#"            ~      "#, Identifier("a")),
+                  (r#"              ~~   "#, Operator("**")),
+                  (r#"                 ~ "#, Identifier("a")),
+                  (r#"                  ~"#, RParen)]);
     }
 
     #[test]
     fn sample_array() {
         test(r#"[1, a]"#,
-             vec![
-            (r#"~     "#, LBracket),
-            (r#" ~    "#, IntLiteral(1)),
-            (r#"  ~   "#, Comma),
-            (r#"    ~ "#, Identifier("a")),
-            (r#"     ~"#, RBracket),
-        ]);
+             vec![(r#"~     "#, LBracket),
+                  (r#" ~    "#, IntLiteral(1)),
+                  (r#"  ~   "#, Comma),
+                  (r#"    ~ "#, Identifier("a")),
+                  (r#"     ~"#, RBracket)]);
     }
 
     #[test]
     fn builtin_operators() {
         test(r#". : = | ->"#,
-             vec![
-            (r#"~         "#, Dot),
-            (r#"  ~       "#, Colon),
-            (r#"    ~     "#, Equals),
-            (r#"      ~   "#, Pipe),
-            (r#"        ~~"#, RArrow),
-        ]);
+             vec![(r#"~         "#, Dot),
+                  (r#"  ~       "#, Colon),
+                  (r#"    ~     "#, Equals),
+                  (r#"      ~   "#, Pipe),
+                  (r#"        ~~"#, RArrow)]);
     }
 
     #[test]
     fn user_defined_operators() {
         test(r#"+-* * /&|=<>: .. <->"#,
-             vec![
-            (r#"~~~                 "#, Operator("+-*")), // Horiffic!
-            (r#"    ~               "#, Operator("*")),
-            (r#"      ~~~~~~~       "#, Operator("/&|=<>:")), // Oh my...
-            (r#"              ~~    "#, Operator("..")),
-            (r#"                 ~~~"#, Operator("<->")),
-        ]);
+             vec![(r#"~~~                 "#, Operator("+-*")), // Horiffic!
+                  (r#"    ~               "#, Operator("*")),
+                  (r#"      ~~~~~~~       "#, Operator("/&|=<>:")), // Oh my...
+                  (r#"              ~~    "#, Operator("..")),
+                  (r#"                 ~~~"#, Operator("<->"))]);
     }
 
     #[test]
     fn delimters() {
         test(r#"{][ () }] "#,
-             vec![
-            (r#"~         "#, LBrace),
-            (r#" ~        "#, RBracket),
-            (r#"  ~       "#, LBracket),
-            (r#"    ~     "#, LParen),
-            (r#"     ~    "#, RParen),
-            (r#"       ~  "#, RBrace),
-            (r#"        ~ "#, RBracket),
-        ]);
+             vec![(r#"~         "#, LBrace),
+                  (r#" ~        "#, RBracket),
+                  (r#"  ~       "#, LBracket),
+                  (r#"    ~     "#, LParen),
+                  (r#"     ~    "#, RParen),
+                  (r#"       ~  "#, RBrace),
+                  (r#"        ~ "#, RBracket)]);
     }
 
     #[test]
     fn string_literals() {
         test(r#"foo "bar\"\n" baz "" "\t""#,
-             vec![
-            (r#"~~~                      "#, Identifier("foo")),
-            (r#"    ~~~~~~~~~            "#, StringLiteral("bar\"\n".to_string())),
-            (r#"              ~~~        "#, Identifier("baz")),
-            (r#"                  ~~     "#, StringLiteral("".to_string())),
-            (r#"                     ~~~~"#, StringLiteral("\t".to_string())),
-        ]);
+             vec![(r#"~~~                      "#, Identifier("foo")),
+                  (r#"    ~~~~~~~~~            "#, StringLiteral("bar\"\n".to_string())),
+                  (r#"              ~~~        "#, Identifier("baz")),
+                  (r#"                  ~~     "#, StringLiteral("".to_string())),
+                  (r#"                     ~~~~"#, StringLiteral("\t".to_string()))]);
     }
 
     #[test]
@@ -614,12 +600,10 @@ mod test {
     #[test]
     fn char_literals() {
         test(r#"foo 'b' '\\' '\''"#,
-             vec![
-            (r#"~~~              "#, Identifier("foo")),
-            (r#"    ~~~          "#, CharLiteral('b')),
-            (r#"        ~~~~     "#, CharLiteral('\\')),
-            (r#"             ~~~~"#, CharLiteral('\'')),
-        ]);
+             vec![(r#"~~~              "#, Identifier("foo")),
+                  (r#"    ~~~          "#, CharLiteral('b')),
+                  (r#"        ~~~~     "#, CharLiteral('\\')),
+                  (r#"             ~~~~"#, CharLiteral('\''))]);
     }
 
     #[test]
@@ -657,11 +641,9 @@ mod test {
     #[test]
     fn int_literals() {
         test(r#"3 1036 45"#,
-             vec![
-            (r#"~        "#, IntLiteral(3)),
-            (r#"  ~~~~   "#, IntLiteral(1036)),
-            (r#"       ~~"#, IntLiteral(45)),
-        ]);
+             vec![(r#"~        "#, IntLiteral(3)),
+                  (r#"  ~~~~   "#, IntLiteral(1036)),
+                  (r#"       ~~"#, IntLiteral(45))]);
     }
 
     #[test]
@@ -673,45 +655,35 @@ mod test {
     #[test]
     fn byte_literals() {
         test(r#"3b 255b 45b"#,
-             vec![
-            (r#"~~         "#, ByteLiteral(3)),
-            (r#"   ~~~~    "#, ByteLiteral(255)),
-            (r#"        ~~~"#, ByteLiteral(45)),
-        ]);
+             vec![(r#"~~         "#, ByteLiteral(3)),
+                  (r#"   ~~~~    "#, ByteLiteral(255)),
+                  (r#"        ~~~"#, ByteLiteral(45))]);
     }
 
     #[test]
     fn float_literals() {
         test(r#"03.1415 1036.2"#,
-             vec![
-            (r#"~~~~~~~       "#, FloatLiteral(3.1415)),
-            (r#"        ~~~~~~"#, FloatLiteral(1036.2)),
-        ]);
+             vec![(r#"~~~~~~~       "#, FloatLiteral(3.1415)),
+                  (r#"        ~~~~~~"#, FloatLiteral(1036.2))]);
     }
 
     #[test]
     fn line_comments() {
         test(r#"hi // hellooo"#,
-             vec![
-            (r#"~~           "#, Identifier("hi")),
-        ]);
+             vec![(r#"~~           "#, Identifier("hi"))]);
     }
 
     #[test]
     fn line_doc_comments() {
         test(r#"hi ///hellooo/// hi"#,
-             vec![
-            (r#"~~                  "#, Identifier("hi")),
-            (r#"   ~~~~~~~~~~~~~~~~~"#, DocComment("hellooo/// hi".to_string())),
-        ]);
+             vec![(r#"~~                  "#, Identifier("hi")),
+                  (r#"   ~~~~~~~~~~~~~~~~~"#, DocComment("hellooo/// hi".to_string()))]);
     }
 
     #[test]
     fn line_doc_comments_with_space() {
         test(r#"hi /// hellooo/// hi"#,
-             vec![
-            (r#"~~                  "#, Identifier("hi")),
-            (r#"   ~~~~~~~~~~~~~~~~~"#, DocComment("hellooo/// hi".to_string())),
-        ]);
+             vec![(r#"~~                  "#, Identifier("hi")),
+                  (r#"   ~~~~~~~~~~~~~~~~~"#, DocComment("hellooo/// hi".to_string()))]);
     }
 }

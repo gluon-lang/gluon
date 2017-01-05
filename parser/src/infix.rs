@@ -86,29 +86,27 @@ impl OpTable {
 
 impl Default for OpTable {
     fn default() -> OpTable {
-        OpTable::new(vec![
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("/", OpMeta::new(7, Fixity::Left)),
-            ("%", OpMeta::new(7, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
-            ("-", OpMeta::new(6, Fixity::Left)),
-            (":", OpMeta::new(5, Fixity::Right)),
-            ("++", OpMeta::new(5, Fixity::Right)),
-            ("&&", OpMeta::new(3, Fixity::Right)),
-            ("||", OpMeta::new(2, Fixity::Right)),
-            ("$", OpMeta::new(0, Fixity::Right)),
-            ("==", OpMeta::new(4, Fixity::Left)),
-            ("/=", OpMeta::new(4, Fixity::Left)),
-            ("<", OpMeta::new(4, Fixity::Left)),
-            (">", OpMeta::new(4, Fixity::Left)),
-            ("<=", OpMeta::new(4, Fixity::Left)),
-            (">=", OpMeta::new(4, Fixity::Left)),
-            // Hack for some library operators
-            ("<<", OpMeta::new(9, Fixity::Right)),
-            (">>", OpMeta::new(9, Fixity::Left)),
-            ("<|", OpMeta::new(0, Fixity::Right)),
-            ("|>", OpMeta::new(0, Fixity::Left)),
-        ])
+        OpTable::new(vec![("*", OpMeta::new(7, Fixity::Left)),
+                          ("/", OpMeta::new(7, Fixity::Left)),
+                          ("%", OpMeta::new(7, Fixity::Left)),
+                          ("+", OpMeta::new(6, Fixity::Left)),
+                          ("-", OpMeta::new(6, Fixity::Left)),
+                          (":", OpMeta::new(5, Fixity::Right)),
+                          ("++", OpMeta::new(5, Fixity::Right)),
+                          ("&&", OpMeta::new(3, Fixity::Right)),
+                          ("||", OpMeta::new(2, Fixity::Right)),
+                          ("$", OpMeta::new(0, Fixity::Right)),
+                          ("==", OpMeta::new(4, Fixity::Left)),
+                          ("/=", OpMeta::new(4, Fixity::Left)),
+                          ("<", OpMeta::new(4, Fixity::Left)),
+                          (">", OpMeta::new(4, Fixity::Left)),
+                          ("<=", OpMeta::new(4, Fixity::Left)),
+                          (">=", OpMeta::new(4, Fixity::Left)),
+                          // Hack for some library operators
+                          ("<<", OpMeta::new(9, Fixity::Right)),
+                          (">>", OpMeta::new(9, Fixity::Left)),
+                          ("<|", OpMeta::new(0, Fixity::Right)),
+                          ("|>", OpMeta::new(0, Fixity::Left))])
     }
 }
 
@@ -116,12 +114,10 @@ impl<'a> Index<&'a str> for OpTable {
     type Output = OpMeta;
 
     fn index(&self, name: &'a str) -> &OpMeta {
-        self.operators.get(name).unwrap_or_else(|| {
-            if name.starts_with("#") {
-                &self[name[1..].trim_left_matches(char::is_alphanumeric)]
-            } else {
-                &self.default_meta
-            }
+        self.operators.get(name).unwrap_or_else(|| if name.starts_with('#') {
+            &self[name[1..].trim_left_matches(char::is_alphanumeric)]
+        } else {
+            &self.default_meta
         })
     }
 }
@@ -456,10 +452,8 @@ mod tests {
     #[test]
     fn reparse_less_precedence() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
-        ]);
+        let ops = OpTable::new(vec![("*", OpMeta::new(7, Fixity::Left)),
+                                    ("+", OpMeta::new(6, Fixity::Left))]);
 
         // 1 + (2 * 8)
         let expr = *op(int(1), "+", op(int(2), "*", int(8)));
@@ -471,10 +465,8 @@ mod tests {
     #[test]
     fn reparse_greater_precedence() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
-        ]);
+        let ops = OpTable::new(vec![("*", OpMeta::new(7, Fixity::Left)),
+                                    ("+", OpMeta::new(6, Fixity::Left))]);
 
         // 1 * (2 + 8)
         let expr = *op(int(1), "*", op(int(2), "+", int(8)));
@@ -487,10 +479,8 @@ mod tests {
     #[test]
     fn reparse_equal_precedence_left_fixity() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![
-            ("-", OpMeta::new(6, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
-        ]);
+        let ops = OpTable::new(vec![("-", OpMeta::new(6, Fixity::Left)),
+                                    ("+", OpMeta::new(6, Fixity::Left))]);
 
         // 1 + (2 - 8)
         let expr = *op(int(1), "+", op(int(2), "-", int(8)));
@@ -503,10 +493,8 @@ mod tests {
     #[test]
     fn reparse_equal_precedence_right_fixity() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![
-            ("-", OpMeta::new(6, Fixity::Right)),
-            ("+", OpMeta::new(6, Fixity::Right)),
-        ]);
+        let ops = OpTable::new(vec![("-", OpMeta::new(6, Fixity::Right)),
+                                    ("+", OpMeta::new(6, Fixity::Right))]);
 
         // 1 + (2 - 8)
         let expr = *op(int(1), "+", op(int(2), "-", int(8)));
@@ -518,11 +506,9 @@ mod tests {
     #[test]
     fn reparse_mixed_precedences_mixed_fixities() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("-", OpMeta::new(6, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
-        ]);
+        let ops = OpTable::new(vec![("*", OpMeta::new(7, Fixity::Left)),
+                                    ("-", OpMeta::new(6, Fixity::Left)),
+                                    ("+", OpMeta::new(6, Fixity::Left))]);
 
         //  1  + (2  * (6   -  8))
         let expr = *op(int(1), "+", op(int(2), "*", op(int(6), "-", int(8))));
@@ -535,10 +521,8 @@ mod tests {
     #[test]
     fn reparse_equal_precedence_conflicting_fixities() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![
-            ("|>", OpMeta::new(5, Fixity::Left)),
-            ("<|", OpMeta::new(5, Fixity::Right)),
-        ]);
+        let ops = OpTable::new(vec![("|>", OpMeta::new(5, Fixity::Left)),
+                                    ("<|", OpMeta::new(5, Fixity::Right))]);
 
         // 1 |> (2 <| 8)
         let expr = *op(int(1), "|>", op(int(2), "<|", int(8)));
@@ -552,10 +536,8 @@ mod tests {
     #[test]
     fn reparse_equal_precedence_conflicting_fixities_nested() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![
-            ("|>", OpMeta::new(5, Fixity::Left)),
-            ("<|", OpMeta::new(5, Fixity::Right)),
-        ]);
+        let ops = OpTable::new(vec![("|>", OpMeta::new(5, Fixity::Left)),
+                                    ("<|", OpMeta::new(5, Fixity::Right))]);
 
         // 1 + (1 |> (2 <| 8))
         let expr = *op(int(1), "+", op(int(1), "|>", op(int(2), "<|", int(8))));

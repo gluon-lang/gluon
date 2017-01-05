@@ -173,7 +173,7 @@ struct SharedIter<'a, I: 'a> {
 
 impl<'a, I> Clone for SharedIter<'a, I> {
     fn clone(&self) -> SharedIter<'a, I> {
-        SharedIter { iter: self.iter.clone() }
+        SharedIter { iter: self.iter }
     }
 }
 
@@ -215,10 +215,7 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
     where Id: Clone,
 {
     let tokenizer = Tokenizer::new(input);
-    let result_ok_iter = RefCell::new(ResultOkIter {
-        iter: tokenizer,
-        error: None,
-    });
+    let result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
 
     let layout = Layout::new(SharedIter::new(&result_ok_iter)).map(|token| {
         /// Return the tokenizer error if one exists

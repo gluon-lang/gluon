@@ -831,10 +831,9 @@ impl<'b> OwnedContext<'b> {
                         let function_size = closure.function.max_stack_size;
 
                         // Before entering a function check that the stack cannot exceed `max_stack_size`
-                        if instruction_index == 0 {
-                            if context.stack.stack.len() + function_size > max_stack_size {
-                                return Err(Error::StackOverflow(max_stack_size));
-                            }
+                        if instruction_index == 0 &&
+                           context.stack.stack.len() + function_size > max_stack_size {
+                            return Err(Error::StackOverflow(max_stack_size));
                         }
 
                         if context.stack.stack.get_frames().len() == 0 {
@@ -1031,7 +1030,7 @@ impl<'b> ExecuteContext<'b> {
                 self.stack.insert_slice(offset, &app.args);
                 self.call_function_with_upvars(total_args, app.function.args(), app.function)
             }
-            x => return Err(Error::Message(format!("Cannot call {:?}", x))),
+            x => Err(Error::Message(format!("Cannot call {:?}", x))),
         }
     }
 

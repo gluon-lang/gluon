@@ -121,6 +121,12 @@ pub struct Compiler {
     implicit_prelude: bool,
 }
 
+impl Default for Compiler {
+    fn default() -> Compiler {
+        Compiler::new()
+    }
+}
+
 impl Compiler {
     /// Creates a new compiler with default settings
     pub fn new() -> Compiler {
@@ -366,7 +372,7 @@ pub fn new_vm() -> RootedThread {
     use ::import::{DefaultImporter, Import};
 
     let vm = RootedThread::new();
-    let gluon_path = env::var("GLUON_PATH").unwrap_or(String::from("."));
+    let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
     let import = Import::new(DefaultImporter);
     import.add_path(gluon_path);
     vm.get_macros()

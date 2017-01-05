@@ -178,13 +178,14 @@ impl<'a> KindCheck<'a> {
 
     fn kindcheck(&mut self, typ: &ArcType) -> Result<(ArcKind, ArcType)> {
         match **typ {
-            Type::Hole | Type::Opaque => Ok((self.subs.new_var(), typ.clone())),
+            Type::Hole |
+            Type::Opaque |
+            Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
                 gen.kind = self.find(&gen.id)?;
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
-            Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
             Type::App(ref ctor, ref args) => {
                 let (mut kind, ctor) = self.kindcheck(ctor)?;
@@ -264,20 +265,20 @@ impl<'a> KindCheck<'a> {
     pub fn finalize_type(&self, typ: ArcType) -> ArcType {
         let default = Some(&self.type_kind);
         types::walk_move_type(typ,
-                              &mut |typ| {
-            match *typ {
-                Type::Variable(ref var) => {
-                    let mut kind = var.kind.clone();
-                    kind = update_kind(&self.subs, kind, default);
-                    Some(Type::variable(types::TypeVariable {
-                        id: var.id,
-                        kind: kind,
-                    }))
-                }
-                Type::Generic(ref var) => Some(Type::generic(self.finalize_generic(var))),
-                _ => None,
-            }
-        })
+                              &mut |typ| match *typ {
+                                  Type::Variable(ref var) => {
+                                      let mut kind = var.kind.clone();
+                                      kind = update_kind(&self.subs, kind, default);
+                                      Some(Type::variable(types::TypeVariable {
+                                          id: var.id,
+                                          kind: kind,
+                                      }))
+                                  }
+                                  Type::Generic(ref var) => {
+                                      Some(Type::generic(self.finalize_generic(var)))
+                                  }
+                                  _ => None,
+                              })
     }
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
         let mut kind = var.kind.clone();
@@ -288,12 +289,12 @@ impl<'a> KindCheck<'a> {
 
 fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
     walk_move_kind(kind,
-                   &mut |kind| {
-        match *kind {
-            Kind::Variable(id) => subs.find_type_for_var(id).cloned().or_else(|| default.cloned()),
-            _ => None,
-        }
-    })
+                   &mut |kind| match *kind {
+                       Kind::Variable(id) => {
+                           subs.find_type_for_var(id).cloned().or_else(|| default.cloned())
+                       }
+                       _ => None,
+                   })
 }
 
 /// Enumeration possible errors other than mismatch and occurs when kindchecking

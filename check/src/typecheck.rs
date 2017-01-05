@@ -968,7 +968,7 @@ impl<'a> Typecheck<'a> {
                 let alias = Alias::make_mut(&mut bind.alias);
                 alias.typ = check.finalize_type(alias.typ.clone());
                 for arg in &mut alias.args {
-                    *arg = check.finalize_generic(&arg);
+                    *arg = check.finalize_generic(arg);
                 }
             }
         }

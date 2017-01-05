@@ -84,7 +84,7 @@ impl<'a> Source<'a> {
 
     /// Returns the string which defines the source
     pub fn src(&self) -> &str {
-        &self.src
+        self.src
     }
 
     /// Returns the byte offset and source of `line_number`
