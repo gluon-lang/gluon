@@ -953,8 +953,15 @@ impl<'b> OwnedContext<'b> {
     }
 
     fn execute(self) -> Result<Async<Option<OwnedContext<'b>>>> {
+        let start_frame = self.stack.get_frames().len();
         let mut maybe_context = Some(self);
         while let Some(mut context) = maybe_context {
+            // If the starting frame has been removed (because it is finished) then we return
+            // control back to the caller to continue processing any frames above the start
+            if context.stack.get_frames().len() < start_frame {
+                maybe_context = Some(context);
+                break;
+            }
             debug!("STACK\n{:?}", context.stack.get_frames());
             let state = context.borrow_mut().stack.frame.state;
 
@@ -982,25 +989,8 @@ impl<'b> OwnedContext<'b> {
                 State::Excess => context.exit_scope().ok(),
                 State::Extern(ext) => {
                     let instruction_index = context.borrow_mut().stack.frame.instruction_index;
-                    if instruction_index != 0 {
-                        // This function was already called
-                        return Ok(Async::Ready(Some(context)));
-                    } else {
-                        let thread = context.thread;
-                        context.borrow_mut().stack.frame.instruction_index = 1;
-                        let result = context.execute_function(&ext);
-                        match result {
-                            Ok(Async::Ready(context)) => Some(context),
-                            Ok(Async::NotReady) => {
-                                let mut context = thread.current_context();
-                                if context.poll_fn.is_some() {
-                                    context.borrow_mut().stack.frame.instruction_index = 0;
-                                }
-                                return Ok(Async::NotReady);
-                            }
-                            Err(err) => return Err(err),
-                        }
-                    }
+                    context.borrow_mut().stack.frame.instruction_index = 1;
+                    Some(try_ready!(context.execute_function(instruction_index == 0, &ext)))
                 }
                 State::Closure(closure) => {
                     let max_stack_size = context.max_stack_size;
@@ -1052,26 +1042,35 @@ impl<'b> OwnedContext<'b> {
         Ok(Async::Ready(maybe_context))
     }
 
-    fn execute_function(mut self, function: &ExternFunction) -> Result<Async<OwnedContext<'b>>> {
+    fn execute_function(mut self,
+                        initial_call: bool,
+                        function: &ExternFunction)
+                        -> Result<Async<OwnedContext<'b>>> {
         debug!("CALL EXTERN {} {:?}", function.id, self.stack);
-        let status = if let Some(mut poll_fn) = self.poll_fn.take() {
-            let result = poll_fn(self.thread, &mut self);
-            self.poll_fn = Some(poll_fn);
-            try_ready!(result);
-            self.poll_fn = None;
-            Status::Ok
-        } else {
+        let mut status = Status::Ok;
+        if initial_call {
             // Make sure that the stack is not borrowed during the external function call
             // Necessary since we do not know what will happen during the function call
             let thread = self.thread;
             drop(self);
-            let status = (function.function)(thread);
+            status = (function.function)(thread);
             self = thread.current_context();
-            if self.poll_fn.is_some() && status == Status::Yield {
+            if status == Status::Yield {
                 return Ok(Async::NotReady);
             }
-            status
-        };
+        } else if let Some(mut poll_fn) = self.poll_fn.take() {
+            // Poll the future that was returned from the initial call to this extern function
+            match poll_fn(self.thread, &mut self)? {
+                Async::Ready(()) => (),
+                Async::NotReady => {
+                    // Restore `poll_fn` so it can be polled again
+                    self.poll_fn = Some(poll_fn);
+                    return Ok(Async::NotReady);
+                }
+            }
+        }
+        // The function call is done at this point so remove any extra values from the frame and
+        // return the value at the top of the stack
         let result = self.stack.pop();
         {
             let mut stack = self.stack.current_frame();
@@ -1079,6 +1078,13 @@ impl<'b> OwnedContext<'b> {
                 debug!("{} {:?}", stack.len(), &*stack);
                 stack.pop();
             }
+            debug_assert!(match stack.frame.state {
+                              State::Extern(ref e) => e.id == function.id,
+                              _ => false,
+                          },
+                          "Attempted to pop {:?} but {} was expected",
+                          stack.frame,
+                          function.id);
         }
         self =
             self.exit_scope()
@@ -1314,6 +1320,13 @@ impl<'b> ExecuteContext<'b> {
                             None => panic!("Expected excess args"),
                         }
                     }
+                    debug_assert!(match self.stack.frame.state {
+                                      State::Closure(ref c) => c.function.name == function.name,
+                                      _ => false,
+                                  },
+                                  "Attempted to pop {:?} but `{}` was expected",
+                                  self.stack.frame.state,
+                                  function.name);
                     match self.exit_scope() {
                         Ok(_) => (),
                         Err(_) => {
@@ -1531,8 +1544,17 @@ impl<'b> ExecuteContext<'b> {
         debug!("Return {:?}", result);
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame.excess;
+
         // We might not get access to the frame above the current as it could be locked
+        debug_assert!(match self.stack.frame.state {
+                          State::Closure(ref c) => c.function.name == function.name,
+                          _ => false,
+                      },
+                      "Attempted to pop {:?} but `{}` was expected",
+                      self.stack.frame.state,
+                      function.name);
         let stack_exists = self.exit_scope().is_ok();
+
         self.stack.pop();
         for _ in 0..len {
             self.stack.pop();
