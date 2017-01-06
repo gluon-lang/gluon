@@ -5,7 +5,7 @@ use base::symbol::Symbol;
 use stack::StackFrame;
 use vm::{self, Thread, Status, RootStr, RootedValue, Root};
 use value::{ArrayRepr, Cloner, DataStruct, ExternFunction, GcStr, Value, ValueArray, Def};
-use thread::{self, Context, OwnedContext, RootedThread};
+use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
 use types::{VmIndex, VmTag, VmInt};
@@ -1825,20 +1825,13 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     #[allow(non_snake_case)]
     pub fn call(&'vm mut self $(, $args: $args)*) -> Result<R> {
         match self.call_first($($args),*)? {
-            Async::Ready(context) => {
-                let value = context.unwrap().stack.pop();
-                R::from_value(self.value.vm(), Variants(&value))
-                    .ok_or_else(|| {
-                        error!("Wrong type {:?}", value);
-                        Error::Message("Wrong type".to_string())
-                    })
-            }
+            Async::Ready(value) => Ok(value),
             Async::NotReady => Err(Error::Message("Unexpected async".into())),
         }
     }
 
     #[allow(non_snake_case)]
-    fn call_first(&'vm self $(, $args: $args)*) -> Result<Async<Option<OwnedContext<'vm>>>> {
+    fn call_first(&'vm self $(, $args: $args)*) -> Result<Async<R>> {
         let vm = self.value.vm();
         let mut context = vm.context();
         context.stack.push(*self.value);
@@ -1849,7 +1842,23 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
             0.push(&vm, &mut context).unwrap();
         }
         let args = count!($($args),*) + R::extra_args();
-        vm.call_function(context, args)
+        vm.call_function(context, args).and_then(|async|{
+            match async {
+                Async::Ready(context) => {
+                    let value = context.unwrap().stack.pop();
+                    Self::return_value(vm, value).map(Async::Ready)
+                }
+                Async::NotReady => Ok(Async::NotReady),
+            }
+        })
+    }
+
+    fn return_value(vm: &Thread, value: Value) -> Result<R> {
+        R::from_value(vm, Variants(&value))
+            .ok_or_else(|| {
+                error!("Wrong type {:?}", value);
+                Error::Message("Wrong type".to_string())
+            })
     }
 }
 
@@ -1864,28 +1873,20 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
         use futures::future::Either;
         use thread::Execute;
 
-        let future = match self.call_first($($args),*) {
+        match self.call_first($($args),*) {
             Ok(ok) => {
                 Either::A(match ok {
-                    Async::Ready(context) => {
-                        Either::A(finished(context.unwrap().stack.pop()))
+                    Async::Ready(value) => Either::A(finished(value)),
+                    Async::NotReady => {
+                        Either::B(Execute::new(self.value.clone_vm())
+                            .and_then(|(vm, value)| Self::return_value(&vm, value)))
                     }
-                    Async::NotReady => Either::B(Execute::new(self.value.clone_vm()))
                 })
             }
             Err(err) => {
                 Either::B(failed(err))
             }
-        };
-        let vm = self.value.clone_vm();
-        future.and_then(move |value| {
-            R::from_value(&vm, Variants(&value))
-                .ok_or_else(|| {
-                    error!("Wrong type {:?}", value);
-                    Error::Message("Wrong type".to_string())
-                })
-            })
-            .boxed()
+        }.boxed()
     }
 }
     )

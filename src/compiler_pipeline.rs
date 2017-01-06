@@ -302,7 +302,7 @@ impl<E> Executable<()> for CompileValue<E>
         let CompileValue { expr, typ, mut function } = self;
         function.id = Symbol::from(name);
         let closure = vm.global_env().new_global_thunk(function)?;
-        let value = vm.call_thunk(closure)?.wait()?;
+        let (_, value) = vm.call_thunk(closure)?.wait()?;
         Ok(ExecuteValue {
             expr: expr,
             typ: typ,
@@ -321,7 +321,7 @@ impl<E> Executable<()> for CompileValue<E>
         let CompileValue { mut expr, typ, function } = self;
         let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
         let closure = vm.global_env().new_global_thunk(function)?;
-        let value = vm.call_thunk(closure)?.wait()?;
+        let (_, value) = vm.call_thunk(closure)?.wait()?;
         vm.set_global(closure.function.name.clone(), typ, metadata, value)?;
         info!("Loaded module `{}` filename", filename);
         Ok(())

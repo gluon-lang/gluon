@@ -38,24 +38,31 @@ use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closu
 pub use gc::Traverseable;
 
 pub struct Execute<T> {
-    thread: T,
+    thread: Option<T>,
 }
 
 impl<T> Execute<T>
     where T: Deref<Target = Thread>,
 {
     pub fn new(thread: T) -> Execute<T> {
-        Execute { thread: thread }
+        Execute { thread: Some(thread) }
     }
 }
 
 impl<T> Future for Execute<T>
     where T: Deref<Target = Thread>,
 {
-    type Item = Value;
+    type Item = (T, Value);
     type Error = Error;
-    fn poll(&mut self) -> Poll<Value, Error> {
-        self.thread.resume().map(|async| async.map(|mut context| context.stack.pop()))
+    fn poll(&mut self) -> Poll<(T, Value), Error> {
+        let value = {
+            let mut context = try_ready!(self.thread
+                .as_ref()
+                .expect("cannot poll Execute future after it has succeded")
+                .resume());
+            context.stack.pop()
+        };
+        Ok(Async::Ready((self.thread.take().unwrap(), value)))
     }
 }
 
@@ -598,8 +605,8 @@ impl ThreadInternal for Thread {
         context.borrow_mut().enter_scope(0, State::Closure(closure));
         context.execute().map(|async| {
             match async {
-                Async::Ready(context) => FutureValue::Value(context.unwrap().stack.pop()),
-                Async::NotReady => FutureValue::Future(Execute { thread: self }),
+                Async::Ready(context) => FutureValue::Value((self, context.unwrap().stack.pop())),
+                Async::NotReady => FutureValue::Future(Execute::new(self)),
             }
         })
     }
