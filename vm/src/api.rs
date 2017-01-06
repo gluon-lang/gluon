@@ -2,7 +2,7 @@
 use {Variants, Error, Result};
 use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
-use stack::{State, StackFrame};
+use stack::StackFrame;
 use vm::{self, Thread, Status, RootStr, RootedValue, Root};
 use value::{ArrayRepr, Cloner, DataStruct, ExternFunction, GcStr, Value, ValueArray, Def};
 use thread::{self, Context, OwnedContext, RootedThread};
@@ -1841,7 +1841,6 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     fn call_first(&'vm self $(, $args: $args)*) -> Result<Async<Option<OwnedContext<'vm>>>> {
         let vm = self.value.vm();
         let mut context = vm.context();
-        StackFrame::current(&mut context.stack).enter_scope(0, State::Unknown);
         context.stack.push(*self.value);
         $(
             $args.push(&vm, &mut context)?;

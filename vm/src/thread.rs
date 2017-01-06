@@ -953,15 +953,8 @@ impl<'b> OwnedContext<'b> {
     }
 
     fn execute(self) -> Result<Async<Option<OwnedContext<'b>>>> {
-        let start_frame = self.stack.get_frames().len();
         let mut maybe_context = Some(self);
         while let Some(mut context) = maybe_context {
-            // If the starting frame has been removed (because it is finished) then we return
-            // control back to the caller to continue processing any frames above the start
-            if context.stack.get_frames().len() < start_frame {
-                maybe_context = Some(context);
-                break;
-            }
             debug!("STACK\n{:?}", context.stack.get_frames());
             let state = context.borrow_mut().stack.frame.state;
 

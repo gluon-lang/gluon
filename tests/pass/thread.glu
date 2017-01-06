@@ -17,7 +17,7 @@ let thread = spawn (\_ ->
         send sender 0
         yield ()
         send sender 1
-        yield ()
+        ()
     )
 resume thread
 

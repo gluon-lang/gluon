@@ -1,19 +1,18 @@
 use std::any::Any;
+use std::borrow::Cow;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
-use futures::Async;
-
 use base::types;
 use base::types::{Type, ArcType};
 use gc::{Gc, GcPtr, Move, Traverseable};
-use api::{Pushable, Generic, OpaqueValue, Userdata, VmType, RuntimeResult};
+use api::{FunctionRef, Getable, OpaqueValue, Userdata, VmType, WithVM, RuntimeResult};
+use api::Generic;
 use api::generic::A;
-use vm::{Status, Thread};
-use {Error, Result};
-use value::{Value, Cloner};
-use stack::StackFrame;
+use vm::Thread;
+use {Error, Result, Variants};
+use value::{Cloner, Value};
 use thread::ThreadInternal;
 
 pub struct Lazy<T> {
@@ -76,57 +75,28 @@ impl<T> VmType for Lazy<T>
     }
 }
 
-extern "C" fn force(vm: &Thread) -> Status {
-    let mut context = vm.context();
-    let value = StackFrame::current(&mut context.stack)[0];
-    match value {
-        Value::Userdata(lazy) => {
-            let lazy = lazy.downcast_ref::<Lazy<A>>().expect("Lazy");
-            let value = *lazy.value.lock().unwrap();
-            match value {
-                Lazy_::Blackhole => {
-                    let result: RuntimeResult<(), _> = RuntimeResult::Panic("<<loop>>");
-                    result.status_push(vm, &mut context)
+fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>)
+         -> RuntimeResult<Generic<A>, Cow<'static, str>> {
+    let mut lazy_lock = lazy.value.lock().unwrap();
+    match *lazy_lock {
+        Lazy_::Blackhole => RuntimeResult::Panic("<<loop>>".into()),
+        Lazy_::Thunk(value) => {
+            *lazy_lock = Lazy_::Blackhole;
+            let mut function =
+                unsafe {
+                    FunctionRef::<fn(()) -> Generic<A>>::from_value(vm, Variants::new(&value))
+                        .unwrap()
+                };
+            drop(lazy_lock);
+            match function.call(()) {
+                Ok(value) => {
+                    *lazy.value.lock().unwrap() = Lazy_::Value(value.0);
+                    RuntimeResult::Return(value)
                 }
-                Lazy_::Thunk(value) => {
-                    context.stack.push(value);
-                    context.stack.push(Value::Int(0));
-                    *lazy.value.lock().unwrap() = Lazy_::Blackhole;
-                    let result = vm.call_function(context, 1);
-                    match result {
-                        Ok(Async::Ready(None)) => panic!("Expected stack"),
-                        Ok(Async::Ready(Some(mut context))) => {
-                            let mut stack = StackFrame::current(&mut context.stack);
-                            let value = stack.pop();
-                            while stack.len() > 1 {
-                                stack.pop();
-                            }
-                            *lazy.value.lock().unwrap() = Lazy_::Value(value);
-                            stack.push(value);
-                            Status::Ok
-                        }
-                        Ok(Async::NotReady) => {
-                            let mut context = vm.context();
-                            let err = "Evaluating a lazy value cannot be done asynchronously at \
-                                       the moment";
-                            let result = Value::String(context.alloc_ignore_limit(&err[..]));
-                            context.stack.push(result);
-                            Status::Error
-                        }
-                        Err(err) => {
-                            let mut context = vm.context();
-                            let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
-                            result.status_push(vm, &mut context)
-                        }
-                    }
-                }
-                Lazy_::Value(value) => {
-                    StackFrame::current(&mut context.stack)[0] = value;
-                    Status::Ok
-                }
+                Err(err) => RuntimeResult::Panic(format!("{}", err).into()),
             }
         }
-        x => panic!("Expected lazy got {:?}", x),
+        Lazy_::Value(value) => RuntimeResult::Return(Generic::from(value)),
     }
 }
 
@@ -140,9 +110,7 @@ fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
 }
 
 pub fn load<'vm>(vm: &'vm Thread) -> Result<()> {
-    use api::primitive;
     vm.define_global("lazy", primitive!(1 lazy))?;
-    vm.define_global("force",
-                       primitive::<fn(&'vm Lazy<A>) -> Generic<A>>("force", ::lazy::force))?;
+    vm.define_global("force", primitive!(1 force))?;
     Ok(())
 }
