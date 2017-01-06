@@ -5,6 +5,7 @@ extern crate gluon;
 
 #[macro_use]
 extern crate collect_mac;
+extern crate futures;
 extern crate hyper;
 
 use std::env;
@@ -12,8 +13,11 @@ use std::fs::File;
 use std::io::{stderr, Read, Write};
 use std::marker::PhantomData;
 
-use self::hyper::method::Method;
-use self::hyper::status::StatusCode;
+use hyper::Method;
+use hyper::status::StatusCode;
+use hyper::server::Service;
+
+use futures::future::{BoxFuture, finished, Finished, Future};
 
 use base::types::{Type, ArcType};
 
@@ -22,7 +26,7 @@ use vm::{Result, Error as VmError};
 use vm::thread::ThreadInternal;
 use vm::thread::{Context, RootedThread, Thread};
 use vm::Variants;
-use vm::api::{VmType, Function, FunctionRef, Getable,OpaqueValue, Pushable, IO, ValueRef, WithVM};
+use vm::api::{VmType, Function, FunctionRef, Getable, OpaqueValue, Pushable, IO, ValueRef, WithVM};
 
 use vm::internal::Value;
 
@@ -35,9 +39,10 @@ struct Handler<T>(PhantomData<T>);
 impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        let typ = (*vm.global_env().get_env().find_type_info("examples.http_types.Handler").unwrap())
-            .clone()
-            .into_type();
+        let typ =
+            (*vm.global_env().get_env().find_type_info("examples.http_types.Handler").unwrap())
+                .clone()
+                .into_type();
         Type::app(typ, collect![T::make_type(vm)])
     }
 }
@@ -64,7 +69,7 @@ define_vmtype! { Method }
 
 impl<'vm> Pushable<'vm> for Wrap<Method> {
     fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        use self::hyper::method::Method::*;
+        use hyper::Method::*;
         context.stack.push(Value::Tag(match self.0 {
             Get => 0,
             Post => 1,
@@ -83,7 +88,7 @@ define_vmtype! { StatusCode }
 
 impl<'vm> Getable<'vm> for Wrap<StatusCode> {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Self> {
-        use self::hyper::status::StatusCode::*;
+        use hyper::status::StatusCode::*;
         match value.as_ref() {
             ValueRef::Tag(tag) => {
                 Some(Wrap(match tag {
@@ -97,7 +102,6 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
         }
     }
 }
-
 
 field_decl! { method, uri, status, body  }
 
@@ -113,33 +117,75 @@ type Response = record_type!{
 fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>) -> IO<()> {
     let WithVM { value: handler, vm: thread } = value;
 
-    use self::hyper::Server;
-    use self::hyper::server::Request as HyperRequest;
-    use self::hyper::server::Response as HyperResponse;
+    use hyper::Server;
+    use hyper::server::Request as HyperRequest;
+    use hyper::server::Response as HyperResponse;
 
-    let server = Server::http(("localhost", port as u16)).unwrap();
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, Request) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread.get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
-    let result = server.handle(move |request: HyperRequest, mut response: HyperResponse<_>| {
-        let gluon_request = record_no_decl! {
-            method => Wrap(request.method),
-            uri => request.uri.to_string()
-        };
-        match handle.clone().call(handler.clone(), gluon_request).unwrap() {
-            IO::Value(record_p!{ status, body }) => {
-                *response.status_mut() = status.0;
-                response.send(body.as_bytes()).unwrap();
-            }
-            IO::Exception(ref err) => {
-                let _ = stderr().write(err.as_bytes());
-            }
-        }
-    });
-    match result {
-        Ok(_) => IO::Value(()),
-        Err(err) => IO::Exception(err.to_string()),
+
+    struct Listen {
+        handle: Function<RootedThread, ListenFn>,
+        handler: OpaqueValue<RootedThread, Handler<Response>>,
     }
+
+    impl Service for Listen {
+        type Request = HyperRequest;
+        type Response = HyperResponse;
+        type Error = hyper::Error;
+        type Future = BoxFuture<HyperResponse, hyper::Error>;
+
+        fn call(&mut self, request: HyperRequest) -> Self::Future {
+            let gluon_request = record_no_decl! {
+                method => Wrap(request.method().clone()),
+                uri => request.uri().to_string()
+            };
+            self.handle
+                .clone()
+                .call_async(self.handler.clone(), gluon_request)
+                .then(|result| {
+                    match result {
+                        Ok(value) => {
+                            match value {
+                                IO::Value(record_p!{ status, body }) => {
+                                    Ok(HyperResponse::new()
+                                        .with_status(status.0)
+                                        .with_body(body))
+                                }
+                                IO::Exception(err) => {
+                                    let _ = stderr().write(err.as_bytes());
+                                    Ok(HyperResponse::new()
+                                        .with_status(StatusCode::InternalServerError))
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            let _ = stderr().write(err.as_bytes());
+                            Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
+                        }
+                    }
+                })
+                .boxed()
+        }
+    }
+
+    let addr = format!("127.0.0.1:{}", port).parse().unwrap();
+    let (_listening, server) = Server::standalone(move |tokio| {
+            Server::http(&addr, tokio)
+                ?
+                .handle(move || {
+                            Ok(Listen {
+                                handle: handle.clone(),
+                                handler: handler.clone(),
+                            })
+                        },
+                        tokio)
+        })
+        .unwrap();
+    server.run();
+
+    IO::Value(())
 }
 
 pub fn load(vm: &Thread) -> Result<()> {
@@ -161,7 +207,9 @@ fn main() {
     let thread = new_vm();
 
     Compiler::new()
-        .run_expr::<()>(&thread, "", r#"let _ = import! "examples/http_types.glu" in () "#)
+        .run_expr::<()>(&thread,
+                        "",
+                        r#"let _ = import! "examples/http_types.glu" in () "#)
         .unwrap_or_else(|err| panic!("{}", err));
     load(&thread).unwrap();
 
