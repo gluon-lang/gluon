@@ -7,7 +7,7 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::pos::Spanned;
-use base::types;
+use base::types::{self, Type};
 
 mod support;
 
@@ -388,4 +388,19 @@ type Foo = Test Int
 "#;
     let result = support::typecheck(text);
     assert_err!(result, KindError(TypeMismatch(..)));
+}
+
+#[test]
+fn type_error_span() {
+    use base::pos::Span;
+
+    let _ = ::env_logger::init();
+    let text = r#"
+let y = 1.0
+y
+"#;
+    let result = support::typecheck_expr_expected(text, Some(&Type::int())).1;
+    let errors: Vec<_> = result.unwrap_err().into();
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].span, Span::new(13.into(), 14.into()));
 }
