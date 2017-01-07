@@ -8,7 +8,8 @@ type Failure = | DontProcess
 /// HTTP server request
 type Request = {
     method : Method,
-    uri : String
+    uri : String,
+    body: Body
 }
 
 type StatusCode = | OK | NotFound | InternalServerError

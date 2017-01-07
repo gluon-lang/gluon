@@ -89,6 +89,9 @@ let get_request : Handler Request =
 
 let empty_response = { status = OK, body = "" }
 
+let io_handler io: IO a -> Handler a =
+    make (\success _ request -> prelude.monad_IO.flat_map (\a -> success a request) io)
+
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler request : Handler Response -> Request -> IO Response =
     let not_found _ _ =
@@ -114,5 +117,7 @@ let handle handler request : Handler Response -> Request -> IO Response =
     get,
     post,
     path,
-    listen = http_prim.listen
+    listen = http_prim.listen,
+    read_chunk = http_prim.read_chunk,
+    io_handler
 }

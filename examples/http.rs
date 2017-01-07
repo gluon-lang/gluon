@@ -5,19 +5,24 @@ extern crate gluon;
 
 #[macro_use]
 extern crate collect_mac;
+extern crate env_logger;
 extern crate futures;
 extern crate hyper;
 
 use std::env;
+use std::fmt;
 use std::fs::File;
 use std::io::{stderr, Read, Write};
 use std::marker::PhantomData;
+use std::str;
+use std::sync::{Arc, Mutex};
 
 use hyper::Method;
 use hyper::status::StatusCode;
 use hyper::server::Service;
 
-use futures::future::{BoxFuture, finished, Finished, Future};
+use futures::future::{BoxFuture, Future};
+use futures::stream::{BoxStream, Stream};
 
 use base::types::{Type, ArcType};
 
@@ -26,7 +31,9 @@ use vm::{Result, Error as VmError};
 use vm::thread::ThreadInternal;
 use vm::thread::{Context, RootedThread, Thread};
 use vm::Variants;
-use vm::api::{VmType, Function, FunctionRef, Getable, OpaqueValue, Pushable, IO, ValueRef, WithVM};
+use vm::api::{VmType, Function, FunctionRef, FutureResult, Getable, OpaqueValue, Pushable, IO,
+              Userdata, ValueRef, WithVM};
+use vm::gc::{Gc, Traverseable};
 
 use vm::internal::Value;
 
@@ -103,11 +110,40 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
     }
 }
 
+pub struct Body(Arc<Mutex<BoxStream<String, VmError>>>);
+
+impl fmt::Debug for Body {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "hyper::Body")
+    }
+}
+
+impl Userdata for Body { }
+
+impl Traverseable for Body {
+    fn traverse(&self, _: &mut Gc) { }
+}
+
+impl VmType for Body {
+    type Type = Self;
+}
+
+fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<String>>, VmError>> {
+    use futures::future::poll_fn;
+    
+    let body = body.0.clone();
+    FutureResult(poll_fn(move || {
+        let mut stream = body.lock().unwrap();
+        stream.poll().map(|async| async.map(IO::Value))
+    }).boxed())
+}
+
 field_decl! { method, uri, status, body  }
 
 type Request = record_type!{
     method => Wrap<Method>,
-    uri => String
+    uri => String,
+    body => Body
 };
 type Response = record_type!{
     status => Wrap<StatusCode>,
@@ -139,7 +175,15 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
         fn call(&mut self, request: HyperRequest) -> Self::Future {
             let gluon_request = record_no_decl! {
                 method => Wrap(request.method().clone()),
-                uri => request.uri().to_string()
+                uri => request.uri().to_string(),
+                body => Body(Arc::new(Mutex::new(request.body()
+                    .map_err(|err| VmError::Message(format!("{}", err)))
+                    .and_then(|chunk| {
+                        match str::from_utf8(&chunk) {
+                            Ok(s) => Ok(String::from(s)),
+                            Err(err) => Err(VmError::Message(format!("{}", err))),
+                        }
+                    }).boxed())))
             };
             self.handle
                 .clone()
@@ -161,7 +205,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
                             }
                         }
                         Err(err) => {
-                            let _ = stderr().write(err.as_bytes());
+                            let _ = stderr().write(format!("{}", err).as_bytes());
                             Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
                         }
                     }
@@ -188,15 +232,22 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     IO::Value(())
 }
 
+pub fn load_types(vm: &Thread) -> Result<()> {
+    vm.register_type::<Body>("Body", &[])?;
+    Ok(())
+}
+
 pub fn load(vm: &Thread) -> Result<()> {
     vm.define_global("http_prim",
                        record! {
-        listen => primitive!(2 listen)
+        listen => primitive!(2 listen),
+        read_chunk => primitive!(1 read_chunk)
     })?;
     Ok(())
 }
 
 fn main() {
+    let _ = env_logger::init();
     let port = env::args().nth(1).map(|port| port.parse::<i32>().expect("port")).unwrap_or(80);
 
     let mut expr = String::new();
@@ -206,6 +257,7 @@ fn main() {
     }
     let thread = new_vm();
 
+    load_types(&thread).unwrap();
     Compiler::new()
         .run_expr::<()>(&thread,
                         "",

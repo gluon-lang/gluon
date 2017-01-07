@@ -6,16 +6,30 @@ let { (<>) } = prelude.make_Monoid string.monoid
 let { (*>) } = prelude.make_Applicative prelude.applicative_IO
 
 let {
-    StatusCode,
-    handle, empty_response, get, get_request, path, listen,
-    applicative, alternative, monad } = import! "examples/http.glu"
+    Request, Response, Handler, StatusCode,
+    handle, io_handler, empty_response, get, post, get_request, path, listen, read_chunk,
+    functor, applicative, alternative, monad } = import! "examples/http.glu"
 
+let { map } = functor
 let { (*>), pure } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative
 let { (>>=) } = prelude.make_Monad monad
 
+let get_body request: Request -> Handler String =
+    io_handler (read_chunk request.body) >>= (\chunk ->
+        match chunk with
+        | Some chunk -> map (\rest -> chunk <> rest) (get_body request)
+        | None -> pure ""
+        )
+
+let echo: Handler Response =
+    get_request >>=
+        get_body >>=
+        (\chunks -> pure { status = OK, body = chunks })
+
 let handler =
     (get *> path "/" *> (pure { status = OK, body = "Hello World" })) <|>
+        (post *> path "/echo" *> echo) <|>
         (get *> path "/error" *> (pure { status = InternalServerError, body = "Error" }))
 
 \port ->
