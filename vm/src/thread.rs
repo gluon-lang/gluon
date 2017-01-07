@@ -512,7 +512,7 @@ pub trait ThreadInternal
     fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Result<FutureValue<Execute<&Self>>>;
 
     /// Executes an `IO` action
-    fn execute_io(&self, value: Value) -> Result<Async<Value>>;
+    fn execute_io(&self, value: Value) -> Result<FutureValue<Execute<&Self>>>;
 
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
@@ -612,7 +612,7 @@ impl ThreadInternal for Thread {
     }
 
     /// Calls a module, allowed to to run IO expressions
-    fn execute_io(&self, value: Value) -> Result<Async<Value>> {
+    fn execute_io(&self, value: Value) -> Result<FutureValue<Execute<&Self>>> {
         debug!("Run IO {:?}", value);
         let mut context = OwnedContext {
             thread: self,
@@ -625,8 +625,10 @@ impl ThreadInternal for Thread {
         context.stack.push(Int(0));
 
         context.borrow_mut().enter_scope(2, State::Unknown);
-        context = try_ready!(self.call_function(context, 1))
-            .expect("call_module to have the stack remaining");
+        context = match self.call_function(context, 1)? {
+            Async::Ready(context) => context.expect("call_module to have the stack remaining"),
+            Async::NotReady => return Ok(FutureValue::Future(Execute::new(self))),
+        };
         let result = context.stack.pop();
         {
             let mut context = context.borrow_mut();
@@ -635,7 +637,7 @@ impl ThreadInternal for Thread {
             }
         }
         let _ = context.exit_scope();
-        Ok(Async::Ready(result))
+        Ok(FutureValue::Value((self, result)))
     }
 
     /// Calls a function on the stack.

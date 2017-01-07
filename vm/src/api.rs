@@ -872,6 +872,9 @@ impl<F> VmType for FutureResult<F>
     fn make_type(vm: &Thread) -> ArcType {
         <F::Item>::make_type(vm)
     }
+    fn extra_args() -> VmIndex {
+        <F::Item>::extra_args()
+    }
 }
 impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
     where F: Future<Error = Error> + Send + 'static,

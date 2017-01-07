@@ -29,7 +29,7 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::env;
 
-use futures::Async;
+use futures::Future;
 
 use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
@@ -294,12 +294,7 @@ impl Compiler {
                 .unwrap_or(false)
         };
         let value = if is_io {
-            match vm.execute_io(*value)? {
-                Async::Ready(value) => value,
-                Async::NotReady => {
-                    return Err(VmError::Message("Unhandled asynchronous execution".into()).into())
-                }
-            }
+            vm.execute_io(*value)?.wait()?.1
         } else {
             *value
         };

@@ -183,3 +183,28 @@ fn return_delayed_future() {
 
     assert_eq!(result, expected);
 }
+
+#[test]
+fn io_future() {
+    use gluon_vm::api::IO;
+
+    let _ = ::env_logger::init();
+
+    fn test(_: ()) -> FutureResult<BoxFuture<IO<i32>, Error>> {
+        FutureResult(Ok(IO::Value(123)).into_future().boxed())
+    }
+
+    let expr = r#"
+    let { applicative_IO, monad_IO } = import "std/prelude.glu"
+    monad_IO.flat_map (\x -> applicative_IO.pure (x + 1)) (test ())
+"#;
+
+    let vm = make_vm();
+    vm.define_global("test", primitive!(1 test)).unwrap();
+
+    let result = Compiler::new()
+        .run_io_expr::<IO<i32>>(&vm, "<top>", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    assert_eq!(result.0, IO::Value(124));
+}
