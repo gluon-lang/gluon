@@ -20,13 +20,12 @@ use field_map::FieldMap;
 use interner::InternedStr;
 use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
-use array::Str;
 use compiler::CompiledFunction;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use stack::{Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
-use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction,
+use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction, GcStr,
             BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
@@ -113,7 +112,7 @@ impl<'vm, T: ?Sized> Deref for Root<'vm, T> {
 }
 
 /// A rooted string
-pub struct RootStr<'vm>(Root<'vm, Str>);
+pub struct RootStr<'vm>(Root<'vm, str>);
 
 impl<'vm> Deref for RootStr<'vm> {
     type Target = str;
@@ -474,7 +473,7 @@ pub trait ThreadInternal {
     fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>>;
 
     /// Roots a string
-    fn root_string<'vm>(&'vm self, ptr: GcPtr<Str>) -> RootStr<'vm>;
+    fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm>;
 
     /// Roots a value
     fn root_value(&self, value: Value) -> RootedValue<RootedThread>;
@@ -541,8 +540,8 @@ impl ThreadInternal for Thread {
     }
 
     /// Roots a string
-    fn root_string<'vm>(&'vm self, ptr: GcPtr<Str>) -> RootStr<'vm> {
-        self.roots.write().unwrap().push(ptr.as_traverseable());
+    fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm> {
+        self.roots.write().unwrap().push(ptr.into_inner().as_traverseable());
         RootStr(Root {
             roots: &self.roots,
             ptr: &*ptr,

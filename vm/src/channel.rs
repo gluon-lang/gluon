@@ -11,7 +11,7 @@ use api::generic::A;
 use gc::{Traverseable, Gc, GcPtr};
 use vm::{Thread, RootedThread, Status};
 use thread::ThreadInternal;
-use value::{Userdata, Value};
+use value::{GcStr, Userdata, Value};
 use stack::{State, StackFrame};
 
 pub struct Sender<T> {
@@ -143,7 +143,9 @@ extern "C" fn resume(vm: &Thread) -> Status {
                 }
                 Err(err) => {
                     let fmt = format!("{}", err);
-                    let result = Value::String(context.alloc_ignore_limit(&fmt[..]));
+                    let result = unsafe {
+                        Value::String(GcStr::from_utf8_unchecked(context.alloc_ignore_limit(fmt.as_bytes())))
+                    };
                     context.stack.push(result);
                     Status::Error
                 }

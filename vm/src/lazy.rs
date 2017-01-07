@@ -6,8 +6,7 @@ use std::sync::Mutex;
 use base::types;
 use base::types::{Type, ArcType};
 use gc::{Gc, GcPtr, Move, Traverseable};
-use api::{OpaqueValue, Userdata, VmType};
-use api::Generic;
+use api::{Pushable, Generic, OpaqueValue, Userdata, VmType, RuntimeResult};
 use api::generic::A;
 use vm::{Status, Thread};
 use {Error, Result};
@@ -84,9 +83,8 @@ extern "C" fn force(vm: &Thread) -> Status {
             let value = *lazy.value.lock().unwrap();
             match value {
                 Lazy_::Blackhole => {
-                    let result = Value::String(context.alloc_ignore_limit("<<loop>>"));
-                    context.stack.push(result);
-                    Status::Error
+                    let result: RuntimeResult<(), _> = RuntimeResult::Panic("<<loop>>");
+                    result.status_push(vm, &mut context)
                 }
                 Lazy_::Thunk(value) => {
                     context.stack.push(value);
@@ -107,10 +105,8 @@ extern "C" fn force(vm: &Thread) -> Status {
                         }
                         Err(err) => {
                             let mut context = vm.context();
-                            let err = format!("{}", err);
-                            let result = Value::String(context.alloc_ignore_limit(&err[..]));
-                            context.stack.push(result);
-                            Status::Error
+                            let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
+                            result.status_push(vm, &mut context)
                         }
                     }
                 }

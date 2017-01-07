@@ -4,7 +4,7 @@ use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, StackFrame};
 use vm::{self, Thread, Status, RootStr, RootedValue, Root};
-use value::{ArrayRepr, Cloner, DataStruct, ExternFunction, Value, ValueArray, Def};
+use value::{ArrayRepr, Cloner, DataStruct, ExternFunction, GcStr, Value, ValueArray, Def};
 use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
@@ -318,7 +318,9 @@ pub trait Pushable<'vm> {
         match self.push(vm, context) {
             Ok(()) => Status::Ok,
             Err(err) => {
-                let msg = context.alloc_ignore_limit(&format!("{}", err)[..]);
+                let msg = unsafe {
+                    GcStr::from_utf8_unchecked(context.alloc_ignore_limit(format!("{}", err).as_bytes()))
+                };
                 context.stack.push(Value::String(msg));
                 Status::Error
             }
@@ -612,7 +614,7 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 }
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let s = context.alloc_with(thread, self)?;
+        let s = unsafe { GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?) };
         context.stack.push(Value::String(s));
         Ok(())
     }
@@ -703,6 +705,10 @@ impl<T> VmType for Vec<T>
           T::Type: Sized,
 {
     type Type = Vec<T::Type>;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        Array::<T>::make_type(thread)
+    }
 }
 
 impl<'vm, T> Pushable<'vm> for Vec<T>
@@ -844,6 +850,15 @@ impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
 pub enum RuntimeResult<T, E> {
     Return(T),
     Panic(E),
+}
+
+impl<T, E> From<StdResult<T, E>> for RuntimeResult<T, E> {
+    fn from(result: StdResult<T, E>) -> RuntimeResult<T, E> {
+        match result {
+            Ok(ok) => RuntimeResult::Return(ok),
+            Err(err) => RuntimeResult::Panic(err),
+        }
+    }
 }
 
 impl<T: VmType, E> VmType for RuntimeResult<T, E> {
@@ -1042,6 +1057,36 @@ impl<'vm> Getable<'vm> for RootStr<'vm> {
             Value::String(v) => Some(vm.root_string(v)),
             _ => None,
         }
+    }
+}
+
+/// NewType which can be used to push types implementating  `AsRef`
+pub struct PushAsRef<T, R>(T, PhantomData<R>);
+
+impl<T, R> PushAsRef<T, R> {
+    pub fn new(value: T) -> PushAsRef<T, R> {
+        PushAsRef(value, PhantomData)
+    }
+}
+
+impl<T, R> VmType for PushAsRef<T, R>
+    where T: AsRef<R>,
+          R: 'static,
+          &'static R: VmType,
+{
+    type Type = <&'static R as VmType>::Type;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        <&'static R as VmType>::make_type(thread)
+    }
+}
+
+impl<'vm, T, R> Pushable<'vm> for PushAsRef<T, R>
+    where T: AsRef<R>,
+          for<'a> &'a R: Pushable<'vm>,
+{
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        self.0.as_ref().push(thread, context)
     }
 }
 

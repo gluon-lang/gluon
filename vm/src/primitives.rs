@@ -1,14 +1,16 @@
 //! Module containing functions for interacting with gluon's primitive types.
 use std::string::String as StdString;
+use std::result::Result as StdResult;
 
 use {Variants, Error};
 use primitives as prim;
-use api::{generic, Generic, Getable, Array, RuntimeResult, primitive, WithVM};
+use api::{generic, Generic, Getable, Pushable, Array, RuntimeResult, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use Result;
 use vm::{Thread, Status};
-use value::{Value, ValueArray};
+use value::{Def, GcStr, Value, ValueArray};
+use stack::StackFrame;
 use thread::ThreadInternal;
 use types::VmInt;
 
@@ -80,7 +82,6 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
 }
 
 fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
-    use array::Str;
     struct StrAppend<'b> {
         lhs: &'b str,
         rhs: &'b str,
@@ -89,20 +90,18 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
     impl<'b> Traverseable for StrAppend<'b> {}
 
     unsafe impl<'b> DataDef for StrAppend<'b> {
-        type Value = Str;
+        type Value = ValueArray;
         fn size(&self) -> usize {
-            ::array::Str::size_of(self.lhs.len() + self.rhs.len())
+            use std::mem::size_of;
+            size_of::<ValueArray>() + (self.lhs.len() + self.rhs.len()) * size_of::<u8>()
         }
-        fn initialize<'w>(self, mut result: WriteOnly<'w, Str>) -> &'w mut Str {
+        fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+            use value::Repr;
             unsafe {
                 let result = &mut *result.as_mut_ptr();
-                {
-                    let array = Str::as_mut_array(result);
-                    ::array::Array::set_len(array, self.lhs.len() + self.rhs.len());
-                    let (l, r) = array.split_at_mut(self.lhs.len());
-                    l.clone_from_slice(self.lhs.as_bytes());
-                    r.clone_from_slice(self.rhs.as_bytes());
-                }
+                result.set_repr(Repr::Byte);
+                result.unsafe_array_mut::<u8>()
+                    .initialize(self.lhs.as_bytes().iter().chain(self.rhs.as_bytes()).cloned());
                 result
             }
         }
@@ -110,14 +109,14 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
 
     let vm = lhs.vm;
     let lhs = lhs.value;
-    let value = {
+    let value = unsafe {
         let mut context = vm.context();
         let result = context.alloc(StrAppend {
             lhs: lhs,
             rhs: rhs,
         });
         match result {
-            Ok(x) => x,
+            Ok(x) => GcStr::from_utf8_unchecked(x),
             Err(err) => return RuntimeResult::Panic(err),
         }
     };
@@ -137,6 +136,40 @@ fn string_slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String
                                      start,
                                      end,
                                      &s[..(s.len() - iter.as_str().len())]))
+    }
+}
+
+extern "C" fn from_utf8(thread: &Thread) -> Status {
+    let mut context = thread.context();
+    let value = StackFrame::current(&mut context.stack)[0];
+    match value {
+        Value::Array(array) => {
+            match GcStr::from_utf8(array) {
+                Ok(string) => {
+                    let value = Value::String(string);
+                    let result = context.alloc_with(thread,
+                                                    Def {
+                                                        tag: 1,
+                                                        elems: &[value],
+                                                    });
+                    match result {
+                        Ok(data) => {
+                            context.stack.push(Value::Data(data));
+                            Status::Ok
+                        }
+                        Err(err) => {
+                            let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
+                            result.status_push(thread, &mut context)
+                        }
+                    }
+                }
+                Err(()) =>{
+                    let err: StdResult<&str, ()> = Err(());
+                    err.status_push(thread, &mut context)
+                }
+            }
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -263,7 +296,8 @@ pub fn load(vm: &Thread) -> Result<()> {
         compare => primitive!(2 str::cmp),
         append => primitive!(2 prim::string_append),
         eq => primitive!(2 <str as PartialEq>::eq),
-        slice => primitive!(3 prim::string_slice)
+        slice => primitive!(3 prim::string_slice),
+        from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>("from_utf8", prim::from_utf8)
     ))?;
     vm.define_global("char",
                        record!(

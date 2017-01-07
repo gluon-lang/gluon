@@ -8,7 +8,7 @@ use base::fnv::FnvMap;
 
 use interner::InternedStr;
 use gc::{Gc, GcPtr, Generation, Traverseable, DataDef, Move, WriteOnly};
-use array::{Array, Str};
+use array::Array;
 use source_map::SourceMap;
 use thread::{Thread, Status};
 use {Error, Result};
@@ -166,12 +166,65 @@ impl<'b> Traverseable for Def<'b> {
     }
 }
 
+mod gc_str {
+    use super::ValueArray;
+    use gc::{Gc, GcPtr, Generation, Traverseable};
+
+    use std::str;
+    use std::ops::Deref;
+
+    #[derive(Copy, Clone, Debug, PartialEq)]
+    pub struct GcStr(GcPtr<ValueArray>);
+
+    impl Eq for GcStr {}
+
+    impl GcStr {
+        pub fn from_utf8(array: GcPtr<ValueArray>) -> Result<GcStr, ()> {
+            unsafe {
+                if array.as_slice::<u8>()
+                    .and_then(|bytes| str::from_utf8(bytes).ok())
+                    .is_some() {
+                    Ok(GcStr::from_utf8_unchecked(array))
+                } else {
+                    Err(())
+                }
+            }
+        }
+        pub unsafe fn from_utf8_unchecked(array: GcPtr<ValueArray>) -> GcStr {
+            GcStr(array)
+        }
+
+        pub fn into_inner(self) -> GcPtr<ValueArray> {
+            self.0
+        }
+
+        pub fn generation(&self) -> Generation {
+            self.0.generation()
+        }
+    }
+
+    impl Deref for GcStr {
+        type Target = str;
+
+        fn deref(&self) -> &str {
+            unsafe { str::from_utf8_unchecked(self.0.as_slice::<u8>().unwrap()) }
+        }
+    }
+
+    impl Traverseable for GcStr {
+        fn traverse(&self, gc: &mut Gc) {
+            self.0.traverse(gc)
+        }
+    }
+}
+pub use self::gc_str::GcStr;
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum Value {
     Byte(u8),
     Int(VmInt),
     Float(f64),
-    String(GcPtr<Str>),
+    String(GcStr),
     Tag(VmTag),
     Data(GcPtr<DataStruct>),
     Array(GcPtr<ValueArray>),
@@ -455,7 +508,7 @@ impl_repr! {
     u8, Repr::Byte,
     VmInt, Repr::Int,
     f64, Repr::Float,
-    GcPtr<Str>, Repr::String,
+    GcStr, Repr::String,
     GcPtr<ValueArray>, Repr::Array,
     Value, Repr::Unknown,
     GcPtr<Box<Userdata>>, Repr::Userdata,
@@ -490,7 +543,7 @@ macro_rules! on_array {
                     Repr::Byte => $f(array.unsafe_array::<u8>()),
                     Repr::Int => $f(array.unsafe_array::<VmInt>()),
                     Repr::Float => $f(array.unsafe_array::<f64>()),
-                    Repr::String => $f(array.unsafe_array::<GcPtr<Str>>()),
+                    Repr::String => $f(array.unsafe_array::<GcStr>()),
                     Repr::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
                     Repr::Unknown => $f(array.unsafe_array::<Value>()),
                     Repr::Userdata => $f(array.unsafe_array::<GcPtr<Box<Userdata>>>()),
@@ -556,6 +609,10 @@ impl ValueArray {
                 Repr::Thread => Value::Thread(self.unsafe_get(index)),
             }
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn len(&self) -> usize {
@@ -643,7 +700,9 @@ impl ValueArray {
 
     pub fn as_slice<T: ArrayRepr + Copy>(&self) -> Option<&[T]> {
         unsafe {
-            if T::matches(self.repr) {
+            // If the array is empty then it may not have the correct type representation set since
+            // there was no value to take the correct representation from
+            if T::matches(self.repr) || self.is_empty() {
                 Some(self.unsafe_array::<T>())
             } else {
                 None
@@ -770,11 +829,8 @@ impl<'t> Cloner<'t> {
         }
     }
 
-    fn deep_clone_ptr<T, A>(&mut self,
-                            value: GcPtr<T>,
-                            alloc: A)
-                            -> Result<StdResult<Value, GcPtr<T>>>
-        where A: FnOnce(&mut Gc, &T) -> Result<(Value, GcPtr<T>)>,
+    fn deep_clone_ptr<T, A, R>(&mut self, value: GcPtr<T>, alloc: A) -> Result<StdResult<Value, R>>
+        where A: FnOnce(&mut Gc, &T) -> Result<(Value, R)>,
     {
         let key = &*value as *const T as *const ();
         let new_ptr = match self.visited.entry(key) {
@@ -789,12 +845,14 @@ impl<'t> Cloner<'t> {
         Ok(Err(new_ptr))
     }
 
-    fn deep_clone_str(&mut self, data: GcPtr<Str>) -> Result<Value> {
-        Ok(self.deep_clone_ptr(data, |gc, data| {
-                let ptr = gc.alloc(&data[..])?;
-                Ok((String(ptr), ptr))
-            })?
-            .unwrap_or_else(String))
+    fn deep_clone_str(&mut self, data: GcStr) -> Result<Value> {
+        unsafe {
+            Ok(self.deep_clone_ptr(data.into_inner(), |gc, data| {
+                    let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
+                    Ok((String(ptr), ptr))
+                })?
+                .unwrap_or_else(String))
+        }
     }
     fn deep_clone_data(&mut self, data: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
