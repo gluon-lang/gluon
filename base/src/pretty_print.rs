@@ -268,7 +268,7 @@ impl<'a> ExprPrinter<'a> {
                 chain![arena;
                     pretty(expr),
                     ".",
-                    field.as_ref()
+                    ident(arena, field.as_ref())
                 ]
             }
             Expr::Record {
@@ -281,18 +281,17 @@ impl<'a> ExprPrinter<'a> {
                     arena.concat(types.iter().map(|field| {
                         chain![arena;
                             arena.space(),
-                            field.name.as_ref()
+                            ident(arena, field.name.as_ref())
                         ]
                     }).chain(exprs.iter().map(|field| {
                         chain![arena;
                             arena.space(),
-                            field.name.as_ref(),
+                            ident(arena, field.name.as_ref()),
                             match field.value {
                                 Some(ref expr) => {
                                     chain![arena;
                                         " =",
-                                        arena.space(),
-                                        pretty(&expr)
+                                        self.hang(expr)
                                     ]
                                 },
                                 None => arena.nil(),
@@ -371,5 +370,6 @@ impl<'a> ExprPrinter<'a> {
         };
         line.append(self.pretty_expr(expr))
             .block(INDENT)
+            .group()
     }
 }

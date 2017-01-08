@@ -73,3 +73,8 @@ fn state() {
 fn stream() {
     test_format("stream.glu");
 }
+
+#[test]
+fn string() {
+    test_format("string.glu");
+}

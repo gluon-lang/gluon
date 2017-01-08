@@ -1,24 +1,14 @@
-let prelude  = import! "std/prelude.glu"
+let prelude = import! "std/prelude.glu"
 let { Num, Option, Eq, Ord, Ordering, Monoid, Show } = prelude
 let { (==) } = prelude.eq_Int
 
-let monoid = {
-    append = string_prim.append,
-    empty = ""
-}
+let monoid = { append = string_prim.append, empty = "" }
 
-let eq : Eq String = {
-    (==) = string_prim.eq
-}
+let eq : Eq String = { (==) = string_prim.eq }
 
-let ord : Ord String = {
-    eq,
-    compare = string_prim.compare
-}
+let ord : Ord String = { eq, compare = string_prim.compare }
 
-let show : Show String = {
-    show = prelude.id
-}
+let show : Show String = { show = prelude.id }
 
 {
     length = string_prim.length,
