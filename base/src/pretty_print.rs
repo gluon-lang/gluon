@@ -186,12 +186,13 @@ impl<'a> ExprPrinter<'a> {
             Expr::Ident(ref id) => ident(arena, id.name.as_ref()),
             Expr::IfElse(ref body, ref if_true, ref if_false) => {
                 chain![arena;
-                    "if",
-                    pretty(body),
+                    arena.text("if ").append(pretty(body)).group(),
+                    arena.space(),
                     "then",
-                    pretty(if_true),
+                    arena.space().append(pretty(if_true)).nest(INDENT).group(),
+                    arena.space(),
                     "else",
-                    pretty(if_false)
+                    arena.space().append(pretty(if_false)).nest(INDENT).group()
                 ]
             }
             Expr::Infix(ref l, ref op, ref r) => {
