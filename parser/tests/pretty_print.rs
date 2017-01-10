@@ -60,11 +60,6 @@ fn map() {
 }
 
 #[test]
-fn types() {
-    test_format("types.glu");
-}
-
-#[test]
 fn state() {
     test_format("state.glu");
 }
@@ -77,4 +72,14 @@ fn stream() {
 #[test]
 fn string() {
     test_format("string.glu");
+}
+
+#[test]
+fn test() {
+    test_format("test.glu");
+}
+
+#[test]
+fn types() {
+    test_format("types.glu");
 }

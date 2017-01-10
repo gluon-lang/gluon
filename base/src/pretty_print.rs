@@ -1,9 +1,9 @@
-use std::iter::repeat;
+use std::iter::{once, repeat};
 
 use itertools::Itertools;
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use ast::{Expr, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern};
+use ast::{Expr, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
 use pos::{BytePos, Span};
 use source::Source;
 use types::{Type, pretty_print as pretty_type};
@@ -24,7 +24,6 @@ fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
         Expr::LetBindings(..) |
         Expr::Match(..) |
         Expr::TypeBindings(..) => true,
-        Expr::Lambda(ref lambda) => forced_new_line(&lambda.body.value),
         _ => false,
     }
 }
@@ -204,38 +203,38 @@ impl<'a> ExprPrinter<'a> {
                     pretty(r)
                 ]
             }
-            Expr::Lambda(ref lambda) => {
-            chain![arena;
-                    "\\",
-                    arena.concat(lambda.args.iter().map(|arg| arena.text(arg.name.as_ref()).append(" "))),
-                    "->",
-                    self.hang(&lambda.body)
-                ]
+            Expr::Lambda(_) => {
+                let (arguments, body) = self.pretty_lambda(previous_end, expr);
+                arguments.append(self.spaced_pretty_expr(previous_end, body))
             }
             Expr::LetBindings(ref binds, ref body) => {
+                let binding = |prefix, bind: &'a ValueBinding<Id>| {
+                    let decl = chain![arena;
+                        doc_comment(arena, &bind.comment),
+                        prefix,
+                        chain![arena;
+                            pretty_pattern(arena, &bind.name),
+                            " ",
+                            arena.concat(bind.args.iter().map(|arg| {
+                                arena.text(arg.name.as_ref()).append(" ")
+                            }))
+                        ].group(),
+                        match *bind.typ {
+                            Type::Hole => arena.nil(),
+                            ref typ => arena.text(": ")
+                                .append(pretty_type(arena, typ))
+                                .append(arena.space()),
+                        },
+                        "="
+                    ];
+                    self.hang(decl, &bind.expr)
+                };
+                let prefixes = once("let ").chain(repeat("and "));
                 chain![arena;
                     doc_comment(arena, &binds.first().unwrap().comment),
-                    "let ",
-                    arena.concat(binds.iter().map(|bind| {
-                        chain![arena;
-                            chain![arena;
-                                pretty_pattern(arena, &bind.name),
-                                " ",
-                                arena.concat(bind.args.iter().map(|arg| {
-                                    arena.text(arg.name.as_ref()).append(" ")
-                                }))
-                            ].group(),
-                            match *bind.typ {
-                                Type::Hole => arena.nil(),
-                                ref typ => arena.text(": ")
-                                    .append(pretty_type(arena, typ))
-                                    .append(arena.space()),
-                            },
-                            "=",
-                            self.hang(&bind.expr)
-                        ].group()
-                    }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span()))
-                        .map(|doc| doc.append("and ")))),
+                    arena.concat(prefixes.zip(binds).map(|(prefix, bind)| {
+                        binding(prefix, bind)
+                    }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span())))),
                     newlines(binds.last().unwrap().expr.span.end, body.span.start),
                     pretty(body)
                 ]
@@ -260,7 +259,7 @@ impl<'a> ExprPrinter<'a> {
                             "| ",
                             pretty_pattern(arena, &alt.pattern),
                             " ->",
-                            self.hang(&alt.expr).group()
+                            self.hang(arena.nil(), &alt.expr).group()
                         ]
                     }).intersperse(arena.newline()))
                 ]
@@ -292,7 +291,7 @@ impl<'a> ExprPrinter<'a> {
                                 Some(ref expr) => {
                                     chain![arena;
                                         " =",
-                                        self.hang(expr)
+                                        self.hang(arena.nil(), expr)
                                     ]
                                 },
                                 None => arena.nil(),
@@ -360,17 +359,63 @@ impl<'a> ExprPrinter<'a> {
             .append(doc)
     }
 
-    fn hang<Id>(&'a self, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
+    fn pretty_lambda<Id>(&'a self,
+                         previous_end: BytePos,
+                         expr: &'a SpannedExpr<Id>)
+                         -> (DocBuilder<'a, Arena<'a>>, &'a SpannedExpr<Id>)
     where
         Id: AsRef<str>,
+    {
+        let arena = &self.arena;
+        match expr.value {
+            Expr::Lambda(ref lambda) => {
+                let decl = chain![arena;
+                    "\\",
+                    arena.concat(lambda.args.iter().map(|arg| arena.text(arg.name.as_ref()).append(" "))),
+                    "->"
+                ];
+                let (next_lambda, body) = self.pretty_lambda(previous_end, &lambda.body);
+                if next_lambda.1 == arena.nil().1 {
+                    (decl.append(next_lambda), body)
+                } else {
+                    (decl.append(arena.space()).append(next_lambda), body)
+                }
+            }
+            _ => (arena.nil(), expr),
+        }
+    }
+
+    fn hang<Id>(&'a self,
+                from: DocBuilder<'a, Arena<'a>>,
+                expr: &'a SpannedExpr<Id>)
+                -> DocBuilder<'a, Arena<'a>>
+        where Id: AsRef<str>,
+    {
+        let (arguments, body) = self.pretty_lambda(BytePos::from(0), expr);
+        let first = if arguments.1 == self.arena.nil().1 {
+            self.arena.nil()
+        } else {
+            self.arena.space()
+        };
+        from.append(first)
+            .append(arguments)
+            .group()
+            .append(self.spaced_pretty_expr(0.into(), body))
+            .block(INDENT)
+            .group()
+    }
+
+    fn spaced_pretty_expr<Id>(&'a self,
+                              previous_end: BytePos,
+                              expr: &'a SpannedExpr<Id>)
+                              -> DocBuilder<'a, Arena<'a>>
+        where Id: AsRef<str>,
     {
         let line = if forced_new_line(&expr.value) {
             self.arena.newline()
         } else {
             self.arena.space()
         };
-        line.append(self.pretty_expr(expr))
-            .block(INDENT)
-            .group()
+        line.append(self.pretty_expr_(previous_end, expr))
     }
 }

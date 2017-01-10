@@ -23,7 +23,7 @@ gluon_base = { path = "../base", version = "0.4.2" } # GLUON
 collect-mac = "0.1.0"
 difference = "0.4.0"
 itertools = "0.5.6"
-pretty = { version = "0.2.0", git = "https://github.com/Marwes/pretty.rs" }
+pretty = { version = "0.2.0", git = "https://github.com/Marwes/pretty.rs", branch = "indent_fix" }
 pretty_assertions = "0.2.0"
 
 [build-dependencies]
