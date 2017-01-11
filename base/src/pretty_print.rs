@@ -20,10 +20,20 @@ pub fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b
 
 fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
     match *expr {
-        Expr::Block(..) |
+        // len() == 1 is parentheses currently
+        Expr::Block(ref exprs) if exprs.len() > 1 => true,
         Expr::LetBindings(..) |
         Expr::Match(..) |
         Expr::TypeBindings(..) => true,
+        Expr::Lambda(ref lambda) => forced_new_line(&lambda.body.value),
+        Expr::Record { ref exprs, .. } => {
+            exprs.iter().any(|field| {
+                field
+                    .value
+                    .as_ref()
+                    .map_or(false, |expr| forced_new_line(&expr.value))
+            })
+        }
         _ => false,
     }
 }
@@ -31,17 +41,20 @@ fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
 fn doc_comment<'a>(arena: &'a Arena<'a>, text: &'a Option<String>) -> DocBuilder<'a, Arena<'a>> {
     match *text {
         Some(ref text) => {
-            arena.concat(text.lines()
-                .map(|line| arena.text("/// ").append(line).append(arena.newline())))
+            arena.concat(text.lines().map(|line| {
+                arena.text("/// ").append(line).append(arena.newline())
+            }))
         }
         None => arena.nil(),
     }
 }
 
-pub fn pretty_pattern<'a, Id>(arena: &'a Arena<'a>,
-                              pattern: &'a SpannedPattern<Id>)
-                              -> DocBuilder<'a, Arena<'a>>
-    where Id: AsRef<str>,
+pub fn pretty_pattern<'a, Id>(
+    arena: &'a Arena<'a>,
+    pattern: &'a SpannedPattern<Id>,
+) -> DocBuilder<'a, Arena<'a>>
+where
+    Id: AsRef<str>,
 {
     match pattern.value {
         Pattern::Constructor(ref ctor, ref args) => {
@@ -122,11 +135,13 @@ impl<'a> ExprPrinter<'a> {
     {
         self.pretty_expr_(BytePos::from(0), expr)
     }
-    pub fn pretty_expr_<Id>(&'a self,
-                            previous_end: BytePos,
-                            expr: &'a SpannedExpr<Id>)
-                            -> DocBuilder<'a, Arena<'a>>
-        where Id: AsRef<str>,
+    pub fn pretty_expr_<Id>(
+        &'a self,
+        previous_end: BytePos,
+        expr: &'a SpannedExpr<Id>,
+    ) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
     {
         let arena = &self.arena;
 
@@ -149,7 +164,9 @@ impl<'a> ExprPrinter<'a> {
         let doc = match expr.value {
             Expr::App(ref func, ref args) => {
                 pretty(func).append(
-                    arena.concat(args.iter().map(|arg| arena.space().append(pretty(arg)))),
+                    arena
+                        .concat(args.iter().map(|arg| arena.space().append(pretty(arg))))
+                        .nest(INDENT),
                 )
             }
             Expr::Array(ref array) => {
@@ -205,7 +222,7 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::Lambda(_) => {
                 let (arguments, body) = self.pretty_lambda(previous_end, expr);
-                arguments.append(self.spaced_pretty_expr(previous_end, body))
+                arguments.group().append(body)
             }
             Expr::LetBindings(ref binds, ref body) => {
                 let binding = |prefix, bind: &'a ValueBinding<Id>| {
@@ -236,7 +253,7 @@ impl<'a> ExprPrinter<'a> {
                         binding(prefix, bind)
                     }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span())))),
                     newlines(binds.last().unwrap().expr.span.end, body.span.start),
-                    pretty(body)
+                    pretty(body).group()
                 ]
             }
             Expr::Literal(ref literal) => {
@@ -250,9 +267,11 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::Match(ref expr, ref alts) => {
                 chain![arena;
-                    "match ",
-                    pretty(expr),
-                    " with",
+                    chain![arena;
+                        "match ",
+                        pretty(expr),
+                        " with"
+                    ].group(),
                     arena.newline(),
                     arena.concat(alts.iter().map(|alt| {
                         chain![arena;
@@ -271,40 +290,9 @@ impl<'a> ExprPrinter<'a> {
                     ident(arena, field.as_ref())
                 ]
             }
-            Expr::Record {
-                ref types,
-                ref exprs,
-                ..
-            } => {
-                chain![arena;
-                    "{",
-                    arena.concat(types.iter().map(|field| {
-                        chain![arena;
-                            arena.space(),
-                            ident(arena, field.name.as_ref())
-                        ]
-                    }).chain(exprs.iter().map(|field| {
-                        chain![arena;
-                            arena.space(),
-                            ident(arena, field.name.as_ref()),
-                            match field.value {
-                                Some(ref expr) => {
-                                    chain![arena;
-                                        " =",
-                                        self.hang(arena.nil(), expr)
-                                    ]
-                                },
-                                None => arena.nil(),
-                            }
-                        ]
-                    })).intersperse(arena.text(","))).block(INDENT),
-                    if types.is_empty() && exprs.is_empty() {
-                        arena.nil()
-                    } else {
-                        arena.space()
-                    },
-                    "}"
-                ].group()
+            Expr::Record { .. } => {
+                let (x, y) = self.pretty_lambda(previous_end, expr);
+                x.append(y)
             }
             Expr::Tuple { ref elems, .. } => {
                 arena
@@ -334,20 +322,23 @@ impl<'a> ExprPrinter<'a> {
                             "=",
                             arena.space()
                                 .append(pretty_type(arena, &bind.alias.value.unresolved_type()))
+                                .block(INDENT)
                                 .group()
                         ].group()
                     }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span()))
                         .map(|doc| doc.append("and ")))),
                     newlines(binds.last().unwrap().alias.span.end, body.span.start),
-                    pretty(body)
+                    pretty(body).group()
                 ]
             }
             Expr::Error => arena.text("<error>"),
         };
-        arena.concat(self.source
-                .comments_between(Span::new(previous_end, expr.span.start))
-                .map(|comment| {
-                    chain![arena;
+        arena
+            .concat(
+                self.source
+                    .comments_between(Span::new(previous_end, expr.span.start))
+                    .map(|comment| {
+                        chain![arena;
                         if comment.is_empty() {
                             arena.nil()
                         } else {
@@ -355,14 +346,16 @@ impl<'a> ExprPrinter<'a> {
                         },
                         arena.newline()
                     ]
-                }))
+                    }),
+            )
             .append(doc)
     }
 
-    fn pretty_lambda<Id>(&'a self,
-                         previous_end: BytePos,
-                         expr: &'a SpannedExpr<Id>)
-                         -> (DocBuilder<'a, Arena<'a>>, &'a SpannedExpr<Id>)
+    fn pretty_lambda<Id>(
+        &'a self,
+        previous_end: BytePos,
+        expr: &'a SpannedExpr<Id>,
+    ) -> (DocBuilder<'a, Arena<'a>>, DocBuilder<'a, Arena<'a>>)
     where
         Id: AsRef<str>,
     {
@@ -381,15 +374,47 @@ impl<'a> ExprPrinter<'a> {
                     (decl.append(arena.space()).append(next_lambda), body)
                 }
             }
-            _ => (arena.nil(), expr),
+            Expr::Record {
+                ref types,
+                ref exprs,
+                ..
+            } => {
+                let record = chain![arena;
+                    if types.is_empty() && exprs.is_empty() {
+                        arena.nil()
+                    } else {
+                        if forced_new_line(&expr.value) {
+                            arena.newline()
+                        } else {
+                            arena.space()
+                        }
+                    },
+                    arena.concat(types.iter().map(|field| {
+                        ident(arena, field.name.as_ref())
+                    }).chain(exprs.iter().map(|field| {
+                        let id = ident(arena, field.name.as_ref());
+                        match field.value {
+                            Some(ref expr) => self.hang(id.append(" ="), expr),
+                            None => id,
+                        }
+                    })).intersperse(arena.text(",").append(arena.space())))
+                ].nest(INDENT)
+                    .append(arena.space())
+                    .group()
+                    .append("}");
+                (arena.text("{"), record)
+            }
+            _ => (arena.nil(), self.spaced_pretty_expr(previous_end, expr)),
         }
     }
 
-    fn hang<Id>(&'a self,
-                from: DocBuilder<'a, Arena<'a>>,
-                expr: &'a SpannedExpr<Id>)
-                -> DocBuilder<'a, Arena<'a>>
-        where Id: AsRef<str>,
+    fn hang<Id>(
+        &'a self,
+        from: DocBuilder<'a, Arena<'a>>,
+        expr: &'a SpannedExpr<Id>,
+    ) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
     {
         let (arguments, body) = self.pretty_lambda(BytePos::from(0), expr);
         let first = if arguments.1 == self.arena.nil().1 {
@@ -400,16 +425,17 @@ impl<'a> ExprPrinter<'a> {
         from.append(first)
             .append(arguments)
             .group()
-            .append(self.spaced_pretty_expr(0.into(), body))
-            .block(INDENT)
+            .append(body.block(INDENT))
             .group()
     }
 
-    fn spaced_pretty_expr<Id>(&'a self,
-                              previous_end: BytePos,
-                              expr: &'a SpannedExpr<Id>)
-                              -> DocBuilder<'a, Arena<'a>>
-        where Id: AsRef<str>,
+    fn spaced_pretty_expr<Id>(
+        &'a self,
+        previous_end: BytePos,
+        expr: &'a SpannedExpr<Id>,
+    ) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
     {
         let line = if forced_new_line(&expr.value) {
             self.arena.newline()

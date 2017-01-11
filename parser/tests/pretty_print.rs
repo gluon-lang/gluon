@@ -1,3 +1,4 @@
+extern crate env_logger;
 extern crate pretty;
 extern crate difference;
 extern crate itertools;
@@ -24,8 +25,13 @@ use support::MockEnv;
 mod support;
 
 fn test_format(name: &str) {
+    let _ = env_logger::init();
+
     let mut contents = String::new();
-    File::open(Path::new("../std").join(name)).unwrap().read_to_string(&mut contents).unwrap();
+    File::open(Path::new("../std").join(name))
+        .unwrap()
+        .read_to_string(&mut contents)
+        .unwrap();
     // The output uses \n line endings
     contents = contents.replace("\r\n", "\n");
 
@@ -35,7 +41,7 @@ fn test_format(name: &str) {
     let printer = ExprPrinter::new(&source);
     let doc = printer.pretty_expr(&expr);
     let mut out = Vec::new();
-    doc.1.render(110, &mut out).unwrap();
+    doc.1.render(100, &mut out).unwrap();
     out.push(b'\n');
     let out_str = ::std::str::from_utf8(&out).unwrap();
     // Remove any trailing whitespace that pretty has emitted (on lines that only contains whitespace)
@@ -82,4 +88,9 @@ fn test() {
 #[test]
 fn types() {
     test_format("types.glu");
+}
+
+#[test]
+fn writer() {
+    test_format("writer.glu");
 }

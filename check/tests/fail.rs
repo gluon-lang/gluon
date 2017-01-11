@@ -9,7 +9,7 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::pos::Spanned;
-use base::types::{self, Type};
+use base::types::Type;
 
 mod support;
 
