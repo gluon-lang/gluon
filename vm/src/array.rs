@@ -5,7 +5,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::slice;
 
-use gc::{DataDef, Gc, Traverseable, WriteOnly};
+use gc::{Gc, Traverseable};
 
 enum Void {}
 
@@ -119,62 +119,5 @@ impl<'a, T: Copy + 'a> IntoIterator for &'a mut Array<T> {
     type IntoIter = <&'a mut [T] as IntoIterator>::IntoIter;
     fn into_iter(self) -> Self::IntoIter {
         (&mut **self).into_iter()
-    }
-}
-
-#[derive(Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct Str(Array<u8>);
-
-impl Str {
-    pub fn size_of(len: usize) -> usize {
-        Array::<u8>::size_of(len)
-    }
-    pub fn as_mut_array(s: &mut Str) -> &mut Array<u8> {
-        &mut s.0
-    }
-}
-
-impl fmt::Debug for Str {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", &**self)
-    }
-}
-
-impl fmt::Display for Str {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &**self)
-    }
-}
-
-impl Traverseable for Str {
-    fn traverse(&self, _: &mut Gc) {}
-}
-
-impl Deref for Str {
-    type Target = str;
-    fn deref(&self) -> &str {
-        unsafe { ::std::str::from_utf8_unchecked(&self.0) }
-    }
-}
-
-impl DerefMut for Str {
-    fn deref_mut(&mut self) -> &mut str {
-        unsafe { mem::transmute::<&mut [u8], &mut str>(&mut self.0) }
-    }
-}
-
-unsafe impl<'a> DataDef for &'a str {
-    type Value = Str;
-    fn size(&self) -> usize {
-        use std::mem::size_of;
-        size_of::<usize>() + self.len()
-    }
-    fn initialize<'w>(self, mut result: WriteOnly<'w, Str>) -> &'w mut Str {
-        unsafe {
-            let result = &mut *result.as_mut_ptr();
-            result.0.len = self.len();
-            result.0.clone_from_slice(self.as_bytes());
-            result
-        }
     }
 }

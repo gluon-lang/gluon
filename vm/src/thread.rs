@@ -14,20 +14,18 @@ use base::metadata::Metadata;
 use base::symbol::Symbol;
 use base::types::ArcType;
 use base::types;
-use base::fnv::FnvMap;
 
 use {Variants, Error, Result};
 use field_map::FieldMap;
 use interner::InternedStr;
 use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
-use array::Str;
 use compiler::CompiledFunction;
-use gc::{DataDef, Gc, GcPtr, Move};
+use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use stack::{Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
-use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction,
+use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction, GcStr,
             BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
@@ -114,7 +112,7 @@ impl<'vm, T: ?Sized> Deref for Root<'vm, T> {
 }
 
 /// A rooted string
-pub struct RootStr<'vm>(Root<'vm, Str>);
+pub struct RootStr<'vm>(Root<'vm, str>);
 
 impl<'vm> Deref for RootStr<'vm> {
     type Target = str;
@@ -215,7 +213,7 @@ impl Drop for RootedThread {
             // The last RootedThread was dropped, there is no way to refer to the global state any
             // longer so drop everything
             let mut gc_ref = self.0.global_state.gc.lock().unwrap();
-            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new(0, 0));
+            let gc_to_drop = ::std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
             // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
             // when the Gc is dropped
             drop(gc_ref);
@@ -250,7 +248,7 @@ impl RootedThread {
             global_state: Arc::new(GlobalVmState::new()),
             parent: None,
             context: Mutex::new(Context {
-                gc: Gc::new(1, usize::MAX),
+                gc: Gc::new(Generation::default(), usize::MAX),
                 stack: Stack::new(),
                 record_map: FieldMap::new(),
                 hook: None,
@@ -260,7 +258,7 @@ impl RootedThread {
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
         };
-        let mut gc = Gc::new(0, usize::MAX);
+        let mut gc = Gc::new(Generation::default(), usize::MAX);
         let vm =
             gc.alloc(Move(thread)).expect("Not enough memory to allocate thread").root_thread();
         *vm.global_state.gc.lock().unwrap() = gc;
@@ -347,11 +345,12 @@ impl Thread {
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
         where T: Getable<'vm> + VmType,
     {
+        use check::check_signature;
         let env = self.get_env();
         let (value, actual) = env.get_binding(name)?;
         // Finally check that type of the returned value is correct
         let expected = T::make_type(self);
-        if expected == *actual {
+        if check_signature(&*env, &expected, &actual) {
             T::from_value(self, Variants(&value))
                 .ok_or_else(|| Error::UndefinedBinding(name.into()))
         } else {
@@ -415,6 +414,7 @@ impl Thread {
     pub fn set_memory_limit(&self, memory_limit: usize) {
         self.current_context().gc.set_memory_limit(memory_limit)
     }
+
     fn current_context(&self) -> OwnedContext {
         OwnedContext {
             thread: self,
@@ -473,7 +473,7 @@ pub trait ThreadInternal {
     fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>>;
 
     /// Roots a string
-    fn root_string<'vm>(&'vm self, ptr: GcPtr<Str>) -> RootStr<'vm>;
+    fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm>;
 
     /// Roots a value
     fn root_value(&self, value: Value) -> RootedValue<RootedThread>;
@@ -513,7 +513,10 @@ pub trait ThreadInternal {
                   value: Value)
                   -> Result<()>;
 
-    fn deep_clone_value(&self, value: Value) -> Result<Value>;
+    /// `owner` is theread that owns `value` which is not necessarily the same as `self`
+    fn deep_clone_value(&self, owner: &Thread, value: Value) -> Result<Value>;
+
+    fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
 }
 
 
@@ -537,8 +540,8 @@ impl ThreadInternal for Thread {
     }
 
     /// Roots a string
-    fn root_string<'vm>(&'vm self, ptr: GcPtr<Str>) -> RootStr<'vm> {
-        self.roots.write().unwrap().push(ptr.as_traverseable());
+    fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm> {
+        self.roots.write().unwrap().push(ptr.into_inner().as_traverseable());
         RootStr(Root {
             roots: &self.roots,
             ptr: &*ptr,
@@ -642,18 +645,48 @@ impl ThreadInternal for Thread {
                   metadata: Metadata,
                   value: Value)
                   -> Result<()> {
-        let mut visited = FnvMap::default();
-        let value = ::value::deep_clone(value,
-                                        &mut visited,
-                                        &mut self.global_env().gc.lock().unwrap(),
-                                        self)?;
+        let value = ::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap()).deep_clone(value)?;
         self.global_env().set_global(name, typ, metadata, value)
     }
 
-    fn deep_clone_value(&self, value: Value) -> Result<Value> {
-        let mut visited = FnvMap::default();
+    fn deep_clone_value(&self, owner: &Thread, value: Value) -> Result<Value> {
         let mut context = self.current_context();
-        ::value::deep_clone(value, &mut visited, &mut context.gc, self)
+        let full_clone = !self.can_share_values_with(&mut context.gc, owner);
+        let mut cloner = ::value::Cloner::new(self, &mut context.gc);
+        if full_clone {
+            cloner.force_full_clone();
+        }
+        cloner.deep_clone(value)
+    }
+
+    fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool {
+        if self as *const Thread == other as *const Thread {
+            return true;
+        }
+        // If the threads do not share the same global state then they are disjoint and can't share
+        // values
+        if &*self.global_state as *const GlobalVmState !=
+           &*other.global_state as *const GlobalVmState {
+            return false;
+        }
+        // Otherwise the threads might be able to share values but only if they are on the same
+        // of the generation tree (see src/gc.rs)
+        // Search from the thread which MAY be a child to the parent. If `parent` could not be
+        // found then the threads must be in different branches of the tree
+        let self_gen = gc.generation();
+        let other_gen = other.context.lock().unwrap().gc.generation();
+        let (parent, mut child) = if self_gen.is_parent_of(other_gen) {
+            (self, other)
+        } else {
+            (other, self)
+        };
+        while let Some(ref next) = child.parent {
+            if &**next as *const Thread == parent as *const Thread {
+                return true;
+            }
+            child = next;
+        }
+        false
     }
 }
 

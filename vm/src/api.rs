@@ -4,7 +4,7 @@ use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::{State, StackFrame};
 use vm::{self, Thread, Status, RootStr, RootedValue, Root};
-use value::{ArrayRepr, DataStruct, ExternFunction, Value, ValueArray, Def};
+use value::{ArrayRepr, Cloner, DataStruct, ExternFunction, GcStr, Value, ValueArray, Def};
 use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
@@ -318,7 +318,9 @@ pub trait Pushable<'vm> {
         match self.push(vm, context) {
             Ok(()) => Status::Ok,
             Err(err) => {
-                let msg = context.alloc_ignore_limit(&format!("{}", err)[..]);
+                let msg = unsafe {
+                    GcStr::from_utf8_unchecked(context.alloc_ignore_limit(format!("{}", err).as_bytes()))
+                };
                 context.stack.push(Value::String(msg));
                 Status::Error
             }
@@ -612,7 +614,7 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 }
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let s = context.alloc_with(thread, self)?;
+        let s = unsafe { GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?) };
         context.stack.push(Value::String(s));
         Ok(())
     }
@@ -703,6 +705,10 @@ impl<T> VmType for Vec<T>
           T::Type: Sized,
 {
     type Type = Vec<T::Type>;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        Array::<T>::make_type(thread)
+    }
 }
 
 impl<'vm, T> Pushable<'vm> for Vec<T>
@@ -846,6 +852,15 @@ pub enum RuntimeResult<T, E> {
     Panic(E),
 }
 
+impl<T, E> From<StdResult<T, E>> for RuntimeResult<T, E> {
+    fn from(result: StdResult<T, E>) -> RuntimeResult<T, E> {
+        match result {
+            Ok(ok) => RuntimeResult::Return(ok),
+            Err(err) => RuntimeResult::Panic(err),
+        }
+    }
+}
+
 impl<T: VmType, E> VmType for RuntimeResult<T, E> {
     type Type = T::Type;
     fn make_type(vm: &Thread) -> ArcType {
@@ -905,6 +920,13 @@ impl<T, V> fmt::Debug for OpaqueValue<T, V>
     }
 }
 
+impl<T, V> Clone for OpaqueValue<T, V>
+    where T: Deref<Target = Thread> + Clone,
+{
+    fn clone(&self) -> Self {
+        OpaqueValue(self.0.clone(), self.1.clone())
+    }
+}
 
 impl<T, V> OpaqueValue<T, V>
     where T: Deref<Target = Thread>,
@@ -935,8 +957,13 @@ impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
           V: VmType,
           V::Type: Sized,
 {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(*self.0);
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        let full_clone = !thread.can_share_values_with(&mut context.gc, self.0.vm());
+        let mut cloner = Cloner::new(thread, &mut context.gc);
+        if full_clone {
+            cloner.force_full_clone();
+        }
+        context.stack.push(cloner.deep_clone(*self.0)?);
         Ok(())
     }
 }
@@ -1030,6 +1057,36 @@ impl<'vm> Getable<'vm> for RootStr<'vm> {
             Value::String(v) => Some(vm.root_string(v)),
             _ => None,
         }
+    }
+}
+
+/// NewType which can be used to push types implementating  `AsRef`
+pub struct PushAsRef<T, R>(T, PhantomData<R>);
+
+impl<T, R> PushAsRef<T, R> {
+    pub fn new(value: T) -> PushAsRef<T, R> {
+        PushAsRef(value, PhantomData)
+    }
+}
+
+impl<T, R> VmType for PushAsRef<T, R>
+    where T: AsRef<R>,
+          R: 'static,
+          &'static R: VmType,
+{
+    type Type = <&'static R as VmType>::Type;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        <&'static R as VmType>::make_type(thread)
+    }
+}
+
+impl<'vm, T, R> Pushable<'vm> for PushAsRef<T, R>
+    where T: AsRef<R>,
+          for<'a> &'a R: Pushable<'vm>,
+{
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        self.0.as_ref().push(thread, context)
     }
 }
 
@@ -1527,6 +1584,17 @@ pub struct Function<T, F>
     _marker: PhantomData<F>,
 }
 
+impl<T, F> Clone for Function<T, F>
+    where T: Deref<Target = Thread> + Clone,
+{
+    fn clone(&self) -> Self {
+        Function {
+            value: self.value.clone(),
+            _marker: self._marker.clone(),
+        }
+    }
+}
+
 impl<T, F> Function<T, F>
     where T: Deref<Target = Thread>,
 {
@@ -1554,10 +1622,20 @@ impl<'vm, T, F: Any> Pushable<'vm> for Function<T, F>
         Ok(())
     }
 }
+
 impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Function<&'vm Thread, F>> {
         Some(Function {
             value: vm.root_value_ref(*value.0),
+            _marker: PhantomData,
+        })//TODO not type safe
+    }
+}
+
+impl<'vm, F> Getable<'vm> for Function<RootedThread, F> {
+    fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
+        Some(Function {
+            value: vm.root_value(*value.0),
             _marker: PhantomData,
         })//TODO not type safe
     }

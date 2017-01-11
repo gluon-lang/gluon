@@ -16,7 +16,7 @@ use macros::MacroEnv;
 use {Error, Result};
 use types::*;
 use interner::{Interner, InternedStr};
-use gc::{Gc, GcPtr, Traverseable, Move};
+use gc::{Gc, GcPtr, Generation, Traverseable, Move};
 use compiler::{CompiledFunction, Variable, CompilerEnv};
 use api::IO;
 use lazy::Lazy;
@@ -325,7 +325,7 @@ impl GlobalVmState {
             generics: RwLock::new(FnvMap::default()),
             typeids: RwLock::new(FnvMap::default()),
             interner: RwLock::new(Interner::new()),
-            gc: Mutex::new(Gc::new(0, usize::MAX)),
+            gc: Mutex::new(Gc::new(Generation::default(), usize::MAX)),
             macros: MacroEnv::new(),
             generation_0_threads: RwLock::new(Vec::new()),
         };

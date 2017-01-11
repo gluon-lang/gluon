@@ -5,14 +5,12 @@ use std::sync::Mutex;
 
 use base::types;
 use base::types::{Type, ArcType};
-use base::fnv::FnvMap;
 use gc::{Gc, GcPtr, Move, Traverseable};
-use api::{OpaqueValue, Userdata, VmType};
-use api::Generic;
+use api::{Pushable, Generic, OpaqueValue, Userdata, VmType, RuntimeResult};
 use api::generic::A;
 use vm::{Status, Thread};
 use {Error, Result};
-use value::{Value, deep_clone};
+use value::{Value, Cloner};
 use stack::StackFrame;
 use thread::ThreadInternal;
 
@@ -24,22 +22,18 @@ pub struct Lazy<T> {
 impl<T> Userdata for Lazy<T>
     where T: Any + Send + Sync,
 {
-    fn deep_clone(&self,
-                  visited: &mut FnvMap<*const (), Value>,
-                  gc: &mut Gc,
-                  thread: &Thread)
-                  -> Result<GcPtr<Box<Userdata>>> {
+    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
         let value = self.value.lock().unwrap();
         let cloned_value = match *value {
             Lazy_::Blackhole => return Err(Error::Message("<<loop>>".into())),
-            Lazy_::Thunk(value) => Lazy_::Thunk(deep_clone(value, visited, gc, thread)?),
-            Lazy_::Value(value) => Lazy_::Value(deep_clone(value, visited, gc, thread)?),
+            Lazy_::Thunk(value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?),
+            Lazy_::Value(value) => Lazy_::Value(deep_cloner.deep_clone(value)?),
         };
         let data: Box<Userdata> = Box::new(Lazy {
             value: Mutex::new(cloned_value),
             _marker: PhantomData::<A>,
         });
-        gc.alloc(Move(data))
+        deep_cloner.gc().alloc(Move(data))
     }
 }
 
@@ -89,9 +83,8 @@ extern "C" fn force(vm: &Thread) -> Status {
             let value = *lazy.value.lock().unwrap();
             match value {
                 Lazy_::Blackhole => {
-                    let result = Value::String(context.alloc_ignore_limit("<<loop>>"));
-                    context.stack.push(result);
-                    Status::Error
+                    let result: RuntimeResult<(), _> = RuntimeResult::Panic("<<loop>>");
+                    result.status_push(vm, &mut context)
                 }
                 Lazy_::Thunk(value) => {
                     context.stack.push(value);
@@ -112,10 +105,8 @@ extern "C" fn force(vm: &Thread) -> Status {
                         }
                         Err(err) => {
                             let mut context = vm.context();
-                            let err = format!("{}", err);
-                            let result = Value::String(context.alloc_ignore_limit(&err[..]));
-                            context.stack.push(result);
-                            Status::Error
+                            let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
+                            result.status_push(vm, &mut context)
                         }
                     }
                 }
