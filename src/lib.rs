@@ -15,8 +15,6 @@ pub extern crate gluon_base as base;
 pub extern crate gluon_parser as parser;
 pub extern crate gluon_check as check;
 
-extern crate regex;
-
 pub mod compiler_pipeline;
 pub mod import;
 pub mod io;
@@ -382,6 +380,14 @@ pub fn new_vm() -> RootedThread {
     ::vm::channel::load(&vm).expect("Loaded channel library");
     ::vm::debug::load(&vm).expect("Loaded debug library");
     ::io::load(&vm).expect("Loaded IO library");
-    ::regex_bind::load(&vm).expect("Loaded regex library");
+    load_regex(&vm);
     vm
+}
+
+#[cfg(feature="regex")]
+fn load_regex(vm: &Thread) {
+    ::regex_bind::load(&vm).expect("Loaded regex library");
+}
+#[cfg(not(feature="regex"))]
+fn load_regex(_: &Thread) {
 }

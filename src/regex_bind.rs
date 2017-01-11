@@ -1,10 +1,11 @@
 //! Module containing bindings to the `regex` library.
 
+extern crate regex;
 
 use vm;
 use vm::thread::Thread;
 
-use regex::Regex;
+use self::regex::Regex;
 
 /// Test the equality of two strings using the regex crate
 fn regex_match(re: &str, text: &str) -> bool {

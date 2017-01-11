@@ -41,7 +41,7 @@ lazy_static = { version = "0.2.0", optional = true }
 rustyline = { version = "1.0.0", optional = true }
 
 # Binding crates
-regex = "0.2.1"
+regex = { version = "0.2.1", optional = true }
 
 # Crates used in testing Testing
 compiletest_rs = { version = "0.2", optional = true }
@@ -51,7 +51,7 @@ skeptic = { version = "0.6", optional = true }
 skeptic = { version = "0.6", optional = true }
 
 [features]
-default = ["repl"]
+default = ["repl", "regex"]
 
 repl = ["env_logger", "lazy_static", "rustyline"]
 test = ["gluon_vm/test", "gluon_check/test", "gluon_parser/test", "repl"]
