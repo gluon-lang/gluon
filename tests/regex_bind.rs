@@ -9,13 +9,14 @@ fn regex_match() {
 
     let thread = new_vm();
     let text = r#"
-        let prelude = import "std/prelude.glu"
+        let { unwrap_ok, (|>) } = import "std/prelude.glu"
         let { assert } = import "std/test.glu"
 
-        assert (regex.matches "a" "a")
-        assert (not (regex.matches "a" "b"))
-        assert (regex.matches ".*" "a")
-        regex.matches "hello, .*" "hello, world"
+        let match_a = regex.new "a" |> unwrap_ok
+        assert (regex.is_match match_a "a")
+        assert (not (regex.is_match match_a "b"))
+        let match_hello = regex.new "hello, .*" |> unwrap_ok
+        regex.is_match match_hello "hello, world"
         "#;
     let result = Compiler::new().run_expr::<bool>(&thread, "<top>", text);
 
