@@ -38,7 +38,7 @@ impl Traverseable for Error {
 fn new(re: &str) -> Result<Regex, Error> {
     match regex::Regex::new(re) {
         Ok(r) => Ok(Regex(r)),
-        Err(e) => Err(Error(e))
+        Err(e) => Err(Error(e)),
     }
 }
 
@@ -60,6 +60,5 @@ pub fn load(vm: &Thread) -> vm::Result<()> {
                      record!(new => primitive!(1 new),
                              is_match => primitive!(2 is_match),
                              error_to_string => primitive!(1 error_to_string)
-                            ),
-                    )
+                            ))
 }

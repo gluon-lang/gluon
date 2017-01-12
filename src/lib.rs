@@ -389,5 +389,4 @@ fn load_regex(vm: &Thread) {
     ::regex_bind::load(&vm).expect("Loaded regex library");
 }
 #[cfg(not(feature="regex"))]
-fn load_regex(_: &Thread) {
-}
+fn load_regex(_: &Thread) {}
