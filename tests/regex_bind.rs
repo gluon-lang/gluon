@@ -23,3 +23,18 @@ fn regex_match() {
     assert!(result.unwrap().0);
 }
 
+#[test]
+fn regex_error() {
+    let _ = ::env_logger::init();
+
+    let thread = new_vm();
+    let text = r#"
+        let { unwrap_err, (|>) } = import "std/prelude.glu"
+
+        regex.new ")" |> unwrap_err |> regex.error_to_string
+        "#;
+    let result = Compiler::new().run_expr::<String>(&thread, "<top>", text);
+
+    assert_eq!(result.unwrap().0,
+               "Error parsing regex near \')\' at character offset 0: Unopened parenthesis.");
+}

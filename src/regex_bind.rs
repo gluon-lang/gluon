@@ -2,6 +2,8 @@
 
 extern crate regex;
 
+use std::error::Error as StdError;
+
 use vm;
 use vm::api::{VmType, Userdata};
 use vm::gc::{Gc, Traverseable};
@@ -45,11 +47,19 @@ fn is_match(re: &Regex, text: &str) -> bool {
     re.is_match(text)
 }
 
+fn error_to_string(err: &Error) -> &str {
+    let &Error(ref err) = err;
+    err.description()
+}
+
+
 pub fn load(vm: &Thread) -> vm::Result<()> {
     vm.register_type::<Regex>("Regex", &[])?;
     vm.register_type::<Error>("Error", &[])?;
     vm.define_global("regex",
                      record!(new => primitive!(1 new),
-                             is_match => primitive!(2 is_match)),
+                             is_match => primitive!(2 is_match),
+                             error_to_string => primitive!(1 error_to_string)
+                            ),
                     )
 }
