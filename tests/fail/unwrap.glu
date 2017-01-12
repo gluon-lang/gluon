@@ -1,0 +1,3 @@
+let { Option, unwrap } = import "std/prelude.glu"
+
+unwrap None
