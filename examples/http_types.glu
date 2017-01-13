@@ -3,7 +3,7 @@
 type Method = | Get | Post | Delete | Update
 
 /// Type used by handlers to indicate why they could not process a request
-type Failure = | DontProcess
+type Failure = | DontProcess | Error String
 
 /// HTTP server request
 type Request = {

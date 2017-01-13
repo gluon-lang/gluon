@@ -47,6 +47,7 @@ let alternative: Alternative Handler = {
         let failure2 reason request2 =
             match reason with
             | DontProcess -> make r success failure request2
+            | Error _ -> failure reason request2
 
         make l success failure2 request),
     empty = make (\_ failure request -> failure DontProcess request)
@@ -92,6 +93,17 @@ let empty_response = { status = OK, body = "" }
 let io_handler io: IO a -> Handler a =
     make (\success _ request -> prelude.monad_IO.flat_map (\a -> success a request) io)
 
+let fail msg : String -> Handler a =
+    make (\_ failure request -> failure (Error msg) request)
+
+let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
+    make (\success failure request ->
+        let failure2 reason request2 =
+            match reason with
+            | DontProcess -> failure reason request2
+            | Error msg -> catch msg success failure request2
+        action success failure2 request)
+
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler request : Handler Response -> Request -> IO Response =
     let not_found _ _ =
@@ -119,5 +131,7 @@ let handle handler request : Handler Response -> Request -> IO Response =
     path,
     listen = http_prim.listen,
     read_chunk = http_prim.read_chunk,
-    io_handler
+    io_handler,
+    fail,
+    catch_error
 }

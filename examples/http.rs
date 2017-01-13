@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 use std::str;
 use std::sync::{Arc, Mutex};
 
-use hyper::Method;
+use hyper::{Chunk, Method};
 use hyper::status::StatusCode;
 use hyper::server::Service;
 
@@ -31,8 +31,8 @@ use vm::{Result, Error as VmError};
 use vm::thread::ThreadInternal;
 use vm::thread::{Context, RootedThread, Thread};
 use vm::Variants;
-use vm::api::{VmType, Function, FunctionRef, FutureResult, Getable, OpaqueValue, Pushable, IO,
-              Userdata, ValueRef, WithVM};
+use vm::api::{VmType, Function, FunctionRef, FutureResult, Getable, OpaqueValue, Pushable,
+              PushAsRef, IO, Userdata, ValueRef, WithVM};
 use vm::gc::{Gc, Traverseable};
 
 use vm::internal::Value;
@@ -110,7 +110,7 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
     }
 }
 
-pub struct Body(Arc<Mutex<BoxStream<String, VmError>>>);
+pub struct Body(Arc<Mutex<BoxStream<PushAsRef<Chunk, [u8]>, VmError>>>);
 
 impl fmt::Debug for Body {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -118,24 +118,25 @@ impl fmt::Debug for Body {
     }
 }
 
-impl Userdata for Body { }
+impl Userdata for Body {}
 
 impl Traverseable for Body {
-    fn traverse(&self, _: &mut Gc) { }
+    fn traverse(&self, _: &mut Gc) {}
 }
 
 impl VmType for Body {
     type Type = Self;
 }
 
-fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<String>>, VmError>> {
+fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<PushAsRef<Chunk, [u8]>>>, VmError>> {
     use futures::future::poll_fn;
-    
+
     let body = body.0.clone();
     FutureResult(poll_fn(move || {
-        let mut stream = body.lock().unwrap();
-        stream.poll().map(|async| async.map(IO::Value))
-    }).boxed())
+            let mut stream = body.lock().unwrap();
+            stream.poll().map(|async| async.map(IO::Value))
+        })
+        .boxed())
 }
 
 field_decl! { method, uri, status, body  }
@@ -172,42 +173,38 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
         type Error = hyper::Error;
         type Future = BoxFuture<HyperResponse, hyper::Error>;
 
-        fn call(&mut self, request: HyperRequest) -> Self::Future {
+        fn call(&self, request: HyperRequest) -> Self::Future {
             let gluon_request = record_no_decl! {
                 method => Wrap(request.method().clone()),
                 uri => request.uri().to_string(),
                 body => Body(Arc::new(Mutex::new(request.body()
                     .map_err(|err| VmError::Message(format!("{}", err)))
-                    .and_then(|chunk| {
-                        match str::from_utf8(&chunk) {
-                            Ok(s) => Ok(String::from(s)),
-                            Err(err) => Err(VmError::Message(format!("{}", err))),
-                        }
-                    }).boxed())))
+                    // This makes the `body` parameter act as a `&[u8]` meaning it is marshalled
+                    // into an `Array Byte` in gluon
+                    .map(PushAsRef::<_, [u8]>::new)
+                    .boxed())))
             };
             self.handle
                 .clone()
                 .call_async(self.handler.clone(), gluon_request)
-                .then(|result| {
-                    match result {
-                        Ok(value) => {
-                            match value {
-                                IO::Value(record_p!{ status, body }) => {
-                                    Ok(HyperResponse::new()
-                                        .with_status(status.0)
-                                        .with_body(body))
-                                }
-                                IO::Exception(err) => {
-                                    let _ = stderr().write(err.as_bytes());
-                                    Ok(HyperResponse::new()
-                                        .with_status(StatusCode::InternalServerError))
-                                }
+                .then(|result| match result {
+                    Ok(value) => {
+                        match value {
+                            IO::Value(record_p!{ status, body }) => {
+                                Ok(HyperResponse::new()
+                                    .with_status(status.0)
+                                    .with_body(body))
+                            }
+                            IO::Exception(err) => {
+                                let _ = stderr().write(err.as_bytes());
+                                Ok(HyperResponse::new()
+                                    .with_status(StatusCode::InternalServerError))
                             }
                         }
-                        Err(err) => {
-                            let _ = stderr().write(format!("{}", err).as_bytes());
-                            Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
-                        }
+                    }
+                    Err(err) => {
+                        let _ = stderr().write(format!("{}", err).as_bytes());
+                        Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
                     }
                 })
                 .boxed()
