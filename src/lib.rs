@@ -18,6 +18,7 @@ pub extern crate gluon_check as check;
 pub mod compiler_pipeline;
 pub mod import;
 pub mod io;
+pub mod regex_bind;
 
 pub use vm::thread::{RootedThread, Thread};
 
@@ -379,5 +380,13 @@ pub fn new_vm() -> RootedThread {
     ::vm::channel::load(&vm).expect("Loaded channel library");
     ::vm::debug::load(&vm).expect("Loaded debug library");
     ::io::load(&vm).expect("Loaded IO library");
+    load_regex(&vm);
     vm
 }
+
+#[cfg(feature="regex")]
+fn load_regex(vm: &Thread) {
+    ::regex_bind::load(&vm).expect("Loaded regex library");
+}
+#[cfg(not(feature="regex"))]
+fn load_regex(_: &Thread) {}
