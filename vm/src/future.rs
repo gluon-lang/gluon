@@ -2,6 +2,9 @@ use futures::{Async, Future, Poll};
 
 use Error;
 
+/// `FutureValue` holds either an already computed value or a `Future` which can be resolved into
+/// that value. This makes it possible to avoid creating an event loop for computions which run
+/// synchronously.
 pub enum FutureValue<F>
     where F: Future,
 {
@@ -13,6 +16,7 @@ pub enum FutureValue<F>
 impl<F> FutureValue<F>
     where F: Future<Error = Error>,
 {
+    /// Returns the resolved `value` if it was synchronously computed or an error otherwise
     pub fn sync_or_error(self) -> Result<F::Item, Error> {
         match self {
             FutureValue::Value(v) => Ok(v),

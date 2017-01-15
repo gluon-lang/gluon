@@ -307,7 +307,14 @@ pub trait VmType {
     }
 }
 
+/// Trait which allows a possibly asynchronous rust value to be pushed to the virtual machine
 pub trait AsyncPushable<'vm> {
+    /// Pushes `self` to `stack`. If the call is successful a single element should have been added
+    /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
+    /// should be returned and the stack should be left intact.
+    ///
+    /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
+    /// the virtual machine knows it must do more work before the value is available.
     fn async_push(self, vm: &'vm Thread, context: &mut Context) -> Result<Async<()>>;
 
     fn status_push(self, vm: &'vm Thread, context: &mut Context) -> Status
@@ -862,6 +869,8 @@ impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
     }
 }
 
+/// Wrapper around a `Future` which can be used as a return value to let the virtual machine know
+/// that it must resolve the `Future` to receive the value.
 pub struct FutureResult<F>(pub F);
 
 impl<F> VmType for FutureResult<F>
@@ -876,6 +885,7 @@ impl<F> VmType for FutureResult<F>
         <F::Item>::extra_args()
     }
 }
+
 impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
     where F: Future<Error = Error> + Send + 'static,
           F::Item: Pushable<'vm>,

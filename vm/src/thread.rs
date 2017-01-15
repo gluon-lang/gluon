@@ -54,6 +54,8 @@ impl<T> Future for Execute<T>
 {
     type Item = (T, Value);
     type Error = Error;
+
+    // Returns `T` so that it can be reused by the caller
     fn poll(&mut self) -> Poll<(T, Value), Error> {
         let value = {
             let mut context = try_ready!(self.thread
@@ -603,11 +605,9 @@ impl ThreadInternal for Thread {
         let mut context = self.current_context();
         context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
-        context.execute().map(|async| {
-            match async {
-                Async::Ready(context) => FutureValue::Value((self, context.unwrap().stack.pop())),
-                Async::NotReady => FutureValue::Future(Execute::new(self)),
-            }
+        context.execute().map(|async| match async {
+            Async::Ready(context) => FutureValue::Value((self, context.unwrap().stack.pop())),
+            Async::NotReady => FutureValue::Future(Execute::new(self)),
         })
     }
 
@@ -893,6 +893,13 @@ impl Context {
         self.max_stack_size = limit;
     }
 
+    /// "Returns a future", letting the virtual machine know that `future` must be resolved to
+    /// produce the actual value.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because the `vm` lifetime must not outlive the lifetime of the
+    /// `Thread`
     pub unsafe fn return_future<'vm, F>(&mut self, mut future: F)
         where F: Future<Error = Error> + Send + 'static,
               F::Item: Pushable<'vm>,
