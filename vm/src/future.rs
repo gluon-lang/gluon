@@ -1,4 +1,5 @@
-use futures::{Async, Future, Poll};
+use futures::{AndThen, Async, Future, Map, MapErr, OrElse, Poll, Then};
+use futures::future::{Either, FutureResult};
 
 use Error;
 
@@ -8,10 +9,12 @@ use Error;
 pub enum FutureValue<F>
     where F: Future,
 {
-    Value(F::Item),
+    Value(Result<F::Item, F::Error>),
     Future(F),
     Polled,
 }
+
+pub type BoxFutureValue<'a, T, E> = FutureValue<Box<Future<Item = T, Error = E> + Send + 'a>>;
 
 impl<F> FutureValue<F>
     where F: Future<Error = Error>,
@@ -19,13 +22,114 @@ impl<F> FutureValue<F>
     /// Returns the resolved `value` if it was synchronously computed or an error otherwise
     pub fn sync_or_error(self) -> Result<F::Item, Error> {
         match self {
-            FutureValue::Value(v) => Ok(v),
+            FutureValue::Value(v) => v,
             FutureValue::Future(_) => {
                 Err(Error::Message("Future needs to be resolved asynchronously".into()))
             }
             FutureValue::Polled => {
                 panic!("`FutureValue` may not be polled again if it contained a value")
             }
+        }
+    }
+}
+
+impl<T, E> FutureValue<FutureResult<T, E>> {
+    pub fn sync(result: Result<T, E>) -> FutureValue<FutureResult<T, E>> {
+        FutureValue::Value(result)
+    }
+}
+
+impl<'f, F> FutureValue<F>
+    where F: Future + 'f,
+{
+    pub fn boxed(self) -> FutureValue<Box<Future<Item = F::Item, Error = F::Error> + Send + 'f>>
+        where F: Send,
+    {
+        match self {
+            FutureValue::Value(v) => FutureValue::Value(v),
+            FutureValue::Future(f) => FutureValue::Future(Box::new(f)),
+            FutureValue::Polled => FutureValue::Polled,
+        }
+    }
+
+    pub fn map<G, U>(self, g: G) -> FutureValue<Map<F, G>>
+        where G: FnOnce(F::Item) -> U,
+    {
+        match self {
+            FutureValue::Value(v) => FutureValue::Value(v.map(g)),
+            FutureValue::Future(f) => FutureValue::Future(f.map(g)),
+            FutureValue::Polled => FutureValue::Polled,
+        }
+    }
+
+    pub fn map_err<G, U>(self, g: G) -> FutureValue<MapErr<F, G>>
+        where G: FnOnce(F::Error) -> U,
+    {
+        match self {
+            FutureValue::Value(v) => FutureValue::Value(v.map_err(g)),
+            FutureValue::Future(f) => FutureValue::Future(f.map_err(g)),
+            FutureValue::Polled => FutureValue::Polled,
+        }
+    }
+
+    pub fn and_then<G, B>(self, g: G) -> FutureValue<Either<B, AndThen<F, FutureValue<B>, G>>>
+        where G: FnOnce(F::Item) -> FutureValue<B>,
+              B: Future<Error = F::Error>,
+    {
+        match self {
+            FutureValue::Value(v) => {
+                match v {
+                    Ok(v) => {
+                        match g(v) {
+                            FutureValue::Value(v) => FutureValue::Value(v),
+                            FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
+                            FutureValue::Polled => FutureValue::Polled,
+                        }
+                    }
+                    Err(err) => FutureValue::Value(Err(err)),
+                }
+            }
+            FutureValue::Future(f) => FutureValue::Future(Either::B(f.and_then(g))),
+            FutureValue::Polled => FutureValue::Polled,
+        }
+    }
+
+    pub fn then<G, B>(self, g: G) -> FutureValue<Either<B, Then<F, FutureValue<B>, G>>>
+        where G: FnOnce(Result<F::Item, F::Error>) -> FutureValue<B>,
+              B: Future<Error = F::Error>,
+    {
+        match self {
+            FutureValue::Value(v) => {
+                match g(v) {
+                    FutureValue::Value(v) => FutureValue::Value(v),
+                    FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
+                    FutureValue::Polled => FutureValue::Polled,
+                }
+            }
+            FutureValue::Future(f) => FutureValue::Future(Either::B(f.then(g))),
+            FutureValue::Polled => FutureValue::Polled,
+        }
+    }
+
+    pub fn or_else<G, B>(self, g: G) -> FutureValue<Either<B, OrElse<F, FutureValue<B>, G>>>
+        where G: FnOnce(F::Error) -> FutureValue<B>,
+              B: Future<Item = F::Item>,
+    {
+        match self {
+            FutureValue::Value(v) => {
+                match v {
+                    Ok(v) => FutureValue::Value(Ok(v)),
+                    Err(err) => {
+                        match g(err) {
+                            FutureValue::Value(v) => FutureValue::Value(v),
+                            FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
+                            FutureValue::Polled => FutureValue::Polled,
+                        }
+                    }
+                }
+            }
+            FutureValue::Future(f) => FutureValue::Future(Either::B(f.or_else(g))),
+            FutureValue::Polled => FutureValue::Polled,
         }
     }
 }
@@ -40,7 +144,7 @@ impl<F> Future for FutureValue<F>
         match *self {
             FutureValue::Value(_) => {
                 match ::std::mem::replace(self, FutureValue::Polled) {
-                    FutureValue::Value(v) => return Ok(Async::Ready(v)),
+                    FutureValue::Value(v) => return v.map(Async::Ready),
                     _ => unreachable!(),
                 }
             }
@@ -53,7 +157,7 @@ impl<F> Future for FutureValue<F>
 
     fn wait(self) -> Result<F::Item, F::Error> {
         match self {
-            FutureValue::Value(v) => Ok(v),
+            FutureValue::Value(v) => v,
             FutureValue::Future(f) => f.wait(),
             FutureValue::Polled => {
                 panic!("`FutureValue` may not be polled again if it contained a value")

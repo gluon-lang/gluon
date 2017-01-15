@@ -606,7 +606,7 @@ impl ThreadInternal for Thread {
         context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
         context.execute().map(|async| match async {
-            Async::Ready(context) => FutureValue::Value((self, context.unwrap().stack.pop())),
+            Async::Ready(context) => FutureValue::Value(Ok((self, context.unwrap().stack.pop()))),
             Async::NotReady => FutureValue::Future(Execute::new(self)),
         })
     }
@@ -637,7 +637,7 @@ impl ThreadInternal for Thread {
             }
         }
         let _ = context.exit_scope();
-        Ok(FutureValue::Value((self, result)))
+        Ok(FutureValue::Value(Ok((self, result))))
     }
 
     /// Calls a function on the stack.

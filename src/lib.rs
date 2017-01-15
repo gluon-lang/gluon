@@ -40,6 +40,7 @@ use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::{Getable, Hole, VmType, OpaqueValue};
 use vm::Error as VmError;
+use vm::future::FutureValue;
 use vm::compiler::CompiledFunction;
 use vm::thread::ThreadInternal;
 use vm::macros;
@@ -260,14 +261,17 @@ impl Compiler {
         where T: Getable<'vm> + VmType,
     {
         let expected = T::make_type(vm);
-        let ExecuteValue { typ: actual, value, .. } =
-            expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?;
-        unsafe {
-            match T::from_value(vm, Variants::new(&value)) {
-                Some(value) => Ok((value, actual)),
-                None => Err(Error::from(VmError::WrongType(expected, actual))),
-            }
-        }
+        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?
+            .and_then(|v| {
+                let ExecuteValue { typ: actual, value, .. } = v;
+                unsafe {
+                    FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
+                        Some(value) => Ok((value, actual)),
+                        None => Err(Error::from(VmError::WrongType(expected, actual))),
+                    })
+                }
+            })
+            .wait()
     }
 
     /// Compiles and runs `expr_str`. If the expression is of type `IO a` the action is evaluated
@@ -281,29 +285,38 @@ impl Compiler {
               T::Type: Sized,
     {
         let expected = T::make_type(vm);
-        let ExecuteValue { typ: actual, value, .. } =
-            expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?;
-        let is_io = {
-            expected.alias_ident()
-                .and_then(|expected_ident| {
-                    let env = vm.get_env();
-                    env.find_type_info("IO")
-                        .ok()
-                        .map(|alias| *expected_ident == alias.name)
+        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?
+            .and_then(move |v| {
+                let ExecuteValue { typ: actual, value, .. } = v;
+                let is_io = {
+                    expected.alias_ident()
+                        .and_then(|expected_ident| {
+                            let env = vm.get_env();
+                            env.find_type_info("IO")
+                                .ok()
+                                .map(|alias| *expected_ident == alias.name)
+                        })
+                        .unwrap_or(false)
+                };
+                if is_io {
+                    match vm.execute_io(*value) {
+                        Ok(future) => {
+                            future.map(move |(_, value)| (value, expected, actual))
+                                .map_err(Error::from)
+                        }
+                        Err(err) => FutureValue::Value(Err(err.into())),
+                    }
+                } else {
+                    FutureValue::Value(Ok((*value, expected, actual)))
+                }
+            })
+            .and_then(|(value, expected, actual)| unsafe {
+                FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
+                    Some(value) => Ok((value, actual)),
+                    None => Err(Error::from(VmError::WrongType(expected, actual))),
                 })
-                .unwrap_or(false)
-        };
-        let value = if is_io {
-            vm.execute_io(*value)?.wait()?.1
-        } else {
-            *value
-        };
-        unsafe {
-            match T::from_value(vm, Variants::new(&value)) {
-                Some(value) => Ok((value, actual)),
-                None => Err(Error::from(VmError::WrongType(expected, actual))),
-            }
-        }
+            })
+            .wait()
     }
 
     fn include_implicit_prelude(&mut self, name: &str, expr: &mut SpannedExpr<Symbol>) {
