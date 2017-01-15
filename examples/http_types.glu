@@ -16,18 +16,22 @@ type StatusCode = | OK | NotFound | InternalServerError
 
 /// HTTP server response
 type Response = {
-    status : StatusCode,
-    body: String
+    status : StatusCode
+}
+
+type HttpState = {
+    request: Request,
+    response : ResponseBody
 }
 
 /// The main type of this micro http framework. A handler takes two continuations and a `Request` and
 /// cakks one of the continuations depending on if it can successfully handle the request or not
 type Handler a =
     // Success continuation
-    (a -> Request -> IO Response) ->
+    (a -> HttpState -> IO Response) ->
     // Failure continuation
-    (Failure -> Request -> IO Response) ->
-    Request ->
+    (Failure -> HttpState -> IO Response) ->
+    HttpState ->
     IO Response
 
 {
@@ -37,4 +41,5 @@ type Handler a =
     StatusCode,
     Response,
     Handler,
+    HttpState,
 }

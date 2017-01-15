@@ -11,7 +11,8 @@ let {
     Request,
     StatusCode,
     Response,
-    Handler } = import! "examples/http_types.glu"
+    Handler,
+    HttpState } = import! "examples/http_types.glu"
 
 /// Force the value to be a Handler. Used to make the the type inference work for higher-kinded types
 let make: Handler a -> Handler a = id
@@ -20,15 +21,15 @@ let functor: Functor Handler = {
     map = \f handler ->
         // FIXME type inference fails without this
         let handler = make handler
-        make (\success failure request -> handler (success << f) failure request)
+        make (\success failure state -> handler (success << f) failure state)
 }
 
 let flat_map f handler: (a -> Handler b) -> Handler a -> Handler b =
     // FIXME type inference fails without this
     let handler = make handler
-    make (\success failure request ->
-        let success2 a r = make (f a) success failure request
-        handler success2 failure request)
+    make (\success failure state ->
+        let success2 a r = make (f a) success failure state
+        handler success2 failure state)
 
 
 let applicative: Applicative Handler = {
@@ -36,21 +37,21 @@ let applicative: Applicative Handler = {
     apply = \a m ->
         let m = make m
         flat_map (\f -> functor.map f m) a,
-    pure = \a -> make (\success _ request -> success a request)
+    pure = \a -> make (\success _ state -> success a state)
 }
 let { (*>) } = prelude.make_Applicative applicative
 
 let alternative: Alternative Handler = {
     applicative,
     // Tries to handle the request with `l`, if it fails with `DontProcess` then `r` is tried instead
-    or = \l r -> make (\success failure request ->
-        let failure2 reason request2 =
+    or = \l r -> make (\success failure state ->
+        let failure2 reason state2 =
             match reason with
-            | DontProcess -> make r success failure request2
-            | Error _ -> failure reason request2
+            | DontProcess -> make r success failure state2
+            | Error _ -> failure reason state2
 
-        make l success failure2 request),
-    empty = make (\_ failure request -> failure DontProcess request)
+        make l success failure2 state),
+    empty = make (\_ failure state -> failure DontProcess state)
 }
 let { or, empty, (<|>) } = prelude.make_Alternative alternative
 
@@ -58,14 +59,15 @@ let monad: Monad Handler = {
     applicative,
     flat_map
 }
+let { (>>=) } = prelude.make_Monad monad
 
 /// Handles the request if `predicate` returns `True
 let test predicate: (Request -> Bool) -> Handler () =
-    \success failure request ->
-        if predicate request then
-            success () request
+    \success failure state ->
+        if predicate state.request then
+            success () state
         else
-            failure DontProcess request
+            failure DontProcess state
 
 /// Handles `Get` requests
 let get : Handler () =
@@ -86,29 +88,35 @@ let path uri: String -> Handler () =
 
 /// Retrieves the HTTP request
 let get_request : Handler Request =
-    \success _ request -> success request request
+    \success _ state -> success state.request state
+
+let get_response_body : Handler ResponseBody =
+    make (\success failure state -> success state.response state)
 
 let empty_response = { status = OK, body = "" }
 
 let io_handler io: IO a -> Handler a =
-    make (\success _ request -> prelude.monad_IO.flat_map (\a -> success a request) io)
+    make (\success _ state -> prelude.monad_IO.flat_map (\a -> success a state) io)
+
+let write_response bytes : Array Byte -> Handler () =
+    get_response_body >>= (\response -> io_handler (http_prim.write_response response bytes))
 
 let fail msg : String -> Handler a =
-    make (\_ failure request -> failure (Error msg) request)
+    make (\_ failure state -> failure (Error msg) state)
 
 let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
-    make (\success failure request ->
-        let failure2 reason request2 =
+    make (\success failure state ->
+        let failure2 reason state2 =
             match reason with
-            | DontProcess -> failure reason request2
-            | Error msg -> catch msg success failure request2
-        action success failure2 request)
+            | DontProcess -> failure reason state2
+            | Error msg -> catch msg success failure state2
+        action success failure2 state)
 
 /// Takes a `Handler` and a `Request` tries to process the request
-let handle handler request : Handler Response -> Request -> IO Response =
+let handle handler state : Handler Response -> HttpState -> IO Response =
     let not_found _ _ =
         pure { status = NotFound, body = "Page not found" }
-    handler (\response _ -> pure response) not_found request 
+    handler (\response _ -> pure response) not_found state
 
 {
     Method,
@@ -131,6 +139,7 @@ let handle handler request : Handler Response -> Request -> IO Response =
     path,
     listen = http_prim.listen,
     read_chunk = http_prim.read_chunk,
+    write_response,
     io_handler,
     fail,
     catch_error

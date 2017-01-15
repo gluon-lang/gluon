@@ -1305,7 +1305,7 @@ pub mod record {
 
     impl<'vm> GetableFieldList<'vm> for () {
         fn from_value(_vm: &'vm Thread, values: &[Value]) -> Option<Self> {
-            debug_assert!(values.is_empty());
+            debug_assert!(values.is_empty(), "{:?}", values);
             Some(())
         }
     }

@@ -8,6 +8,8 @@ extern crate collect_mac;
 extern crate env_logger;
 extern crate futures;
 extern crate hyper;
+#[macro_use]
+extern crate log;
 
 use std::env;
 use std::fmt;
@@ -21,12 +23,15 @@ use hyper::{Chunk, Method};
 use hyper::status::StatusCode;
 use hyper::server::Service;
 
+use futures::Async;
 use futures::future::{BoxFuture, Future};
+use futures::sink::Sink;
 use futures::stream::{BoxStream, Stream};
+use futures::sync::mpsc::Sender;
 
 use base::types::{Type, ArcType};
 
-use vm::{Result, Error as VmError};
+use vm::{Result as VmResult, Error as VmError};
 
 use vm::thread::ThreadInternal;
 use vm::thread::{Context, RootedThread, Thread};
@@ -75,7 +80,7 @@ macro_rules! define_vmtype {
 define_vmtype! { Method }
 
 impl<'vm> Pushable<'vm> for Wrap<Method> {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
+    fn push(self, _: &'vm Thread, context: &mut Context) -> VmResult<()> {
         use hyper::Method::*;
         context.stack.push(Value::Tag(match self.0 {
             Get => 0,
@@ -139,16 +144,76 @@ fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<PushAsRef<Chunk, 
         .boxed())
 }
 
-field_decl! { method, uri, status, body  }
+pub struct ResponseBody(Arc<Mutex<Option<Sender<Result<Chunk, hyper::Error>>>>>);
+
+impl fmt::Debug for ResponseBody {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "hyper::Response")
+    }
+}
+
+impl Userdata for ResponseBody {}
+
+impl Traverseable for ResponseBody {
+    fn traverse(&self, _: &mut Gc) {}
+}
+
+impl VmType for ResponseBody {
+    type Type = Self;
+}
+
+fn write_response(response: &ResponseBody,
+                  bytes: &[u8])
+                  -> FutureResult<BoxFuture<IO<()>, VmError>> {
+    use futures::future::poll_fn;
+    use futures::AsyncSink;
+
+    let mut unsent_chunk = Some(Ok(bytes.to_owned().into()));
+    let response = response.0.clone();
+    FutureResult(poll_fn(move || {
+            info!("Starting response send");
+            let mut sender = response.lock().unwrap();
+            let mut sender = sender.as_mut().expect("Sender has been dropped while still in use");
+            if let Some(chunk) = unsent_chunk.take() {
+                match sender.start_send(chunk) {
+                    Ok(AsyncSink::NotReady(chunk)) => {
+                        unsent_chunk = Some(chunk);
+                        return Ok(Async::NotReady);
+                    }
+                    Ok(AsyncSink::Ready) => (),
+                    Err(_) => {
+                        info!("Could not send http response");
+                        return Ok(Async::Ready(IO::Value(())));
+                    }
+                }
+            }
+            match sender.poll_complete() {
+                Ok(async) => Ok(async.map(IO::Value)),
+                Err(_) => {
+                    info!("Could not send http response");
+                    Ok(Async::Ready(IO::Value(())))
+                }
+            }
+        })
+        .boxed())
+}
+
+
+field_decl! { method, uri, status, body, request, response }
 
 type Request = record_type!{
     method => Wrap<Method>,
     uri => String,
     body => Body
 };
+
 type Response = record_type!{
-    status => Wrap<StatusCode>,
-    body => String
+    status => Wrap<StatusCode>
+};
+
+type HttpState = record_type!{
+    request => Request,
+    response => ResponseBody 
 };
 
 fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>) -> IO<()> {
@@ -158,7 +223,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     use hyper::server::Request as HyperRequest;
     use hyper::server::Response as HyperResponse;
 
-    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, Request) -> IO<Response>;
+    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread.get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
 
@@ -184,16 +249,25 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
                     .map(PushAsRef::<_, [u8]>::new)
                     .boxed())))
             };
+            let (response_sender, response_body) = hyper::Body::pair();
+            let response_sender = Arc::new(Mutex::new(Some(response_sender)));
+            let http_state = record_no_decl!{
+                request => gluon_request,
+                response => ResponseBody(response_sender.clone())
+            };
             self.handle
                 .clone()
-                .call_async(self.handler.clone(), gluon_request)
-                .then(|result| match result {
+                .call_async(self.handler.clone(), http_state)
+                .then(move |result| match result {
                     Ok(value) => {
                         match value {
-                            IO::Value(record_p!{ status, body }) => {
+                            IO::Value(record_p!{ status }) => {
+                                // Drop the sender to so that it the receiver stops waiting for
+                                // more chunks
+                                *response_sender.lock().unwrap() = None;
                                 Ok(HyperResponse::new()
                                     .with_status(status.0)
-                                    .with_body(body))
+                                    .with_body(response_body))
                             }
                             IO::Exception(err) => {
                                 let _ = stderr().write(err.as_bytes());
@@ -229,16 +303,18 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     IO::Value(())
 }
 
-pub fn load_types(vm: &Thread) -> Result<()> {
+pub fn load_types(vm: &Thread) -> VmResult<()> {
     vm.register_type::<Body>("Body", &[])?;
+    vm.register_type::<ResponseBody>("ResponseBody", &[])?;
     Ok(())
 }
 
-pub fn load(vm: &Thread) -> Result<()> {
+pub fn load(vm: &Thread) -> VmResult<()> {
     vm.define_global("http_prim",
                        record! {
         listen => primitive!(2 listen),
-        read_chunk => primitive!(1 read_chunk)
+        read_chunk => primitive!(1 read_chunk),
+        write_response => primitive!(2 write_response)
     })?;
     Ok(())
 }
