@@ -18,7 +18,7 @@ use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
 
 use vm::compiler::CompiledFunction;
-use vm::future::BoxFutureValue;
+use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros::MacroExpander;
 use vm::thread::{RootedValue, Thread, ThreadInternal};
 
@@ -248,7 +248,7 @@ pub trait Executable<'vm, Extra> {
                 name: &str,
                 expr_str: &str,
                 arg: Extra)
-                -> Result<BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error>>;
+                -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error>;
 
     fn load_script(self,
                    compiler: &mut Compiler,
@@ -270,10 +270,12 @@ impl<'vm, C, Extra> Executable<'vm, Extra> for C
                 name: &str,
                 expr_str: &str,
                 arg: Extra)
-                -> Result<BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error>> {
+                -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
 
-        self.compile(compiler, vm, name, expr_str, arg)
-            .and_then(|v| v.run_expr(compiler, vm, name, expr_str, ()))
+        match self.compile(compiler, vm, name, expr_str, arg) {
+            Ok(v) => v.run_expr(compiler, vm, name, expr_str, ()),
+            Err(err) => FutureValue::Value(Err(err)),
+        }
     }
     fn load_script(self,
                    compiler: &mut Compiler,
@@ -298,12 +300,12 @@ impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
                 name: &str,
                 _expr_str: &str,
                 _: ())
-                -> Result<BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error>> {
+                -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
 
         let CompileValue { expr, typ, mut function } = self;
         function.id = Symbol::from(name);
-        let closure = vm.global_env().new_global_thunk(function)?;
-        Ok(vm.call_thunk(closure)?
+        let closure = try_future!(vm.global_env().new_global_thunk(function));
+        vm.call_thunk(closure)
             .map(|(vm, value)| {
                 ExecuteValue {
                     expr: expr,
@@ -312,7 +314,7 @@ impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
                 }
             })
             .map_err(Error::from)
-            .boxed())
+            .boxed()
     }
     fn load_script(self,
                    _compiler: &mut Compiler,
@@ -326,7 +328,7 @@ impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
         let CompileValue { mut expr, typ, function } = self;
         let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
         let closure = vm.global_env().new_global_thunk(function)?;
-        let (_, value) = vm.call_thunk(closure)?.wait()?;
+        let (_, value) = vm.call_thunk(closure).wait()?;
         vm.set_global(closure.function.name.clone(), typ, metadata, value)?;
         info!("Loaded module `{}` filename", filename);
         Ok(())

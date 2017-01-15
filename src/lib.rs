@@ -261,7 +261,7 @@ impl Compiler {
         where T: Getable<'vm> + VmType,
     {
         let expected = T::make_type(vm);
-        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?
+        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(|v| {
                 let ExecuteValue { typ: actual, value, .. } = v;
                 unsafe {
@@ -285,7 +285,7 @@ impl Compiler {
               T::Type: Sized,
     {
         let expected = T::make_type(vm);
-        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?
+        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
                 let ExecuteValue { typ: actual, value, .. } = v;
                 let is_io = {
@@ -299,13 +299,9 @@ impl Compiler {
                         .unwrap_or(false)
                 };
                 if is_io {
-                    match vm.execute_io(*value) {
-                        Ok(future) => {
-                            future.map(move |(_, value)| (value, expected, actual))
-                                .map_err(Error::from)
-                        }
-                        Err(err) => FutureValue::Value(Err(err.into())),
-                    }
+                    vm.execute_io(*value)
+                        .map(move |(_, value)| (value, expected, actual))
+                        .map_err(Error::from)
                 } else {
                     FutureValue::Value(Ok((*value, expected, actual)))
                 }

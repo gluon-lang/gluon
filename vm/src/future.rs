@@ -165,3 +165,13 @@ impl<F> Future for FutureValue<F>
         }
     }
 }
+
+#[macro_export]
+macro_rules! try_future {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return $crate::future::FutureValue::Value(Err(err.into())),
+        }
+    }
+}

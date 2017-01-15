@@ -511,10 +511,10 @@ pub trait ThreadInternal
                     -> Result<()>;
 
     /// Evaluates a zero argument function (a thunk)
-    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Result<FutureValue<Execute<&Self>>>;
+    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Self>>;
 
     /// Executes an `IO` action
-    fn execute_io(&self, value: Value) -> Result<FutureValue<Execute<&Self>>>;
+    fn execute_io(&self, value: Value) -> FutureValue<Execute<&Self>>;
 
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
@@ -601,18 +601,19 @@ impl ThreadInternal for Thread {
         Ok(())
     }
 
-    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> Result<FutureValue<Execute<&Thread>>> {
+    fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Thread>> {
         let mut context = self.current_context();
         context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
-        context.execute().map(|async| match async {
+        let async = try_future!(context.execute());
+        match async {
             Async::Ready(context) => FutureValue::Value(Ok((self, context.unwrap().stack.pop()))),
             Async::NotReady => FutureValue::Future(Execute::new(self)),
-        })
+        }
     }
 
     /// Calls a module, allowed to to run IO expressions
-    fn execute_io(&self, value: Value) -> Result<FutureValue<Execute<&Self>>> {
+    fn execute_io(&self, value: Value) -> FutureValue<Execute<&Self>> {
         debug!("Run IO {:?}", value);
         let mut context = OwnedContext {
             thread: self,
@@ -625,9 +626,9 @@ impl ThreadInternal for Thread {
         context.stack.push(Int(0));
 
         context.borrow_mut().enter_scope(2, State::Unknown);
-        context = match self.call_function(context, 1)? {
+        context = match try_future!(self.call_function(context, 1)) {
             Async::Ready(context) => context.expect("call_module to have the stack remaining"),
-            Async::NotReady => return Ok(FutureValue::Future(Execute::new(self))),
+            Async::NotReady => return FutureValue::Future(Execute::new(self)),
         };
         let result = context.stack.pop();
         {
@@ -637,7 +638,7 @@ impl ThreadInternal for Thread {
             }
         }
         let _ = context.exit_scope();
-        Ok(FutureValue::Value(Ok((self, result))))
+        FutureValue::Value(Ok((self, result)))
     }
 
     /// Calls a function on the stack.
