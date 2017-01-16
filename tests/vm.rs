@@ -874,6 +874,20 @@ fn suggestion_from_implicit_prelude() {
     assert!(!result.is_empty());
 }
 
+/// Would cause panics in `Source` as the spans from the implicit prelude were used with the
+/// `Source` from the normal expression
+#[test]
+fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+
+    let expr = "1";
+
+    Compiler::new()
+        .typecheck_str(&vm, "example", expr, Some(&Type::float()))
+        .unwrap_err();
+}
+
 #[test]
 fn value_size() {
     assert!(::std::mem::size_of::<Value>() <= 16);
