@@ -171,8 +171,11 @@ fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<Str
 }
 
 fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> IO<String> {
+    use futures::Future;
+
     let frame_level = vm.context().stack.get_frames().len();
-    let run_result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(vm, "<top>", expr);
+    let run_result =
+        Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(vm, "<top>", expr).wait();
     let mut context = vm.context();
     let stack = StackFrame::current(&mut context.stack);
     match run_result {

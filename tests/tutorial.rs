@@ -25,6 +25,7 @@ fn access_field_through_alias() {
     let vm = new_vm();
     Compiler::new()
         .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", " import \"std/prelude.glu\" ")
+        .sync_or_error()
         .unwrap();
     let mut add: FunctionRef<fn(i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
         .unwrap();
@@ -42,7 +43,10 @@ fn call_rust_from_gluon() {
     let vm = new_vm();
     vm.define_global("factorial", primitive!(1 factorial)).unwrap();
 
-    let result = Compiler::new().run_expr::<i32>(&vm, "example", "factorial 5").unwrap();
+    let result = Compiler::new()
+        .run_expr::<i32>(&vm, "example", "factorial 5")
+        .sync_or_error()
+        .unwrap();
     let expected = (120, Type::int());
 
     assert_eq!(result, expected);
@@ -58,6 +62,7 @@ fn use_string_module() {
                             "example",
                             " let string = import \"std/string.glu\" in string.trim \"  Hello \
                              world  \t\" ")
+        .sync_or_error()
         .unwrap();
     let expected = ("Hello world".to_string(), Type::string());
 

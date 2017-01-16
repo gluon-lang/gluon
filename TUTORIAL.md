@@ -395,6 +395,7 @@ Once in possession of a [RootedThread][] you can compile and execute code using 
 let vm = new_vm();
 let (result, _) = Compiler::new()
     .run_expr::<i32>(&vm, "example", "1 + 2")
+    .sync_or_error()
     .ok();
 assert_eq!(result, Some(3));
 ```
@@ -406,6 +407,7 @@ let vm = new_vm();
 // Ensure that the prelude module is loaded before trying to access something from it
 Compiler::new()
     .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", " import \"std/prelude.glu\" ")
+    .sync_or_error()
     .unwrap();
 let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
     .unwrap();
@@ -426,6 +428,7 @@ vm.define_global("factorial", factorial as fn (_) -> _)
     .unwrap();
 let (result, _) = Compiler::new()
     .run_expr::<i32>(&vm, "example", "factorial 5")
+    .sync_or_error()
     .unwrap();
 assert_eq!(result, 120);
 ```
@@ -436,6 +439,7 @@ assert_eq!(result, 120);
 let vm = new_vm();
 let (result, _) = Compiler::new()
     .run_expr::<String>(&vm, "example", " let string = import \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
+    .sync_or_error()
     .unwrap();
 assert_eq!(result, "Hello world");
 ```

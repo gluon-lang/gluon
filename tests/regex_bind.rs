@@ -19,7 +19,7 @@ fn regex_match() {
         let match_hello = regex.new "hello, .*" |> unwrap_ok
         regex.is_match match_hello "hello, world"
         "#;
-    let result = Compiler::new().run_expr::<bool>(&thread, "<top>", text);
+    let result = Compiler::new().run_expr::<bool>(&thread, "<top>", text).sync_or_error();
 
     assert!(result.unwrap().0);
 }
@@ -34,7 +34,7 @@ fn regex_error() {
 
         regex.new ")" |> unwrap_err |> regex.error_to_string
         "#;
-    let result = Compiler::new().run_expr::<String>(&thread, "<top>", text);
+    let result = Compiler::new().run_expr::<String>(&thread, "<top>", text).sync_or_error();
 
     assert_eq!(result.unwrap().0,
                "Error parsing regex near \')\' at character offset 0: Unopened parenthesis.");

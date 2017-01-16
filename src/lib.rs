@@ -29,8 +29,6 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::env;
 
-use futures::Future;
-
 use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
 use base::metadata::Metadata;
@@ -40,7 +38,7 @@ use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::{Getable, Hole, VmType, OpaqueValue};
 use vm::Error as VmError;
-use vm::future::FutureValue;
+use vm::future::{BoxFutureValue, FutureValue};
 use vm::compiler::CompiledFunction;
 use vm::thread::ThreadInternal;
 use vm::macros;
@@ -257,12 +255,12 @@ impl Compiler {
                             vm: &'vm Thread,
                             name: &str,
                             expr_str: &str)
-                            -> Result<(T, ArcType)>
-        where T: Getable<'vm> + VmType,
+                            -> BoxFutureValue<'vm, (T, ArcType), Error>
+        where T: Getable<'vm> + VmType + Send + 'vm,
     {
         let expected = T::make_type(vm);
         expr_str.run_expr(self, vm, name, expr_str, Some(&expected))
-            .and_then(|v| {
+            .and_then(move |v| {
                 let ExecuteValue { typ: actual, value, .. } = v;
                 unsafe {
                     FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
@@ -271,7 +269,7 @@ impl Compiler {
                     })
                 }
             })
-            .wait()
+            .boxed()
     }
 
     /// Compiles and runs `expr_str`. If the expression is of type `IO a` the action is evaluated
@@ -280,8 +278,8 @@ impl Compiler {
                                vm: &'vm Thread,
                                name: &str,
                                expr_str: &str)
-                               -> Result<(T, ArcType)>
-        where T: Getable<'vm> + VmType,
+                               -> BoxFutureValue<'vm, (T, ArcType), Error>
+        where T: Getable<'vm> + VmType + Send + 'vm,
               T::Type: Sized,
     {
         let expected = T::make_type(vm);
@@ -306,13 +304,13 @@ impl Compiler {
                     FutureValue::Value(Ok((*value, expected, actual)))
                 }
             })
-            .and_then(|(value, expected, actual)| unsafe {
+            .and_then(move |(value, expected, actual)| unsafe {
                 FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                     Some(value) => Ok((value, actual)),
                     None => Err(Error::from(VmError::WrongType(expected, actual))),
                 })
             })
-            .wait()
+            .boxed()
     }
 
     fn include_implicit_prelude(&mut self, name: &str, expr: &mut SpannedExpr<Symbol>) {
@@ -404,6 +402,7 @@ pub fn new_vm() -> RootedThread {
     Compiler::new()
         .implicit_prelude(false)
         .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import "std/types.glu" "#)
+        .sync_or_error()
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::vm::channel::load(&vm).expect("Loaded channel library");

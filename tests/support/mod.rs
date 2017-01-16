@@ -1,5 +1,6 @@
 extern crate env_logger;
 extern crate gluon;
+pub extern crate futures;
 
 use gluon::vm::api::{Getable, VmType};
 use gluon::vm::thread::{RootedThread, Thread};
@@ -15,18 +16,19 @@ pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<
 
 #[allow(dead_code)]
 pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
-    where T: Getable<'vm> + VmType,
+    where T: Getable<'vm> + VmType + Send + 'vm,
 {
     Compiler::new()
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s)
+        .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err))
         .0
 }
 
 #[allow(dead_code)]
 pub fn run_expr<'vm, T>(vm: &'vm Thread, s: &str) -> T
-    where T: Getable<'vm> + VmType,
+    where T: Getable<'vm> + VmType + Send + 'vm,
 {
     run_expr_(vm, s, false)
 }
@@ -59,11 +61,14 @@ macro_rules! test_expr {
     (io $name: ident, $expr: expr, $value: expr) => {
         #[test]
         fn $name() {
+            use $crate::support::futures::Future;
+
             let _ = ::env_logger::init();
             let mut vm = make_vm();
             let (value, _) = Compiler::new()
                 .implicit_prelude(false)
                 .run_io_expr(&mut vm, "<top>", $expr)
+                .wait()
                 .unwrap_or_else(|err| panic!("{}", err));
             match value {
                 IO::Value(value) => {

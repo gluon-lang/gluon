@@ -46,7 +46,8 @@ pub unsafe extern "C" fn glu_run_expr(vm: &Thread,
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, module, expr);
+    let result =
+        Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, module, expr).sync_or_error();
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,

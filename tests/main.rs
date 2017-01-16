@@ -64,7 +64,7 @@ fn main_() -> Result<(), Box<Error>> {
         file.read_to_string(&mut text)?;
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text)?;
+        compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text).sync_or_error()?;
     }
     for filename in test_files("tests/fail")? {
         let mut file = File::open(&filename)?;
@@ -72,7 +72,7 @@ fn main_() -> Result<(), Box<Error>> {
         file.read_to_string(&mut text)?;
         let name = filename.to_str().unwrap_or("<unknown>");
         println!("test {}", name);
-        match compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text) {
+        match compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, name, &text).sync_or_error() {
             Ok(x) => {
                 return Err(StringError(format!("Expected test '{}' to fail got {:?}",
                                                filename.to_str().unwrap(),

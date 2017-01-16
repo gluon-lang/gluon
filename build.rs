@@ -23,7 +23,7 @@ fn main() {{
     let _ = ::env_logger::init();
     let text = r#\"{}\"#;
     let vm = new_vm();
-    match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, \"example\", text) {{
+    match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, \"example\", text) .sync_or_error() {{
         Ok(_value) => (),
         Err(err) => {{
             panic!(\"{{}}\", err);

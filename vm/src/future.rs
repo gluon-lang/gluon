@@ -17,14 +17,15 @@ pub enum FutureValue<F>
 pub type BoxFutureValue<'a, T, E> = FutureValue<Box<Future<Item = T, Error = E> + Send + 'a>>;
 
 impl<F> FutureValue<F>
-    where F: Future<Error = Error>,
+    where F: Future,
+          F::Error: From<Error>,
 {
     /// Returns the resolved `value` if it was synchronously computed or an error otherwise
-    pub fn sync_or_error(self) -> Result<F::Item, Error> {
+    pub fn sync_or_error(self) -> Result<F::Item, F::Error> {
         match self {
             FutureValue::Value(v) => v,
             FutureValue::Future(_) => {
-                Err(Error::Message("Future needs to be resolved asynchronously".into()))
+                Err(Error::Message("Future needs to be resolved asynchronously".into()).into())
             }
             FutureValue::Polled => {
                 panic!("`FutureValue` may not be polled again if it contained a value")

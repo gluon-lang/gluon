@@ -15,12 +15,14 @@ fn verify_value_cloned(from: &Thread, to: &Thread) {
 
     let (value, _) = Compiler::new()
         .run_expr::<OpaqueValue<RootedThread, Reference<i32>>>(&from, "example", expr)
+        .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err));
 
     // Load the prelude
     type Fn<'t> = FunctionRef<'t, fn(OpaqueValue<RootedThread, Reference<i32>>)>;
     let (mut store_1, _) = Compiler::new()
         .run_expr::<Fn>(&to, "store_1", r#"\r -> r <- 1"#)
+        .sync_or_error()
         .unwrap();
     assert_eq!(store_1.call(value.clone()), Ok(()));
 

@@ -98,7 +98,10 @@ test "hello"
     let vm = make_vm();
     vm.define_global("test", primitive!(1 test)).unwrap();
 
-    let result = Compiler::new().run_expr::<String>(&vm, "<top>", expr).unwrap();
+    let result = Compiler::new()
+        .run_expr::<String>(&vm, "<top>", expr)
+        .wait()
+        .unwrap();
     let expected = ("hello world".to_string(), Type::string());
 
     assert_eq!(result, expected);
@@ -118,8 +121,10 @@ sum_bytes [100b, 42b, 3b, 15b]
     let vm = make_vm();
     vm.define_global("sum_bytes", primitive!(1 sum_bytes)).unwrap();
 
-    let result =
-        Compiler::new().run_expr::<u8>(&vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
+    let result = Compiler::new()
+        .run_expr::<u8>(&vm, "<top>", expr)
+        .wait()
+        .unwrap_or_else(|err| panic!("{}", err));
     let expected = (160, Type::byte());
 
     assert_eq!(result, expected);
@@ -140,8 +145,10 @@ fn return_finished_future() {
     let vm = make_vm();
     vm.define_global("add", primitive!(2 add)).unwrap();
 
-    let result =
-        Compiler::new().run_expr::<i32>(&vm, "<top>", expr).unwrap_or_else(|err| panic!("{}", err));
+    let result = Compiler::new()
+        .run_expr::<i32>(&vm, "<top>", expr)
+        .wait()
+        .unwrap_or_else(|err| panic!("{}", err));
     let expected = (3, Type::int());
 
     assert_eq!(result, expected);
@@ -178,6 +185,7 @@ fn return_delayed_future() {
 
     let result = Compiler::new()
         .run_expr::<i32>(&vm, "<top>", expr)
+        .wait()
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = (3, Type::int());
 
@@ -204,6 +212,7 @@ fn io_future() {
 
     let result = Compiler::new()
         .run_io_expr::<IO<i32>>(&vm, "<top>", expr)
+        .wait()
         .unwrap_or_else(|err| panic!("{}", err));
 
     assert_eq!(result.0, IO::Value(124));
