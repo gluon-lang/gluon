@@ -17,7 +17,7 @@ use gluon::Compiler;
 use gluon::import::Import;
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new().load_script(vm, filename, input)
+    Compiler::new().load_script(vm, filename, input).sync_or_error()
 }
 
 fn make_vm() -> RootedThread {

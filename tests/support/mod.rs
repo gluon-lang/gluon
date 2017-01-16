@@ -12,6 +12,7 @@ pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<
     Compiler::new()
         .implicit_prelude(false)
         .load_script(vm, filename, input)
+        .sync_or_error()
 }
 
 #[allow(dead_code)]

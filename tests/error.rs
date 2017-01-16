@@ -10,6 +10,6 @@ fn dont_panic_when_error_span_is_at_eof() {
     let _ = ::env_logger::init();
     let vm = support::make_vm();
     let text = r#"abc"#;
-    let result = Compiler::new().load_script(&vm, "test", text);
+    let result = Compiler::new().load_script(&vm, "test", text).sync_or_error();
     assert!(result.is_err());
 }

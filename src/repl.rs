@@ -176,8 +176,7 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
         find_kind => primitive!(1 find_kind)
     ))?;
     let mut compiler = Compiler::new();
-    compiler.load_file(vm, "std/prelude.glu")?;
-    compiler.load_file(vm, "std/repl.glu")?;
+    compiler.load_file(vm, "std/repl.glu").sync_or_error()?;
     Ok(())
 }
 

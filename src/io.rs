@@ -186,7 +186,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> IO<String> {
 
 fn load_script(WithVM { vm, value: name }: WithVM<&str>, expr: &str) -> IO<String> {
     let frame_level = vm.context().stack.get_frames().len();
-    let run_result = Compiler::new().load_script(vm, name, expr);
+    let run_result = Compiler::new().load_script(vm, name, expr).sync_or_error();
     let mut context = vm.context();
     let stack = StackFrame::current(&mut context.stack);
     match run_result {

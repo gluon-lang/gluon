@@ -25,6 +25,8 @@ pub mod regex_bind;
 
 pub use vm::thread::{RootedThread, Thread};
 
+pub use futures::Future;
+
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::env;
@@ -232,21 +234,34 @@ impl Compiler {
     ///
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
-    pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
+    pub fn load_script<'vm>(&mut self,
+                            vm: &'vm Thread,
+                            filename: &str,
+                            input: &str)
+                            -> BoxFutureValue<'vm, (), Error> {
         input.load_script(self, vm, filename, input, None)
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
-    pub fn load_file(&mut self, vm: &Thread, filename: &str) -> Result<()> {
+    pub fn load_file<'vm>(&mut self,
+                          vm: &'vm Thread,
+                          filename: &str)
+                          -> BoxFutureValue<'vm, (), Error> {
         use std::fs::File;
         use std::io::Read;
-        let mut buffer = StdString::new();
-        {
-            let mut file = File::open(filename)?;
-            file.read_to_string(&mut buffer)?;
-        }
+        let result = (|| {
+            let mut buffer = StdString::new();
+            {
+                let mut file = File::open(filename)?;
+                file.read_to_string(&mut buffer)?;
+            }
+            Ok(buffer)
+        })();
         let name = filename_to_module(filename);
-        self.load_script(vm, &name, &buffer)
+        match result {
+            Ok(buffer) => self.load_script(vm, &name, &buffer),
+            Err(err) => FutureValue::Value(Err(err)),
+        }
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the

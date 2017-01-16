@@ -55,7 +55,7 @@ fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
 fn main_() -> Result<(), Box<Error>> {
     let vm = new_vm();
     let mut compiler = Compiler::new();
-    compiler.load_file(&vm, "std/prelude.glu")?;
+    compiler.load_file(&vm, "std/prelude.glu").sync_or_error()?;
     let mut text = String::new();
     let _ = ::env_logger::init();
     for filename in test_files("tests/pass")? {

@@ -9,8 +9,6 @@
 
 use std::borrow::{Borrow, BorrowMut};
 
-use futures::Future;
-
 use base::ast::SpannedExpr;
 use base::error::InFile;
 use base::types::ArcType;
@@ -252,11 +250,11 @@ pub trait Executable<'vm, Extra> {
 
     fn load_script(self,
                    compiler: &mut Compiler,
-                   vm: &Thread,
+                   vm: &'vm Thread,
                    filename: &str,
                    expr_str: &str,
                    arg: Extra)
-                   -> Result<()>;
+                   -> BoxFutureValue<'vm, (), Error>;
 }
 impl<'vm, C, Extra> Executable<'vm, Extra> for C
     where C: Compileable<Extra>,
@@ -279,14 +277,16 @@ impl<'vm, C, Extra> Executable<'vm, Extra> for C
     }
     fn load_script(self,
                    compiler: &mut Compiler,
-                   vm: &Thread,
+                   vm: &'vm Thread,
                    filename: &str,
                    expr_str: &str,
                    arg: Extra)
-                   -> Result<()> {
+                   -> BoxFutureValue<'vm, (), Error> {
 
-        self.compile(compiler, vm, filename, expr_str, arg)
-            .and_then(|v| v.load_script(compiler, vm, filename, expr_str, ()))
+        match self.compile(compiler, vm, filename, expr_str, arg) {
+            Ok(v) => v.load_script(compiler, vm, filename, expr_str, ()),
+            Err(err) => FutureValue::Value(Err(err)),
+        }
     }
 }
 impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
@@ -318,19 +318,24 @@ impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
     }
     fn load_script(self,
                    _compiler: &mut Compiler,
-                   vm: &Thread,
+                   vm: &'vm Thread,
                    filename: &str,
                    _expr_str: &str,
                    _: ())
-                   -> Result<()> {
+                   -> BoxFutureValue<'vm, (), Error> {
         use check::metadata;
 
         let CompileValue { mut expr, typ, function } = self;
         let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
-        let closure = vm.global_env().new_global_thunk(function)?;
-        let (_, value) = vm.call_thunk(closure).wait()?;
-        vm.set_global(closure.function.name.clone(), typ, metadata, value)?;
-        info!("Loaded module `{}` filename", filename);
-        Ok(())
+        let closure = try_future!(vm.global_env().new_global_thunk(function));
+        let filename = filename.to_string();
+        vm.call_thunk(closure)
+            .map_err(Error::from)
+            .and_then(move |(_, value)| {
+                try_future!(vm.set_global(closure.function.name.clone(), typ, metadata, value));
+                info!("Loaded module `{}` filename", filename);
+                FutureValue::sync(Ok(()))
+            })
+            .boxed()
     }
 }
