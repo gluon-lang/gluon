@@ -810,7 +810,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
                 if data.tag == 0 {
                     Some(None)
                 } else {
-                    T::from_value(vm, Variants(&data.fields[1])).map(Some)
+                    T::from_value(vm, Variants(&data.fields[0])).map(Some)
                 }
             }
             Value::Tag(0) => Some(None),
