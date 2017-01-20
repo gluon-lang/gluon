@@ -2,7 +2,12 @@ use std::fmt;
 use std::collections::hash_map::Entry;
 use std::result::Result as StdResult;
 
+use itertools::Itertools;
+
+use pretty::{Arena, DocAllocator, DocBuilder};
+
 use base::symbol::Symbol;
+use base::types::{ArcType, Type, TypeEnv};
 use types::*;
 use base::fnv::FnvMap;
 
@@ -247,6 +252,199 @@ impl Value {
             Value::Userdata(p) => p.generation(),
             Value::Thread(p) => p.generation(),
             Value::Tag(_) | Value::Byte(_) | Int(_) | Float(_) => Generation::default(),
+        }
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, PartialOrd)]
+enum Prec {
+    Top,
+    Constructor,
+}
+use self::Prec::*;
+
+
+pub struct ValuePrinter<'a> {
+    pub typ: &'a ArcType,
+    pub env: &'a TypeEnv,
+    pub value: Value,
+    pub max_level: i32,
+    pub width: usize,
+}
+
+impl<'t> ValuePrinter<'t> {
+    pub fn new(env: &'t TypeEnv, typ: &'t ArcType, value: Value) -> ValuePrinter<'t> {
+        ValuePrinter {
+            typ: typ,
+            env: env,
+            value: value,
+            max_level: i32::max_value(),
+            width: 80,
+        }
+    }
+
+    pub fn max_level(&mut self, max_level: i32) -> &mut ValuePrinter<'t> {
+        self.max_level = max_level;
+        self
+    }
+
+    pub fn width(&mut self, width: usize) -> &mut ValuePrinter<'t> {
+        self.width = width;
+        self
+    }
+}
+
+struct InternalPrinter<'a, 't> {
+    typ: &'t ArcType,
+    env: &'t TypeEnv,
+    arena: &'a Arena<'a>,
+    prec: Prec,
+    level: i32,
+}
+
+impl<'a> fmt::Display for ValuePrinter<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+        let arena = Arena::new();
+        let mut s = Vec::new();
+        InternalPrinter {
+                typ: self.typ,
+                env: self.env,
+                arena: &arena,
+                prec: Top,
+                level: self.max_level,
+            }.pretty(self.value)
+            .group()
+            .1
+            .render(self.width, &mut s)
+            .map_err(|_| fmt::Error)?;
+        write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
+    }
+}
+
+impl<'a, 't> InternalPrinter<'a, 't> {
+    fn pretty(&self, value: Value) -> DocBuilder<'a, Arena<'a>> {
+        use std::iter;
+
+        let arena = self.arena;
+        match value {
+            _ if self.level == 0 => arena.text(".."),
+            Value::String(s) => arena.text(format!("{:?}", s)),
+            Value::Data(ref data) => self.pretty_data(data.tag, data.fields.iter().cloned()),
+            Value::Tag(tag) => self.pretty_data(tag, iter::empty()),
+            Value::Function(ref function) => {
+                chain![arena;
+                    "<extern ",
+                    function.id.declared_name().to_string(),
+                    ">"
+                ]
+            }
+            Value::Closure(ref closure) => {
+                chain![arena;
+                    "{",
+                    arena.concat(closure.upvars.iter().map(|field| {
+                        arena.text(format!("{:?}", field))
+                    })),
+                    "}"
+                ]
+            }
+            Value::Array(ref array) => {
+                chain![arena;
+                    "[",
+                    arena.concat(array.iter().map(|field| {
+                        match **self.typ {
+                            Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
+                            _ => arena.text(format!("{:?}", field)),
+                        }
+                    }).intersperse(arena.text(",").append(arena.space()))),
+                    "]"
+                ]
+            }
+            Value::PartialApplication(p) => arena.text(format!("{:?}", p)),
+            Value::Userdata(ref data) => arena.text(format!("{:?}", data)),
+            Value::Thread(thread) => arena.text(format!("{:?}", thread)),
+            Value::Byte(b) => arena.text(format!("{}", b)),
+            Value::Int(i) => arena.text(format!("{}", i)),
+            Value::Float(f) => arena.text(format!("{}", f)),
+        }
+    }
+
+    fn pretty_data<I>(&self, tag: VmTag, fields: I) -> DocBuilder<'a, Arena<'a>>
+        where I: IntoIterator<Item = Value>,
+    {
+        fn enclose<'a>(p: Prec,
+                       limit: Prec,
+                       arena: &'a Arena<'a>,
+                       doc: DocBuilder<'a, Arena<'a>>)
+                       -> DocBuilder<'a, Arena<'a>> {
+            if p >= limit {
+                chain![arena; "(", doc, ")"]
+            } else {
+                doc
+            }
+        }
+        use base::resolve::remove_aliases_cow;
+        use base::types::arg_iter;
+
+        let typ = remove_aliases_cow(self.env, self.typ);
+        let arena = self.arena;
+        match **typ {
+            Type::Record(ref row) => {
+                chain![arena;
+                            "{",
+                            arena.concat(fields.into_iter().zip(row.row_iter())
+                                .map(|(field, type_field)| {
+                                chain![arena;
+                                    arena.space(),
+                                    type_field.name.to_string(),
+                                    ":",
+                                    arena.space(),
+                                    self.p(&type_field.typ, Top).pretty(field)
+                                ]
+                                }).intersperse(arena.text(","))),
+                            arena.space(),
+                            "}"
+                        ]
+            }
+            Type::Variant(ref row) => {
+                let type_field = row.row_iter()
+                    .nth(tag as usize)
+                    .expect("Variant tag is out of bounds");
+                let mut empty = true;
+                let doc = chain![arena;
+                            type_field.name.declared_name().to_string(),
+                            arena.concat(fields.into_iter().zip(arg_iter(&type_field.typ))
+                                .map(|(field, typ)| {
+                                    empty = false;
+                                    arena.space().append(self.p(typ, Constructor).pretty(field))
+                                }))
+                        ];
+                if empty {
+                    doc
+                } else {
+                    enclose(self.prec, Constructor, arena, doc)
+                }
+            }
+            _ => {
+                chain![arena;
+                        "{",
+                        arena.concat(fields.into_iter().map(|field| {
+                            arena.space().append(self.p(&Type::hole(), Top).pretty(field))
+                        }).intersperse(arena.text(","))),
+                        arena.space(),
+                        "}"
+                    ]
+            }
+        }
+    }
+
+    fn p(&self, typ: &'t ArcType, prec: Prec) -> InternalPrinter<'a, 't> {
+        InternalPrinter {
+            typ: typ,
+            env: self.env,
+            arena: self.arena,
+            prec: prec,
+            level: self.level - 1,
         }
     }
 }
@@ -961,5 +1159,91 @@ impl<'t> Cloner<'t> {
                 Ok(new_data)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gc::Gc;
+    use types::VmInt;
+
+    use base::kind::{ArcKind, KindEnv};
+    use base::types::{Alias, AliasData, ArcType, Field, Type, TypeEnv};
+    use base::symbol::{Symbol, SymbolRef};
+
+    struct MockEnv(Option<Alias<Symbol, ArcType>>);
+
+    impl KindEnv for MockEnv {
+        fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
+            None
+        }
+    }
+
+    impl TypeEnv for MockEnv {
+        fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+            None
+        }
+
+        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+            self.0.as_ref()
+        }
+
+        fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+            None
+        }
+    }
+
+    #[test]
+    fn pretty_variant() {
+        let mut gc = Gc::new(0, usize::max_value());
+
+        let list = Symbol::from("List");
+        let typ: ArcType = Type::variant(vec![Field {
+                                                  name: Symbol::from("Cons"),
+                                                  typ: Type::function(vec![Type::int(),
+                                                                  Type::ident(list.clone())],
+                                                                      Type::ident(list.clone())),
+                                              },
+                                              Field {
+                                                  name: Symbol::from("Nil"),
+                                                  typ: Type::ident(list.clone()),
+                                              }]);
+
+        let env = MockEnv(Some(Alias::from(AliasData {
+            name: list.clone(),
+            args: vec![],
+            typ: typ.clone(),
+        })));
+
+        let nil = Value::Tag(1);
+        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)), "Nil");
+        let list1 = Value::Data(gc.alloc(Def {
+                tag: 0,
+                elems: &[Value::Int(123), nil],
+            })
+            .unwrap());
+        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, list1)),
+                   "Cons 123 Nil");
+        let list2 = Value::Data(gc.alloc(Def {
+                tag: 0,
+                elems: &[Value::Int(0), list1],
+            })
+            .unwrap());
+        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, list2)),
+                   "Cons 0 (Cons 123 Nil)");
+    }
+
+    #[test]
+    fn pretty_array() {
+        let mut gc = Gc::new(0, usize::max_value());
+
+        let typ = Type::array(Type::int());
+
+        let env = MockEnv(None);
+
+        let nil = Value::Array(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
+        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)),
+                   "[1, 2, 3]");
     }
 }
