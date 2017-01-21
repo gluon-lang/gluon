@@ -1,49 +1,67 @@
-let { Functor, Applicative, Alternative, Monad, id, make_Monoid, show_Char = show } = import "std/prelude.glu"
+let prelude = import "std/prelude.glu"
+let { Functor, Applicative, Alternative, Monad, List, id, make_Monoid, show_Char = show } = prelude
 let string = import "std/string.glu"
 let { (<>) } = make_Monoid string.monoid
 
 type OffsetString = { start: Int, end: Int, buffer: String }
 type Position = Int
 type Error = String
-type ParseResult a = Result Error { value: a, rest: OffsetString }
+type ParseResult a = Result Error { value: a, buffer: OffsetString }
 type Parser a =
-    OffsetString -> Position ->
-    (a -> OffsetString -> Position -> ParseResult a) ->
-    (OffsetString -> Position -> String -> ParseResult a) ->
-    ParseResult a
+    OffsetString -> ParseResult a
 
 let parser: Parser a -> Parser a = id
 
-let functor: Functor Parser = {
-    map = \f p -> parser (\stream position success failure ->
-        let success2 v s p = success (f v) s p
-        (parser p) stream position success2 failure)
+let functor : Functor Parser = {
+    map = \f m -> parser (\buffer ->
+        let result = parser m buffer 
+        match result with
+        | Ok a -> Ok { value = f a.value, buffer = a.buffer }
+        | Err err -> Err err)
 }
 
-let flat_map f m: (a -> Parser b) -> Parser a -> Parser b = parser (\stream position success failure ->
-    let success2 v s p = (parser (f v)) s p success failure
-    (parser m) stream position success2 failure
-    )
+let { map } = functor
 
-let applicative: Applicative Parser = {
+let applicative : Applicative Parser = {
     functor,
-    apply = \a m -> flat_map (\f -> functor.map f m) a,
-    pure = \value -> parser (\stream position success failure -> success value stream position)
+
+    apply = \f m -> parser (\buffer ->
+        let result1 = parser f buffer
+        match result1 with
+        | Ok g ->
+            let result2 = parser m g.buffer 
+            match result2 with
+            | Ok a -> Ok { value = g.value a.value, buffer = a.buffer }
+            | Err err -> Err err
+        | Err err -> Err err),
+
+    pure = \value -> parser (\buffer -> Ok { value, buffer })
 }
-let { pure } = applicative
+
+let { (*>), (<*), pure } = prelude.make_Applicative applicative
 
 let alternative: Alternative Parser = {
     applicative,
-    or = \l r -> parser (\stream position success failure ->
-        let failure2 _ _ _ = (parser r) stream position success failure
-        (parser l) stream position success failure2),
-    empty = parser (\stream position _ failure -> failure stream position "empty")
+
+    or = \l r -> parser (\stream ->
+        match parser l stream with
+        | Ok a -> Ok a
+        | Err _ -> parser r stream),
+    empty = parser (\stream -> Err "empty")
 }
 
-let monad: Monad Parser = {
+let { (<|>) } = prelude.make_Alternative alternative
+
+let monad : Monad Parser = {
     applicative,
-    flat_map
+
+    flat_map = \f m -> parser (\buffer ->
+        match parser m buffer with
+        | Ok a -> parser (f a.value) a.buffer
+        | Err err -> Err err)
 }
+
+let { (>>=), flat_map } = prelude.make_Monad monad
 
 let uncons stream : OffsetString -> Option { char: Char, rest: OffsetString } =
     if stream.start == stream.end then
@@ -64,15 +82,15 @@ let update_position c position: Char -> Position -> Position =
     position + char.len_utf8 c
 
 let any: Parser Char =
-    parser (\stream position success failure ->
+    parser (\stream ->
         match uncons stream with
         | Some record ->
             let { char, rest } = record
-            success char rest (update_position char position)
-        | None -> failure stream position "End of stream")
+            Ok { value = char, buffer = rest }
+        | None -> Err "End of stream")
 
 let fail message: String -> Parser a =
-    parser (\stream position _ failure -> failure stream position message)
+    parser (\stream -> Err message)
 
 let satisfy predicate: (Char -> Bool) -> Parser Char =
     let f c =
@@ -82,14 +100,52 @@ let satisfy predicate: (Char -> Bool) -> Parser Char =
             fail ("Unexpected character " <> show.show c)
     flat_map f any
 
+let token expected: Char -> Parser Char =
+    satisfy (\c -> expected == c)
+
+let take1 predicate : (Char -> Bool) -> Parser String =
+    parser (\stream ->
+        let take_ stream2 =
+            match uncons stream2 with
+            | Some record ->
+                if predicate record.char then
+                    take_ record.rest
+                else if stream.start == stream2.start then
+                    Err "Unexpected token"
+                else
+                    Ok {
+                        value = string.slice stream.buffer stream.start stream2.start,
+                        buffer = stream2
+                    }
+            | None -> Ok {
+                    value = string.slice stream.buffer stream.start stream.end,
+                    buffer = stream2
+                }
+        take_ stream
+        )
+
+let take predicate : (Char -> Bool) -> Parser String =
+    take1 predicate <|> pure ""
+
+let spaces = take char.is_whitespace
+
+let lazy_parser f : (() -> Parser a) -> Parser a =
+    parser (\stream -> f () stream)
+
+let between l r x: Parser a -> Parser b -> Parser c -> Parser c =
+    l *> x <* r
+
+let many p : Parser a -> Parser (List a) =
+    many1 p <|> pure Nil
+
+and many1 p : Parser a -> Parser (List a) =
+    p >>= (\h -> map (\t -> Cons h t) (many p))
+
 let parse p input: Parser a -> String -> Result String a =
-    let success a rest _ = Ok { value = a, rest }
-    let failure _ _ message = Err message
-    match (parser p) { start = 0, end = string.length input, rest = input } 0 success failure with
+    match p { start = 0, end = string.length input, buffer = input } with
     | Ok ok -> Ok ok.value
     | Err err -> Err err
     
-
 {
     Position, Error, ParseResult, Parser,
 
@@ -97,7 +153,7 @@ let parse p input: Parser a -> String -> Result String a =
 
     parser,
 
-    any, satisfy,
+    any, between, token, many, many1, satisfy, spaces, take1, lazy_parser,
 
     parse
 }
