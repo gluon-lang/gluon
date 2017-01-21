@@ -56,7 +56,10 @@ let eval_tests =
             (Ok (Float (1.0 + 2.5 + 3.14))) *>
         assert_leq
             (eval_string "(+ (+ 1 2) (+ 3 4))")
-            (Ok (Int (1 + 2 + 3 + 4)))
+            (Ok (Int (1 + 2 + 3 + 4))) *>
+        assert_leq
+            (eval_string "(- (* 2 3) (/ 2 2))")
+            (Ok (Int ((2 * 3) - (2 / 2))))
 
 let tests = parser_tests *> eval_tests
 

@@ -107,20 +107,26 @@ and expr _ : () -> Parser Expr = (atom <|> float <|> int <|> lazy_parser list) <
 let map = import "std/map.glu"
 let { Map } = map
 let prim_map = map.make string.ord
-//let { (<>) } = prelude.make_Monoid prim_map.monoid
 
-let primitives = prim_map.singleton "+" (\l r ->
+let primitive name int_op float_op = prim_map.singleton name (\l r ->
     match l with
     | Int li ->
         match r with
-        | Int ri -> Ok (Int (li + ri))
+        | Int ri -> Ok (Int (int_op li ri))
         | _ -> Err ("Cant add " <> show.show r)
     | Float lf ->
         match r with
-        | Float rf -> Ok (Float (lf + rf))
+        | Float rf -> Ok (Float (float_op lf rf))
         | _ -> Err ("Cant add " <> show.show r)
     | _ -> Err ("Cant add " <> show.show l)
     )
+
+let primitives =
+    let { (<>) = (++) } = prelude.make_Monoid prim_map.monoid
+    primitive "+" (+) (+) ++
+        primitive "-" (-) (-) ++
+        primitive "*" (*) (*) ++
+        primitive "/" (/) (/)
 
 let { (>>=), foldM } = prelude.make_Monad prelude.monad_Result
 
