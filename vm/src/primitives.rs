@@ -1,6 +1,7 @@
 //! Module containing functions for interacting with gluon's primitive types.
-use std::string::String as StdString;
 use std::result::Result as StdResult;
+use std::string::String as StdString;
+use std::str::FromStr;
 
 use {Variants, Error};
 use primitives as prim;
@@ -204,6 +205,12 @@ fn char_at(s: &str, index: usize) -> RuntimeResult<char, String> {
     ))
 }
 
+fn parse<T>(s: &str) -> StdResult<T, ()>
+    where T: FromStr,
+{
+    s.parse().map_err(|_| ())
+}
+
 fn show_int(i: VmInt) -> String {
     format!("{}", i)
 }
@@ -286,11 +293,10 @@ pub fn load(vm: &Thread) -> Result<()> {
         cosh => primitive!(1 f64::cosh),
         tanh => primitive!(1 f64::tanh),
         acosh => primitive!(1 f64::acosh),
-        atanh => primitive!(1 f64::atanh)
-    ),
-    )?;
-    vm.define_global(
-        "int",
+        atanh => primitive!(1 f64::atanh),
+        parse => primitive!(1 parse::<f64>)
+    ))?;
+    vm.define_global("int",
         record!(
         min_value => VmInt::min_value(),
         max_value => VmInt::max_value(),
@@ -306,11 +312,10 @@ pub fn load(vm: &Thread) -> Result<()> {
         abs => primitive!(1 VmInt::abs),
         signum => primitive!(1 VmInt::signum),
         is_positive => primitive!(1 VmInt::is_positive),
-        is_negative => primitive!(1 VmInt::is_negative)
-    ),
-    )?;
-    vm.define_global(
-        "array",
+        is_negative => primitive!(1 VmInt::is_negative),
+        parse => primitive!(1 parse::<VmInt>)
+    ))?;
+    vm.define_global("array",
         record!(
         length => primitive!(1 prim::array_length),
         index => primitive!(2 prim::array_index),
