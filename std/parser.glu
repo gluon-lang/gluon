@@ -127,6 +127,16 @@ let take1 predicate : (Char -> Bool) -> Parser String =
 let take predicate : (Char -> Bool) -> Parser String =
     take1 predicate <|> pure ""
 
+let take_string p : Parser a -> Parser String =
+    parser (\stream ->
+        match parser p stream with
+        | Ok a ->
+            Ok {
+                value = string.slice stream.buffer stream.start a.buffer.start,
+                buffer = a.buffer
+            }
+        | Err err -> Err err)
+
 let spaces = take char.is_whitespace
 
 let lazy_parser f : (() -> Parser a) -> Parser a =
@@ -141,6 +151,11 @@ let many p : Parser a -> Parser (List a) =
 and many1 p : Parser a -> Parser (List a) =
     p >>= (\h -> map (\t -> Cons h t) (many p))
 
+let skip_many p : Parser a -> Parser () =
+    skip_many1 p <|> pure ()
+and skip_many1 p : Parser a -> Parser () =
+    p >>= (\_ -> skip_many p)
+
 let parse p input: Parser a -> String -> Result String a =
     match p { start = 0, end = string.length input, buffer = input } with
     | Ok ok -> Ok ok.value
@@ -153,7 +168,8 @@ let parse p input: Parser a -> String -> Result String a =
 
     parser,
 
-    any, between, token, many, many1, satisfy, spaces, take1, lazy_parser,
+    any, between, token, many, many1, satisfy, spaces, take1, lazy_parser, fail, take_string,
+    skip_many, skip_many1,
 
     parse
 }

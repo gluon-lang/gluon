@@ -26,6 +26,12 @@ let tests =
             (Ok (List (Cons (Atom "test") (Cons (Atom "abc") Nil)))) *>
         assert_leq
             (parser.parse lisp.expr "(test (abc) d)")
-            (Ok (List (Cons (Atom "test") (Cons (List (Cons (Atom "abc") Nil)) (Cons (Atom "d") Nil)))))
+            (Ok (List (Cons (Atom "test") (Cons (List (Cons (Atom "abc") Nil)) (Cons (Atom "d") Nil))))) *>
+        assert_leq
+            (parser.parse lisp.expr "(test 123)")
+            (Ok (List (Cons (Atom "test") (Cons (Int 123) Nil)))) *>
+        assert_leq
+            (parser.parse lisp.expr "123.45")
+            (Ok (Float 123.45))
 
 run tests

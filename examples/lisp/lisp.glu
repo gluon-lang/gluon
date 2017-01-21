@@ -1,39 +1,58 @@
 let prelude = import "std/prelude.glu"
 let { List } = prelude
+let { (==) } = prelude.eq_Int
+let { (==) } = prelude.eq_Float
 let {
     Parser,
     functor,
     alternative,
     applicative,
     monad,
+    fail,
     between,
     lazy_parser,
     many,
+    satisfy,
     spaces,
     token,
-    take1 } = import "std/parser.glu"
+    take_string,
+    take1,
+    skip_many,
+    skip_many1
+    } = import "std/parser.glu"
 
 let string = import "std/string.glu"
+let { (==) } = string.eq
 let { (<>) } = prelude.make_Monoid string.monoid
 
 type Expr =
     | Atom String
+    | Int Int
+    | Float Float
     | List (List Expr)
 
 let eq : Eq Expr =
-    let (==) l r : Expr -> Expr -> Bool =
+    let eq_expr l r : Expr -> Expr -> Bool =
         match l with
         | Atom ls ->
             match r with
-            | Atom rs -> string.eq.(==) ls rs
-            | List _ -> False
+            | Atom rs -> ls == rs
+            | _ -> False
+        | Int ls ->
+            match r with
+            | Int rs -> ls == rs
+            | _ -> False
+        | Float ls ->
+            match r with
+            | Float rs -> ls == rs
+            | _ -> False
         | List ls ->
             match r with
-            | Atom _ -> False
             | List rs ->
-                let list_eq: Eq (List Expr) = prelude.eq_List { (==) }
+                let list_eq: Eq (List Expr) = prelude.eq_List { (==) = eq_expr }
                 list_eq.(==) ls rs
-    { (==) }
+            | _ -> False
+    { (==) = eq_expr }
 
 let show : Show Expr =
     let spaced xs =
@@ -47,6 +66,8 @@ let show : Show Expr =
     and show expr =
         match expr with
         | Atom s -> s
+        | Int i -> prelude.show_Int.show i
+        | Float f -> prelude.show_Float.show f
         | List ls -> "(" <> spaced ls <> ")"
     { show }
 
@@ -54,11 +75,29 @@ let { (<*), (*>), map2, pure } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative
 let { (>>=) } = prelude.make_Monad monad
 
-let atom : Parser Expr = functor.map (\x -> Atom x) (take1 char.is_alphanumeric)
+let atom : Parser Expr =
+    functor.map
+        (\x -> Atom x)
+        (take_string (satisfy char.is_alphabetic *> skip_many (satisfy char.is_alphanumeric)))
+
+let parse_parser p f msg: Parser a -> (String -> Result () b) -> String -> Parser b =
+    take_string p >>= (\s ->
+        match f s with
+        | Ok i -> pure i
+        | Err _ -> fail ("Expected " <> msg))
+
+let int : Parser Expr =
+    functor.map (\i -> Int i) (parse_parser (skip_many1 (satisfy char.is_numeric)) int.parse "integer")
+
+let float : Parser Expr =
+    let number = skip_many1 (satisfy char.is_numeric)
+    functor.map
+        (\f -> Float f)
+        (parse_parser (number *> token '.' *> number) float.parse "float")
 
 let list _ : () -> Parser Expr =
     let e = expr ()
     between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
-and expr _ : () -> Parser Expr = (atom <|> lazy_parser list) <* spaces
+and expr _ : () -> Parser Expr = (atom <|> float <|> int <|> lazy_parser list) <* spaces
 
 { Expr, eq, show, expr = spaces *> lazy_parser expr }
