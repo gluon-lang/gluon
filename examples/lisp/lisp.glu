@@ -100,4 +100,46 @@ let list _ : () -> Parser Expr =
     between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
 and expr _ : () -> Parser Expr = (atom <|> float <|> int <|> lazy_parser list) <* spaces
 
-{ Expr, eq, show, expr = spaces *> lazy_parser expr }
+let map = import "std/map.glu"
+let { Map } = map
+let prim_map = map.make string.ord
+//let { (<>) } = prelude.make_Monoid prim_map.monoid
+
+let primitives = prim_map.singleton "+" (\l r ->
+    match l with
+    | Int li ->
+        match r with
+        | Int ri -> Int (li + ri)
+        | _ -> error ("Cant add " <> show.show r)
+    | Float lf ->
+        match r with
+        | Float rf -> Float (lf + rf)
+        | _ -> error ("Cant add " <> show.show r)
+    | _ -> error ("Cant add " <> show.show l)
+    )
+
+let eval expr : Expr -> Expr =
+    match expr with
+    | Atom _ -> error "unimplemented"
+    | Int _ -> expr
+    | Float _ -> expr
+    | List list ->
+        match list with
+        | Cons x xs ->
+            match x with
+            | Atom name ->
+                match prim_map.find name primitives with
+                | Some prim ->
+                    match xs with
+                    | Cons y ys -> prelude.foldl prim y ys
+                    | Nil -> error "Expected arguments to primitive"
+                | None -> error ("Primitive `" <> name <> "` does not exist")
+            | _ -> error ("Cant apply" <> show.show x)
+        | Nil -> expr
+
+{
+    Expr,
+    eq, show,
+    expr = spaces *> lazy_parser expr,
+    eval
+}

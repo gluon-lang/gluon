@@ -13,7 +13,7 @@ let { Expr } = lisp
 let assert_leq =
     assert_eq (prelude.show_Result string.show lisp.show) (prelude.eq_Result string.eq lisp.eq)
 
-let tests =
+let parser_tests =
     assert_leq (parser.parse lisp.expr "test") (Ok (Atom "test")) *>
         assert_leq
             (parser.parse lisp.expr "()")
@@ -33,5 +33,16 @@ let tests =
         assert_leq
             (parser.parse lisp.expr "123.45")
             (Ok (Float 123.45))
+
+let assert_leq2 =
+    assert_eq lisp.show lisp.eq
+
+let eval_tests =
+    assert_leq2 (lisp.eval (Int 123)) (Int 123) *>
+        assert_leq2
+            (lisp.eval (List (Cons (Atom "+") (Cons (Int 1) (Cons (Int 2) Nil)))))
+            (Int 3)
+
+let tests = parser_tests *> eval_tests
 
 run tests
