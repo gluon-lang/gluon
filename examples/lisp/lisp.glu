@@ -122,7 +122,7 @@ let primitives = prim_map.singleton "+" (\l r ->
     | _ -> Err ("Cant add " <> show.show l)
     )
 
-let { foldM } = prelude.make_Monad prelude.monad_Result
+let { (>>=), foldM } = prelude.make_Monad prelude.monad_Result
 
 let eval expr : Expr -> Result String Expr =
     match expr with
@@ -137,7 +137,9 @@ let eval expr : Expr -> Result String Expr =
                 match prim_map.find name primitives with
                 | Some prim ->
                     match xs with
-                    | Cons y ys -> foldM prim y ys
+                    | Cons y ys ->
+                        let arg_eval l r = eval r >>= (\a -> prim l a)
+                        eval y >>= (\y -> foldM arg_eval y ys)
                     | Nil -> Err "Expected arguments to primitive"
                 | None -> Err ("Primitive `" <> name <> "` does not exist")
             | _ -> Err ("Cant apply" <> show.show x)
