@@ -1,0 +1,64 @@
+let prelude = import "std/prelude.glu"
+let { List } = prelude
+let {
+    Parser,
+    functor,
+    alternative,
+    applicative,
+    monad,
+    between,
+    lazy_parser,
+    many,
+    spaces,
+    token,
+    take1 } = import "std/parser.glu"
+
+let string = import "std/string.glu"
+let { (<>) } = prelude.make_Monoid string.monoid
+
+type Expr =
+    | Atom String
+    | List (List Expr)
+
+let eq : Eq Expr =
+    let (==) l r : Expr -> Expr -> Bool =
+        match l with
+        | Atom ls ->
+            match r with
+            | Atom rs -> string.eq.(==) ls rs
+            | List _ -> False
+        | List ls ->
+            match r with
+            | Atom _ -> False
+            | List rs ->
+                let list_eq: Eq (List Expr) = prelude.eq_List { (==) }
+                list_eq.(==) ls rs
+    { (==) }
+
+let show : Show Expr =
+    let spaced xs =
+        match xs with
+        | Cons y ys -> show y <> spaced1 ys
+        | Nil -> ""
+    and spaced1 xs =
+        match xs with
+        | Cons y ys -> " " <> show y <> spaced1 ys
+        | Nil -> ""
+    and show expr =
+        match expr with
+        | Atom s -> s
+        | List ls -> "(" <> spaced ls <> ")"
+    { show }
+
+let { (<*), (*>), map2, pure } = prelude.make_Applicative applicative
+let { (<|>) } = prelude.make_Alternative alternative
+let { (>>=) } = prelude.make_Monad monad
+
+let atom : Parser Expr = functor.map (\x -> Atom x) (take1 char.is_alphanumeric)
+
+let list _ : () -> Parser Expr =
+    let e = expr ()
+    between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
+and expr _ : () -> Parser Expr = (atom <|> lazy_parser list) <* spaces
+
+{ Expr, eq, show, expr = spaces *> lazy_parser expr }
